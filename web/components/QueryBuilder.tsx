@@ -5,9 +5,10 @@ import { compactNumber } from "@/lib/format";
 import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
   createCanvas, updateCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
-  listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery, runSemanticOp,
+  listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery, runSemanticOp, decompileSql,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
   type CatalogEntry, type SavedQuery, type Canvas, type SemanticOpResult, type SemanticOpRequest,
+  type DecompiledQuery,
 } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
 import { type ChartCustom } from "@/components/Chart";
@@ -1318,6 +1319,36 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
     if (items.length) setAcPos(caretPos(e.target));
   };
 
+  // Layer-3 — reverse-compile the edited SQL back into chips, so a pasted/engine query
+  // becomes editable in the visual builder. Lossy shapes (CTE/subquery) report a reason
+  // and leave the SQL untouched.
+  const [importMsg, setImportMsg] = useState<string>("");
+  const importSqlToBuilder = useCallback(async () => {
+    if (!sql.trim()) return;
+    setImportMsg("");
+    const r: DecompiledQuery = await decompileSql(sql).catch(() => ({ ok: false, reason: "Decompile failed" }));
+    if (!r.ok) { setImportMsg(r.reason || "Could not import this SQL into the builder."); return; }
+    if (r.primary_table) setPrimaryTable(r.primary_table);
+    setJoinedTables((r.joins || []).map(j => j.table).filter(t => t && t !== r.primary_table));
+    setDims((r.dimensions || []).map(d => ({
+      id: uid(), col: d.col, table: d.table || r.primary_table || "",
+      transform: (d.transform || undefined) as DimItem["transform"],
+    })));
+    setMeasures((r.measures || []).map(m => ({
+      id: uid(), col: m.col, table: m.table || r.primary_table || "",
+      agg: m.agg as AggFn, customExpr: m.customExpr || "", alias: m.alias || "",
+    })));
+    setFilters((r.filters || []).map(f => ({
+      id: uid(), col: f.col, table: f.table || r.primary_table || "",
+      op: f.op as FilterOp, val: f.val || "",
+    })));
+    setOrderBy(r.order_by || "");
+    setLimit(r.limit && r.limit > 0 ? r.limit : limit);
+    setAutoSql(true);   // hand control back to the chips → buildSql regenerates from them
+    const dropped = (r.unmapped_filters || []).length;
+    setImportMsg(dropped ? `Imported. ${dropped} filter${dropped > 1 ? "s" : ""} couldn't be mapped — check the SQL.` : "Imported into the builder.");
+  }, [sql, limit]);
+
   const insertSuggestion = useCallback((s: string) => {
     const ta = sqlRef.current; if (!ta) return;
     const cursor = ta.selectionStart ?? sql.length;
@@ -2308,7 +2339,12 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                   )}
                   {sqlOpen && (
                     <div className="ml-auto flex items-center gap-2">
+                      {importMsg && <span className="text-[11px] text-zinc-500 italic max-w-[220px] truncate" title={importMsg}>{importMsg}</span>}
                       <span className="text-[11px] text-zinc-500">⌘↵ to run</span>
+                      <button onClick={importSqlToBuilder} title="Reverse-compile this SQL into the visual builder's chips"
+                        className="text-[11px] text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+                        Import → builder
+                      </button>
                       <button onClick={()=>{ if (sql.trim()) { setSql(formatSql(sql)); setAutoSql(false); } }}
                         className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
                         Format

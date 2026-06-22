@@ -227,23 +227,33 @@ def retrieve_for_question(question: str, connection_id: str, top_k: int = _TOP_K
         return ""
 
     try:
-        from aughor.semantic.embedder import embed
+        from aughor.semantic.embedder import embed_one
+        from aughor.semantic.lexical import hybrid_rerank
         from qdrant_client.models import Filter, FieldCondition, MatchValue
         client = _qdrant()
-        vec = embed(question)
+        # embed_one → a FLAT 768-vec. (embed() returns a nested [[…]] for a single string,
+        # which Qdrant rejects — the search was silently failing into the all-entries
+        # fallback below, so this path never actually ranked by relevance. R7 fix.)
+        vec = embed_one(question)
         hits = client.search(
             collection_name=_COLLECTION,
             query_vector=vec,
             query_filter=Filter(must=[
                 FieldCondition(key="connection_id", match=MatchValue(value=connection_id)),
             ]),
-            limit=top_k,
+            limit=top_k * 3,        # over-fetch for the hybrid rerank
             score_threshold=_MIN_SCORE,
         )
         if not hits:
             return ""
-        retrieved_ids = {h.payload["entry_id"] for h in hits}
-        matched = [e for e in entries if e.id in retrieved_ids]
+        by_id = {e.id: e for e in entries}
+        # HYBRID rerank (R7): blend vector score with BM25 over each entry's text, so an
+        # exact metric/column name surfaces — then take top_k, preserving the reranked order
+        # (the old code collected an unordered set, losing relevance order entirely).
+        cands = [{"score": h.score, "entry_id": h.payload.get("entry_id")}
+                 for h in hits if h.payload.get("entry_id") in by_id]
+        cands = hybrid_rerank(question, cands, text_of=lambda c: by_id[c["entry_id"]].render())
+        matched = [by_id[c["entry_id"]] for c in cands][:top_k]
         if not matched:
             return ""
         lines = ["DOMAIN KNOWLEDGE (use these definitions exactly when writing SQL):"]

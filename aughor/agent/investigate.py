@@ -569,12 +569,13 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
     # executing. Adopt only if it dry-runs clean; silent on anything it can't prove.
     if schema:
         try:
-            from aughor.sql.fanout import detect_fanout, defan
+            from aughor.sql.fanout import detect_fanout, defan, dimension_ratio_chasm
             from aughor.tools.schema import _parse_schema_tables
             _dialect = getattr(conn, "dialect", "duckdb")
             _tc = {t: (list(c.keys()) if isinstance(c, dict) else c)
                    for t, c in _parse_schema_tables(schema).items()}
-            _ff = detect_fanout(sql, _tc, dialect=_dialect)
+            _ff = detect_fanout(sql, _tc, dialect=_dialect) or \
+                dimension_ratio_chasm(sql, _tc, dialect=_dialect)
             if _ff:
                 _rw = defan(sql, _ff, dialect=_dialect)
                 if _rw and _rw.strip() != sql.strip() and conn.dry_run(_rw)[0]:
@@ -712,7 +713,8 @@ def _parallel_execute_safe(
     Returns a list of (PlanQuery, QueryResult) tuples in the same order as
     plan_queries[:cap].
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import as_completed
+    from aughor.kernel.concurrency import ContextThreadPoolExecutor
 
     valid = [(q, q.sql.strip()) for q in plan_queries[:cap] if q.sql and q.sql.strip()]
     if not valid:
@@ -731,7 +733,7 @@ def _parallel_execute_safe(
         return (q, r)
 
     try:
-        with ThreadPoolExecutor(max_workers=len(valid)) as pool:
+        with ContextThreadPoolExecutor(max_workers=len(valid)) as pool:
             futures = {pool.submit(_run, item): i for i, item in enumerate(valid)}
             ordered: list[tuple | None] = [None] * len(valid)
             for fut in as_completed(futures):
@@ -1020,6 +1022,27 @@ def _xsec_max_seeking(question: str) -> bool:
 _RATIO_METRIC_COL_RE = re.compile(r"metric_total|metric_value|\bratio\b|pct|percent|\brate\b", re.I)
 
 
+def _suppress_fanned_ratio(findings: list, metric_label: str, eff_caveat: str) -> str:
+    """Fix B — when a RATIO metric fans out (a join multiplies its rows), the value is CORRUPTED,
+    not merely inflated: the numerator and denominator are multiplied by DIFFERENT per-group
+    factors, so the ratio and its ranking are meaningless (the ROAS 0.0–0.01 case). Suppress them
+    instead of presenting + rationalising an artifact — drop the chart, replace the interpretation,
+    and clear the bogus key numbers. Returns the reframed phase summary; mutates ``findings``.
+    Cold-start safety net: Fix C avoids this whenever a grain-correct finding SQL exists to reuse."""
+    honest = (
+        f"{metric_label} could not be computed reliably across the scanned dimensions: {eff_caveat} "
+        f"The values are fan-out artifacts, not real {metric_label} — a grain-correct recompute "
+        "(pre-aggregate each side to the dimension grain, then divide) is needed before this can be "
+        "ranked or trusted.")
+    for f in (findings or []):
+        f["interpretation"] = honest
+        f["chart_type"] = "none"
+        f["key_numbers"] = []
+    return (f"⚠ {metric_label} could not be computed reliably across the scanned dimensions — a "
+            "fan-out across the join corrupts the ratio, so the values are suppressed (a "
+            "grain-correct recompute is needed).")
+
+
 def _chart_ratio_primary(finding) -> None:
     """For a RATIO metric, plot metric_total (the ratio itself), not the large numerator/
     denominator dollar aggregates it was built from. Keep the dimension column + the ratio
@@ -1062,94 +1085,13 @@ def _skipped_finding(phase_id: str, reason: str) -> InvestigationFinding:
 
 
 def _detect_phase_contradictions(phases: list[InvestigationPhaseResult]) -> str:
-    """
-    Deterministically scan phase summaries for direct factual contradictions.
-
-    Detects these contradiction classes:
-      A. Significance flip — one phase says the change is "significant" / "anomalous"
-         while another says "within normal variance" / "not significant" / "no anomaly".
-      B. Direction flip — one phase says metric is "up" / "increased" and another
-         says "down" / "decreased" for the same metric mention.
-      C. Causal attribution flip — one phase names a cause X, another says X is "not
-         the cause" or that the relationship is "not significant".
-
-    Returns a prompt section string to inject before synthesis, or "" if clean.
-    Never raises.
-    """
-    try:
-        if not phases or len(phases) < 2:
-            return ""
-
-        summaries: list[tuple[str, str]] = [
-            (p.get("phase_name", ""), (p.get("summary") or "").lower())
-            for p in phases
-        ]
-
-        contradictions: list[str] = []
-
-        # ── Class A: significance flip ────────────────────────────────────────
-        sig_positive = re.compile(
-            r'\b(significant|anomal|unusual|notable|material|above.normal|outside.normal)\b'
-        )
-        sig_negative = re.compile(
-            r'\b(within.normal|no.anomal|not.significant|insignificant|expected.variance|'
-            r'consistent.with.historical|normal.variance|no.significant)\b'
-        )
-        phases_with_sig = [(name, s) for name, s in summaries if sig_positive.search(s)]
-        phases_with_neg = [(name, s) for name, s in summaries if sig_negative.search(s)]
-        if phases_with_sig and phases_with_neg:
-            contradictions.append(
-                f"Significance contradiction: phase(s) {', '.join(n for n, _ in phases_with_sig)} "
-                f"describe the change as significant/anomalous, but phase(s) "
-                f"{', '.join(n for n, _ in phases_with_neg)} describe it as within normal variance. "
-                f"You MUST resolve this tension explicitly in your report — do NOT paper over it."
-            )
-
-        # ── Class B: direction flip on same metric keyword ─────────────────────
-        # Find metric-like tokens (revenue, orders, conversion, churn, etc.)
-        metric_re = re.compile(
-            r'\b(revenue|orders|conversion|churn|retention|aov|gmv|mrr|sessions|'
-            r'traffic|cac|ltv|profit|margin|spend|cost)\b'
-        )
-        direction_up = re.compile(r'\b(increas|grew|up|higher|gain|improv|recover|surged)\b')
-        direction_down = re.compile(r'\b(declin|decreas|fell|drop|down|lower|reduc|shrunk|worsened)\b')
-
-        metric_directions: dict[str, dict[str, list[str]]] = {}
-        for name, s in summaries:
-            for m in metric_re.finditer(s):
-                metric = m.group(1)
-                # Check surrounding context (±80 chars)
-                start = max(0, m.start() - 80)
-                end = min(len(s), m.end() + 80)
-                ctx = s[start:end]
-                if direction_up.search(ctx):
-                    metric_directions.setdefault(metric, {}).setdefault("up", []).append(name)
-                elif direction_down.search(ctx):
-                    metric_directions.setdefault(metric, {}).setdefault("down", []).append(name)
-
-        for metric, dirs in metric_directions.items():
-            if "up" in dirs and "down" in dirs:
-                contradictions.append(
-                    f"Direction contradiction on '{metric}': "
-                    f"phase(s) {', '.join(dirs['up'])} describe it as increasing, "
-                    f"phase(s) {', '.join(dirs['down'])} describe it as decreasing. "
-                    f"Clarify which direction is correct and over what time period."
-                )
-
-        if not contradictions:
-            return ""
-
-        lines = [
-            "\n⚠ CROSS-PHASE CONTRADICTIONS DETECTED — address each explicitly in your report "
-            "(surface them in the risks or data quality notes; do NOT silently average them out):"
-        ]
-        for i, c in enumerate(contradictions, 1):
-            lines.append(f"  {i}. {c}")
-        lines.append("")
-        return "\n".join(lines)
-
-    except Exception:
-        return ""
+    """Back-compat thin wrapper: the detection now lives in the Orchestrator as a typed
+    ``ContradictionReport`` (so the tension is a first-class artifact), and this returns
+    its ``to_prompt_section()`` — byte-identical to the string this used to build, so the
+    synthesizer sees exactly what it always did. Callers wanting the typed report should
+    use ``orchestrator.detect_contradictions`` directly."""
+    from aughor.agent.orchestrator import detect_contradictions
+    return detect_contradictions(phases).to_prompt_section()
 
 
 def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
@@ -1839,11 +1781,35 @@ def ada_intake(state: AgentState) -> dict:
     except Exception:
         analysis_ledger = ""
 
-    return {
+    # Orchestrator: declare the phase path the deterministic routers will execute, so the
+    # Analyst's autonomy is legible (a plan of record, not emergent gate-by-gate routing).
+    # Derived from the SAME signals the routers key on — it can't disagree with what runs.
+    plan_dict = None
+    try:
+        from aughor.agent.orchestrator import plan_phases
+        plan = plan_phases(
+            question=question,
+            cross_sectional=bool(intake.cross_sectional),
+            dimension_ask=_question_asks_for_dimension(question),
+            behavioral=_question_needs_behavioral(question),
+        )
+        plan_dict = plan.to_dict()
+        from aughor.agent.handoff import emit_handoff
+        emit_handoff("orchestrator", "analyst", "intake",
+                     {"plan": plan.summary(), "planned_ids": plan.planned_ids},
+                     conn_id=state.get("connection_id") or None)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "orchestration plan", counter="orchestrator")
+
+    out = {
         "investigation_phases": [phase],
         "_ada_intake": intake_dict,
         "analysis_ledger": analysis_ledger,
     }
+    if plan_dict is not None:
+        out["_orchestration_plan"] = plan_dict
+    return out
 
 
 # ── Premise direction helpers ─────────────────────────────────────────────────
@@ -1894,27 +1860,37 @@ def run_analysis_phase(
     exec_error_msg: str = "Queries failed to execute.",
     exec_status: str = "error",
     exec_skipped_reason: str = "No results.",
+    preplanned=None,
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
     phase for the caller to return. The interpret prompt is built by ``interpret_user_fn(
-    results_text)`` since it depends on the executed results."""
+    results_text)`` since it depends on the executed results.
+
+    ``preplanned`` (a PhasePlan): when a drilled finding hands us its already-grounded,
+    grain-correct query, REUSE it verbatim instead of re-deriving — so the phase reproduces the
+    finding's numbers rather than risking a fresh fan-out. The LLM re-plan guards (temporal,
+    fan-out) are then skipped, since re-planning would defeat the reuse."""
     from aughor.agent.prompts_investigate import PhasePlan, PhaseInterpretation
 
-    # Step 1 — plan
-    try:
-        plan: PhasePlan = _provider("coder").complete(
-            system=plan_system, user=plan_user, response_model=PhasePlan)
-    except Exception as e:
-        return _PhaseRun(ok=False, error_phase=_phase_result(
-            phase_id, title, emoji, "error", plan_error_msg, [_skipped_finding(phase_id, str(e))]))
+    # Step 1 — plan (or reuse a preplanned, grain-correct query).
+    _preplanned = bool(preplanned is not None and getattr(preplanned, "queries", None))
+    if _preplanned:
+        plan = preplanned
+    else:
+        try:
+            plan: PhasePlan = _provider("coder").complete(
+                system=plan_system, user=plan_user, response_model=PhasePlan)
+        except Exception as e:
+            return _PhaseRun(ok=False, error_phase=_phase_result(
+                phase_id, title, emoji, "error", plan_error_msg, [_skipped_finding(phase_id, str(e))]))
 
     # Temporal guard (WCH-DS) — the intake clamp put LITERAL observation/comparison windows into
     # plan_user, but a coder that reaches for CURRENT_DATE / NOW() / DATE_SUB produces ZERO rows on
     # historical data. The prompt rule is advisory; this ENFORCES it with one corrective re-plan
     # that must use the literal dates. (Shared by every phase, so baseline/decompose/dimensional/
     # behavioral are all covered.)
-    if plan and plan.queries and any(_uses_relative_date(q.sql) for q in plan.queries):
+    if not _preplanned and plan and plan.queries and any(_uses_relative_date(q.sql) for q in plan.queries):
         from aughor.stats import stats as _s; _s.inc("temporal_guard_retries")
         try:
             _fixed = _provider("coder").complete(
@@ -1943,10 +1919,7 @@ def run_analysis_phase(
     # that reaches the dimension via a UNIQUE lookup key instead of fanning out through a fact table.
     _fanout_caveat = None
     try:
-        from aughor.sql.fanout import (
-            sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
-            measure_times_key_arithmetic, avg_of_row_ratios,
-        )
+        from aughor.agent.verifier import Verifier as _Verifier, FANOUT_CAVEAT as _FANOUT_CAVEAT
         from aughor.tools.schema import parse_schema_tables
         _tc = parse_schema_tables(schema) if schema else {}
         _dialect = getattr(conn, "dialect", "duckdb")
@@ -1992,18 +1965,12 @@ def run_analysis_phase(
                 tolerate(_e1, "fanout schema-augment is best-effort", counter="ada.fanout_augment_failed")
 
         def _scan_fanout(queries):
+            # The owned Verifier runs the deterministic detector battery (fan-out / id-
+            # arithmetic / ratio-of-sums) over this phase's queries — schema-augmented above.
             _augment_tc(queries)
-            hits = []
-            for _q in (queries or []):
-                for _det in (sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
-                             measure_times_key_arithmetic, avg_of_row_ratios):
-                    _h = _det(_q.sql, _tc, _dialect)
-                    if _h:
-                        hits.append(_h)
-                        break
-            return hits
+            return _Verifier.scan(queries, _tc, _dialect)
 
-        _fanout_hints = _scan_fanout(plan.queries)
+        _fanout_hints = [] if _preplanned else _scan_fanout(plan.queries)
         if _fanout_hints:
             from aughor.stats import stats as _s; _s.inc("ada.fanout_guard_retries")
             try:
@@ -2031,12 +1998,7 @@ def run_analysis_phase(
             # chasm, we must not present the magnitude as trustworthy — carry a caveat downstream.
             if _scan_fanout(plan.queries):
                 _s.inc("ada.fanout_guard_unresolved")
-                _fanout_caveat = (
-                    "The metric is aggregated across a fan-out join (a one-to-many join multiplies "
-                    "the rows being summed), so the magnitudes below are likely inflated and the "
-                    "ranking may be volume-weighted rather than reflecting the true per-group total — "
-                    "treat these numbers as directional only."
-                )
+                _fanout_caveat = _FANOUT_CAVEAT
     except Exception:
         _fanout_caveat = None
 
@@ -2062,6 +2024,14 @@ def run_analysis_phase(
             response_model=PhaseInterpretation)
     except Exception:
         interpretation = None
+    # Phase 2 — journal this phase's SQL-Engineer → Verifier → Narrator hand-offs as
+    # typed events, so the collaboration is legible in the Fleet view / receipt.
+    # Additive and fail-open: never touches the investigation's result.
+    from aughor.agent.handoff import journal_phase_handoffs
+    journal_phase_handoffs(phase_id, plan=plan, results=results, fanout_caveat=_fanout_caveat,
+                           interpretation=interpretation,
+                           conn_id=getattr(conn, "_connection_id", None),
+                           dialect=getattr(conn, "dialect", "duckdb"))
     return _PhaseRun(ok=True, results=results, results_text=results_text, interpretation=interpretation,
                      fanout_caveat=_fanout_caveat)
 
@@ -2689,8 +2659,28 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
             "to the question — it matters MORE than the per-dimension scan below.\n"
         )
 
+    # Fix C — reuse the drilled finding's grain-correct query. When this scan is DEEPENING an
+    # explorer finding (origin_finding), execute the finding's OWN grounded ranking SQL rather
+    # than re-deriving it: the explorer already computed it correctly (e.g. ROAS 6.23), so
+    # re-deriving only risks re-introducing the fan-out the finding avoided (the 0.0–0.01 mess).
+    # Only reuse a GROUP BY ranking query — a scalar finding has no cross-sectional shape to reuse.
+    _anchor = None
+    _origin_sql = ((state.get("origin_finding") or {}).get("sql") or "").strip()
+    if (_origin_sql and re.match(r"(?is)^\s*(select|with)\b", _origin_sql)
+            and re.search(r"(?i)\bgroup\s+by\b", _origin_sql)):
+        try:
+            from aughor.agent.prompts_investigate import PhasePlan as _PP, PhaseQueryPlan as _PQ
+            _anchor = _PP(queries=[_PQ(
+                title=f"{metric_label} by dimension (established finding)",
+                sql=_origin_sql, chart_type="bar_horizontal",
+                rationale="Reuse the drilled finding's grain-correct query so the drill-down reproduces it exactly.")])
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "cross-section origin-finding anchor best-effort", counter="ada.xsec_anchor")
+
     _run = run_analysis_phase(
         conn, phase_id="cross_section", title="Cross-Sectional Scan", emoji="🧭", cap=5, schema=schema,
+        preplanned=_anchor,
         plan_system="Write one ranking query per dimension. Rank the metric ascending (weakest first). No time filters." + _ADA_SQL_GROUNDING,
         plan_user=CROSS_SECTION_PLAN_PROMPT.format(
             question=question, metric_label=metric_label, metric_sql=metric_sql,
@@ -2806,7 +2796,12 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         for f in findings:
             f["trust_caveat"] = f.get("trust_caveat") or _eff_caveat
             f["is_significant"] = False
-        summary = f"⚠ {_eff_caveat} " + (summary or "")
+        if is_ratio:
+            # Fix B — a fanned RATIO is corrupted, not merely inflated; suppress its values + ranking
+            # rather than present and let the narrator rationalise an artifact (the ROAS 0.0–0.01 mess).
+            summary = _suppress_fanned_ratio(findings, metric_label, _eff_caveat)
+        else:
+            summary = f"⚠ {_eff_caveat} " + (summary or "")
 
     phase = _phase_result(
         "cross_section", "Cross-Sectional Scan", "🧭",
@@ -2855,12 +2850,29 @@ def ada_synthesize(state: AgentState) -> dict:
     # overflow is folded into a number-preserving digest (tree-reduce) instead of being truncated away.
     evidence_log = _phases_evidence_budgeted(phases)
 
-    # ── Cross-phase contradiction detection ───────────────────────────────────
+    # ── Cross-phase contradiction detection (typed) ───────────────────────────
     # Before synthesis, deterministically check phase summaries for contradictions.
     # Example: baseline says "significant drop (z=-2.4)" while dimensional says
     # "no segment deviates from baseline" — the synthesizer must not silently paper
-    # over this.  We inject any contradictions as a hard instruction in the prompt.
-    contradiction_section = _detect_phase_contradictions(phases)
+    # over this. The Orchestrator returns a typed ContradictionReport: .to_prompt_section()
+    # is the byte-identical hard instruction the synthesizer always received, and .to_dict()
+    # rides along on the report as a first-class trust artifact (surfaced to the UI).
+    from aughor.agent.orchestrator import detect_contradictions, reconcile
+    contradiction_report = detect_contradictions(phases)
+    contradiction_section = contradiction_report.to_prompt_section()
+    # Reconcile the Analyst's declared plan against the phases that actually ran, and
+    # journal the seam so planned-vs-actual autonomy is legible in the Fleet view.
+    orchestration_plan = state.get("_orchestration_plan")
+    plan_reconciliation = reconcile((orchestration_plan or {}).get("planned_ids", []), phase_ids)
+    try:
+        from aughor.agent.handoff import emit_handoff
+        emit_handoff("analyst", "orchestrator", "synthesis",
+                     {"reconciliation": plan_reconciliation,
+                      "contradictions": contradiction_report.severity},
+                     conn_id=state.get("connection_id") or None)
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "plan reconciliation journal", counter="orchestrator")
 
     # Cross-sectional runs have no temporal "change" — tell synthesis to frame the
     # report as a where-is-value-weakest diagnostic, not a period-over-period decline.
@@ -3077,6 +3089,9 @@ def ada_synthesize(state: AgentState) -> dict:
             confidence_justification=synth.confidence_justification,
             recommendations=recommendations,
             data_gaps=synth.data_gaps,
+            contradiction_report=contradiction_report.to_dict(),
+            orchestration_plan=orchestration_plan,
+            plan_reconciliation=plan_reconciliation,
         )
     else:
         ada_report = ADAReport(
@@ -3092,6 +3107,9 @@ def ada_synthesize(state: AgentState) -> dict:
             confidence_justification="Synthesis LLM call failed.",
             recommendations=[],
             data_gaps=[],
+            contradiction_report=contradiction_report.to_dict(),
+            orchestration_plan=orchestration_plan,
+            plan_reconciliation=plan_reconciliation,
         )
 
     # Also produce a legacy AnalysisReport for backward compat (history, cache)

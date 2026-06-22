@@ -92,11 +92,15 @@ def _ensure_indexed() -> bool:
 # ── Retrieval helpers ─────────────────────────────────────────────────────────
 
 def _search(query: str, top_k: int, tier_filter: int | None = None) -> list[dict]:
-    """Raw search — returns list of payload dicts sorted by score."""
+    """Raw search — returns list of payload dicts. Over-fetches by vector, then HYBRID-reranks
+    the pool by vector⊕BM25 (R7) so an exact-term match buried mid-pool by pure cosine is
+    recovered, before filtering by tier and truncating to top_k."""
     from aughor.semantic.embedder import embed_one
     from aughor.semantic.vector_store import search
+    from aughor.semantic.lexical import hybrid_rerank, payload_text
     vector = embed_one(query)
     hits = search(KB_COLLECTION, vector, top_k=top_k * 3)
+    hits = hybrid_rerank(query, hits, text_of=lambda h: payload_text(h.get("payload", {})))
     results = []
     for h in hits:
         p = h["payload"]

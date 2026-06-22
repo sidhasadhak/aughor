@@ -51,6 +51,11 @@ MAX_ROWS = 2000
 _UPLOAD_ROOT = Path("data/uploads")
 DEFAULT_SCHEMA = "main"
 
+# A removed-seed tombstone: seed schemas/tables are re-materialized on every connector
+# construction, so deleting one only sticks if we persist that it was removed and skip it on
+# the next re-seed. Lives in the connection's upload dir alongside the user files.
+_TOMBSTONE_FILE = "_removed_seeds.json"
+
 # Serializes ATTACH/DETACH of the shared seed file. The connector is constructed
 # fresh per request, so without this two concurrent requests race on the same
 # samples.duckdb and one silently materializes nothing (missing-sample-data bug).
@@ -122,6 +127,8 @@ class LocalUploadConnection(Connector):
         self._seed_path = (meta or {}).get("seed_duckdb")
         self._seeded: set[tuple[str, str]] = set()
         self._seed_failed: str | None = None  # reason string when seeding broke
+        # Seed schemas/tables the user removed — loaded BEFORE seeding so re-seed skips them.
+        self._removed_seed_schemas, self._removed_seed_tables = self._load_tombstone()
         self._seed_from_duckdb()        # sample/demo tables (read-only)
         self._reload_existing_files()   # user uploads (override seeds on clash)
         self._set_search_path()         # resolve bare names across user schemas
@@ -197,6 +204,10 @@ class LocalUploadConnection(Connector):
                         self._seed_failed = "seed DB attached but contains no tables"
                         logger.error("Seed DB %s has no tables (conn=%s)", p, self._connection_id)
                     for schema, table in tbls:
+                        # Honor the removed-seed tombstone — a schema (or single table) the
+                        # user deleted must not come back on this re-seed.
+                        if schema in self._removed_seed_schemas or f"{schema}.{table}" in self._removed_seed_tables:
+                            continue
                         try:
                             self._duckdb.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
                             self._duckdb.execute(
@@ -243,6 +254,43 @@ class LocalUploadConnection(Connector):
                 names.add(d.name)
         return sorted(names)
 
+    # ── Removed-seed tombstone ──────────────────────────────────────────────────
+
+    def _load_tombstone(self) -> tuple[set, set]:
+        """``(removed_schemas, removed_tables)`` the user deleted from the seed catalog.
+        Fail-open to empty (a corrupt/absent tombstone never blocks the connection)."""
+        schemas: set = set()
+        tables: set = set()
+        try:
+            p = self._upload_dir / _TOMBSTONE_FILE
+            if p.exists():
+                data = json.loads(p.read_text())
+                schemas = set(data.get("schemas") or [])
+                tables = set(data.get("tables") or [])
+        except Exception as exc:
+            logger.debug("removed-seed tombstone load failed for %s: %s", self._connection_id, exc)
+        return schemas, tables
+
+    def _save_tombstone(self) -> None:
+        try:
+            (self._upload_dir / _TOMBSTONE_FILE).write_text(json.dumps(
+                {"schemas": sorted(self._removed_seed_schemas),
+                 "tables": sorted(self._removed_seed_tables)}))
+        except Exception as exc:
+            logger.debug("removed-seed tombstone save failed for %s: %s", self._connection_id, exc)
+
+    def restore_seeds(self, schema: str | None = None) -> None:
+        """Clear the tombstone (all, or one schema) so the sample catalog re-materializes on
+        the next connector construction. The UI's 'restore sample data' affordance."""
+        if schema is None:
+            self._removed_seed_schemas.clear()
+            self._removed_seed_tables.clear()
+        else:
+            s = _safe_ident(schema, "schema")
+            self._removed_seed_schemas.discard(s)
+            self._removed_seed_tables = {t for t in self._removed_seed_tables if not t.startswith(f"{s}.")}
+        self._save_tombstone()
+
     def create_schema(self, name: str) -> str:
         schema = _safe_ident(name, "schema")
         self._schema_dir(schema).mkdir(parents=True, exist_ok=True)
@@ -250,6 +298,10 @@ class LocalUploadConnection(Connector):
             self._duckdb.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
         except Exception:
             pass
+        # Re-creating a schema the user previously removed is an explicit "bring it back" —
+        # lift its tombstone so the seed (if any) returns on the next construction.
+        if schema in self._removed_seed_schemas:
+            self.restore_seeds(schema)
         return schema
 
     def drop_schema(self, name: str) -> None:
@@ -263,6 +315,11 @@ class LocalUploadConnection(Connector):
             self._duckdb.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         except Exception:
             pass
+        # If this schema was seed-backed, tombstone it so the re-seed on the next construction
+        # skips it — otherwise a sample schema like `ecommerce` silently comes back.
+        if any(s == schema for s, _ in self._seeded):
+            self._removed_seed_schemas.add(schema)
+            self._save_tombstone()
 
     # ── Analyze (no persistence) ────────────────────────────────────────────────
 
@@ -506,6 +563,10 @@ class LocalUploadConnection(Connector):
             self._duckdb.execute(f'DROP TABLE IF EXISTS "{schema}"."{tbl}"')
         except Exception:
             pass
+        # Tombstone a seed-backed table so the re-seed on the next construction skips it.
+        if (schema, tbl) in self._seeded:
+            self._removed_seed_tables.add(f"{schema}.{tbl}")
+            self._save_tombstone()
 
     def delete_file(self, filename: str, schema: str = DEFAULT_SCHEMA) -> None:
         schema = _safe_ident(schema, DEFAULT_SCHEMA)

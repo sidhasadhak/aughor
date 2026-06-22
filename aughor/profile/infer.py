@@ -169,7 +169,17 @@ def infer_business_profile(connection_id: str,
     from aughor.llm.provider import get_provider
 
     schema, domains = _gather_context(connection_id, schema_name)
+    # Declared identity (company/website/HQ/industry) grounds the inference in the REAL business,
+    # not just the schema shape — e.g. a user-declared "Food Delivery" industry steers the
+    # vertical/metric choices. '' when unset (no-op); the org override still wins at read time.
+    org = ""
+    try:
+        from aughor.orgsettings import org_context
+        org = org_context()
+    except Exception as _e:
+        logger.debug("[profile:%s] org_context unavailable: %s", connection_id, _e)
     user = (
+        f"{org}"
         "SCHEMA (tables, columns, types, row counts; with business glossary notes):\n"
         f"{schema}\n\n"
         f"GENERIC DOMAINS already assigned (for reference, may be too generic): {domains or 'none'}\n\n"

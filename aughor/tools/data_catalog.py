@@ -107,10 +107,18 @@ def build_data_catalog(conn: "DatabaseConnection", tables: list[str]) -> str:
         from aughor.tools.schema import _compute_join_map
         jmap = _compute_join_map(catalog_cols)
         if jmap.get("joins"):
-            jlines = ["", "FOREIGN KEY JOINS (use these exact keys to join the tables above):"]
-            for j in jmap["joins"]:
-                jlines.append(f"  {j['t1']}.{j['c1']} = {j['t2']}.{j['c2']}")
-            catalog += "\n" + "\n".join(jlines)
+            # PREVENTION: value-verify the name-inferred join edges at (catalog) build time —
+            # demote a value-disjoint name coincidence to an explicit DO-NOT-JOIN so the model
+            # never draws it. Cached per connection (probes run on catalog cache-miss only);
+            # fail-open to the name-only list if verification can't run.
+            from aughor.sql.join_guard import verified_join_edges, render_verified_joins
+            verified, rejected = verified_join_edges(conn, jmap["joins"], cache_key=conn_id or "")
+            block = render_verified_joins(verified, rejected)
+            if not block:
+                block = "\n".join(
+                    ["FOREIGN KEY JOINS (use these exact keys to join the tables above):"]
+                    + [f"  {j['t1']}.{j['c1']} = {j['t2']}.{j['c2']}" for j in jmap["joins"]])
+            catalog += "\n\n" + block
     except Exception:
         pass
 

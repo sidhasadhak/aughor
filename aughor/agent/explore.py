@@ -402,11 +402,14 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
             from aughor.agent.state import SQLFix
             from aughor.agent.prompts import FIX_SQL_PROMPT
             from aughor.semantic.kb_retriever import retrieve_for_fix_sql
-            from aughor.tools.error_classifier import classify_sql_error
+            from aughor.tools.error_classifier import classify_sql_error, classify_error_type, error_class_guidance
 
             original_error = result.error
             kb_fix_patterns = retrieve_for_fix_sql(original_error, sql)
             diagnosis = classify_sql_error(original_error, sql, conn.dialect)
+            _g = error_class_guidance(classify_error_type(original_error, sql, conn.dialect))  # R3: route by type
+            if _g:
+                diagnosis = f"ERROR CLASS — {_g}\n{diagnosis}".strip()
             if domain_warnings:
                 _dw = "\n".join(w.to_prompt_text() for w in domain_warnings)
                 diagnosis = f"{diagnosis}\n{_dw}".strip()

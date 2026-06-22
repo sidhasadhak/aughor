@@ -561,6 +561,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     {i > 0 && <div className="border-t border-zinc-800 my-8" />}
                     <ChatMessage
                       turn={turn}
+                      connectionId={connectionId}
                       onFollowUp={(q) => handleSend(q)}
                       onRunFresh={(q) => handleSend(q, "investigate", { skipCache: true })}
                       onShowSource={setSourcePanel}

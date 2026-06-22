@@ -1925,6 +1925,59 @@ export async function buildQuerySql(params: {
   return res.json();
 }
 
+// Query Builder Layer-3 — reverse-compile raw SQL into the builder's chips.
+export interface DecompiledQuery {
+  ok: boolean;
+  reason?: string;
+  primary_table?: string;
+  joins?: { table: string; alias: string | null; side: string; on: string }[];
+  dimensions?: { col: string; table: string; transform: string | null; alias: string | null }[];
+  measures?: { agg: string; col: string; table: string; alias: string | null; customExpr: string }[];
+  filters?: { col: string; table: string; op: string; val: string }[];
+  unmapped_filters?: string[];
+  order_by?: string;
+  limit?: number;
+  having?: string;
+}
+
+export async function decompileSql(sql: string, dialect = "duckdb"): Promise<DecompiledQuery> {
+  const res = await fetch(`${BASE}/query/decompile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql, dialect }),
+  });
+  if (!res.ok) return { ok: false, reason: "Decompile request failed" };
+  return res.json();
+}
+
+// On-demand governed validation of an answer's query (the guard battery, re-run live).
+export interface QueryValidation {
+  passed: boolean;
+  issue_count: number;
+  fanout_hits: string[];
+  join_warnings: { table_a: string; col_a: string; table_b: string; col_b: string; overlap: number }[];
+  filter_warnings: { table: string; column: string; literal: string; op: string; suggestion: string }[];
+}
+
+export async function validateQuery(connId: string, sql: string): Promise<QueryValidation> {
+  const res = await fetch(`${BASE}/query/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_id: connId, sql }),
+  });
+  if (!res.ok) throw new Error("Validation failed");
+  return res.json();
+}
+
+// Lightweight feedback/remember signal on a chat answer (journaled to the ledger).
+export async function sendChatFeedback(connId: string, turnId: string, verdict: "helpful" | "unhelpful", note = ""): Promise<void> {
+  await fetch(`${BASE}/chat/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_id: connId, turn_id: turnId, verdict, note }),
+  }).catch(() => {});
+}
+
 // ── Evidence Ledger ────────────────────────────────────────────────────────────
 
 export interface EvidenceClaim {
@@ -2583,10 +2636,98 @@ export interface FindingDossier {
   revalidation?: "confirmed" | "drifted" | "error";
 }
 
+/** Per-run compute a job/answer spent (R1). Honest signals only — tokens · calls ·
+ *  queries · rows · time. No fabricated $ (see docs/MOTHERDUCK_LEARNINGS.md). */
+export interface RunCost {
+  llm_calls?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  query_count?: number;
+  rows_returned?: number;
+  llm_ms?: number;
+  query_ms?: number;
+}
+
 export interface InsightReceipt {
   artifact: { id: string; kind: string; version: number; created_at: string; payload: Record<string, unknown> & { dossier?: FindingDossier } };
   lineage: { relation: string; ref: string; detail: string | null }[];
-  job: { id: string; kind: string; state: string; started_at: string | null; finished_at: string | null } | null;
+  job: { id: string; kind: string; state: string; started_at: string | null; finished_at: string | null; metrics?: RunCost | null } | null;
+  cost?: RunCost | null;
+}
+
+// ── The Fleet: kernel jobs as named agents (R2) ──────────────────────────────
+
+export interface FleetAgent { agent: string; blurb: string; icon: string }
+
+export interface FleetJob {
+  id: string;
+  kind: string;
+  state: string;            // PENDING | RUNNING | SUCCEEDED | FAILED | CANCELLED | PAUSED
+  conn_id: string | null;
+  canvas_id: string | null;
+  created_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+  agent: FleetAgent;
+  title: string;
+  cost: RunCost | null;
+  duration_ms: number | null;
+}
+
+export async function getJobs(params?: { state?: string; conn_id?: string; kind?: string; limit?: number }): Promise<FleetJob[]> {
+  const q = new URLSearchParams();
+  if (params?.state) q.set("state", params.state);
+  if (params?.conn_id) q.set("conn_id", params.conn_id);
+  if (params?.kind) q.set("kind", params.kind);
+  if (params?.limit) q.set("limit", String(params.limit));
+  const res = await fetch(`${BASE}/jobs${q.toString() ? `?${q}` : ""}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function getJobLogs(jobId: string): Promise<{ seq: number; at: string; kind: string; payload: unknown }[]> {
+  const res = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/logs`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function cancelJob(jobId: string): Promise<{ job_id: string; cancelled: boolean }> {
+  const res = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+  if (!res.ok) return { job_id: jobId, cancelled: false };
+  return res.json();
+}
+
+// ── Agent registry + governance: manage the fleet (Phase 0) ──────────────────
+
+export interface AgentGovernance { enabled: boolean; token_budget: number | null; time_budget_s: number | null }
+export interface AgentSpend { runs: number; total_tokens: number; query_count: number }
+export interface AgentRosterEntry {
+  id: string; name: string; role: string; goal: string;
+  lane: "background" | "interactive";
+  job_kinds: string[]; tools: string[]; icon: string; reserved: boolean;
+  default_budget: { token_budget: number | null; time_budget_s: number | null };
+  governance: AgentGovernance;
+  spend: AgentSpend;
+}
+
+export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[]> {
+  const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+  const res = await fetch(`${BASE}/agents${q}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function patchAgent(
+  agentId: string,
+  body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; workspace_id?: string },
+): Promise<{ agent_id: string; governance: AgentGovernance } | null> {
+  const res = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) return null;
+  return res.json();
 }
 
 /** Live re-validation of a finding's dossier — re-runs the stored SQL and re-grounds

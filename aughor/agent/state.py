@@ -349,6 +349,11 @@ class ADAReport(TypedDict):
     confidence_justification: str
     recommendations: list[ADARecommendation]
     data_gaps: list[str]
+    # Phase-2 structural trust artifacts (Orchestrator). Optional — older cached reports
+    # may omit them; the UI reads each via .get(). See agent/orchestrator.py.
+    contradiction_report: Optional[dict]   # typed cross-phase ContradictionReport.to_dict()
+    orchestration_plan: Optional[dict]     # the Analyst's declared phase plan (plan of record)
+    plan_reconciliation: Optional[dict]    # planned-vs-actual phases at the synthesis seam
 
 
 class AgentState(TypedDict):

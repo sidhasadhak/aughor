@@ -931,21 +931,34 @@ def build_table_profile(
                 elif grain_column is None:
                     grain_column = candidate
         else:
-            # Catalog miss: only run COUNT(DISTINCT) on small tables
-            if row_count <= _LARGE_TABLE_THRESHOLD:
-                qc = _q(candidate)
+            # Catalog miss. On a small table an exact COUNT(DISTINCT) is cheap. On a LARGE
+            # table the exact scan is too costly — but a HyperLogLog (approx_count_distinct,
+            # one cheap pass) verifies uniqueness within ~1%, so a big table's PK is no longer
+            # missed (was: skip entirely → grain left unverified). HLL is DuckDB-only; other
+            # dialects keep the conservative skip.
+            qc = _q(candidate)
+            exact = row_count <= _LARGE_TABLE_THRESHOLD
+            if exact:
                 r2 = conn.execute("__profiler__", f"SELECT COUNT(DISTINCT {qc}) FROM {qt}")
-                if not r2.error and r2.rows:
-                    try:
-                        distinct = int(r2.rows[0][0])
-                        if distinct == row_count:
-                            grain_column = candidate
-                            grain_verified = True
-                            break
-                        elif grain_column is None:
-                            grain_column = candidate
-                    except (TypeError, ValueError):
-                        pass
+            elif conn.dialect == "duckdb":
+                r2 = conn.execute("__profiler__", f"SELECT approx_count_distinct({qc}) FROM {qt}")
+            else:
+                r2 = None
+            if r2 is not None and not r2.error and r2.rows:
+                try:
+                    distinct = int(r2.rows[0][0])
+                    # exact → equality. HLL (approx_count_distinct) is noisy in magnitude (DuckDB
+                    # can over-estimate ~15%), but a PK's estimate is ≈row_count while a
+                    # non-unique key's is far smaller — so test the RATIO, not an absolute delta.
+                    is_unique = (distinct == row_count) if exact else (distinct >= row_count * 0.9)
+                    if is_unique:
+                        grain_column = candidate
+                        grain_verified = True
+                        break
+                    elif grain_column is None:
+                        grain_column = candidate
+                except (TypeError, ValueError):
+                    pass
 
     # ── 2b. Composite grain — no single column was unique; many facts are keyed by a
     # PAIR (parent FK × line/sequence col, e.g. order_items at (order_id, order_item_id)).

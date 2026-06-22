@@ -11,6 +11,61 @@ otherwise (raw error is surfaced as-is).
 from __future__ import annotations
 
 import re
+from enum import Enum
+from typing import Optional
+
+
+class SqlErrorClass(str, Enum):
+    """The *kind* of SQL failure — the Verifier's typed signal that ROUTES repair
+    (à la MotherDuck's try_bind, extended). Distinguishing these lets the fixer do
+    the right thing instead of a blind retry: a `binder` error needs the real
+    columns, a `parser` error needs the syntax re-checked, a `runtime` error needs
+    a guard (NULLIF), a `semantic` error needs a cast."""
+    OK = "ok"
+    PARSER = "parser"       # won't parse — syntax
+    BINDER = "binder"       # name resolution — missing/ambiguous column/table/function, GROUP BY
+    SEMANTIC = "semantic"   # binds, but a type / expression mismatch
+    RUNTIME = "runtime"     # executed, then failed (division by zero, overflow, timeout)
+
+
+def classify_error_type(error: Optional[str], sql: str = "", dialect: str = "") -> SqlErrorClass:
+    """Classify a raw DB error into the repair taxonomy. Works across DuckDB
+    (prefixed: 'Parser Error:', 'Binder Error:', 'Conversion Error:'), Postgres,
+    and SQLite. Order matters — runtime and the semantic 'operator does not exist'
+    are checked before the generic binder 'does not exist'. Never raises."""
+    if not error:
+        return SqlErrorClass.OK
+    e = error.lower()
+    if any(k in e for k in ("division by zero", "out of range", "overflow",
+                            "timeout", "timed out", "deadlock", "out of memory")):
+        return SqlErrorClass.RUNTIME
+    if any(k in e for k in ("parser error", "syntax error", "incomplete input",
+                            "unterminated", "unexpected token", "unexpected end")):
+        return SqlErrorClass.PARSER
+    if any(k in e for k in ("operator does not exist", "no function matches",
+                            "conversion error", "invalid input", "cannot cast",
+                            "could not convert", "type mismatch", "double precision")):
+        return SqlErrorClass.SEMANTIC
+    if any(k in e for k in ("binder error", "catalog error", "does not exist",
+                            "no such column", "no such table", "ambiguous",
+                            "must appear in the group by", "not in group by",
+                            "not found", "unknown column", "undefined column")):
+        return SqlErrorClass.BINDER
+    return SqlErrorClass.SEMANTIC   # unmatched: a logic/type issue to re-examine
+
+
+_CLASS_GUIDANCE: dict = {
+    SqlErrorClass.PARSER:   "The SQL does not parse. Re-check the dialect's syntax — quoting, commas, balanced parentheses, reserved words.",
+    SqlErrorClass.BINDER:   "A referenced name (column/table/function) is missing or ambiguous. Use ONLY the exact columns and tables provided — do not invent names; fully-qualify ambiguous columns.",
+    SqlErrorClass.SEMANTIC: "A type or expression mismatch. Cast explicitly (e.g. ::NUMERIC, CAST(col AS TIMESTAMP)), match function argument types, and never apply date/number ops to text columns.",
+    SqlErrorClass.RUNTIME:  "The query ran, then failed at execution (e.g. division by zero). Guard it — wrap denominators in NULLIF(...), bound ranges, avoid overflow.",
+}
+
+
+def error_class_guidance(cls: SqlErrorClass) -> str:
+    """One-line, type-specific repair framing — prepended to the diagnosis so the
+    fixer routes by error class instead of retrying blind."""
+    return _CLASS_GUIDANCE.get(cls, "")
 
 
 def classify_sql_error(error: str, sql: str, dialect: str) -> str:

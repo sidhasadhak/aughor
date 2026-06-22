@@ -304,6 +304,118 @@ def query_build_sql(body: _QueryBuildRequest):
     return {"sql": "\n".join(lines)}
 
 
+class _DecompileRequest(BaseModel):
+    sql: str
+    dialect: str = "duckdb"
+
+
+@router.post("/query/decompile")
+def query_decompile(body: _DecompileRequest):
+    """Query Builder Layer-3 — reverse-compile raw SQL back into the visual builder's chips
+    (primary table, joins, dimensions, measures, filters, order/limit). Returns
+    ``{ok: false, reason}`` for a shape the builder can't represent (CTE, set-op, subquery
+    source), so the UI can keep the raw SQL instead of importing it lossily."""
+    from aughor.sql.decompile import decompile_sql
+    return decompile_sql(body.sql or "", dialect=body.dialect or "duckdb")
+
+
+class _QueryValidateRequest(BaseModel):
+    conn_id: str
+    sql: str
+    dialect: str = "duckdb"
+
+
+@router.post("/query/validate")
+def query_validate(body: _QueryValidateRequest):
+    """On-demand governed validation of an answer's query: re-run the deterministic guard
+    battery against the live connection — fan-out / chasm (static), join value-domain and
+    filter value-domain (live probes) — and return a structured verdict. Each guard is
+    fail-open: one that can't run is simply omitted, never an error. This is the explicit,
+    user-triggered version of the guards that run inline during answer generation."""
+    from aughor.db.connection import open_connection_for
+    from aughor.kernel.errors import tolerate
+
+    if not (body.sql or "").strip():
+        raise HTTPException(status_code=400, detail="sql is required")
+    try:
+        db = open_connection_for(body.conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    sql = body.sql
+    dialect = getattr(db, "dialect", None) or body.dialect or "duckdb"
+    fanout_hits: list = []
+    join_warnings: list = []
+    filter_warnings: list = []
+    try:
+        # Fan-out / chasm — static analysis over the connection's schema-derived columns.
+        try:
+            from aughor.tools.schema import parse_schema_tables
+            from aughor.agent.verifier import Verifier
+            table_cols = parse_schema_tables(db.get_schema())
+            fanout_hits = Verifier.scan([sql], table_cols, dialect)
+        except Exception as exc:
+            tolerate(exc, "validate: fan-out scan", counter="validate.fanout")
+        # Join value-domain — live overlap probe of each join's keys.
+        try:
+            from aughor.sql.join_guard import check_join_value_domains
+            join_warnings = [
+                {"table_a": w.table_a, "col_a": w.col_a, "table_b": w.table_b,
+                 "col_b": w.col_b, "overlap": w.overlap}
+                for w in check_join_value_domains(db, sql)
+            ]
+        except Exception as exc:
+            tolerate(exc, "validate: join value-domain", counter="validate.join")
+        # Filter value-domain — a guessed enum literal that matches no row but has a near neighbour.
+        try:
+            from aughor.sql.join_guard import check_filter_value_domains
+            filter_warnings = [
+                {"table": w.table, "column": w.col, "literal": w.bad_value,
+                 "op": w.op, "suggestion": w.suggestion or ""}
+                for w in check_filter_value_domains(db, sql)
+            ]
+        except Exception as exc:
+            tolerate(exc, "validate: filter value-domain", counter="validate.filter")
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            tolerate(exc, "validate: db close", counter="validate.close")
+
+    issues = len(fanout_hits) + len(join_warnings) + len(filter_warnings)
+    return {
+        "passed": issues == 0,
+        "issue_count": issues,
+        "fanout_hits": fanout_hits,
+        "join_warnings": join_warnings,
+        "filter_warnings": filter_warnings,
+    }
+
+
+class _ChatFeedbackRequest(BaseModel):
+    conn_id: str
+    turn_id: str
+    verdict: str          # "helpful" | "unhelpful"
+    note: str = ""
+
+
+@router.post("/chat/feedback")
+def chat_feedback(body: _ChatFeedbackRequest):
+    """Record a helpful/unhelpful signal (and optional note) on a chat answer. Journaled to
+    the ledger as a ``chat.feedback`` event so it rides the audit trail; fail-open."""
+    from aughor.kernel.errors import tolerate
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit(
+            "chat.feedback",
+            {"turn_id": body.turn_id, "verdict": body.verdict, "note": body.note[:2000]},
+            conn_id=body.conn_id,
+        )
+    except Exception as exc:
+        tolerate(exc, "chat feedback journal", counter="chat.feedback")
+    return {"ok": True}
+
+
 # ── Saved queries ─────────────────────────────────────────────────────────────
 # Persist a Query Builder query (SQL + visual spec) so it survives reloads. Connection-scoped,
 # mirrors the Canvas store pattern. ``spec`` is opaque JSON owned by the frontend.

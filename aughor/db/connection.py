@@ -137,6 +137,13 @@ def _security_post(
         )
     except Exception:
         pass  # security failures must never break query execution
+    # Per-run compute metering — best-effort, no-op outside a metered run.
+    try:
+        from aughor.kernel import metering
+        metering.record_query(getattr(result, "row_count", 0) or 0, duration_ms)
+    except Exception as _m_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_m_exc, "query metering", counter="metering")
     return result
 
 
@@ -614,6 +621,21 @@ def _duckdb_is_local(path: str | Path) -> bool:
     p = str(path).lower()
     return not any(p.startswith(prefix) for prefix in ("md:", "s3://", "http://", "https://", "gs://", "azure://", "memory:"))
 
+def _apply_lane_envelope(duck_conn, connection_id: str) -> None:
+    """Apply the connection's per-workspace DuckDB resource envelope (R6 — aughor/db/lanes.py):
+    PRAGMA memory_limit + threads, so a workspace's queries run inside a fixed compute budget.
+    No-op at defaults (nothing emitted unless an operator configured a limit); fail-open — a
+    lane never breaks a connection open."""
+    if not connection_id:
+        return
+    try:
+        from aughor.db.lanes import lane_for_connection
+        lane_for_connection(connection_id).apply_envelope(duck_conn)
+    except Exception as _exc:
+        import logging as _logging
+        _logging.getLogger(__name__).debug("lane envelope skipped (%s): %s", connection_id, _exc)
+
+
 class DuckDBConnection(DatabaseConnection):
     dialect = "duckdb"
 
@@ -639,6 +661,8 @@ class DuckDBConnection(DatabaseConnection):
                 self._conn.execute(f"SET search_path = '{schema_name}'")
             except Exception:
                 pass  # best-effort — don't fail the connection over schema routing
+        # R6: bound this workspace's compute (memory_limit + threads). No-op at defaults.
+        _apply_lane_envelope(self._conn, connection_id)
 
     def make_reader(self) -> "DuckDBConnection":
         """Open a fresh read-only DuckDB connection for use in a parallel thread.
@@ -664,6 +688,8 @@ class DuckDBConnection(DatabaseConnection):
                 clone._conn.execute(f"SET search_path = '{self._schema_name}'")
             except Exception:
                 pass
+        # R6: a reader runs in the same workspace lane → same resource envelope.
+        _apply_lane_envelope(clone._conn, clone._connection_id)
         return clone
 
     def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:

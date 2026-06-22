@@ -22,6 +22,7 @@ Env vars (still honoured as the layer-2 fallback):
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
@@ -83,6 +84,31 @@ _runtime: Optional[dict] = None
 _config_version = 0          # bumped on every config (re)load
 _cache_version = -1          # the version the _providers cache was built against
 _providers: dict[Role, "LLMProvider"] = {}
+# Providers pinned to an explicit model (per-agent override), keyed by (role, model).
+_pinned_providers: dict[tuple, "LLMProvider"] = {}
+
+# Per-agent LLM model: a run can pin the model its LLM calls use (set by the kernel from
+# the agent's governance, override-wins). A contextvar so it scopes to the run without
+# threading a model arg through every get_provider() call site — mirrors the metering hook.
+_run_model: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "aughor_run_model", default=None
+)
+
+
+def set_run_model(model: Optional[str]):
+    """Pin the LLM model for the current run/context (returns a reset token)."""
+    return _run_model.set((model or "").strip() or None)
+
+
+def reset_run_model(token) -> None:
+    try:
+        _run_model.reset(token)
+    except (ValueError, LookupError) as exc:
+        logger.debug("reset_run_model: stale token ignored (%s)", exc)  # token from another context
+
+
+def current_run_model() -> Optional[str]:
+    return _run_model.get()
 
 
 def _read_config() -> dict:
@@ -201,6 +227,25 @@ def _build_anthropic_client(api_key: str) -> instructor.Instructor:
     return instructor.from_anthropic(raw)
 
 
+def _extract_usage(raw) -> tuple[int, int]:
+    """(prompt_tokens, completion_tokens) from a raw OpenAI/Anthropic completion,
+    best-effort. Returns (0, 0) when unavailable (e.g. some local backends omit
+    usage) — metering is honest about what it could measure, never guesses."""
+    usage = getattr(raw, "usage", None)
+    if usage is None:
+        return 0, 0
+    pt = getattr(usage, "prompt_tokens", None)          # OpenAI-compatible
+    if pt is None:
+        pt = getattr(usage, "input_tokens", 0)           # Anthropic
+    ct = getattr(usage, "completion_tokens", None)       # OpenAI-compatible
+    if ct is None:
+        ct = getattr(usage, "output_tokens", 0)          # Anthropic
+    try:
+        return int(pt or 0), int(ct or 0)
+    except Exception:
+        return 0, 0
+
+
 class LLMProvider:
     """Call .complete() with a Pydantic response_model, get a typed object back."""
 
@@ -252,19 +297,30 @@ class LLMProvider:
 
     @staticmethod
     def _complete_on(client, backend, model, system, user, response_model, temperature):
+        import time as _time
+        from aughor.kernel import metering
         if backend == "anthropic":
-            return client.messages.create(
-                model=model, max_tokens=4096, system=system,
-                messages=[{"role": "user", "content": user}],
-                response_model=response_model,
-            )
-        return client.chat.completions.create(
-            model=model, temperature=temperature, response_model=response_model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
+            endpoint = client.messages
+            kwargs = dict(model=model, max_tokens=4096, system=system,
+                          messages=[{"role": "user", "content": user}],
+                          response_model=response_model)
+        else:
+            endpoint = client.chat.completions
+            kwargs = dict(model=model, temperature=temperature, response_model=response_model,
+                          messages=[{"role": "system", "content": system},
+                                    {"role": "user", "content": user}])
+        # Prefer create_with_completion (instructor ≥1.0) so we can read token usage
+        # off the raw response. Falls back to create() with no usage on older clients.
+        _t0 = _time.monotonic()
+        cwc = getattr(endpoint, "create_with_completion", None)
+        if cwc is not None:
+            out, raw = cwc(**kwargs)
+        else:
+            out, raw = endpoint.create(**kwargs), None
+        pt, ct = _extract_usage(raw)
+        metering.record_llm(pt, ct, (_time.monotonic() - _t0) * 1000.0)
+        metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
+        return out
 
     def _fallback_client(self):
         """Lazily build (and cache) an Anthropic client for fallback, or None when
@@ -283,12 +339,24 @@ class LLMProvider:
         return self._fb_client
 
 
-def get_provider(role: Role = "coder") -> LLMProvider:
-    """Process-global provider for `role`. Rebuilds when the config changes."""
+def get_provider(role: Role = "coder", *, model: Optional[str] = None) -> LLMProvider:
+    """Process-global provider for `role`. Rebuilds when the config changes.
+
+    When a model is pinned — explicitly via ``model=`` or implicitly by the current run's
+    ``set_run_model`` (the per-agent override) — returns a provider bound to that model,
+    cached per ``(role, model)``. With no pin, the normal role-default provider is used, so
+    unpinned code is unaffected."""
     global _cache_version
     if _cache_version != _config_version:
         _providers.clear()
+        _pinned_providers.clear()
         _cache_version = _config_version
+    pinned = (model or current_run_model() or "").strip()
+    if pinned:
+        key = (role, pinned)
+        if key not in _pinned_providers:
+            _pinned_providers[key] = LLMProvider(_active_backend(), role, model=pinned)
+        return _pinned_providers[key]
     if role not in _providers:
         _providers[role] = LLMProvider(_active_backend(), role)
     return _providers[role]

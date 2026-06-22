@@ -19,6 +19,7 @@ same .to_prompt_text() interface as JoinWarning / AmbiguityWarning.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -148,6 +149,67 @@ SELECT
     return None
 
 
+# Above this many rows on either side, the exact probe's full RHS scan (a hashed IN-set of
+# every distinct value) gets expensive — estimate containment with a HyperLogLog instead.
+_HLL_MIN_ROWS = max(1, int(os.getenv("AUGHOR_JOIN_HLL_MIN_ROWS", "1000000")))
+
+
+def hll_min_rows() -> int:
+    """The per-table row-count threshold above which join overlap is HLL-estimated rather
+    than exactly probed (env ``AUGHOR_JOIN_HLL_MIN_ROWS``). Public so the explorer's phase-4
+    precompute shares one source of truth."""
+    return _HLL_MIN_ROWS
+
+
+def _probe_overlap_hll(
+    conn: "DatabaseConnection",
+    table_a: str,
+    col_a: str,
+    table_b: str,
+    col_b: str,
+) -> float | None:
+    """Containment of ``table_a.col_a`` in ``table_b.col_b`` estimated via HLL
+    inclusion–exclusion (``approx_count_distinct``) — one aggregate pass per side, no
+    anti-join and no materialised IN-set, so it stays cheap on huge tables. Returns the
+    containment fraction in [0, 1] (real FK → ~1.0; disjoint → ~0.0), or None (fail-open)."""
+    try:
+        from aughor.sql.sketches import overlap_from_hll
+        ta, tb = _quote_table(table_a), _quote_table(table_b)
+        qa, qb = f'"{col_a}"', f'"{col_b}"'
+        sql = f"""
+SELECT
+  (SELECT approx_count_distinct(CAST({qa} AS VARCHAR)) FROM {ta} WHERE {qa} IS NOT NULL) AS a_d,
+  (SELECT approx_count_distinct(CAST({qb} AS VARCHAR)) FROM {tb} WHERE {qb} IS NOT NULL) AS b_d,
+  (SELECT approx_count_distinct(v) FROM (
+       SELECT CAST({qa} AS VARCHAR) AS v FROM {ta} WHERE {qa} IS NOT NULL
+       UNION ALL
+       SELECT CAST({qb} AS VARCHAR)      FROM {tb} WHERE {qb} IS NOT NULL
+   ) AS _u) AS union_d
+""".strip()
+        result = conn.execute("__hll_overlap_probe__", sql)
+        if result and result.rows:
+            a_d, b_d, u_d = (int(result.rows[0][0]), int(result.rows[0][1]), int(result.rows[0][2]))
+            _, cont_a, _ = overlap_from_hll(a_d, b_d, u_d)
+            return cont_a
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "join_guard: HLL overlap probe failed — fall back / allow",
+                 counter="join_guard.hll_error")
+    return None
+
+
+def _probe_pair(conn, t1, c1, t2, c2, table_rows, hll_min_rows) -> float | None:
+    """Max bidirectional containment for one edge, choosing the HLL estimator when either
+    side is large (``table_rows`` known) and the exact sampled probe otherwise."""
+    big = bool(table_rows) and (
+        int((table_rows or {}).get(t1, 0) or 0) >= hll_min_rows
+        or int((table_rows or {}).get(t2, 0) or 0) >= hll_min_rows
+    )
+    probe = _probe_overlap_hll if big else _probe_overlap
+    overlaps = [o for o in (probe(conn, t1, c1, t2, c2), probe(conn, t2, c2, t1, c1)) if o is not None]
+    return max(overlaps) if overlaps else None
+
+
 @dataclass
 class JoinDomainWarning:
     table_a: str
@@ -197,6 +259,120 @@ def check_join_value_domains(
         tolerate(exc, "join_guard: domain check failed — no warnings emitted",
                  counter="join_guard.check_error")
     return warnings
+
+
+# ── Build-time joinability: PREVENT a value-disjoint join, not just catch it ─────────
+# The query-time guard above catches a value-disjoint join when the model writes one. This
+# precomputes the SAME value-overlap signal at BUILD time over the NAME-inferred join
+# candidates, so a join whose two keys share a name-shape but hold disjoint values is
+# demoted to "do not join" BEFORE generation — the model never sees it as a valid FK, so it
+# can't draw it in the first place (prevention, not recovery). Bounded (only the small set
+# of name-matched candidates is probed), cached per connection, fail-open (an unverifiable
+# edge is KEPT — we never reject on inability to check).
+_JOINABLE_MAX_PROBES = 32
+_VERIFIED_JOIN_CACHE: dict = {}
+
+
+@dataclass
+class VerifiedJoin:
+    t1: str
+    c1: str
+    t2: str
+    c2: str
+    overlap: float        # max containment fraction across both directions; -1.0 = unverifiable
+    match: str = "exact"  # the name-inference confidence carried through
+
+
+def verify_join_edges(
+    conn: "DatabaseConnection",
+    joins: list,
+    *,
+    threshold: float = _THRESHOLD,
+    max_probes: int = _JOINABLE_MAX_PROBES,
+    table_rows: "dict | None" = None,
+    hll_min_rows: int = _HLL_MIN_ROWS,
+) -> tuple:
+    """Probe each name-inferred join edge for value overlap. Returns ``(verified, rejected)``
+    lists of :class:`VerifiedJoin`. An edge is VERIFIED when its keys actually share values
+    (a real FK → ~1.0) or can't be probed (fail-open), REJECTED when value-disjoint (a
+    name-shape coincidence → ~0.0). When ``table_rows`` is supplied, edges touching a table
+    above ``hll_min_rows`` are estimated with a HyperLogLog (cheap on huge tables) instead of
+    the exact sampled probe."""
+    verified: list = []
+    rejected: list = []
+    for j in (joins or [])[:max_probes]:
+        t1, c1, t2, c2 = j.get("t1"), j.get("c1"), j.get("t2"), j.get("c2")
+        if not all((t1, c1, t2, c2)):
+            continue
+        ov = _probe_pair(conn, t1, c1, t2, c2, table_rows, hll_min_rows)
+        vj = VerifiedJoin(t1, c1, t2, c2, overlap=(ov if ov is not None else -1.0),
+                          match=j.get("match", "exact"))
+        (rejected if (ov is not None and ov < threshold) else verified).append(vj)
+    return verified, rejected
+
+
+def verified_join_edges(conn: "DatabaseConnection", joins: list, *, cache_key: str = "",
+                        table_rows: "dict | None" = None) -> tuple:
+    """Cached :func:`verify_join_edges` — computed once per (cache_key, edge-signature) so the
+    overlap probes run at build time, not per question. An empty ``cache_key`` disables caching.
+    ``table_rows`` (table → row count) routes huge tables through the HLL estimator."""
+    sig = tuple(sorted((j.get("t1"), j.get("c1"), j.get("t2"), j.get("c2")) for j in (joins or [])))
+    key = (cache_key, sig)
+    if cache_key and key in _VERIFIED_JOIN_CACHE:
+        return _VERIFIED_JOIN_CACHE[key]
+    result = verify_join_edges(conn, joins, table_rows=table_rows)
+    if cache_key:
+        _VERIFIED_JOIN_CACHE[key] = result
+    return result
+
+
+def seed_verified_cache(cache_key: str, joins: list, verifications: list) -> tuple:
+    """Precompute path: turn the explorer's phase-4 FK checks into the build-time joinability
+    cache, so the data catalog reuses that work instead of re-probing. ``verifications`` are the
+    explorer's ``join_verifications`` records ({from_table, from_col, to_table, to_col, verified,
+    orphan_count, fk_distinct, ...}); a non-verified (orphaned) edge becomes a REJECTED (do-not-
+    join) entry. Keyed by the SAME (cache_key, edge-signature) :func:`verified_join_edges` reads,
+    so a later catalog build hits the cache. Returns ``(verified, rejected)``. Fail-open."""
+    verified: list = []
+    rejected: list = []
+    try:
+        by_pair = {(v.get("from_table"), v.get("from_col"), v.get("to_table"), v.get("to_col")): v
+                   for v in (verifications or [])}
+        for j in (joins or []):
+            t1, c1, t2, c2 = j.get("t1"), j.get("c1"), j.get("t2"), j.get("c2")
+            rec = by_pair.get((t1, c1, t2, c2)) or by_pair.get((t2, c2, t1, c1))
+            if rec is None:
+                continue
+            fk_d = int(rec.get("fk_distinct") or 0)
+            orphans = int(rec.get("orphan_count") or 0)
+            # containment of the FK side ≈ (distinct − orphaned) / distinct
+            ov = (max(0, fk_d - orphans) / fk_d) if fk_d > 0 else (1.0 if rec.get("verified") else 0.0)
+            vj = VerifiedJoin(t1, c1, t2, c2, overlap=ov, match=j.get("match", "exact"))
+            (verified if rec.get("verified") or ov >= _THRESHOLD else rejected).append(vj)
+        sig = tuple(sorted((j.get("t1"), j.get("c1"), j.get("t2"), j.get("c2")) for j in (joins or [])))
+        if cache_key:
+            _VERIFIED_JOIN_CACHE[(cache_key, sig)] = (verified, rejected)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "join_guard: seed_verified_cache best-effort", counter="join_guard.seed_error")
+    return verified, rejected
+
+
+def render_verified_joins(verified: list, rejected: list) -> str:
+    """The data-catalog block: the value-verified FK joins to USE, plus an explicit
+    DO-NOT-JOIN list for the name-shape coincidences that hold disjoint values."""
+    lines: list = []
+    if verified:
+        lines.append("FOREIGN KEY JOINS (value-verified — use these exact keys to join the tables above):")
+        for v in verified:
+            lines.append(f"  {'✓' if v.overlap >= 0 else '·'} {v.t1}.{v.c1} = {v.t2}.{v.c2}")
+    if rejected:
+        lines.append("")
+        lines.append("DO NOT JOIN (these column pairs share a name but hold DISJOINT values — "
+                     "joining them fabricates rows):")
+        for r in rejected:
+            lines.append(f"  ✗ {r.t1}.{r.c1} ≠ {r.t2}.{r.c2}  ({r.overlap:.0%} value overlap)")
+    return "\n".join(lines)
 
 
 # ── WHERE/HAVING literal value-domain guard ─────────────────────────────────

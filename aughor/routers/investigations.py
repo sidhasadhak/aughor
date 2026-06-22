@@ -141,10 +141,17 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             pass
         for e in (guard_edges or []):
             lineage.append(e)
+        # Stamp per-run compute onto the artifact so the Trust Receipt shows what the
+        # answer cost. For job-backed answers (ADA) the job row carries the full total
+        # too; for the synchronous chat/insight path this is the only sink.
+        from aughor.kernel import metering
+        _cost = metering.snapshot()
         Ledger.default().artifact_write(
             kind, natural_key,
             {"question": question, "headline": headline or question,
-             "sql": sqls[0] if sqls else "", "tables": sorted(seen), **(payload_extra or {})},
+             "sql": sqls[0] if sqls else "", "tables": sorted(seen),
+             **({"cost": _cost} if _cost is not None else {}),
+             **(payload_extra or {})},
             conn_id=connection_id, canvas_id=canvas_id or None, lineage=lineage,
         )
         if enf is not None:
@@ -968,7 +975,8 @@ async def _stream_chat(
             # catalog (build_metrics_block) and never saw the connection's GOVERNED north-star
             # value_sql, so it re-derived gross margin / ROAS / AOV and could disagree with Deep.
             from aughor.semantic.canonical import unified_metric_grounding
-            _mb = unified_metric_grounding(connection_id, canvas_scope_eff_schema, schema_text=schema)
+            _mb = unified_metric_grounding(connection_id, canvas_scope_eff_schema, schema_text=schema,
+                                           question=question)
             metrics_section = (_mb + "\n\n") if _mb else ""
         except Exception:
             metrics_section = ""
@@ -1227,9 +1235,11 @@ async def _stream_chat(
         # pre-aggregate rewrite below (adopted only if it re-executes cleanly).
         _fanout_fix_hint = ""
         try:
-            from aughor.sql.fanout import detect_fanout, defan
+            from aughor.sql.fanout import detect_fanout, defan, dimension_ratio_chasm
             from aughor.tools.schema import _parse_schema_tables as _pst
-            _ff = detect_fanout(final_sql, _pst(_full_schema), dialect=db.dialect)
+            _pst_cols = _pst(_full_schema)
+            _ff = detect_fanout(final_sql, _pst_cols, dialect=db.dialect) or \
+                dimension_ratio_chasm(final_sql, _pst_cols, dialect=db.dialect)
             if _ff:
                 # Deterministic de-fan FIRST (the LLM-rewrite path is only ~20%
                 # reliable on a known fan-out — it returns plausible CTEs that still
@@ -1899,7 +1909,8 @@ async def _stream_investigation(
             # investigation on big warehouses (profiled), duplicating this same schema.
             # Use the EFFECTIVE scope schema (canvas OR an explicit schema-scoped run) so the
             # connection's GOVERNED north-star metrics for THIS schema are injected (RC2).
-            _canon = unified_metric_grounding(connection_id, scope_schema, schema_text=full_schema)
+            _canon = unified_metric_grounding(connection_id, scope_schema, schema_text=full_schema,
+                                              question=question)
             if _canon:
                 schema_for_agent = f"{schema_for_agent}\n\n{_canon}"
         except Exception:
@@ -2212,6 +2223,30 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+async def _metered_stream(gen: AsyncGenerator[str, None],
+                          budget: tuple | None = None) -> AsyncGenerator[str, None]:
+    """Meter a synchronous streaming answer + enforce its budget in-context. The
+    chat/insight path is not a kernel job, so it has no JobKernel._run (to flush its
+    compute) and no heartbeat (to enforce a budget). We set the per-run accumulator
+    for the whole iteration — the receipt reads it via metering.snapshot() — and arm
+    the Insight agent's budget; the LLM funnel raises BudgetExceeded (a BaseException,
+    so it unwinds past the answer path's fail-open try/excepts), surfaced here as a
+    clean error event. Output is otherwise passed through unchanged."""
+    from aughor.kernel import metering
+    token = metering.start()
+    btoken = metering.set_budget(*budget) if budget else None
+    try:
+        async for chunk in gen:
+            yield chunk
+    except metering.BudgetExceeded as be:
+        yield _sse("error", {"message": f"Answer stopped — {be.reason} exceeded. "
+                                        f"Raise the Insight agent's budget in Fleet → Agents."})
+    finally:
+        if btoken is not None:
+            metering.clear_budget(btoken)
+        metering.reset(token)
+
+
 @router.post("/chat")
 async def chat_endpoint(req: ChatRequest, request: Request):
     conn_id = req.connection_id
@@ -2220,8 +2255,21 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         resolved = resolve_connection_id(req.canvas_id)
         if resolved:
             conn_id = resolved
+    # Resolve the Insight agent's budget (Org/workspace governance) for this run.
+    budget = None
+    try:
+        from aughor.kernel.agents import effective_governance
+        from aughor.workspace.store import workspace_for_connection
+        gov = effective_governance("insight", workspace_for_connection(conn_id))
+        budget = (gov.token_budget, gov.time_budget_s)
+    except Exception:
+        budget = None
     return StreamingResponse(
-        _stream_chat(req.question, conn_id, req.history, request, session_id=req.session_id, canvas_id=req.canvas_id),
+        _metered_stream(
+            _stream_chat(req.question, conn_id, req.history, request,
+                         session_id=req.session_id, canvas_id=req.canvas_id),
+            budget=budget,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

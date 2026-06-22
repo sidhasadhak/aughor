@@ -44,6 +44,15 @@ class FanoutFinding:
     children: list[str] = field(default_factory=list)    # for parent_fanout: the many-side tables
 
     def to_prompt_text(self) -> str:
+        if self.kind == "dim_ratio":
+            a, b = (self.satellites + ["", ""])[:2]
+            return (
+                f"FAN-OUT RISK: a ratio drawing its numerator from {a} and denominator from {b}, "
+                f"joined on the '{self.hub_root}' dimension, multiplies each side's total by the "
+                f"OTHER table's per-'{self.hub_root}' row count — the ratio is off by that factor. "
+                f"Pre-aggregate EACH table to '{self.hub_root}' in its own CTE, then 1:1-join the "
+                f"CTEs and divide (never SUM across the raw dimension join)."
+            )
         if self.kind == "parent_fanout":
             parent = self.satellites[0] if self.satellites else "the parent table"
             kids = ", ".join(self.children) or "a finer-grained child"
@@ -921,6 +930,29 @@ def build_parent_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str
         return None
 
 
+def _split_and(node):
+    """Flatten a top-level AND (through parens) into its conjuncts; a non-AND is one conjunct."""
+    try:
+        from sqlglot import exp
+    except Exception:
+        return [node]
+    if isinstance(node, exp.Paren):
+        return _split_and(node.this)
+    if isinstance(node, exp.And):
+        return _split_and(node.left) + _split_and(node.right)
+    return [node]
+
+
+def _strip_table_quals(node):
+    """A copy of ``node`` with every column's table qualifier removed — for pushing a predicate
+    into a single-table CTE where the alias no longer exists."""
+    n = node.copy()
+    from sqlglot import exp
+    for c in n.find_all(exp.Column):
+        c.set("table", None)
+    return n
+
+
 def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
     """Deterministic de-fan for a CHASM (≥2 satellites of one hub aggregated across a
     star join — the clicks×impressions case). Pre-aggregate EACH satellite to the hub
@@ -931,10 +963,17 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
     ratio-of-sums in the outer query (the only correct un-fanned mean; a fanned AVG is
     weighted by the other satellite's multiplicity).
 
+    A WHERE on a satellite is split: a top-level AND of single-table predicates pushes each
+    satellite predicate into that satellite's CTE (filtering its rows BEFORE the per-key
+    aggregation — which matches the original fanned semantics, INNER joins included) and keeps
+    hub predicates in the outer query. It still bails on a predicate that can't be cleanly
+    attributed (an OR/mixed-table conjunct, an unqualified column, or a satellite that isn't
+    aggregated, so has no CTE to receive it).
+
     Returns rewritten SQL or None on any shape it can't prove correct: MIN/MAX or
-    COUNT(DISTINCT)/COUNT(*)/AVG(DISTINCT) aggs, a hub-column aggregate mixed in, a WHERE
-    on a satellite (predicates can't be safely split), a child-level GROUP BY, or a
-    non-star join. Caller MUST dry-run/compare before adopting."""
+    COUNT(DISTINCT)/COUNT(*)/AVG(DISTINCT) aggs, a hub-column aggregate mixed in, an
+    unsplittable satellite WHERE, a child-level GROUP BY, or a non-star join. Caller MUST
+    dry-run/compare before adopting."""
     if finding is None or finding.kind != "chasm" or len(finding.satellites) < 2:
         return None
     try:
@@ -987,8 +1026,6 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
             return None
 
     where = sel.args.get("where")
-    if where and any((c.table or "").lower() in sat_aliases for c in where.find_all(exp.Column)):
-        return None  # a satellite predicate can't be safely pushed into one CTE
 
     grp = sel.args.get("group")
     group_cols = []
@@ -1021,6 +1058,28 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
     if len(aggregated) < 2:
         return None
 
+    # ── Satellite-WHERE splitting ────────────────────────────────────────────────
+    # Partition the WHERE's top-level AND conjuncts: hub predicates stay in the outer query;
+    # a predicate on exactly one AGGREGATED satellite is pushed into that satellite's CTE.
+    # Bail on anything we can't attribute cleanly (the original safe-bail, now narrowed).
+    sat_predicates: dict[str, list] = {}
+    hub_predicates: list = []
+    if where is not None:
+        for conj in _split_and(where.this):
+            cols = list(conj.find_all(exp.Column))
+            if not cols:
+                hub_predicates.append(conj)               # constant predicate → outer
+                continue
+            tbls = {(c.table or "").lower() for c in cols}
+            if "" in tbls:
+                return None                               # unqualified column — can't attribute
+            if tbls == {hub_alias}:
+                hub_predicates.append(conj)
+            elif len(tbls) == 1 and next(iter(tbls)) in aggregated:
+                sat_predicates.setdefault(next(iter(tbls)), []).append(conj)
+            else:
+                return None  # OR/mixed-table, or a predicate on a non-aggregated satellite
+
     # Build a CTE per aggregated satellite: SELECT sat_key AS _k, <aggs> GROUP BY sat_key.
     ctes = {}
     agg_loc = {}   # id(body) -> (cte_name, agg_alias)
@@ -1044,7 +1103,12 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
                     an = f"_a{ai}"; ai += 1
                     cproj.append(exp.alias_(type(body)(this=exp.column(body.this.name)), an))
                     agg_loc[id(body)] = (cte_name, ("sum", an))
-        cte_sel = exp.Select(expressions=cproj).from_(exp.to_table(sat_aliases[sa])).group_by(exp.column(sat_key.name))
+        cte_sel = exp.Select(expressions=cproj).from_(exp.to_table(sat_aliases[sa]))
+        # Push this satellite's predicates INTO the CTE (alias-stripped) so its rows are
+        # filtered before the per-key aggregation — exactly what the original WHERE did.
+        for pred in sat_predicates.get(sa, []):
+            cte_sel = cte_sel.where(_strip_table_quals(pred))
+        cte_sel = cte_sel.group_by(exp.column(sat_key.name))
         ctes[sa] = (cte_name, cte_sel)
 
     # Clone the original (keeps hub FROM/WHERE/GROUP BY), swap satellite joins for CTE joins,
@@ -1057,6 +1121,17 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
         if ja in sat_aliases:
             continue
         kept.append(j)
+    # When satellite predicates were pushed into CTEs, the outer query keeps only the hub
+    # predicates (rebuilt from the conjuncts). Untouched when nothing was split — preserving
+    # the original WHERE verbatim for the common no-satellite-filter path.
+    if sat_predicates:
+        if hub_predicates:
+            new_where = hub_predicates[0].copy()
+            for p in hub_predicates[1:]:
+                new_where = exp.And(this=new_where, expression=p.copy())
+            outer.set("where", exp.Where(this=new_where))
+        else:
+            outer.set("where", None)
     for sa in aggregated:
         cte_name = ctes[sa][0]
         hub_key = sat_join[sa][2]
@@ -1096,14 +1171,261 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
         return None
 
 
+# ── Ratio across a shared DIMENSION join — the structure the FK-root chasm guards
+# above CANNOT see (#159 "ROAS mess"). Two RAW fact tables joined on the SAME
+# categorical column they are grouped by (`orders.marketing_channel = perf.channel`),
+# with a ratio that draws its NUMERATOR from one table and its DENOMINATOR from the
+# OTHER (revenue ÷ spend). The join is many-to-many on the dimension value, so each
+# side's SUM is multiplied by the other side's per-dimension row count — the ratio
+# comes out off by that factor (and on a drill-down often fans to 0.0–0.01 or
+# binder-errors). detect_fanout()/_chasm_roots() miss it: neither key is an FK root.
+#
+# The cure is exact and UNCONDITIONAL: pre-aggregate EACH side to the dimension grain
+# in its own CTE, 1:1-join, divide. That is the canonical meaning of "ratio of two
+# totals per dimension", so the rewrite is at-least-as-correct as the raw join for ANY
+# cardinality (when both sides are already 1:1 it returns the identical value) — which
+# is why no cardinality oracle is needed. High-precision: fires ONLY on the exact shape
+# (2 raw tables, joined on the group-by dimension, cross-table SUM/COUNT ratio). ──
+
+def _single_table_agg(node, alias_to_table: dict):
+    """If `node`'s subtree contains EXACTLY ONE non-distinct SUM/COUNT over a single
+    column of ONE base table, return (func_type, col_name, table_bare). Else None
+    (zero/multiple aggregates, a DISTINCT, COUNT(*), an expression arg, or multi-table)."""
+    from sqlglot import exp
+    found = []
+    for a in node.find_all(exp.Sum, exp.Count):
+        inner = a.this
+        if isinstance(inner, exp.Distinct) or not isinstance(inner, exp.Column):
+            return None  # COUNT(*) / COUNT(DISTINCT) / SUM(expr) — can't pre-aggregate cleanly
+        tbl = alias_to_table.get((inner.table or "").lower())
+        if not tbl:
+            return None
+        found.append((type(a), inner.name, tbl))
+    if len(found) != 1:
+        return None
+    return found[0]
+
+
+def _extract_dim_ratio(sql: str, table_cols: dict | None = None, dialect: str = "duckdb"):
+    """Parse a 2-table cross-table ratio-of-sums grouped by the join dimension into the
+    pieces both the detector and the rewrite need, or None on ANY shape it can't prove.
+    High-precision by construction: every uncertainty is a bail."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+    try:
+        sel = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if not isinstance(sel, exp.Select) or sel.args.get("with"):
+        return None  # CTE/derived sources are already the fix
+
+    # Exactly two RAW base tables (FROM + one JOIN), no subqueries.
+    tables = [t for t in sel.find_all(exp.Table)]
+    if any(not isinstance(t.parent, (exp.From, exp.Join)) for t in tables):
+        return None
+    alias_to_table = {(t.alias_or_name or "").lower(): t.name.lower() for t in tables}
+    base = sorted({t.name.lower() for t in tables})
+    if len(base) != 2 or len(alias_to_table) != 2:
+        return None
+
+    # Exactly one equi-join on a single column pair (the shared dimension key).
+    joins = sel.args.get("joins") or []
+    if len(joins) != 1:
+        return None
+    on = joins[0].args.get("on")
+    if not on:
+        return None
+    eqs = list(on.find_all(exp.EQ))
+    if len(eqs) != 1:
+        return None  # composite/﻿extra join conditions → bail
+    l, r = eqs[0].left, eqs[0].right
+    if not (isinstance(l, exp.Column) and isinstance(r, exp.Column)):
+        return None
+    # A LEFT/RIGHT/FULL join changes which rows survive — only INNER is a clean 1:1 re-join.
+    if (joins[0].args.get("side") or "").upper() in ("LEFT", "RIGHT", "FULL"):
+        return None
+    key_of = {(l.table or "").lower(): l.name, (r.table or "").lower(): r.name}
+    if set(key_of) != set(alias_to_table):
+        return None
+
+    # GROUP BY must be exactly the join dimension (a single column that IS one join key).
+    grp = sel.args.get("group")
+    if not grp or len(grp.expressions) != 1:
+        return None
+    gcol = grp.expressions[0]
+    if not isinstance(gcol, exp.Column):
+        return None
+    g_alias = (gcol.table or "").lower()
+    if g_alias not in key_of or key_of[g_alias].lower() != gcol.name.lower():
+        return None  # grouped by something other than the join key → not this shape
+
+    # The ratio: a Div whose numerator aggregates one table and denominator the other.
+    ratio_alias = dim_alias = None
+    num = den = None
+    scale_100 = False
+    order_dir = None        # None | "DESC" | "ASC"
+    order_by_ratio = False
+    for e in sel.expressions:
+        body = e.this if isinstance(e, exp.Alias) else e
+        out_alias = e.alias if isinstance(e, exp.Alias) else None
+        if isinstance(body, exp.Column):
+            # the dimension projection (must be the group key)
+            if (body.table or "").lower() == g_alias and body.name.lower() == gcol.name.lower():
+                dim_alias = out_alias or body.name
+            continue
+        div = body.find(exp.Div)
+        if div is None:
+            return None  # a non-dim, non-ratio projection → not a clean ratio finding
+        a = _single_table_agg(div.this, alias_to_table)
+        b = _single_table_agg(div.expression, alias_to_table)
+        if not a or not b or a[2] == b[2]:
+            return None  # need cross-table numerator/denominator
+        num, den = a, b
+        ratio_alias = out_alias or "ratio"
+        for lit in body.find_all(exp.Literal):
+            if (not lit.is_string) and str(lit.this) in ("100", "100.0"):
+                scale_100 = True
+    if num is None or den is None or dim_alias is None:
+        return None
+
+    # ORDER BY — preserve only when it targets the ratio or the dimension (by alias).
+    order = sel.args.get("order")
+    if order and order.expressions:
+        first = order.expressions[0]
+        tgt = first.this
+        desc = bool(first.args.get("desc"))
+        tgt_name = tgt.name.lower() if isinstance(tgt, exp.Column) else None
+        if tgt_name == (ratio_alias or "").lower() or (isinstance(tgt, exp.Div)):
+            order_dir, order_by_ratio = ("DESC" if desc else "ASC"), True
+        elif tgt_name == (dim_alias or "").lower():
+            order_dir, order_by_ratio = ("DESC" if desc else "ASC"), False
+
+    # WHERE — split top-level AND: a single-table predicate is pushed into that side's CTE.
+    num_where, den_where = [], []
+    where = sel.args.get("where")
+    if where is not None:
+        # invert alias→table so we can route a predicate to num/den side
+        alias_for = {tn: al for al, tn in alias_to_table.items()}
+        num_alias = alias_for.get(num[2])
+        den_alias = alias_for.get(den[2])
+        for conj in _split_and(where.this):
+            cols = list(conj.find_all(exp.Column))
+            tbls = {(c.table or "").lower() for c in cols}
+            if not cols or "" in tbls or len(tbls) != 1:
+                return None  # constant/unqualified/mixed/OR predicate → can't attribute, bail
+            t = next(iter(tbls))
+            if t == num_alias:
+                num_where.append(conj)
+            elif t == den_alias:
+                den_where.append(conj)
+            else:
+                return None
+
+    return {
+        "num_table": num[2], "num_func": num[0], "num_col": num[1],
+        "num_key": _key_for_table(key_of, alias_to_table, num[2]),
+        "den_table": den[2], "den_func": den[0], "den_col": den[1],
+        "den_key": _key_for_table(key_of, alias_to_table, den[2]),
+        "scale_100": scale_100, "ratio_alias": ratio_alias, "dim_alias": dim_alias,
+        "num_where": num_where, "den_where": den_where,
+        "order_dir": order_dir, "order_by_ratio": order_by_ratio,
+    }
+
+
+def _key_for_table(key_of: dict, alias_to_table: dict, table_bare: str) -> str:
+    """The join-key column on `table_bare` (map table → its alias → its join key)."""
+    for al, tn in alias_to_table.items():
+        if tn == table_bare and al in key_of:
+            return key_of[al]
+    return ""
+
+
+def dimension_ratio_chasm(sql: str, table_cols: dict | None = None, dialect: str = "duckdb",
+                          is_unique_on=None) -> "FanoutFinding | None":
+    """Detect a cross-table ratio-of-sums over a shared-dimension join (the #159 shape
+    detect_fanout misses). Returns a FanoutFinding(kind='dim_ratio') the rewrite path
+    can de-fan, or None. `is_unique_on` is accepted for battery-signature parity (the
+    rewrite is correct regardless of cardinality, so it is unused). Never raises."""
+    try:
+        parsed = _extract_dim_ratio(sql, table_cols, dialect)
+    except Exception:
+        return None
+    if not parsed:
+        return None
+    return FanoutFinding(
+        hub_root=parsed["num_key"] or parsed["den_key"] or "dimension",
+        satellites=sorted({parsed["num_table"], parsed["den_table"]}),
+        aggregates=[f"{parsed['num_func'].__name__.upper()}({parsed['num_col']})/"
+                    f"{parsed['den_func'].__name__.upper()}({parsed['den_col']})"],
+        kind="dim_ratio",
+    )
+
+
+def build_dim_ratio_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
+    """Pre-aggregate each side of a dimension-join ratio to the dimension grain in its
+    own CTE, then 1:1-join and divide — the exact, cardinality-independent cure for the
+    fanned cross-table ratio. Returns rewritten SQL, or None on any shape it can't prove
+    (caller still dry-runs before adopting). Satellite WHERE predicates are pushed into
+    their side's CTE so row filtering happens before the per-dimension aggregation."""
+    if finding is None or finding.kind != "dim_ratio":
+        return None
+    try:
+        from sqlglot import exp
+    except Exception:
+        return None
+    p = _extract_dim_ratio(sql, None, dialect)
+    if not p:
+        return None
+
+    def _cte(table, key, func, col, preds):
+        s = exp.Select(expressions=[
+            exp.alias_(exp.column(key), "_k"),
+            exp.alias_(func(this=exp.column(col)), "_v"),
+        ]).from_(exp.to_table(table))
+        for pred in preds:
+            s = s.where(_strip_table_quals(pred))
+        return s.group_by(exp.column(key))
+
+    try:
+        num_cte = _cte(p["num_table"], p["num_key"], p["num_func"], p["num_col"], p["num_where"])
+        den_cte = _cte(p["den_table"], p["den_key"], p["den_func"], p["den_col"], p["den_where"])
+        num_node = exp.column("_v", table="_rn")
+        if p["scale_100"]:
+            num_node = exp.Mul(this=exp.Literal.number("100.0"), expression=num_node)
+        ratio = exp.Div(this=num_node,
+                        expression=exp.func("NULLIF", exp.column("_v", table="_rd"), exp.Literal.number("0")))
+        outer = exp.Select(expressions=[
+            exp.alias_(exp.column("_k", table="_rn"), p["dim_alias"]),
+            exp.alias_(ratio, p["ratio_alias"]),
+        ]).from_(exp.to_table("_rn"))
+        outer = outer.join(
+            exp.to_table("_rd"),
+            on=exp.EQ(this=exp.column("_k", table="_rn"), expression=exp.column("_k", table="_rd")),
+            join_type="INNER",
+        )
+        if p["order_dir"] is not None:
+            tgt = p["ratio_alias"] if p["order_by_ratio"] else p["dim_alias"]
+            outer.set("order", exp.Order(expressions=[
+                exp.Ordered(this=exp.column(tgt), desc=(p["order_dir"] == "DESC"))]))
+        outer = outer.with_("_rn", as_=num_cte).with_("_rd", as_=den_cte)
+        return outer.sql(dialect=dialect)
+    except Exception:
+        return None
+
+
 def defan(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
     """Deterministic de-fan dispatcher. Returns a corrected SQL for the
-    parent_fanout or chasm cases, or None when neither can be safely rewritten
-    (the caller then falls back to the LLM hint)."""
+    parent_fanout, chasm, or dimension-ratio cases, or None when none can be
+    safely rewritten (the caller then falls back to the LLM hint)."""
     if finding is None:
         return None
     if finding.kind == "parent_fanout":
         return build_parent_fanout_rewrite(sql, finding, dialect)
     if finding.kind == "chasm":
         return build_chasm_fanout_rewrite(sql, finding, dialect)
+    if finding.kind == "dim_ratio":
+        return build_dim_ratio_rewrite(sql, finding, dialect)
     return None

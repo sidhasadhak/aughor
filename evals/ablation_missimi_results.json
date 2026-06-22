@@ -1,0 +1,293 @@
+{
+  "results": [
+    {
+      "id": "q01_order_count",
+      "trap": "control",
+      "question": "How many orders are in the dataset?",
+      "raw": {
+        "sql": "SELECT COUNT(*) AS order_count\nFROM missimi.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(*) AS order_count\nFROM missimi.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "injected": {
+        "sql": "SELECT COUNT(*) AS order_count\nFROM missimi.orders;",
+        "class": "correct",
+        "match": 1.0
+      },
+      "latency_s": 5.9
+    },
+    {
+      "id": "q02_brand_count",
+      "trap": "control",
+      "question": "How many distinct brands are there?",
+      "raw": {
+        "sql": "SELECT COUNT(DISTINCT brand_id) AS distinct_brand_count\nFROM missimi.brands",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(DISTINCT brand_id) AS distinct_brand_count\nFROM missimi.brands",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "injected": {
+        "sql": "SELECT COUNT(DISTINCT brand_id) AS distinct_brand_count\nFROM missimi.brands",
+        "class": "correct",
+        "match": 1.0
+      },
+      "latency_s": 3.8
+    },
+    {
+      "id": "q03_top_channel",
+      "trap": "control",
+      "question": "Which marketing channel brought in the most orders?",
+      "raw": {
+        "sql": "SELECT \n    marketing_channel,\n    COUNT(*) AS order_count\nFROM missimi.orders\nWHERE marketing_channel IS NOT NULL\nGROUP BY marketing_channel\nORDER BY order_count DESC",
+        "class": "silent-wrong",
+        "match": 0.125
+      },
+      "guarded": {
+        "sql": "SELECT \n    marketing_channel,\n    COUNT(*) AS order_count\nFROM missimi.orders\nWHERE marketing_channel IS NOT NULL\nGROUP BY marketing_channel\nORDER BY order_count DESC",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.125
+      },
+      "injected": {
+        "sql": "SELECT\n    marketing_channel,\n    COUNT(*) AS order_count\nFROM missimi.orders\nGROUP BY marketing_channel\nORDER BY order_count DESC;",
+        "class": "silent-wrong",
+        "match": 0.125
+      },
+      "latency_s": 4.2
+    },
+    {
+      "id": "q04_cancelled_count",
+      "trap": "value_domain",
+      "question": "How many orders were cancelled?",
+      "raw": {
+        "sql": "SELECT COUNT(*) AS cancelled_orders\nFROM missimi.orders\nWHERE order_status = 'canceled'",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(*) AS cancelled_orders\nFROM missimi.orders\nWHERE order_status = 'canceled'",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "injected": {
+        "sql": "SELECT COUNT(*) AS cancelled_orders\nFROM missimi.orders\nWHERE order_status = 'cancelled';",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "latency_s": 5.1
+    },
+    {
+      "id": "q05_aov",
+      "trap": "grain",
+      "question": "What is the average order value?",
+      "raw": {
+        "sql": "SELECT ROUND(AVG(order_value), 2) AS avg_order_value\nFROM missimi.orders\nWHERE order_status IS NOT NULL",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(AVG(order_value), 2) AS avg_order_value\nFROM missimi.orders\nWHERE order_status IS NOT NULL",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "injected": {
+        "sql": "SELECT \n  ROUND(SUM(order_value) / NULLIF(COUNT(*), 0), 2) AS avg_order_value\nFROM missimi.orders\nWHERE order_status NOT IN ('delivered', 'cancelled')",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "latency_s": 4.7
+    },
+    {
+      "id": "q06_delivered_revenue",
+      "trap": "fanout",
+      "question": "What is the total revenue from delivered orders?",
+      "raw": {
+        "sql": "SELECT \n  ROUND(SUM(o.order_value), 2) AS total_revenue\nFROM \n  missimi.orders o\nWHERE \n  o.order_status = 'delivered';",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT \n  ROUND(SUM(o.order_value), 2) AS total_revenue\nFROM \n  missimi.orders o\nWHERE \n  o.order_status = 'delivered';",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "injected": {
+        "sql": "SELECT \n  ROUND(SUM(oi.unit_price * oi.order_item_id), 2) AS total_revenue\nFROM missimi.orders o\nJOIN missimi.order_items oi ON o.order_id = oi.order_id\nWHERE o.order_status = 'delivered'",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "latency_s": 6.1
+    },
+    {
+      "id": "q07_gmv_items",
+      "trap": "fanout",
+      "question": "What is the total value of all order items sold?",
+      "raw": {
+        "sql": "SELECT ROUND(SUM(unit_price), 2) AS total_order_items_value\nFROM missimi.order_items",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(SUM(unit_price), 2) AS total_order_items_value\nFROM missimi.order_items",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "injected": {
+        "sql": "SELECT ROUND(SUM(unit_price), 2) AS total_order_items_value\nFROM missimi.order_items",
+        "class": "correct",
+        "match": 1.0
+      },
+      "latency_s": 5.4
+    },
+    {
+      "id": "q08_revenue_by_category",
+      "trap": "fanout",
+      "question": "What is the total item revenue for each product category?",
+      "raw": {
+        "sql": "SELECT \n  oi.category,\n  ROUND(SUM(oi.unit_price * oi.order_item_id / oi.order_item_id), 2) AS total_item_revenue\nFROM missimi.order_items oi\nGROUP BY oi.category\nORDER BY total_item_revenue DESC;",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT \n  oi.category,\n  ROUND(SUM(oi.unit_price * oi.order_item_id / oi.order_item_id), 2) AS total_item_revenue\nFROM missimi.order_items oi\nGROUP BY oi.category\nORDER BY total_item_revenue DESC;",
+        "class": "correct",
+        "guards_fired": [
+          "id_arithmetic"
+        ],
+        "match": 1.0
+      },
+      "injected": {
+        "sql": "SELECT \n    oi.category,\n    SUM(oi.unit_price * oi.order_item_id) AS total_item_revenue\nFROM missimi.order_items oi\nGROUP BY oi.category\nORDER BY total_item_revenue DESC;",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "latency_s": 5.5
+    },
+    {
+      "id": "q09_gross_profit",
+      "trap": "metric",
+      "question": "What is the total gross profit on items sold (price minus cost)?",
+      "raw": {
+        "sql": "SELECT \n  ROUND(SUM(oi.unit_price - oi.unit_cost), 2) AS total_gross_profit\nFROM missimi.order_items oi",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT \n  ROUND(SUM(oi.unit_price - oi.unit_cost), 2) AS total_gross_profit\nFROM missimi.order_items oi",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "injected": {
+        "sql": "SELECT \n  SUM(oi.unit_price - oi.unit_cost) AS gross_profit\nFROM missimi.order_items oi",
+        "class": "correct",
+        "match": 1.0
+      },
+      "latency_s": 4.8
+    },
+    {
+      "id": "q10_avg_review",
+      "trap": "control",
+      "question": "What is the average customer review score?",
+      "raw": {
+        "sql": "SELECT ROUND(AVG(review_score), 2) AS avg_review_score\nFROM missimi.order_reviews\nWHERE review_score IS NOT NULL",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(AVG(review_score), 2) AS avg_review_score\nFROM missimi.order_reviews\nWHERE review_score IS NOT NULL",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "injected": {
+        "sql": "SELECT ROUND(AVG(review_score), 2) AS avg_review_score\nFROM missimi.order_reviews\nWHERE review_score IS NOT NULL",
+        "class": "correct",
+        "match": 1.0
+      },
+      "latency_s": 4.8
+    },
+    {
+      "id": "q11_revenue_by_channel",
+      "trap": "control",
+      "question": "What is the total order revenue by marketing channel?",
+      "raw": {
+        "sql": "SELECT \n  marketing_channel,\n  ROUND(SUM(order_value), 2) AS total_revenue\nFROM missimi.orders\nWHERE marketing_channel IS NOT NULL\nGROUP BY marketing_channel\nORDER BY total_revenue DESC;",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT \n  marketing_channel,\n  ROUND(SUM(order_value), 2) AS total_revenue\nFROM missimi.orders\nWHERE marketing_channel IS NOT NULL\nGROUP BY marketing_channel\nORDER BY total_revenue DESC;",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "injected": {
+        "sql": "SELECT \n    marketing_channel,\n    SUM(order_value) AS total_revenue\nFROM missimi.orders\nGROUP BY marketing_channel\nORDER BY total_revenue DESC",
+        "class": "correct",
+        "match": 1.0
+      },
+      "latency_s": 4.4
+    },
+    {
+      "id": "q12_total_revenue",
+      "trap": "fanout",
+      "question": "What is the total revenue across all orders?",
+      "raw": {
+        "sql": "SELECT ROUND(SUM(order_value), 2) AS total_revenue\nFROM missimi.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(SUM(order_value), 2) AS total_revenue\nFROM missimi.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "injected": {
+        "sql": "SELECT SUM(order_value) AS total_revenue\nFROM missimi.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "latency_s": 4.0
+    }
+  ],
+  "summary": {
+    "n": 12,
+    "raw": {
+      "correct": 11,
+      "silent-wrong": 1
+    },
+    "guarded": {
+      "correct": 11,
+      "silent-wrong": 1
+    },
+    "injected": {
+      "correct": 7,
+      "silent-wrong": 5
+    },
+    "raw_accuracy": 0.917,
+    "guarded_safe_rate": 0.917,
+    "injected_accuracy": 0.583,
+    "raw_silent_wrong": 1,
+    "guarded_silent_wrong": 1,
+    "injected_silent_wrong": 5,
+    "saves": [],
+    "regressions": []
+  }
+}

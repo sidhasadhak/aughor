@@ -170,6 +170,10 @@ class OntologyRelationship(BaseModel):
     to_col: str
     join_confidence: Literal["exact", "inferred", "verified"] = "inferred"
     nullable: bool = False                     # FK col has null rows
+    # Value-verification (joinable_with): the max containment fraction the two keys actually
+    # SHARE, probed at build time. None = unprobed; ~1.0 = a real FK; a value-DISJOINT name
+    # coincidence (≈0) is dropped from the graph entirely, never persisted as a relationship.
+    value_overlap: Optional[float] = None
 
 
 class OntologyMetric(BaseModel):

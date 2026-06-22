@@ -43,6 +43,10 @@ if not logging.getLogger().handlers:
 
 logger = logging.getLogger(__name__)
 
+# The context-propagating default executor (installed at startup, torn down at
+# shutdown) — see _install_context_executor.
+_CTX_EXECUTOR = None
+
 
 @asynccontextmanager
 async def _lifespan(app: "FastAPI"):
@@ -54,6 +58,9 @@ async def _lifespan(app: "FastAPI"):
     defined below — they are resolved at call time (startup), not import time.
     """
     # ── Startup ────────────────────────────────────────────────────────────────
+    # First: make contextvars (current job id + per-run metering) cross the
+    # run_in_executor boundary, before any startup step dispatches into a thread.
+    _install_context_executor()
     await _kernel_journal_boot()
     await _setup_samples()
     # Orphaned investigations are recovered (salvaged, not blanket-failed) inside
@@ -69,9 +76,16 @@ async def _lifespan(app: "FastAPI"):
     await _start_brief_scheduler()
     yield
     # ── Shutdown ───────────────────────────────────────────────────────────────
-    # Nothing to tear down explicitly: background loops (supervisor, ontology
-    # refresh) are cancelled by event-loop teardown, and the kernel's
-    # boot_recovery fails any job orphaned by the stop on the next start.
+    # Background loops (supervisor, ontology refresh) are cancelled by event-loop
+    # teardown, and the kernel's boot_recovery fails any job orphaned by the stop
+    # on the next start. The one explicit teardown is the context executor.
+    global _CTX_EXECUTOR
+    if _CTX_EXECUTOR is not None:
+        try:
+            _CTX_EXECUTOR.shutdown(wait=False)
+        except Exception as exc:
+            logger.warning("context executor shutdown failed (non-fatal): %s", exc)
+        _CTX_EXECUTOR = None
 
 
 app = FastAPI(title="Aughor API", lifespan=_lifespan)
@@ -98,6 +112,22 @@ def _require_auth(key: str | None = Security(_api_key_header)) -> None:
 
 
 # ── Startup steps (run by _lifespan above, in this order) ──────────────────────
+
+def _install_context_executor() -> None:
+    """Make ``loop.run_in_executor(None, …)`` propagate contextvars into worker
+    threads, by installing a :class:`ContextThreadPoolExecutor` as the loop's
+    default executor. The stdlib default does not copy context, so the current
+    job id and the per-run metering accumulator would otherwise be invisible to
+    the LLM/SQL calls (which all run in the executor). Strict more-correct; the
+    only observable change is that executor-run work now sees the right context."""
+    global _CTX_EXECUTOR
+    try:
+        from aughor.kernel.concurrency import ContextThreadPoolExecutor
+        _CTX_EXECUTOR = ContextThreadPoolExecutor(thread_name_prefix="aughor-exec")
+        asyncio.get_event_loop().set_default_executor(_CTX_EXECUTOR)
+    except Exception as exc:
+        logger.warning("context executor install failed (non-fatal): %s", exc)
+
 
 async def _kernel_journal_boot() -> None:
     # The boot event anchors the journal's timeline: restarts become visible,
@@ -378,6 +408,7 @@ async def _start_brief_scheduler() -> None:
 
 from aughor.routers import (  # noqa: E402
     system,
+    agents,
     investigations,
     canvas,
     workspace,
@@ -394,6 +425,7 @@ from aughor.routers import (  # noqa: E402
     semantic,
     briefs,
     events,
+    jobs,
     llm,
     profile,
     orgsettings,
@@ -416,6 +448,8 @@ app.include_router(monitors.router)
 app.include_router(semantic.router)
 app.include_router(briefs.router)
 app.include_router(events.router)
+app.include_router(jobs.router)
+app.include_router(agents.router)
 app.include_router(llm.router)
 app.include_router(profile.router)
 app.include_router(orgsettings.router)

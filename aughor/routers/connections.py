@@ -102,7 +102,7 @@ async def create_connection(req: AddConnectionRequest):
     # and cancellable via POST /exploration/{id}/stop.
     explorer_started = False
     try:
-        explorer_started = _kickoff_exploration(conn_id)
+        explorer_started = _kickoff_exploration(conn_id, auto=True)
     except Exception:
         logger.warning("create_connection: explorer kickoff failed for %s", conn_id, exc_info=True)
 
@@ -830,6 +830,21 @@ async def delete_connection_table(conn_id: str, table: str, schema: str = "main"
             db.close()
     await loop.run_in_executor(None, _work)
     return {"message": f"Table '{table}' removed"}
+
+
+@router.post("/connections/{conn_id}/restore-samples", status_code=200)
+async def restore_connection_samples(conn_id: str, schema: str | None = None):
+    """Undo a sample-schema removal — clear the removed-seed tombstone so the bundled sample
+    catalog re-materializes on the next request. Optional ``schema`` restores just one."""
+    loop = asyncio.get_event_loop()
+    def _work():
+        db = _open_file_connector(conn_id, "restore_seeds")
+        try:
+            db.restore_seeds(schema)
+        finally:
+            db.close()
+    await loop.run_in_executor(None, _work)
+    return {"message": "Sample data restored" + (f" ('{schema}')" if schema else "")}
 
 
 # ── Process map + causal graph ────────────────────────────────────────────────

@@ -27,6 +27,7 @@ import {
   type BriefMetric,
 } from "@/components/brief/Brief";
 import { ChatTurn } from "@/lib/useChat";
+import { validateQuery, sendChatFeedback, type QueryValidation } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { DossierTrace } from "@/components/BriefingPanel";
@@ -791,9 +792,10 @@ function ClarifyingQuestionsBanner({ questions, contextNote }: { questions: stri
 // Headline + interpretation prose + the one framed result (chart / table /
 // metrics) + folded-away machinery. No purple card, no badges, no stacked banners.
 function InsightBrief({
-  turn, onShowSource, onFollowUp, onRunFresh,
+  turn, connectionId, onShowSource, onFollowUp, onRunFresh,
 }: {
   turn: ChatTurn;
+  connectionId?: string;
   onShowSource?: (data: SourcePanelData) => void;
   onFollowUp?: (q: string) => void;
   onRunFresh?: (q: string) => void;
@@ -852,8 +854,69 @@ function InsightBrief({
         </BriefSection>
       )}
 
+      <InsightActions turn={turn} connectionId={connectionId} />
+
       <InsightDetails turn={turn} onShowSource={onShowSource} />
     </Brief>
+  );
+}
+
+// ── Opt-in actions on a chat answer: re-validate the query + a feedback signal ──────
+function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?: string }) {
+  const [verdict, setVerdict] = useState<QueryValidation | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<"helpful" | "unhelpful" | null>(null);
+  const sql = (turn.sql || "").trim();
+  if (!sql || !connectionId) return null;
+
+  const runValidate = async () => {
+    setBusy(true);
+    try { setVerdict(await validateQuery(connectionId, sql)); }
+    catch { setVerdict(null); }
+    finally { setBusy(false); }
+  };
+  const rate = (v: "helpful" | "unhelpful") => {
+    setFeedback(v);
+    if (turn.receiptId) void sendChatFeedback(connectionId, turn.receiptId, v);
+  };
+
+  const issues = verdict
+    ? [...verdict.fanout_hits,
+       ...verdict.join_warnings.map(w => `Join ${w.table_a}.${w.col_a} ↔ ${w.table_b}.${w.col_b}: only ${Math.round(w.overlap * 100)}% value overlap`),
+       ...verdict.filter_warnings.map(w => `Filter ${w.column} = ${w.literal} matches no rows${w.suggestion ? ` — did you mean ${w.suggestion}?` : ""}`)]
+    : [];
+
+  return (
+    <div className="flex flex-col gap-1.5 pt-1">
+      <div className="flex items-center gap-2 aug-text-xs text-zinc-500">
+        <button onClick={runValidate} disabled={busy}
+          className="border border-zinc-700 rounded-md px-2 py-0.5 text-zinc-400 hover:text-zinc-200 transition disabled:opacity-50">
+          {busy ? "Validating…" : "Validate"}
+        </button>
+        <span className="text-zinc-700">·</span>
+        <button onClick={() => navigator.clipboard.writeText(sql).catch(() => {})}
+          className="text-zinc-500 hover:text-zinc-300 transition">Copy SQL</button>
+        <span className="text-zinc-700">·</span>
+        <button onClick={() => rate("helpful")}
+          className={`transition ${feedback === "helpful" ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Helpful">👍</button>
+        <button onClick={() => rate("unhelpful")}
+          className={`transition ${feedback === "unhelpful" ? "text-amber-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Not helpful">👎</button>
+        {feedback && <span className="text-zinc-600 italic">thanks — noted</span>}
+      </div>
+      {verdict && (
+        issues.length === 0 ? (
+          <p className="aug-text-xs text-emerald-400/80">✓ Validated — no fan-out, join, or filter issues found.</p>
+        ) : (
+          <ul className="flex flex-col gap-0.5">
+            {issues.map((it, i) => (
+              <li key={i} className="aug-text-xs text-amber-300/80 flex items-start gap-1.5">
+                <span className="shrink-0 text-amber-400/70">⚠</span>{it}
+              </li>
+            ))}
+          </ul>
+        )
+      )}
+    </div>
   );
 }
 
@@ -923,12 +986,14 @@ function InsightDetails({
 
 export function ChatMessage({
   turn,
+  connectionId,
   onFollowUp,
   onRunFresh,
   onShowSource,
   onDeeper,
 }: {
   turn: ChatTurn;
+  connectionId?: string;
   onFollowUp?: (q: string) => void;
   onRunFresh?: (q: string) => void;
   onShowSource?: (data: SourcePanelData) => void;
@@ -1036,6 +1101,7 @@ export function ChatMessage({
       {!collapsed && isDone && !isInvestigate && (
         <InsightBrief
           turn={turn}
+          connectionId={connectionId}
           onShowSource={onShowSource}
           onFollowUp={onFollowUp}
           onRunFresh={onRunFresh}

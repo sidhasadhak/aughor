@@ -455,7 +455,7 @@ def metric_additivity(metric) -> bool:
 
 
 def build_metrics_block(
-    path: Path | None = None, schema_text: str = "", connection_id: str = ""
+    path: Path | None = None, schema_text: str = "", connection_id: str = "", question: str = ""
 ) -> str:
     """
     Return a METRICS CATALOG block to append to the schema context string.
@@ -489,8 +489,16 @@ def build_metrics_block(
     if not metrics:
         return ""
 
+    # R7a — rank the catalog by relevance to the question so the canonical metric is PROMOTED
+    # (and, at scale, the long tail trimmed). Fail-open: keeps catalog order when there's no signal.
+    _top_relevant = False
+    if question:
+        from aughor.semantic.metric_retrieval import rank_metrics_for_question
+        metrics, _top_relevant = rank_metrics_for_question(question, metrics)
+
     lines = [
-        "METRICS CATALOG (use these exact SQL expressions — do not re-derive):",
+        "METRICS CATALOG (use these exact SQL expressions — do not re-derive"
+        + ("; the FIRST is the most relevant to this question):" if _top_relevant else "):"),
     ]
     for m in metrics:
         header = f"  {m.name.upper()} ({m.label}): {m.sql}"

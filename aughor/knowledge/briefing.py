@@ -384,6 +384,17 @@ def generate_narrative(
         top[:8], patterns[:3], macro_context, coverage_digest=coverage,
         multi_schema=multi_schema, currency_sym=currency_sym,
     )
+    # Identity context (company/HQ/website/industry) so the narrator frames the brief for THIS
+    # business by name, not a generic org — declared identity only, '' when unset (a no-op for
+    # unconfigured orgs), workspace override-wins.
+    try:
+        from aughor.orgsettings import org_context
+        _org = org_context(workspace_id)
+        if _org:
+            user_prompt = _org + "\n" + user_prompt
+    except Exception as _e:
+        import logging as _l
+        _l.getLogger(__name__).debug("briefing: org_context unavailable: %s", _e)
 
     result: BriefingNarrative = provider.complete(
         system=_SYSTEM_MULTI if multi_schema else _SYSTEM,
