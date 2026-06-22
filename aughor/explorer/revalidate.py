@@ -75,23 +75,44 @@ def revalidate_finding(dossier: dict, conn) -> dict:
     pinned_version = dossier.get("data_version")
     current_version = None
     data_moved = None
+    reproduced = None   # True/False when we could re-run AT the pinned snapshot (DuckLake); else None
     if pinned_version:
         try:
-            from aughor.db.snapshot import data_version
+            from aughor.db.snapshot import (
+                data_version, as_of_supported, execute_as_of, native_version_id,
+            )
             from aughor.explorer.scope import tables_in_sql
             current_version = data_version(conn, tables_in_sql(sql))
             if current_version is not None:
                 data_moved = (current_version != pinned_version)
+            # EXACT proof when the storage is version-aware: re-run the finding's SQL AT its
+            # pinned snapshot. If the stored number reproduces there, the finding was correctly
+            # computed and any live drift is genuinely new data; if it doesn't, it was mis-derived.
+            vid = native_version_id(pinned_version)
+            if vid is not None and as_of_supported(conn):
+                repro = execute_as_of(conn, sql, vid)
+                if repro is not None and not getattr(repro, "error", None):
+                    reproduced = (numeric_cells_block(repro.rows or []) == stored_cells)
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "snapshot data-version comparison is best-effort", counter="snapshot.revalidate")
 
     if not cells_changed:
         interpretation = "stable — the finding's numbers are unchanged"
+    elif reproduced is True:
+        interpretation = (
+            "CONFIRMED correct as computed — it reproduces exactly at its pinned snapshot; the "
+            "data has since moved, so the live number is new data, not a mis-derivation"
+        )
+    elif reproduced is False:
+        interpretation = (
+            "the finding does NOT reproduce even at its own pinned snapshot — it was mis-derived "
+            "or non-deterministic (a trust issue, not a data update)"
+        )
     elif data_moved is True:
         interpretation = (
             "the underlying data has moved since this finding was computed (as of "
-            f"{dossier.get('generated_at') or 'emit'}); the change reflects new data, not a mis-derivation"
+            f"{dossier.get('generated_at') or 'emit'}); the change likely reflects new data, not a mis-derivation"
         )
     elif data_moved is False:
         interpretation = (
@@ -114,6 +135,7 @@ def revalidate_finding(dossier: dict, conn) -> dict:
         "pinned_version": pinned_version,
         "current_version": current_version,
         "data_moved": data_moved,
+        "reproduced": reproduced,
         "interpretation": interpretation,
     }
 

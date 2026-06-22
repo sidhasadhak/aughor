@@ -651,6 +651,13 @@ def _apply_lane_envelope(duck_conn, connection_id: str) -> None:
         _logging.getLogger(__name__).debug("lane envelope skipped (%s): %s", connection_id, _exc)
 
 
+def apply_lane_envelope(duck_conn, connection_id: str) -> None:
+    """Public: apply the per-workspace DuckDB resource envelope (R6) — for out-of-module
+    connection lanes (e.g. DuckLake) that open their own handle, rather than reaching into
+    the leading-underscore internal."""
+    _apply_lane_envelope(duck_conn, connection_id)
+
+
 def _maybe_register_ai_udfs(duck_conn, md_db) -> None:
     """Register the governed ``prompt()``/``embedding()`` AI-column UDFs (R8) when
     ``AUGHOR_AI_SQL`` is on, so agent-generated SQL can compute an AI column in-query.

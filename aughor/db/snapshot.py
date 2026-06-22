@@ -59,20 +59,41 @@ def _table_signature(conn: Any, table: str) -> Optional[str]:
     return f"{table}={row[0]}" if row else None
 
 
+def _ducklake_catalog(conn: Any) -> Optional[str]:
+    """The name of an attached DuckLake catalog on this connection, or None. DuckLake keeps its
+    tables in a versioned catalog that shows up as ``type = 'ducklake'`` in duckdb_databases()."""
+    row = _meta_row(conn, "SELECT database_name FROM duckdb_databases() WHERE type = 'ducklake' LIMIT 1")
+    return str(row[0]) if row else None
+
+
 def _native_snapshot(conn: Any) -> Optional[str]:
-    """Forward-compat seam: the storage layer's exact version id when version-aware
-    (DuckLake snapshot id; a warehouse time-travel token). Returns None on a plain DuckDB
-    file — today's lanes aren't version-aware, so callers fall back to the fingerprint."""
+    """The EXACT data version when the connection's storage is version-aware: the current
+    DuckLake snapshot id as ``dl:<catalog>:<id>``. None on a plain DuckDB file — callers fall
+    back to the fingerprint. This is the seam a warehouse time-travel token would also fill."""
+    cat = _ducklake_catalog(conn)
+    if not cat:
+        return None
+    row = _meta_row(conn, f"SELECT max(snapshot_id) FROM ducklake_snapshots('{cat}')")
+    return f"dl:{cat}:{row[0]}" if row and row[0] is not None else None
+
+
+def native_version_id(token: Optional[str]) -> Optional[int]:
+    """The numeric snapshot id inside a native ``dl:<catalog>:<id>`` token, else None."""
+    if token and token.startswith("dl:"):
+        try:
+            return int(token.rsplit(":", 1)[1])
+        except (ValueError, IndexError):
+            return None
     return None
 
 
 def data_version(conn: Any, tables: Iterable[str]) -> Optional[str]:
-    """A token identifying the data ``tables`` held when called — the native snapshot id if
-    the storage is version-aware, else a portable fingerprint over the finding's tables.
-    ``None`` when nothing is probeable (fail-open). Deterministic for a fixed dataset."""
+    """A token identifying the data ``tables`` held when called — the EXACT native snapshot id
+    (``dl:…``) if the storage is version-aware, else a portable fingerprint (``fp:…``) over the
+    finding's tables. ``None`` when nothing is probeable (fail-open). Deterministic per dataset."""
     native = _native_snapshot(conn)
     if native:
-        return f"snap:{native}"
+        return native
     sigs = [s for t in sorted({str(x) for x in (tables or [])}) if (s := _table_signature(conn, t))]
     if not sigs:
         return None
@@ -80,7 +101,31 @@ def data_version(conn: Any, tables: Iterable[str]) -> Optional[str]:
 
 
 def as_of_supported(conn: Any) -> bool:
-    """True when ``conn`` can reproduce a query AT a past version (DuckLake time-travel /
-    warehouse). False on a plain DuckDB file — re-validate then disambiguates via the
-    fingerprint comparison instead of an exact AT-VERSION reproduction. Forward-compat hook."""
-    return _native_snapshot(conn) is not None
+    """True when ``conn`` can reproduce a query AT a past version (DuckLake time-travel). False
+    on a plain DuckDB file — re-validate then disambiguates via the fingerprint comparison
+    instead of an exact AT-VERSION reproduction."""
+    return _ducklake_catalog(conn) is not None
+
+
+def execute_as_of(conn: Any, sql: str, version: int) -> Any:
+    """Reproduce a query AS IT WOULD HAVE RUN at a past DuckLake snapshot, by pinning every
+    table to ``AT (VERSION => version)`` (sqlglot rewrite). Returns the QueryResult, or None on
+    failure. Requires :func:`as_of_supported`; pins ALL tables, so mixed-catalog queries (a
+    DuckLake table joined to a non-versioned one) aren't supported — caller falls back."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql, read="duckdb")
+        # DuckDB time-travel parses into Table.args["when"] (a HistoricalData AT/VERSION node).
+        when = sqlglot.parse_one(
+            f"SELECT 1 FROM _t AT (VERSION => {int(version)})", read="duckdb"
+        ).find(exp.Table).args["when"]
+        pinned = 0
+        for tbl in tree.find_all(exp.Table):
+            tbl.set("when", when.copy())
+            pinned += 1
+        if not pinned:
+            return None
+        return conn.execute("__asof__", tree.sql(dialect="duckdb"))
+    except Exception:
+        return None
