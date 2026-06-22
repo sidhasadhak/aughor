@@ -462,6 +462,7 @@ from aughor.routers import (  # noqa: E402
     llm,
     profile,
     orgsettings,
+    metastore,
 )
 
 app.include_router(system.router)
@@ -484,5 +485,6 @@ app.include_router(events.router)
 app.include_router(jobs.router)
 app.include_router(agents.router)
 app.include_router(llm.router)
+app.include_router(metastore.router)
 app.include_router(profile.router)
 app.include_router(orgsettings.router)
