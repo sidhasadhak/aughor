@@ -795,6 +795,89 @@ def _mislabeled_named_metric(finding_text: str, sql: str, vocab: dict) -> str | 
     return None
 
 
+def _alias_stripped_norm(sql: str) -> str:
+    """Normalized SQL with table qualifiers removed from columns, so a governed formula
+    signature `SUM(total_amount)` matches an alias-prefixed query `SUM(o.total_amount)` —
+    the alias-insensitivity check_metric_enforcement lacks (a correct prefixed query reads
+    as 'drift' to its raw substring match). Fail-open to the plain normalization."""
+    try:
+        import sqlglot as _sg
+        from sqlglot import exp as _sgx
+        tree = _sg.parse_one(sql, read="duckdb")
+        for c in tree.find_all(_sgx.Column):
+            c.set("table", None)
+        return _kbnorm(tree.sql(dialect="duckdb"))
+    except Exception:
+        return _kbnorm(sql)
+
+
+def _wrong_usage_idents(metric) -> list[str]:
+    """Column/table identifiers (snake_case) a metric's `wrong_usage_examples` warn against —
+    the positive drift signal (`line_total` for order-grain revenue). Underscore-bearing only,
+    so SQL keywords ('from', 'select') can't masquerade as a wrong column."""
+    out: list[str] = []
+    for ex in (getattr(metric, "wrong_usage_examples", []) or []):
+        for ident in re.findall(r"[a-z]+_[a-z0-9_]+", ex.lower()):
+            if ident not in out:
+                out.append(ident)
+    return out
+
+
+def _asserted_registered(finding_text: str, metrics: list) -> list:
+    """Registered metrics whose name/label the prose ASSERTS with a value (a number in the
+    same clause) — a passing mention ('revenue is worth watching') doesn't count. Inlined
+    targeting (not enforcement._targets) to keep the public-import boundary clean."""
+    clauses = [c for c in re.split(r"[.;\n]", (finding_text or "").lower()) if re.search(r"\d", c)]
+    if not clauses:
+        return []
+    out: list = []
+    for m in metrics:
+        name = (getattr(m, "name", "") or "").lower()
+        label = (getattr(m, "label", "") or "").lower()
+        words = [w for w in re.findall(r"[a-z]+", label) if len(w) >= 4]
+        for c in clauses:
+            cw = set(re.split(r"[^a-z0-9]+", c))
+            if (name and name in cw) or (label and label in c) or (words and all(w in c for w in words)):
+                out.append(m)
+                break
+    return out
+
+
+def _drifted_registered_metric(finding_text: str, sql: str) -> str | None:
+    """The deeper coherence layer under the alias↔claim signal: a finding that ASSERTS a
+    REGISTERED metric whose SQL structurally DRIFTS from that metric's governed formula —
+    caught even with no revealing result alias (the alias guard needs one). High-precision:
+    only registered metrics with a governed formula; the governed signature is checked
+    alias-insensitively (so a correct prefixed query is never flagged); and a hard reject
+    fires ONLY when a wrong-usage COLUMN the metric warns against is actually present (so a
+    merely differently-written correct query is never dropped). Returns a reason or None."""
+    if not finding_text or not sql:
+        return None
+    try:
+        from aughor.semantic.metrics import list_metrics
+        metrics = [m for m in list_metrics() if (getattr(m, "sql", "") or "").strip()]
+    except Exception as _e:
+        logger.debug("formula-drift: registry unavailable: %s", _e)
+        return None
+    asserted = _asserted_registered(finding_text, metrics)
+    if not asserted:
+        return None
+    s = _alias_stripped_norm(sql)
+    for m in asserted:
+        formula = _kbnorm(getattr(m, "sql", ""))
+        if not formula or formula in s:
+            continue                       # governed formula present (alias-insensitive) → no drift
+        # Governed formula ABSENT — corroborate with a wrong-usage column actually in the SQL.
+        for ident in _wrong_usage_idents(m):
+            n = _kbnorm(ident)
+            if len(n) >= 6 and n not in formula and n in s:
+                lbl = getattr(m, "label", "") or getattr(m, "name", "")
+                return (f"metric formula drift: the finding asserts {lbl} but the query uses a "
+                        f"non-governed form (references '{ident}'; governed: {getattr(m, 'sql', '')}). "
+                        "Recompute with the governed formula or relabel to what the SQL computes.")
+    return None
+
+
 @lru_cache(maxsize=64)
 def _industry_for_conn(conn_id: str) -> str:
     """The connection's declared/inferred industry, for industry-scoped metric vocabulary."""
@@ -877,6 +960,9 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
         nm = _mislabeled_named_metric(finding_text, sql, _metric_vocab_for(conn, industry))
         if nm:
             return (False, nm)
+        dr = _drifted_registered_metric(finding_text, sql)
+        if dr:
+            return (False, dr)
         return (True, "")
     except Exception:
         return (True, "")  # fail-open: a gate bug must not suppress real findings
