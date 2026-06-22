@@ -4,7 +4,8 @@ rejects a finding whose query is ALIASED as one metric while the prose asserts a
 matched to the connection's industry — so airline/manufacturing/SaaS are covered by their JSON."""
 from __future__ import annotations
 
-from aughor.explorer.agent import _mislabeled_named_metric, verify_insight
+from aughor.explorer.agent import verify_insight
+from aughor.explorer.metric_coherence import mislabeled_named_metric
 from aughor.profile.metric_kb import metric_vocabulary
 
 _RETAIL = "Retail / E-commerce"
@@ -33,30 +34,30 @@ def test_vocab_is_industry_scoped():
 # ── the guard: alias ≠ asserted metric ───────────────────────────────────────────
 
 def test_the_aov_as_roas_bug_is_flagged():
-    why = _mislabeled_named_metric("Email CRM has the highest ROAS at 6.23", _AOV_SQL, _vocab(_RETAIL))
+    why = mislabeled_named_metric("Email CRM has the highest ROAS at 6.23", _AOV_SQL, _vocab(_RETAIL))
     assert why and "mislabel" in why and "Average Order Value" in why
 
 
 def test_correctly_labelled_aov_passes():
-    assert _mislabeled_named_metric("Email CRM has the highest AOV at 6.23", _AOV_SQL, _vocab(_RETAIL)) is None
+    assert mislabeled_named_metric("Email CRM has the highest AOV at 6.23", _AOV_SQL, _vocab(_RETAIL)) is None
 
 
 def test_real_roas_aliased_roas_passes():
-    assert _mislabeled_named_metric("Email CRM ROAS at 6.2 leads", _REAL_ROAS_SQL, _vocab(_RETAIL)) is None
+    assert mislabeled_named_metric("Email CRM ROAS at 6.2 leads", _REAL_ROAS_SQL, _vocab(_RETAIL)) is None
 
 
 def test_passing_mention_without_a_value_passes():
-    assert _mislabeled_named_metric("AOV leads; ROAS would be worth checking", _AOV_SQL, _vocab(_RETAIL)) is None
+    assert mislabeled_named_metric("AOV leads; ROAS would be worth checking", _AOV_SQL, _vocab(_RETAIL)) is None
 
 
 def test_claim_naming_the_computed_metric_among_others_passes():
     # the SQL metric (AOV) IS among the asserted metrics → not a mislabel
-    assert _mislabeled_named_metric("AOV is 6.23 here and ROAS tracks it", _AOV_SQL, _vocab(_RETAIL)) is None
+    assert mislabeled_named_metric("AOV is 6.23 here and ROAS tracks it", _AOV_SQL, _vocab(_RETAIL)) is None
 
 
 def test_unaliased_or_unknown_metric_query_is_ignored():
-    assert _mislabeled_named_metric("ROAS was 6.23", "SELECT channel, SUM(rev) AS total FROM t GROUP BY channel", _vocab(_RETAIL)) is None
-    assert _mislabeled_named_metric("ROAS was 6.23", _AOV_SQL, {}) is None   # empty vocab → no-op
+    assert mislabeled_named_metric("ROAS was 6.23", "SELECT channel, SUM(rev) AS total FROM t GROUP BY channel", _vocab(_RETAIL)) is None
+    assert mislabeled_named_metric("ROAS was 6.23", _AOV_SQL, {}) is None   # empty vocab → no-op
 
 
 # ── wired into the pre-emission trust gate ───────────────────────────────────────
