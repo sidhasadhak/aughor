@@ -1009,8 +1009,8 @@ async def _stream_chat(
         semantic_layer_section = ""
         try:
             from aughor.tools.data_catalog import build_data_catalog
-            from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
-            linked_tables = list(_parse_schema_tables(schema).keys())
+            from aughor.tools.schema import parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
+            linked_tables = list(parse_schema_tables(schema).keys())
             if linked_tables:
                 # Add the date/time dimension first (before FK expansion + the
                 # 10-table cap) so a temporal question keeps it.
@@ -1236,7 +1236,7 @@ async def _stream_chat(
         _fanout_fix_hint = ""
         try:
             from aughor.sql.fanout import detect_fanout, defan, dimension_ratio_chasm
-            from aughor.tools.schema import _parse_schema_tables as _pst
+            from aughor.tools.schema import parse_schema_tables as _pst
             _pst_cols = _pst(_full_schema)
             _ff = detect_fanout(final_sql, _pst_cols, dialect=db.dialect) or \
                 dimension_ratio_chasm(final_sql, _pst_cols, dialect=db.dialect)
@@ -1859,8 +1859,8 @@ async def _stream_investigation(
         data_catalog = ""
         try:
             from aughor.tools.data_catalog import build_data_catalog
-            from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
-            linked_tables = list(_parse_schema_tables(schema).keys())
+            from aughor.tools.schema import parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
+            linked_tables = list(parse_schema_tables(schema).keys())
             if linked_tables:
                 # Complete the join paths BEFORE building the catalog (mirrors the /chat path):
                 # schema-linking picks ~4 tables by keyword, missing bridge/parent tables a join

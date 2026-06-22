@@ -813,7 +813,7 @@ class DuckDBConnection(DatabaseConnection):
 
     def build_intelligence(self) -> str:
         """Heavy path: profiles + ontology + enrichment. Call this from a background task, never on the hot path."""
-        from aughor.tools.schema import build_schema_context, _compute_join_map, _parse_schema_tables
+        from aughor.tools.schema import build_schema_context, compute_join_map, parse_schema_tables
         from aughor.tools.profile_cache import get_or_build_profiles
         from aughor.tools.profiler import render_profile_annotations
 
@@ -840,8 +840,8 @@ class DuckDBConnection(DatabaseConnection):
                     "AND table_type = 'BASE TABLE' ORDER BY table_name",
                 ).fetchall()
             ]
-        table_cols = _parse_schema_tables(base)
-        jmap = _compute_join_map(table_cols)
+        table_cols = parse_schema_tables(base)
+        jmap = compute_join_map(table_cols)
         fk_hints: dict[str, set[str]] = {t: set() for t in tables}
         for j in jmap.get("joins", []):
             fk_hints.setdefault(j["t1"], set()).add(j["c1"])
@@ -1179,9 +1179,9 @@ class PostgresConnection(DatabaseConnection):
                 tables = [r[0] for r in _tcur.fetchall()]
         except Exception:
             tables = list({table for table, _, _ in rows})  # fallback
-        from aughor.tools.schema import _parse_schema_tables, _compute_join_map
-        table_cols_map = _parse_schema_tables(enriched)
-        jmap = _compute_join_map(table_cols_map)
+        from aughor.tools.schema import parse_schema_tables, compute_join_map
+        table_cols_map = parse_schema_tables(enriched)
+        jmap = compute_join_map(table_cols_map)
         fk_hints: dict[str, set[str]] = {t: set() for t in tables}
         for j in jmap.get("joins", []):
             fk_hints.setdefault(j["t1"], set()).add(j["c1"])

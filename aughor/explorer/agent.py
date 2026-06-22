@@ -833,8 +833,8 @@ class SchemaExplorer:
                     lines.append(f"  {col_p.column}  {col_p.dtype}")
             schema_str = "\n".join(lines)
 
-            from aughor.tools.schema import _parse_schema_tables, _compute_join_map
-            jmap = _compute_join_map(_parse_schema_tables(schema_str))
+            from aughor.tools.schema import parse_schema_tables, compute_join_map
+            jmap = compute_join_map(parse_schema_tables(schema_str))
 
             return tp, cp, jmap
 

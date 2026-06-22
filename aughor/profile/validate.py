@@ -400,8 +400,8 @@ def audit_profile(profile, conn, schema: str) -> dict[str, str]:
     (the Briefing just shows one fewer explainer chart). Never raises."""
     failures: dict[str, str] = {}
     try:
-        from aughor.tools.schema import _parse_schema_tables
-        table_cols = _parse_schema_tables(schema)
+        from aughor.tools.schema import parse_schema_tables
+        table_cols = parse_schema_tables(schema)
     except Exception:
         table_cols = {}
     for m in getattr(profile, "north_star_metrics", []) or []:

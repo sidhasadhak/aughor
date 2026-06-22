@@ -149,10 +149,10 @@ def _uniqueness_oracle_for(conn):
         return None
     try:
         from aughor.profile.validate import make_uniqueness_oracle
-        from aughor.tools.schema import _parse_schema_tables
+        from aughor.tools.schema import parse_schema_tables
         tc = getattr(conn, "_insight_table_cols", None)
         if tc is None:
-            tc = _parse_schema_tables(conn.get_schema())
+            tc = parse_schema_tables(conn.get_schema())
             if hasattr(conn, "__dict__"):
                 conn._insight_table_cols = tc
         return make_uniqueness_oracle(conn, tc)
@@ -196,7 +196,7 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
         return f"avg-of-ratios: {ratio[:160]}"
 
     # Build the oracle FIRST — it parses + caches conn._insight_table_cols, so the fan-out
-    # guards reuse that schema parse (no second private import of _parse_schema_tables).
+    # guards reuse that schema parse (no second private import of parse_schema_tables).
     oracle = _uniqueness_oracle_for(conn)
     table_cols = getattr(conn, "_insight_table_cols", None) or {}
 

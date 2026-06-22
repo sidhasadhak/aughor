@@ -28,7 +28,7 @@ from aughor.routers._shared import (
     invalidate_schema_cache as _invalidate_schema_cache,
     kickoff_exploration as _kickoff_exploration,
 )
-from aughor.tools.schema import _norm_type
+from aughor.tools.schema import norm_type
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["connections"])
@@ -253,12 +253,12 @@ async def connection_schema_profile(conn_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
-        from aughor.tools.schema import _parse_schema_tables
+        from aughor.tools.schema import parse_schema_tables
         from aughor.tools.profile_cache import compute_schema_fingerprint, load_profiles
 
         def _work():
             schema_str = _get_schema_cached(conn_id, db)
-            table_cols = _parse_schema_tables(schema_str)
+            table_cols = parse_schema_tables(schema_str)
             col_counts = {t: len(cols) for t, cols in table_cols.items()}
             fingerprint = compute_schema_fingerprint(col_counts)
             result = load_profiles(conn_id, fingerprint)
@@ -289,14 +289,14 @@ async def connection_freshness(conn_id: str):
         raise HTTPException(status_code=404, detail="Connection not found")
 
     def _work():
-        from aughor.tools.schema import _parse_schema_tables
+        from aughor.tools.schema import parse_schema_tables
         _DATE_PAT = re.compile(
             r"(_at|_date|_time|_ts|timestamp|created|updated|modified|inserted)$",
             re.IGNORECASE,
         )
         try:
             schema_str = db.get_schema()
-            table_cols = _parse_schema_tables(schema_str)
+            table_cols = parse_schema_tables(schema_str)
         except Exception:
             db.close()
             return {"freshness": None, "source": None}
@@ -390,7 +390,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                 try:
                     columns, rows, _ = db.raw_execute(f"DESCRIBE {ref}")
                     if rows:
-                        cols = [{"name": r[0], "type": _norm_type(str(r[1]))} for r in rows]
+                        cols = [{"name": r[0], "type": norm_type(str(r[1]))} for r in rows]
                         return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
@@ -398,7 +398,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                 try:
                     columns, rows, _ = db.raw_execute(f"PRAGMA table_info({ref})")
                     if rows:
-                        cols = [{"name": r[1], "type": _norm_type(str(r[2]))} for r in rows]
+                        cols = [{"name": r[1], "type": norm_type(str(r[2]))} for r in rows]
                         return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
@@ -418,7 +418,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         f"WHERE {where} ORDER BY ordinal_position"
                     )
                     if rows:
-                        cols = [{"name": r[0], "type": _norm_type(str(r[1]) if r[1] is not None else "")} for r in rows]
+                        cols = [{"name": r[0], "type": norm_type(str(r[1]) if r[1] is not None else "")} for r in rows]
                         if any(c["type"] for c in cols):
                             return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
@@ -433,7 +433,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         f"WHERE {where} ORDER BY ordinal_position"
                     )
                     if rows:
-                        cols = [{"name": r[0], "type": _norm_type(str(r[1]) if r[1] is not None else "")} for r in rows]
+                        cols = [{"name": r[0], "type": norm_type(str(r[1]) if r[1] is not None else "")} for r in rows]
                         if any(c["type"] for c in cols):
                             return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
@@ -441,7 +441,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                 # 4. Final fallback: empty SELECT — use cursor description to recover types.
                 try:
                     columns, rows, types = db.raw_execute(f"SELECT * FROM {ref} LIMIT 0")
-                    cols = [{"name": c, "type": _norm_type(t) or ""} for c, t in zip(columns, types)]
+                    cols = [{"name": c, "type": norm_type(t) or ""} for c, t in zip(columns, types)]
                     return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
@@ -457,7 +457,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         f"WHERE {where} ORDER BY ordinal_position",
                     )
                     if res.rows:
-                        cols = [{"name": r[0], "type": _norm_type(str(r[1]))} for r in res.rows]
+                        cols = [{"name": r[0], "type": norm_type(str(r[1]))} for r in res.rows]
                         return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass

@@ -279,11 +279,11 @@ def _build_grounded_schema(full_schema: str, metric_table: str, dimensions, date
     table, FK-joinable neighbours, and temporal dimension tables, then appends the
     DETECTED JOIN PATHS hints (which _filter_schema strips) — what the /chat path does."""
     try:
-        from aughor.tools.schema import _parse_schema_tables
+        from aughor.tools.schema import parse_schema_tables
         # If the schema isn't TABLE:-format (e.g. an already-scoped Data Catalog from the
         # /investigate route), don't re-filter it — that would drop the FK-neighbour tables
         # the route already added. The route owns scoping in that case.
-        if not _parse_schema_tables(full_schema):
+        if not parse_schema_tables(full_schema):
             return full_schema
     except Exception:
         pass
@@ -570,10 +570,10 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
     if schema:
         try:
             from aughor.sql.fanout import detect_fanout, defan, dimension_ratio_chasm
-            from aughor.tools.schema import _parse_schema_tables
+            from aughor.tools.schema import parse_schema_tables
             _dialect = getattr(conn, "dialect", "duckdb")
             _tc = {t: (list(c.keys()) if isinstance(c, dict) else c)
-                   for t, c in _parse_schema_tables(schema).items()}
+                   for t, c in parse_schema_tables(schema).items()}
             _ff = detect_fanout(sql, _tc, dialect=_dialect) or \
                 dimension_ratio_chasm(sql, _tc, dialect=_dialect)
             if _ff:

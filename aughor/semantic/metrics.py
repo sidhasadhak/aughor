@@ -256,8 +256,8 @@ def _schema_tables_and_columns(schema_text: str) -> tuple[set[str], set[str]]:
     text — a metric/description that merely mentions a column name in prose must
     not count as that column being present."""
     try:
-        from aughor.tools.schema import _parse_schema_tables
-        parsed = _parse_schema_tables(schema_text)
+        from aughor.tools.schema import parse_schema_tables
+        parsed = parse_schema_tables(schema_text)
         tables = {t.split(".")[-1].lower() for t in parsed}
         cols = {c.lower() for cols in parsed.values() for c in cols}
         return tables, cols

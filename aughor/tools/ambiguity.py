@@ -63,7 +63,7 @@ def detect_invalid_joins(sql: str, schema_context: str) -> list[JoinWarning]:
     Scan *sql* for table pairs that appear in the same query but have no
     detected join path in the schema.
 
-    Uses the `no_join` list from _compute_join_map — if both tables from a
+    Uses the `no_join` list from compute_join_map — if both tables from a
     known-unconnected pair appear in the SQL, that is almost certainly a
     hallucinated join.  Returns an empty list for single-table queries or
     when all pairs are joinable.
@@ -72,9 +72,9 @@ def detect_invalid_joins(sql: str, schema_context: str) -> list[JoinWarning]:
     if len(sql_tables) < 2:
         return []
 
-    from aughor.tools.schema import _parse_schema_tables, _compute_join_map
-    table_cols = _parse_schema_tables(schema_context)
-    jmap = _compute_join_map(table_cols)
+    from aughor.tools.schema import parse_schema_tables, compute_join_map
+    table_cols = parse_schema_tables(schema_context)
+    jmap = compute_join_map(table_cols)
 
     warnings: list[JoinWarning] = []
     for t1, t2 in jmap.get("no_join", []):

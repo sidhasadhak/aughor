@@ -142,6 +142,20 @@ def compute_join_map(table_cols: dict[str, list[str]]) -> dict:
     return _compute_join_map(table_cols)
 
 
+def norm_type(t: str) -> str:
+    """Public alias for the column-type normaliser (stable cross-module interface)."""
+    return _norm_type(t)
+
+
+def fk_root(col: str) -> str | None:
+    """Public alias for the FK-root extractor (stable cross-module interface)."""
+    return _fk_root(col)
+
+
+# Public alias for the schema-block section-stop matcher (stable cross-module interface).
+SECTION_STOP = _SECTION_STOP
+
+
 def _table_base(t: str) -> str:
     """Bare table name for owner matching: last path segment, lowercased, with
     dim_/fact_/_dim wrappers and a trailing plural 's' removed."""
