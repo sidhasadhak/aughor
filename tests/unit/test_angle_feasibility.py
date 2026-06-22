@@ -1,12 +1,12 @@
 """Column-feasibility gate (#1) — the explorer must not pursue a coverage angle
 whose required column class is absent from the domain, or the generator stubs the
 missing dimension with a constant literal (the `'Unknown' AS signup_source` channel
-hallucination). See agent._angle_feasible and the Phase-8 column-feasibility gate.
+hallucination). See feasibility.angle_feasible and the Phase-8 column-feasibility gate.
 
-Parallels the temporal-feasibility gate (_is_temporal_angle): same idea, but for
-categorical column requirements instead of a date/timestamp.
+Parallels the temporal-feasibility gate (feasibility.is_temporal_angle): same idea,
+but for categorical column requirements instead of a date/timestamp.
 """
-from aughor.explorer.agent import _angle_feasible
+from aughor.explorer.feasibility import angle_feasible as _angle_feasible
 
 
 def test_channel_angle_needs_a_channel_column():

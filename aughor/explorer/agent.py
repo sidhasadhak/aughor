@@ -62,6 +62,12 @@ from aughor.explorer.scope import (
     tables_in_sql,
     crosses_datasets,
 )
+from aughor.explorer.feasibility import (
+    is_temporal_angle,
+    angle_feasible,
+    has_temporal_sql,
+    has_vacuous_temporal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -180,55 +186,6 @@ def _extract_dead_refs(error: str) -> set:
     return out
 
 
-# Coverage angles that inherently require a date/timestamp (aging, over-time, cohorts).
-# Offering one on a domain with NO real timestamp forces the generator to invent a date
-# column — the `invoice_date`-on-a-dateless-`invoices`-table hallucination. Substring-matched
-# so checklist wording can vary. See _phase8 temporal-feasibility gate (#1).
-_TEMPORAL_ANGLE_RE = re.compile(
-    r"(trend|season|retention|lifecycle|cohort|churn|aging|recency|lead.?time|"
-    r"growth|velocity|momentum|over.?time|time.?series|tenure)",
-    re.I,
-)
-
-
-def _is_temporal_angle(angle: str) -> bool:
-    """True when a coverage angle inherently needs a date/timestamp column."""
-    return bool(_TEMPORAL_ANGLE_RE.search(angle or ""))
-
-
-# Coverage angles that need a SPECIFIC KIND of column. Offering one when the
-# domain has no matching column forces the generator to invent the dimension —
-# the `'Unknown' AS signup_source` channel hallucination. Substring-matched on
-# both the angle name (keys) and the available column names (patterns), so
-# checklist/column wording can vary. See _phase8 column-feasibility gate (#1).
-_ANGLE_REQUIRED_COLS: dict[str, "re.Pattern[str]"] = {
-    "channel_mix":          re.compile(r"channel|source|medium|utm|referr|acqui", re.I),
-    "attribution":          re.compile(r"channel|source|medium|utm|referr|attribut|touchpoint|campaign", re.I),
-    "campaign_roi":         re.compile(r"campaign|utm|ad_|adset|spend|budget|cost", re.I),
-    "conversion":           re.compile(r"conver|funnel|stage|status|step|visit|session|signup|lead", re.I),
-    "experiments":          re.compile(r"experiment|variant|\bab_|test_group|bucket|treatment|cohort_group", re.I),
-    "payment_behavior":     re.compile(r"payment|pay_|tender|method|installment|card|gateway|wallet", re.I),
-    "refund_rate":          re.compile(r"refund|return|chargeback|cancel|reversal|dispute", re.I),
-    "receivables":          re.compile(r"invoice|due|outstanding|receivable|balance|paid|payment_date|aging", re.I),
-    "supplier_performance": re.compile(r"supplier|vendor|partner|on_time|delay|fulfil|deliver", re.I),
-    "inventory_health":     re.compile(r"invent|stock|sku|quantity|on_hand|reorder|warehouse|backorder", re.I),
-    "lead_times":           re.compile(r"lead.?time|deliver|ship|fulfil|expected|actual.?date|dispatch", re.I),
-    "fulfillment":          re.compile(r"fulfil|ship|deliver|dispatch|status|tracking|warehouse", re.I),
-}
-
-
-def _angle_feasible(angle: str, columns: "set[str]") -> bool:
-    """True unless the angle needs a column class entirely absent from the domain.
-
-    Conservative: an angle with no specific column requirement is always feasible,
-    and a present-but-oddly-named column is matched by the broad patterns — so a
-    false drop (skipping a real angle) is rare, and far cheaper than a fabrication."""
-    pat = _ANGLE_REQUIRED_COLS.get((angle or "").lower())
-    if pat is None:
-        return True
-    return any(pat.search(c) for c in columns)
-
-
 def _query_columns(sql: str) -> set:
     """Lowercased bare column names referenced by a SQL string (best-effort, via sqlglot).
     Used to tell a meaning-changing repair (one column SUBSTITUTED for another) apart from a
@@ -240,44 +197,6 @@ def _query_columns(sql: str) -> set:
     except Exception:
         return set()
     return {(c.name or "").lower() for c in tree.find_all(exp.Column) if c.name}
-
-
-# SQL that computes OVER TIME — a date/time function, INTERVAL, or a date literal. Used to
-# catch a repair that silently DE-TEMPORALISES a time-based question (the invoice case: invoice
-# AGE via DATE_DIFF on a date + a date-range filter, "repaired" into a plain payment-delay
-# column). Deterministic and high-precision — no LLM judgement (an LLM rated that drift faithful).
-_TEMPORAL_SQL_RE = re.compile(
-    r"\b(date_?diff|datediff|date_?trunc|date_?part|date_?add|date_?sub|extract|strftime|"
-    r"julian_?day|current_date|current_timestamp|interval)\b"
-    r"|'\d{4}-\d{2}-\d{2}",   # a date literal like '2025-05-17'
-    re.I,
-)
-
-
-def _has_temporal_sql(sql: str) -> bool:
-    """True when SQL computes over time (date/time function, INTERVAL, or a date literal)."""
-    return bool(_TEMPORAL_SQL_RE.search(sql or ""))
-
-
-# A date-difference whose two date operands are IDENTICAL — DATE_DIFF(CURRENT_DATE,
-# CURRENT_DATE) or DATE_DIFF(x.c, x.c) — is always 0. A repair on a dateless table that
-# can't find a real date column sometimes fakes the time computation this way, keeping a
-# temporal *shape* while answering nothing (so _has_temporal_sql alone won't flag it). The
-# operand class excludes parens, so nested-call operands simply don't match (no false flag).
-_VACUOUS_DATEDIFF_RE = re.compile(
-    r"date_?diff\s*\(\s*(?:'[^']*'\s*,\s*)?(?P<a>[^,()]+?)\s*,\s*(?P<b>[^,()]+?)\s*\)",
-    re.I,
-)
-
-
-def _has_vacuous_temporal(sql: str) -> bool:
-    """True when a date-difference compares a value to itself → a constant-0 'time' metric."""
-    for m in _VACUOUS_DATEDIFF_RE.finditer(sql or ""):
-        a = re.sub(r"\s+", "", m.group("a")).lower()
-        b = re.sub(r"\s+", "", m.group("b")).lower()
-        if a == b:
-            return True
-    return False
 
 
 def _ontology_skip_note(last_build: Optional[dict]) -> str:
@@ -2075,7 +1994,7 @@ class SchemaExplorer:
                 dateless_tables = sorted(t for t in domain_tables if not _tbl_ts(t))
                 domain_has_dates = any(_tbl_ts(t) for t in domain_tables)
                 if not domain_has_dates:
-                    uncovered = [a for a in uncovered if not _is_temporal_angle(a)] or [
+                    uncovered = [a for a in uncovered if not is_temporal_angle(a)] or [
                         "distribution", "composition", "ranking", "anomalies"]
                     temporal_guard_block = (
                         "NO TEMPORAL DATA: this domain has NO date or timestamp column. Do NOT use "
@@ -2149,7 +2068,7 @@ class SchemaExplorer:
                 # the missing dimension with a constant literal. Keep at least one
                 # angle so the loop never starves.
                 if domain_cols:
-                    _feasible = [a for a in uncovered if _angle_feasible(a, domain_cols)]
+                    _feasible = [a for a in uncovered if angle_feasible(a, domain_cols)]
                     if _feasible and len(_feasible) < len(uncovered):
                         logger.info(
                             "[explorer:%s] Phase 8: %s — dropping infeasible angles %s (required column absent)",
@@ -2708,8 +2627,8 @@ class SchemaExplorer:
                 # than none). No LLM judgement: an LLM rated this exact drift "faithful".
                 if sql != nq.sql:
                     _removed = _query_columns(nq.sql) - _query_columns(sql)
-                    _detemporalised = bool(_removed) and _has_temporal_sql(nq.sql) and not _has_temporal_sql(sql)
-                    _vacuous = _has_vacuous_temporal(sql)
+                    _detemporalised = bool(_removed) and has_temporal_sql(nq.sql) and not has_temporal_sql(sql)
+                    _vacuous = has_vacuous_temporal(sql)
                     if _detemporalised or _vacuous:
                         logger.info(
                             "[explorer:%s] Phase 8: %s/%s — dropping finding; repair %s a time-based "

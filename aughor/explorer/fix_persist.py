@@ -35,9 +35,8 @@ from aughor.explorer.grounding import verify_finding, numeric_cells_block
 from aughor.explorer.agent import (
     _semantic_metric_drift,
     _query_columns,
-    _has_temporal_sql,
-    _has_vacuous_temporal,
 )
+from aughor.explorer.feasibility import has_temporal_sql, has_vacuous_temporal
 from aughor.explorer.verify import is_degenerate_result, has_fabricated_dimension, clamp_novelty
 
 logger = logging.getLogger(__name__)
@@ -156,9 +155,9 @@ def persist_fixed_finding(
     # Guards → flags. A flagged finding is still stored (user effort), marked unverified.
     flags: list[str] = []
     removed = _query_columns(original_sql) - _query_columns(fixed_sql)
-    if removed and _has_temporal_sql(original_sql) and not _has_temporal_sql(fixed_sql):
+    if removed and has_temporal_sql(original_sql) and not has_temporal_sql(fixed_sql):
         flags.append("the repair removed all time logic from a time-based question (de-temporalised)")
-    if _has_vacuous_temporal(fixed_sql):
+    if has_vacuous_temporal(fixed_sql):
         flags.append("the repair reduced the time computation to a constant (date difference of identical dates)")
     if _semantic_metric_drift(original_sql, fixed_sql):
         flags.append("the repair swapped the metric for a different one (e.g. revenue↔cost) — it changed WHAT is measured")
