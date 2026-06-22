@@ -102,6 +102,7 @@ def build_dossier(
     state: dict,
     generated_at: str,
     data_fingerprint: Optional[str] = None,
+    data_version: Optional[str] = None,
 ) -> dict:
     """Assemble the dossier for one finding from inputs already in hand at emit.
 
@@ -134,6 +135,10 @@ def build_dossier(
         # the claim stands on (joins verified, NULL semantics, lifecycle, shape).
         "structural_ctx": _structural_ctx(state or {}, tables),
         # Freshness anchors — Phase 4 (re-validate) compares live data against these.
+        # ``data_fingerprint`` pins the SCHEMA shape; ``data_version`` pins the DATA
+        # version this finding ran against (DuckLake snapshot id / portable fingerprint)
+        # so re-validate can tell "the data moved" apart from "the finding was wrong".
         "generated_at": generated_at,
         "data_fingerprint": data_fingerprint,
+        "data_version": data_version,
     }

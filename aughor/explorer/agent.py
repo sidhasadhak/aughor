@@ -3029,6 +3029,17 @@ class SchemaExplorer:
                 _dossier = None
                 try:
                     from aughor.explorer.dossier import build_dossier
+                    _ftables = tables_in_sql(sql)
+                    # Snapshot-pin the finding to the data version it ran against (opt-in),
+                    # so a later drill / re-validate can reproduce it and tell a moved
+                    # dataset apart from a mis-derived finding. Fail-open — never blocks emit.
+                    _data_version = None
+                    try:
+                        from aughor.db.snapshot import snapshot_receipts_enabled, data_version
+                        if snapshot_receipts_enabled():
+                            _data_version = data_version(self._conn, _ftables)
+                    except Exception:
+                        logger.debug("data-version pin failed (non-fatal)", exc_info=True)
                     _dossier = build_dossier(
                         question=nq.question,
                         sql=sql,
@@ -3036,10 +3047,11 @@ class SchemaExplorer:
                         rationale=getattr(interp, "rationale", "") or "",
                         rows=rows,
                         grounding=_g,
-                        tables=tables_in_sql(sql),
+                        tables=_ftables,
                         state=self._state,
                         generated_at=insight["generated_at"],
                         data_fingerprint=self._state.get("schema_fingerprint"),
+                        data_version=_data_version,
                     )
                 except Exception:
                     logger.debug("dossier build failed (non-fatal)", exc_info=True)

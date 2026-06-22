@@ -67,6 +67,40 @@ def revalidate_finding(dossier: dict, conn) -> dict:
     fresh_cells = numeric_cells_block(rows)
     g = verify_finding(finding, rows)
     status = "confirmed" if g.grounded else "drifted"
+    cells_changed = fresh_cells != stored_cells
+
+    # Snapshot-pinned attribution: compare the data version this finding ran against (pinned
+    # in the dossier) with the data version NOW. This is what tells a moved dataset apart from
+    # a mis-derived finding — the ambiguity a bare cells_changed flag can't resolve.
+    pinned_version = dossier.get("data_version")
+    current_version = None
+    data_moved = None
+    if pinned_version:
+        try:
+            from aughor.db.snapshot import data_version
+            from aughor.explorer.scope import tables_in_sql
+            current_version = data_version(conn, tables_in_sql(sql))
+            if current_version is not None:
+                data_moved = (current_version != pinned_version)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "snapshot data-version comparison is best-effort", counter="snapshot.revalidate")
+
+    if not cells_changed:
+        interpretation = "stable — the finding's numbers are unchanged"
+    elif data_moved is True:
+        interpretation = (
+            "the underlying data has moved since this finding was computed (as of "
+            f"{dossier.get('generated_at') or 'emit'}); the change reflects new data, not a mis-derivation"
+        )
+    elif data_moved is False:
+        interpretation = (
+            "the result changed with NO change to the underlying data — the finding's SQL is "
+            "non-deterministic or was mis-derived (a trust issue, not a data update)"
+        )
+    else:
+        interpretation = "the numbers changed; no data-version pin was available to attribute the cause"
+
     return {
         "status": status,
         "grounded": g.grounded,
@@ -74,8 +108,13 @@ def revalidate_finding(dossier: dict, conn) -> dict:
         "ungrounded": g.ungrounded,
         "stored_cells": stored_cells,
         "fresh_cells": fresh_cells,
-        "cells_changed": fresh_cells != stored_cells,
+        "cells_changed": cells_changed,
         "row_count": res.row_count,
+        # snapshot-pinned attribution (None when the finding predates pinning / was off)
+        "pinned_version": pinned_version,
+        "current_version": current_version,
+        "data_moved": data_moved,
+        "interpretation": interpretation,
     }
 
 
