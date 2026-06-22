@@ -7,7 +7,7 @@ The window must anchor on the trailing edge of *activity* (measure-bearing table
 
 See docs/ADAPTIVE_TEMPORAL_SCOPE.md §3.
 """
-from aughor.explorer.agent import _role_aware_time_window
+from aughor.explorer.windowing import role_aware_time_window as _role_aware_time_window
 
 
 def _tp(**ranges):
@@ -81,7 +81,7 @@ def test_no_dated_tables_returns_none():
 
 
 def test_anchor_activity_picks_latest_measure_bearing_table():
-    from aughor.explorer.agent import _anchor_activity
+    from aughor.explorer.windowing import anchor_activity as _anchor_activity
     tp = _tp(sales=("2019-01-01", "2023-06-30"), orders=("2019-01-01", "2023-09-30"),
              date_dim=("2015-01-01", "2025-12-31"))
     cp = _cp(sales=True, orders=True, date_dim=False)
@@ -90,7 +90,7 @@ def test_anchor_activity_picks_latest_measure_bearing_table():
 
 
 def test_days_between_helper():
-    from aughor.explorer.agent import _days_between
+    from aughor.explorer.windowing import days_between as _days_between
     assert _days_between("2025-11-17", "2026-05-17") == 181
     assert _days_between("2026-05-17", "2025-11-17") == 181   # absolute
     assert _days_between("bad", "2026-01-01") == 0            # parse-safe
@@ -108,7 +108,7 @@ def _tpr(**spec):
 
 
 def test_core_fact_wins_recency_tie():
-    from aughor.explorer.agent import _anchor_activity
+    from aughor.explorer.windowing import anchor_activity as _anchor_activity
     tp = _tpr(campaigns=("2025-11-01", "2026-05-17", 5_000),
               order_items=("2025-05-17", "2026-05-17", 6_437_071))
     cp = _cp(campaigns=True, order_items=True)
@@ -117,7 +117,7 @@ def test_core_fact_wins_recency_tie():
 
 
 def test_slightly_fresher_peripheral_within_tolerance_loses_to_core_fact():
-    from aughor.explorer.agent import _anchor_activity
+    from aughor.explorer.windowing import anchor_activity as _anchor_activity
     # peripheral table 10 days fresher (within the 45-day tolerance) but tiny
     tp = _tpr(campaigns=("2025-11-01", "2026-05-27", 5_000),
               order_items=("2025-05-17", "2026-05-17", 6_000_000))
@@ -127,7 +127,7 @@ def test_slightly_fresher_peripheral_within_tolerance_loses_to_core_fact():
 
 
 def test_clearly_fresher_table_outside_tolerance_sets_the_edge():
-    from aughor.explorer.agent import _anchor_activity
+    from aughor.explorer.windowing import anchor_activity as _anchor_activity
     # a table 6 months fresher legitimately defines the trailing edge, tiny or not
     tp = _tpr(old_fact=("2019-01-01", "2023-06-30", 9_000_000),
               new_fact=("2024-01-01", "2024-06-30", 1_000))
@@ -137,7 +137,7 @@ def test_clearly_fresher_table_outside_tolerance_sets_the_edge():
 
 
 def test_calendar_spine_detected_by_name():
-    from aughor.explorer.agent import _is_calendar_spine
+    from aughor.explorer.windowing import _is_calendar_spine
     assert _is_calendar_spine("main.date_dim", {"amount": {"semantic_type": "measure"}}) is True
     assert _is_calendar_spine("dim_date", None) is True
     assert _is_calendar_spine("calendar", None) is True
@@ -145,7 +145,7 @@ def test_calendar_spine_detected_by_name():
 
 
 def test_calendar_spine_detected_by_datepart_shape():
-    from aughor.explorer.agent import _is_calendar_spine
+    from aughor.explorer.windowing import _is_calendar_spine
     # a non-obviously-named table whose "measures" are all date-parts (mis-tagged)
     cols = {f"d_{p}": {"semantic_type": "measure"}
             for p in ("year", "moy", "dom", "qoy", "week_seq")}
@@ -156,7 +156,7 @@ def test_calendar_spine_detected_by_datepart_shape():
 
 
 def test_mistagged_calendar_excluded_from_anchor():
-    from aughor.explorer.agent import _anchor_activity
+    from aughor.explorer.windowing import anchor_activity as _anchor_activity
     # date_dim runs to 2100 with date-part columns mis-tagged as measures — must NOT anchor.
     tp = _tpr(**{"main.date_dim": ("2015-01-01", "2100-01-01", 73_049),
                  "main.item":     ("2000-01-01", "2001-10-27", 18_000)})

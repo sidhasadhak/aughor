@@ -15,9 +15,9 @@ Three deterministic fixes under test:
 """
 from types import SimpleNamespace
 
-from aughor.explorer.agent import (
-    _role_aware_time_window,
-    _window_for_tables,
+from aughor.explorer.windowing import (
+    role_aware_time_window as _role_aware_time_window,
+    window_for_tables as _window_for_tables,
     _table_min,
 )
 from aughor.agent.investigate import (
