@@ -19,3 +19,7 @@ class PlaybookEntry(BaseModel):
     evidence_sources: list[str] = Field(default_factory=list)  # inv_ids where this worked
     historical_success_rate: float = 0.0        # 0–1; updated by outcomes
     status: Literal["active", "deprecated", "draft"] = "draft"
+    # ── Governed-Dive provenance (set by the store; do not hand-edit) ──────────
+    version: int = 1                            # bumps each time the play's CONTENT changes
+    receipt: str = ""                           # content fingerprint pinning THIS version
+    updated_at: str = ""                        # ISO timestamp of the last content change

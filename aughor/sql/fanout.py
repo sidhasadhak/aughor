@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from aughor.tools.schema import _fk_root
+from aughor.tools.schema import fk_root
 
 
 @dataclass
@@ -73,10 +73,10 @@ class FanoutFinding:
 
 
 def _table_fk_roots(cols: list[str]) -> set[str]:
-    """FK roots present on a table's columns (date/time keys already excluded by _fk_root)."""
+    """FK roots present on a table's columns (date/time keys already excluded by fk_root)."""
     roots: set[str] = set()
     for c in cols:
-        r = _fk_root(c)
+        r = fk_root(c)
         if r:
             roots.add(r)
     return roots
@@ -87,7 +87,7 @@ def _fk_col_for_root(cols: list[str], root: str) -> str | None:
     i.e. the key this table joins to the hub on. Used to ask a cardinality oracle
     whether the table is 1:1 on that key."""
     for c in cols:
-        if _fk_root(c) == root:
+        if fk_root(c) == root:
             return c
     return None
 

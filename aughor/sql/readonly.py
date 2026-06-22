@@ -1,6 +1,6 @@
 """AST-based read-only / mutation detection for LLM-emitted SQL.
 
-The execution gate (`security/safety.py` → `db/connection.py:_security_pre`) was
+The execution gate (`security/safety.py` → `db/connection.py:security_pre`) was
 regex + first-token only. That passes exactly what an AST catches:
 
   * `SELECT lo_export('/tmp/x', 1)` / `SELECT setval('s', 1)` / `SELECT nextval('s')`

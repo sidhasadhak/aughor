@@ -15,6 +15,10 @@ import {
   rebuildOntology,
   getDuplicateEntities,
   mergeOntologyEntities,
+  getLearnedSkills,
+  useLearnedSkill,
+  deleteLearnedSkill,
+  getAutonomy,
   type OntologyGraph,
   type OntologyEntity,
   type OntologyAction,
@@ -22,6 +26,7 @@ import {
   type LifecycleCount,
   type ConnectionSettings,
   type DuplicateCluster,
+  type AutonomyLevel,
 } from "@/lib/api";
 import { OntologyCanvas } from "./OntologyCanvas";
 import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
@@ -924,6 +929,101 @@ function DuplicatesDrawer({ connId, onClose, onMerged }: {
 }
 
 
+// ── Learned-skills drawer (R8 Agent-Skills) ───────────────────────────────────
+// Lists the skills crystallized from finished investigations (origin='learned'
+// OntologyActions that the planner already reuses via the ontology overlay). A human can
+// see each skill's reusable SQL + reuse count, "Use" it (records a use → feeds autonomy),
+// or delete it. The connection's EARNED autonomy level is shown at the top.
+const _AUTONOMY_TONE = ["text-zinc-400", "text-sky-300", "text-violet-300", "text-emerald-300"];
+
+function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void }) {
+  const [skills,   setSkills]   = useState<OntologyAction[] | null>(null);
+  const [autonomy, setAutonomy] = useState<AutonomyLevel | null>(null);
+  const [loading,  setLoading]  = useState(true);
+  const [busy,     setBusy]     = useState<string | null>(null);
+  const [error,    setError]    = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true); setError(null);
+    Promise.all([getLearnedSkills(connId), getAutonomy(connId)])
+      .then(([s, a]) => { setSkills(s); setAutonomy(a); })
+      .catch(() => setError("Couldn't load learned skills."))
+      .finally(() => setLoading(false));
+  }, [connId]);
+  useEffect(() => { load(); }, [load]);
+
+  const doUse = async (id: string) => {
+    setBusy(id); setError(null);
+    try { await useLearnedSkill(id, connId); }
+    catch (e) { setError((e as Error).message || "Use failed"); }
+    finally { setBusy(null); load(); }   // always clear busy (else later actions stay disabled)
+  };
+  const doDelete = async (id: string) => {
+    setBusy(id); setError(null);
+    try { await deleteLearnedSkill(id, connId); }
+    catch (e) { setError((e as Error).message || "Delete failed"); }
+    finally { setBusy(null); load(); }
+  };
+
+  return (
+    <div className="w-[340px] shrink-0 border-l border-zinc-700/70 bg-zinc-900/40 flex flex-col overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-700/70">
+        <p className="text-xs font-semibold text-zinc-300">Learned skills</p>
+        <button onClick={onClose} className="ml-auto text-zinc-500 hover:text-zinc-300 transition">
+          <CloseIcon label="Close" size="small" />
+        </button>
+      </div>
+      {autonomy && (
+        <div className="px-3 py-2 border-b border-zinc-800/70 text-[10px] text-zinc-500">
+          autonomy{" "}
+          <span className={cn("font-medium", _AUTONOMY_TONE[autonomy.level] ?? "text-zinc-400")}>
+            L{autonomy.level} · {autonomy.label}
+          </span>
+          {autonomy.reason && <span className="text-zinc-600"> — {autonomy.reason}</span>}
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+        {loading && <p className="text-[11px] text-zinc-500">Loading skills…</p>}
+        {error && <p className="text-[11px] text-red-400">{error}</p>}
+        {!loading && !error && skills?.length === 0 && (
+          <p className="text-[11px] text-zinc-500">
+            No learned skills yet. A skill is crystallized from a finished investigation
+            (its grounded, read-only query) — run a deep analysis, then “Save as skill”.
+          </p>
+        )}
+        {skills?.map(sk => (
+          <div key={sk.id} className="rounded border border-violet-500/25 bg-violet-500/[0.04] p-2.5 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-violet-200 truncate" title={sk.display_name}>{sk.display_name}</span>
+              <span className="text-[10px] text-zinc-500 shrink-0">{sk.action_type} · used {sk.usage_count ?? 0}×</span>
+            </div>
+            {sk.description && <p className="text-[10px] text-zinc-500 line-clamp-2">{sk.description}</p>}
+            <pre className="text-[10px] text-zinc-400 bg-zinc-900/60 rounded p-1.5 overflow-x-auto whitespace-pre-wrap break-words max-h-24">{sk.sql_template}</pre>
+            {sk.parameters?.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {sk.parameters.map(p => (
+                  <span key={p.name} className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{`{${p.name}}`}</span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-1 pt-0.5">
+              <button onClick={() => doUse(sk.id)} disabled={busy !== null}
+                className="text-[10px] px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40">
+                {busy === sk.id ? "…" : "Use"}
+              </button>
+              <button onClick={() => doDelete(sk.id)} disabled={busy !== null}
+                className="text-[10px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-red-300 hover:border-red-500/40 transition disabled:opacity-40">
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 export function OntologyPanel({ connectionId, onInvestigate }: Props) {
   const [graph,             setGraph]            = useState<OntologyGraph | null>(null);
   const [loading,           setLoading]          = useState(false);
@@ -933,6 +1033,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
   const [selectedConnId,    setSelectedConnId]   = useState(connectionId);
   const [showSettings,      setShowSettings]     = useState(false);
   const [showDuplicates,    setShowDuplicates]   = useState(false);
+  const [showSkills,        setShowSkills]        = useState(false);
   const [orgMode,           setOrgMode]          = useState(false);
 
   useEffect(() => { setSelectedConnId(connectionId); }, [connectionId]);
@@ -1006,7 +1107,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
             · {Object.keys(graph.relationships).length} relationships
           </span>
           <button
-            onClick={() => { setShowDuplicates(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); }}
+            onClick={() => { setShowDuplicates(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowSkills(false); }}
             className={cn(
               "text-[11px] px-2 py-0.5 rounded border transition",
               showDuplicates
@@ -1018,7 +1119,19 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
             Find duplicates
           </button>
           <button
-            onClick={() => { setShowSettings(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowDuplicates(false); }}
+            onClick={() => { setShowSkills(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); }}
+            className={cn(
+              "text-[11px] px-2 py-0.5 rounded border transition",
+              showSkills
+                ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
+                : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
+            )}
+            title="Learned skills crystallized from investigations"
+          >
+            Learned skills
+          </button>
+          <button
+            onClick={() => { setShowSettings(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowDuplicates(false); setShowSkills(false); }}
             className={cn(
               "text-zinc-500 hover:text-zinc-300 transition ml-1",
               showSettings && "text-violet-400",
@@ -1137,6 +1250,11 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
             onClose={() => setShowDuplicates(false)}
             onMerged={() => { getOntology(selectedConnId).then(setGraph).catch(() => {}); }}
           />
+        )}
+
+        {/* Learned skills (agent procedural memory) */}
+        {showSkills && (
+          <SkillsDrawer connId={selectedConnId} onClose={() => setShowSkills(false)} />
         )}
       </div>
     </div>

@@ -363,6 +363,17 @@ def get_playbook_entry(entry_id: str):
     return e.model_dump()
 
 
+@router.get("/playbook/{entry_id}/versions")
+def get_playbook_versions(entry_id: str):
+    """The immutable Governed-Dive history of a play — every frozen version (with its receipt),
+    oldest → newest. A finding that cited an older version can be resolved against the exact
+    content it relied on."""
+    from aughor.playbook.store import get_entry, list_versions
+    if not get_entry(entry_id):
+        raise HTTPException(status_code=404, detail="Entry not found")
+    return list_versions(entry_id)
+
+
 @router.post("/playbook", status_code=201, dependencies=[gate(Capability.PLAYBOOK)])
 def create_playbook_entry(req: PlaybookEntryRequest):
     from aughor.playbook.models import PlaybookEntry

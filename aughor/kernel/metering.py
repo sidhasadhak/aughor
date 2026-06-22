@@ -2,7 +2,7 @@
 
 A single accumulator lives in a contextvar; the LLM funnel
 (:func:`aughor.llm.provider.LLMProvider._complete_on`) and the warehouse execute
-chokepoint (:func:`aughor.db.connection._security_post`) add to it; it is flushed
+chokepoint (:func:`aughor.db.connection.security_post`) add to it; it is flushed
 onto the job row (:mod:`aughor.kernel.jobs`) and stamped into the answer artifact
 so it surfaces in the Trust Receipt and the Fleet view.
 

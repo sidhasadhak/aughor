@@ -1,6 +1,6 @@
 """Re-validate STORED explorer findings against the current guards.
 
-Generation-time guards (agent._has_fabricated_dimension, _clamp_novelty,
+Generation-time guards (agent.has_fabricated_dimension, clamp_novelty,
 _is_degenerate_result) only protect NEW findings. Anything written before a guard
 existed sits in the store untouched. This pass re-checks stored findings and either:
 
@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from aughor.explorer.agent import _has_fabricated_dimension, _clamp_novelty, _NO_DATA_RE
+from aughor.explorer.verify import has_fabricated_dimension, clamp_novelty, _NO_DATA_RE
 
 
 def validate_insight(ins: dict) -> Optional[tuple[str, str]]:
@@ -31,7 +31,7 @@ def validate_insight(ins: dict) -> Optional[tuple[str, str]]:
     if ins.get("invalid"):
         return None
     sql = ins.get("sql") or ""
-    if _has_fabricated_dimension(sql):
+    if has_fabricated_dimension(sql):
         return ("quarantine", "fabricated dimension (constant grouping key)")
     finding = ins.get("finding") or ""
     if finding and _NO_DATA_RE.search(finding):
@@ -67,6 +67,61 @@ def revalidate_finding(dossier: dict, conn) -> dict:
     fresh_cells = numeric_cells_block(rows)
     g = verify_finding(finding, rows)
     status = "confirmed" if g.grounded else "drifted"
+    cells_changed = fresh_cells != stored_cells
+
+    # Snapshot-pinned attribution: compare the data version this finding ran against (pinned
+    # in the dossier) with the data version NOW. This is what tells a moved dataset apart from
+    # a mis-derived finding — the ambiguity a bare cells_changed flag can't resolve.
+    pinned_version = dossier.get("data_version")
+    current_version = None
+    data_moved = None
+    reproduced = None   # True/False when we could re-run AT the pinned snapshot (DuckLake); else None
+    if pinned_version:
+        try:
+            from aughor.db.snapshot import (
+                data_version, as_of_supported, execute_as_of, native_version_id,
+            )
+            from aughor.explorer.scope import tables_in_sql
+            current_version = data_version(conn, tables_in_sql(sql))
+            if current_version is not None:
+                data_moved = (current_version != pinned_version)
+            # EXACT proof when the storage is version-aware: re-run the finding's SQL AT its
+            # pinned snapshot. If the stored number reproduces there, the finding was correctly
+            # computed and any live drift is genuinely new data; if it doesn't, it was mis-derived.
+            vid = native_version_id(pinned_version)
+            if vid is not None and as_of_supported(conn):
+                repro = execute_as_of(conn, sql, vid)
+                if repro is not None and not getattr(repro, "error", None):
+                    reproduced = (numeric_cells_block(repro.rows or []) == stored_cells)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "snapshot data-version comparison is best-effort", counter="snapshot.revalidate")
+
+    if not cells_changed:
+        interpretation = "stable — the finding's numbers are unchanged"
+    elif reproduced is True:
+        interpretation = (
+            "CONFIRMED correct as computed — it reproduces exactly at its pinned snapshot; the "
+            "data has since moved, so the live number is new data, not a mis-derivation"
+        )
+    elif reproduced is False:
+        interpretation = (
+            "the finding does NOT reproduce even at its own pinned snapshot — it was mis-derived "
+            "or non-deterministic (a trust issue, not a data update)"
+        )
+    elif data_moved is True:
+        interpretation = (
+            "the underlying data has moved since this finding was computed (as of "
+            f"{dossier.get('generated_at') or 'emit'}); the change likely reflects new data, not a mis-derivation"
+        )
+    elif data_moved is False:
+        interpretation = (
+            "the result changed with NO change to the underlying data — the finding's SQL is "
+            "non-deterministic or was mis-derived (a trust issue, not a data update)"
+        )
+    else:
+        interpretation = "the numbers changed; no data-version pin was available to attribute the cause"
+
     return {
         "status": status,
         "grounded": g.grounded,
@@ -74,8 +129,14 @@ def revalidate_finding(dossier: dict, conn) -> dict:
         "ungrounded": g.ungrounded,
         "stored_cells": stored_cells,
         "fresh_cells": fresh_cells,
-        "cells_changed": fresh_cells != stored_cells,
+        "cells_changed": cells_changed,
         "row_count": res.row_count,
+        # snapshot-pinned attribution (None when the finding predates pinning / was off)
+        "pinned_version": pinned_version,
+        "current_version": current_version,
+        "data_moved": data_moved,
+        "reproduced": reproduced,
+        "interpretation": interpretation,
     }
 
 
@@ -96,7 +157,7 @@ def revalidate_state(state: dict, *, apply: bool = False) -> dict:
                 ins["invalid_reason"] = reason
         else:
             nv = ins.get("novelty")
-            new = _clamp_novelty(nv)
+            new = clamp_novelty(nv)
             conf = min(0.95, 0.4 + new * 0.1)
             rec["fix"] = f"novelty {nv}→{new}, confidence→{conf}"
             repaired.append(rec)

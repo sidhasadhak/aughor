@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 
 from aughor.llm.provider import LLMProvider, get_provider
-from aughor.tools.schema import _parse_schema_tables
+from aughor.tools.schema import parse_schema_tables
 
 
 # ── Result type ───────────────────────────────────────────────────────────────
@@ -281,7 +281,7 @@ class SqlWriter:
     def __init__(self, db, schema_str: str | None = None, temperature: float = 0.1):
         self._db = db
         self._schema: str = schema_str if schema_str is not None else db.get_schema()
-        self._table_cols: dict[str, list[str]] = _parse_schema_tables(self._schema)
+        self._table_cols: dict[str, list[str]] = parse_schema_tables(self._schema)
         self._llm: LLMProvider = get_provider("coder")
         # Decode temperature for the write/fix calls. Defaults to 0.1 — the same
         # value LLMProvider.complete() already used implicitly — so existing

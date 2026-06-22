@@ -104,8 +104,8 @@ def build_data_catalog(conn: "DatabaseConnection", tables: list[str]) -> str:
     # catalog has no relational structure and the model invents wrong join paths
     # on multi-table questions (verified on TPC-H Q5/Q10).
     try:
-        from aughor.tools.schema import _compute_join_map
-        jmap = _compute_join_map(catalog_cols)
+        from aughor.tools.schema import compute_join_map
+        jmap = compute_join_map(catalog_cols)
         if jmap.get("joins"):
             # PREVENTION: value-verify the name-inferred join edges at (catalog) build time —
             # demote a value-disjoint name coincidence to an explicit DO-NOT-JOIN so the model

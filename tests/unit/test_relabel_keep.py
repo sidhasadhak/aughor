@@ -5,7 +5,8 @@ mislabel with a REAL number survives corrected (the missimi 'email CRM AOV $69.1
 called 'ROAS'), while a mislabel whose number was ALSO fabricated is still dropped by grounding."""
 from __future__ import annotations
 
-from aughor.explorer.agent import relabel_mislabeled_finding, verify_insight, _metric_vocab_for
+from aughor.explorer.agent import verify_insight
+from aughor.explorer.metric_coherence import relabel_mislabeled_finding, metric_vocab_for
 
 _VOCAB = {
     "aov": ("Average Order Value", "SUM(order_value)/COUNT(DISTINCT order_id)"),
@@ -54,7 +55,7 @@ def test_multiple_occurrences_all_relabeled():
 # ── end-to-end: relabel then verify_insight (grounding still guards the number) ───
 
 def test_grounded_mislabel_is_rescued_and_kept():
-    vocab = _metric_vocab_for(None, _RETAIL)
+    vocab = metric_vocab_for(None, _RETAIL)
     rows = [["email_crm", 69.15], ["display", 69.57]]
     finding = "Email CRM has the highest ROAS at 69.15, ahead of display at 69.57."
     relabeled = relabel_mislabeled_finding(finding, _AOV_SQL, vocab, rows)
@@ -64,7 +65,7 @@ def test_grounded_mislabel_is_rescued_and_kept():
 
 
 def test_fabricated_number_mislabel_is_not_rescued_then_dropped():
-    vocab = _metric_vocab_for(None, _RETAIL)
+    vocab = metric_vocab_for(None, _RETAIL)
     rows = [["email_crm", 69.15], ["display", 69.57]]      # real AOV values
     finding = "Email CRM has the highest ROAS at 6.23."    # 6.23 is NOT in the rows
     assert relabel_mislabeled_finding(finding, _AOV_SQL, vocab, rows) is None   # strict grounding refuses

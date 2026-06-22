@@ -281,7 +281,7 @@ def _regenerate_value_sql(profile, recipes: list, schema: str, conn, only: set) 
     can't fall into the `WHERE abandoned = 0` denominator trap the draft did — and the
     chart_sql explainer inherits the same correct grain."""
     from aughor.profile.validate import audit_value_sql, audit_chart_sql
-    from aughor.tools.schema import _parse_schema_tables
+    from aughor.tools.schema import parse_schema_tables
 
     by_name = {_norm_name(r.get("metric", "")): r for r in (recipes or []) if r.get("formula")}
     targets = []  # (metric_obj, recipe)
@@ -344,7 +344,7 @@ def _regenerate_value_sql(profile, recipes: list, schema: str, conn, only: set) 
 
     table_cols = {}
     try:
-        table_cols = _parse_schema_tables(schema)
+        table_cols = parse_schema_tables(schema)
     except Exception:
         pass
     fresh = {_norm_name(x.name): x for x in out.metrics}
@@ -377,7 +377,7 @@ def _generate_key_question_sql(profile, recipes: list, schema: str, conn) -> Non
     then a one-shot batched repair for the ones that fail to bind. Best-effort: any error
     leaves the list as-is. The build affords this care once so every run is deterministic."""
     from aughor.profile.validate import audit_finding_sql
-    from aughor.tools.schema import _parse_schema_tables
+    from aughor.tools.schema import parse_schema_tables
     from aughor.llm.provider import get_provider
     from pydantic import BaseModel, Field
 
@@ -386,7 +386,7 @@ def _generate_key_question_sql(profile, recipes: list, schema: str, conn) -> Non
         profile.key_question_sql = []
         return
     try:
-        table_cols = _parse_schema_tables(schema)
+        table_cols = parse_schema_tables(schema)
     except Exception:
         table_cols = {}
 

@@ -93,6 +93,16 @@ def build_playbook_prompt_section(entries: list[PlaybookEntry]) -> str:
         timeline = f" | timeline: {e.typical_timeline}" if e.typical_timeline else ""
         lines.append(f"  • {e.recommendation}{impact}{timeline}{sr}")
 
+    # Governed-Dive binding: rendering a play into the analysis prompt IS using it, so pin
+    # each to its version + receipt in the ledger. Fail-open — never affects the rendering.
+    try:
+        from aughor.playbook.store import emit_playbook_use
+        for e in entries:
+            emit_playbook_use(e, used_in="ada_synthesis")
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "playbook-use binding is best-effort", counter="playbook.use")
+
     return "\n".join(lines) + "\n"
 
 

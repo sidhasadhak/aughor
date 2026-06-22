@@ -825,7 +825,7 @@ def extract_structural_ontology(
     schema_fingerprint: str,
     table_profiles: "dict[str, TableProfile]",
     column_profiles: "dict[str, ColumnProfile]",
-    join_map: dict,           # {"joins": [...], "no_join": [...]} from _compute_join_map
+    join_map: dict,           # {"joins": [...], "no_join": [...]} from compute_join_map
     glossary: dict,
 ) -> OntologyGraph:
     """

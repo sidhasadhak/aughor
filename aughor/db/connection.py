@@ -144,6 +144,21 @@ def _security_post(
     except Exception as _m_exc:
         from aughor.kernel.errors import tolerate
         tolerate(_m_exc, "query metering", counter="metering")
+    # R8: provenance for an in-SQL AI column — when a query computed one via the governed
+    # prompt()/embedding() UDF, journal an ai.column receipt so it rides the Trust Receipt.
+    try:
+        from aughor.semops.ai_sql import ai_sql_enabled, sql_uses_ai_column
+        _op = sql_uses_ai_column(sql) if ai_sql_enabled() else None
+        if _op:
+            from aughor.semops.ai_sql import AIColumnReceipt, emit_ai_receipt
+            _rows = getattr(result, "row_count", 0) or 0
+            _rc = AIColumnReceipt(operator=_op, template="(in-SQL UDF)", role="", model="",
+                                  n_input=_rows, n_applied=_rows)
+            _rc.notes.append("computed in-SQL via the governed UDF")
+            emit_ai_receipt(_rc, conn_id=connection_id)
+    except Exception as _ai_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_ai_exc, "ai-column receipt", counter="ai_column.receipt")
     return result
 
 
@@ -636,6 +651,29 @@ def _apply_lane_envelope(duck_conn, connection_id: str) -> None:
         _logging.getLogger(__name__).debug("lane envelope skipped (%s): %s", connection_id, _exc)
 
 
+def apply_lane_envelope(duck_conn, connection_id: str) -> None:
+    """Public: apply the per-workspace DuckDB resource envelope (R6) — for out-of-module
+    connection lanes (e.g. DuckLake) that open their own handle, rather than reaching into
+    the leading-underscore internal."""
+    _apply_lane_envelope(duck_conn, connection_id)
+
+
+def _maybe_register_ai_udfs(duck_conn, md_db) -> None:
+    """Register the governed ``prompt()``/``embedding()`` AI-column UDFs (R8) when
+    ``AUGHOR_AI_SQL`` is on, so agent-generated SQL can compute an AI column in-query.
+    Skipped for MotherDuck-backed connections (they have NATIVE prompt()/embedding() — don't
+    shadow them) and a strict no-op when the flag is off. Fail-open — never breaks a connect."""
+    if md_db:
+        return
+    try:
+        from aughor.semops.ai_sql import ai_sql_enabled, register_ai_udfs
+        if ai_sql_enabled():
+            register_ai_udfs(duck_conn)
+    except Exception as _exc:
+        import logging as _logging
+        _logging.getLogger(__name__).debug("ai-udf registration skipped: %s", _exc)
+
+
 class DuckDBConnection(DatabaseConnection):
     dialect = "duckdb"
 
@@ -663,6 +701,8 @@ class DuckDBConnection(DatabaseConnection):
                 pass  # best-effort — don't fail the connection over schema routing
         # R6: bound this workspace's compute (memory_limit + threads). No-op at defaults.
         _apply_lane_envelope(self._conn, connection_id)
+        # R8: optionally expose the governed AI-column UDFs to generated SQL (opt-in, no-op off).
+        _maybe_register_ai_udfs(self._conn, _md_db)
 
     def make_reader(self) -> "DuckDBConnection":
         """Open a fresh read-only DuckDB connection for use in a parallel thread.
@@ -690,6 +730,8 @@ class DuckDBConnection(DatabaseConnection):
                 pass
         # R6: a reader runs in the same workspace lane → same resource envelope.
         _apply_lane_envelope(clone._conn, clone._connection_id)
+        # R8: a reader runs the same generated SQL → same governed AI-column UDFs.
+        _maybe_register_ai_udfs(clone._conn, _md_db)
         return clone
 
     def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:
@@ -778,7 +820,7 @@ class DuckDBConnection(DatabaseConnection):
 
     def build_intelligence(self) -> str:
         """Heavy path: profiles + ontology + enrichment. Call this from a background task, never on the hot path."""
-        from aughor.tools.schema import build_schema_context, _compute_join_map, _parse_schema_tables
+        from aughor.tools.schema import build_schema_context, compute_join_map, parse_schema_tables
         from aughor.tools.profile_cache import get_or_build_profiles
         from aughor.tools.profiler import render_profile_annotations
 
@@ -805,8 +847,8 @@ class DuckDBConnection(DatabaseConnection):
                     "AND table_type = 'BASE TABLE' ORDER BY table_name",
                 ).fetchall()
             ]
-        table_cols = _parse_schema_tables(base)
-        jmap = _compute_join_map(table_cols)
+        table_cols = parse_schema_tables(base)
+        jmap = compute_join_map(table_cols)
         fk_hints: dict[str, set[str]] = {t: set() for t in tables}
         for j in jmap.get("joins", []):
             fk_hints.setdefault(j["t1"], set()).add(j["c1"])
@@ -1144,9 +1186,9 @@ class PostgresConnection(DatabaseConnection):
                 tables = [r[0] for r in _tcur.fetchall()]
         except Exception:
             tables = list({table for table, _, _ in rows})  # fallback
-        from aughor.tools.schema import _parse_schema_tables, _compute_join_map
-        table_cols_map = _parse_schema_tables(enriched)
-        jmap = _compute_join_map(table_cols_map)
+        from aughor.tools.schema import parse_schema_tables, compute_join_map
+        table_cols_map = parse_schema_tables(enriched)
+        jmap = compute_join_map(table_cols_map)
         fk_hints: dict[str, set[str]] = {t: set() for t in tables}
         for j in jmap.get("joins", []):
             fk_hints.setdefault(j["t1"], set()).add(j["c1"])

@@ -865,6 +865,8 @@ export interface OntologyAction {
   business_rules_enforced: string[];
   returns: string;
   source_table: string;
+  origin?: "structural" | "learned" | "manual";  // learned skills carry these
+  usage_count?: number;
 }
 
 export interface OntologyMetric {
@@ -957,6 +959,86 @@ export async function patchOntologyAction(
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(overrides) },
   );
   if (!res.ok) throw new Error("Failed to update action");
+  return res.json();
+}
+
+// ── Learned Skills (agent procedural memory) ──────────────────────────────────
+// Skills ARE OntologyActions with origin='learned' + a usage_count. The backend
+// crystallizes them from finished investigations and the ontology overlay re-enters
+// them into the planner's action set; this surface lets a human review + manage them.
+
+export interface AutonomyLevel {
+  connection_id: string;
+  level: number;                 // 0 manual · 1 assisted · 2 supervised · 3 autonomous
+  label: string;
+  signals?: Record<string, unknown>;
+  reason?: string;
+  usage_count?: number;          // present on the per-skill variant
+}
+
+export async function getLearnedSkills(connectionId: string, schemaName?: string): Promise<OntologyAction[]> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${BASE}/ontology/skills?${q}`);
+  if (!res.ok) throw new Error("Failed to load learned skills");
+  return (await res.json()).skills ?? [];
+}
+
+// Crystallize a CANDIDATE skill from a finished investigation (not persisted — the UI
+// confirms, then calls saveLearnedSkill). 422 when the run isn't skill-worthy.
+export async function proposeLearnedSkill(
+  invId: string, connectionId: string, schemaName?: string,
+): Promise<OntologyAction> {
+  const q = new URLSearchParams({ inv_id: invId, connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${BASE}/ontology/skills/propose?${q}`, { method: "POST" });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { detail?: string }).detail ?? "Run is not skill-worthy");
+  }
+  return (await res.json()).candidate as OntologyAction;
+}
+
+export async function saveLearnedSkill(
+  action: OntologyAction, connectionId: string, schemaName?: string,
+): Promise<{ ok: boolean; schema_name: string; id: string }> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${BASE}/ontology/skills?${q}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(action),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { detail?: string }).detail ?? "Skill rejected (SQL not read-only or failed dry-run)");
+  }
+  return res.json();
+}
+
+export async function useLearnedSkill(
+  actionId: string, connectionId: string, schemaName?: string,
+): Promise<{ ok: boolean; usage_count: number; autonomy: AutonomyLevel }> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${BASE}/ontology/skills/${encodeURIComponent(actionId)}/use?${q}`, { method: "POST" });
+  if (!res.ok) throw new Error("Learned skill not found");
+  return res.json();
+}
+
+export async function deleteLearnedSkill(
+  actionId: string, connectionId: string, schemaName?: string,
+): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${BASE}/ontology/skills/${encodeURIComponent(actionId)}?${q}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete learned skill");
+}
+
+export async function getAutonomy(connectionId: string): Promise<AutonomyLevel> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  const res = await fetch(`${BASE}/ontology/autonomy?${q}`);
+  if (!res.ok) return { connection_id: connectionId, level: 0, label: "manual" };
   return res.json();
 }
 

@@ -252,14 +252,14 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
     try:
         from aughor.tools.profile_cache import get_or_build_profiles
         from aughor.tools.profiler import render_profile_annotations
-        from aughor.tools.schema import _parse_schema_tables, _compute_join_map
+        from aughor.tools.schema import parse_schema_tables, compute_join_map
 
         schema_str = state["schema_context"]
-        table_cols_map = _parse_schema_tables(schema_str)
+        table_cols_map = parse_schema_tables(schema_str)
         tables = list(table_cols_map.keys())
 
         if tables:
-            jmap = _compute_join_map(table_cols_map)
+            jmap = compute_join_map(table_cols_map)
             fk_hints: dict[str, set[str]] = {t: set() for t in tables}
             for j in jmap.get("joins", []):
                 fk_hints.setdefault(j["t1"], set()).add(j["c1"])
@@ -286,13 +286,13 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         pass  # fall through to ad-hoc SQL
 
     # ── Fallback: ad-hoc SQL recon ────────────────────────────────────────────
-    from aughor.tools.schema import _SECTION_STOP
+    from aughor.tools.schema import SECTION_STOP
 
     schema_str = state["schema_context"]
     table_col_types: dict[str, list[tuple[str, str]]] = {}
     current: str | None = None
     for line in schema_str.splitlines():
-        if _SECTION_STOP.match(line):
+        if SECTION_STOP.match(line):
             current = None
             continue
         m = re.match(r"^TABLE:\s+([\w.]+)", line)
@@ -538,6 +538,16 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     llm = get_provider("coder")
     _schema_ctx = state["schema_context"]
     _dialect = conn.dialect
+
+    # R8: when in-SQL AI columns are enabled, teach the generator the governed prompt()/embedding()
+    # operators exist (conservative — text-only, row-bounded). No-op + zero prompt cost when off.
+    try:
+        from aughor.semops.ai_sql import ai_sql_enabled, ai_sql_operator_hint
+        if ai_sql_enabled():
+            _schema_ctx = _schema_ctx + "\n\n" + ai_sql_operator_hint()
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "ai-sql generator hint is best-effort", counter="ai_sql.hint")
 
     # Build ontology formula injection section — if the hypothesis/intent mentions
     # a known metric name, inject its approved formula_sql so the LLM can't hallucinate it.

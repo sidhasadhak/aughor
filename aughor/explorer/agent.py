@@ -50,6 +50,24 @@ from aughor.explorer.grounding import (
     numeric_cells_block,
     verify_finding,
 )
+from aughor.explorer.windowing import (
+    profile_field,
+    days_between,
+    anchor_activity,
+    role_aware_time_window,
+    window_for_tables,
+)
+from aughor.explorer.scope import (
+    dataset_of,
+    tables_in_sql,
+    crosses_datasets,
+)
+from aughor.explorer.feasibility import (
+    is_temporal_angle,
+    angle_feasible,
+    has_temporal_sql,
+    has_vacuous_temporal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -97,1059 +115,19 @@ _TERMINAL_SUBS = ("cancel", "fail", "reject", "expir", "close", "archiv", "delet
 _ACTIVE_SUBS   = ("pend", "process", "approv", "creat", "open", "activ", "run", "sched", "place", "accept", "new")
 
 
-# ── Temporal scope — Tier 0: role-aware recency ───────────────────────────────────
-# Anchor the analytical window's recency on the CONSENSUS TRAILING EDGE OF ACTIVITY
-# among measure-bearing event/fact tables — never MAX(any date column). A calendar /
-# date-dimension table holds one row per day far into the future and is uniformly dense
-# (so effective_date_range == its full span); anchoring on the global MAX would push the
-# window past the last real fact and every fact filter returns zero rows ("no data"
-# briefings). See docs/ADAPTIVE_TEMPORAL_SCOPE.md §3.
-
-_SENTINEL_MAX_YEAR = 9999
-_SENTINEL_MIN_YEAR = 1900
-_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+# _NO_DATA_RE moved to explorer/verify.py (with is_degenerate_result, its only user besides revalidate).
 
 
-def _profile_field(prof, name):
-    """Read a field from a TableProfile/ColumnProfile that may be a dataclass or a dict."""
-    if isinstance(prof, dict):
-        return prof.get(name)
-    return getattr(prof, name, None)
-
-
-def _table_recency(prof):
-    """Sentinel-filtered recency for a table — (YYYY-MM-DD, is_effective) or (None, False).
-    Prefers the dense ``effective_date_range`` over the raw ``date_range``."""
-    for key, is_eff in (("effective_date_range", True), ("date_range", False)):
-        rng = _profile_field(prof, key)
-        if rng and len(rng) >= 2 and _ISO_DATE.match(str(rng[1])):
-            head = str(rng[1])[:10]
-            try:
-                year = int(head[:4])
-            except ValueError:
-                continue
-            if year >= _SENTINEL_MAX_YEAR or year <= _SENTINEL_MIN_YEAR:
-                continue  # 9999-12-31 / 1900-01-01 / epoch placeholder — not real activity
-            return head, is_eff
-    return None, False
-
-
-def _table_has_measure(cols) -> bool:
-    """True when the table has ≥1 additive measure column — what makes it an *activity*
-    (fact/event) table rather than a calendar/dimension spine. Tolerates ``cols`` as a
-    dict {name: profile} or a list of profiles, each a dataclass or a dict."""
-    if not cols:
-        return False
-    vals = cols.values() if isinstance(cols, dict) else cols
-    return any(_profile_field(c, "semantic_type") == "measure" for c in vals)
-
-
-# A date dimension / calendar table runs across the *whole* date axis (often into the
-# future, e.g. TPC-DS date_dim → 2100) and the profiler frequently mis-tags its integer
-# date-part columns (d_year, d_moy, d_qoy…) as "measures" — which would wrongly admit it
-# to the activity pool and push the window past all real facts. Catch it by name and by
-# shape (its "measures" are overwhelmingly date-parts). See docs/ADAPTIVE_TEMPORAL_SCOPE.md §3,§7.
-_CALENDAR_NAME_RE = re.compile(
-    r"(?:^|[._])(date_dim|dim_date|dim_day|day_dim|d_date|time_dim|dim_time|calendar|dates?)(?:$|[._])",
-    re.I,
+# The pre-emission trust gate + structural guards live in verify.py; the metric-naming layer in
+# metric_coherence.py — both extracted from this god-file. The class methods + emission sites below
+# import the PUBLIC entry points (kept public so these cross-module imports stay off the ratchet).
+from aughor.explorer.metric_coherence import metric_vocab_for, relabel_mislabeled_finding  # noqa: E402
+from aughor.explorer.verify import (  # noqa: E402
+    verify_insight,
+    has_fabricated_dimension,
+    clamp_novelty,
+    mislabeled_per_grain,
 )
-_DATEPART_RE = re.compile(
-    r"(year|month|moy|day|dom|dow|doy|quarter|qoy|qtr|week|woy|seq|fiscal|fy|holiday|weekend|season|date_sk|julian)",
-    re.I,
-)
-
-
-def _col_name(c, key=None):
-    """Best-effort column name from a profile (dataclass/dict) or its dict key."""
-    return getattr(c, "column", None) or (c.get("column") if isinstance(c, dict) else None) or key
-
-
-def _is_calendar_spine(table, cols) -> bool:
-    """True when *table* is a calendar / date-dimension spine — by name (date_dim,
-    dim_date, calendar…) or by shape (≥70% of its measure-tagged columns are date-parts).
-    Such tables must be excluded from activity anchoring even when mis-tagged with measures."""
-    base = str(table).split(".")[-1].lower()
-    if _CALENDAR_NAME_RE.search(base):
-        return True
-    if not cols:
-        return False
-    items = cols.items() if isinstance(cols, dict) else [(None, c) for c in cols]
-    measure_names = [
-        _col_name(c, k) for k, c in items
-        if _profile_field(c, "semantic_type") == "measure"
-    ]
-    measure_names = [n for n in measure_names if n]
-    if len(measure_names) >= 4:
-        dateparts = sum(1 for n in measure_names if _DATEPART_RE.search(n))
-        if dateparts / len(measure_names) >= 0.7:
-            return True
-    return False
-
-
-def _is_activity_table(table, cols) -> bool:
-    """An *activity* (fact/event) table: measure-bearing and not a calendar spine."""
-    return _table_has_measure(cols) and not _is_calendar_spine(table, cols)
-
-
-def _days_between(a: str, b: str) -> int:
-    """Absolute day gap between two ISO date strings; 0 on parse error."""
-    try:
-        return abs((datetime.fromisoformat(b[:10]) - datetime.fromisoformat(a[:10])).days)
-    except (ValueError, TypeError):
-        return 0
-
-
-# When two activity tables share (nearly) the same trailing edge, the *core fact*
-# (most rows) is the better anchor than a fresher-by-days peripheral table — a tiny
-# `campaigns` (5K rows) ending the same day as a 6.4M-row `order_items` should not win.
-_ANCHOR_RECENCY_TOLERANCE_DAYS = 45
-
-
-def _anchor_activity(tp, cp=None):
-    """Return ``(table, recency, is_effective)`` for the anchor activity table — the one
-    whose trailing edge defines the window. Among measure-bearing tables whose recency is
-    within ``_ANCHOR_RECENCY_TOLERANCE_DAYS`` of the latest, prefer the **core fact**
-    (largest row_count): recency ties shouldn't hand the window to a small peripheral
-    table. Falls back to all dated tables when no measures are detected. Returns
-    ``(None, None, False)`` when nothing is usable."""
-    activity, spine = [], []   # each: (recency, is_effective, table, row_count)
-    for table, prof in (tp or {}).items():
-        rec, is_eff = _table_recency(prof)
-        if rec is None:
-            continue
-        rows = _profile_field(prof, "row_count") or 0
-        (activity if _is_activity_table(table, (cp or {}).get(table)) else spine).append(
-            (rec, is_eff, table, rows))
-    pool = activity or spine
-    if not pool:
-        return None, None, False
-
-    latest = max(r[0] for r in pool)
-    # Tables effectively at the trailing edge (within tolerance of the latest recency).
-    fresh = [r for r in pool if _days_between(r[0], latest) <= _ANCHOR_RECENCY_TOLERANCE_DAYS]
-    # Among those, the core fact (most rows) wins; recency breaks any row-count tie.
-    rec, is_eff, table, _rows = max(fresh, key=lambda r: (r[3], r[0]))
-    return table, rec, is_eff
-
-
-def _table_min(prof):
-    """Sentinel-filtered earliest date for a table — 'YYYY-MM-DD' or None. Mirrors
-    ``_table_recency`` on the range *start*, preferring the dense effective range."""
-    for key in ("effective_date_range", "date_range"):
-        rng = _profile_field(prof, key)
-        if rng and len(rng) >= 2 and _ISO_DATE.match(str(rng[0])):
-            head = str(rng[0])[:10]
-            try:
-                year = int(head[:4])
-            except ValueError:
-                continue
-            if year >= _SENTINEL_MAX_YEAR or year <= _SENTINEL_MIN_YEAR:
-                continue
-            return head
-    return None
-
-
-def _role_aware_time_window(tp, cp=None, jmap=None, months: int = 12):
-    """Choose the analytical window by anchoring recency on *activity* tables.
-
-    Returns ``(start_iso, end_iso, discrepancy)`` where ``discrepancy`` is a list of
-    ``(table, recency)`` for non-activity tables (calendar / dimension spines) whose
-    dates extend *past* the chosen activity edge — a data-quality signal worth
-    surfacing. Returns ``(None, None, [])`` when no usable, non-sentinel date range
-    exists. ``jmap`` is accepted for a future join-graph in-degree refinement; the
-    measure signal (``cp``) is the primary catch today.
-
-    The window start is CLAMPED to the earliest fact across the activity tables:
-    a dataset holding 17 days of history must not get a "last 12 months" window
-    whose start pre-dates its first row by 11 months — the blind-window bug that
-    framed a 1-month bakehouse dataset as a year of analysis.
-    """
-    from datetime import timedelta as _td
-
-    _anchor, best_rec, best_eff = _anchor_activity(tp, cp)
-    if best_rec is None:
-        return None, None, []
-
-    discrepancy = sorted(
-        ((t, _table_recency(p)[0]) for t, p in (tp or {}).items()
-         if not _is_activity_table(t, (cp or {}).get(t)) and (_table_recency(p)[0] or "") > best_rec),
-        key=lambda x: x[1], reverse=True,
-    )
-
-    # Earliest fact among activity tables (fall back to any dated table) — the
-    # honest lower bound for the window.
-    _mins = [
-        m for t, p in (tp or {}).items()
-        if _is_activity_table(t, (cp or {}).get(t)) and (m := _table_min(p))
-    ] or [m for p in (tp or {}).values() if (m := _table_min(p))]
-    data_min = min(_mins) if _mins else None
-
-    try:
-        max_d = datetime.fromisoformat(best_rec)
-        if best_eff:
-            # an effective max is month-truncated — nudge forward to cover the final month
-            max_d = max_d + _td(days=31)
-        start_d = max_d - _td(days=round(months * 30.4375))
-        start = start_d.strftime("%Y-%m-%d")
-        if data_min and data_min > start:
-            start = data_min
-        return start, max_d.strftime("%Y-%m-%d"), discrepancy
-    except (ValueError, TypeError):
-        return None, None, []
-
-
-def _window_for_tables(tp, cp, tables, months: int = 12):
-    """Derive a time window from ONLY the given tables (bare or qualified names) —
-    the per-dataset/per-domain view. On a multi-dataset connection the global window
-    anchors on the freshest dataset; a domain living in a different dataset (e.g.
-    17-day ``bakehouse.*`` beside 24-month ``ecommerce.*``) needs its own anchor and
-    its own clamp. Returns ``(start, end)`` or ``None``."""
-    if not tables:
-        return None
-    wanted = set()
-    for t in tables:
-        s = str(t)
-        wanted.add(s.lower())
-        wanted.add(s.split(".")[-1].lower())
-    sub_tp = {
-        t: p for t, p in (tp or {}).items()
-        if t.lower() in wanted or t.split(".")[-1].lower() in wanted
-    }
-    if not sub_tp:
-        return None
-    sub_cp = {t: (cp or {}).get(t) for t in sub_tp}
-    start, end, _ = _role_aware_time_window(sub_tp, sub_cp, None, months)
-    return (start, end) if start and end else None
-
-
-# A "no data" finding — the query matched nothing (all-NULL row from an empty join/filter)
-# or the interpreter explicitly reported no data. These must not become insights: they're
-# noise in the Briefing and, worse, become broken monitors when a user clicks Create Monitor.
-_NO_DATA_RE = re.compile(
-    r"(returned no data|no data (found|available|to report|for)|0 \w+ (were |was )?found|"
-    r"null values for all|no rows (returned|found|matched)|query (failed|errored)|"
-    r"no matching (rows|records|data)|empty result set)",
-    re.I,
-)
-
-
-# A connection can hold several UNRELATED uploaded datasets, each landing in its own
-# schema (e.g. a bakehouse CRM in `bakehouse.*` + an ecommerce store in `ecommerce.*`).
-# They share no real key, so any join across them is a hallucination — exactly the
-# `bakehouse.sales_customers ⋈ ecommerce.orders` garbage that produced a broken finding.
-# "Dataset" = the schema path (everything before the table name). The inferred join map
-# can't be trusted to separate them (it had a false-positive cross-schema edge), so the
-# schema is the reliable boundary.
-
-def _dataset_of(tbl: str) -> str:
-    """Schema path of a (possibly qualified) table name; '' when unqualified."""
-    parts = str(tbl).split(".")
-    return ".".join(parts[:-1]) if len(parts) > 1 else ""
-
-
-def _tables_in_sql(sql: str) -> set:
-    """Real (non-CTE) qualified table names referenced by a SQL string. Best-effort.
-
-    Delegates to the shared, CTE-safe extractor (aughor/sql/tables.py) so the
-    explorer's dataset-isolation guard, the chat scope guard, and the read-only
-    gate all share one tested table-extraction primitive (scope traversal +
-    flat fallback) instead of three ad-hoc walks."""
-    from aughor.sql.tables import extract_tables
-    return {r.qualified() for r in extract_tables(sql)}
-
-
-def _crosses_datasets(sql: str) -> bool:
-    """True when the SQL references real tables from ≥2 distinct schemas (datasets) — a
-    join across unrelated uploaded datasets. Operates on the generated SQL's *qualified*
-    table refs, so it works regardless of how the ontology stored source tables. Tables
-    with no schema qualifier are ignored (they can't be cross-dataset)."""
-    datasets = {_dataset_of(t) for t in _tables_in_sql(sql)}
-    datasets.discard("")
-    return len(datasets) > 1
-
-
-_RATE_CTX_RE = re.compile(
-    r"\b(?:conversion|convert|rate|ratio|share|percent|pct|margin|occupancy|"
-    r"utiliz|attach|win[\s_-]?rate|success[\s_-]?rate|load[\s_-]?factor)\b",
-    re.IGNORECASE,
-)
-
-
-def _is_degenerate_result(rows, finding_text: str = "", sql: str = "", metric_ranges=None) -> bool:
-    """True when a Phase-8 result carries no trustworthy data — so it never becomes an
-    insight (and so never reaches the Briefing). Cases:
-
-      1. the whole result is NULL (empty join/filter matched nothing), OR
-      2. ANY numeric column is NULL across EVERY row, OR ZERO across every row — a metric
-         that never computed because a join/linkage is broken (a `touchpoint_type=channel`
-         join that matches nothing → revenue/ROAS all NULL) or a value was destroyed
-         (`ROUND(weight, 4)` on a ~2e-07 weight → every ROAS = 0.0). RULE: a NULL **or
-         all-zero** metric must not appear in a Briefing — it reads as a confident finding
-         ("$0 ROAS — no revenue captured") when it is really a query bug; the underlying
-         data ($491M revenue) is intact. OR
-      3. a bounded RATE OUT OF its declared range — a 0..1 rate that comes out ≈1.0 in every
-         segment (broken denominator → "100% conversion across all traffic sources") OR
-         ABOVE 1 (a 141% conversion). The AUTHORITY is the profile when available: a finding
-         is matched to its north-star metric and its DECLARED sane range applied — so a
-         conversion (ratio 0-1) at 1.41 is dropped while a ROAS (ratio 0-∞) at 2.3 is kept.
-         Without a profile match it falls back to a keyword rate-signal + boundary check
-         (so a count-of-1 / always-true flag is not mistaken for a saturated rate). OR
-      4. the interpretation text explicitly says "no data".
-
-    A column with MIXED values (some at the boundary, some not) is real signal and
-    survives — only a metric flat NULL / flat zero / out-of-range is dropped."""
-    # The profile's declared range for THIS finding's metric, when we can match it —
-    # the precise authority that tells a bounded conversion from an unbounded ROAS.
-    matched = None
-    if metric_ranges:
-        try:
-            from aughor.profile.validate import match_metric_range
-            matched = match_metric_range(f"{finding_text}\n{sql}", metric_ranges)
-        except Exception:
-            matched = None
-    m_kind, m_max = (matched if matched else (None, None))
-    rate_ctx = bool(_RATE_CTX_RE.search(f"{sql}\n{finding_text}"))
-    if rows:
-        # Normalise to row-lists (dict rows → values in stable key order).
-        if isinstance(rows[0], dict):
-            keys = list(rows[0].keys())
-            norm = [[r.get(k) for k in keys] for r in rows]
-        else:
-            norm = [list(r) for r in rows]
-        ncols = max((len(r) for r in norm), default=0)
-        for i in range(ncols):
-            col = [r[i] for r in norm if i < len(r)]
-            if not col:
-                continue
-            nonnull = [c for c in col if c is not None and c != "" and c != "NULL"]
-            if not nonnull:
-                return True          # entirely-NULL column → broken/empty linkage
-            try:
-                nums = [float(c) for c in nonnull]
-            except (TypeError, ValueError):
-                continue             # non-numeric (a dimension) — not a dead measure
-            if all(n == 0.0 for n in nums):
-                return True          # a NUMERIC column that is ZERO everywhere → no signal
-            hi = max(nums)
-            # (a) Profile-authoritative range check: the matched metric is a BOUNDED rate
-            # and this column overshoots its ceiling → grain bug (conversion 1.41, 105%).
-            # Applies to a single column too (a per-channel rate need not span ≥2 rows to
-            # be impossible). A matched OPEN metric (ROAS) is explicitly exempt.
-            if m_max is not None:
-                # Normalise to a 0..1 fraction, TOLERATING the SQL emitting the other scale
-                # than declared — a metric declared 'ratio 0-1' whose query returns 100.0, OR
-                # declared 'percent 0-100' whose query returns 1.0. Both are the broken-
-                # denominator / saturation signature; the old check missed them because the
-                # raw value sat far from the declared ceiling. Works on a single segment too.
-                fracs: list | None = [v / m_max for v in nums]
-                if hi > m_max * 1.5:
-                    alt = 100.0 if m_max == 1.0 else 1.0
-                    if min(nums) >= 0.0 and hi <= alt * 1.5:
-                        fracs = [v / alt for v in nums]   # SQL used the OTHER scale
-                    else:
-                        fracs = None                       # a count-like column, not this rate
-                if fracs is not None:
-                    if any(f > 1.05 for f in fracs):
-                        return True      # above the bound → impossible rate (conversion 1.41)
-                    if all(f >= 0.9995 for f in fracs):
-                        return True      # saturated at the ceiling (100% repeat / 100% approved)
-            # (b) Keyword fallback when no profile match — saturated-at-ceiling only (the
-            # >bound case is unsafe without knowing bounded-vs-unbounded). Skip entirely
-            # when we matched an OPEN metric (don't ceiling-drop a real ROAS=1.0).
-            elif matched is None and rate_ctx and len(norm) >= 2:
-                lo = min(nums)
-                if 0.0 <= lo and hi <= 1.0005 and all(n >= 0.9995 for n in nums):
-                    return True      # 0..1 rate pinned at 1.0 in every segment
-                if 0.0 <= lo and hi <= 100.05 and all(n >= 99.95 for n in nums):
-                    return True      # 0..100% rate pinned at 100 in every segment
-    return bool(finding_text and _NO_DATA_RE.search(finding_text))
-
-
-# Tokens that mark a SUM(... × weight) as the NORMALIZED multi-touch attribution idiom —
-# where the per-order weights sum to 1, so SUM(measure × weight) over a fact⋈attribution
-# join is NOT inflated (the F2 case). Such a SUM is exempt from the chasm DROP.
-_WEIGHT_FACTOR_RE = re.compile(r"sum\s*\([^)]*\b(weight|share|alloc\w*|attribution)\b", re.IGNORECASE)
-# Salient numbers a narration asserts — currency, comma-grouped counts, percentages.
-_CLAIM_NUM_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d+(?:\.\d+)?\s?%")
-
-
-def _safe_float(x):
-    """float(x) or None — expected non-numeric cells are control flow, not an error."""
-    try:
-        return float(x)
-    except (TypeError, ValueError):
-        return None
-
-
-def _uniqueness_oracle_for(conn):
-    """Build (and cache on conn) the cardinality oracle the fan-out chasm guards use to
-    treat a 1:1 dimension as a non-satellite. Returns None if conn/schema unavailable."""
-    if conn is None:
-        return None
-    try:
-        from aughor.profile.validate import make_uniqueness_oracle
-        from aughor.tools.schema import _parse_schema_tables
-        tc = getattr(conn, "_insight_table_cols", None)
-        if tc is None:
-            tc = _parse_schema_tables(conn.get_schema())
-            if hasattr(conn, "__dict__"):
-                conn._insight_table_cols = tc
-        return make_uniqueness_oracle(conn, tc)
-    except Exception as _e:
-        tolerate(_e, "insight-gate: cardinality oracle unavailable", counter="insight_gate.oracle_failed")
-        return None
-
-
-def _insight_sql_unsound(sql: str, conn=None) -> str | None:
-    """Static SQL-trust battery for a CANDIDATE INSIGHT's query — the same authorities the
-    profile audit applies, now enforced BEFORE an explorer finding can be emitted. Returns a
-    one-line reason the query is untrustworthy, or None. High precision (errs toward keeping):
-
-      • self-ratio tautology (X/X → always 1.0),
-      • parent fan-out (SUM/AVG of a parent table's measure across a join to its child),
-      • chasm fan-out (≥2 many-side satellites of one hub) for SUM/COUNT(*)/AVG — with the
-        cardinality oracle (a 1:1 dimension is not a satellite) AND a carve-out for the
-        normalized SUM(measure × weight) attribution idiom, which is fan-out-safe."""
-    s = (sql or "").strip()
-    if not s:
-        return None
-    try:
-        from aughor.sql.fanout import (
-            self_ratio_tautology, detect_fanout, sum_over_chasm_fanout,
-            count_star_chasm_fanout, avg_over_chasm_fanout, measure_times_key_arithmetic,
-            avg_of_row_ratios, dimension_ratio_chasm,
-        )
-    except Exception:
-        return None
-
-    taut = self_ratio_tautology(s)
-    if taut:
-        return taut
-
-    idmath = measure_times_key_arithmetic(s)
-    if idmath:
-        return f"id-arithmetic: {idmath[:160]}"
-
-    ratio = avg_of_row_ratios(s)
-    if ratio:
-        return f"avg-of-ratios: {ratio[:160]}"
-
-    # Build the oracle FIRST — it parses + caches conn._insight_table_cols, so the fan-out
-    # guards reuse that schema parse (no second private import of _parse_schema_tables).
-    oracle = _uniqueness_oracle_for(conn)
-    table_cols = getattr(conn, "_insight_table_cols", None) or {}
-
-    # Fan-out battery (one guarded block; fail-open via tolerate, never silent):
-    #   • detect_fanout — high-precision multi-satellite/parent detector ("category GMV
-    #     $457k > total GMV $251k"); exempt the normalized SUM(measure × weight) idiom.
-    #   • chasm SUM/COUNT/AVG with the cardinality oracle (a 1:1 dimension isn't a satellite).
-    #   • the SAME chasm battery re-run on each CTE BODY — the outer-scope guards miss a
-    #     chasm HIDDEN inside a CTE (the ROAS bug: channel_revenue AS (SELECT SUM(...) FROM
-    #     order_items JOIN attribution ...)).
-    try:
-        weighted = bool(_WEIGHT_FACTOR_RE.search(s))
-        if not weighted:
-            f = detect_fanout(s, table_cols)
-            if f is not None:
-                return f"fan-out: {f.to_prompt_text()[:160]}"
-            # Backstop for the dimension-join ratio detect_fanout can't see (#159): if the
-            # de-fan rewrite upstream couldn't adopt, drop rather than emit a fanned ratio.
-            fdr = dimension_ratio_chasm(s, table_cols)
-            if fdr is not None:
-                return f"fan-out: {fdr.to_prompt_text()[:160]}"
-        if oracle is not None:
-            if not weighted:
-                r = sum_over_chasm_fanout(s, table_cols, is_unique_on=oracle)
-                if r:
-                    return f"fan-out: {r[:160]}"
-            for fn in (count_star_chasm_fanout, avg_over_chasm_fanout):
-                r = fn(s, table_cols, is_unique_on=oracle)
-                if r:
-                    return f"fan-out: {r[:160]}"
-            import sqlglot
-            from sqlglot import exp as _exp
-            for cte in sqlglot.parse_one(s, read="duckdb").find_all(_exp.CTE):
-                body = cte.this.sql(dialect="duckdb")
-                if _WEIGHT_FACTOR_RE.search(body):
-                    continue
-                rc = (sum_over_chasm_fanout(body, table_cols, is_unique_on=oracle)
-                      or count_star_chasm_fanout(body, table_cols, is_unique_on=oracle)
-                      or avg_over_chasm_fanout(body, table_cols, is_unique_on=oracle))
-                if rc:
-                    return f"fan-out in CTE '{cte.alias_or_name}': {rc[:140]}"
-    except Exception as _e:
-        tolerate(_e, "insight-gate: fan-out analysis", counter="insight_gate.fanout_failed")
-    return None
-
-
-# A column whose NAME is a count/row-tally is never a grand total nor a money "part" — it is a
-# different measure. Used to stop a constant COUNT column (e.g. `n` = 210 weeks/channel) from being
-# mistaken for the total that a money column "exceeds" (the spurious fan-out flag on a ratio scan).
-_COUNT_COL_RE = re.compile(r'(^|[_\s])(n|cnt|count|num|rows?|records?|freq|samples?|observations?)([_\s]|$)', re.I)
-# Beyond this overshoot the candidate "total" and the "part" are different MEASURES (a count next to
-# money), not a fan-out over-count of the same measure — a real fan-out exceeds the total only modestly.
-_PART_WHOLE_OVERSHOOT_CAP = 1000.0
-
-
-def _part_exceeds_whole(rows, columns=None) -> str | None:
-    """Internal-consistency check: a column that is CONSTANT across the result is a candidate
-    grand total; if another numeric column has a value that EXCEEDS it, the 'parts' are bigger
-    than the 'whole' — the signature of a fan-out total (the 'category GMV $457k > total GMV
-    $251k' bug). Conservative: needs ≥2 rows, both columns at money/count magnitude (≥100), and
-    a clear >5% overshoot — so a constant rate next to a count never trips it.
-
-    Guards against the ratio-scan false positive: a constant COUNT column (`n`) sitting next to a
-    money column is NOT a part/whole pair. Count columns are excluded by name (when `columns` are
-    known) and, as a measure-agnostic backstop, an overshoot of orders of magnitude is ignored
-    (a fan-out exceeds the total modestly; a count-vs-money mismatch exceeds it ~1000×+)."""
-    if not rows or len(rows) < 2:
-        return None
-    norm = [list(r.values()) if isinstance(r, dict) else list(r) for r in rows]
-    ncols = min((len(r) for r in norm), default=0)
-    # Resolve column names from the explicit arg or, failing that, dict-row keys.
-    names = None
-    if columns and len(columns) >= ncols:
-        names = [str(c) for c in columns[:ncols]]
-    elif rows and isinstance(rows[0], dict):
-        names = [str(k) for k in list(rows[0].keys())[:ncols]]
-    count_idx = {i for i, nm in enumerate(names) if _COUNT_COL_RE.search(nm)} if names else set()
-    cols = []
-    for i in range(ncols):
-        parsed = [_safe_float(r[i]) for r in norm]
-        cols.append(parsed if all(v is not None for v in parsed) else None)
-    for i, ci in enumerate(cols):
-        if i in count_idx:
-            continue                      # a count is never a grand total
-        if not ci or len(set(ci)) != 1:
-            continue                      # column i must be CONSTANT (a candidate total)
-        total = ci[0]
-        if abs(total) < 100:
-            continue                      # too small to be a money/count total — skip (rates)
-        for j, cj in enumerate(cols):
-            if j == i or not cj or j in count_idx:
-                continue                  # a count is never a money 'part' of the total
-            mx = max(cj)
-            if abs(total) * 1.05 < mx <= abs(total) * _PART_WHOLE_OVERSHOOT_CAP and mx >= 100:
-                return (f"component exceeds total: a value {mx:.0f} exceeds the constant "
-                        f"total {total:.0f} in the same result — fan-out over-count")
-    return None
-
-
-def _claim_numbers_grounded(finding_text: str, rows) -> str | None:
-    """Conservative claim-grounding: every salient number the NARRATION asserts (currency,
-    comma-grouped counts, percentages) should trace to the actual result. Flags ONLY gross
-    fabrication — ≥2 salient numbers asserted and NONE found in the rows (a percentage is
-    matched against both its raw value and its 0..1 fraction; magnitudes within 1%). Rounding,
-    abbreviations ($1.3M) and a single derived figure never trip it — false positives here
-    would drop good insights, so the bar is deliberately high."""
-    if not finding_text or not rows:
-        return None
-    vals = []
-    for tok in _CLAIM_NUM_RE.findall(finding_text):
-        v = _safe_float(re.sub(r"[\$,%\s]", "", tok))
-        if v is not None:
-            vals.append((tok, v))
-    if len(vals) < 2:
-        return None
-    # flatten numeric cells from the result
-    cells = []
-    for r in rows[:200]:
-        row = r.values() if isinstance(r, dict) else r
-        cells.extend(v for v in (_safe_float(c) for c in row) if v is not None)
-    if not cells:
-        return None
-
-    def grounded(v):
-        for c in cells:
-            for cand in (c, c * 100.0, c / 100.0):  # percent ↔ fraction
-                if cand == 0:
-                    continue
-                if abs(v - cand) <= abs(cand) * 0.01 + 1e-6:
-                    return True
-        return v == 0.0
-    if not any(grounded(v) for _, v in vals):
-        return (f"claim not grounded: none of the asserted figures "
-                f"{[t for t, _ in vals][:4]} appear in the query result")
-    return None
-
-
-# RC4 — implausible ratio/turnover magnitude. A turnover or multiplier is bounded by
-# reality (inventory turns a few × per year; a multiplier rarely exceeds tens). When a
-# finding asserts a turnover/ratio/×-multiplier in the thousands it is virtually always a
-# grain bug (e.g. SUM(units_sold)/AVG(units_on_hand) across all product-months → 96,295)
-# — never a real signal. Deliberately conservative: a high cap and a narrow keyword set so
-# it only fires on genuine grain explosions, never on a legitimate large count or revenue.
-# A number DIRECTLY bound to a ratio word — "turnover of 96,295.6", "turnover (25.0x)",
-# "ratio: 1,200", "turnover is 96295". No other digit may sit between the word and the
-# number, so a nearby revenue figure ("$175.06M" two words away) is never captured — that
-# loose-window false-positive is exactly what wrongly flagged a healthy 25× tier.
-_RATIO_NUM_RE = re.compile(
-    r"\b(?:turnover|multiplier|ratio)\b\s*(?:of|is|at|was|=|:|reached|hit|stands at)?\s*[\(\[]?\s*"
-    r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?",
-    re.I,
-)
-# "<number>x"/"<number>×" multiplier, and "<number> turnover/multiplier".
-_TIMES_MULT_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?\s*[x×]\b", re.I)
-_NUM_RATIO_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?\s*\b(?:turnover|multiplier)\b", re.I)
-_IMPLAUSIBLE_RATIO_CAP = 1000.0
-
-
-def _parse_magnitude(num: str, suf: str = "") -> "Optional[float]":
-    """Expand a numeric token ('96,295.6' + 'M') to a float; None if unparseable."""
-    s = (num or "").strip().replace(",", "")
-    try:
-        base = float(s)
-    except ValueError:
-        return None
-    return base * {"k": 1e3, "m": 1e6, "b": 1e9}.get((suf or "").lower(), 1.0)
-
-
-def _implausible_ratio_claim(finding_text: str, cap: float = _IMPLAUSIBLE_RATIO_CAP) -> str:
-    """Return a reason when the finding asserts a turnover/ratio/×-multiplier DIRECTLY bound
-    to a number far beyond a sane bound (a grain-bug signature), else ''. Tightly scoped to
-    the number that belongs to the ratio word so a legitimate large revenue/count nearby is
-    never flagged."""
-    t = finding_text or ""
-    if not t:
-        return ""
-    candidates: list[tuple[str, str]] = []
-    for rx in (_RATIO_NUM_RE, _TIMES_MULT_RE, _NUM_RATIO_RE):
-        candidates += [(m.group(1), m.group(2) or "") for m in rx.finditer(t)]
-    for num, suf in candidates:
-        v = _parse_magnitude(num, suf)
-        if v is not None and abs(v) > cap:
-            return (f"implausible turnover/ratio magnitude in finding ({num.strip()}{suf} ≫ {cap:g}) "
-                    "— almost certainly a grain bug, not a real signal")
-    return ""
-
-
-# Named-metric ↔ SQL coherence — industry-aware, data-driven (NO hardcoded metric list). The real
-# bug: the coder aliased SUM(order_value)/COUNT(DISTINCT order_id) AS `aov` (correctly — that IS
-# AOV), but the narrator wrote it up as "ROAS at 6.23"; that one wrong word made the Briefing claim
-# ROAS and the drill-down chase a revenue÷spend ratio that has no clean grain. The signal is the
-# query's OWN label disagreeing with the claim: the result is aliased as one metric, the prose
-# asserts a DIFFERENT one. The metric vocabulary comes from the per-industry KB (data/kb/industry/
-# *.json) matched to the connection's profile, plus org-registered metrics — so airline/manufacturing
-# /SaaS are covered by their JSON, and a new metric is a KB/registry entry, not a code change.
-_ALIAS_RE = re.compile(r"\bAS\s+\"?([A-Za-z_][A-Za-z0-9_]*)\"?", re.IGNORECASE)
-
-
-def _kbnorm(s: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
-
-
-def _metric_of_sql_alias(sql: str, vocab: dict):
-    """The canonical metric a query LABELS its result as — the label its top-level column alias
-    resolves to in ``vocab`` ({token: (label, formula)}) — or None. Falls back to a regex scan of
-    ``AS <ident>`` if the SQL won't parse."""
-    cands: list = []
-    try:
-        import sqlglot as _sg
-        from sqlglot import exp as _sgx
-        tree = _sg.parse_one(sql, read="duckdb")
-        for e in (getattr(tree, "expressions", None) or []):
-            a = e.alias if isinstance(e, _sgx.Alias) else getattr(e, "alias", "")
-            if a:
-                cands.append(a)
-    except Exception:
-        cands = [m.group(1) for m in _ALIAS_RE.finditer(sql)]
-    for a in cands:
-        hit = vocab.get(_kbnorm(a))
-        if hit:
-            return hit[0]   # the canonical label
-    return None
-
-
-def _asserted_metrics_in_text(text: str, vocab: dict) -> set:
-    """Canonical labels of vocab metrics ASSERTED in the prose — a name/alias appearing in a clause
-    that ALSO carries a number ("ROAS at 6.23"), so a passing mention ('ROAS is worth checking')
-    doesn't count. Single-word tokens match a clause word; longer tokens match the clause's
-    normalized form (so 'return on ad spend' is caught)."""
-    out: set = set()
-    for clause in re.split(r"[.;\n]", (text or "").lower()):
-        if not re.search(r"\d", clause):
-            continue
-        words = set(re.split(r"[^a-z0-9]+", clause))
-        cnorm = _kbnorm(clause)
-        for token, (label, _formula) in vocab.items():
-            if token in words or (len(token) >= 6 and token in cnorm):
-                out.add(label)
-    return out
-
-
-def _mislabeled_named_metric(finding_text: str, sql: str, vocab: dict) -> str | None:
-    """Reason when the query's result is aliased as one metric but the finding asserts a DIFFERENT
-    one — a metric mislabel (AOV computed, "ROAS" claimed). High-precision: both must be recognized
-    metrics from the industry KB / registry, and the claim must be asserted with a value."""
-    if not finding_text or not sql or not vocab:
-        return None
-    sql_metric = _metric_of_sql_alias(sql, vocab)
-    if not sql_metric:
-        return None
-    claimed = _asserted_metrics_in_text(finding_text, vocab)
-    if claimed and sql_metric not in claimed:
-        other = sorted(claimed)[0]
-        return (f"metric mislabel: the query computes {sql_metric} (its result is aliased as such) "
-                f"but the finding asserts {other}. Relabel the finding to {sql_metric}, or fix the "
-                "query to actually compute the claimed metric.")
-    return None
-
-
-def _alias_stripped_norm(sql: str) -> str:
-    """Normalized SQL with table qualifiers removed from columns, so a governed formula
-    signature `SUM(total_amount)` matches an alias-prefixed query `SUM(o.total_amount)` —
-    the alias-insensitivity check_metric_enforcement lacks (a correct prefixed query reads
-    as 'drift' to its raw substring match). Fail-open to the plain normalization."""
-    try:
-        import sqlglot as _sg
-        from sqlglot import exp as _sgx
-        tree = _sg.parse_one(sql, read="duckdb")
-        for c in tree.find_all(_sgx.Column):
-            c.set("table", None)
-        return _kbnorm(tree.sql(dialect="duckdb"))
-    except Exception:
-        return _kbnorm(sql)
-
-
-def _wrong_usage_idents(metric) -> list[str]:
-    """Column/table identifiers (snake_case) a metric's `wrong_usage_examples` warn against —
-    the positive drift signal (`line_total` for order-grain revenue). Underscore-bearing only,
-    so SQL keywords ('from', 'select') can't masquerade as a wrong column."""
-    out: list[str] = []
-    for ex in (getattr(metric, "wrong_usage_examples", []) or []):
-        for ident in re.findall(r"[a-z]+_[a-z0-9_]+", ex.lower()):
-            if ident not in out:
-                out.append(ident)
-    return out
-
-
-def _asserted_registered(finding_text: str, metrics: list) -> list:
-    """Registered metrics whose name/label the prose ASSERTS with a value (a number in the
-    same clause) — a passing mention ('revenue is worth watching') doesn't count. Inlined
-    targeting (not enforcement._targets) to keep the public-import boundary clean."""
-    clauses = [c for c in re.split(r"[.;\n]", (finding_text or "").lower()) if re.search(r"\d", c)]
-    if not clauses:
-        return []
-    out: list = []
-    for m in metrics:
-        name = (getattr(m, "name", "") or "").lower()
-        label = (getattr(m, "label", "") or "").lower()
-        words = [w for w in re.findall(r"[a-z]+", label) if len(w) >= 4]
-        for c in clauses:
-            cw = set(re.split(r"[^a-z0-9]+", c))
-            if (name and name in cw) or (label and label in c) or (words and all(w in c for w in words)):
-                out.append(m)
-                break
-    return out
-
-
-def _drifted_registered_metric(finding_text: str, sql: str) -> str | None:
-    """The deeper coherence layer under the alias↔claim signal: a finding that ASSERTS a
-    REGISTERED metric whose SQL structurally DRIFTS from that metric's governed formula —
-    caught even with no revealing result alias (the alias guard needs one). High-precision:
-    only registered metrics with a governed formula; the governed signature is checked
-    alias-insensitively (so a correct prefixed query is never flagged); and a hard reject
-    fires ONLY when a wrong-usage COLUMN the metric warns against is actually present (so a
-    merely differently-written correct query is never dropped). Returns a reason or None."""
-    if not finding_text or not sql:
-        return None
-    try:
-        from aughor.semantic.metrics import list_metrics
-        metrics = [m for m in list_metrics() if (getattr(m, "sql", "") or "").strip()]
-    except Exception as _e:
-        logger.debug("formula-drift: registry unavailable: %s", _e)
-        return None
-    asserted = _asserted_registered(finding_text, metrics)
-    if not asserted:
-        return None
-    s = _alias_stripped_norm(sql)
-    for m in asserted:
-        formula = _kbnorm(getattr(m, "sql", ""))
-        if not formula or formula in s:
-            continue                       # governed formula present (alias-insensitive) → no drift
-        # Governed formula ABSENT — corroborate with a wrong-usage column actually in the SQL.
-        for ident in _wrong_usage_idents(m):
-            n = _kbnorm(ident)
-            if len(n) >= 6 and n not in formula and n in s:
-                lbl = getattr(m, "label", "") or getattr(m, "name", "")
-                return (f"metric formula drift: the finding asserts {lbl} but the query uses a "
-                        f"non-governed form (references '{ident}'; governed: {getattr(m, 'sql', '')}). "
-                        "Recompute with the governed formula or relabel to what the SQL computes.")
-    return None
-
-
-def _row_floats(rows) -> list:
-    """Every numeric cell value in the result, for grounding an asserted number. Type-checked
-    (no try/except) so a non-numeric cell is simply skipped — bool excluded (it's not a measure)."""
-    out: list = []
-    for r in rows or []:
-        for v in (r.values() if isinstance(r, dict) else r):
-            if isinstance(v, bool):
-                continue
-            if isinstance(v, (int, float)):
-                out.append(float(v))
-            elif isinstance(v, str) and re.fullmatch(r"\s*-?\d+(?:\.\d+)?\s*", v):
-                out.append(float(v.strip()))
-    return out
-
-
-def _wrong_metric_value_grounded(finding_text: str, vocab: dict, wrong_labels: set, rows) -> bool:
-    """STRICT grounding for relabel: every number in a clause that asserts a WRONG-labelled metric
-    must actually appear in the result rows (1% tolerant, percent↔fraction-aware). Stricter than
-    the lenient emission gate (which skips small numbers) — so relabel can NEVER keep a fabricated
-    value like the 'ROAS 6.23' a query returning AOV ~69 never produced. No cells / no asserted
-    number → not grounded (don't rescue)."""
-    cells = _row_floats(rows)
-    if not cells:
-        return False
-    wrong_tokens = {tok for tok, (label, _f) in vocab.items() if label in wrong_labels}
-    nums: list = []
-    for clause in re.split(r"[.;\n]", (finding_text or "").lower()):
-        words = set(re.split(r"[^a-z0-9]+", clause))
-        cnorm = _kbnorm(clause)
-        if any(t in words or (len(t) >= 6 and t in cnorm) for t in wrong_tokens):
-            nums += [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", clause.replace(",", ""))]
-    if not nums:
-        return False
-
-    def grounded(n: float) -> bool:
-        for c in cells:
-            if abs(n - c) <= max(0.05, abs(c) * 0.01):
-                return True
-            if abs(n - c * 100.0) <= max(0.05, abs(c * 100.0) * 0.01):   # cell is a fraction, prose a percent
-                return True
-        return False
-
-    return all(grounded(n) for n in nums)
-
-
-def relabel_mislabeled_finding(finding_text: str, sql: str, vocab: dict, rows=None) -> str | None:
-    """Relabel-and-keep: when a finding is mislabeled (the query computes metric A but the prose
-    asserts a DIFFERENT metric B with a value), rewrite B's name to A's canonical label and KEEP
-    the finding instead of dropping it — the SIGNAL is real, only the label was wrong (the missimi
-    'email CRM AOV $69.15' that a bad LLM draw called 'ROAS').
-
-    Safe by a STRICT internal grounding gate: it relabels ONLY when the wrong metric's asserted
-    value(s) are present in the result rows — so a mislabel whose number was ALSO fabricated
-    ('ROAS 6.23' over rows that are ~69) is NOT rescued and falls through to the normal reject (the
-    emission gate's grounding is too lenient on small numbers to be relied on here). Only single-word
-    recognized metric tokens that appear verbatim (ROAS/AOV/CAC…) are rewritten — a multi-word phrase
-    can't be located reliably. Returns the relabeled text, or None when there's nothing to safely relabel."""
-    if not finding_text or not sql or not vocab:
-        return None
-    sql_metric = _metric_of_sql_alias(sql, vocab)
-    if not sql_metric:
-        return None
-    claimed = _asserted_metrics_in_text(finding_text, vocab)
-    wrong_labels = {c for c in claimed if c != sql_metric}
-    if not wrong_labels:
-        return None
-    if not _wrong_metric_value_grounded(finding_text, vocab, wrong_labels, rows):
-        return None   # the asserted value isn't this query's output → don't keep a wrong number
-    # surface tokens (single alnum words like 'roas') that map to a wrong label — longest first.
-    wrong_tokens = sorted(
-        {tok for tok, (label, _f) in vocab.items() if label in wrong_labels and tok.isalnum()},
-        key=len, reverse=True)
-    new_text, replaced = finding_text, False
-    for tok in wrong_tokens:
-        pat = re.compile(rf"\b{re.escape(tok)}\b", re.I)
-        if pat.search(new_text):
-            new_text = pat.sub(sql_metric, new_text)
-            replaced = True
-    return new_text if replaced else None
-
-
-@lru_cache(maxsize=64)
-def _industry_for_conn(conn_id: str) -> str:
-    """The connection's declared/inferred industry, for industry-scoped metric vocabulary."""
-    if not conn_id:
-        return ""
-    try:
-        from aughor.profile import store as _pstore
-        bp = _pstore.load(conn_id)
-        return (getattr(bp, "industry", "") or "") if bp else ""
-    except Exception:
-        return ""
-
-
-def _metric_vocab_for(conn, industry: str = "") -> dict:
-    """{normalized_token: (label, formula)} for the coherence check — the per-industry curated KB
-    matched to this connection's profile, plus org-registered metric names. Fail-open to {}."""
-    try:
-        ind = (industry or "").strip()
-        if not ind and conn is not None:
-            ind = _industry_for_conn(getattr(conn, "_connection_id", "") or "")
-        from aughor.profile.metric_kb import metric_vocabulary
-        vocab = {t: (label, formula) for (t, label, formula) in metric_vocabulary(ind)}
-        try:    # org-registered metrics (governed) extend the vocabulary by name + label
-            from aughor.semantic.metrics import list_metrics
-            for m in list_metrics():
-                label = getattr(m, "label", "") or getattr(m, "name", "")
-                for tok in (getattr(m, "name", ""), label):
-                    t = _kbnorm(tok)
-                    if t and t not in vocab:
-                        vocab[t] = (label, getattr(m, "sql", "") or "")
-        except Exception as _e:
-            logger.debug("metric vocab: registry metrics unavailable: %s", _e)
-        return vocab
-    except Exception as _e:
-        logger.debug("metric vocab build failed: %s", _e)
-        return {}
-
-
-def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None, *, columns=None, industry: str = "") -> tuple[bool, str]:
-    """THE pre-emission trust gate: a candidate finding is surfaced ONLY if it passes every
-    deterministic check. Returns (ok, reason). A SOTA platform treats generated claims as
-    untrusted until verified — so the explorer self-weeds (tautologies, fan-out artifacts,
-    boundary-saturated rates, fabricated numbers) instead of shipping confident nonsense to
-    a Briefing. Supersedes the bare degenerate check at every emission site; fail-open only
-    on internal error (never silently drops a sound finding due to a gate bug)."""
-    try:
-        why = _insight_sql_unsound(sql, conn)
-        if why:
-            return (False, why)
-        if _is_degenerate_result(rows, finding_text, sql, metric_ranges):
-            return (False, "degenerate result (flat NULL / zero / boundary-pinned rate)")
-        pw = _part_exceeds_whole(rows, columns=columns)
-        if pw:
-            return (False, pw)
-        vc = _vacuous_case_dimension(sql, rows)
-        if vc:
-            return (False, vc)
-        # Impossible-magnitude check (operating bands), shared with the briefing's triage so
-        # there is ONE band KB. Lifted to the EMISSION gate so an impossible value (inventory
-        # turnover 3,600×) never gets stored — protecting the insight cards and any other
-        # consumer, not just the brief. Only the 'implausible' severity hard-rejects here; the
-        # 'confound' severity is deliberately NOT rejected (an inverse relationship can be a
-        # real finding — "churn falls as engagement rises") and stays a soft demotion at synthesis.
-        try:
-            from aughor.knowledge.triage import plausibility as _plausibility
-            _pv = _plausibility(finding_text, sql)
-            if _pv.severity == "implausible":
-                return (False, _pv.reason)
-        except Exception as _e:
-            tolerate(_e, "insight-gate: plausibility band check", counter="insight_gate.plausibility_failed")
-        # RC4 backstop — a generic implausible turnover/ratio CLAIM in the finding text that
-        # the structural + operating-band checks above didn't already catch (runs last so the
-        # more-specific reasons — vacuous CASE, operating band — win when they apply).
-        ir = _implausible_ratio_claim(finding_text)
-        if ir:
-            return (False, ir)
-        cg = _claim_numbers_grounded(finding_text, rows)
-        if cg:
-            return (False, cg)
-        nm = _mislabeled_named_metric(finding_text, sql, _metric_vocab_for(conn, industry))
-        if nm:
-            return (False, nm)
-        dr = _drifted_registered_metric(finding_text, sql)
-        if dr:
-            return (False, dr)
-        return (True, "")
-    except Exception:
-        return (True, "")  # fail-open: a gate bug must not suppress real findings
-
-
-_LITERAL_DIM_RE = re.compile(r"""['"][^'"]*['"]\s+AS\s+(\w+)""", re.IGNORECASE)
-
-
-def _has_fabricated_dimension(sql: str) -> bool:
-    """True when a query invents its dimension by aliasing a constant literal and
-    grouping by it — e.g. ``SELECT 'Unknown' AS signup_source ... GROUP BY signup_source``.
-
-    The model writes this when the real column doesn't exist, producing a vacuous
-    single-group "breakdown" the narrator then presents as a real category ("the
-    only channel represented"). High-precision: only fires when the SOLE grouping
-    key is the constant — a real dimension alongside it is a legitimate breakdown.
-    """
-    if not sql:
-        return False
-    low = sql.lower()
-    if "group by" not in low:
-        return False
-    gb = low.split("group by", 1)[1]
-    gb = re.split(r"\b(order\s+by|having|limit|window|qualify)\b", gb, maxsplit=1)[0]
-    keys = [k.strip() for k in gb.split(",") if k.strip()]
-    if len(keys) != 1:
-        return False  # another real dimension is present → legitimate breakdown
-    key = keys[0]
-    if key.startswith("'") or key.startswith('"'):
-        return True  # GROUP BY 'literal'
-    return any(m.group(1).lower() == key for m in _LITERAL_DIM_RE.finditer(sql))
-
-
-# A CASE that buckets rows into string labels: capture each branch's THEN label and the
-# ELSE default. ``.+?`` (non-greedy, DOTALL) tolerates quoted IN-lists inside the WHEN
-# condition (``WHEN x IN ('A','B') THEN 'mass'``) — it stops at the branch's own THEN.
-_CASE_THEN_RE = re.compile(r"\bWHEN\b.+?\bTHEN\s+'([^']+)'", re.IGNORECASE | re.DOTALL)
-_CASE_ELSE_RE = re.compile(r"\bELSE\s+'([^']+)'\s+END\b", re.IGNORECASE)
-
-
-def _vacuous_case_dimension(sql: str, rows) -> str | None:
-    """Reason when a CASE that segments rows into labels collapses ENTIRELY into its ELSE
-    default — i.e. the WHEN literals matched NO rows, so the derived dimension is a single
-    meaningless bucket presented as a real segmentation.
-
-    The canonical bug: ``CASE WHEN brand_name IN ('CeraVe','La Mer',…) THEN 'mass'/'luxury'
-    … ELSE 'unknown'`` on data whose brands are actually ``Brand_000`` — every row falls to
-    'unknown', the cross-tier comparison is vacuous, and a real ``brand_tier`` column was
-    ignored. High-precision: needs ≥2 intended categories AND a result where ONLY the ELSE
-    label appears and NONE of the THEN labels do (an empty ⋂ proves the scheme matched
-    nothing). A query whose CASE produced even one real category never trips it."""
-    if not sql or not rows:
-        return None
-    then_labels = {m.strip().lower() for m in _CASE_THEN_RE.findall(sql) if m.strip()}
-    else_labels = {m.strip().lower() for m in _CASE_ELSE_RE.findall(sql) if m.strip()}
-    if len(then_labels) < 2 or not else_labels:
-        return None   # not a multi-branch labelled categorization with a default
-    present: set[str] = set()
-    for r in rows[:500]:
-        cells = r.values() if isinstance(r, dict) else r
-        for c in cells:
-            if isinstance(c, str) and c.strip():
-                present.add(c.strip().lower())
-    if not present:
-        return None
-    if (else_labels & present) and not (then_labels & present):
-        return (f"vacuous categorization: a CASE bucketed every row into its default "
-                f"'{sorted(else_labels)[0]}' — the intended categories {sorted(then_labels)[:4]} "
-                f"matched no rows (hardcoded literals absent from the data; a real category "
-                f"column was likely ignored)")
-    return None
-
-
-def _clamp_novelty(v) -> int:
-    """Novelty is a 1-5 score (see the interpret prompt). The LLM occasionally
-    echoes a data magnitude into it — e.g. revenue 77568 lands in `novelty`, which
-    then pins confidence at 95% (``0.4 + novelty*0.1`` capped) and lets a junk
-    finding own the headline (novelty drives ranking). Clamp to the valid range."""
-    try:
-        return max(1, min(5, int(v)))
-    except (TypeError, ValueError):
-        return 3
-
-
-# Per-grain mislabel (#6): a line-item-grain column averaged and presented as a
-# per-ORDER / per-customer metric. True AOV = SUM(revenue)/COUNT(DISTINCT order);
-# `AVG(oi.line_total) AS aov` averages LINE ITEMS, undercounting (the $467-vs-$1108
-# mislabel). High-precision: keys off a line-grain column name inside AVG() that's
-# then labelled (alias or narration) as an order/customer-level metric.
-_LINE_GRAIN_COL = re.compile(r"line_?(total|amount|item|price|value|subtotal|qty|quantity)|item_(total|amount|price|qty)", re.I)
-_PER_ORDER_LABEL = re.compile(r"\baov\b|average\s+order\s+value|avg_?order_?value|order_?value|per[\s_]order|per[\s_]customer|per[\s_]basket", re.I)
-
-
-def _mislabeled_per_grain(sql: str, finding_text: str = "") -> bool:
-    """True when SQL averages a line-item-grain column but the alias or the finding
-    narrates it as a per-order/per-customer value — a semantic mislabel the numeric
-    grounding can't catch (the averaged value is a real cell, just the wrong metric)."""
-    if not sql:
-        return False
-    for m in re.finditer(r"AVG\s*\(([^)]*)\)(?:\s+AS\s+(\w+))?", sql, re.IGNORECASE):
-        arg, alias = m.group(1), (m.group(2) or "")
-        if _LINE_GRAIN_COL.search(arg) and (_PER_ORDER_LABEL.search(alias) or _PER_ORDER_LABEL.search(finding_text)):
-            return True
-    return False
-
-
 # Semantic metric groups (#5). A repair that swaps a column from one group for a
 # column in another changed WHAT is measured (revenue→cost), not just how. An LLM
 # faithfulness check rates these "faithful" (cf. 5ba0fbe) — the deterministic
@@ -1208,55 +186,6 @@ def _extract_dead_refs(error: str) -> set:
     return out
 
 
-# Coverage angles that inherently require a date/timestamp (aging, over-time, cohorts).
-# Offering one on a domain with NO real timestamp forces the generator to invent a date
-# column — the `invoice_date`-on-a-dateless-`invoices`-table hallucination. Substring-matched
-# so checklist wording can vary. See _phase8 temporal-feasibility gate (#1).
-_TEMPORAL_ANGLE_RE = re.compile(
-    r"(trend|season|retention|lifecycle|cohort|churn|aging|recency|lead.?time|"
-    r"growth|velocity|momentum|over.?time|time.?series|tenure)",
-    re.I,
-)
-
-
-def _is_temporal_angle(angle: str) -> bool:
-    """True when a coverage angle inherently needs a date/timestamp column."""
-    return bool(_TEMPORAL_ANGLE_RE.search(angle or ""))
-
-
-# Coverage angles that need a SPECIFIC KIND of column. Offering one when the
-# domain has no matching column forces the generator to invent the dimension —
-# the `'Unknown' AS signup_source` channel hallucination. Substring-matched on
-# both the angle name (keys) and the available column names (patterns), so
-# checklist/column wording can vary. See _phase8 column-feasibility gate (#1).
-_ANGLE_REQUIRED_COLS: dict[str, "re.Pattern[str]"] = {
-    "channel_mix":          re.compile(r"channel|source|medium|utm|referr|acqui", re.I),
-    "attribution":          re.compile(r"channel|source|medium|utm|referr|attribut|touchpoint|campaign", re.I),
-    "campaign_roi":         re.compile(r"campaign|utm|ad_|adset|spend|budget|cost", re.I),
-    "conversion":           re.compile(r"conver|funnel|stage|status|step|visit|session|signup|lead", re.I),
-    "experiments":          re.compile(r"experiment|variant|\bab_|test_group|bucket|treatment|cohort_group", re.I),
-    "payment_behavior":     re.compile(r"payment|pay_|tender|method|installment|card|gateway|wallet", re.I),
-    "refund_rate":          re.compile(r"refund|return|chargeback|cancel|reversal|dispute", re.I),
-    "receivables":          re.compile(r"invoice|due|outstanding|receivable|balance|paid|payment_date|aging", re.I),
-    "supplier_performance": re.compile(r"supplier|vendor|partner|on_time|delay|fulfil|deliver", re.I),
-    "inventory_health":     re.compile(r"invent|stock|sku|quantity|on_hand|reorder|warehouse|backorder", re.I),
-    "lead_times":           re.compile(r"lead.?time|deliver|ship|fulfil|expected|actual.?date|dispatch", re.I),
-    "fulfillment":          re.compile(r"fulfil|ship|deliver|dispatch|status|tracking|warehouse", re.I),
-}
-
-
-def _angle_feasible(angle: str, columns: "set[str]") -> bool:
-    """True unless the angle needs a column class entirely absent from the domain.
-
-    Conservative: an angle with no specific column requirement is always feasible,
-    and a present-but-oddly-named column is matched by the broad patterns — so a
-    false drop (skipping a real angle) is rare, and far cheaper than a fabrication."""
-    pat = _ANGLE_REQUIRED_COLS.get((angle or "").lower())
-    if pat is None:
-        return True
-    return any(pat.search(c) for c in columns)
-
-
 def _query_columns(sql: str) -> set:
     """Lowercased bare column names referenced by a SQL string (best-effort, via sqlglot).
     Used to tell a meaning-changing repair (one column SUBSTITUTED for another) apart from a
@@ -1268,44 +197,6 @@ def _query_columns(sql: str) -> set:
     except Exception:
         return set()
     return {(c.name or "").lower() for c in tree.find_all(exp.Column) if c.name}
-
-
-# SQL that computes OVER TIME — a date/time function, INTERVAL, or a date literal. Used to
-# catch a repair that silently DE-TEMPORALISES a time-based question (the invoice case: invoice
-# AGE via DATE_DIFF on a date + a date-range filter, "repaired" into a plain payment-delay
-# column). Deterministic and high-precision — no LLM judgement (an LLM rated that drift faithful).
-_TEMPORAL_SQL_RE = re.compile(
-    r"\b(date_?diff|datediff|date_?trunc|date_?part|date_?add|date_?sub|extract|strftime|"
-    r"julian_?day|current_date|current_timestamp|interval)\b"
-    r"|'\d{4}-\d{2}-\d{2}",   # a date literal like '2025-05-17'
-    re.I,
-)
-
-
-def _has_temporal_sql(sql: str) -> bool:
-    """True when SQL computes over time (date/time function, INTERVAL, or a date literal)."""
-    return bool(_TEMPORAL_SQL_RE.search(sql or ""))
-
-
-# A date-difference whose two date operands are IDENTICAL — DATE_DIFF(CURRENT_DATE,
-# CURRENT_DATE) or DATE_DIFF(x.c, x.c) — is always 0. A repair on a dateless table that
-# can't find a real date column sometimes fakes the time computation this way, keeping a
-# temporal *shape* while answering nothing (so _has_temporal_sql alone won't flag it). The
-# operand class excludes parens, so nested-call operands simply don't match (no false flag).
-_VACUOUS_DATEDIFF_RE = re.compile(
-    r"date_?diff\s*\(\s*(?:'[^']*'\s*,\s*)?(?P<a>[^,()]+?)\s*,\s*(?P<b>[^,()]+?)\s*\)",
-    re.I,
-)
-
-
-def _has_vacuous_temporal(sql: str) -> bool:
-    """True when a date-difference compares a value to itself → a constant-0 'time' metric."""
-    for m in _VACUOUS_DATEDIFF_RE.finditer(sql or ""):
-        a = re.sub(r"\s+", "", m.group("a")).lower()
-        b = re.sub(r"\s+", "", m.group("b")).lower()
-        if a == b:
-            return True
-    return False
 
 
 def _ontology_skip_note(last_build: Optional[dict]) -> str:
@@ -1406,7 +297,7 @@ class SchemaExplorer:
         if not self.schema_name:
             return False
         mine = self.schema_name.lower()
-        other = {_dataset_of(t).lower() for t in _tables_in_sql(sql)} - {mine, ""}
+        other = {dataset_of(t).lower() for t in tables_in_sql(sql)} - {mine, ""}
         return bool(other)
 
     # ── External control ──────────────────────────────────────────────────────
@@ -1473,7 +364,7 @@ class SchemaExplorer:
             from aughor.kernel.ledger import Ledger
             from aughor.kernel.jobs import current_job_id
             _lineage = [("source_sql", "sql", sql)]
-            for _tbl in sorted(_tables_in_sql(sql))[:8]:
+            for _tbl in sorted(tables_in_sql(sql))[:8]:
                 _lineage.append(("input", f"table:{_tbl}", None))
             _lineage.append(("validated_by", "guard:numeric_grounding",
                              "all magnitudes matched result cells"))
@@ -1565,7 +456,7 @@ class SchemaExplorer:
         (9999/1900/epoch) are filtered, and the dense ``effective_date_range`` is
         preferred over the raw ``date_range``. See docs/ADAPTIVE_TEMPORAL_SCOPE.md §3.
         """
-        start, end, discrepancy = _role_aware_time_window(tp, cp, jmap)
+        start, end, discrepancy = role_aware_time_window(tp, cp, jmap)
         if discrepancy:
             spines = ", ".join(f"{t} (→{r})" for t, r in discrepancy[:3])
             logger.info(
@@ -1580,12 +471,12 @@ class SchemaExplorer:
         # only — we move the window start forward to a recent structural break, never widen
         # or weaken the Tier-0 result; any failure falls back to the fixed window.
         try:
-            anchor, _rec, _eff = _anchor_activity(tp, cp)
+            anchor, _rec, _eff = anchor_activity(tp, cp)
             if anchor:
                 regime_start = self._regime_window_start(anchor, tp, start)
                 # Floor: never narrow below ~a quarter of data — guards against a recent
                 # daily/weekly spike collapsing the window to days.
-                if regime_start and regime_start > start and _days_between(regime_start, end) >= 90:
+                if regime_start and regime_start > start and days_between(regime_start, end) >= 90:
                     logger.info(
                         "[explorer:%s] Tier 1: narrowing window to current regime (start %s → %s)",
                         self.connection_id, start, regime_start,
@@ -1633,7 +524,7 @@ class SchemaExplorer:
         arc (secular trend / growth factor) the briefing juxtaposes against the recent
         regime. Cheap (one GROUP BY year, ~N_years rows). Best-effort; returns None on
         any failure. See aughor/explorer/temporal.py + docs/ADAPTIVE_TEMPORAL_SCOPE.md §5."""
-        anchor, _rec, _eff = _anchor_activity(tp, cp)
+        anchor, _rec, _eff = anchor_activity(tp, cp)
         if not anchor:
             return None
         prof = tp.get(anchor)
@@ -1654,7 +545,7 @@ class SchemaExplorer:
                     or n.startswith(("id_", "key_")))
         measure_col = None
         for col_name, col_p in (cp.get(anchor) or {}).items():
-            if _profile_field(col_p, "semantic_type") == "measure" and not _looks_like_key(col_name):
+            if profile_field(col_p, "semantic_type") == "measure" and not _looks_like_key(col_name):
                 measure_col = col_name
                 break
 
@@ -1752,11 +643,11 @@ class SchemaExplorer:
             # curiosity loop should use approximate aggregates. Best-effort, never fatal.
             try:
                 from aughor.explorer.watermark import get_watermark, set_watermark
-                _anchor, _rec, _ = _anchor_activity(tp, cp)
+                _anchor, _rec, _ = anchor_activity(tp, cp)
                 self._prev_watermark = get_watermark(self.connection_id, _anchor) if _anchor else None
                 if _anchor and _rec:
                     set_watermark(self.connection_id, _anchor, _rec)
-                self._cost_large = any((_profile_field(p, "row_count") or 0) >= _COST_LARGE_ROWS
+                self._cost_large = any((profile_field(p, "row_count") or 0) >= _COST_LARGE_ROWS
                                        for p in (tp or {}).values())
                 if self._cost_large:
                     logger.info("[explorer:%s] Tier 3: large connection — approximate aggregates on",
@@ -1942,8 +833,8 @@ class SchemaExplorer:
                     lines.append(f"  {col_p.column}  {col_p.dtype}")
             schema_str = "\n".join(lines)
 
-            from aughor.tools.schema import _parse_schema_tables, _compute_join_map
-            jmap = _compute_join_map(_parse_schema_tables(schema_str))
+            from aughor.tools.schema import parse_schema_tables, compute_join_map
+            jmap = compute_join_map(parse_schema_tables(schema_str))
 
             return tp, cp, jmap
 
@@ -2067,7 +958,7 @@ class SchemaExplorer:
         _hll_rows = hll_min_rows()
         joins = jmap.get("joins", [])
         done_keys = {v.get("key") for v in self._state.get("join_verifications", [])}
-        table_rows = {t: (_profile_field(p, "row_count") or 0) for t, p in (tp or {}).items()}
+        table_rows = {t: (profile_field(p, "row_count") or 0) for t, p in (tp or {}).items()}
 
         for j in joins:
             t1, c1, t2, c2 = j["t1"], j["c1"], j["t2"], j["c2"]
@@ -2580,7 +1471,7 @@ class SchemaExplorer:
                     logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — %s",
                                 self.connection_id, qi, _why)
                     continue
-                if _has_fabricated_dimension(sql):
+                if has_fabricated_dimension(sql):
                     continue
 
                 # Interpret.
@@ -2601,7 +1492,7 @@ class SchemaExplorer:
 
                 if self._leaks_schema(sql):
                     continue
-                _rl = relabel_mislabeled_finding(interp.finding, sql, _metric_vocab_for(self._conn), rows)
+                _rl = relabel_mislabeled_finding(interp.finding, sql, metric_vocab_for(self._conn), rows)
                 if _rl:
                     logger.info("[explorer:%s] Phase 8 (pinned): relabeled a mislabeled metric, keeping the signal",
                                 self.connection_id)
@@ -2636,8 +1527,8 @@ class SchemaExplorer:
                     "measures": [],
                     "finding": interp.finding,
                     "sql": sql,
-                    "confidence": min(0.95, 0.4 + _clamp_novelty(interp.novelty) * 0.1),
-                    "novelty": _clamp_novelty(interp.novelty),
+                    "confidence": min(0.95, 0.4 + clamp_novelty(interp.novelty) * 0.1),
+                    "novelty": clamp_novelty(interp.novelty),
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "canvas_id": self.canvas_id,
                     "promoted_to_org": False,
@@ -2759,14 +1650,14 @@ class SchemaExplorer:
         # schemas (e.g. bakehouse + ecommerce). The generated SQL is schema-qualified, so a
         # bare→dataset map lets us also restrict the table context the LLM sees. No-op for a
         # single-schema connection.
-        _all_datasets = {_dataset_of(t) for t in (tp or {}) if _dataset_of(t)}
+        _all_datasets = {dataset_of(t) for t in (tp or {}) if dataset_of(t)}
         multi_dataset = len(_all_datasets) > 1
-        _bare2dataset = {str(q).split(".")[-1].lower(): _dataset_of(q)
-                         for q in (tp or {}) if _dataset_of(q)}
+        _bare2dataset = {str(q).split(".")[-1].lower(): dataset_of(q)
+                         for q in (tp or {}) if dataset_of(q)}
 
         def _ds(tbl):
             """Dataset (schema) of a possibly-bare table, via the qualified-table universe."""
-            return _dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
+            return dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
 
         if multi_dataset:
             logger.info("[explorer:%s] Phase 8: multi-dataset connection %s — isolating datasets",
@@ -2790,32 +1681,12 @@ class SchemaExplorer:
             dss = [_ds(t) for t in e.source_tables if _ds(t)]
             return _C(dss).most_common(1)[0][0] if dss else ""
 
-        passes: list[tuple[str, str, list]] = []   # (pass_label, base_domain, entities)
-        for _domain, _entities in domain_entities.items():
-            if not multi_dataset:
-                passes.append((_domain, _domain, _entities))
-                continue
-            _by_ds: dict[str, list] = {}
-            for _e in _entities:
-                _by_ds.setdefault(_entity_ds(_e), []).append(_e)
-            _real = {k: v for k, v in _by_ds.items() if k}
-            if len(_real) <= 1:
-                # One (or zero) identifiable dataset — keep the domain whole.
-                passes.append((_domain, _domain, _entities))
-            else:
-                # Split: a labelled pass per dataset. Entities whose dataset can't be
-                # determined ride with the largest group so they're not dropped either.
-                _unknown = _by_ds.get("", [])
-                _primary = max(sorted(_real), key=lambda d: len(_real[d]))
-                for _ds_name in sorted(_real):
-                    _ents = list(_real[_ds_name])
-                    if _ds_name == _primary:
-                        _ents += _unknown
-                    passes.append((f"{_domain} · {_ds_name}", _domain, _ents))
-                logger.info(
-                    "[explorer:%s] Phase 8: %s domain spans %s — splitting into one pass per dataset",
-                    self.connection_id, _domain, sorted(_real),
-                )
+        passes, _pass_splits = _build_domain_passes(domain_entities, multi_dataset, _entity_ds)
+        for _split_domain, _split_datasets in _pass_splits:
+            logger.info(
+                "[explorer:%s] Phase 8: %s domain spans %s — splitting into one pass per dataset",
+                self.connection_id, _split_domain, _split_datasets,
+            )
 
         # ── Industry-aware steering (Business Profile) ──────────────────────────
         # The keystone for industry-aware intelligence. Load the connection's
@@ -3103,7 +1974,7 @@ class SchemaExplorer:
                 dateless_tables = sorted(t for t in domain_tables if not _tbl_ts(t))
                 domain_has_dates = any(_tbl_ts(t) for t in domain_tables)
                 if not domain_has_dates:
-                    uncovered = [a for a in uncovered if not _is_temporal_angle(a)] or [
+                    uncovered = [a for a in uncovered if not is_temporal_angle(a)] or [
                         "distribution", "composition", "ranking", "anomalies"]
                     temporal_guard_block = (
                         "NO TEMPORAL DATA: this domain has NO date or timestamp column. Do NOT use "
@@ -3177,7 +2048,7 @@ class SchemaExplorer:
                 # the missing dimension with a constant literal. Keep at least one
                 # angle so the loop never starves.
                 if domain_cols:
-                    _feasible = [a for a in uncovered if _angle_feasible(a, domain_cols)]
+                    _feasible = [a for a in uncovered if angle_feasible(a, domain_cols)]
                     if _feasible and len(_feasible) < len(uncovered):
                         logger.info(
                             "[explorer:%s] Phase 8: %s — dropping infeasible angles %s (required column absent)",
@@ -3350,7 +2221,7 @@ class SchemaExplorer:
                     # freshest dataset (multi-dataset connections), and its phrasing must
                     # reflect the actual coverage — a 17-day dataset framed as "the last
                     # 12 months" produces findings narrated over data that doesn't exist.
-                    _domain_window = _window_for_tables(tp, cp, domain_tables) or self._time_window
+                    _domain_window = window_for_tables(tp, cp, domain_tables) or self._time_window
                     if _domain_window:
                         # Name only the profiler-vetted timestamp columns. Without this the
                         # LLM invents a date filter on a date-NAMED integer column (e.g.
@@ -3364,7 +2235,7 @@ class SchemaExplorer:
                         })
                         if _ts_cols:
                             _wstart, _wend = _domain_window[0], _domain_window[1]
-                            _wdays = _days_between(_wstart, _wend) or 0
+                            _wdays = days_between(_wstart, _wend) or 0
                             if _wdays < 300:
                                 _frame = (
                                     f"DATA COVERAGE: this domain's data spans only ~{_wdays} days "
@@ -3445,10 +2316,10 @@ class SchemaExplorer:
                 # Dataset-isolation guard: if the LLM still wrote a cross-dataset join,
                 # drop it — a hallucinated join between unrelated uploaded datasets that can
                 # only return garbage (the bakehouse ⋈ ecommerce class).
-                if multi_dataset and _crosses_datasets(nq.sql):
+                if multi_dataset and crosses_datasets(nq.sql):
                     logger.info(
                         "[explorer:%s] Phase 8: %s/%s — skipping cross-dataset join: %s",
-                        self.connection_id, domain, nq.angle, sorted(_tables_in_sql(nq.sql)),
+                        self.connection_id, domain, nq.angle, sorted(tables_in_sql(nq.sql)),
                     )
                     used += 1
                     budgets[domain] = used
@@ -3459,7 +2330,7 @@ class SchemaExplorer:
                 # … GROUP BY signup_source) — a fabricated dimension. Catch it BEFORE
                 # wasting an execute+interpret cycle (the named-angle gate above only
                 # covers the checklist; the LLM can free-propose any angle).
-                if _has_fabricated_dimension(nq.sql):
+                if has_fabricated_dimension(nq.sql):
                     logger.info(
                         "[explorer:%s] Phase 8: %s/%s — skipping fabricated-dimension question (constant grouping key)",
                         self.connection_id, domain, nq.angle,
@@ -3475,7 +2346,7 @@ class SchemaExplorer:
                 # cost column (missimi) can't mask a cost-less one (bakehouse).
                 try:
                     from aughor.semantic.metric_feasibility import unsupported_metric_gap
-                    _q_tables = {t.lower() for t in _tables_in_sql(nq.sql)}
+                    _q_tables = {t.lower() for t in tables_in_sql(nq.sql)}
                     _q_bare = {t.split(".")[-1] for t in _q_tables}
                     _q_cols = {
                         c for tk, cols in (sql_writer.table_cols or {}).items()
@@ -3736,8 +2607,8 @@ class SchemaExplorer:
                 # than none). No LLM judgement: an LLM rated this exact drift "faithful".
                 if sql != nq.sql:
                     _removed = _query_columns(nq.sql) - _query_columns(sql)
-                    _detemporalised = bool(_removed) and _has_temporal_sql(nq.sql) and not _has_temporal_sql(sql)
-                    _vacuous = _has_vacuous_temporal(sql)
+                    _detemporalised = bool(_removed) and has_temporal_sql(nq.sql) and not has_temporal_sql(sql)
+                    _vacuous = has_vacuous_temporal(sql)
                     if _detemporalised or _vacuous:
                         logger.info(
                             "[explorer:%s] Phase 8: %s/%s — dropping finding; repair %s a time-based "
@@ -3906,7 +2777,7 @@ class SchemaExplorer:
                     logger.info("[explorer:%s] Phase 8: %s/%s — dropping finding: SQL escapes schema %s",
                                 self.connection_id, domain, nq.angle, self.schema_name)
                     continue
-                _rl = relabel_mislabeled_finding(interp.finding, sql, _metric_vocab_for(self._conn), rows)
+                _rl = relabel_mislabeled_finding(interp.finding, sql, metric_vocab_for(self._conn), rows)
                 if _rl:
                     logger.info("[explorer:%s] Phase 8: %s/%s — relabeled a mislabeled metric, keeping the signal",
                                 self.connection_id, domain, nq.angle)
@@ -3923,7 +2794,7 @@ class SchemaExplorer:
                 # column with a constant literal ('Unknown' AS channel … GROUP BY
                 # channel), yielding a vacuous single-group "breakdown" the narrator
                 # dresses up as a real category ("the only channel represented").
-                if _has_fabricated_dimension(sql):
+                if has_fabricated_dimension(sql):
                     logger.info(
                         "[explorer:%s] Phase 8: %s/%s — skipping fabricated-dimension finding (constant grouping key)",
                         self.connection_id, domain, nq.angle,
@@ -3934,7 +2805,7 @@ class SchemaExplorer:
                 # per-order/per-customer metric (AVG(line_total) AS aov). The numeric
                 # grounding below can't catch it: the averaged value is a real cell,
                 # only the metric name is wrong (the $467-AOV-vs-$1108 case).
-                if _mislabeled_per_grain(sql, interp.finding):
+                if mislabeled_per_grain(sql, interp.finding):
                     logger.info(
                         "[explorer:%s] Phase 8: %s/%s — skipping per-grain mislabel (line-item AVG sold as a per-order metric)",
                         self.connection_id, domain, nq.angle,
@@ -4137,8 +3008,8 @@ class SchemaExplorer:
                     # nq.sql here showed a non-runnable draft as "the data behind this claim",
                     # breaking the Evidence layer's provenance.
                     "sql": sql,
-                    "confidence": min(0.95, 0.4 + _clamp_novelty(interp.novelty) * 0.1),
-                    "novelty": _clamp_novelty(interp.novelty),
+                    "confidence": min(0.95, 0.4 + clamp_novelty(interp.novelty) * 0.1),
+                    "novelty": clamp_novelty(interp.novelty),
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "canvas_id": self.canvas_id,
                     "promoted_to_org": False,
@@ -4158,6 +3029,17 @@ class SchemaExplorer:
                 _dossier = None
                 try:
                     from aughor.explorer.dossier import build_dossier
+                    _ftables = tables_in_sql(sql)
+                    # Snapshot-pin the finding to the data version it ran against (opt-in),
+                    # so a later drill / re-validate can reproduce it and tell a moved
+                    # dataset apart from a mis-derived finding. Fail-open — never blocks emit.
+                    _data_version = None
+                    try:
+                        from aughor.db.snapshot import snapshot_receipts_enabled, data_version
+                        if snapshot_receipts_enabled():
+                            _data_version = data_version(self._conn, _ftables)
+                    except Exception:
+                        logger.debug("data-version pin failed (non-fatal)", exc_info=True)
                     _dossier = build_dossier(
                         question=nq.question,
                         sql=sql,
@@ -4165,10 +3047,11 @@ class SchemaExplorer:
                         rationale=getattr(interp, "rationale", "") or "",
                         rows=rows,
                         grounding=_g,
-                        tables=_tables_in_sql(sql),
+                        tables=_ftables,
                         state=self._state,
                         generated_at=insight["generated_at"],
                         data_fingerprint=self._state.get("schema_fingerprint"),
+                        data_version=_data_version,
                     )
                 except Exception:
                     logger.debug("dossier build failed (non-fatal)", exc_info=True)
@@ -4194,6 +3077,51 @@ class SchemaExplorer:
 
 
 # ── Helpers (module-level) ────────────────────────────────────────────────────
+
+def _build_domain_passes(domain_entities, multi_dataset, entity_ds):
+    """Split each ontology domain into per-dataset exploration passes so no uploaded
+    dataset is ever dropped — the "every dataset gets understood" guarantee.
+
+    On a multi-dataset connection a domain's entities can span unrelated uploaded
+    datasets (a Marketing domain over BOTH bakehouse and netflix). Keeping only the
+    dominant dataset's entities silently dropped the rest, so a single-table catalog
+    like ``netflix.netflix_titles`` — which loses every dominance contest — got ZERO
+    exploration and ZERO briefing (it just vanished). Splitting into one pass per
+    dataset keeps every pass single-dataset (so the in-loop isolation guards stay
+    no-ops) and drops nothing; entities whose dataset can't be determined ride with
+    the largest group. ``entity_ds(entity) -> str`` resolves an entity's dataset
+    ('' when unknown); on a single-dataset connection it is never called.
+
+    Returns ``(passes, splits)``: ``passes`` = ``[(pass_label, base_domain, entities)]``
+    (``base_domain`` still drives the angle checklist + insight tagging); ``splits`` =
+    ``[(domain, sorted_datasets)]`` for the caller to log.
+    """
+    passes: list[tuple[str, str, list]] = []   # (pass_label, base_domain, entities)
+    splits: list[tuple[str, list]] = []
+    for _domain, _entities in domain_entities.items():
+        if not multi_dataset:
+            passes.append((_domain, _domain, _entities))
+            continue
+        _by_ds: dict[str, list] = {}
+        for _e in _entities:
+            _by_ds.setdefault(entity_ds(_e), []).append(_e)
+        _real = {k: v for k, v in _by_ds.items() if k}
+        if len(_real) <= 1:
+            # One (or zero) identifiable dataset — keep the domain whole.
+            passes.append((_domain, _domain, _entities))
+        else:
+            # Split: a labelled pass per dataset. Entities whose dataset can't be
+            # determined ride with the largest group so they're not dropped either.
+            _unknown = _by_ds.get("", [])
+            _primary = max(sorted(_real), key=lambda d: len(_real[d]))
+            for _ds_name in sorted(_real):
+                _ents = list(_real[_ds_name])
+                if _ds_name == _primary:
+                    _ents += _unknown
+                passes.append((f"{_domain} · {_ds_name}", _domain, _ents))
+            splits.append((_domain, sorted(_real)))
+    return passes, splits
+
 
 def _find_status_col(col_map: dict) -> Optional[str]:
     """Return the most likely lifecycle/status column in a table's column map."""

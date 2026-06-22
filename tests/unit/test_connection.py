@@ -139,7 +139,7 @@ def test_internal_query_bypasses_audit() -> None:
 
 
 def test_security_pre_skips_internal_query() -> None:
-    """_security_pre never blocks an internal query, even a dangerous-looking one."""
-    from aughor.db.connection import _security_pre
+    """security_pre never blocks an internal query, even a dangerous-looking one."""
+    from aughor.db.connection import security_pre
     # A DROP would normally be BLOCKED; under an internal label it's not even scored.
-    assert _security_pre("c1", "__catalog__", "DROP TABLE x") is None
+    assert security_pre("c1", "__catalog__", "DROP TABLE x") is None

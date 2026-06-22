@@ -72,6 +72,7 @@ The layer that separates Aughor from a plausible-sounding demo. Deterministic, e
 - **Filter value-domain repair** — a misspelled enum literal (`status = 'cancelled'` when the data holds `'canceled'`) runs clean but matches zero rows — or, with `!=` / `NOT IN`, *excludes* zero rows ("you have no cancellations" over 15,737). The column's real domain is probed and the near-miss is repaired, on every SQL path (chat + Deep).
 - **Narration-inversion guard** — drops/caveats a claim that over-generalises a per-group value into a universal one ("3 orders × 1 item" narrated as "all orders have 3 items").
 - **Angle-feasibility + intent-preservation** — won't ask a time-based question of a dateless table, and drops/flags a repair that silently changed the question's meaning.
+- **Snapshot-pinned, reproducible receipts** — a finding can be pinned to the *data version* it ran against (a portable per-table fingerprint, or an exact DuckLake snapshot id), so re-validate tells a *moved dataset* apart from a *mis-derived finding* — and on a version-aware store it **proves** the verdict by reproducing the query `AT` the pinned snapshot. Every answer becomes reproducible-*as-of*, not merely re-runnable. (Opt-in; the foundation for the lakehouse direction in [`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md).)
 - **Graceful by contract** — bad inputs, dead dependencies, and crashes surface an error or recover; never a 500, a hang, or a silent-wrong success (locked by a failure-path + fault-injection + crash-recovery test suite).
 
 ### 📡 Intelligence surfaces + actionability
@@ -146,7 +147,8 @@ aughor/
 ## Roadmap & features
 
 - **[ROADMAP.md](ROADMAP.md)** — prioritized backlog, shipped milestones, what's next.
-- **[FEATURES.md](FEATURES.md)** — a living reference of every major feature (155+ and counting), how it works, and the files behind it.
+- **[FEATURES.md](FEATURES.md)** — a living reference of every major feature (160+ and counting), how it works, and the files behind it.
+- **[docs/PLATFORM_ARCHITECTURE.md](docs/PLATFORM_ARCHITECTURE.md)** — the platform direction: org-tenancy, the catalog & storage model (Unity-Catalog-aligned), and the control-plane / data-plane split for multi-tenant SaaS.
 
 ## License
 

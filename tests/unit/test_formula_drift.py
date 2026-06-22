@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.explorer.agent import (
-    _drifted_registered_metric, _asserted_registered, _wrong_usage_idents,
-    _alias_stripped_norm, verify_insight,
+from aughor.explorer.agent import verify_insight
+from aughor.explorer.metric_coherence import (
+    drifted_registered_metric, _asserted_registered, _wrong_usage_idents, _alias_stripped_norm,
 )
 from aughor.semantic.metrics import list_metrics
 
@@ -49,7 +49,7 @@ def test_asserted_requires_a_value_in_the_clause():
 def _drift_via_stub(finding, sql, monkeypatch):
     # list_metrics is imported inside the function from its source module — patch there.
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda: [_REVENUE])
-    return _drifted_registered_metric(finding, sql)
+    return drifted_registered_metric(finding, sql)
 
 
 def test_line_total_grain_drift_is_flagged(monkeypatch):

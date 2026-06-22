@@ -1009,8 +1009,8 @@ async def _stream_chat(
         semantic_layer_section = ""
         try:
             from aughor.tools.data_catalog import build_data_catalog
-            from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
-            linked_tables = list(_parse_schema_tables(schema).keys())
+            from aughor.tools.schema import parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
+            linked_tables = list(parse_schema_tables(schema).keys())
             if linked_tables:
                 # Add the date/time dimension first (before FK expansion + the
                 # 10-table cap) so a temporal question keeps it.
@@ -1236,7 +1236,7 @@ async def _stream_chat(
         _fanout_fix_hint = ""
         try:
             from aughor.sql.fanout import detect_fanout, defan, dimension_ratio_chasm
-            from aughor.tools.schema import _parse_schema_tables as _pst
+            from aughor.tools.schema import parse_schema_tables as _pst
             _pst_cols = _pst(_full_schema)
             _ff = detect_fanout(final_sql, _pst_cols, dialect=db.dialect) or \
                 dimension_ratio_chasm(final_sql, _pst_cols, dialect=db.dialect)
@@ -1657,7 +1657,7 @@ async def _build_origin_finding(
     ``insight_id``; falls back to the lightweight ``seed_context``/``seed_sql`` a caller
     passed inline (a finding predating dossier capture, or a chart drill). Best-effort.
     """
-    from aughor.explorer.agent import _tables_in_sql
+    from aughor.explorer.scope import tables_in_sql
     if insight_id:
         try:
             from aughor.kernel.ledger import Ledger
@@ -1675,7 +1675,7 @@ async def _build_origin_finding(
                     "insight_id": insight_id,
                     "finding": (dossier.get("finding") or "").strip(),
                     "sql": _sql,
-                    "tables": sorted(_tables_in_sql(_sql)) if _sql else [],
+                    "tables": sorted(tables_in_sql(_sql)) if _sql else [],
                     "result_cells": (dossier.get("result_cells") or "").strip(),
                     "structural": joins,
                     "narrative": (dossier.get("narrative") or "").strip(),
@@ -1690,7 +1690,7 @@ async def _build_origin_finding(
             "insight_id": insight_id or "",
             "finding": _sc,
             "sql": _sq,
-            "tables": sorted(_tables_in_sql(_sq)) if _sq else [],
+            "tables": sorted(tables_in_sql(_sq)) if _sq else [],
             "result_cells": "",
             "structural": [],
             "narrative": "",
@@ -1859,8 +1859,8 @@ async def _stream_investigation(
         data_catalog = ""
         try:
             from aughor.tools.data_catalog import build_data_catalog
-            from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
-            linked_tables = list(_parse_schema_tables(schema).keys())
+            from aughor.tools.schema import parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
+            linked_tables = list(parse_schema_tables(schema).keys())
             if linked_tables:
                 # Complete the join paths BEFORE building the catalog (mirrors the /chat path):
                 # schema-linking picks ~4 tables by keyword, missing bridge/parent tables a join
