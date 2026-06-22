@@ -878,6 +878,87 @@ def _drifted_registered_metric(finding_text: str, sql: str) -> str | None:
     return None
 
 
+def _row_floats(rows) -> list:
+    """Every numeric cell value in the result, for grounding an asserted number. Type-checked
+    (no try/except) so a non-numeric cell is simply skipped — bool excluded (it's not a measure)."""
+    out: list = []
+    for r in rows or []:
+        for v in (r.values() if isinstance(r, dict) else r):
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, (int, float)):
+                out.append(float(v))
+            elif isinstance(v, str) and re.fullmatch(r"\s*-?\d+(?:\.\d+)?\s*", v):
+                out.append(float(v.strip()))
+    return out
+
+
+def _wrong_metric_value_grounded(finding_text: str, vocab: dict, wrong_labels: set, rows) -> bool:
+    """STRICT grounding for relabel: every number in a clause that asserts a WRONG-labelled metric
+    must actually appear in the result rows (1% tolerant, percent↔fraction-aware). Stricter than
+    the lenient emission gate (which skips small numbers) — so relabel can NEVER keep a fabricated
+    value like the 'ROAS 6.23' a query returning AOV ~69 never produced. No cells / no asserted
+    number → not grounded (don't rescue)."""
+    cells = _row_floats(rows)
+    if not cells:
+        return False
+    wrong_tokens = {tok for tok, (label, _f) in vocab.items() if label in wrong_labels}
+    nums: list = []
+    for clause in re.split(r"[.;\n]", (finding_text or "").lower()):
+        words = set(re.split(r"[^a-z0-9]+", clause))
+        cnorm = _kbnorm(clause)
+        if any(t in words or (len(t) >= 6 and t in cnorm) for t in wrong_tokens):
+            nums += [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", clause.replace(",", ""))]
+    if not nums:
+        return False
+
+    def grounded(n: float) -> bool:
+        for c in cells:
+            if abs(n - c) <= max(0.05, abs(c) * 0.01):
+                return True
+            if abs(n - c * 100.0) <= max(0.05, abs(c * 100.0) * 0.01):   # cell is a fraction, prose a percent
+                return True
+        return False
+
+    return all(grounded(n) for n in nums)
+
+
+def relabel_mislabeled_finding(finding_text: str, sql: str, vocab: dict, rows=None) -> str | None:
+    """Relabel-and-keep: when a finding is mislabeled (the query computes metric A but the prose
+    asserts a DIFFERENT metric B with a value), rewrite B's name to A's canonical label and KEEP
+    the finding instead of dropping it — the SIGNAL is real, only the label was wrong (the missimi
+    'email CRM AOV $69.15' that a bad LLM draw called 'ROAS').
+
+    Safe by a STRICT internal grounding gate: it relabels ONLY when the wrong metric's asserted
+    value(s) are present in the result rows — so a mislabel whose number was ALSO fabricated
+    ('ROAS 6.23' over rows that are ~69) is NOT rescued and falls through to the normal reject (the
+    emission gate's grounding is too lenient on small numbers to be relied on here). Only single-word
+    recognized metric tokens that appear verbatim (ROAS/AOV/CAC…) are rewritten — a multi-word phrase
+    can't be located reliably. Returns the relabeled text, or None when there's nothing to safely relabel."""
+    if not finding_text or not sql or not vocab:
+        return None
+    sql_metric = _metric_of_sql_alias(sql, vocab)
+    if not sql_metric:
+        return None
+    claimed = _asserted_metrics_in_text(finding_text, vocab)
+    wrong_labels = {c for c in claimed if c != sql_metric}
+    if not wrong_labels:
+        return None
+    if not _wrong_metric_value_grounded(finding_text, vocab, wrong_labels, rows):
+        return None   # the asserted value isn't this query's output → don't keep a wrong number
+    # surface tokens (single alnum words like 'roas') that map to a wrong label — longest first.
+    wrong_tokens = sorted(
+        {tok for tok, (label, _f) in vocab.items() if label in wrong_labels and tok.isalnum()},
+        key=len, reverse=True)
+    new_text, replaced = finding_text, False
+    for tok in wrong_tokens:
+        pat = re.compile(rf"\b{re.escape(tok)}\b", re.I)
+        if pat.search(new_text):
+            new_text = pat.sub(sql_metric, new_text)
+            replaced = True
+    return new_text if replaced else None
+
+
 @lru_cache(maxsize=64)
 def _industry_for_conn(conn_id: str) -> str:
     """The connection's declared/inferred industry, for industry-scoped metric vocabulary."""
@@ -2520,6 +2601,11 @@ class SchemaExplorer:
 
                 if self._leaks_schema(sql):
                     continue
+                _rl = relabel_mislabeled_finding(interp.finding, sql, _metric_vocab_for(self._conn), rows)
+                if _rl:
+                    logger.info("[explorer:%s] Phase 8 (pinned): relabeled a mislabeled metric, keeping the signal",
+                                self.connection_id)
+                    interp.finding = _rl
                 _ok, _why = verify_insight(rows, interp.finding, sql, _mranges, conn=self._conn)
                 if not _ok:
                     logger.info("[explorer:%s] Phase 8 (pinned): dropping interpreted finding — %s",
@@ -3820,6 +3906,11 @@ class SchemaExplorer:
                     logger.info("[explorer:%s] Phase 8: %s/%s — dropping finding: SQL escapes schema %s",
                                 self.connection_id, domain, nq.angle, self.schema_name)
                     continue
+                _rl = relabel_mislabeled_finding(interp.finding, sql, _metric_vocab_for(self._conn), rows)
+                if _rl:
+                    logger.info("[explorer:%s] Phase 8: %s/%s — relabeled a mislabeled metric, keeping the signal",
+                                self.connection_id, domain, nq.angle)
+                    interp.finding = _rl
                 _ok, _why = verify_insight(rows, interp.finding, sql, _metric_ranges, conn=self._conn)
                 if not _ok:
                     logger.info(
