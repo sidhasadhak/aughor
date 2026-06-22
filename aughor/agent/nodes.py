@@ -539,6 +539,16 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     _schema_ctx = state["schema_context"]
     _dialect = conn.dialect
 
+    # R8: when in-SQL AI columns are enabled, teach the generator the governed prompt()/embedding()
+    # operators exist (conservative — text-only, row-bounded). No-op + zero prompt cost when off.
+    try:
+        from aughor.semops.ai_sql import ai_sql_enabled, ai_sql_operator_hint
+        if ai_sql_enabled():
+            _schema_ctx = _schema_ctx + "\n\n" + ai_sql_operator_hint()
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "ai-sql generator hint is best-effort", counter="ai_sql.hint")
+
     # Build ontology formula injection section — if the hypothesis/intent mentions
     # a known metric name, inject its approved formula_sql so the LLM can't hallucinate it.
     _ontology_formulas_section = ""

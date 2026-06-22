@@ -21,6 +21,8 @@ can't make a million LLM calls).
 from __future__ import annotations
 
 import logging
+import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -239,3 +241,51 @@ def emit_ai_receipt(receipt: AIColumnReceipt, *, conn_id: Optional[str] = None) 
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "ai-column receipt journal", counter="ai_column.receipt")
+
+
+# ── Generation wiring ─────────────────────────────────────────────────────────
+# Make the governed prompt()/embedding() UDFs usable from agent-GENERATED SQL: register
+# them on the executing DuckDB connection, teach the generator they exist, and emit a
+# receipt when a query computes an AI column. OPT-IN — these make per-row LLM calls, so
+# the default is off; an operator turns them on with AUGHOR_AI_SQL=1.
+
+def ai_sql_enabled() -> bool:
+    """True when in-SQL AI columns are turned on. Off by default (they make per-row LLM calls);
+    set ``AUGHOR_AI_SQL=1`` to register the prompt()/embedding() UDFs + teach the generator."""
+    return os.getenv("AUGHOR_AI_SQL", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def register_ai_udfs(duck_conn: Any, *, max_calls: int = DEFAULT_MAX_ROWS) -> Any:
+    """Register BOTH governed UDFs (``prompt`` + ``embedding``) on a DuckDB connection so
+    agent-generated SQL can emit AI columns. Fail-open (each registrar is best-effort) and
+    governed by the per-registration call cap. Returns the connection."""
+    register_prompt_udf(duck_conn, max_calls=max_calls)
+    register_embedding_udf(duck_conn, max_calls=max_calls)
+    return duck_conn
+
+
+_AI_UDF_RE = re.compile(r"\b(prompt|embedding)\s*\(", re.I)
+
+
+def sql_uses_ai_column(sql: str) -> Optional[str]:
+    """The AI operator a SQL string invokes (``'prompt'`` / ``'embedding'``), or ``None`` —
+    used to emit the AI-column receipt when an executed query computed an AI column in-SQL."""
+    m = _AI_UDF_RE.search(sql or "")
+    return m.group(1).lower() if m else None
+
+
+def ai_sql_operator_hint() -> str:
+    """The generator-facing description of the governed AI columns, injected into the SQL-gen
+    schema context only when :func:`ai_sql_enabled`. Deliberately conservative — text-only, and
+    always row-bounded — so the model reaches for it rarely and never instead of plain SQL."""
+    return (
+        "GOVERNED AI COLUMNS (optional — only when the question needs reasoning over free TEXT that "
+        "SQL itself can't express, e.g. the sentiment of a review or the theme of a support ticket):\n"
+        "  • prompt('<instruction>', <text_column>) → applies an LLM per row, returning one short "
+        "value (a label / sentiment / extracted answer). Reproducible (temperature 0).\n"
+        "  • embedding(<text_column>) → the row's embedding vector; rank semantically with "
+        "list_cosine_similarity(embedding(col), embedding('<query text>')).\n"
+        "  Rules: use ONLY for genuine text reasoning — NEVER for anything plain SQL can do; ALWAYS "
+        "bound the rows first with a WHERE and a small LIMIT (these are cost-gated and REFUSE above a "
+        "row cap — prefer LIMIT 50). If a plain-SQL answer exists, write that instead."
+    )
