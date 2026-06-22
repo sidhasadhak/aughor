@@ -70,6 +70,7 @@ async def _lifespan(app: "FastAPI"):
     await _ensure_default_org()
     await _migrate_upload_storage()
     await _ensure_default_workspace()
+    await _sync_metastore()
     await _validate_connections()
     await _start_explorers()
     await _start_ontology_refresh_loop()
@@ -207,6 +208,17 @@ async def _ensure_default_workspace() -> None:
         ensure_default_workspace()
     except Exception as exc:
         logger.warning("Workspace migration failed (non-fatal): %s", exc)
+
+
+async def _sync_metastore() -> None:
+    # Derive catalogs (← connections) + grants (← workspace membership). Must run
+    # AFTER the default workspace exists so memberships are present. Non-fatal; the
+    # metastore isn't on the live data path yet (the gate still uses connection_ids).
+    try:
+        from aughor.metastore import sync_metastore_from_registry
+        sync_metastore_from_registry()
+    except Exception as exc:
+        logger.warning("Metastore sync failed (non-fatal): %s", exc)
 
 
 async def _validate_connections() -> None:
