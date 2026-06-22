@@ -292,14 +292,21 @@ objects; `org_id` is absent from persisted objects, jobs, receipts, and metering
 Each phase ships value and is independently stoppable.
 
 - **Phase 0 — done.** `DuckLakeConnection` + the format-agnostic snapshot/reproduction seam.
-- **Phase 1 — the Org/tenant spine** *(the cheap-now, brutal-to-retrofit groundwork; do this
-  next).* Introduce `Org` above `Workspace`; add `org_id` to every persisted object, job,
-  receipt, and metering row; re-path storage to `{root}/{org_id}/…`; make the control-plane /
-  data-plane split explicit in code; model access as a vended capability. Single org in
-  practice; multi-tenant-shaped in structure.
-- **Phase 2 — the metastore service.** Catalog / Schema / Grant as first-class objects;
-  connections become catalogs reached via grants; a **UC-API-compatible** surface (so the
-  later swap is an adapter, and external engines can interoperate).
+- **Phase 1 — the Org/tenant spine — ✅ done** *(2026-06-22/23, branch `2026-06-22-org-tenant-spine`).*
+  `aughor/org/` (`Org` above `Workspace`, `current_org_id()` contextvar, registry + bootstrap);
+  `org_id` on every persisted store (workspaces, connections, jobs, artifacts, lineage,
+  audit_log) + metering; storage re-pathed to `{root}/{org_id}/{conn_id}/…` via the
+  `aughor/platform/` control plane (`vend_storage()` — access is vended, never ambient,
+  Invariant #2) with a crash-safe idempotent on-disk migration; the control-plane / data-plane
+  split is explicit in code. Single org in practice; multi-tenant-shaped in structure.
+- **Phase 2 — the metastore service — ◑ foundation done.** `aughor/metastore/` ships
+  **Catalog + Grant as first-class objects** (a connection *is* a catalog within an org; a
+  workspace holds USAGE grants), derived/reconciled from the connection registry + workspace
+  membership, with a grant resolver `granted_catalog_ids()` parity-tested against the live
+  `workspace_connection_ids()` gate. *Remaining (next checkpoint):* flip the ~8 data-path gate
+  sites onto grants (make grants authoritative), **Schema** as a first-class object +
+  schema/table-level grants, and the **UC-API-compatible** read surface (so the later swap is
+  an adapter and external engines can interoperate).
 - **Phase 3 — storage maturity.** Managed vs external locations; the credential-vending
   abstraction made real; **Volumes** for the unstructured tier wired to the semantic operators.
 - **Phase 4 — the multi-tenant flip.** Postgres-backed metastore; S3/GCS storage with scoped
