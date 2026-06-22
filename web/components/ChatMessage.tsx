@@ -27,7 +27,7 @@ import {
   type BriefMetric,
 } from "@/components/brief/Brief";
 import { ChatTurn } from "@/lib/useChat";
-import { validateQuery, sendChatFeedback, type QueryValidation } from "@/lib/api";
+import { validateQuery, sendChatFeedback, proposeLearnedSkill, saveLearnedSkill, type QueryValidation } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { DossierTrace } from "@/components/BriefingPanel";
@@ -1157,10 +1157,43 @@ export function ChatMessage({
 
       {/* ── Export this response as PDF / PowerPoint (Insight or Deep Analysis) ── */}
       {isDone && (turn.investigationId || turn.receiptId) && (
-        <div className="flex justify-end mt-3">
+        <div className="flex justify-end items-center gap-2 mt-3">
+          {turn.investigationId && connectionId && (
+            <SaveAsSkillButton invId={turn.investigationId} connectionId={connectionId} />
+          )}
           <ExportButton invId={(turn.investigationId ?? turn.receiptId) as string} />
         </div>
       )}
     </div>
+  );
+}
+
+// Crystallize a finished investigation into a reusable, governed learned skill: propose
+// (the candidate from its grounded, read-only SQL) → save (EXPLAIN-gated server-side). A
+// 422 means the run wasn't skill-worthy (low confidence / ungrounded / no read-only query).
+function SaveAsSkillButton({ invId, connectionId }: { invId: string; connectionId: string }) {
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [msg, setMsg] = useState("");
+  const save = async () => {
+    setState("saving"); setMsg("");
+    try {
+      const candidate = await proposeLearnedSkill(invId, connectionId);
+      await saveLearnedSkill(candidate, connectionId);
+      setState("saved");
+    } catch (e) {
+      setState("error"); setMsg((e as Error).message || "Couldn't save");
+    }
+  };
+  if (state === "saved")
+    return <span className="text-[11px] text-emerald-400">✓ Saved as skill</span>;
+  return (
+    <button
+      onClick={save}
+      disabled={state === "saving"}
+      title={msg || "Crystallize this investigation into a reusable, governed skill (Ontology ▸ Learned skills)"}
+      className="text-[11px] text-violet-400 hover:text-violet-300 border border-violet-500/30 rounded px-2.5 py-1 transition disabled:opacity-50"
+    >
+      {state === "saving" ? "Saving…" : state === "error" ? "Retry — not skill-worthy?" : "Save as skill"}
+    </button>
   );
 }
