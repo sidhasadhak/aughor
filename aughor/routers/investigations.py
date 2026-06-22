@@ -1235,9 +1235,11 @@ async def _stream_chat(
         # pre-aggregate rewrite below (adopted only if it re-executes cleanly).
         _fanout_fix_hint = ""
         try:
-            from aughor.sql.fanout import detect_fanout, defan
+            from aughor.sql.fanout import detect_fanout, defan, dimension_ratio_chasm
             from aughor.tools.schema import _parse_schema_tables as _pst
-            _ff = detect_fanout(final_sql, _pst(_full_schema), dialect=db.dialect)
+            _pst_cols = _pst(_full_schema)
+            _ff = detect_fanout(final_sql, _pst_cols, dialect=db.dialect) or \
+                dimension_ratio_chasm(final_sql, _pst_cols, dialect=db.dialect)
             if _ff:
                 # Deterministic de-fan FIRST (the LLM-rewrite path is only ~20%
                 # reliable on a known fan-out — it returns plausible CTEs that still

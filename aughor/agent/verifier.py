@@ -52,10 +52,16 @@ class Verifier:
         per query is enough)."""
         from aughor.sql.fanout import (
             sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
-            measure_times_key_arithmetic, avg_of_row_ratios,
+            measure_times_key_arithmetic, avg_of_row_ratios, dimension_ratio_chasm,
         )
+
+        def _dim_ratio_hint(sql, tc, d):
+            # The cross-table dimension-join ratio the FK-root chasm guards miss (#159).
+            f = dimension_ratio_chasm(sql, tc, d)
+            return f.to_prompt_text() if f else None
+
         battery = (sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
-                   measure_times_key_arithmetic, avg_of_row_ratios)
+                   measure_times_key_arithmetic, avg_of_row_ratios, _dim_ratio_hint)
         hits: list[str] = []
         for q in (queries or []):
             sql = getattr(q, "sql", "") or (q if isinstance(q, str) else "")

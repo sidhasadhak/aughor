@@ -517,7 +517,7 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
         from aughor.sql.fanout import (
             self_ratio_tautology, detect_fanout, sum_over_chasm_fanout,
             count_star_chasm_fanout, avg_over_chasm_fanout, measure_times_key_arithmetic,
-            avg_of_row_ratios,
+            avg_of_row_ratios, dimension_ratio_chasm,
         )
     except Exception:
         return None
@@ -552,6 +552,11 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
             f = detect_fanout(s, table_cols)
             if f is not None:
                 return f"fan-out: {f.to_prompt_text()[:160]}"
+            # Backstop for the dimension-join ratio detect_fanout can't see (#159): if the
+            # de-fan rewrite upstream couldn't adopt, drop rather than emit a fanned ratio.
+            fdr = dimension_ratio_chasm(s, table_cols)
+            if fdr is not None:
+                return f"fan-out: {fdr.to_prompt_text()[:160]}"
         if oracle is not None:
             if not weighted:
                 r = sum_over_chasm_fanout(s, table_cols, is_unique_on=oracle)
@@ -3531,9 +3536,10 @@ class SchemaExplorer:
                 # the exact DISTINCT(parent-key, measure) dedup before interpreting.
                 # Adopt only if it dry-runs clean and re-executes; silent otherwise.
                 try:
-                    from aughor.sql.fanout import detect_fanout, defan
+                    from aughor.sql.fanout import detect_fanout, defan, dimension_ratio_chasm
                     _dialect = getattr(self._conn, "dialect", "duckdb")
-                    _ff = detect_fanout(sql, sql_writer.table_cols, dialect=_dialect)
+                    _ff = detect_fanout(sql, sql_writer.table_cols, dialect=_dialect) or \
+                        dimension_ratio_chasm(sql, sql_writer.table_cols, dialect=_dialect)
                     if _ff:
                         _rw = defan(sql, _ff, dialect=_dialect)
                         if _rw and _rw.strip() != sql.strip() and self._conn.dry_run(_rw)[0]:
