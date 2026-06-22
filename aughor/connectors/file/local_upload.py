@@ -2,16 +2,19 @@
 
 No external dependencies — DuckDB handles all file formats natively.
 
-DSN:   local://  (sentinel; files are stored in data/uploads/{connection_id}/)
+DSN:   local://  (sentinel; storage is vended by the control plane, tenant-scoped)
 
-Storage layout (schema-aware)::
+Storage layout (tenant-pathed, schema-aware)::
 
-    data/uploads/{connection_id}/
+    data/uploads/{org_id}/{connection_id}/
         main/                       # default schema
             sales.csv
             sales.csv.import.json   # {"table_name","schema","column_types"}
         finance/
             ledger.parquet
+
+The {org_id} segment is resolved via aughor.platform.vending.vend_storage (§5.1);
+this connector never joins the upload root directly.
             ledger.parquet.import.json
 
 Each *schema* is a sub-directory; each data file becomes one table inside that
@@ -44,11 +47,15 @@ import duckdb
 
 from aughor.connectors.base import Connector
 from aughor.agent.state import QueryResult
+from aughor.platform.vending import STORAGE_ROOT, vend_storage
 
 logger = logging.getLogger(__name__)
 
 MAX_ROWS = 2000
-_UPLOAD_ROOT = Path("data/uploads")
+# The managed-storage root; single source of truth lives in the vending seam.
+# Paths are resolved per-connection via vend_storage() (tenant-scoped), not by
+# joining this directly — kept as an alias for back-compat callers.
+_UPLOAD_ROOT = STORAGE_ROOT
 DEFAULT_SCHEMA = "main"
 
 # A removed-seed tombstone: seed schemas/tables are re-materialized on every connector
@@ -115,7 +122,10 @@ class LocalUploadConnection(Connector):
     ) -> None:
         self._connection_id = connection_id
         self._schema_name = schema_name
-        self._upload_dir = _UPLOAD_ROOT / (connection_id or "default")
+        # Storage is vended by the control plane, never addressed directly (Invariant
+        # #2): the capability resolves the tenant-scoped path {root}/{org}/{conn}/...
+        self._cap = vend_storage(connection_id)
+        self._upload_dir = self._cap.root
         self._upload_dir.mkdir(parents=True, exist_ok=True)
         (self._upload_dir / DEFAULT_SCHEMA).mkdir(exist_ok=True)
         self._duckdb = duckdb.connect(":memory:")

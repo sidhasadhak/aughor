@@ -9,8 +9,8 @@ import json
 import duckdb
 import pytest
 
-import aughor.connectors.file.local_upload as lu
 from aughor.connectors.file.local_upload import LocalUploadConnection
+from aughor.platform import vending
 
 
 @pytest.fixture
@@ -26,7 +26,9 @@ def seed_db(tmp_path):
 
 @pytest.fixture(autouse=True)
 def _isolate_uploads(tmp_path, monkeypatch):
-    monkeypatch.setattr(lu, "_UPLOAD_ROOT", tmp_path / "uploads")
+    # Patch the canonical storage root (the vending seam); the connector resolves
+    # its upload dir through vend_storage(), which reads this.
+    monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
 
 
 def _schemas(c):
@@ -62,7 +64,8 @@ def test_tombstone_is_persisted(seed_db, tmp_path):
     c = _conn(seed_db)
     c.drop_schema("demo")
     c.close()
-    p = tmp_path / "uploads" / "ws" / "_removed_seeds.json"
+    # Storage is tenant-pathed: {root}/{org_id}/{conn_id}/...
+    p = tmp_path / "uploads" / "default" / "ws" / "_removed_seeds.json"
     assert p.exists() and "demo" in json.loads(p.read_text())["schemas"]
 
 

@@ -68,6 +68,7 @@ async def _lifespan(app: "FastAPI"):
     # the salvage jobs we submit aren't themselves caught by that sweep.
     await _purge_legacy_canvases()
     await _ensure_default_org()
+    await _migrate_upload_storage()
     await _ensure_default_workspace()
     await _validate_connections()
     await _start_explorers()
@@ -187,6 +188,17 @@ async def _ensure_default_org() -> None:
         ensure_default_org()
     except Exception as exc:
         logger.warning("Org bootstrap failed (non-fatal): %s", exc)
+
+
+async def _migrate_upload_storage() -> None:
+    # Tenant-path the on-disk uploads ({conn}/ → {org}/{conn}/) before any connector
+    # is constructed. One-time, idempotent, crash-safe. Must run AFTER the default
+    # org exists and BEFORE connections are validated / explorers start.
+    try:
+        from aughor.platform import migrate_uploads_to_org_layout
+        migrate_uploads_to_org_layout()
+    except Exception as exc:
+        logger.warning("Upload storage migration failed (non-fatal): %s", exc)
 
 
 async def _ensure_default_workspace() -> None:

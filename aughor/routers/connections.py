@@ -522,8 +522,10 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
     # on next load (each request creates a fresh in-memory DB from sidecars).
     conn_type, _ = get_dsn(conn_id)
     if conn_type == "local_upload":
-        from aughor.connectors.file.local_upload import _UPLOAD_ROOT, _SIDECAR_SUFFIX, _safe_ident
-        upload_dir = _UPLOAD_ROOT / (conn_id or "default")
+        from aughor.connectors.file.local_upload import _SIDECAR_SUFFIX, _safe_ident
+        from aughor.platform.vending import vend_storage
+        # Tenant-scoped storage via the control plane (same seam the connector uses).
+        upload_dir = vend_storage(conn_id).root
         schema_dir = upload_dir / _safe_ident(safe_schema or "main", "main")
         if schema_dir.exists():
             for f in schema_dir.iterdir():
