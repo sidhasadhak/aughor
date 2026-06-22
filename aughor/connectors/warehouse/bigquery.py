@@ -57,10 +57,10 @@ class BigQueryConnection(Connector):
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         import time as _time
-        from aughor.db.connection import _security_pre, _security_post
+        from aughor.db.connection import security_pre, security_post
 
         sql = sql.strip().rstrip(";")
-        if (blocked := _security_pre(self._connection_id, hypothesis_id, sql)):
+        if (blocked := security_pre(self._connection_id, hypothesis_id, sql)):
             return blocked
 
         _t0 = _time.monotonic()
@@ -90,7 +90,7 @@ class BigQueryConnection(Connector):
             )
 
         elapsed_ms = (_time.monotonic() - _t0) * 1000
-        return _security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)
+        return security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Use BigQuery's native dry-run — validates SQL + estimates bytes, zero cost."""

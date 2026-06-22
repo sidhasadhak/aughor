@@ -16,7 +16,7 @@ from pathlib import Path
 
 # Lower these as offences are converted — never raise them.
 SILENT_SWALLOW_BASELINE = 268
-PRIVATE_IMPORT_BASELINE = 42
+PRIVATE_IMPORT_BASELINE = 22
 
 REPO = Path(__file__).parent.parent.parent
 
