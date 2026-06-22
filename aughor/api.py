@@ -67,6 +67,7 @@ async def _lifespan(app: "FastAPI"):
     # _kernel_boot_recovery — AFTER kernel boot_recovery sweeps the job table, so
     # the salvage jobs we submit aren't themselves caught by that sweep.
     await _purge_legacy_canvases()
+    await _ensure_default_org()
     await _ensure_default_workspace()
     await _validate_connections()
     await _start_explorers()
@@ -178,6 +179,14 @@ async def _purge_legacy_canvases() -> None:
             logger.info("Canvas cleanup: removed %d auto-generated Canvas(es)", removed)
     except Exception as exc:
         logger.warning("Canvas cleanup failed (non-fatal): %s", exc)
+
+
+async def _ensure_default_org() -> None:
+    try:
+        from aughor.org import ensure_default_org
+        ensure_default_org()
+    except Exception as exc:
+        logger.warning("Org bootstrap failed (non-fatal): %s", exc)
 
 
 async def _ensure_default_workspace() -> None:

@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 from aughor.workspace.models import Workspace
 
 _DB_PATH = Path(__file__).parent.parent.parent / "data" / "workspaces.db"
@@ -48,6 +49,10 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
     cols = {r[1] for r in c.execute("PRAGMA table_info(workspaces)").fetchall()}
     if "settings_override_json" not in cols:
         c.execute("ALTER TABLE workspaces ADD COLUMN settings_override_json TEXT DEFAULT '{}'")
+    # Migration (2026-06-22): tenant key. Every workspace belongs to an org;
+    # back-fills to the bootstrap org on existing single-org rows.
+    if "org_id" not in cols:
+        c.execute(f"ALTER TABLE workspaces ADD COLUMN org_id TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'")
     c.commit()
 
 
@@ -65,6 +70,7 @@ def _row_to_workspace(row: sqlite3.Row) -> Workspace:
         override = {}
     return Workspace(
         id=row["id"],
+        org_id=(row["org_id"] if "org_id" in row.keys() and row["org_id"] else DEFAULT_ORG_ID),
         name=row["name"],
         description=row["description"] or "",
         connection_ids=json.loads(row["connection_ids_json"] or "[]"),
@@ -86,19 +92,20 @@ def create_workspace(
     settings_override: Optional[Dict[str, Any]] = None,
 ) -> Workspace:
     wid = workspace_id or uuid.uuid4().hex[:8]
+    org_id = current_org_id()
     now = _now()
     ids_json = json.dumps(connection_ids or [])
     override_json = json.dumps(settings_override or {})
     c = _conn()
     _ensure_schema(c)
     c.execute(
-        "INSERT INTO workspaces (id, name, description, connection_ids_json, is_default, settings_override_json, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (wid, name, description, ids_json, int(is_default), override_json, now, now),
+        "INSERT INTO workspaces (id, org_id, name, description, connection_ids_json, is_default, settings_override_json, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (wid, org_id, name, description, ids_json, int(is_default), override_json, now, now),
     )
     c.commit()
     return Workspace(
-        id=wid, name=name, description=description,
+        id=wid, org_id=org_id, name=name, description=description,
         connection_ids=connection_ids or [], is_default=is_default,
         settings_override=settings_override or {},
         created_at=now, updated_at=now,
