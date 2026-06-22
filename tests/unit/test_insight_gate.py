@@ -6,8 +6,8 @@ battery: self-ratio tautology, fan-out (incl. CTE-hidden + parent), boundary-sat
 rate (scale-robust), part>whole, and claim-grounding.
 """
 from aughor.sql.fanout import self_ratio_tautology
-from aughor.explorer.agent import (
-    _is_degenerate_result, _part_exceeds_whole, _claim_numbers_grounded, verify_insight,
+from aughor.explorer.verify import (
+    is_degenerate_result, _part_exceeds_whole, _claim_numbers_grounded, verify_insight,
 )
 
 REPEAT_RANGE = [(frozenset({"repeat", "purchase"}), "ratio01", 1.0)]   # declared ratio 0-1
@@ -26,13 +26,13 @@ class TestTautology:
 class TestBoundarySaturation:
     def test_percent_value_on_ratio_metric_single_row(self):
         # "100% repeat buyers": value 100.0 but metric declared ratio 0-1 → saturated
-        assert _is_degenerate_result([["100.0"]], "100% of customers are repeat buyers", "", REPEAT_RANGE)
+        assert is_degenerate_result([["100.0"]], "100% of customers are repeat buyers", "", REPEAT_RANGE)
 
     def test_self_ratio_caught_by_gate_not_value_check(self):
         # a bare 1.0 on a percent metric is NOT value-flagged (could be a real 1%) — the
         # value check stays conservative; the underlying self-ratio bug is caught by the
         # SQL tautology guard in the full gate instead.
-        assert not _is_degenerate_result([["1.0"], ["1.0"]], "gross margin 100%", "", MARGIN_RANGE)
+        assert not is_degenerate_result([["1.0"], ["1.0"]], "gross margin 100%", "", MARGIN_RANGE)
         ok, why = verify_insight([["1.0"], ["1.0"]], "gross margin 100%",
                                  "SELECT m, SUM(gm)/NULLIF(SUM(gm),0) FROM t GROUP BY 1", MARGIN_RANGE)
         assert not ok and "self-referential" in why
@@ -40,10 +40,10 @@ class TestBoundarySaturation:
     def test_mixed_rates_survive(self):
         # genuine tier variation 91.67–100 is real signal, NOT degenerate
         rows = [["100.0"], ["97.79"], ["96.88"], ["91.67"]]
-        assert not _is_degenerate_result(rows, "repeat purchase rate by tier", "", REPEAT_RANGE)
+        assert not is_degenerate_result(rows, "repeat purchase rate by tier", "", REPEAT_RANGE)
 
     def test_healthy_rate_survives(self):
-        assert not _is_degenerate_result([["66.3"], ["66.2"]], "gross margin 66%", "", MARGIN_RANGE)
+        assert not is_degenerate_result([["66.3"], ["66.2"]], "gross margin 66%", "", MARGIN_RANGE)
 
 
 class TestPartExceedsWhole:

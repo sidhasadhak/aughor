@@ -5,7 +5,7 @@
 
 These are the deterministic, pure pieces of the gate-on-the-authority + re-validate fix.
 """
-from aughor.explorer.agent import _implausible_ratio_claim, _parse_magnitude, verify_insight
+from aughor.explorer.verify import _implausible_ratio_claim, _parse_magnitude, verify_insight
 
 
 # ── RC4: implausible ratio/turnover magnitude ────────────────────────────────

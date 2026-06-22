@@ -1,6 +1,6 @@
 """Re-validate STORED explorer findings against the current guards.
 
-Generation-time guards (agent._has_fabricated_dimension, _clamp_novelty,
+Generation-time guards (agent.has_fabricated_dimension, clamp_novelty,
 _is_degenerate_result) only protect NEW findings. Anything written before a guard
 existed sits in the store untouched. This pass re-checks stored findings and either:
 
@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from aughor.explorer.agent import _has_fabricated_dimension, _clamp_novelty, _NO_DATA_RE
+from aughor.explorer.verify import has_fabricated_dimension, clamp_novelty, _NO_DATA_RE
 
 
 def validate_insight(ins: dict) -> Optional[tuple[str, str]]:
@@ -31,7 +31,7 @@ def validate_insight(ins: dict) -> Optional[tuple[str, str]]:
     if ins.get("invalid"):
         return None
     sql = ins.get("sql") or ""
-    if _has_fabricated_dimension(sql):
+    if has_fabricated_dimension(sql):
         return ("quarantine", "fabricated dimension (constant grouping key)")
     finding = ins.get("finding") or ""
     if finding and _NO_DATA_RE.search(finding):
@@ -96,7 +96,7 @@ def revalidate_state(state: dict, *, apply: bool = False) -> dict:
                 ins["invalid_reason"] = reason
         else:
             nv = ins.get("novelty")
-            new = _clamp_novelty(nv)
+            new = clamp_novelty(nv)
             conf = min(0.95, 0.4 + new * 0.1)
             rec["fix"] = f"novelty {nv}→{new}, confidence→{conf}"
             repaired.append(rec)

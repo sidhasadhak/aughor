@@ -4,7 +4,7 @@ Grounded in the real missimi finding: a CASE bucketed every row into 'unknown' b
 its hardcoded brand names ('CeraVe', 'La Mer', …) matched none of the synthetic
 'Brand_000'-style names, while a real brand_tier column was ignored.
 """
-from aughor.explorer.agent import _vacuous_case_dimension, verify_insight
+from aughor.explorer.verify import _vacuous_case_dimension, verify_insight
 
 TIER_SQL = """
 WITH brand_tier AS (
