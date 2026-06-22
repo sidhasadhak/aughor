@@ -299,14 +299,16 @@ Each phase ships value and is independently stoppable.
   `aughor/platform/` control plane (`vend_storage()` — access is vended, never ambient,
   Invariant #2) with a crash-safe idempotent on-disk migration; the control-plane / data-plane
   split is explicit in code. Single org in practice; multi-tenant-shaped in structure.
-- **Phase 2 — the metastore service — ◑ foundation done.** `aughor/metastore/` ships
-  **Catalog + Grant as first-class objects** (a connection *is* a catalog within an org; a
-  workspace holds USAGE grants), derived/reconciled from the connection registry + workspace
-  membership, with a grant resolver `granted_catalog_ids()` parity-tested against the live
-  `workspace_connection_ids()` gate. *Remaining (next checkpoint):* flip the ~8 data-path gate
-  sites onto grants (make grants authoritative), **Schema** as a first-class object +
-  schema/table-level grants, and the **UC-API-compatible** read surface (so the later swap is
-  an adapter and external engines can interoperate).
+- **Phase 2 — the metastore service — ✅ done** *(2026-06-23).* `aughor/metastore/` ships
+  **Catalog + Grant** (a connection *is* a catalog within an org; a workspace holds USAGE
+  grants) and now **Schema** (the middle of the `catalog.schema.table` namespace, synced from
+  live introspection), all org-scoped. The **live data-path gate is flipped onto grants**: the
+  five visibility gates resolve through `accessible_catalog_ids()` (reconcile-on-read, provably
+  equal to the legacy `workspace_connection_ids()` gate), so the metastore is on the live path.
+  A **UC-compatible read surface** (`/api/2.1/unity-catalog/{catalogs,schemas,tables}`) exposes
+  the three-level namespace for external-engine interop. *Remaining (later):* make grants fully
+  authoritative (independent of membership) + enforce schema/table-level grants; the four
+  control-path reverse lookups (governance/compute) deliberately stay on the workspace store.
 - **Phase 3 — storage maturity.** Managed vs external locations; the credential-vending
   abstraction made real; **Volumes** for the unstructured tier wired to the semantic operators.
 - **Phase 4 — the multi-tenant flip.** Postgres-backed metastore; S3/GCS storage with scoped
