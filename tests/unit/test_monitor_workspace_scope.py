@@ -18,6 +18,9 @@ def _seed(tmp_path, monkeypatch) -> str:
     monkeypatch.setattr(mstore, "_DB_PATH", tmp_path / "monitors.db")
     mstore._init_schema()
     monkeypatch.setattr(wstore, "_DB_PATH", tmp_path / "workspaces.db")
+    # The data-path gate now resolves through the metastore — keep it hermetic too.
+    import aughor.metastore.store as cat_store
+    monkeypatch.setattr(cat_store, "_DB_PATH", tmp_path / "metastore.db")
 
     mstore.upsert_monitor(Monitor(conn_id="c1", name="m1", custom_sql="SELECT 1"))
     mstore.upsert_monitor(Monitor(conn_id="c2", name="m2", custom_sql="SELECT 1"))

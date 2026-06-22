@@ -15,6 +15,7 @@ import pytest
 from aughor.org import using_org
 from aughor.metastore import (
     USAGE,
+    accessible_catalog_ids,
     add_grant,
     catalog_securable,
     ensure_catalogs_for_connections,
@@ -139,6 +140,28 @@ class TestResolverParity:
         add_grant(workspace_principal("w1"), catalog_securable("c9"), privilege="ADMIN")
         # ADMIN ≠ USAGE → resolver (USAGE-scoped) does not surface it
         assert granted_catalog_ids("w1") == set()
+
+
+class TestLiveGate:
+    """`accessible_catalog_ids` is the wired data-path gate — reconcile-on-read keeps
+    it provably equal to `workspace_connection_ids` with no explicit sync."""
+
+    def test_reflects_membership_without_explicit_sync(self, stores):
+        ws_store = stores
+        from aughor.workspace.store import workspace_connection_ids
+        ws_store.create_workspace(name="W", workspace_id="w1", connection_ids=["c1", "c2"])
+        # No ensure_grants_for_memberships() call — the gate self-reconciles on read.
+        assert accessible_catalog_ids("w1") == {"c1", "c2"} == workspace_connection_ids("w1")
+
+        # Membership changes; the very next gate read reflects it (add + revoke).
+        ws_store.update_workspace("w1", connection_ids=["c2", "c3"])
+        assert accessible_catalog_ids("w1") == {"c2", "c3"} == workspace_connection_ids("w1")
+
+    def test_none_and_fail_closed_semantics(self, stores):
+        stores.create_workspace(name="W", workspace_id="w1", connection_ids=["c1"])
+        assert accessible_catalog_ids(None) is None          # unscoped
+        assert accessible_catalog_ids("nope") == set()       # unknown → fail-closed
+        assert accessible_catalog_ids("w1") == {"c1"}
 
 
 class TestOrgStamping:

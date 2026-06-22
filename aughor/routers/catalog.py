@@ -98,9 +98,10 @@ async def get_catalog_tree(workspace_id: str | None = None):
 
     def _build_tree() -> dict:
         from aughor.db.registry import list_connections
-        from aughor.workspace.store import workspace_connection_ids
+        from aughor.metastore import accessible_catalog_ids
 
-        allowed = workspace_connection_ids(workspace_id)
+        # Data-path tenancy gate, now resolved through the metastore (grants).
+        allowed = accessible_catalog_ids(workspace_id)
         # Single catalog list. The Workspace (which now folds in the sample
         # ecommerce tables) is returned first by list_connections.
         entries = []

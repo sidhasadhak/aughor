@@ -2,10 +2,11 @@
 Phase 2). Catalog (the unit of isolation, = a connection within an org) + Grant
 (workspace → catalog) as first-class objects.
 
-Foundation: catalogs and grants are *derived* from the connection registry and
-workspace membership, and `granted_catalog_ids()` returns the same visibility as the
-current `workspace_connection_ids()` gate (the parity-tested drop-in seam). Flipping
-the live gate onto grants is the next checkpoint.
+Catalogs and grants are *derived* from the connection registry and workspace
+membership. The live data-path gate is now `accessible_catalog_ids()` (reconcile-on-
+read, wired into the router visibility gates) — it routes the gate through the
+metastore while staying provably equal to the legacy `workspace_connection_ids()`
+gate. Making grants fully authoritative (independent of membership) is a later step.
 """
 from aughor.metastore.models import (
     USAGE,
@@ -26,9 +27,11 @@ from aughor.metastore.store import (
     upsert_catalog,
 )
 from aughor.metastore.sync import (
+    accessible_catalog_ids,
     ensure_catalogs_for_connections,
     ensure_grants_for_memberships,
     granted_catalog_ids,
+    reconcile_workspace_grants,
     sync_metastore_from_registry,
 )
 
@@ -41,5 +44,6 @@ __all__ = [
     "add_grant", "revoke_grant", "list_grants", "grants_for_workspace",
     # sync + resolver
     "sync_metastore_from_registry", "ensure_catalogs_for_connections",
-    "ensure_grants_for_memberships", "granted_catalog_ids",
+    "ensure_grants_for_memberships", "reconcile_workspace_grants",
+    "granted_catalog_ids", "accessible_catalog_ids",
 ]

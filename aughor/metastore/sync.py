@@ -1,12 +1,13 @@
 """Derive the metastore from the connection registry + workspace membership, and
 the grant resolver.
 
-Foundation behaviour: catalogs mirror connections (1:1), and grants are *reconciled*
-to each workspace's current `connection_ids` — so the metastore is fully derived from
-today's state and the grant resolver returns the exact same visibility as the
-`workspace_connection_ids()` gate (proven by the parity test). Nothing in the live
-data path consumes this yet; flipping the 8 gate sites onto `granted_catalog_ids` is
-the next checkpoint, at which point grants become authoritative (no auto-reconcile).
+Catalogs mirror connections (1:1), and grants are *reconciled* to each workspace's
+current `connection_ids`. The live data-path gate `accessible_catalog_ids()`
+reconciles a workspace's grants on read and then returns them, so it is provably
+equal to the legacy `workspace_connection_ids()` gate at all times while routing the
+gate through the metastore. The control-path reverse lookups (`workspace_for_connection`
+— governance/compute) deliberately stay on the workspace store. Making grants fully
+authoritative (independent of membership) is a later step.
 """
 from __future__ import annotations
 
@@ -38,22 +39,27 @@ def ensure_catalogs_for_connections() -> int:
     return n
 
 
-def ensure_grants_for_memberships() -> int:
-    """Reconcile each workspace's catalog grants to its current `connection_ids`
+def reconcile_workspace_grants(ws) -> int:
+    """Reconcile ONE workspace's catalog grants to its current `connection_ids`
     (add missing USAGE grants, revoke ones no longer backed by membership). Idempotent.
     Returns the number of grant mutations applied."""
-    from aughor.workspace.store import list_workspaces
+    desired = set(ws.connection_ids or [])
+    current = granted_catalog_ids(ws.id) or set()
     changed = 0
-    for ws in list_workspaces():
-        desired = set(ws.connection_ids or [])
-        current = granted_catalog_ids(ws.id) or set()
-        for cid in desired - current:
-            store.add_grant(workspace_principal(ws.id), catalog_securable(cid), org_id=ws.org_id)
-            changed += 1
-        for cid in current - desired:
-            store.revoke_grant(workspace_principal(ws.id), catalog_securable(cid), org_id=ws.org_id)
-            changed += 1
+    for cid in desired - current:
+        store.add_grant(workspace_principal(ws.id), catalog_securable(cid), org_id=ws.org_id)
+        changed += 1
+    for cid in current - desired:
+        store.revoke_grant(workspace_principal(ws.id), catalog_securable(cid), org_id=ws.org_id)
+        changed += 1
     return changed
+
+
+def ensure_grants_for_memberships() -> int:
+    """Reconcile EVERY workspace's catalog grants to its membership. Idempotent.
+    Returns the total number of grant mutations applied."""
+    from aughor.workspace.store import list_workspaces
+    return sum(reconcile_workspace_grants(ws) for ws in list_workspaces())
 
 
 def sync_metastore_from_registry() -> dict:
@@ -89,3 +95,24 @@ def granted_catalog_ids(workspace_id: Optional[str]) -> Optional[set]:
         if cid is not None:
             ids.add(cid)
     return ids
+
+
+def accessible_catalog_ids(workspace_id: Optional[str]) -> Optional[set]:
+    """The LIVE data-path gate — the grant-based replacement for
+    `workspace_connection_ids()`, wired into the router visibility gates.
+
+    Reconciles the workspace's catalog grants to its current membership **on read**,
+    then returns the granted set. The reconcile makes the gate provably equal to
+    `workspace_connection_ids()` at all times (no staleness, no missed-hook risk),
+    while routing the live gate through the metastore and keeping the grants table —
+    the future authority — continuously maintained. Same None / set / fail-closed
+    semantics as the gate it replaces.
+    """
+    if not workspace_id:
+        return None
+    from aughor.workspace.store import get_workspace
+    ws = get_workspace(workspace_id)
+    if not ws:
+        return set()
+    reconcile_workspace_grants(ws)
+    return granted_catalog_ids(workspace_id)
