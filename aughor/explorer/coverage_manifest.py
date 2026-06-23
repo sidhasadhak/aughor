@@ -36,6 +36,19 @@ _MIN_PERIODS_YOY = 24
 
 _NON_DIM_TYPES = {"id", "foreign_key", "measure", "metric", "key", "primary_key"}
 
+# Numeric columns that are NOT business measures — summing/averaging them is grounded but
+# meaningless ("total longitude = 104.06"). Matched precisely (exact name or a clear suffix) so
+# we never false-exclude "latency"/"belong"/"relation".
+_COORD_NAMES = frozenset({
+    "lat", "lng", "lon", "latitude", "longitude", "geolat", "geolng", "geo_lat", "geo_lng",
+})
+_COORD_SUFFIXES = ("_lat", "_lng", "_lon", "_latitude", "_longitude")
+
+
+def _is_coordinate(column: str) -> bool:
+    n = (column or "").strip().lower()
+    return n in _COORD_NAMES or any(n.endswith(s) for s in _COORD_SUFFIXES)
+
 
 @dataclass(frozen=True)
 class ManifestCell:
@@ -73,6 +86,8 @@ def _measures(cols: Iterable[Any]) -> list[Any]:
     for c in cols:
         if (getattr(c, "semantic_type", "") or "").lower() != "measure" or getattr(c, "is_fk", False):
             continue
+        if _is_coordinate(getattr(c, "column", "")):
+            continue                      # geo coordinate — numeric but not a business measure
         if getattr(c, "value_range", None) or getattr(c, "unit", None) or getattr(c, "value_interpretation", None):
             out.append(c)
     return out

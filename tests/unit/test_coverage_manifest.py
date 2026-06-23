@@ -44,6 +44,22 @@ class TestMateriality:
         cells = build_manifest({}, cp)
         assert {c.cut for c in cells if c.axis == "dimension"} == {"status"}
 
+    def test_geo_coordinates_are_not_treated_as_measures(self):
+        # "total longitude" is grounded but meaningless — exclude coordinates (on-target fix).
+        cp = _cp(
+            ColumnProfile("geo", "lng", "DOUBLE", "measure", value_range=(-180, 180)),
+            ColumnProfile("geo", "longitude", "DOUBLE", "measure", value_range=(-180, 180)),
+            ColumnProfile("geo", "customer_lat", "DOUBLE", "measure", value_range=(-90, 90)),
+            _measure("geo", "revenue"),                 # a real measure on the same table
+        )
+        metrics = {c.metric for c in build_manifest({}, cp) if c.source == "profiled_measure"}
+        assert metrics == {"revenue"}                   # coordinates dropped, revenue kept
+
+    def test_coordinate_match_does_not_false_exclude_real_columns(self):
+        # precise matching: 'latency_ms' / 'belong_count' are NOT coordinates
+        cp = _cp(ColumnProfile("t", "latency_ms", "DOUBLE", "measure", unit="ms", value_range=(0, 999)))
+        assert {c.metric for c in build_manifest({}, cp)} == {"latency_ms"}
+
     def test_a_measure_without_unit_or_range_is_skipped(self):
         bare = ColumnProfile("t", "raw_num", "DOUBLE", "measure")   # no unit/range → not baseline-worthy
         cells = build_manifest({}, _cp(bare, _dim("t", "kind", 3)))
