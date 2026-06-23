@@ -55,7 +55,10 @@ in **Settings → Models / System** so an operator can flip them without env var
 - Briefing / Verdict hero, Fleet, Agents enable/pause, Learned-skills drawer, Save-as-skill, Trust Receipt, Validate/feedback row, QB decompile, KPI scorecard, Org/Workspace settings, Pivot — all confirmed present.
 
 ## Build order
-1. **U4 + U1 + U2** — the Catalog Explorer shell with Volumes + Permissions (the two 🔴 + their container) — one coherent Databricks-style increment.
-2. **U3** — Glossary as inline comments in the same explorer.
-3. **U5 / U6 / U7 / U8** — the small per-screen items.
-4. **P3** — optional Settings toggles.
+1. ✅ **U4 + U1 + U2** — Catalog Explorer with **Volumes** + **Permissions** tabs (`7caaa6e`, browser-verified).
+2. ✅ **U3** — **Glossary** as a Comments tab in the table detail (`63efe35`, browser-verified).
+3. ⬜ **U5 / U6 / U7 / U8** — the small per-screen items (per-agent model picker · playbook versions · monitor grace-period · post-proc transforms).
+4. ⬜ **P3** — optional Settings toggles for the env-gated features.
+
+> **Status:** all three 🔴 real gaps (Volumes · Grants · Glossary) are shipped on branch
+> `2026-06-22-org-tenant-spine` (PR #78). The 🟡 small items remain.
