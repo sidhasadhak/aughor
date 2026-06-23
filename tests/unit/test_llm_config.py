@@ -34,6 +34,28 @@ def test_defaults_when_empty(clean_cfg):
     assert c["keys_set"] == {"groq": False, "together": False, "anthropic": False}
 
 
+def test_config_surfaces_per_role_capability_profile(clean_cfg):
+    # §5b: the config view carries the vended capability per role so Settings → Inference
+    # can show what the bound model can do — and, crucially, where its prompts go.
+    c = P.current_config()
+    caps = c["capabilities"]
+    assert set(caps) == {"coder", "narrator", "fast"}
+    coder = caps["coder"]
+    # the shipped default (qwen3-coder-next:cloud) egresses to Ollama Cloud — flagged honestly
+    assert coder["privacy_class"] == "public_api"
+    assert coder["cache_mode"] == "auto_prefix_unverified"
+    assert coder["cost"] == "unknown"
+    assert {"cache_mode", "tooling", "structured_output", "token_accounting",
+            "max_context", "privacy_class", "cost"} <= set(coder)
+
+
+def test_local_ollama_model_is_marked_on_device(clean_cfg):
+    # A bare (non-:cloud) model on a localhost Ollama is local — no egress.
+    c = P.set_config({"models": {"coder": "qwen3-coder:7b"}})
+    assert c["capabilities"]["coder"]["privacy_class"] == "local"
+    assert c["capabilities"]["coder"]["cost"] == "flat"
+
+
 def test_backend_switch_uses_that_backends_default_model(clean_cfg):
     c = P.set_config({"backend": "groq"})
     assert c["backend"] == "groq"

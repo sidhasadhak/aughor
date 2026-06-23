@@ -2545,11 +2545,23 @@ export function downloadInvestigationExport(invId: string, fmt: "pdf" | "pptx", 
 
 // ── LLM inference provider config (Settings → Inference) ────────────────────────
 
+/** The vended capability profile for one role's bound model (PLATFORM_ARCHITECTURE.md §5b). */
+export interface LlmCapability {
+  cache_mode: "explicit_breakpoint" | "auto_prefix" | "auto_prefix_unverified" | "none";
+  tooling: "native_tools" | "none";
+  structured_output: "native" | "instructor_emulated";
+  token_accounting: "exact" | "estimated";
+  max_context: number;
+  privacy_class: "local" | "private_endpoint" | "public_api";  // governs what context may be sent
+  cost: "per_token" | "flat" | "unknown";
+}
+
 export interface LlmConfig {
   backend: string;
   models: Record<string, string>;          // effective coder/narrator/fast
   base_urls: Record<string, string>;       // effective ollama/lmstudio
   keys_set: Record<string, boolean>;        // groq/together/anthropic — set or not (never the value)
+  capabilities: Record<string, LlmCapability>;  // per-role vended profile (§5b)
   models_set: Record<string, string>;       // explicit overrides on disk
   base_urls_set: Record<string, string>;
   backends: string[];

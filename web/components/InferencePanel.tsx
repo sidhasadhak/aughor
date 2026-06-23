@@ -7,7 +7,7 @@
  * key is set, so nothing sensitive round-trips back to the browser.
  */
 import { useEffect, useState } from "react";
-import { getLlmConfig, setLlmConfig, testLlmConfig, type LlmConfig } from "@/lib/api";
+import { getLlmConfig, setLlmConfig, testLlmConfig, type LlmCapability, type LlmConfig } from "@/lib/api";
 
 const BACKEND_LABEL: Record<string, string> = {
   ollama: "Ollama (local)",
@@ -21,6 +21,47 @@ const ROLE_LABEL: Record<string, string> = {
   narrator: "Narrator — report prose",
   fast: "Fast — per-phase interprets",
 };
+
+// Where context goes (PLATFORM_ARCHITECTURE.md §5b.4) — the governance-relevant axis.
+const PRIVACY_META: Record<string, { label: string; fg: string; bg: string; note: string }> = {
+  local:            { label: "On-device", fg: "var(--grn5)", bg: "var(--grn1)", note: "Prompts stay on this machine." },
+  private_endpoint: { label: "Private endpoint", fg: "var(--t2)", bg: "var(--bg-2)", note: "Prompts go to your own hosted endpoint." },
+  public_api:       { label: "Public API", fg: "var(--amb5)", bg: "var(--amb1)", note: "Prompts are sent to a third-party API." },
+};
+const CACHE_NOTE: Record<string, string> = {
+  explicit_breakpoint: "prefix-cacheable",
+  auto_prefix: "auto prefix-cache",
+  auto_prefix_unverified: "prefix-cache unverified",
+  none: "no prefix cache",
+};
+
+function CapChip({ text, title }: { text: string; title?: string }) {
+  return (
+    <span title={title} style={{
+      fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
+      background: "var(--bg-2)", border: "1px solid var(--b1)", color: "var(--t3)",
+      fontFamily: "var(--font-mono)",
+    }}>{text}</span>
+  );
+}
+
+function CapabilityRow({ cap }: { cap: LlmCapability }) {
+  const p = PRIVACY_META[cap.privacy_class] ?? PRIVACY_META.private_endpoint;
+  const ctxK = cap.max_context >= 1000 ? `${Math.round(cap.max_context / 1000)}k ctx` : `${cap.max_context} ctx`;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 4, alignItems: "center" }}>
+      <span title={p.note} style={{
+        fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
+        background: p.bg, color: p.fg, fontWeight: 500,
+      }}>{p.label}</span>
+      <CapChip text={ctxK} title="model context window (drives payload caps)" />
+      <CapChip text={CACHE_NOTE[cap.cache_mode] ?? cap.cache_mode} title={`cache_mode: ${cap.cache_mode}`} />
+      {cap.tooling === "native_tools" && <CapChip text="tools" title="native tool calling" />}
+      <CapChip text={cap.cost === "per_token" ? "$/token" : cap.cost} title={`cost: ${cap.cost}`} />
+      {cap.token_accounting === "estimated" && <CapChip text="est. tokens" title="usage estimated (provider omits a usage block)" />}
+    </div>
+  );
+}
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r2)", fontSize: 12,
@@ -162,11 +203,29 @@ export function InferencePanel() {
               placeholder={defaults[role] || cfg.models[role] || "default"}
               style={inputStyle}
             />
+            {cfg.capabilities?.[role] && <CapabilityRow cap={cfg.capabilities[role]} />}
           </div>
         ))}
         <div style={{ fontSize: 10, color: "var(--t4)" }}>
           Leave a model blank to use the provider's default (shown as the placeholder).
         </div>
+        {(() => {
+          // The bound models' privacy classes — a saved-config view (§5b.4 governance).
+          const classes = new Set(Object.values(cfg.capabilities ?? {}).map((c) => c.privacy_class));
+          if (classes.has("public_api")) {
+            return (
+              <div style={{
+                fontSize: 10.5, lineHeight: 1.5, padding: "7px 10px", borderRadius: "var(--r2)",
+                background: "var(--amb1)", color: "var(--amb5)", border: "1px solid var(--amb2)",
+              }}>
+                A bound model sends prompts to a third-party API. Schema, sample rows and findings
+                in the prompt leave this machine — bind a local or private-endpoint model for
+                data that must stay in-tenant.
+              </div>
+            );
+          }
+          return null;
+        })()}
       </div>
 
       {/* Actions */}

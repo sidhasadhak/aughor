@@ -394,15 +394,36 @@ def current_config() -> dict:
     """A secret-free view of the effective config, for the Settings UI.
 
     `models`/`base_urls` are the *effective* values (what calls actually use);
-    `keys_set` says whether a key is available (config OR env) — never the value."""
+    `keys_set` says whether a key is available (config OR env) — never the value.
+    `capabilities` is the per-role vended profile (§5b) — what the bound model can do
+    and, crucially for BYO-model governance, its `privacy_class` (local · private_endpoint
+    · public_api). All non-secret; surfaced so Settings → Inference shows it plainly."""
+    from aughor.platform.inference import capability_for
+
     cfg = _cfg()
     backend = _active_backend()
+    base_url = _active_base_url(backend)
+
+    def _capability(role: Role) -> dict:
+        cap = capability_for(backend, _active_model(backend, role), role, base_url)
+        return {
+            "cache_mode": cap.cache_mode,
+            "tooling": cap.tooling,
+            "structured_output": cap.structured_output,
+            "token_accounting": cap.token_accounting,
+            "max_context": cap.max_context,
+            "privacy_class": cap.privacy_class,
+            "cost": cap.cost,
+        }
+
     return {
         "backend": backend,
         # effective values (what calls actually use):
         "models": {r: _active_model(backend, r) for r in ROLES},
         "base_urls": {b: _active_base_url(b) for b in LOCAL_BACKENDS},
         "keys_set": {b: bool(_active_key(b)) for b in NEEDS_KEY},
+        # the vended capability profile per role (§5b, Invariant #7):
+        "capabilities": {r: _capability(r) for r in ROLES},
         # explicit overrides on disk (so the UI shows set vs default), never secrets:
         "models_set": dict(cfg.get("models") or {}),
         "base_urls_set": dict(cfg.get("base_urls") or {}),
