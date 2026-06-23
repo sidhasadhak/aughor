@@ -2070,6 +2070,8 @@ class SchemaExplorer:
                          counter="explorer.playbook_hint_failed")
 
             _dup_streak = 0   # consecutive structural-duplicate findings → stop a looping domain
+            _followup_hint = ""   # Layer 3: drill instruction carried to the next iteration
+            _chain_depth = 0      # consecutive drills, bounded so a thread deepens but never runs away
             while used < budgets.get(f"{domain}__cap", HARD_BUDGET):
                 cap = budgets.get(f"{domain}__cap", HARD_BUDGET)
                 await self._gate()
@@ -2512,6 +2514,7 @@ class SchemaExplorer:
                         f"{diversity_block}"
                         f"{frontier_block}"
                         f"{playbook_block}"
+                        f"{_followup_hint}"
                         "Propose the single most valuable next question. "
                         "Choose an uncovered angle. Write grain-correct SQL."
                     )
@@ -3312,6 +3315,22 @@ class SchemaExplorer:
                     f"[explorer:{self.connection_id}] Phase 8: {domain}/{angle_key} — "
                     f"novelty={interp.novelty} — \"{interp.finding[:80]}…\""
                 )
+
+                # Forward-chaining (Layer 3): a NOTABLE finding (high novelty) spawns a
+                # targeted drill as the NEXT question — explain WHY (which driver/segment
+                # accounts for it), reusing this same pipeline rather than returning to a
+                # blank frontier cut. Bounded to 2 consecutive drills so a thread deepens
+                # without running away; a flat finding resets the chain.
+                if clamp_novelty(interp.novelty) >= 4 and _chain_depth < 2:
+                    _chain_depth += 1
+                    _followup_hint = (
+                        "DRILL THIS FINDING (explain it, do not restate it): "
+                        f"\"{interp.finding[:160]}\". Propose the single question that reveals WHY "
+                        "— which segment, driver or sub-population accounts for it — at the correct grain.\n\n"
+                    )
+                else:
+                    _followup_hint = ""
+                    _chain_depth = 0
 
             # Incremental synthesis (opt-in, `explorer.synthesis_incremental`): the moment
             # a domain has accumulated findings that form combinable pairs, compose a few —
