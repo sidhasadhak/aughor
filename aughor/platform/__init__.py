@@ -22,6 +22,11 @@ The tenant registry itself lives in :mod:`aughor.org` (control-plane in role); t
 package hosts the storage-vending seam and is the home for further control-plane
 primitives (grants, the catalog/metastore service) as they land.
 """
+from aughor.platform.inference import (
+    InferenceCapability,
+    capability_for,
+    vend_llm,
+)
 from aughor.platform.vending import (
     STORAGE_ROOT,
     StorageCapability,
@@ -34,4 +39,8 @@ __all__ = [
     "StorageCapability",
     "vend_storage",
     "migrate_uploads_to_org_layout",
+    # inference plane (§5b, Invariant #7)
+    "InferenceCapability",
+    "vend_llm",
+    "capability_for",
 ]

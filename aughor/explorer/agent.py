@@ -753,6 +753,14 @@ class SchemaExplorer:
             )
 
         except asyncio.CancelledError:
+            # A cancel (budget breach / user stop / owner deletion) unwinds here BEFORE the
+            # COMPLETE transition, so the in-memory status was left at whatever phase it was in
+            # (e.g. domain_intel). Mark it terminal so a later start/spawn doesn't see a stale
+            # "still running" explorer and refuse — the budget-cancel WEDGE (Tier-0 #1).
+            self._status.phase = ExplorationPhase.FAILED
+            if not self._status.error:
+                self._status.error = "cancelled (budget exceeded or stopped) — progress saved"
+            self._journal("exploration.phase", {"phase": "failed", "reason": "cancelled"})
             self._save_state()
             logger.info(f"[explorer:{self.connection_id}] Cancelled, progress saved")
             raise
@@ -1554,6 +1562,35 @@ class SchemaExplorer:
 
     # ── Phase 8: Domain intelligence curiosity loop ───────────────────────────
 
+    def _manifest_nq(self, domain_table_cols, NQ):
+        """Tier-1 #4: pop the next uncovered manifest cell whose table is in this domain's scope
+        and build a deterministic next-question from it (zero LLM). Returns None when no cell
+        applies or its SQL can't be synthesised — the caller then uses the LLM generator."""
+        from aughor.explorer.manifest_query import cell_question, cell_to_sql
+        _tbls = {str(t).split(".")[-1].lower() for t in (domain_table_cols or {})}
+        for cell in self._manifest_cells:
+            key = (cell.metric, cell.table, cell.axis, cell.cut)
+            if key in self._manifest_attempted:
+                continue
+            # KPI cells (pre-validated value_sql) are connection-level — run regardless of which
+            # domain is active; synthesised cells must be scoped to this domain's tables.
+            if getattr(cell, "sql", None) is None and _tbls and str(cell.table).split(".")[-1].lower() not in _tbls:
+                continue
+            self._manifest_attempted.add(key)            # one attempt per cell, persisted across runs
+            self._state["manifest_covered"] = {          # so re-runs skip it (Tier-2 coverage tracker)
+                "fp": self._state.get("schema_fingerprint"),
+                "cells": [list(k) for k in self._manifest_attempted],
+            }
+            _st = self._state.setdefault("manifest_status", {})
+            _st["attempts"] = _st.get("attempts", 0) + 1     # observability: the path actually ran
+            sql = cell_to_sql(cell, self._tp_by_table.get(cell.table),
+                              self._cp_by_key.get((cell.table, cell.metric)))
+            if sql:
+                return NQ(question=cell_question(cell), sql=sql,
+                          angle=f"{cell.metric}:{cell.axis}",
+                          why="manifest baseline coverage (deterministic, no LLM)")
+        return None
+
     async def _phase8_domain_intelligence(
         self,
         cp: dict | None = None,
@@ -1579,6 +1616,42 @@ class SchemaExplorer:
         from aughor.llm.provider import get_provider
         from aughor.ontology.store import load_latest_ontology
         from aughor.sql.writer import SqlWriter
+
+        # Tier-1 #4: manifest-driven deterministic generation (feature-flagged, default OFF — zero
+        # regression). When on, Phase 8 covers the L2 baseline cells with SYNTHESISED SQL (no
+        # generation LLM call) and the existing guards enforce correctness; it falls back to the
+        # LLM curiosity loop for cells/domains the manifest doesn't cover.
+        from aughor.kernel.flags import flag_enabled
+        self._manifest_driven = flag_enabled("explorer.manifest_driven")
+        self._manifest_cells = []
+        self._manifest_attempted = set()
+        self._cp_by_key = {}
+        self._tp_by_table = tp or {}
+        if self._manifest_driven:
+            try:
+                from aughor.explorer.coverage_manifest import build_manifest
+                _cpf = {f"{t}.{c}": p for t, cols in (cp or {}).items() for c, p in (cols or {}).items()}
+                self._cp_by_key = {(t, c): p for t, cols in (cp or {}).items() for c, p in (cols or {}).items()}
+                self._manifest_cells = [c for c in build_manifest(tp or {}, _cpf)
+                                        if c.source == "profiled_measure"]
+                # Coverage tracker (Tier-2): seed `attempted` from the cells a prior run already
+                # covered on the SAME data, so re-runs skip them and only advance the frontier.
+                # Reset when the schema fingerprint changed (new/changed data → re-cover).
+                _cov = self._state.get("manifest_covered") or {}
+                _fp = self._state.get("schema_fingerprint")
+                if isinstance(_cov, dict) and _fp is not None and _cov.get("fp") == _fp:
+                    self._manifest_attempted = {tuple(k) for k in _cov.get("cells", [])}
+                logger.info("[explorer:%s] Phase 8 manifest-driven ON — %d baseline cells (%d already covered)",
+                            self.connection_id, len(self._manifest_cells), len(self._manifest_attempted))
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "manifest build is best-effort; on failure fall back to the LLM loop",
+                         counter="explorer.manifest_build_failed")
+                self._manifest_driven = False
+        # Observability (Tier-5): persist whether the manifest path is live + its size, so a
+        # post-run state read tells us if it actually engaged (driven/cells) and ran (attempts).
+        self._state["manifest_status"] = {"driven": bool(self._manifest_driven),
+                                          "cells": len(self._manifest_cells), "attempts": 0}
 
         ontology = load_latest_ontology(self.connection_id, self.schema_name)
         if not ontology:
@@ -1828,6 +1901,30 @@ class SchemaExplorer:
                 tolerate(_exc, "pinned key-questions pass is best-effort; on failure the free "
                          "per-domain loop still runs", counter="explorer.pinned_pass_failed")
 
+        # Tier-1 #4: cover the named KPIs deterministically too — reuse each metric's pre-validated
+        # value_sql (no LLM, no synthesis), prepended so the on-target KPIs lead the frontier.
+        if self._manifest_driven and _profile_for_pin is not None:
+            from aughor.explorer.coverage_manifest import ManifestCell
+            _kpi_cells = []
+            for _m in (getattr(_profile_for_pin, "north_star_metrics", None) or []):
+                _vs = (getattr(_m, "value_sql", "") or "").strip()
+                if not _vs:
+                    continue
+                # Only lead with a KPI whose value_sql actually BINDS against THIS run's schema —
+                # a profile's value_sql can target a different dataset (ecommerce.orders) than a
+                # per-schema run (missimi), in which case it'd just be skipped. Validate up front.
+                try:
+                    _ok, _ = self._conn.dry_run(_vs)
+                except Exception:
+                    _ok = False
+                if _ok:
+                    _kpi_cells.append(ManifestCell(metric=_m.name, table="(kpi)", axis="headline",
+                                                   cut=None, source="profile", sql=_vs))
+            if _kpi_cells:
+                self._manifest_cells = _kpi_cells + list(self._manifest_cells)
+                logger.info("[explorer:%s] Phase 8: +%d KPI cells (value_sql, bind-validated) → %d cells",
+                            self.connection_id, len(_kpi_cells), len(self._manifest_cells))
+
         for domain, _base_domain, entities in passes:
             await self._gate()
             if self._stopped:
@@ -1843,7 +1940,12 @@ class SchemaExplorer:
                 i for i in self._state.get("insights", []) if i.get("domain") == domain
             ]
 
-            used = budgets.get(domain, 0)
+            # The per-domain budget is a CROSS-RUN throttle for the LLM loop (don't re-ask a
+            # saturated domain forever). For manifest-driven mode that throttle is the manifest
+            # FRONTIER (covered cells are tracked separately and skipped), so the budget is
+            # per-RUN — without this reset, domains pinned at the cap by prior runs skip the loop
+            # entirely and the manifest path never runs (attempts=0).
+            used = 0 if self._manifest_driven else budgets.get(domain, 0)
 
             # Dataset isolation, hoisted to cover the WHOLE per-domain context. A domain's
             # entities can span unrelated uploaded datasets (Customer = bakehouse.sales_customers
@@ -1889,8 +1991,14 @@ class SchemaExplorer:
 
                 covered_angles = coverage.get(domain, [])
 
-                # Stop on novelty decay: avg novelty of last 3 findings < 2
-                if len(domain_insights) >= 3:
+                # Stop on novelty decay: avg novelty of last 3 findings < 2. But when manifest-driven
+                # and uncovered cells remain, the MANIFEST FRONTIER drives the loop — a few low-novelty
+                # (already-covered) cells must not halt it before the uncovered cells are reached.
+                # Novelty-decay then governs only the LLM tail, once the frontier is exhausted.
+                _frontier_remains = self._manifest_driven and any(
+                    (c.metric, c.table, c.axis, c.cut) not in self._manifest_attempted
+                    for c in self._manifest_cells)
+                if not _frontier_remains and len(domain_insights) >= 3:
                     recent_novelty = [i.get("novelty", 3) for i in domain_insights[-3:]]
                     if sum(recent_novelty) / 3 < 2.0:
                         logger.info(f"[explorer:{self.connection_id}] Phase 8: {domain} — novelty decay, stopping")
@@ -2289,10 +2397,16 @@ class SchemaExplorer:
                         "Propose the single most valuable next question. "
                         "Choose an uncovered angle. Write grain-correct SQL."
                     )
-                    nq: _NextQuestion = await _loop.run_in_executor(
-                        None,
-                        lambda: llm.complete(system=_sys1, user=_usr1, response_model=_NextQuestion),
-                    )
+                    # Tier-1 #4: a manifest cell IS the query spec — synthesise it deterministically
+                    # (no generation LLM call) when manifest-driven; the entire downstream pipeline
+                    # (bind-check, guards, execute, interpret) is unchanged. Fall back to the LLM
+                    # generator when no manifest cell applies (deeper/cross-cutting tail).
+                    nq = self._manifest_nq(domain_table_cols, _NextQuestion) if self._manifest_driven else None
+                    if nq is None:
+                        nq = await _loop.run_in_executor(
+                            None,
+                            lambda: llm.complete(system=_sys1, user=_usr1, response_model=_NextQuestion),
+                        )
                 except Exception as e:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM question gen failed for {domain}: {e}")
                     break

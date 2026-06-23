@@ -202,6 +202,128 @@ objects with AI operators bridging to their content.
 
 ---
 
+## 5b. Inference plane — bring-your-own-model as a vended capability
+
+Storage and compute are vended resources (§4, §5.2). **Inference is the third — and today it
+is the one that is still ambient.** Every intelligence surface (ADA, NL2SQL, briefing
+synthesis, R8 semantic operators) calls one chokepoint — `LLMProvider.complete()`
+(`aughor/llm/provider.py`) — but the backend, endpoint, and API key behind it are resolved
+from a single **global** `data/llm_config.json` → env → default (`_active_backend` /
+`_active_base_url` / `_active_key`). The only per-agent dimension is a model-*name* string
+pinned via the `_run_model` contextvar. There is no `org_id`, no workspace scope, and the
+credential is process-global env. That violates **Invariant #1** (tenant-keyed everything) and
+**Invariant #2** (vend, never ambient) for the inference dimension.
+
+The platform thesis applies unchanged: **flexibility is the product, not a feature.** A tenant
+may bind a local Llama, a public API (Anthropic / OpenAI / Sakana), Ollama Cloud, or a private
+model-serving endpoint on Databricks — and the call sites must not know or care which.
+
+### 5b.1 Binding resolution — Org → Workspace → Agent
+
+LLM binding is **inherited, last-most-specific wins** — the same hybrid scope as workspace
+settings:
+
+```
+Org default  →  Workspace override  →  Agent override        (per role: coder · narrator · fast)
+```
+
+The org sets a sane default; a workspace may override it; an agent may override *that* to trade
+cost / accuracy / latency (a cheap local model for `fast` interpretation, a frontier API for
+`narrator` synthesis). Today's global config becomes the **org default**; today's `_run_model`
+contextvar generalises into the **agent override** — but carrying a *binding*, not just a model
+string.
+
+### 5b.2 The capability — `vend_llm(...) → InferenceCapability`
+
+Mirror `vend_storage` (§5.2). The control plane resolves the inheritance chain and the
+credential once, and vends a scoped handle; the call site addresses a *logical role*, never a
+backend:
+
+```
+vend_llm(role, *, org_id?, workspace_id?, agent_id?) -> InferenceCapability
+```
+
+The capability carries the **resolved binding** (backend · model · endpoint · scoped
+credential) *and* a declared **capability profile** — what this backend can actually do, so
+nothing downstream branches on provider identity:
+
+| Field | Values | Why it matters |
+|---|---|---|
+| `cache_mode` | `explicit_breakpoint` · `auto_prefix` · `auto_prefix_unverified` · `none` | how (if at all) to exploit a stable prompt prefix; `_unverified` until the probe measures it |
+| `tooling` | `native_tools` · `none` | whether mid-generation retrieval is available |
+| `structured_output` | `native` · `instructor_emulated` | how `response_model` is enforced |
+| `token_accounting` | `exact` · `estimated` | some endpoints return no `usage` — meter must degrade honestly |
+| `max_context` | int | drives the payload cap (§5b.3, Layer A) |
+| `privacy_class` | `local` · `private_endpoint` · `public_api` | governs *what context may be sent* (§5b.4) |
+| `cost` | per-token · flat · unknown | per-agent budget normalisation |
+
+Anthropic → `explicit_breakpoint`; OpenAI / Together / Ollama-local → `auto_prefix`;
+Ollama-cloud → `auto_prefix (unverified)`; a bare private endpoint → `none`. A new backend is a
+config row + a profile, **not** a code change — the same property `vend_storage` gives storage.
+
+### 5b.3 Two-layer optimisation — only one layer is backend-coupled
+
+Per-provider tricks (Anthropic cache_control, Ollama prefix hashing, the Qwen3
+`enable_thinking` template trap) are **not** portable and must never leak into call sites. The
+seam splits the work:
+
+- **Layer A — backend-independent, always on.** Schema linking (`tools/schema_linker`),
+  evidence-log digesting (the `numeric_cells_block` / dossier move), payload caps against
+  `max_context`. These reduce *tokens themselves* and pay off under every binding.
+- **Layer B — canonical assembly + capability-gated exploitation.** Prompts are *always*
+  assembled in one canonical shape — `[stable prefix: rules + linked schema + canonical defs]`
+  then `[volatile tail: phase question + results]` — assembled once, provider-agnostic. A thin
+  per-provider **adapter** then exploits it against `cache_mode`: insert a breakpoint, rely on
+  free auto-prefix reuse (and pin `num_ctx` / `keep_alive`), or do nothing. The sequencing thus
+  *proliferates* — it lives in one assembler, and each backend gets whatever benefit it is
+  capable of without the caller knowing.
+
+> **Status (measured, not assumed).** We refuse to *assume* a backend caches. The
+> prefix-cache **probe** (`aughor/llm/cache_probe.py`, `POST /llm/config/cache-probe`) measures
+> reuse over the real provider — a shared-prefix series vs a distinct control — and persists
+> the verdict, which the capability seam adopts (`cache_mode_override`), so the chip stops
+> saying "unverified". **Live result: `qwen3-coder-next:cloud` → `no_reuse`** (warm 891ms vs
+> cold 819ms). Ollama Cloud multiplexes requests across workers and does **not** reuse the
+> prefix KV across calls — so **Layer B is worthless for the shipped cloud binding**, and the
+> measurement (not a guess) redirects effort to Layer A.
+>
+> **Layer A is also tempered by reality:** aughor's context is *already curated* (schema-linking
+> picks ~4 tables, results cap at 12 rows, schema/scan have char caps), so the relevance
+> selection *is* the compression and headroom-style "massive compression" has a low ceiling.
+> The Layer-A win across heterogeneous BYO-model backends is therefore **adaptation, not
+> compression**: intake caps are sized to the bound model's `max_context`
+> (`context_budget.schema_scan_char_limits`, safe-direction-only — identical on a large window,
+> tighter on a small one), and a **warn-only overflow guard** at `complete()` surfaces "bind a
+> larger-context model" instead of cutting evidence (which would risk grounding). The
+> *destructive* evidence-log digest is deliberately **deferred pending an eval** that proves it
+> does not degrade synthesis grounding.
+
+### 5b.4 Privacy/residency is a routing constraint, not a footnote
+
+`privacy_class` is where data governance (§7) meets inference: a `public_api` binding and a
+`private_endpoint` are **not** interchangeable for a regulated tenant. An org policy can bind
+the capability — *"agents on `public_api` providers receive schema-only context, never raw
+cells"* — enforced at assembly time. This is the inference face of the data plane's tenant
+isolation, and it is a governance capability a wrapper cannot retrofit later.
+
+### 5b.5 Metering normalisation
+
+`kernel/metering.py` (R1) assumes `prompt_tokens` / `completion_tokens` come back. A
+bring-your-own private endpoint may return nothing, so `token_accounting: estimated` needs a
+local-tokenizer fallback and must report savings/spend as an **honest estimate with a
+confidence band**, not fake-exact zeros — otherwise per-agent budgets break the moment an
+exotic backend is bound.
+
+> **Invariant #7 — inference is vended, never ambient.** A model binding (endpoint +
+> credential) is a scoped capability resolved Org → Workspace → Agent, not global process env.
+> Local/default is just a trivial implementation of that capability.
+
+This lands with the **Phase 4** multi-tenant flip (per-org credentials, scoped vending), but the
+seam — `vend_llm` + a canonical assembler behind `complete()` — is cheap to model now and makes
+the flip a config change, exactly as `vend_storage` did for storage.
+
+---
+
 ## 6. Multi-tenancy & isolation — the groundwork
 
 Isolation is enforced in layers; each must be tenant-aware from the start:
@@ -337,6 +459,15 @@ Each phase ships value and is independently stoppable.
 - **Two storage lanes** behind one seam: DuckLake (embedded) now, Delta+UC (governed) later;
   the format bet is reversible via `db/snapshot.py`.
 - **Aughor differentiates at the intelligence layer**, not by reinventing data governance.
+- **Inference is a vended resource alongside storage and compute** (§5b): bring-your-own-model
+  (local · API · private endpoint) bound Org → Workspace → Agent (inherited, last-most-specific
+  wins). Per-provider caching/tooling quirks stay behind a capability profile; a canonical
+  prompt assembler (stable prefix → volatile tail) is provider-agnostic and applied once.
+- **Measure backend caching, don't assume it.** The prefix-cache probe found
+  `qwen3-coder-next:cloud` does **not** reuse prefixes across requests (Ollama Cloud
+  multiplexes workers) → Layer-B prefix alignment is dead for the shipped cloud binding.
+  Layer-A is **adaptation, not compression** (context already curated); the destructive
+  evidence-digest waits for a grounding eval.
 - **Build the Org/tenant spine next** (Phase 1), not another feature — it is the only piece
   that cannot be added cheaply later.
 
@@ -364,3 +495,5 @@ Each phase ships value and is independently stoppable.
 4. **Open formats, UC-compatible** — no proprietary lock-in; the catalog speaks an open API.
 5. **Format-agnostic trust** — the snapshot/reproduction seam works on any version-aware backend.
 6. **Two governance layers, cleanly separated** — UC owns data access; Aughor owns intelligence.
+7. **Inference is vended, never ambient** — a model binding (endpoint + credential) is a scoped
+   capability resolved Org → Workspace → Agent (§5b), not global process env.

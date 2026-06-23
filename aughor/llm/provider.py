@@ -173,6 +173,44 @@ def _env_model_for_role(backend: str, role: Role) -> str:
     return narrator_model
 
 
+def measured_cache_mode(backend: str, model: str) -> Optional[str]:
+    """The empirically-measured cache_mode for a binding, or None if never probed.
+    Persisted in the runtime config under ``measured_cache: {"backend:model": mode}`` by
+    the prefix-cache probe (`aughor/llm/cache_probe.py`); consulted by the capability seam
+    so a measured verdict overrides the declared default (evidence > guess)."""
+    return (_cfg().get("measured_cache") or {}).get(f"{backend}:{model}") or None
+
+
+def set_measured_cache_mode(backend: str, model: str, mode: Optional[str]) -> None:
+    """Persist (or clear, with ``mode=None``) a measured cache_mode for one binding, then
+    reload so live capabilities reflect it. Written by the probe after it runs."""
+    cfg = dict(_read_config())
+    measured = dict(cfg.get("measured_cache") or {})
+    key = f"{backend}:{model}"
+    if mode:
+        measured[key] = mode
+    else:
+        measured.pop(key, None)
+    cfg["measured_cache"] = measured
+    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+    load_config()
+
+
+def resolve_binding(role: Role = "coder", *, model: Optional[str] = None) -> tuple[str, str, str]:
+    """The single binding resolver — the effective ``(backend, model, base_url)`` for a role.
+
+    Shared by :func:`get_provider` (data plane, builds the client) and
+    :func:`aughor.platform.inference.vend_llm` (control-plane seam, describes the binding),
+    so a vended :class:`InferenceCapability` always matches the binding a real call uses.
+    Model precedence mirrors :func:`get_provider`: explicit pin → run/agent contextvar
+    (``set_run_model``) → role default — i.e. Org default → … → Agent override."""
+    backend = _active_backend()
+    pinned = (model or current_run_model() or "").strip()
+    eff_model = pinned or _active_model(backend, role)
+    return backend, eff_model, _active_base_url(backend)
+
+
 def _active_model(backend: str, role: Role) -> str:
     cfg = _cfg()
     cfg_model = (cfg.get("models") or {}).get(role)
@@ -257,6 +295,7 @@ class LLMProvider:
         self._model = model or _active_model(backend, role)
         key = api_key if api_key is not None else _active_key(backend)
         url = base_url or _active_base_url(backend)
+        self._base_url = url
         if backend == "ollama":
             self._client = _build_ollama_client(self._model, url)
         elif backend == "lmstudio":
@@ -268,6 +307,17 @@ class LLMProvider:
         else:
             raise ValueError(f"Unknown backend: {backend!r}. Use one of {', '.join(BACKENDS)}.")
 
+    @property
+    def capability(self):
+        """The vended :class:`InferenceCapability` describing this provider's binding —
+        backend, model, endpoint, and the declared profile (cache_mode, privacy_class, …).
+        The seam Layer-A/Layer-B optimisation and governance routing dispatch on
+        (PLATFORM_ARCHITECTURE.md §5b). Lazy import avoids a module-load cycle."""
+        from aughor.org.context import current_org_id
+        from aughor.platform.inference import capability_for
+
+        return capability_for(self.backend, self._model, self.role, self._base_url, current_org_id())
+
     def complete(
         self,
         system: str,
@@ -275,6 +325,7 @@ class LLMProvider:
         response_model: Type[T],
         temperature: float = 0.1,
     ) -> T:
+        self._warn_if_over_window(system, user)
         try:
             return self._complete_on(self._client, self.backend, self._model,
                                      system, user, response_model, temperature)
@@ -294,6 +345,24 @@ class LLMProvider:
                                          system, user, response_model, temperature)
             except Exception:
                 raise primary_exc  # surface the original failure if fallback also fails
+
+    def _warn_if_over_window(self, system: str, user: str) -> None:
+        """Layer-A safety net (§5b.3): a single, universal overflow check on every call.
+        Warn-only — never truncates (silently cutting evidence would risk grounding); the
+        signal is "the bound model is too small for this prompt; bind a larger-context one".
+        Best-effort: a budgeting hiccup must never block a real completion."""
+        try:
+            from aughor.llm.context_budget import overflow_tokens
+
+            over = overflow_tokens(system, user, self.capability.max_context)
+            if over:
+                est, budget = over
+                logger.warning(
+                    "llm: prompt ~%d tok exceeds %s's usable window ~%d tok (ctx %d) — "
+                    "the call may be rejected or truncated; bind a larger-context model.",
+                    est, self._model, budget, self.capability.max_context)
+        except Exception:
+            logger.debug("llm: overflow check skipped", exc_info=True)
 
     @staticmethod
     def _complete_on(client, backend, model, system, user, response_model, temperature):
@@ -368,15 +437,38 @@ def current_config() -> dict:
     """A secret-free view of the effective config, for the Settings UI.
 
     `models`/`base_urls` are the *effective* values (what calls actually use);
-    `keys_set` says whether a key is available (config OR env) — never the value."""
+    `keys_set` says whether a key is available (config OR env) — never the value.
+    `capabilities` is the per-role vended profile (§5b) — what the bound model can do
+    and, crucially for BYO-model governance, its `privacy_class` (local · private_endpoint
+    · public_api). All non-secret; surfaced so Settings → Inference shows it plainly."""
+    from aughor.platform.inference import capability_for
+
     cfg = _cfg()
     backend = _active_backend()
+    base_url = _active_base_url(backend)
+
+    def _capability(role: Role) -> dict:
+        m = _active_model(backend, role)
+        cap = capability_for(backend, m, role, base_url,
+                             cache_mode_override=measured_cache_mode(backend, m))
+        return {
+            "cache_mode": cap.cache_mode,
+            "tooling": cap.tooling,
+            "structured_output": cap.structured_output,
+            "token_accounting": cap.token_accounting,
+            "max_context": cap.max_context,
+            "privacy_class": cap.privacy_class,
+            "cost": cap.cost,
+        }
+
     return {
         "backend": backend,
         # effective values (what calls actually use):
         "models": {r: _active_model(backend, r) for r in ROLES},
         "base_urls": {b: _active_base_url(b) for b in LOCAL_BACKENDS},
         "keys_set": {b: bool(_active_key(b)) for b in NEEDS_KEY},
+        # the vended capability profile per role (§5b, Invariant #7):
+        "capabilities": {r: _capability(r) for r in ROLES},
         # explicit overrides on disk (so the UI shows set vs default), never secrets:
         "models_set": dict(cfg.get("models") or {}),
         "base_urls_set": dict(cfg.get("base_urls") or {}),

@@ -2545,11 +2545,23 @@ export function downloadInvestigationExport(invId: string, fmt: "pdf" | "pptx", 
 
 // ── LLM inference provider config (Settings → Inference) ────────────────────────
 
+/** The vended capability profile for one role's bound model (PLATFORM_ARCHITECTURE.md §5b). */
+export interface LlmCapability {
+  cache_mode: "explicit_breakpoint" | "auto_prefix" | "auto_prefix_unverified" | "none";
+  tooling: "native_tools" | "none";
+  structured_output: "native" | "instructor_emulated";
+  token_accounting: "exact" | "estimated";
+  max_context: number;
+  privacy_class: "local" | "private_endpoint" | "public_api";  // governs what context may be sent
+  cost: "per_token" | "flat" | "unknown";
+}
+
 export interface LlmConfig {
   backend: string;
   models: Record<string, string>;          // effective coder/narrator/fast
   base_urls: Record<string, string>;       // effective ollama/lmstudio
   keys_set: Record<string, boolean>;        // groq/together/anthropic — set or not (never the value)
+  capabilities: Record<string, LlmCapability>;  // per-role vended profile (§5b)
   models_set: Record<string, string>;       // explicit overrides on disk
   base_urls_set: Record<string, string>;
   backends: string[];
@@ -2589,6 +2601,28 @@ export async function testLlmConfig(backend?: string, model?: string): Promise<{
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ backend, model }),
+  });
+  return res.json();
+}
+
+export interface CacheProbeResult {
+  ok: boolean;
+  backend: string;
+  model: string;
+  verdict?: "reuse_active" | "no_reuse" | "inconclusive";
+  ratio?: number;                 // warm/cold latency ratio
+  cache_mode?: string | null;     // the measured mode persisted to the capability
+  warm_median_ms?: number | null;
+  cold_median_ms?: number | null;
+  error?: string;
+}
+
+/** Measure prefix-cache reuse for the active binding and persist the verdict (§5b.3). */
+export async function cacheProbe(role?: string, rounds?: number): Promise<CacheProbeResult> {
+  const res = await fetch(`${BASE}/llm/config/cache-probe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role, rounds }),
   });
   return res.json();
 }

@@ -81,6 +81,12 @@ async def spawn_explorer(
     logger = logging.getLogger(__name__)
     from aughor.explorer.models import ExplorationPhase
 
+    # Canonical key: a single-schema connection always uses the bare key, so an explicit
+    # ?schema= can't split state between {conn} and {conn}__{the_only_schema} (canvas runs
+    # key by canvas_id and are unaffected).
+    if not canvas_id:
+        schema_name = canonical_schema(conn_id, schema_name)
+
     registry = canvas_explorers if canvas_id else explorers
     tasks_registry = canvas_explorer_tasks if canvas_id else explorer_tasks
     # A per-schema run gets its OWN registry/state/idempotency key so several schemas of
@@ -120,7 +126,12 @@ async def spawn_explorer(
     registry[key] = explorer
 
     def _cleanup(_job_id: str, _final: str) -> None:
+        # On ANY terminal job state (succeeded/failed/cancelled), drop the explorer from the
+        # registry too — not just the task. The registry holds *active* explorers; leaving a
+        # finished one (especially a budget-cancelled run stuck mid-phase) makes the next
+        # start/spawn refuse "already running". Status falls back to the persisted disk state.
         tasks_registry.pop(key, None)
+        registry.pop(key, None)
 
     from aughor.kernel.jobs import kernel
     job_id = await kernel().submit(
@@ -159,6 +170,21 @@ def schemas_of_connection(conn_id: str) -> list[str]:
         return [str(r[0]) for r in (getattr(res, "rows", None) or []) if r and r[0]]
     except Exception:
         return []
+
+
+def canonical_schema(conn_id: str, schema: str | None) -> str | None:
+    """Normalise a requested schema to the canonical key dimension. A single-schema connection
+    has exactly one user schema == the connection itself, so it must ALWAYS use the bare key
+    (schema=None) — otherwise state splits between `{conn}` and `{conn}__{the_only_schema}`
+    depending on whether a caller passed `?schema=`. Returns None for the bare key, else the
+    schema unchanged. Best-effort: on any lookup failure, leave the schema as given."""
+    if not schema:
+        return None
+    try:
+        schemas = schemas_of_connection(conn_id)
+    except Exception:
+        return schema
+    return None if len(schemas) <= 1 else schema
 
 
 def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: bool = False) -> bool:
