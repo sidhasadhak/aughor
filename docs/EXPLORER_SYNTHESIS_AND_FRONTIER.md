@@ -1,8 +1,21 @@
 # Explorer Synthesis & Knowledge Frontier
 
-**Status:** in progress — branch `2026-06-23-explorer-synthesis`
+**Status:** BUILT + UNIT-TESTED — branch `2026-06-23-explorer-synthesis` (5 commits, not pushed)
 **Date:** 2026-06-23
 **Author:** Scout intelligence arc
+
+> **Build complete.** All five pieces landed (commits 7083bc9 → d07fca9): L1 cut-frontier,
+> Synthesis Phase 9 (+ incremental flag), pinned reproduce-by-read, L2 playbook wiring,
+> L3 forward-chaining, + status/UI surfacing. 1646 unit tests pass; zero net ratchet debt
+> (silent-swallows 293 == main). Synthesis **discovery half proven on the real missimi
+> findings** (12 combinable pairs incl. the cross-domain high-margin×high-return SKU
+> tension/chain; frontier flagged 26/30 cells unexplored). The LLM-articulation +
+> confirming-query half reuses the proven Phase-8 guards/grounding but is **not yet
+> live-verified end-to-end** — the local connection registry is empty (warehouse remote),
+> so a full live exploration couldn't be triggered headlessly. NEXT: run a live exploration
+> on missimi to confirm synthesized findings emit + render, and capture before/after
+> (novel-cuts vs repeats, synth count by operator, playbook-triggered follow-ups, pinned
+> re-executions eliminated).
 
 ## The problem (observed)
 
@@ -111,8 +124,21 @@ debt; gate every synthesized number on the same authorities as a normal finding.
 
 ## Build order
 
-1. L1 frontier (prereq for clean synthesis) + signature/claim enrichment.
-2. Synthesis pillar (graph + 5 operators + verification + Phase 9 + flag).
-3. Pinned read+refresh-if-stale.
-4. L2 playbook wiring.
-5. L3 forward-chaining.
+1. ✅ L1 frontier (prereq for clean synthesis) + signature/claim enrichment. — `7083bc9`
+2. ✅ Synthesis pillar (graph + 5 operators + verification + Phase 9 + flag). — `7083bc9`
+3. ✅ Pinned read+refresh-if-stale. — `3af9946`
+4. ✅ L2 playbook wiring. — `f18e489`
+5. ✅ L3 forward-chaining. — `3c59c49`
+6. ✅ Status + UI surfacing of the SYNTHESIS phase. — `d07fca9`
+
+## Files
+
+- `aughor/explorer/frontier.py` (new) — Cut, signature_fields, build_universe, rank_frontier.
+- `aughor/explorer/synthesis.py` (new) — Claim, candidate_pairs, 5-operator eligibility.
+- `aughor/explorer/agent.py` — `_phase9_synthesis`, frontier/playbook/forward-chain prompt
+  blocks, signature enrichment at both insight sites, pinned reproduce-by-read.
+- `aughor/explorer/models.py` — `ExplorationPhase.SYNTHESIS`.
+- `aughor/kernel/flags.py` — `explorer.synthesis_incremental`.
+- `aughor/routers/exploration.py` — SYNTHESIS in foundation-done set.
+- `web/components/{BriefingPanel,ExplorationBadge,ExplorationPanel}.tsx` — phase labels.
+- `tests/unit/test_frontier.py`, `tests/unit/test_synthesis.py` (new) — +18 tests.
