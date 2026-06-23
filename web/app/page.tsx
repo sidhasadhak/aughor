@@ -66,6 +66,7 @@ import {
   cancelJob,
   getAgents,
   patchAgent,
+  getLlmConfig,
   type Connection,
   type ExplorationStatus,
   type OntologyGraph,
@@ -953,6 +954,15 @@ function AgentsPanel({ workspaceId, workspaceName }: { workspaceId?: string; wor
   }, [workspaceId]);   // re-resolve governance when the scope (Org vs workspace) changes
   const reload = () => getAgents(workspaceId).then(setAgents);
   const toggle = (id: string, enabled: boolean) => { patchAgent(id, { enabled, workspace_id: workspaceId }).then(() => reload()); };
+  const setModel = (id: string, model: string) => { patchAgent(id, { model, workspace_id: workspaceId }).then(() => reload()); };
+
+  // Available LLM models for the per-agent override (the distinct effective models).
+  const [models, setModels] = useState<string[]>([]);
+  useEffect(() => {
+    getLlmConfig()
+      .then(c => setModels([...new Set(Object.values(c.models || {}))].filter(Boolean) as string[]))
+      .catch(() => setModels([]));
+  }, []);
 
   if (!tried) {
     return <div style={{ padding: "40px 0", textAlign: "center" }}><p style={{ fontSize: 12, color: "var(--t3)" }}>Loading agents…</p></div>;
@@ -1007,8 +1017,18 @@ function AgentsPanel({ workspaceId, workspaceName }: { workspaceId?: string; wor
               {a.tools.map((t, i) => <span key={i} className="aug-tag">{t}</span>)}
             </div>
             {!a.reserved && (
-              <div style={{ display: "flex", gap: 18, fontSize: 11, color: "var(--t3)", borderTop: "1px solid var(--b1)", paddingTop: 8, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 18, fontSize: 11, color: "var(--t3)", borderTop: "1px solid var(--b1)", paddingTop: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <span>Budget <span style={{ color: "var(--t2)" }}>{fmtBudget(a.governance.token_budget)} tokens/run</span></span>
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  Model
+                  <select className="aug-input" value={a.governance.model ?? ""}
+                    onChange={e => setModel(a.id, e.target.value)}
+                    style={{ fontSize: 11, padding: "2px 6px", maxWidth: 220 }}>
+                    <option value="">Role default</option>
+                    {models.map(m => <option key={m} value={m}>{m}</option>)}
+                    {a.governance.model && !models.includes(a.governance.model) && <option value={a.governance.model}>{a.governance.model}</option>}
+                  </select>
+                </span>
                 <span>Recent <span style={{ color: "var(--t2)" }}>{a.spend.runs} runs · {fmtCompact(a.spend.total_tokens)} tokens · {a.spend.query_count} queries</span></span>
               </div>
             )}

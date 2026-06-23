@@ -30,8 +30,13 @@ from typing import Any, Iterable, Optional
 
 def snapshot_receipts_enabled() -> bool:
     """True when findings should be pinned to a data-version token at emit. Off by default
-    (the version probe touches the DB); set ``AUGHOR_SNAPSHOT_RECEIPTS=1`` to turn it on."""
-    return os.getenv("AUGHOR_SNAPSHOT_RECEIPTS", "").strip().lower() in ("1", "true", "yes", "on")
+    (the version probe touches the DB). A runtime override (Settings → System) wins;
+    otherwise ``AUGHOR_SNAPSHOT_RECEIPTS=1`` decides."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("snapshot_receipts")
+    except Exception:
+        return os.getenv("AUGHOR_SNAPSHOT_RECEIPTS", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _meta_row(conn: Any, sql: str) -> Optional[tuple]:

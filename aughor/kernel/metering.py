@@ -36,6 +36,7 @@ from typing import Iterator, Optional
 class RunMetrics:
     """Accumulated compute for one run (one investigation / exploration / answer)."""
 
+    org_id: str = ""  # tenant this run is billed to; stamped at register_job
     llm_calls: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -118,9 +119,14 @@ _by_job: dict[str, RunMetrics] = {}
 
 
 def register_job(job_id: str) -> None:
-    """Expose the current run's metrics under `job_id` for cross-task budget reads."""
+    """Expose the current run's metrics under `job_id` for cross-task budget reads.
+    Stamps the run's tenant from the current Org context so per-run compute is
+    tenant-keyed alongside the job/receipt rows."""
     m = _current.get()
     if m is not None:
+        from aughor.org.context import current_org_id
+        if not m.org_id:
+            m.org_id = current_org_id()
         with _lock:
             _by_job[job_id] = m
 

@@ -41,12 +41,18 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             row_count     INTEGER NOT NULL DEFAULT 0,
             duration_ms   REAL    NOT NULL DEFAULT 0,
             pii_redacted  INTEGER NOT NULL DEFAULT 0,
-            error         TEXT
+            error         TEXT,
+            org_id        TEXT    NOT NULL DEFAULT 'default'
         );
         CREATE INDEX IF NOT EXISTS idx_audit_conn ON audit_log (connection_id);
         CREATE INDEX IF NOT EXISTS idx_audit_ts   ON audit_log (ts);
         PRAGMA journal_mode=WAL;
     """)
+    # Migration (2026-06-22): tenant key on existing single-org audit logs.
+    # Idempotent — add only if an older DB predates the column.
+    cols = {r[1] for r in c.execute("PRAGMA table_info(audit_log)").fetchall()}
+    if "org_id" not in cols:
+        c.execute("ALTER TABLE audit_log ADD COLUMN org_id TEXT NOT NULL DEFAULT 'default'")
     c.commit()
 
 
@@ -65,21 +71,25 @@ class AuditLogger:
         duration_ms: float = 0.0,
         pii_redacted: int = 0,
         error: str | None = None,
+        org_id: str | None = None,
     ) -> str:
-        """Write one audit record. Returns the new record ID."""
+        """Write one audit record. Returns the new record ID. ``org_id`` defaults to
+        the current tenant context so every audited query is tenant-keyed."""
+        from aughor.org.context import current_org_id
         record_id = str(uuid.uuid4())
         digest = sql[:120].replace("\n", " ").strip()
         ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        oid = org_id or current_org_id()
         c = _connect()
         try:
             _ensure_schema(c)
             c.execute(
                 """INSERT INTO audit_log
                    (id, ts, connection_id, hypothesis_id, sql_digest, sql_full,
-                    verdict, row_count, duration_ms, pii_redacted, error)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    verdict, row_count, duration_ms, pii_redacted, error, org_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (record_id, ts, connection_id, hypothesis_id, digest, sql,
-                 verdict, row_count, round(duration_ms, 2), pii_redacted, error),
+                 verdict, row_count, round(duration_ms, 2), pii_redacted, error, oid),
             )
             c.commit()
         finally:

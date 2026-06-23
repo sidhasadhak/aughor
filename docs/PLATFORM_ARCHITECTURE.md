@@ -292,16 +292,32 @@ objects; `org_id` is absent from persisted objects, jobs, receipts, and metering
 Each phase ships value and is independently stoppable.
 
 - **Phase 0 — done.** `DuckLakeConnection` + the format-agnostic snapshot/reproduction seam.
-- **Phase 1 — the Org/tenant spine** *(the cheap-now, brutal-to-retrofit groundwork; do this
-  next).* Introduce `Org` above `Workspace`; add `org_id` to every persisted object, job,
-  receipt, and metering row; re-path storage to `{root}/{org_id}/…`; make the control-plane /
-  data-plane split explicit in code; model access as a vended capability. Single org in
-  practice; multi-tenant-shaped in structure.
-- **Phase 2 — the metastore service.** Catalog / Schema / Grant as first-class objects;
-  connections become catalogs reached via grants; a **UC-API-compatible** surface (so the
-  later swap is an adapter, and external engines can interoperate).
-- **Phase 3 — storage maturity.** Managed vs external locations; the credential-vending
-  abstraction made real; **Volumes** for the unstructured tier wired to the semantic operators.
+- **Phase 1 — the Org/tenant spine — ✅ done** *(2026-06-22/23, branch `2026-06-22-org-tenant-spine`).*
+  `aughor/org/` (`Org` above `Workspace`, `current_org_id()` contextvar, registry + bootstrap);
+  `org_id` on every persisted store (workspaces, connections, jobs, artifacts, lineage,
+  audit_log) + metering; storage re-pathed to `{root}/{org_id}/{conn_id}/…` via the
+  `aughor/platform/` control plane (`vend_storage()` — access is vended, never ambient,
+  Invariant #2) with a crash-safe idempotent on-disk migration; the control-plane / data-plane
+  split is explicit in code. Single org in practice; multi-tenant-shaped in structure.
+- **Phase 2 — the metastore service — ✅ done** *(2026-06-23).* `aughor/metastore/` ships
+  **Catalog + Grant** (a connection *is* a catalog within an org; a workspace holds USAGE
+  grants) and now **Schema** (the middle of the `catalog.schema.table` namespace, synced from
+  live introspection), all org-scoped. The **live data-path gate is flipped onto grants**: the
+  five visibility gates resolve through `accessible_catalog_ids()` (reconcile-on-read, provably
+  equal to the legacy `workspace_connection_ids()` gate), so the metastore is on the live path.
+  A **UC-compatible read surface** (`/api/2.1/unity-catalog/{catalogs,schemas,tables}`) exposes
+  the three-level namespace for external-engine interop. **Grants are fully authoritative** —
+  an independent access-control layer (`/metastore/workspaces/{id}/grants` to grant/revoke), so
+  the gate is `membership ∪ explicit grants` with no reconcile-on-read; an explicit grant widens
+  access beyond membership and is durable across membership edits. *Remaining (later):* enforce
+  schema/table-level grants; the four control-path reverse lookups (governance/compute)
+  deliberately stay on the workspace store.
+- **Phase 3 — storage maturity — ◑ in progress.** **Volumes** for the unstructured tier
+  shipped (`aughor/volumes/`): catalog-scoped governed containers for files/images/PDFs/video,
+  bytes vended to the tenant path (`{root}/{org}/{catalog}/_volumes/…`), a queryable object
+  metadata catalog, and a `/metastore` API (create/list volume · put/list/download/delete
+  object). *Remaining:* wire `extracted_text` to the R8 `prompt()`/`embedding()` operators;
+  managed vs external locations; the credential-vending abstraction made real (S3/GCS).
 - **Phase 4 — the multi-tenant flip.** Postgres-backed metastore; S3/GCS storage with scoped
   credential vending; external IdP/SSO; per-org metering → billing.
 - **Phase 5 — scale & interop.** Optionally embed **Unity Catalog OSS** as the catalog service
@@ -326,12 +342,14 @@ Each phase ships value and is independently stoppable.
 
 ## 12. Open questions
 
-- **Sequencing:** local-first vs SaaS-first determines how aggressively Phase 4/5 are pulled
-  forward.
-- **UC adoption depth:** run **UC-OSS the server**, or implement its **model + API shape** and
-  defer the server? (Current lean: model + API now, server when scale earns it.)
-- **Format bet:** Delta-everywhere (one substrate, max interop) vs DuckLake-embedded +
-  Delta-governed (two lanes, simpler local).
+- **Sequencing:** ✅ **decided 2026-06-23 — local-first.** Keep shipping single-org value;
+  multi-tenant stays the already-de-risked config flip. Phase 4/5 (Postgres metastore, S3/GCS
+  vending, IdP/SSO, billing) wait for a concrete SaaS driver.
+- **UC adoption depth:** ✅ **model + API now, server later.** The Phase-2 UC-compatible read
+  surface implements the UC model + API shape; run UC-OSS the server only when scale earns it.
+- **Format bet:** ✅ **decided 2026-06-23 — two lanes** (DuckLake embedded now / Delta-under-UC
+  governed at scale, behind the `db/snapshot.py` seam — reversible, simpler local), not
+  Delta-everywhere.
 - **Identity:** which IdP/SSO standard for the multi-tenant flip; how org-level RBAC composes
   with Aughor's existing capability gates.
 - **Billing model:** the metering spine (R1) exists; the pricing/packaging on top does not.

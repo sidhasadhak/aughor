@@ -16,6 +16,8 @@ from typing import Optional
 
 from cryptography.fernet import Fernet
 
+from aughor.org.context import DEFAULT_ORG_ID, current_org_id
+
 REGISTRY_DB = Path(__file__).parent.parent.parent / "data" / "connections.db"
 KEY_FILE    = Path(__file__).parent.parent.parent / "data" / ".aughor_key"
 
@@ -56,15 +58,21 @@ def _db() -> sqlite3.Connection:
     REGISTRY_DB.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(REGISTRY_DB))
     conn.row_factory = sqlite3.Row
-    conn.execute("""
+    conn.execute(f"""
         CREATE TABLE IF NOT EXISTS connections (
             id         TEXT PRIMARY KEY,
             name       TEXT NOT NULL,
             conn_type  TEXT NOT NULL,
             dsn_enc    TEXT NOT NULL,
-            meta       TEXT DEFAULT '{}'
+            meta       TEXT DEFAULT '{{}}',
+            org_id     TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'
         )
     """)
+    # Migration (2026-06-22): tenant key on existing single-org registries.
+    # Idempotent — add only if an older DB predates the column.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(connections)").fetchall()}
+    if "org_id" not in cols:
+        conn.execute(f"ALTER TABLE connections ADD COLUMN org_id TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'")
     conn.commit()
     return conn
 
@@ -154,8 +162,8 @@ def add_connection(name: str, conn_type: str, dsn: str, meta: dict | None = None
     conn_id = str(uuid.uuid4())[:8]
     with _db() as conn:
         conn.execute(
-            "INSERT INTO connections (id, name, conn_type, dsn_enc, meta) VALUES (?, ?, ?, ?, ?)",
-            [conn_id, name, conn_type, _encrypt(dsn), json.dumps(_encrypt_meta(conn_type, meta))],
+            "INSERT INTO connections (id, name, conn_type, dsn_enc, meta, org_id) VALUES (?, ?, ?, ?, ?, ?)",
+            [conn_id, name, conn_type, _encrypt(dsn), json.dumps(_encrypt_meta(conn_type, meta)), current_org_id()],
         )
         conn.commit()
     return conn_id

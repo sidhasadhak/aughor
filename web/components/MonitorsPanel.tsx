@@ -62,6 +62,7 @@ function blankForm(connId: string): Partial<MonitorDef> & { conn_id: string; nam
     freshness_table: null,
     freshness_column: "updated_at",
     freshness_sla_hours: 24,
+    grace_period_hours: 4,
     notification_channel: "in_app",
     enabled: true,
   };
@@ -633,6 +634,17 @@ function MonitorForm({
             Runs: <code style={{ fontFamily: "var(--font-code)" }}>{form.check_cron}</code>
           </div>
         )}
+      </Field>
+
+      {/* Grace period (anti-flap debounce) */}
+      <Field label="Grace period (hours)">
+        <input className="aug-input" type="number" min={0} step={0.5}
+          value={form.grace_period_hours ?? 4}
+          onChange={e => setField("grace_period_hours", Number(e.target.value) as any)}
+          style={{ width: 120 }} />
+        <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
+          After an alert fires, suppress further same- or lower-severity alerts for this many hours (anti-flap). Escalations fire immediately.
+        </div>
       </Field>
 
       {/* Notification */}

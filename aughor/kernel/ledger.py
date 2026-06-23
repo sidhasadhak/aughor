@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from aughor.org.context import current_org_id
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_DB = Path(__file__).parent.parent.parent / "data" / "system.db"
@@ -68,6 +70,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
   version      INTEGER NOT NULL,
   conn_id      TEXT,
   canvas_id    TEXT,
+  org_id       TEXT NOT NULL DEFAULT 'default',
   payload      TEXT NOT NULL,
   created_at   TEXT NOT NULL,
   created_by_job TEXT,
@@ -78,7 +81,8 @@ CREATE TABLE IF NOT EXISTS lineage (
   artifact_id  TEXT NOT NULL,
   relation     TEXT NOT NULL,
   ref          TEXT NOT NULL,
-  detail       TEXT
+  detail       TEXT,
+  org_id       TEXT NOT NULL DEFAULT 'default'
 );
 CREATE INDEX IF NOT EXISTS lineage_artifact ON lineage(artifact_id);
 CREATE TABLE IF NOT EXISTS jobs (
@@ -86,6 +90,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   kind            TEXT NOT NULL,
   conn_id         TEXT,
   canvas_id       TEXT,
+  org_id          TEXT NOT NULL DEFAULT 'default',
   state           TEXT NOT NULL,
   payload         TEXT,
   error           TEXT,
@@ -126,6 +131,16 @@ class Ledger:
             _job_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(jobs)").fetchall()}
             if "metrics" not in _job_cols:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN metrics TEXT")
+            # Additive migration (2026-06-22): tenant key on jobs, artifacts, lineage.
+            # PRAGMA-guarded + idempotent; back-fills existing rows to the bootstrap org.
+            if "org_id" not in _job_cols:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN org_id TEXT NOT NULL DEFAULT 'default'")
+            _art_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(artifacts)").fetchall()}
+            if "org_id" not in _art_cols:
+                self._conn.execute("ALTER TABLE artifacts ADD COLUMN org_id TEXT NOT NULL DEFAULT 'default'")
+            _lin_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(lineage)").fetchall()}
+            if "org_id" not in _lin_cols:
+                self._conn.execute("ALTER TABLE lineage ADD COLUMN org_id TEXT NOT NULL DEFAULT 'default'")
 
     @classmethod
     def default(cls) -> "Ledger":
@@ -239,14 +254,17 @@ class Ledger:
         *,
         conn_id: Optional[str] = None,
         canvas_id: Optional[str] = None,
+        org_id: Optional[str] = None,
         created_by_job: Optional[str] = None,
         lineage: Optional[list[tuple[str, str, Optional[str]]]] = None,
     ) -> str:
         """Write a new VERSION of an artifact (id returned). The previous
         version (if any) gets `superseded_by` set — never deleted. ``lineage``
-        is a list of (relation, ref, detail) provenance edges."""
+        is a list of (relation, ref, detail) provenance edges. ``org_id`` defaults
+        to the current tenant context so every receipt is tenant-keyed."""
         import uuid as _uuid
         art_id = _uuid.uuid4().hex[:12]
+        oid = org_id or current_org_id()
         with self._lock, self._conn:
             row = self._conn.execute(
                 "SELECT id, version FROM artifacts WHERE natural_key=? AND superseded_by IS NULL "
@@ -255,9 +273,9 @@ class Ledger:
             prev_id, prev_ver = (row[0], row[1]) if row else (None, 0)
             self._conn.execute(
                 "INSERT INTO artifacts (id, kind, natural_key, version, conn_id, canvas_id, "
-                "payload, created_at, created_by_job) VALUES (?,?,?,?,?,?,?,?,?)",
+                "org_id, payload, created_at, created_by_job) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (art_id, kind, natural_key, prev_ver + 1, conn_id, canvas_id,
-                 json.dumps(payload, default=str), _now(), created_by_job),
+                 oid, json.dumps(payload, default=str), _now(), created_by_job),
             )
             if prev_id:
                 self._conn.execute(
@@ -265,8 +283,8 @@ class Ledger:
                 )
             for relation, ref, detail in (lineage or []):
                 self._conn.execute(
-                    "INSERT INTO lineage (artifact_id, relation, ref, detail) VALUES (?,?,?,?)",
-                    (art_id, relation, ref, detail),
+                    "INSERT INTO lineage (artifact_id, relation, ref, detail, org_id) VALUES (?,?,?,?,?)",
+                    (art_id, relation, ref, detail, oid),
                 )
         return art_id
 
@@ -321,9 +339,10 @@ class Ledger:
     # ── jobs: rows for the K1 job kernel (state machine lives in jobs.py) ────
 
     def job_insert(self, row: dict) -> None:
-        cols = ("id", "kind", "conn_id", "canvas_id", "state", "payload", "error",
+        cols = ("id", "kind", "conn_id", "canvas_id", "org_id", "state", "payload", "error",
                 "idempotency_key", "attempt", "created_at", "started_at",
                 "heartbeat_at", "finished_at")
+        row = {**row, "org_id": row.get("org_id") or current_org_id()}
         with self._lock, self._conn:
             self._conn.execute(
                 f"INSERT INTO jobs ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",

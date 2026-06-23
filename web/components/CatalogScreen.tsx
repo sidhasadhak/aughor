@@ -32,6 +32,8 @@ import {
 } from "@/lib/api";
 import { ERDiagram } from "@/components/ERDiagram";
 import { SchemaShape } from "@/components/SchemaShape";
+import { VolumesPanel, PermissionsPanel } from "@/components/catalog/MetastorePanels";
+import { GlossaryPanel } from "@/components/catalog/GlossaryPanel";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaPanel } from "@/components/SchemaPanel";
 import { DocumentUploader } from "@/components/DocumentUploader";
@@ -580,7 +582,7 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
 
 // ── Right: TABLE detail ───────────────────────────────────────────────────────
 
-type TableTab = "overview" | "sample";
+type TableTab = "overview" | "sample" | "comments";
 
 function TableDetailPanel({ sel, onAsk, onRemoved }: {
   sel:   Extract<Sel, { level: "table" }>;
@@ -689,10 +691,15 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
       />
 
       <TabBar
-        tabs={[{ id: "overview", label: "Overview" }, { id: "sample", label: "Sample Data" }]}
+        tabs={[{ id: "overview", label: "Overview" }, { id: "sample", label: "Sample Data" }, { id: "comments", label: "Comments" }]}
         active={tab}
         onChange={id => setTab(id as TableTab)}
       />
+
+      {/* ── Comments (glossary) tab ── */}
+      {tab === "comments" && (
+        <GlossaryPanel table={bare(sel.table.name)} columns={cols.map(c => c.name)} />
+      )}
 
       {/* ── Overview tab ── */}
       {tab === "overview" && (
@@ -990,7 +997,7 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
   testResult?:    boolean;
 }) {
   const [filter, setFilter] = useState("");
-  const [tab, setTab]       = useState<"overview" | "knowledge">("overview");
+  const [tab, setTab]       = useState<"overview" | "knowledge" | "volumes" | "permissions">("overview");
   const [confirmDel, setConfirmDel] = useState(false);
   const { entry } = sel;
   const cm = connMeta(entry.conn_type);
@@ -1011,13 +1018,19 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
       <TabBar
         tabs={[
           { id: "overview", label: `Overview  ${entry.schemas.length}` },
+          { id: "volumes", label: "Volumes" },
+          { id: "permissions", label: "Permissions" },
           ...(entry.builtin ? [] : [{ id: "knowledge", label: "Knowledge" }]),
         ]}
         active={effTab}
-        onChange={id => setTab(id as "overview" | "knowledge")}
+        onChange={id => setTab(id as "overview" | "knowledge" | "volumes" | "permissions")}
       />
 
-      {effTab === "knowledge" ? (
+      {effTab === "volumes" ? (
+        <VolumesPanel catalogId={entry.conn_id} />
+      ) : effTab === "permissions" ? (
+        <PermissionsPanel catalogId={entry.conn_id} />
+      ) : effTab === "knowledge" ? (
         <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
           <p style={{ fontSize: 12, color: "var(--t2)", marginBottom: 16, maxWidth: 560, lineHeight: 1.5 }}>
             Upload documents (PDFs, reports, runbooks) to give Aughor institutional knowledge

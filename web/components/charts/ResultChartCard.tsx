@@ -22,13 +22,22 @@
  * own inference), so this is additive — no regression for existing results.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BarChart3, Table2, Grid3x3 } from "lucide-react";
 import { Chart, type ChartCustom } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
 import { classifyColumns, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
 import { cleanLabel } from "@/lib/format";
+import { applyPostproc, type PostprocOp } from "@/lib/api";
+
+const TRANSFORM_OPTS: { v: PostprocOp | "none"; t: string }[] = [
+  { v: "none", t: "None" },
+  { v: "pop", t: "Period-over-period" },
+  { v: "contribution", t: "Share of total" },
+  { v: "rolling", t: "Rolling avg (3)" },
+  { v: "cumulative", t: "Cumulative" },
+];
 
 type Agg = "sum" | "avg" | "count" | "min" | "max";
 
@@ -151,6 +160,21 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
     return derive(columns, rows, dim, metric, agg);
   }, [touched, columns, rows, dim, metric, agg]);
 
+  // On-demand post-processing transform (PoP / share / rolling / cumulative) — appends a
+  // derived column on the chosen measure via /query/postproc. Off by default (today's view).
+  const [transformOp, setTransformOp] = useState<PostprocOp | "none">("none");
+  const [transformed, setTransformed] = useState<{ columns: string[]; rows: unknown[][] } | null>(null);
+  const [tErr, setTErr] = useState("");
+  useEffect(() => {
+    if (transformOp === "none" || !metric) { setTransformed(null); setTErr(""); return; }
+    let alive = true;
+    applyPostproc(data.columns, data.rows, transformOp, metric)
+      .then(r => { if (alive) { setTransformed(r); setTErr(""); } })
+      .catch(e => { if (alive) { setTransformed(null); setTErr(String((e as Error).message)); } });
+    return () => { alive = false; };
+  }, [transformOp, data, metric]);
+  const effData = transformed ?? data;
+
   // Respect the backend hint until the user picks a type from Display.
   const hint = typeSel === "auto" ? (chartType ?? "auto") : (TYPE_TO_HINT[typeSel] ?? "auto");
   const Dropdown = (label: string, value: string, opts: { v: string; t: string }[], on: (v: string) => void) => (
@@ -183,6 +207,9 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
                   ⚠ summing a rate
                 </span>
               )}
+              {metricCols.length >= 1 &&
+                Dropdown("Transform", transformOp, TRANSFORM_OPTS, (v) => setTransformOp(v as PostprocOp | "none"))}
+              {tErr && <span className="text-[10px]" style={{ color: "var(--amber4, #B25D00)" }} title={tErr}>⚠ transform n/a</span>}
             </>
           )}
         </div>
@@ -227,11 +254,11 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
       {view === "pivot" ? (
         <PivotTable columns={columns} rows={rows} />
       ) : view === "table" ? (
-        <SqlResultTable columns={data.columns} rows={data.rows} maxHeight={340} />
+        <SqlResultTable columns={effData.columns} rows={effData.rows} maxHeight={340} />
       ) : (
         <Chart
-          columns={data.columns}
-          rows={data.rows}
+          columns={effData.columns}
+          rows={effData.rows}
           chartType={hint}
           chartConfig={touched ? null : chartConfig}
           custom={custom}

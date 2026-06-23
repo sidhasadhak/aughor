@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from pydantic import BaseModel, Field
 
+from aughor.org.context import DEFAULT_ORG_ID
+
 
 class Workspace(BaseModel):
     """A named grouping of DB connections — the top-level scope.
@@ -17,6 +19,9 @@ class Workspace(BaseModel):
     Workspace itself owns no credentials.
     """
     id: str
+    # The tenant this workspace belongs to. Single-org today (defaults to the
+    # bootstrap org); stamped so multi-tenant is additive, not a migration.
+    org_id: str = DEFAULT_ORG_ID
     name: str
     description: str = ""
     connection_ids: List[str] = Field(default_factory=list)

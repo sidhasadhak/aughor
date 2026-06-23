@@ -67,7 +67,10 @@ async def _lifespan(app: "FastAPI"):
     # _kernel_boot_recovery — AFTER kernel boot_recovery sweeps the job table, so
     # the salvage jobs we submit aren't themselves caught by that sweep.
     await _purge_legacy_canvases()
+    await _ensure_default_org()
+    await _migrate_upload_storage()
     await _ensure_default_workspace()
+    await _sync_metastore()
     await _validate_connections()
     await _start_explorers()
     await _start_ontology_refresh_loop()
@@ -180,12 +183,42 @@ async def _purge_legacy_canvases() -> None:
         logger.warning("Canvas cleanup failed (non-fatal): %s", exc)
 
 
+async def _ensure_default_org() -> None:
+    try:
+        from aughor.org import ensure_default_org
+        ensure_default_org()
+    except Exception as exc:
+        logger.warning("Org bootstrap failed (non-fatal): %s", exc)
+
+
+async def _migrate_upload_storage() -> None:
+    # Tenant-path the on-disk uploads ({conn}/ → {org}/{conn}/) before any connector
+    # is constructed. One-time, idempotent, crash-safe. Must run AFTER the default
+    # org exists and BEFORE connections are validated / explorers start.
+    try:
+        from aughor.platform import migrate_uploads_to_org_layout
+        migrate_uploads_to_org_layout()
+    except Exception as exc:
+        logger.warning("Upload storage migration failed (non-fatal): %s", exc)
+
+
 async def _ensure_default_workspace() -> None:
     try:
         from aughor.workspace.store import ensure_default_workspace
         ensure_default_workspace()
     except Exception as exc:
         logger.warning("Workspace migration failed (non-fatal): %s", exc)
+
+
+async def _sync_metastore() -> None:
+    # Derive catalogs (← connections) + grants (← workspace membership). Must run
+    # AFTER the default workspace exists so memberships are present. Non-fatal; the
+    # metastore isn't on the live data path yet (the gate still uses connection_ids).
+    try:
+        from aughor.metastore import sync_metastore_from_registry
+        sync_metastore_from_registry()
+    except Exception as exc:
+        logger.warning("Metastore sync failed (non-fatal): %s", exc)
 
 
 async def _validate_connections() -> None:
@@ -429,6 +462,8 @@ from aughor.routers import (  # noqa: E402
     llm,
     profile,
     orgsettings,
+    metastore,
+    volumes,
 )
 
 app.include_router(system.router)
@@ -451,5 +486,8 @@ app.include_router(events.router)
 app.include_router(jobs.router)
 app.include_router(agents.router)
 app.include_router(llm.router)
+app.include_router(metastore.router)
+app.include_router(metastore.grants_router)
+app.include_router(volumes.router)
 app.include_router(profile.router)
 app.include_router(orgsettings.router)

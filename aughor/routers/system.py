@@ -117,6 +117,26 @@ def get_capabilities(connection_id: str | None = None):
     }
 
 
+@router.get("/system/flags")
+def get_system_flags():
+    """Operator feature flags (runtime override > env). For Settings → System."""
+    from aughor.kernel.flags import list_flags
+    return list_flags()
+
+
+class _FlagPatch(BaseModel):
+    value: bool
+
+
+@router.put("/system/flags/{name}")
+def set_system_flag(name: str, body: _FlagPatch):
+    from aughor.kernel.flags import FLAG_ENV, list_flags, set_flag
+    if name not in FLAG_ENV:
+        raise HTTPException(status_code=404, detail=f"unknown flag '{name}'")
+    set_flag(name, body.value)
+    return list_flags()[name]
+
+
 @router.get("/dev/stats")
 def get_dev_stats():
     """Return in-process stats counters."""

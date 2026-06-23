@@ -2136,6 +2136,7 @@ export interface MonitorDef {
   freshness_column: string | null;
   freshness_sla_hours: number;
   drift_p_threshold: number | null;
+  grace_period_hours: number;
   notification_channel: string;
   enabled: boolean;
   created_at: string;
@@ -2783,7 +2784,7 @@ export async function cancelJob(jobId: string): Promise<{ job_id: string; cancel
 
 // ── Agent registry + governance: manage the fleet (Phase 0) ──────────────────
 
-export interface AgentGovernance { enabled: boolean; token_budget: number | null; time_budget_s: number | null }
+export interface AgentGovernance { enabled: boolean; token_budget: number | null; time_budget_s: number | null; model?: string | null }
 export interface AgentSpend { runs: number; total_tokens: number; query_count: number }
 export interface AgentRosterEntry {
   id: string; name: string; role: string; goal: string;
@@ -2803,7 +2804,7 @@ export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[
 
 export async function patchAgent(
   agentId: string,
-  body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; workspace_id?: string },
+  body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; model?: string; workspace_id?: string },
 ): Promise<{ agent_id: string; governance: AgentGovernance } | null> {
   const res = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -2896,6 +2897,180 @@ export async function getAnswerReceipt(kind: "chat" | "ada", connId: string, id:
   const res = await fetch(
     `${BASE}/${kind}/${encodeURIComponent(connId)}/${encodeURIComponent(id)}/receipt`,
   );
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── Metastore: Volumes (the governed unstructured tier) ─────────────────────────
+
+export interface MetastoreVolume {
+  id: string;
+  org_id: string;
+  catalog_id: string;
+  name: string;
+  full_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MetastoreVolumeObject {
+  id: string;
+  org_id: string;
+  volume_id: string;
+  path: string;
+  name: string;
+  mime_type: string;
+  size_bytes: number;
+  extracted_text: string | null;
+  created_at: string;
+}
+
+export async function listVolumes(catalogId: string): Promise<MetastoreVolume[]> {
+  const res = await fetch(`${BASE}/metastore/catalogs/${encodeURIComponent(catalogId)}/volumes`);
+  if (!res.ok) throw new Error("Failed to list volumes");
+  return (await res.json()).volumes ?? [];
+}
+
+export async function createVolume(catalogId: string, name: string): Promise<MetastoreVolume> {
+  const res = await fetch(`${BASE}/metastore/catalogs/${encodeURIComponent(catalogId)}/volumes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Failed to create volume"); }
+  return res.json();
+}
+
+export async function listVolumeObjects(volumeId: string): Promise<MetastoreVolumeObject[]> {
+  const res = await fetch(`${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects`);
+  if (!res.ok) throw new Error("Failed to list objects");
+  return (await res.json()).objects ?? [];
+}
+
+export async function uploadVolumeObject(volumeId: string, file: File): Promise<MetastoreVolumeObject> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects`, { method: "POST", body: form });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Upload failed"); }
+  return res.json();
+}
+
+export function volumeObjectContentUrl(volumeId: string, objectId: string): string {
+  return `${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects/${encodeURIComponent(objectId)}/content`;
+}
+
+export async function deleteVolumeObject(volumeId: string, objectId: string): Promise<void> {
+  const res = await fetch(`${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects/${encodeURIComponent(objectId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Delete failed");
+}
+
+// ── Metastore: Grants (explicit catalog access for a workspace) ─────────────────
+
+export async function listWorkspaceGrants(workspaceId: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants`);
+  if (!res.ok) throw new Error("Failed to list grants");
+  return (await res.json()).catalogs ?? [];
+}
+
+export async function grantWorkspaceCatalog(workspaceId: string, catalogId: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ catalog_id: catalogId }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Grant failed"); }
+  return (await res.json()).catalogs ?? [];
+}
+
+export async function revokeWorkspaceCatalog(workspaceId: string, catalogId: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants/${encodeURIComponent(catalogId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Revoke failed");
+  return (await res.json()).catalogs ?? [];
+}
+
+// ── Business Glossary (institutional knowledge: table/column descriptions) ───────
+
+export interface GlossaryColumn { description?: string; values?: string; caveats?: string; }
+export interface GlossaryTable {
+  description?: string;
+  grain?: string;
+  joins?: string[];
+  columns?: Record<string, GlossaryColumn>;
+}
+export interface Glossary { tables?: Record<string, GlossaryTable>; }
+
+export async function getGlossary(): Promise<Glossary> {
+  const res = await fetch(`${BASE}/glossary`);
+  if (!res.ok) return { tables: {} };
+  return res.json();
+}
+
+export async function updateTableGlossary(table: string, description: string): Promise<void> {
+  const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description }),
+  });
+  if (!res.ok) throw new Error("Failed to save table comment");
+}
+
+export async function updateColumnGlossary(table: string, column: string, description: string): Promise<void> {
+  const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}/${encodeURIComponent(column)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description }),
+  });
+  if (!res.ok) throw new Error("Failed to save column comment");
+}
+
+// ── Playbook (Governed Dives): version history ──────────────────────────────────
+
+export interface PlaybookVersion {
+  entry_id: string;
+  version: number;
+  receipt: string;
+  saved_at: string;
+  content: Record<string, unknown>;
+}
+
+export async function getPlaybookVersions(entryId: string): Promise<PlaybookVersion[]> {
+  const res = await fetch(`${BASE}/playbook/${encodeURIComponent(entryId)}/versions`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+// ── Post-processing transforms (PoP / share / rolling / cumulative) ─────────────
+
+export type PostprocOp = "pop" | "contribution" | "rolling" | "cumulative";
+
+export async function applyPostproc(
+  columns: string[], rows: unknown[][], op: PostprocOp, valueCol: string,
+  window = 3, agg: "mean" | "sum" | "min" | "max" = "mean",
+): Promise<{ columns: string[]; rows: unknown[][] }> {
+  const res = await fetch(`${BASE}/query/postproc`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ columns, rows, op, value_col: valueCol, window, agg }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Transform failed"); }
+  return res.json();
+}
+
+// ── System feature flags (runtime override > env) ───────────────────────────────
+
+export interface SystemFlag {
+  value: boolean;
+  source: "runtime" | "env";
+  env_var: string;
+  label: string;
+  description: string;
+}
+
+export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
+  const res = await fetch(`${BASE}/system/flags`);
+  if (!res.ok) return {};
+  return res.json();
+}
+
+export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag | null> {
+  const res = await fetch(`${BASE}/system/flags/${encodeURIComponent(name)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }),
+  });
   if (!res.ok) return null;
   return res.json();
 }

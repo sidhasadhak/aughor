@@ -57,8 +57,8 @@ def get_canvases(include_legacy: bool = True, workspace_id: str | None = None):
     belongs to that workspace are returned (data-path tenancy)."""
     from aughor.canvas.store import list_canvases
     from aughor.db.history import last_activity_by_canvas
-    from aughor.workspace.store import workspace_connection_ids
-    allowed = workspace_connection_ids(workspace_id)
+    from aughor.metastore import accessible_catalog_ids
+    allowed = accessible_catalog_ids(workspace_id)
     activity = last_activity_by_canvas()
     out = []
     for c in list_canvases(include_legacy=include_legacy):
