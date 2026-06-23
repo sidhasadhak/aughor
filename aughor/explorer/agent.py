@@ -1576,7 +1576,11 @@ class SchemaExplorer:
             # domain is active; synthesised cells must be scoped to this domain's tables.
             if getattr(cell, "sql", None) is None and _tbls and str(cell.table).split(".")[-1].lower() not in _tbls:
                 continue
-            self._manifest_attempted.add(key)            # one attempt per cell per run (advance)
+            self._manifest_attempted.add(key)            # one attempt per cell, persisted across runs
+            self._state["manifest_covered"] = {          # so re-runs skip it (Tier-2 coverage tracker)
+                "fp": self._state.get("schema_fingerprint"),
+                "cells": [list(k) for k in self._manifest_attempted],
+            }
             sql = cell_to_sql(cell, self._tp_by_table.get(cell.table),
                               self._cp_by_key.get((cell.table, cell.metric)))
             if sql:
@@ -1628,8 +1632,15 @@ class SchemaExplorer:
                 self._cp_by_key = {(t, c): p for t, cols in (cp or {}).items() for c, p in (cols or {}).items()}
                 self._manifest_cells = [c for c in build_manifest(tp or {}, _cpf)
                                         if c.source == "profiled_measure"]
-                logger.info("[explorer:%s] Phase 8 manifest-driven ON — %d baseline cells",
-                            self.connection_id, len(self._manifest_cells))
+                # Coverage tracker (Tier-2): seed `attempted` from the cells a prior run already
+                # covered on the SAME data, so re-runs skip them and only advance the frontier.
+                # Reset when the schema fingerprint changed (new/changed data → re-cover).
+                _cov = self._state.get("manifest_covered") or {}
+                _fp = self._state.get("schema_fingerprint")
+                if isinstance(_cov, dict) and _fp is not None and _cov.get("fp") == _fp:
+                    self._manifest_attempted = {tuple(k) for k in _cov.get("cells", [])}
+                logger.info("[explorer:%s] Phase 8 manifest-driven ON — %d baseline cells (%d already covered)",
+                            self.connection_id, len(self._manifest_cells), len(self._manifest_attempted))
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "manifest build is best-effort; on failure fall back to the LLM loop",

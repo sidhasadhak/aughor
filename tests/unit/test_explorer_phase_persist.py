@@ -132,6 +132,7 @@ def test_manifest_nq_pops_cell_and_builds_deterministic_question():
     ex = SchemaExplorer.__new__(SchemaExplorer)
     ex._manifest_cells = [ManifestCell("amount", "orders", "headline", None, "profiled_measure")]
     ex._manifest_attempted = set()
+    ex._state = {}
     ex._cp_by_key = {("orders", "amount"):
                      ColumnProfile("orders", "amount", "DOUBLE", "measure", unit="USD", value_range=(0, 100))}
     ex._tp_by_table = {"orders": TableProfile("orders")}
@@ -144,9 +145,32 @@ def test_manifest_nq_pops_cell_and_builds_deterministic_question():
     assert nq is not None and "SUM(amount)" in nq.sql and nq.angle == "amount:headline"
     # the cell is now attempted → no cell left → falls back (None)
     assert ex._manifest_nq({"orders": ["amount"]}, _NQ) is None
+    # the attempt was persisted to state so a re-run skips it (Tier-2 coverage tracker)
+    assert ex._state["manifest_covered"]["cells"] == [["amount", "orders", "headline", None]]
     # a cell whose table isn't in this domain's scope is skipped
     ex._manifest_attempted.clear()
     assert ex._manifest_nq({"other_table": ["x"]}, _NQ) is None
+
+
+def test_manifest_coverage_skips_cells_covered_by_a_prior_run():
+    """Tier-2: a cell already covered (seeded into _manifest_attempted from persisted state) is
+    not re-attempted — re-runs skip the covered frontier and stay cheap."""
+    from aughor.explorer.coverage_manifest import ManifestCell
+    from aughor.tools.profiler import ColumnProfile, TableProfile
+
+    ex = SchemaExplorer.__new__(SchemaExplorer)
+    ex._manifest_cells = [ManifestCell("amount", "orders", "headline", None, "profiled_measure")]
+    ex._manifest_attempted = {("amount", "orders", "headline", None)}   # covered by a prior run
+    ex._state = {}
+    ex._cp_by_key = {("orders", "amount"):
+                     ColumnProfile("orders", "amount", "DOUBLE", "measure", unit="USD", value_range=(0, 100))}
+    ex._tp_by_table = {"orders": TableProfile("orders")}
+
+    class _NQ:
+        def __init__(self, question, sql, angle, why):
+            self.question, self.sql, self.angle, self.why = question, sql, angle, why
+
+    assert ex._manifest_nq({"orders": ["amount"]}, _NQ) is None        # already covered → skipped
 
 
 def test_explorer_semaphore_sized_from_env(monkeypatch):
