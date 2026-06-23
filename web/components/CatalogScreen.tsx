@@ -33,6 +33,7 @@ import {
 import { ERDiagram } from "@/components/ERDiagram";
 import { SchemaShape } from "@/components/SchemaShape";
 import { VolumesPanel, PermissionsPanel } from "@/components/catalog/MetastorePanels";
+import { GlossaryPanel } from "@/components/catalog/GlossaryPanel";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaPanel } from "@/components/SchemaPanel";
 import { DocumentUploader } from "@/components/DocumentUploader";
@@ -581,7 +582,7 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
 
 // ── Right: TABLE detail ───────────────────────────────────────────────────────
 
-type TableTab = "overview" | "sample";
+type TableTab = "overview" | "sample" | "comments";
 
 function TableDetailPanel({ sel, onAsk, onRemoved }: {
   sel:   Extract<Sel, { level: "table" }>;
@@ -690,10 +691,15 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
       />
 
       <TabBar
-        tabs={[{ id: "overview", label: "Overview" }, { id: "sample", label: "Sample Data" }]}
+        tabs={[{ id: "overview", label: "Overview" }, { id: "sample", label: "Sample Data" }, { id: "comments", label: "Comments" }]}
         active={tab}
         onChange={id => setTab(id as TableTab)}
       />
+
+      {/* ── Comments (glossary) tab ── */}
+      {tab === "comments" && (
+        <GlossaryPanel table={bare(sel.table.name)} columns={cols.map(c => c.name)} />
+      )}
 
       {/* ── Overview tab ── */}
       {tab === "overview" && (

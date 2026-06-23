@@ -2986,3 +2986,34 @@ export async function revokeWorkspaceCatalog(workspaceId: string, catalogId: str
   if (!res.ok) throw new Error("Revoke failed");
   return (await res.json()).catalogs ?? [];
 }
+
+// ── Business Glossary (institutional knowledge: table/column descriptions) ───────
+
+export interface GlossaryColumn { description?: string; values?: string; caveats?: string; }
+export interface GlossaryTable {
+  description?: string;
+  grain?: string;
+  joins?: string[];
+  columns?: Record<string, GlossaryColumn>;
+}
+export interface Glossary { tables?: Record<string, GlossaryTable>; }
+
+export async function getGlossary(): Promise<Glossary> {
+  const res = await fetch(`${BASE}/glossary`);
+  if (!res.ok) return { tables: {} };
+  return res.json();
+}
+
+export async function updateTableGlossary(table: string, description: string): Promise<void> {
+  const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description }),
+  });
+  if (!res.ok) throw new Error("Failed to save table comment");
+}
+
+export async function updateColumnGlossary(table: string, column: string, description: string): Promise<void> {
+  const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}/${encodeURIComponent(column)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description }),
+  });
+  if (!res.ok) throw new Error("Failed to save column comment");
+}
