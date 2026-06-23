@@ -1532,8 +1532,16 @@ def ada_intake(state: AgentState) -> dict:
     from aughor.agent.prompts_investigate import INTAKE_PROMPT, IntakeOutput
 
     question = state["question"]
-    schema = _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT)
-    scan = _trim(state.get("scan_context") or "", _SCAN_CHAR_LIMIT)
+    # Size the intake caps to the bound model's window (Layer A, §5b.3): unchanged on a
+    # large context, tighter on a small BYO model so the curated payload fits instead of
+    # overflowing. Defaults preserved exactly when the window is generous.
+    from aughor.llm.context_budget import schema_scan_char_limits
+    from aughor.platform import vend_llm
+    _schema_cap, _scan_cap = schema_scan_char_limits(vend_llm("coder").max_context,
+                                                     default_schema=_SCHEMA_CHAR_LIMIT,
+                                                     default_scan=_SCAN_CHAR_LIMIT)
+    schema = _trim(state["schema_context"], _schema_cap)
+    scan = _trim(state.get("scan_context") or "", _scan_cap)
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
     origin_finding_section = _render_origin_finding_section(state.get("origin_finding"))
