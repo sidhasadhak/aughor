@@ -249,7 +249,7 @@ nothing downstream branches on provider identity:
 
 | Field | Values | Why it matters |
 |---|---|---|
-| `cache_mode` | `explicit_breakpoint` · `auto_prefix` · `none` | how (if at all) to exploit a stable prompt prefix |
+| `cache_mode` | `explicit_breakpoint` · `auto_prefix` · `auto_prefix_unverified` · `none` | how (if at all) to exploit a stable prompt prefix; `_unverified` until the probe measures it |
 | `tooling` | `native_tools` · `none` | whether mid-generation retrieval is available |
 | `structured_output` | `native` · `instructor_emulated` | how `response_model` is enforced |
 | `token_accounting` | `exact` · `estimated` | some endpoints return no `usage` — meter must degrade honestly |
@@ -277,6 +277,26 @@ seam splits the work:
   free auto-prefix reuse (and pin `num_ctx` / `keep_alive`), or do nothing. The sequencing thus
   *proliferates* — it lives in one assembler, and each backend gets whatever benefit it is
   capable of without the caller knowing.
+
+> **Status (measured, not assumed).** We refuse to *assume* a backend caches. The
+> prefix-cache **probe** (`aughor/llm/cache_probe.py`, `POST /llm/config/cache-probe`) measures
+> reuse over the real provider — a shared-prefix series vs a distinct control — and persists
+> the verdict, which the capability seam adopts (`cache_mode_override`), so the chip stops
+> saying "unverified". **Live result: `qwen3-coder-next:cloud` → `no_reuse`** (warm 891ms vs
+> cold 819ms). Ollama Cloud multiplexes requests across workers and does **not** reuse the
+> prefix KV across calls — so **Layer B is worthless for the shipped cloud binding**, and the
+> measurement (not a guess) redirects effort to Layer A.
+>
+> **Layer A is also tempered by reality:** aughor's context is *already curated* (schema-linking
+> picks ~4 tables, results cap at 12 rows, schema/scan have char caps), so the relevance
+> selection *is* the compression and headroom-style "massive compression" has a low ceiling.
+> The Layer-A win across heterogeneous BYO-model backends is therefore **adaptation, not
+> compression**: intake caps are sized to the bound model's `max_context`
+> (`context_budget.schema_scan_char_limits`, safe-direction-only — identical on a large window,
+> tighter on a small one), and a **warn-only overflow guard** at `complete()` surfaces "bind a
+> larger-context model" instead of cutting evidence (which would risk grounding). The
+> *destructive* evidence-log digest is deliberately **deferred pending an eval** that proves it
+> does not degrade synthesis grounding.
 
 ### 5b.4 Privacy/residency is a routing constraint, not a footnote
 
@@ -443,6 +463,11 @@ Each phase ships value and is independently stoppable.
   (local · API · private endpoint) bound Org → Workspace → Agent (inherited, last-most-specific
   wins). Per-provider caching/tooling quirks stay behind a capability profile; a canonical
   prompt assembler (stable prefix → volatile tail) is provider-agnostic and applied once.
+- **Measure backend caching, don't assume it.** The prefix-cache probe found
+  `qwen3-coder-next:cloud` does **not** reuse prefixes across requests (Ollama Cloud
+  multiplexes workers) → Layer-B prefix alignment is dead for the shipped cloud binding.
+  Layer-A is **adaptation, not compression** (context already curated); the destructive
+  evidence-digest waits for a grounding eval.
 - **Build the Org/tenant spine next** (Phase 1), not another feature — it is the only piece
   that cannot be added cheaply later.
 
