@@ -21,6 +21,7 @@ _STORE = "feature_flags"
 FLAG_ENV = {
     "ai_sql": "AUGHOR_AI_SQL",
     "snapshot_receipts": "AUGHOR_SNAPSHOT_RECEIPTS",
+    "explorer.synthesis_incremental": "AUGHOR_SYNTHESIS_INCREMENTAL",
 }
 
 # Human-facing copy for the Settings UI.
@@ -32,6 +33,10 @@ FLAG_META = {
     "snapshot_receipts": {
         "label": "Snapshot-pinned receipts",
         "description": "Pin every finding to the exact data version it ran against (reproducible-as-of). The version probe touches the DB on each emit.",
+    },
+    "explorer.synthesis_incremental": {
+        "label": "Incremental synthesis",
+        "description": "Fire cross-finding synthesis the moment a new finding creates a combinable pair, not only at end-of-run. More 'alive', more compute. Phase 9 always runs at end-of-run regardless.",
     },
 }
 
