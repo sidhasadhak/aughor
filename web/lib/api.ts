@@ -2899,3 +2899,90 @@ export async function getAnswerReceipt(kind: "chat" | "ada", connId: string, id:
   if (!res.ok) return null;
   return res.json();
 }
+
+// ── Metastore: Volumes (the governed unstructured tier) ─────────────────────────
+
+export interface MetastoreVolume {
+  id: string;
+  org_id: string;
+  catalog_id: string;
+  name: string;
+  full_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MetastoreVolumeObject {
+  id: string;
+  org_id: string;
+  volume_id: string;
+  path: string;
+  name: string;
+  mime_type: string;
+  size_bytes: number;
+  extracted_text: string | null;
+  created_at: string;
+}
+
+export async function listVolumes(catalogId: string): Promise<MetastoreVolume[]> {
+  const res = await fetch(`${BASE}/metastore/catalogs/${encodeURIComponent(catalogId)}/volumes`);
+  if (!res.ok) throw new Error("Failed to list volumes");
+  return (await res.json()).volumes ?? [];
+}
+
+export async function createVolume(catalogId: string, name: string): Promise<MetastoreVolume> {
+  const res = await fetch(`${BASE}/metastore/catalogs/${encodeURIComponent(catalogId)}/volumes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Failed to create volume"); }
+  return res.json();
+}
+
+export async function listVolumeObjects(volumeId: string): Promise<MetastoreVolumeObject[]> {
+  const res = await fetch(`${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects`);
+  if (!res.ok) throw new Error("Failed to list objects");
+  return (await res.json()).objects ?? [];
+}
+
+export async function uploadVolumeObject(volumeId: string, file: File): Promise<MetastoreVolumeObject> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects`, { method: "POST", body: form });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Upload failed"); }
+  return res.json();
+}
+
+export function volumeObjectContentUrl(volumeId: string, objectId: string): string {
+  return `${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects/${encodeURIComponent(objectId)}/content`;
+}
+
+export async function deleteVolumeObject(volumeId: string, objectId: string): Promise<void> {
+  const res = await fetch(`${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects/${encodeURIComponent(objectId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Delete failed");
+}
+
+// ── Metastore: Grants (explicit catalog access for a workspace) ─────────────────
+
+export async function listWorkspaceGrants(workspaceId: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants`);
+  if (!res.ok) throw new Error("Failed to list grants");
+  return (await res.json()).catalogs ?? [];
+}
+
+export async function grantWorkspaceCatalog(workspaceId: string, catalogId: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ catalog_id: catalogId }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Grant failed"); }
+  return (await res.json()).catalogs ?? [];
+}
+
+export async function revokeWorkspaceCatalog(workspaceId: string, catalogId: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants/${encodeURIComponent(catalogId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Revoke failed");
+  return (await res.json()).catalogs ?? [];
+}
