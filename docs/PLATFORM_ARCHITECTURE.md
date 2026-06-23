@@ -312,8 +312,12 @@ Each phase ships value and is independently stoppable.
   access beyond membership and is durable across membership edits. *Remaining (later):* enforce
   schema/table-level grants; the four control-path reverse lookups (governance/compute)
   deliberately stay on the workspace store.
-- **Phase 3 — storage maturity.** Managed vs external locations; the credential-vending
-  abstraction made real; **Volumes** for the unstructured tier wired to the semantic operators.
+- **Phase 3 — storage maturity — ◑ in progress.** **Volumes** for the unstructured tier
+  shipped (`aughor/volumes/`): catalog-scoped governed containers for files/images/PDFs/video,
+  bytes vended to the tenant path (`{root}/{org}/{catalog}/_volumes/…`), a queryable object
+  metadata catalog, and a `/metastore` API (create/list volume · put/list/download/delete
+  object). *Remaining:* wire `extracted_text` to the R8 `prompt()`/`embedding()` operators;
+  managed vs external locations; the credential-vending abstraction made real (S3/GCS).
 - **Phase 4 — the multi-tenant flip.** Postgres-backed metastore; S3/GCS storage with scoped
   credential vending; external IdP/SSO; per-org metering → billing.
 - **Phase 5 — scale & interop.** Optionally embed **Unity Catalog OSS** as the catalog service
