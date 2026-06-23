@@ -752,6 +752,8 @@ def fix_all(conn_id: str, body: FixAllRequest):
 async def start_exploration(conn_id: str, schema: str | None = None):
     """Start a fresh explorer run if none is active. With ?schema=, explores just that
     schema; without it, a multi-schema connection fans out into one run per schema."""
+    from aughor.routers._shared import canonical_schema
+    schema = canonical_schema(conn_id, schema)   # single-schema → bare key (no split)
     key = f"{conn_id}__{schema}" if schema else conn_id
     existing = _explorers.get(key)
     if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
@@ -770,8 +772,9 @@ async def trigger_domain_intelligence(conn_id: str, schema: str | None = None):
     resolve the same schema targets ``start``/``kickoff`` use — reading the per-schema state,
     not the (empty) bare-connection state. ``?schema=`` targets one schema (Tier-0 #2)."""
     from aughor.explorer import store as _expl_store
-    from aughor.routers._shared import schemas_of_connection
+    from aughor.routers._shared import canonical_schema, schemas_of_connection
 
+    schema = canonical_schema(conn_id, schema)   # single-schema → bare key (no split)
     if schema:
         targets: list[str | None] = [schema]
     else:
