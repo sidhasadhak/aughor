@@ -1562,6 +1562,27 @@ class SchemaExplorer:
 
     # ── Phase 8: Domain intelligence curiosity loop ───────────────────────────
 
+    def _manifest_nq(self, domain_table_cols, NQ):
+        """Tier-1 #4: pop the next uncovered manifest cell whose table is in this domain's scope
+        and build a deterministic next-question from it (zero LLM). Returns None when no cell
+        applies or its SQL can't be synthesised — the caller then uses the LLM generator."""
+        from aughor.explorer.manifest_query import cell_question, cell_to_sql
+        _tbls = {str(t).split(".")[-1].lower() for t in (domain_table_cols or {})}
+        for cell in self._manifest_cells:
+            key = (cell.metric, cell.table, cell.axis, cell.cut)
+            if key in self._manifest_attempted:
+                continue
+            if _tbls and str(cell.table).split(".")[-1].lower() not in _tbls:
+                continue
+            self._manifest_attempted.add(key)            # one attempt per cell per run (advance)
+            sql = cell_to_sql(cell, self._tp_by_table.get(cell.table),
+                              self._cp_by_key.get((cell.table, cell.metric)))
+            if sql:
+                return NQ(question=cell_question(cell), sql=sql,
+                          angle=f"{cell.metric}:{cell.axis}",
+                          why="manifest baseline coverage (deterministic, no LLM)")
+        return None
+
     async def _phase8_domain_intelligence(
         self,
         cp: dict | None = None,
@@ -1587,6 +1608,31 @@ class SchemaExplorer:
         from aughor.llm.provider import get_provider
         from aughor.ontology.store import load_latest_ontology
         from aughor.sql.writer import SqlWriter
+
+        # Tier-1 #4: manifest-driven deterministic generation (feature-flagged, default OFF — zero
+        # regression). When on, Phase 8 covers the L2 baseline cells with SYNTHESISED SQL (no
+        # generation LLM call) and the existing guards enforce correctness; it falls back to the
+        # LLM curiosity loop for cells/domains the manifest doesn't cover.
+        from aughor.kernel.flags import flag_enabled
+        self._manifest_driven = flag_enabled("explorer.manifest_driven")
+        self._manifest_cells = []
+        self._manifest_attempted = set()
+        self._cp_by_key = {}
+        self._tp_by_table = tp or {}
+        if self._manifest_driven:
+            try:
+                from aughor.explorer.coverage_manifest import build_manifest
+                _cpf = {f"{t}.{c}": p for t, cols in (cp or {}).items() for c, p in (cols or {}).items()}
+                self._cp_by_key = {(t, c): p for t, cols in (cp or {}).items() for c, p in (cols or {}).items()}
+                self._manifest_cells = [c for c in build_manifest(tp or {}, _cpf)
+                                        if c.source == "profiled_measure"]
+                logger.info("[explorer:%s] Phase 8 manifest-driven ON — %d baseline cells",
+                            self.connection_id, len(self._manifest_cells))
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "manifest build is best-effort; on failure fall back to the LLM loop",
+                         counter="explorer.manifest_build_failed")
+                self._manifest_driven = False
 
         ontology = load_latest_ontology(self.connection_id, self.schema_name)
         if not ontology:
@@ -2297,10 +2343,16 @@ class SchemaExplorer:
                         "Propose the single most valuable next question. "
                         "Choose an uncovered angle. Write grain-correct SQL."
                     )
-                    nq: _NextQuestion = await _loop.run_in_executor(
-                        None,
-                        lambda: llm.complete(system=_sys1, user=_usr1, response_model=_NextQuestion),
-                    )
+                    # Tier-1 #4: a manifest cell IS the query spec — synthesise it deterministically
+                    # (no generation LLM call) when manifest-driven; the entire downstream pipeline
+                    # (bind-check, guards, execute, interpret) is unchanged. Fall back to the LLM
+                    # generator when no manifest cell applies (deeper/cross-cutting tail).
+                    nq = self._manifest_nq(domain_table_cols, _NextQuestion) if self._manifest_driven else None
+                    if nq is None:
+                        nq = await _loop.run_in_executor(
+                            None,
+                            lambda: llm.complete(system=_sys1, user=_usr1, response_model=_NextQuestion),
+                        )
                 except Exception as e:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM question gen failed for {domain}: {e}")
                     break

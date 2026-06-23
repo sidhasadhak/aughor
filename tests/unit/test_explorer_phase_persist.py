@@ -122,6 +122,33 @@ def test_cancelled_run_marks_status_terminal(monkeypatch):
     assert "cancelled" in (ex._status.error or "").lower()
 
 
+def test_manifest_nq_pops_cell_and_builds_deterministic_question():
+    """Tier-1 #4 wiring: _manifest_nq pops the next uncovered manifest cell whose table is in
+    scope and builds a deterministic next-question (zero LLM), marking it attempted so the run
+    advances rather than repeats."""
+    from aughor.explorer.coverage_manifest import ManifestCell
+    from aughor.tools.profiler import ColumnProfile, TableProfile
+
+    ex = SchemaExplorer.__new__(SchemaExplorer)
+    ex._manifest_cells = [ManifestCell("amount", "orders", "headline", None, "profiled_measure")]
+    ex._manifest_attempted = set()
+    ex._cp_by_key = {("orders", "amount"):
+                     ColumnProfile("orders", "amount", "DOUBLE", "measure", unit="USD", value_range=(0, 100))}
+    ex._tp_by_table = {"orders": TableProfile("orders")}
+
+    class _NQ:
+        def __init__(self, question, sql, angle, why):
+            self.question, self.sql, self.angle, self.why = question, sql, angle, why
+
+    nq = ex._manifest_nq({"orders": ["amount"]}, _NQ)
+    assert nq is not None and "SUM(amount)" in nq.sql and nq.angle == "amount:headline"
+    # the cell is now attempted → no cell left → falls back (None)
+    assert ex._manifest_nq({"orders": ["amount"]}, _NQ) is None
+    # a cell whose table isn't in this domain's scope is skipped
+    ex._manifest_attempted.clear()
+    assert ex._manifest_nq({"other_table": ["x"]}, _NQ) is None
+
+
 def test_explorer_semaphore_sized_from_env(monkeypatch):
     monkeypatch.setattr(agent_mod, "_MAX_CONCURRENT_EXPLORERS", 2)
     monkeypatch.setattr(agent_mod, "_explorer_semaphore", None)
