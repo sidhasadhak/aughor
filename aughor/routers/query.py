@@ -392,6 +392,43 @@ def query_validate(body: _QueryValidateRequest):
     }
 
 
+class _PostprocRequest(BaseModel):
+    columns: list[str]
+    rows: list[list]
+    op: Literal["pop", "contribution", "rolling", "cumulative"]
+    value_col: str                 # the (numeric) measure column to transform
+    window: int = 3                # for rolling
+    agg: Literal["mean", "sum", "min", "max"] = "mean"   # for rolling
+
+
+@router.post("/query/postproc")
+def query_postproc(body: _PostprocRequest):
+    """Apply an on-demand post-processing transform to a result set — period-over-period,
+    share-of-total (Pareto), rolling aggregate, or cumulative total — appending a derived
+    column. The same operators the stats surface auto-injects for the LLM, now user-driven.
+    Pure (columns, rows) → (columns, rows); never touches the DB."""
+    from aughor.tools import postproc as pp
+
+    if body.value_col not in body.columns:
+        raise HTTPException(status_code=400, detail=f"value_col '{body.value_col}' not in columns")
+    # Pareto/share is only meaningful for an additive measure — refuse it on a rate/avg.
+    if body.op == "contribution" and not pp.is_additive_measure(body.value_col):
+        raise HTTPException(status_code=422,
+                            detail=f"share-of-total is not meaningful for a non-additive measure ('{body.value_col}')")
+    try:
+        if body.op == "pop":
+            cols, rows = pp.with_period_over_period(body.columns, body.rows, body.value_col)
+        elif body.op == "contribution":
+            cols, rows = pp.with_contribution(body.columns, body.rows, body.value_col)
+        elif body.op == "rolling":
+            cols, rows = pp.with_rolling(body.columns, body.rows, body.value_col, body.window, body.agg)
+        else:  # cumulative
+            cols, rows = pp.with_cumulative(body.columns, body.rows, body.value_col)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"transform failed: {exc}")
+    return {"columns": cols, "rows": rows}
+
+
 class _ChatFeedbackRequest(BaseModel):
     conn_id: str
     turn_id: str

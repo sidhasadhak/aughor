@@ -3034,3 +3034,19 @@ export async function getPlaybookVersions(entryId: string): Promise<PlaybookVers
   if (!res.ok) return [];
   return res.json();
 }
+
+// ── Post-processing transforms (PoP / share / rolling / cumulative) ─────────────
+
+export type PostprocOp = "pop" | "contribution" | "rolling" | "cumulative";
+
+export async function applyPostproc(
+  columns: string[], rows: unknown[][], op: PostprocOp, valueCol: string,
+  window = 3, agg: "mean" | "sum" | "min" | "max" = "mean",
+): Promise<{ columns: string[]; rows: unknown[][] }> {
+  const res = await fetch(`${BASE}/query/postproc`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ columns, rows, op, value_col: valueCol, window, agg }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Transform failed"); }
+  return res.json();
+}
