@@ -591,14 +591,22 @@ def get_exploration_episodes(conn_id: str, phase: str = "", limit: int = 300):
 
 @router.post("/exploration/{conn_id}/stop")
 def stop_exploration(conn_id: str):
-    explorer = _explorers.get(conn_id)
-    if explorer:
-        explorer.stop()
-        explorer._status.paused = True
-    task = _explorer_tasks.get(conn_id)
-    if task and not task.done():
-        task.cancel()
-    return {"ok": True, "stopped": explorer is not None}
+    # Stop EVERY explorer bound to this connection — the connection-level run AND each per-schema
+    # run ({conn}__{schema}) — so /stop works regardless of which key the run was spawned under
+    # (trigger-intel/kickoff use the bare key for a single-schema connection; an explicit
+    # ?schema= uses the per-schema key). Mirrors _purge_exploration_state's key resolution.
+    keys = [k for k in list(_explorers.keys()) if k == conn_id or k.startswith(f"{conn_id}__")]
+    stopped = 0
+    for key in keys:
+        e = _explorers.get(key)
+        if e is not None:
+            e.stop()
+            e._status.paused = True
+            stopped += 1
+        t = _explorer_tasks.get(key)
+        if t is not None and not t.done():
+            t.cancel()
+    return {"ok": True, "stopped": stopped > 0, "count": stopped}
 
 
 @router.post("/exploration/{conn_id}/resume", dependencies=[gate(Capability.AUTO_EXPLORATION)])
