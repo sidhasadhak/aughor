@@ -325,6 +325,7 @@ class LLMProvider:
         response_model: Type[T],
         temperature: float = 0.1,
     ) -> T:
+        self._warn_if_over_window(system, user)
         try:
             return self._complete_on(self._client, self.backend, self._model,
                                      system, user, response_model, temperature)
@@ -344,6 +345,24 @@ class LLMProvider:
                                          system, user, response_model, temperature)
             except Exception:
                 raise primary_exc  # surface the original failure if fallback also fails
+
+    def _warn_if_over_window(self, system: str, user: str) -> None:
+        """Layer-A safety net (§5b.3): a single, universal overflow check on every call.
+        Warn-only — never truncates (silently cutting evidence would risk grounding); the
+        signal is "the bound model is too small for this prompt; bind a larger-context one".
+        Best-effort: a budgeting hiccup must never block a real completion."""
+        try:
+            from aughor.llm.context_budget import overflow_tokens
+
+            over = overflow_tokens(system, user, self.capability.max_context)
+            if over:
+                est, budget = over
+                logger.warning(
+                    "llm: prompt ~%d tok exceeds %s's usable window ~%d tok (ctx %d) — "
+                    "the call may be rejected or truncated; bind a larger-context model.",
+                    est, self._model, budget, self.capability.max_context)
+        except Exception:
+            logger.debug("llm: overflow check skipped", exc_info=True)
 
     @staticmethod
     def _complete_on(client, backend, model, system, user, response_model, temperature):

@@ -35,6 +35,17 @@ def input_budget_tokens(max_context: int, *, reserve_output: int = 4096,
     return max(512, int((max(1024, int(max_context)) - reserve_output) * headroom))
 
 
+def overflow_tokens(system: str, user: str, max_context: int, *,
+                    reserve_output: int = 4096) -> tuple[int, int] | None:
+    """If the assembled prompt would exceed the bound model's usable input window, return
+    ``(estimated_input_tokens, budget_tokens)``; otherwise None. Used by the chokepoint to
+    *warn* — never to truncate, since silently cutting evidence would risk grounding. The
+    honest signal is "this binding is too small for this prompt; bind a larger-context one"."""
+    est = estimate_tokens(system) + estimate_tokens(user)
+    budget = input_budget_tokens(max_context, reserve_output=reserve_output)
+    return (est, budget) if est > budget else None
+
+
 def schema_scan_char_limits(max_context: int, *, default_schema: int = 20_000,
                             default_scan: int = 6_000) -> tuple[int, int]:
     """The (schema, scan) char caps for ADA intake, sized to the bound model.
