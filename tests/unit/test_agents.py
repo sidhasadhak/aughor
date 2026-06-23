@@ -26,10 +26,12 @@ def _run(coro):
 
 @pytest.fixture(autouse=True)
 def _clean_governance():
-    # Governance lives in the shared hermetic ledger — isolate each test.
+    # Governance + budget policies live in the shared hermetic ledger — isolate each test.
     Ledger.default().kv_replace_all("agent_governance", {})
+    Ledger.default().kv_replace_all("budget_policies", {})
     yield
     Ledger.default().kv_replace_all("agent_governance", {})
+    Ledger.default().kv_replace_all("budget_policies", {})
 
 
 class TestRegistry:
@@ -109,6 +111,37 @@ class TestAgentsAPI:
 
     def test_patch_unknown_404(self, client):
         assert client.patch("/agents/ghost", json={"enabled": True}).status_code == 404
+
+
+class TestBudgetAPI:
+    def test_roster_includes_budget_status(self, client):
+        scout = next(a for a in client.get("/agents").json() if a["id"] == "scout")
+        assert scout["budget"]["state"] == "unbounded"        # no policy set
+        assert scout["budget"]["scope_type"] == "agent"
+
+    def test_set_and_read_org_budget(self, client):
+        r = client.put("/agents/budget", json={
+            "scope_type": "org", "scope_id": "default", "limit_tokens": 1000})
+        assert r.status_code == 200 and r.json()["state"] == "ok"
+        overview = client.get("/agents/budget").json()
+        assert overview["org"]["limit_tokens"] == 1000
+        assert overview["org"]["state"] == "ok"
+
+    def test_set_agent_budget_surfaces_on_roster(self, client):
+        client.put("/agents/budget", json={
+            "scope_type": "agent", "scope_id": "scout", "limit_tokens": 500})
+        scout = next(a for a in client.get("/agents").json() if a["id"] == "scout")
+        assert scout["budget"]["limit_tokens"] == 500
+
+    def test_unknown_agent_scope_404(self, client):
+        r = client.put("/agents/budget", json={
+            "scope_type": "agent", "scope_id": "ghost", "limit_tokens": 100})
+        assert r.status_code == 404
+
+    def test_bad_scope_type_422(self, client):
+        r = client.put("/agents/budget", json={
+            "scope_type": "galaxy", "scope_id": "x", "limit_tokens": 100})
+        assert r.status_code == 422
 
 
 class TestEnableGate:

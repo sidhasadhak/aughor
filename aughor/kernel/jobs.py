@@ -145,6 +145,21 @@ class JobKernel:
         })
         self.ledger.emit("job.state", {"state": JobState.PENDING, "kind": kind},
                          conn_id=conn_id, canvas_id=canvas_id, job_id=job_id)
+        # Preflight cumulative-budget gate — refuse to spawn a run whose Org or agent
+        # scope is already over a hard cap (block before checkout, not mid-flight; the
+        # per-run heartbeat gate stays the in-flight backstop). No-op until a policy is
+        # set; a refused run is recorded FAILED so it's auditable in the Fleet view.
+        blocked = self._budget_block(kind)
+        if blocked:
+            self.ledger.emit("budget.blocked", {"reason": blocked, "kind": kind},
+                             conn_id=conn_id, canvas_id=canvas_id, job_id=job_id)
+            self._transition(job_id, JobState.FAILED, error=f"budget blocked: {blocked}")
+            if on_finish is not None:
+                try:
+                    on_finish(job_id, JobState.FAILED)
+                except Exception:
+                    logger.warning("job %s on_finish hook failed", job_id, exc_info=True)
+            return job_id
         task = asyncio.create_task(
             self._run(job_id, coro_factory, on_finish), name=f"job-{kind}-{job_id}"
         )
@@ -178,6 +193,18 @@ class JobKernel:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "per-agent model resolve", counter="agent_model")
         return None
+
+    def _budget_block(self, kind: Optional[str]) -> Optional[str]:
+        """Preflight cumulative-budget gate (the submit chokepoint). Reads spend through
+        *this kernel's* ledger so it sees exactly the rows it writes. Best-effort —
+        never blocks a run on a resolution error, and a no-op when no policy is set."""
+        try:
+            from aughor.platform.budget import preflight_block_for_kind
+            return preflight_block_for_kind(kind, ledger=self.ledger)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "budget preflight", counter="budget")
+            return None
 
     def _over_budget(self, job_id: str, gov, elapsed_s: float) -> Optional[str]:
         """The budget this run has blown, or None. Tokens come from the live

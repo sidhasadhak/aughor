@@ -27,6 +27,16 @@ from aughor.platform.inference import (
     capability_for,
     vend_llm,
 )
+from aughor.platform.budget import (
+    BudgetPolicy,
+    BudgetStatus,
+    block_reason,
+    get_policy,
+    preflight_block_for_kind,
+    set_policy,
+    spend_tokens,
+    status,
+)
 from aughor.platform.vending import (
     STORAGE_ROOT,
     StorageCapability,
@@ -43,4 +53,13 @@ __all__ = [
     "InferenceCapability",
     "vend_llm",
     "capability_for",
+    # budget governance (§4, Invariant #2 — cumulative scoped spend gate)
+    "BudgetPolicy",
+    "BudgetStatus",
+    "set_policy",
+    "get_policy",
+    "spend_tokens",
+    "status",
+    "block_reason",
+    "preflight_block_for_kind",
 ]
