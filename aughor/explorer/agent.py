@@ -270,6 +270,7 @@ class SchemaExplorer:
         self._macro_context: Optional[dict] = None  # Tier 2 full-span long-arc rollup
         self._cost_large: bool = False               # Tier 3 — connection big enough for approx
         self._prev_watermark: Optional[str] = None   # Tier 3 — anchor edge at the last run
+        self._activity_unchanged: bool = False        # no new activity since last run → pinned findings reproducible-by-read
 
     # ── State persistence helpers ─────────────────────────────────────────────
 
@@ -392,6 +393,22 @@ class SchemaExplorer:
         if journal_extra:
             payload.update(journal_extra)
         self._journal("exploration.insight", payload)
+
+    def _read_prior_pinned(self, qi: int) -> Optional[dict]:
+        """The latest stored pinned finding for slot ``qi`` from the ledger, or None.
+        Lets the pinned pass REPRODUCE a finding (read) instead of re-running identical
+        SQL when the data hasn't moved — killing the visible 'asks the same question
+        every run' symptom while keeping the briefing reproducible."""
+        try:
+            from aughor.kernel.ledger import Ledger
+            rec = Ledger.default().receipt(f"insight:{self.connection_id}:pinned__{qi}")
+            payload = ((rec or {}).get("artifact", {}) or {}).get("payload", {}) or {}
+            if isinstance(payload, dict) and payload.get("finding") and payload.get("sql"):
+                return payload
+        except Exception:
+            logger.debug("[explorer:%s] prior pinned read failed (q%d)",
+                         self.connection_id, qi, exc_info=True)
+        return None
 
     def pause(self) -> None:
         """Yield execution — called when a user investigation begins."""
@@ -646,6 +663,11 @@ class SchemaExplorer:
                 from aughor.explorer.watermark import get_watermark, set_watermark
                 _anchor, _rec, _ = anchor_activity(tp, cp)
                 self._prev_watermark = get_watermark(self.connection_id, _anchor) if _anchor else None
+                # If the activity high-water mark hasn't advanced since the last run, the
+                # data behind a pinned finding hasn't moved — so it's reproducible from the
+                # ledger (read, don't re-run identical SQL every exploration). Refresh only
+                # when activity moved.
+                self._activity_unchanged = bool(_anchor and _rec and self._prev_watermark == _rec)
                 if _anchor and _rec:
                     set_watermark(self.connection_id, _anchor, _rec)
                 self._cost_large = any((profile_field(p, "row_count") or 0) >= _COST_LARGE_ROWS
@@ -1438,6 +1460,31 @@ class SchemaExplorer:
             await self._gate()
             if self._stopped:
                 break
+
+            # Reproduce-by-read: when activity hasn't moved since the last run, a pinned
+            # finding is reproducible from the ledger — read it back instead of re-executing
+            # identical SQL every exploration (the visible "asking the same question again"
+            # symptom). Refresh (re-run below) only when the data actually moved.
+            if self._activity_unchanged:
+                prior = self._read_prior_pinned(qi)
+                if prior:
+                    _pdoss = prior.pop("dossier", None) if isinstance(prior, dict) else None
+                    if not prior.get("signature"):
+                        _psf = signature_fields(prior.get("sql", ""), getattr(self._conn, "dialect", "duckdb"))
+                        prior["dimensions"], prior["measures"], prior["signature"] = (
+                            _psf["dimensions"], _psf["measures"], _psf)
+                    prior["reproduced"] = True
+                    self._state.setdefault("insights", []).append(prior)
+                    if hasattr(self, "_insight_vecs"):
+                        self._insight_vecs.append(None)
+                    self._emit_insight(prior, prior.get("sql", ""), dossier=_pdoss,
+                                       journal_extra={"pinned": True, "reproduced": True})
+                    stored += 1
+                    from aughor.stats import stats as _s; _s.inc("explorer.pinned_reproduced")
+                    logger.info("[explorer:%s] Phase 8 (pinned): reproduced Q%d from ledger "
+                                "(activity unchanged — no re-run)", self.connection_id, qi)
+                    continue
+
             try:
                 _cached = _kq_sql[qi].strip() if qi < len(_kq_sql) and _kq_sql[qi] else ""
                 if _cached:
