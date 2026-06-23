@@ -2046,6 +2046,29 @@ class SchemaExplorer:
 
             logger.info(f"[explorer:{self.connection_id}] Phase 8: {domain} domain — {len(entities)} entities, used={used}")
 
+            # Playbook hypotheses (Layer 2): consult the org playbook — the causal
+            # "when metric X behaves like Y, investigate Z" knowledge — for this domain's
+            # metrics, and offer the matching plays as patterns to look for. This is the
+            # explorer finally BUILDING ON the playbook (it was Analyst-only before): the
+            # generator gets known cause→effect patterns to test, not just blank angles.
+            playbook_block = ""
+            try:
+                from aughor.playbook.retriever import retrieve_for_metric_and_phases
+                _pb_labels = [domain] + list(profile_angles) + list(angles)
+                _plays = retrieve_for_metric_and_phases(_pb_labels, limit=4)
+                if _plays:
+                    _pb_lines = "\n".join(
+                        f"  • When {p.trigger_metric} {p.trigger_condition}: {(p.recommendation or '')[:140]}"
+                        for p in _plays)
+                    playbook_block = (
+                        "KNOWN PATTERNS (from the playbook) — if the data shows one of these triggers, "
+                        "prefer surfacing it as the finding:\n" + _pb_lines + "\n\n"
+                    )
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "playbook hypotheses are best-effort prompt context; on failure omit",
+                         counter="explorer.playbook_hint_failed")
+
             _dup_streak = 0   # consecutive structural-duplicate findings → stop a looping domain
             while used < budgets.get(f"{domain}__cap", HARD_BUDGET):
                 cap = budgets.get(f"{domain}__cap", HARD_BUDGET)
@@ -2488,6 +2511,7 @@ class SchemaExplorer:
                         f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n"
                         f"{diversity_block}"
                         f"{frontier_block}"
+                        f"{playbook_block}"
                         "Propose the single most valuable next question. "
                         "Choose an uncovered angle. Write grain-correct SQL."
                     )
