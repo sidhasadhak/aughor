@@ -1563,6 +1563,7 @@ const PHASE_LABELS: Record<string, string> = {
   distribution:      "profiling distributions",
   cross_table:       "finding cross-table patterns",
   domain_intel:      "synthesising domain intelligence",
+  synthesis:         "composing cross-finding insights",
 };
 
 function BriefingEmpty({

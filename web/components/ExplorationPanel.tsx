@@ -22,6 +22,7 @@ const PHASES = [
   { key: "distribution",      label: "Distributions" },
   { key: "cross_table",       label: "Patterns" },
   { key: "domain_intel",      label: "Intelligence" },
+  { key: "synthesis",         label: "Synthesis" },
   { key: "complete",          label: "Complete" },
 ];
 

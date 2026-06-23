@@ -789,7 +789,8 @@ async def trigger_domain_intelligence(conn_id: str, schema: str | None = None):
         # Foundation (phases 3-7) is done once a run reaches domain_intel — accept that as well as
         # 'complete', so an incremental Phase-8 run works after a budget-cancel left it at
         # domain_intel rather than 'complete' (the run still has its cached foundation).
-        _foundation_done = (ExplorationPhase.DOMAIN_INTEL.value, ExplorationPhase.COMPLETE.value)
+        _foundation_done = (ExplorationPhase.DOMAIN_INTEL.value, ExplorationPhase.SYNTHESIS.value,
+                            ExplorationPhase.COMPLETE.value)
         if phase not in _foundation_done:
             results.append({"schema": sch, "ok": False,
                             "reason": f"phases 3-7 not complete (current: {phase}) — run /start or /restart first"})
