@@ -306,9 +306,12 @@ Each phase ships value and is independently stoppable.
   five visibility gates resolve through `accessible_catalog_ids()` (reconcile-on-read, provably
   equal to the legacy `workspace_connection_ids()` gate), so the metastore is on the live path.
   A **UC-compatible read surface** (`/api/2.1/unity-catalog/{catalogs,schemas,tables}`) exposes
-  the three-level namespace for external-engine interop. *Remaining (later):* make grants fully
-  authoritative (independent of membership) + enforce schema/table-level grants; the four
-  control-path reverse lookups (governance/compute) deliberately stay on the workspace store.
+  the three-level namespace for external-engine interop. **Grants are fully authoritative** —
+  an independent access-control layer (`/metastore/workspaces/{id}/grants` to grant/revoke), so
+  the gate is `membership ∪ explicit grants` with no reconcile-on-read; an explicit grant widens
+  access beyond membership and is durable across membership edits. *Remaining (later):* enforce
+  schema/table-level grants; the four control-path reverse lookups (governance/compute)
+  deliberately stay on the workspace store.
 - **Phase 3 — storage maturity.** Managed vs external locations; the credential-vending
   abstraction made real; **Volumes** for the unstructured tier wired to the semantic operators.
 - **Phase 4 — the multi-tenant flip.** Postgres-backed metastore; S3/GCS storage with scoped
