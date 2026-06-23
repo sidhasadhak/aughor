@@ -58,6 +58,8 @@ class ManifestCell:
     axis: str                   # 'headline' | 'dimension' | 'trend' | 'seasonality' | 'yoy'
     cut: Optional[str]          # the dimension column when axis == 'dimension', else None
     source: str                 # 'profile' (named KPI) | 'profiled_measure' (fallback)
+    sql: Optional[str] = None   # pre-validated SQL (a KPI's value_sql); when set it's used verbatim
+                                # instead of synthesising — and the cell is connection-level (no table scope)
 
 
 def _bare(name: str) -> str:

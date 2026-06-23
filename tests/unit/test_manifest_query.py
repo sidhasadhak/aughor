@@ -60,6 +60,12 @@ class TestAxes:
         c = ManifestCell(metric="NPS", table="(business)", axis="headline", cut=None, source="profile")
         assert cell_to_sql(c, None, None) is None
 
+    def test_kpi_cell_with_prevalidated_sql_is_used_verbatim(self):
+        # a KPI cell carrying its value_sql is used as-is (already correct), not synthesised
+        c = ManifestCell(metric="GMV", table="(kpi)", axis="headline", cut=None, source="profile",
+                         sql="SELECT SUM(total_amount) AS value FROM orders WHERE status='paid'")
+        assert cell_to_sql(c, None, None) == "SELECT SUM(total_amount) AS value FROM orders WHERE status='paid'"
+
 
 def test_cell_question_labels_each_axis():
     assert "total amount" in cell_question(_cell("headline")).lower()

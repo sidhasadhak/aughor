@@ -1572,7 +1572,9 @@ class SchemaExplorer:
             key = (cell.metric, cell.table, cell.axis, cell.cut)
             if key in self._manifest_attempted:
                 continue
-            if _tbls and str(cell.table).split(".")[-1].lower() not in _tbls:
+            # KPI cells (pre-validated value_sql) are connection-level — run regardless of which
+            # domain is active; synthesised cells must be scoped to this domain's tables.
+            if getattr(cell, "sql", None) is None and _tbls and str(cell.table).split(".")[-1].lower() not in _tbls:
                 continue
             self._manifest_attempted.add(key)            # one attempt per cell per run (advance)
             sql = cell_to_sql(cell, self._tp_by_table.get(cell.table),
@@ -1882,6 +1884,30 @@ class SchemaExplorer:
                 tolerate(_exc, "pinned key-questions pass is best-effort; on failure the free "
                          "per-domain loop still runs", counter="explorer.pinned_pass_failed")
 
+        # Tier-1 #4: cover the named KPIs deterministically too — reuse each metric's pre-validated
+        # value_sql (no LLM, no synthesis), prepended so the on-target KPIs lead the frontier.
+        if self._manifest_driven and _profile_for_pin is not None:
+            from aughor.explorer.coverage_manifest import ManifestCell
+            _kpi_cells = []
+            for _m in (getattr(_profile_for_pin, "north_star_metrics", None) or []):
+                _vs = (getattr(_m, "value_sql", "") or "").strip()
+                if not _vs:
+                    continue
+                # Only lead with a KPI whose value_sql actually BINDS against THIS run's schema —
+                # a profile's value_sql can target a different dataset (ecommerce.orders) than a
+                # per-schema run (missimi), in which case it'd just be skipped. Validate up front.
+                try:
+                    _ok, _ = self._conn.dry_run(_vs)
+                except Exception:
+                    _ok = False
+                if _ok:
+                    _kpi_cells.append(ManifestCell(metric=_m.name, table="(kpi)", axis="headline",
+                                                   cut=None, source="profile", sql=_vs))
+            if _kpi_cells:
+                self._manifest_cells = _kpi_cells + list(self._manifest_cells)
+                logger.info("[explorer:%s] Phase 8: +%d KPI cells (value_sql, bind-validated) → %d cells",
+                            self.connection_id, len(_kpi_cells), len(self._manifest_cells))
+
         for domain, _base_domain, entities in passes:
             await self._gate()
             if self._stopped:
@@ -1943,8 +1969,14 @@ class SchemaExplorer:
 
                 covered_angles = coverage.get(domain, [])
 
-                # Stop on novelty decay: avg novelty of last 3 findings < 2
-                if len(domain_insights) >= 3:
+                # Stop on novelty decay: avg novelty of last 3 findings < 2. But when manifest-driven
+                # and uncovered cells remain, the MANIFEST FRONTIER drives the loop — a few low-novelty
+                # (already-covered) cells must not halt it before the uncovered cells are reached.
+                # Novelty-decay then governs only the LLM tail, once the frontier is exhausted.
+                _frontier_remains = self._manifest_driven and any(
+                    (c.metric, c.table, c.axis, c.cut) not in self._manifest_attempted
+                    for c in self._manifest_cells)
+                if not _frontier_remains and len(domain_insights) >= 3:
                     recent_novelty = [i.get("novelty", 3) for i in domain_insights[-3:]]
                     if sum(recent_novelty) / 3 < 2.0:
                         logger.info(f"[explorer:{self.connection_id}] Phase 8: {domain} — novelty decay, stopping")

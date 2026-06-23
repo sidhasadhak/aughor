@@ -59,6 +59,9 @@ def cell_to_sql(cell: ManifestCell, table_profile: Any, metric_profile: Any,
     (e.g. a time axis with no timestamp). ``metric`` is a column on ``cell.table``; a named
     KPI cell (table ``"(business)"`` / unmapped) returns None — those reuse the metric's
     own ``value_sql``/``chart_sql`` instead, which is already validated."""
+    # A cell carrying pre-validated SQL (a KPI's value_sql) is used verbatim — already correct.
+    if getattr(cell, "sql", None):
+        return cell.sql
     # Profile-led KPI cells carry a KPI *name* (e.g. "Gross Merchandise Value (GMV)"), not a
     # column — they reuse the metric's own validated value_sql/chart_sql, not a synthesised
     # aggregate. Only profiled-measure cells (metric == a real column) are synthesised here.
