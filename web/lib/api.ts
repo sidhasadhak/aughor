@@ -2136,6 +2136,7 @@ export interface MonitorDef {
   freshness_column: string | null;
   freshness_sla_hours: number;
   drift_p_threshold: number | null;
+  grace_period_hours: number;
   notification_channel: string;
   enabled: boolean;
   created_at: string;
@@ -2783,7 +2784,7 @@ export async function cancelJob(jobId: string): Promise<{ job_id: string; cancel
 
 // ── Agent registry + governance: manage the fleet (Phase 0) ──────────────────
 
-export interface AgentGovernance { enabled: boolean; token_budget: number | null; time_budget_s: number | null }
+export interface AgentGovernance { enabled: boolean; token_budget: number | null; time_budget_s: number | null; model?: string | null }
 export interface AgentSpend { runs: number; total_tokens: number; query_count: number }
 export interface AgentRosterEntry {
   id: string; name: string; role: string; goal: string;
@@ -2803,7 +2804,7 @@ export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[
 
 export async function patchAgent(
   agentId: string,
-  body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; workspace_id?: string },
+  body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; model?: string; workspace_id?: string },
 ): Promise<{ agent_id: string; governance: AgentGovernance } | null> {
   const res = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -3016,4 +3017,20 @@ export async function updateColumnGlossary(table: string, column: string, descri
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description }),
   });
   if (!res.ok) throw new Error("Failed to save column comment");
+}
+
+// ── Playbook (Governed Dives): version history ──────────────────────────────────
+
+export interface PlaybookVersion {
+  entry_id: string;
+  version: number;
+  receipt: string;
+  saved_at: string;
+  content: Record<string, unknown>;
+}
+
+export async function getPlaybookVersions(entryId: string): Promise<PlaybookVersion[]> {
+  const res = await fetch(`${BASE}/playbook/${encodeURIComponent(entryId)}/versions`);
+  if (!res.ok) return [];
+  return res.json();
 }

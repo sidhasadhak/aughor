@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { API_BASE as BASE } from "@/lib/config";
 import { pct } from "@/lib/format";
+import { getPlaybookVersions, type PlaybookVersion } from "@/lib/api";
 
 interface PlaybookEntry {
   id: string;
@@ -20,6 +21,9 @@ interface PlaybookEntry {
   evidence_sources: string[];
   historical_success_rate: number;
   status: "active" | "draft" | "deprecated";
+  version?: number;
+  receipt?: string;
+  updated_at?: string;
 }
 
 const STATUS_CHIP: Record<string, { bg: string; color: string; label: string }> = {
@@ -295,6 +299,9 @@ function PlaybookDetail({
         </div>
       )}
 
+      {/* Version history (Governed Dives — immutable, receipt-pinned versions) */}
+      <VersionHistory entryId={entry.id} currentVersion={entry.version} />
+
       {/* Promote / deprecate */}
       <div className="flex gap-2 pt-2" style={{ borderTop: "0.5px solid var(--b2)" }}>
         {entry.status !== "active" && (
@@ -329,6 +336,47 @@ function PlaybookDetail({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function VersionHistory({ entryId, currentVersion }: { entryId: string; currentVersion?: number }) {
+  const [open, setOpen] = useState(false);
+  const [versions, setVersions] = useState<PlaybookVersion[] | null>(null);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && versions === null) getPlaybookVersions(entryId).then(setVersions).catch(() => setVersions([]));
+  };
+
+  return (
+    <div style={{ borderTop: "0.5px solid var(--b1)", paddingTop: 12 }}>
+      <button onClick={toggle} className="flex items-center gap-2 text-[11px]" style={{ color: "var(--t3)" }}>
+        <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .12s" }}>▸</span>
+        Version history
+        {currentVersion != null && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-[3px] font-mono"
+            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t4)" }}>v{currentVersion}</span>
+        )}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          {versions === null && <p className="text-[11px]" style={{ color: "var(--t4)" }}>Loading…</p>}
+          {versions?.length === 0 && <p className="text-[11px]" style={{ color: "var(--t4)" }}>No frozen versions yet.</p>}
+          {versions?.slice().reverse().map(v => (
+            <div key={v.version} className="flex items-center gap-3 text-[11px]" style={{ color: "var(--t3)" }}>
+              <span className="font-mono px-1.5 py-0.5 rounded-[3px]"
+                style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t2)" }}>v{v.version}</span>
+              <span style={{ color: "var(--t4)" }}>{v.saved_at ? new Date(v.saved_at).toLocaleString() : ""}</span>
+              <span className="font-mono truncate" style={{ color: "var(--t4)" }} title={v.receipt}>{v.receipt ? v.receipt.slice(0, 16) + "…" : ""}</span>
+            </div>
+          ))}
+          <p className="text-[10px] mt-1" style={{ color: "var(--t4)" }}>
+            Immutable, receipt-pinned versions — a finding that cited an older version resolves against the exact content it relied on.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
