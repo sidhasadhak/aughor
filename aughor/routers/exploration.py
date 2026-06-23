@@ -755,22 +755,44 @@ async def start_exploration(conn_id: str, schema: str | None = None):
 
 
 @router.post("/exploration/{conn_id}/trigger-intel", dependencies=[gate(Capability.DOMAIN_INTEL)])
-async def trigger_domain_intelligence(conn_id: str):
-    """Run only Phase 8 (domain intelligence) if phases 3-7 are already complete."""
+async def trigger_domain_intelligence(conn_id: str, schema: str | None = None):
+    """Run only Phase 8 (domain intelligence) where phases 3-7 are already complete.
+
+    A multi-schema connection's runs live under per-schema keys (``{conn}__{schema}``), so
+    resolve the same schema targets ``start``/``kickoff`` use — reading the per-schema state,
+    not the (empty) bare-connection state. ``?schema=`` targets one schema (Tier-0 #2)."""
     from aughor.explorer import store as _expl_store
-    state = _expl_store.load(conn_id)
-    phase = state.get("phase", "pending")
-    if phase not in ("complete", ExplorationPhase.COMPLETE.value):
-        return {"ok": False, "reason": f"phases 3-7 not complete (current: {phase}) — run /start or /restart first"}
+    from aughor.routers._shared import schemas_of_connection
 
-    existing = _explorers.get(conn_id)
-    if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
-        return {"ok": False, "reason": "explorer already running", "phase": existing.status.phase.value}
+    if schema:
+        targets: list[str | None] = [schema]
+    else:
+        _schemas = schemas_of_connection(conn_id)
+        targets = list(_schemas) if len(_schemas) >= 2 else [None]
 
-    res = await spawn_explorer(conn_id, domain_intel_only=True)
-    if not res["ok"]:
-        logger.warning("Trigger-intel: failed for %s — %s", conn_id, res["reason"])
-    return {"ok": res["ok"], **({"reason": res["reason"]} if res["reason"] else {})}
+    results: list[dict] = []
+    for sch in targets:
+        key = f"{conn_id}__{sch}" if sch else conn_id
+        state = _expl_store.load(key)
+        phase = state.get("phase", "pending")
+        # Foundation (phases 3-7) is done once a run reaches domain_intel — accept that as well as
+        # 'complete', so an incremental Phase-8 run works after a budget-cancel left it at
+        # domain_intel rather than 'complete' (the run still has its cached foundation).
+        _foundation_done = (ExplorationPhase.DOMAIN_INTEL.value, ExplorationPhase.COMPLETE.value)
+        if phase not in _foundation_done:
+            results.append({"schema": sch, "ok": False,
+                            "reason": f"phases 3-7 not complete (current: {phase}) — run /start or /restart first"})
+            continue
+        existing = _explorers.get(key)
+        if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
+            results.append({"schema": sch, "ok": False, "reason": "explorer already running"})
+            continue
+        res = await spawn_explorer(conn_id, schema_name=sch, domain_intel_only=True)
+        if not res["ok"]:
+            logger.warning("Trigger-intel: failed for %s (schema=%s) — %s", conn_id, sch, res["reason"])
+        results.append({"schema": sch, **res})
+
+    return {"ok": any(r.get("ok") for r in results), "results": results}
 
 
 @router.post("/exploration/{conn_id}/reset")

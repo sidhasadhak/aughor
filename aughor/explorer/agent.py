@@ -753,6 +753,14 @@ class SchemaExplorer:
             )
 
         except asyncio.CancelledError:
+            # A cancel (budget breach / user stop / owner deletion) unwinds here BEFORE the
+            # COMPLETE transition, so the in-memory status was left at whatever phase it was in
+            # (e.g. domain_intel). Mark it terminal so a later start/spawn doesn't see a stale
+            # "still running" explorer and refuse — the budget-cancel WEDGE (Tier-0 #1).
+            self._status.phase = ExplorationPhase.FAILED
+            if not self._status.error:
+                self._status.error = "cancelled (budget exceeded or stopped) — progress saved"
+            self._journal("exploration.phase", {"phase": "failed", "reason": "cancelled"})
             self._save_state()
             logger.info(f"[explorer:{self.connection_id}] Cancelled, progress saved")
             raise

@@ -82,6 +82,46 @@ def test_save_state_accepts_plain_string_phase(monkeypatch):
     assert captured["state"]["phase"] == "domain_intel"
 
 
+def test_cancelled_run_marks_status_terminal(monkeypatch):
+    """Tier-0 #1 (the budget-cancel WEDGE): a CancelledError mid-run must leave the in-memory
+    status TERMINAL (FAILED), not stuck at domain_intel — otherwise the next start/spawn sees a
+    stale 'still running' explorer and refuses. Drive a cancel in Phase 8 and assert the handler
+    marks it terminal."""
+    import pytest
+
+    ex = SchemaExplorer.__new__(SchemaExplorer)
+    ex.connection_id = "c"
+    ex.schema_name = None
+    ex._store_key = "c"
+    ex._state = {}
+    ex._rate_seconds = 0
+
+    class _Status:
+        phase = ExplorationPhase.PENDING
+        error = None
+        domain_intel_skipped = False
+        domain_intel_note = None
+        tables_total = columns_total = joins_total = 0
+
+    ex._status = _Status()
+    monkeypatch.setattr(ex, "_load_profiler_data", lambda: ({"t": object()}, {}, {"joins": []}))
+    monkeypatch.setattr(ex, "_compute_time_window", lambda *a, **k: None)
+    monkeypatch.setattr(ex, "_compute_macro_context", lambda *a, **k: None)
+    monkeypatch.setattr(ex, "_save_state", lambda: None)
+    monkeypatch.setattr(ex, "_journal", lambda *a, **k: None)
+
+    async def _cancel(*a, **k):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(ex, "_phase8_domain_intelligence", _cancel)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(ex._explore_run(domain_intel_only=True))   # skips 3-7, cancels in Phase 8
+
+    assert ex._status.phase == ExplorationPhase.FAILED          # terminal, not stuck at domain_intel
+    assert "cancelled" in (ex._status.error or "").lower()
+
+
 def test_explorer_semaphore_sized_from_env(monkeypatch):
     monkeypatch.setattr(agent_mod, "_MAX_CONCURRENT_EXPLORERS", 2)
     monkeypatch.setattr(agent_mod, "_explorer_semaphore", None)

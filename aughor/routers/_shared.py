@@ -120,7 +120,12 @@ async def spawn_explorer(
     registry[key] = explorer
 
     def _cleanup(_job_id: str, _final: str) -> None:
+        # On ANY terminal job state (succeeded/failed/cancelled), drop the explorer from the
+        # registry too — not just the task. The registry holds *active* explorers; leaving a
+        # finished one (especially a budget-cancelled run stuck mid-phase) makes the next
+        # start/spawn refuse "already running". Status falls back to the persisted disk state.
         tasks_registry.pop(key, None)
+        registry.pop(key, None)
 
     from aughor.kernel.jobs import kernel
     job_id = await kernel().submit(
