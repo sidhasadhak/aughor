@@ -57,10 +57,10 @@ in **Settings → Models / System** so an operator can flip them without env var
 ## Build order
 1. ✅ **U4 + U1 + U2** — Catalog Explorer with **Volumes** + **Permissions** tabs (`7caaa6e`, browser-verified).
 2. ✅ **U3** — **Glossary** as a Comments tab in the table detail (`63efe35`, browser-verified).
-3. ✅ **U5 / U7 / U6** — per-agent model picker · monitor grace-period · playbook version history (`56f2c95`, browser-verified). ⬜ **U8** — post-proc transforms (needs a backend apply-on-demand endpoint; currently auto-injected to the LLM only).
-4. ⬜ **P3** — optional Settings toggles for the env-gated features (needs runtime-flag support; currently env-only).
+3. ✅ **U5 / U7 / U6** — per-agent model picker · monitor grace-period · playbook version history (`56f2c95`, browser-verified).
+4. ✅ **U8** — post-proc transforms: a `POST /query/postproc` endpoint + a "Transform" control on the answer card (`8c5a88e`).
+5. ✅ **P3** — runtime feature-flag store (`aughor/kernel/flags.py`, override > env) + Settings → System toggles (`494b43e`).
 
-> **Status:** all three 🔴 real gaps (Volumes · Grants · Glossary) **and** the backend-ready
-> 🟡 items (U5/U6/U7) are shipped on branch `2026-06-22-org-tenant-spine` (PR #78). Remaining:
-> **U8** and **P3** both need a small backend addition first (an apply-transform endpoint /
-> a runtime feature-flag store) — they are not pure UI.
+> **Status: COMPLETE.** All 🔴 real gaps (Volumes · Grants · Glossary) and all 🟡/P3 items
+> (U5–U8, P3) are shipped on branch `2026-06-22-org-tenant-spine` (PR #78), each browser-verified.
+> Every shipped-but-invisible feature from the audit now has a UI surface.
