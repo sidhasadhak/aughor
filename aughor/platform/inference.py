@@ -184,16 +184,22 @@ class InferenceCapability:
 
 
 def capability_for(backend: str, model: str, role: str, base_url: str,
-                   org_id: Optional[str] = None) -> InferenceCapability:
+                   org_id: Optional[str] = None,
+                   cache_mode_override: Optional[CacheMode] = None) -> InferenceCapability:
     """Build the capability for an already-resolved binding (pure: strings in, profile out).
-    Shared by :func:`vend_llm` and ``LLMProvider.capability`` so the two never drift."""
+    Shared by :func:`vend_llm` and ``LLMProvider.capability`` so the two never drift.
+
+    ``cache_mode_override`` lets an *empirical* measurement (the prefix-cache probe,
+    `aughor/llm/cache_probe.py`) replace the *declared* default — e.g. a `:cloud` model
+    declared ``auto_prefix_unverified`` becomes ``auto_prefix`` (measured reuse) or ``none``
+    (measured no-reuse). Evidence beats the guess; callers pass the persisted verdict."""
     return InferenceCapability(
         org_id=org_id or current_org_id() or DEFAULT_ORG_ID,
         role=role,
         backend=backend,
         model=model,
         base_url=base_url,
-        cache_mode=_cache_mode(backend, model, base_url),
+        cache_mode=cache_mode_override or _cache_mode(backend, model, base_url),
         tooling=_tooling(backend, model),
         structured_output=_structured_output(backend, model),
         token_accounting=_token_accounting(backend),
@@ -214,7 +220,8 @@ def vend_llm(role: "Role" = "coder", *, org_id: Optional[str] = None,
     pins an explicit per-agent override (the future Agent level); with none, the run's
     ``set_run_model`` contextvar then the role default apply (Org → Workspace → Agent).
     """
-    from aughor.llm.provider import resolve_binding  # lazy: provider imports this module
+    from aughor.llm.provider import measured_cache_mode, resolve_binding  # lazy: provider imports this
 
     backend, eff_model, base_url = resolve_binding(role, model=model)
-    return capability_for(backend, eff_model, role, base_url, org_id=org_id)
+    return capability_for(backend, eff_model, role, base_url, org_id=org_id,
+                          cache_mode_override=measured_cache_mode(backend, eff_model))

@@ -2605,6 +2605,28 @@ export async function testLlmConfig(backend?: string, model?: string): Promise<{
   return res.json();
 }
 
+export interface CacheProbeResult {
+  ok: boolean;
+  backend: string;
+  model: string;
+  verdict?: "reuse_active" | "no_reuse" | "inconclusive";
+  ratio?: number;                 // warm/cold latency ratio
+  cache_mode?: string | null;     // the measured mode persisted to the capability
+  warm_median_ms?: number | null;
+  cold_median_ms?: number | null;
+  error?: string;
+}
+
+/** Measure prefix-cache reuse for the active binding and persist the verdict (§5b.3). */
+export async function cacheProbe(role?: string, rounds?: number): Promise<CacheProbeResult> {
+  const res = await fetch(`${BASE}/llm/config/cache-probe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role, rounds }),
+  });
+  return res.json();
+}
+
 // ── Explorer Control ────────────────────────────────────────────────────────────
 
 export interface ExplorerStatus {

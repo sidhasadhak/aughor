@@ -173,6 +173,30 @@ def _env_model_for_role(backend: str, role: Role) -> str:
     return narrator_model
 
 
+def measured_cache_mode(backend: str, model: str) -> Optional[str]:
+    """The empirically-measured cache_mode for a binding, or None if never probed.
+    Persisted in the runtime config under ``measured_cache: {"backend:model": mode}`` by
+    the prefix-cache probe (`aughor/llm/cache_probe.py`); consulted by the capability seam
+    so a measured verdict overrides the declared default (evidence > guess)."""
+    return (_cfg().get("measured_cache") or {}).get(f"{backend}:{model}") or None
+
+
+def set_measured_cache_mode(backend: str, model: str, mode: Optional[str]) -> None:
+    """Persist (or clear, with ``mode=None``) a measured cache_mode for one binding, then
+    reload so live capabilities reflect it. Written by the probe after it runs."""
+    cfg = dict(_read_config())
+    measured = dict(cfg.get("measured_cache") or {})
+    key = f"{backend}:{model}"
+    if mode:
+        measured[key] = mode
+    else:
+        measured.pop(key, None)
+    cfg["measured_cache"] = measured
+    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+    load_config()
+
+
 def resolve_binding(role: Role = "coder", *, model: Optional[str] = None) -> tuple[str, str, str]:
     """The single binding resolver — the effective ``(backend, model, base_url)`` for a role.
 
@@ -405,7 +429,9 @@ def current_config() -> dict:
     base_url = _active_base_url(backend)
 
     def _capability(role: Role) -> dict:
-        cap = capability_for(backend, _active_model(backend, role), role, base_url)
+        m = _active_model(backend, role)
+        cap = capability_for(backend, m, role, base_url,
+                             cache_mode_override=measured_cache_mode(backend, m))
         return {
             "cache_mode": cap.cache_mode,
             "tooling": cap.tooling,

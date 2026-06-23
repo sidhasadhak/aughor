@@ -7,7 +7,7 @@
  * key is set, so nothing sensitive round-trips back to the browser.
  */
 import { useEffect, useState } from "react";
-import { getLlmConfig, setLlmConfig, testLlmConfig, type LlmCapability, type LlmConfig } from "@/lib/api";
+import { cacheProbe, getLlmConfig, setLlmConfig, testLlmConfig, type CacheProbeResult, type LlmCapability, type LlmConfig } from "@/lib/api";
 
 const BACKEND_LABEL: Record<string, string> = {
   ollama: "Ollama (local)",
@@ -81,6 +81,8 @@ export function InferencePanel() {
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; error?: string; model?: string } | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [probe, setProbe] = useState<CacheProbeResult | null>(null);
 
   const load = () =>
     getLlmConfig()
@@ -142,6 +144,18 @@ export function InferencePanel() {
       setResult({ ok: false, error: e instanceof Error ? e.message : String(e) });
     }
     setTesting(false);
+  };
+
+  const runProbe = async () => {
+    setProbing(true); setProbe(null);
+    try {
+      const r = await cacheProbe("coder");
+      setProbe(r);
+      await load();   // the verdict is persisted → reload so the capability chips update
+    } catch (e) {
+      setProbe({ ok: false, backend, model: models.coder || "", error: e instanceof Error ? e.message : String(e) });
+    }
+    setProbing(false);
   };
 
   return (
@@ -252,6 +266,18 @@ export function InferencePanel() {
         >
           {testing ? "Testing…" : "Test connection"}
         </button>
+        <button
+          onClick={runProbe}
+          disabled={probing}
+          title="Measure whether this backend reuses a shared prompt prefix across requests, and record the verdict"
+          style={{
+            padding: "7px 14px", borderRadius: "var(--r2)", fontSize: 12,
+            background: "var(--bg-2)", color: "var(--t2)", border: "1px solid var(--b1)",
+            cursor: probing ? "default" : "pointer", opacity: probing ? 0.6 : 1,
+          }}
+        >
+          {probing ? "Measuring…" : "Measure prefix cache"}
+        </button>
         {saved && <span style={{ fontSize: 11, color: "var(--grn4)" }}>✓ Saved</span>}
       </div>
 
@@ -269,6 +295,35 @@ export function InferencePanel() {
             : `✗ ${result.error || "test failed"}`}
         </div>
       )}
+
+      {/* Prefix-cache probe verdict */}
+      {probe && (() => {
+        const ok = probe.ok && probe.verdict;
+        const reuse = probe.verdict === "reuse_active";
+        const tone = !ok ? { bg: "var(--red1)", fg: "var(--red4)", bd: "var(--red2)" }
+          : reuse ? { bg: "var(--grn1)", fg: "var(--grn5)", bd: "var(--grn2)" }
+          : probe.verdict === "no_reuse" ? { bg: "var(--amb1)", fg: "var(--amb5)", bd: "var(--amb2)" }
+          : { bg: "var(--bg-2)", fg: "var(--t2)", bd: "var(--b1)" };
+        const headline = !ok ? `✗ ${probe.error || "probe failed"}`
+          : reuse ? "✓ Prefix cache reused — prefix-aligned prompts pay off here"
+          : probe.verdict === "no_reuse" ? "✗ No cross-request prefix reuse — prefix alignment won't help this binding"
+          : "~ Inconclusive — measurement was ambiguous; left as declared";
+        return (
+          <div style={{
+            padding: "8px 12px", borderRadius: "var(--r2)", fontSize: 11, lineHeight: 1.55,
+            background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`,
+            fontFamily: "var(--font-mono)", wordBreak: "break-word",
+          }}>
+            <div>{headline}</div>
+            {ok && probe.warm_median_ms != null && (
+              <div style={{ opacity: 0.85, marginTop: 3 }}>
+                warm {probe.warm_median_ms}ms vs cold {probe.cold_median_ms}ms · ratio {probe.ratio}
+                {probe.cache_mode ? ` · recorded cache_mode=${probe.cache_mode}` : ""}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
