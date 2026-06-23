@@ -1581,6 +1581,8 @@ class SchemaExplorer:
                 "fp": self._state.get("schema_fingerprint"),
                 "cells": [list(k) for k in self._manifest_attempted],
             }
+            _st = self._state.setdefault("manifest_status", {})
+            _st["attempts"] = _st.get("attempts", 0) + 1     # observability: the path actually ran
             sql = cell_to_sql(cell, self._tp_by_table.get(cell.table),
                               self._cp_by_key.get((cell.table, cell.metric)))
             if sql:
@@ -1646,6 +1648,10 @@ class SchemaExplorer:
                 tolerate(_exc, "manifest build is best-effort; on failure fall back to the LLM loop",
                          counter="explorer.manifest_build_failed")
                 self._manifest_driven = False
+        # Observability (Tier-5): persist whether the manifest path is live + its size, so a
+        # post-run state read tells us if it actually engaged (driven/cells) and ran (attempts).
+        self._state["manifest_status"] = {"driven": bool(self._manifest_driven),
+                                          "cells": len(self._manifest_cells), "attempts": 0}
 
         ontology = load_latest_ontology(self.connection_id, self.schema_name)
         if not ontology:
@@ -1934,7 +1940,12 @@ class SchemaExplorer:
                 i for i in self._state.get("insights", []) if i.get("domain") == domain
             ]
 
-            used = budgets.get(domain, 0)
+            # The per-domain budget is a CROSS-RUN throttle for the LLM loop (don't re-ask a
+            # saturated domain forever). For manifest-driven mode that throttle is the manifest
+            # FRONTIER (covered cells are tracked separately and skipped), so the budget is
+            # per-RUN — without this reset, domains pinned at the cap by prior runs skip the loop
+            # entirely and the manifest path never runs (attempts=0).
+            used = 0 if self._manifest_driven else budgets.get(domain, 0)
 
             # Dataset isolation, hoisted to cover the WHOLE per-domain context. A domain's
             # entities can span unrelated uploaded datasets (Customer = bakehouse.sales_customers
