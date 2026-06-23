@@ -250,9 +250,13 @@ def emit_ai_receipt(receipt: AIColumnReceipt, *, conn_id: Optional[str] = None) 
 # the default is off; an operator turns them on with AUGHOR_AI_SQL=1.
 
 def ai_sql_enabled() -> bool:
-    """True when in-SQL AI columns are turned on. Off by default (they make per-row LLM calls);
-    set ``AUGHOR_AI_SQL=1`` to register the prompt()/embedding() UDFs + teach the generator."""
-    return os.getenv("AUGHOR_AI_SQL", "").strip().lower() in ("1", "true", "yes", "on")
+    """True when in-SQL AI columns are turned on. Off by default (they make per-row LLM calls).
+    A runtime override (Settings → System) wins; otherwise ``AUGHOR_AI_SQL=1`` decides."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("ai_sql")
+    except Exception:
+        return os.getenv("AUGHOR_AI_SQL", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def register_ai_udfs(duck_conn: Any, *, max_calls: int = DEFAULT_MAX_ROWS) -> Any:

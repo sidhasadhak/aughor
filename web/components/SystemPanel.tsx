@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getDevStats, resetDevStats, type DevStats } from "@/lib/api";
+import { getDevStats, resetDevStats, getSystemFlags, setSystemFlag, type DevStats, type SystemFlag } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { formatCount, pct as fmtPct } from "@/lib/format";
 
@@ -135,6 +135,9 @@ export function SystemPanel() {
         </button>
       </div>
 
+      {/* Feature flags */}
+      <FeatureFlags />
+
       {/* Ontology */}
       <Section title="Ontology (M12)">
         <StatRow
@@ -217,5 +220,57 @@ export function SystemPanel() {
         Counters reset on server restart · auto-refreshes every 15s
       </p>
     </div>
+  );
+}
+
+function FeatureFlags() {
+  const [flags, setFlags] = useState<Record<string, SystemFlag>>({});
+  const [busy, setBusy] = useState("");
+
+  useEffect(() => { getSystemFlags().then(setFlags).catch(() => setFlags({})); }, []);
+
+  const toggle = async (name: string, value: boolean) => {
+    setBusy(name);
+    const updated = await setSystemFlag(name, value);
+    if (updated) setFlags(f => ({ ...f, [name]: updated }));
+    setBusy("");
+  };
+
+  const entries = Object.entries(flags);
+  if (entries.length === 0) return null;
+
+  return (
+    <Section title="Feature flags">
+      {entries.map(([name, f]) => (
+        <div key={name} className="flex items-start justify-between gap-4 py-2 border-b border-white/5 last:border-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-zinc-200">{f.label}</span>
+              <span className="text-[9.5px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t4)" }}>
+                {f.source === "runtime" ? "override" : `env: ${f.env_var}`}
+              </span>
+            </div>
+            <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">{f.description}</p>
+          </div>
+          <button
+            onClick={() => toggle(name, !f.value)}
+            disabled={busy === name}
+            role="switch"
+            aria-checked={f.value}
+            className="shrink-0 mt-0.5 rounded-full transition-colors disabled:opacity-50"
+            style={{
+              width: 36, height: 20, padding: 2,
+              background: f.value ? "var(--grn2)" : "var(--bg-3)",
+              border: "1px solid var(--b1)",
+            }}
+          >
+            <span style={{
+              display: "block", width: 14, height: 14, borderRadius: "9999px", background: "#fff",
+              transform: f.value ? "translateX(16px)" : "translateX(0)", transition: "transform .15s",
+            }} />
+          </button>
+        </div>
+      ))}
+    </Section>
   );
 }

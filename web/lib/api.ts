@@ -3050,3 +3050,27 @@ export async function applyPostproc(
   if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Transform failed"); }
   return res.json();
 }
+
+// ── System feature flags (runtime override > env) ───────────────────────────────
+
+export interface SystemFlag {
+  value: boolean;
+  source: "runtime" | "env";
+  env_var: string;
+  label: string;
+  description: string;
+}
+
+export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
+  const res = await fetch(`${BASE}/system/flags`);
+  if (!res.ok) return {};
+  return res.json();
+}
+
+export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag | null> {
+  const res = await fetch(`${BASE}/system/flags/${encodeURIComponent(name)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
