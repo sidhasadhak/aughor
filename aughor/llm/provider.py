@@ -173,6 +173,20 @@ def _env_model_for_role(backend: str, role: Role) -> str:
     return narrator_model
 
 
+def resolve_binding(role: Role = "coder", *, model: Optional[str] = None) -> tuple[str, str, str]:
+    """The single binding resolver — the effective ``(backend, model, base_url)`` for a role.
+
+    Shared by :func:`get_provider` (data plane, builds the client) and
+    :func:`aughor.platform.inference.vend_llm` (control-plane seam, describes the binding),
+    so a vended :class:`InferenceCapability` always matches the binding a real call uses.
+    Model precedence mirrors :func:`get_provider`: explicit pin → run/agent contextvar
+    (``set_run_model``) → role default — i.e. Org default → … → Agent override."""
+    backend = _active_backend()
+    pinned = (model or current_run_model() or "").strip()
+    eff_model = pinned or _active_model(backend, role)
+    return backend, eff_model, _active_base_url(backend)
+
+
 def _active_model(backend: str, role: Role) -> str:
     cfg = _cfg()
     cfg_model = (cfg.get("models") or {}).get(role)
@@ -257,6 +271,7 @@ class LLMProvider:
         self._model = model or _active_model(backend, role)
         key = api_key if api_key is not None else _active_key(backend)
         url = base_url or _active_base_url(backend)
+        self._base_url = url
         if backend == "ollama":
             self._client = _build_ollama_client(self._model, url)
         elif backend == "lmstudio":
@@ -267,6 +282,17 @@ class LLMProvider:
             self._client = _build_anthropic_client(key)
         else:
             raise ValueError(f"Unknown backend: {backend!r}. Use one of {', '.join(BACKENDS)}.")
+
+    @property
+    def capability(self):
+        """The vended :class:`InferenceCapability` describing this provider's binding —
+        backend, model, endpoint, and the declared profile (cache_mode, privacy_class, …).
+        The seam Layer-A/Layer-B optimisation and governance routing dispatch on
+        (PLATFORM_ARCHITECTURE.md §5b). Lazy import avoids a module-load cycle."""
+        from aughor.org.context import current_org_id
+        from aughor.platform.inference import capability_for
+
+        return capability_for(self.backend, self._model, self.role, self._base_url, current_org_id())
 
     def complete(
         self,
