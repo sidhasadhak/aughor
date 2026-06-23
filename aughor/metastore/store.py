@@ -54,11 +54,18 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             principal   TEXT NOT NULL,
             securable   TEXT NOT NULL,
             privilege   TEXT NOT NULL DEFAULT 'USAGE',
+            source      TEXT NOT NULL DEFAULT 'explicit',
             created_at  TEXT NOT NULL,
             UNIQUE (org_id, principal, securable, privilege)
         )
     """)
     c.execute("CREATE INDEX IF NOT EXISTS grants_principal ON grants(org_id, principal)")
+    # Migration (2026-06-23): grants are an independent access-control layer, not a
+    # projection of membership. Pre-existing rows were membership-derived; mark them so
+    # the gate (membership ∪ explicit) ignores them. New grants default to 'explicit'.
+    gcols = {r[1] for r in c.execute("PRAGMA table_info(grants)").fetchall()}
+    if "source" not in gcols:
+        c.execute("ALTER TABLE grants ADD COLUMN source TEXT NOT NULL DEFAULT 'membership'")
     c.execute("""
         CREATE TABLE IF NOT EXISTS schemas (
             catalog_id  TEXT NOT NULL,
@@ -80,9 +87,12 @@ def _row_to_catalog(row: sqlite3.Row) -> Catalog:
 
 
 def _row_to_grant(row: sqlite3.Row) -> Grant:
+    keys = row.keys()
     return Grant(
         id=row["id"], org_id=row["org_id"], principal=row["principal"],
-        securable=row["securable"], privilege=row["privilege"], created_at=row["created_at"],
+        securable=row["securable"], privilege=row["privilege"],
+        source=(row["source"] if "source" in keys and row["source"] else "explicit"),
+        created_at=row["created_at"],
     )
 
 
@@ -141,15 +151,18 @@ def delete_catalog(catalog_id: str, org_id: Optional[str] = None) -> bool:
 # ── grants ────────────────────────────────────────────────────────────────────
 
 def add_grant(principal: str, securable: str, privilege: str = USAGE,
-              org_id: Optional[str] = None) -> Grant:
-    """Grant a privilege (idempotent on org_id+principal+securable+privilege)."""
+              source: str = "explicit", org_id: Optional[str] = None) -> Grant:
+    """Grant a privilege (idempotent on org_id+principal+securable+privilege). An
+    existing grant's ``source`` is upgraded to the new value, so explicitly granting a
+    legacy membership row flips it to 'explicit' (and the gate then honours it)."""
     oid = org_id or current_org_id()
     now = _now()
     c = _conn()
     c.execute(
-        "INSERT OR IGNORE INTO grants (id, org_id, principal, securable, privilege, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (uuid.uuid4().hex[:12], oid, principal, securable, privilege, now),
+        "INSERT INTO grants (id, org_id, principal, securable, privilege, source, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(org_id, principal, securable, privilege) DO UPDATE SET source=excluded.source",
+        (uuid.uuid4().hex[:12], oid, principal, securable, privilege, source, now),
     )
     c.commit()
     row = c.execute(
@@ -174,7 +187,7 @@ def revoke_grant(principal: str, securable: str, privilege: str = USAGE,
 
 
 def list_grants(org_id: Optional[str] = None, principal: Optional[str] = None,
-                securable: Optional[str] = None) -> List[Grant]:
+                securable: Optional[str] = None, source: Optional[str] = None) -> List[Grant]:
     oid = org_id or current_org_id()
     clauses = ["org_id=?"]
     params: list = [oid]
@@ -184,6 +197,9 @@ def list_grants(org_id: Optional[str] = None, principal: Optional[str] = None,
     if securable is not None:
         clauses.append("securable=?")
         params.append(securable)
+    if source is not None:
+        clauses.append("source=?")
+        params.append(source)
     c = _conn()
     rows = c.execute(
         f"SELECT * FROM grants WHERE {' AND '.join(clauses)} ORDER BY principal, securable", params

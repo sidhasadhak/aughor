@@ -15,10 +15,14 @@ today it exposes the org metastore namespace.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from aughor.metastore import Catalog, Schema, get_catalog, list_catalogs, list_schemas
 
 router = APIRouter(prefix="/api/2.1/unity-catalog", tags=["unity-catalog"])
+
+# A second router for Aughor-native access control (not part of the UC read surface).
+grants_router = APIRouter(prefix="/metastore", tags=["metastore"])
 
 
 def _catalog_obj(cat: Catalog) -> dict:
@@ -131,3 +135,38 @@ async def uc_get_table(full_name: str) -> dict:
         if t.get("name") == table_name:
             return _table_obj(catalog_name, schema_name, t)
     raise HTTPException(status_code=404, detail=f"table '{full_name}' not found")
+
+
+# ── access control: explicit catalog grants on a workspace ────────────────────
+# The data-path gate is `membership ∪ explicit grants`; these endpoints manage the
+# explicit layer — independent of (and durable across) connection-membership edits.
+
+class GrantRequest(BaseModel):
+    catalog_id: str
+
+
+@grants_router.get("/workspaces/{workspace_id}/grants")
+def list_workspace_grants(workspace_id: str) -> dict:
+    from aughor.metastore import explicit_catalog_ids
+    return {"workspace_id": workspace_id, "catalogs": sorted(explicit_catalog_ids(workspace_id))}
+
+
+@grants_router.post("/workspaces/{workspace_id}/grants")
+def grant_workspace_catalog(workspace_id: str, req: GrantRequest) -> dict:
+    from aughor.metastore import (
+        USAGE, add_grant, catalog_securable, explicit_catalog_ids, get_catalog, workspace_principal,
+    )
+    if get_catalog(req.catalog_id) is None:
+        raise HTTPException(status_code=404, detail=f"catalog '{req.catalog_id}' not found")
+    add_grant(workspace_principal(workspace_id), catalog_securable(req.catalog_id),
+              privilege=USAGE, source="explicit")
+    return {"workspace_id": workspace_id, "catalogs": sorted(explicit_catalog_ids(workspace_id))}
+
+
+@grants_router.delete("/workspaces/{workspace_id}/grants/{catalog_id}")
+def revoke_workspace_catalog(workspace_id: str, catalog_id: str) -> dict:
+    from aughor.metastore import (
+        USAGE, catalog_securable, explicit_catalog_ids, revoke_grant, workspace_principal,
+    )
+    revoke_grant(workspace_principal(workspace_id), catalog_securable(catalog_id), privilege=USAGE)
+    return {"workspace_id": workspace_id, "catalogs": sorted(explicit_catalog_ids(workspace_id))}

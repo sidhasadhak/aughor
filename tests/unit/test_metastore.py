@@ -1,10 +1,11 @@
-"""Phase 2 foundation — the metastore (Catalog + Grant).
+"""Phase 2 — the metastore (Catalog + Grant + Schema).
 
-The metastore is derived from the connection registry + workspace membership, and the
-grant resolver `granted_catalog_ids()` is the parity-tested drop-in for the live
-`workspace_connection_ids()` gate. These tests pin store CRUD + idempotent migration,
-the bootstrap reconcile (add AND revoke), org-scoping, and — the headline — that the
-resolver returns exactly the same visibility as the current gate for every workspace.
+Catalogs are derived from the connection registry. Grants are an independent
+access-control layer: the live data-path gate `accessible_catalog_ids()` =
+a workspace's connection membership (read live) ∪ its explicit catalog grants. These
+tests pin store CRUD + idempotent migration, the catalog sync, and — the headline —
+that the gate equals the legacy `workspace_connection_ids()` with no explicit grants
+and widens with one.
 """
 from __future__ import annotations
 
@@ -19,9 +20,8 @@ from aughor.metastore import (
     add_grant,
     catalog_securable,
     ensure_catalogs_for_connections,
-    ensure_grants_for_memberships,
+    explicit_catalog_ids,
     get_catalog,
-    granted_catalog_ids,
     grants_for_workspace,
     list_catalogs,
     list_grants,
@@ -93,20 +93,7 @@ class TestMigrationIdempotent:
 
 # ── bootstrap reconcile ───────────────────────────────────────────────────────
 
-class TestReconcile:
-    def test_grants_track_membership_add_and_revoke(self, stores):
-        ws_store = stores
-        ws_store.create_workspace(name="W", workspace_id="w1", connection_ids=["c1", "c2"])
-        assert ensure_grants_for_memberships() == 2          # two grants added
-        assert granted_catalog_ids("w1") == {"c1", "c2"}
-        assert ensure_grants_for_memberships() == 0          # idempotent: no change
-
-        # membership shifts: drop c2, add c3 → reconcile applies exactly one add + one revoke
-        ws_store.update_workspace("w1", connection_ids=["c1", "c3"])
-        assert ensure_grants_for_memberships() == 2
-        assert granted_catalog_ids("w1") == {"c1", "c3"}
-        assert ensure_grants_for_memberships() == 0
-
+class TestCatalogSync:
     def test_catalogs_mirror_connections(self, stores, monkeypatch):
         import aughor.db.registry as registry
         monkeypatch.setattr(registry, "list_connections", lambda: [
@@ -117,29 +104,29 @@ class TestReconcile:
         assert get_catalog("a1").name == "Alpha"
 
 
-# ── the headline: resolver parity with the live gate ──────────────────────────
+# ── the headline: the gate equals the legacy membership gate (no explicit grants) ──
 
-class TestResolverParity:
-    def test_resolver_matches_workspace_gate(self, stores):
+class TestGateParity:
+    def test_gate_matches_workspace_membership(self, stores):
         ws_store = stores
         from aughor.workspace.store import workspace_connection_ids
         ws_store.create_workspace(name="Default", workspace_id="default",
                                   connection_ids=["c1", "c2", "c3"], is_default=True)
         ws_store.create_workspace(name="Sales", workspace_id="ws_sales", connection_ids=["c2"])
         ws_store.create_workspace(name="Empty", workspace_id="ws_empty", connection_ids=[])
-        ensure_grants_for_memberships()
-
+        # No explicit grants → the gate is exactly the legacy membership gate.
         for ws in ws_store.list_workspaces():
-            assert granted_catalog_ids(ws.id) == workspace_connection_ids(ws.id), ws.id
-        # the None / fail-closed semantics match too
-        assert granted_catalog_ids(None) is workspace_connection_ids(None) is None
-        assert granted_catalog_ids("unknown") == workspace_connection_ids("unknown") == set()
+            assert accessible_catalog_ids(ws.id) == workspace_connection_ids(ws.id), ws.id
+        assert accessible_catalog_ids(None) is workspace_connection_ids(None) is None
+        assert accessible_catalog_ids("unknown") == workspace_connection_ids("unknown") == set()
 
-    def test_non_usage_grant_is_ignored_by_resolver(self, stores):
+    def test_non_usage_and_non_explicit_grants_ignored(self, stores):
         stores.create_workspace(name="W", workspace_id="w1", connection_ids=[])
         add_grant(workspace_principal("w1"), catalog_securable("c9"), privilege="ADMIN")
-        # ADMIN ≠ USAGE → resolver (USAGE-scoped) does not surface it
-        assert granted_catalog_ids("w1") == set()
+        add_grant(workspace_principal("w1"), catalog_securable("c8"), source="membership")
+        # ADMIN ≠ USAGE and source≠explicit → neither widens the gate
+        assert explicit_catalog_ids("w1") == set()
+        assert accessible_catalog_ids("w1") == set()
 
 
 class TestSchemaStore:
@@ -166,19 +153,28 @@ class TestSchemaStore:
 
 
 class TestLiveGate:
-    """`accessible_catalog_ids` is the wired data-path gate — reconcile-on-read keeps
-    it provably equal to `workspace_connection_ids` with no explicit sync."""
+    """The gate is `membership ∪ explicit grants`, a pure live read — no reconcile."""
 
-    def test_reflects_membership_without_explicit_sync(self, stores):
+    def test_membership_is_read_live(self, stores):
         ws_store = stores
         from aughor.workspace.store import workspace_connection_ids
         ws_store.create_workspace(name="W", workspace_id="w1", connection_ids=["c1", "c2"])
-        # No ensure_grants_for_memberships() call — the gate self-reconciles on read.
         assert accessible_catalog_ids("w1") == {"c1", "c2"} == workspace_connection_ids("w1")
-
-        # Membership changes; the very next gate read reflects it (add + revoke).
         ws_store.update_workspace("w1", connection_ids=["c2", "c3"])
         assert accessible_catalog_ids("w1") == {"c2", "c3"} == workspace_connection_ids("w1")
+
+    def test_explicit_grant_widens_and_revoke_narrows(self, stores):
+        ws_store = stores
+        ws_store.create_workspace(name="W", workspace_id="w1", connection_ids=["c1"])
+        # Grant access to a catalog NOT in membership → the gate widens.
+        add_grant(workspace_principal("w1"), catalog_securable("shared"), source="explicit")
+        assert accessible_catalog_ids("w1") == {"c1", "shared"}
+        # Durable across a membership edit (membership is just one input).
+        ws_store.update_workspace("w1", connection_ids=["c1", "c2"])
+        assert accessible_catalog_ids("w1") == {"c1", "c2", "shared"}
+        # Revoke the explicit grant → back to membership only.
+        revoke_grant(workspace_principal("w1"), catalog_securable("shared"))
+        assert accessible_catalog_ids("w1") == {"c1", "c2"}
 
     def test_none_and_fail_closed_semantics(self, stores):
         stores.create_workspace(name="W", workspace_id="w1", connection_ids=["c1"])
@@ -187,11 +183,35 @@ class TestLiveGate:
         assert accessible_catalog_ids("w1") == {"c1"}
 
 
+class TestGrantApi:
+    """The independent access-control endpoints (grant/revoke/list explicit grants)."""
+
+    def test_grant_revoke_list_roundtrip(self, stores):
+        from aughor.routers.metastore import (
+            GrantRequest, grant_workspace_catalog, list_workspace_grants, revoke_workspace_catalog,
+        )
+        stores.create_workspace(name="W", workspace_id="w1", connection_ids=["c1"])
+        upsert_catalog("shared", name="Shared", conn_id="shared")
+        assert list_workspace_grants("w1")["catalogs"] == []
+        assert grant_workspace_catalog("w1", GrantRequest(catalog_id="shared"))["catalogs"] == ["shared"]
+        assert list_workspace_grants("w1")["catalogs"] == ["shared"]
+        assert accessible_catalog_ids("w1") == {"c1", "shared"}   # the gate widened via the API
+        assert revoke_workspace_catalog("w1", "shared")["catalogs"] == []
+        assert accessible_catalog_ids("w1") == {"c1"}
+
+    def test_grant_unknown_catalog_404(self, stores):
+        from fastapi import HTTPException
+        from aughor.routers.metastore import GrantRequest, grant_workspace_catalog
+        with pytest.raises(HTTPException) as e:
+            grant_workspace_catalog("w1", GrantRequest(catalog_id="ghost"))
+        assert e.value.status_code == 404
+
+
 class TestOrgStamping:
-    def test_grant_stamped_with_workspace_org(self, stores):
+    def test_explicit_grant_stamped_with_org(self, stores):
         with using_org("acme"):
             stores.create_workspace(name="A", workspace_id="wa", connection_ids=["c1"])
-            ensure_grants_for_memberships()
+            add_grant(workspace_principal("wa"), catalog_securable("extra"), source="explicit")
             g = grants_for_workspace("wa", org_id="acme")
-            assert len(g) == 1 and g[0].org_id == "acme" and g[0].privilege == USAGE
-            assert granted_catalog_ids("wa") == {"c1"}
+            assert len(g) == 1 and g[0].org_id == "acme" and g[0].source == "explicit"
+            assert accessible_catalog_ids("wa") == {"c1", "extra"}

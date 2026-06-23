@@ -335,12 +335,14 @@ Each phase ships value and is independently stoppable.
 
 ## 12. Open questions
 
-- **Sequencing:** local-first vs SaaS-first determines how aggressively Phase 4/5 are pulled
-  forward.
-- **UC adoption depth:** run **UC-OSS the server**, or implement its **model + API shape** and
-  defer the server? (Current lean: model + API now, server when scale earns it.)
-- **Format bet:** Delta-everywhere (one substrate, max interop) vs DuckLake-embedded +
-  Delta-governed (two lanes, simpler local).
+- **Sequencing:** ✅ **decided 2026-06-23 — local-first.** Keep shipping single-org value;
+  multi-tenant stays the already-de-risked config flip. Phase 4/5 (Postgres metastore, S3/GCS
+  vending, IdP/SSO, billing) wait for a concrete SaaS driver.
+- **UC adoption depth:** ✅ **model + API now, server later.** The Phase-2 UC-compatible read
+  surface implements the UC model + API shape; run UC-OSS the server only when scale earns it.
+- **Format bet:** ✅ **decided 2026-06-23 — two lanes** (DuckLake embedded now / Delta-under-UC
+  governed at scale, behind the `db/snapshot.py` seam — reversible, simpler local), not
+  Delta-everywhere.
 - **Identity:** which IdP/SSO standard for the multi-tenant flip; how org-level RBAC composes
   with Aughor's existing capability gates.
 - **Billing model:** the metering spine (R1) exists; the pricing/packaging on top does not.

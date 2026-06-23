@@ -83,12 +83,15 @@ USAGE = "USAGE"
 
 
 class Grant(BaseModel):
-    """A privilege a principal holds on a securable. Foundation grants are
-    `workspace → catalog` USAGE, mirroring today's membership."""
+    """A privilege a principal holds on a securable — `workspace → catalog` USAGE
+    today. An independent access-control record: the data-path gate is
+    `membership ∪ explicit grants`, so an explicit grant adds access to a catalog
+    beyond a workspace's connection membership."""
 
     id: str
     org_id: str = DEFAULT_ORG_ID
     principal: str                 # e.g. "workspace:{ws_id}"
     securable: str                 # e.g. "catalog:{catalog_id}"
     privilege: str = USAGE
+    source: str = "explicit"       # "explicit" (gate reads these) | "membership" (legacy)
     created_at: str = ""
