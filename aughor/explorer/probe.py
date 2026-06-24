@@ -116,10 +116,10 @@ def probe_to_sql(probe: Probe, *, tables_cols: dict, col_profiles: dict,
     (caller falls back to free-form). ``tables_cols`` = {table: [cols]}; ``col_profiles``
     = {table: {col: profile}}; ``joins`` = verified join dicts."""
     measures = [m for m in (probe.measures or []) if m]
-    if not measures:
-        return None
     dims = [d for d in (probe.dimensions or []) if d][:2]
     filters = list(probe.filters or [])
+    if not measures and not dims:
+        return None                          # nothing to count or aggregate
 
     # column(normalised) -> tables hosting it, and (table,colnorm) -> real col name + profile
     colnorm_to_tables: dict = {}
@@ -135,8 +135,10 @@ def probe_to_sql(probe: Probe, *, tables_cols: dict, col_profiles: dict,
             profof[(t, _norm(c))] = p
 
     # The measures must all live on ONE table (the fact) — keeps the join grain-safe
-    # (no parent-measure fan-out). Dims/filters may live on a single directly-joined table.
-    m_tables = _resolve(colnorm_to_tables, measures)
+    # (no parent-measure fan-out). With no measures we COUNT, anchoring on the dims'
+    # table. Dims/filters may live on a single directly-joined table.
+    _anchor = measures if measures else dims
+    m_tables = _resolve(colnorm_to_tables, _anchor)
     if m_tables is None:
         return None
     fact_candidates = set.intersection(*[set(fs) for fs in m_tables]) if m_tables else set()
@@ -153,6 +155,8 @@ def probe_to_sql(probe: Probe, *, tables_cols: dict, col_profiles: dict,
                       if fact not in (colnorm_to_tables.get(_norm(c)) or set())]
         if not other_cols:
             return _single_table_sql(fact)
+        if not measures:
+            return None                       # count probes stay single-table (no count fan-out across joins)
         other_tables = _resolve(colnorm_to_tables, other_cols)
         if other_tables is None:
             return None
@@ -170,6 +174,8 @@ def probe_to_sql(probe: Probe, *, tables_cols: dict, col_profiles: dict,
         return f"{alias}.{rn}" if alias else rn
 
     def _measure_select(table: str, alias: str = "") -> tuple:
+        if not measures:
+            return ["COUNT(*) AS n"], "n"      # measure-less probe → entity count
         sel = []
         order_expr = None
         for i, m in enumerate(measures):

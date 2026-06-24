@@ -1741,8 +1741,8 @@ class SchemaExplorer:
         dims = sorted(set(dims))
         logger.debug("[explorer:%s] grounded probe: domain=%s tables=%s measures=%d dims=%d",
                      self.connection_id, domain, list(domain_table_cols.keys()), len(meas), len(dims))
-        if not meas:
-            return None                       # nothing to ground → free-form fallback
+        if not meas and not dims:
+            return None                       # nothing to count or aggregate → free-form fallback
 
         class _PFilter(_BM):
             column: str = ""
@@ -1767,13 +1767,16 @@ class SchemaExplorer:
         _sys = (
             "You are a data analyst choosing the next analytical probe to run. You do NOT write "
             "SQL. Choose `measures` and `dimensions` ONLY from the column lists provided — never "
-            "invent or rename a column. Prefer an uncovered, high-value cut. For a COMPOSITE "
-            "question (a threshold on a metric across a group — e.g. SKUs whose avg margin > 0.6), "
-            "set `having` to {measure, op, value}. Keep it to 1-2 dimensions."
+            "invent or rename a column, and never name a column that isn't listed. Prefer an "
+            "uncovered, high-value cut. If NO measure columns are listed, leave `measures` empty — "
+            "the probe will COUNT rows by your chosen dimension(s). For a COMPOSITE question (a "
+            "threshold on a metric across a group — e.g. SKUs whose avg margin > 0.6), set `having` "
+            "to {measure, op, value}. Keep it to 1-2 dimensions."
         )
         _usr = (
             steering +
-            f"MEASURE COLUMNS you may aggregate (use these names EXACTLY): {', '.join(meas)}\n"
+            f"MEASURE COLUMNS you may aggregate (use these names EXACTLY; empty = COUNT rows): "
+            f"{', '.join(meas) or '(none — use a COUNT-by-dimension probe)'}\n"
             f"DIMENSION COLUMNS you may group/filter by (EXACTLY): {', '.join(dims) or '(none)'}\n\n"
             "Fill the probe with the single most valuable next question, using ONLY listed columns."
         )

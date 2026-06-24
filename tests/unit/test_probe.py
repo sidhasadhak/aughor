@@ -99,6 +99,23 @@ class TestSingleTable:
         assert _compile(Probe(measures=["line_total"], dimensions=["category"])) is None
 
 
+class TestCountProbe:
+    def test_dim_only_probe_counts_by_dimension(self):
+        # a dim-only domain (no measures) → COUNT(*) by dimension, real columns only
+        sql = _compile(Probe(measures=[], dimensions=["category"]))
+        assert sql and _parses(sql)
+        assert "COUNT(*)" in sql and "GROUP BY" in sql and "category" in sql
+
+    def test_empty_probe_returns_none(self):
+        assert _compile(Probe(measures=[], dimensions=[])) is None
+
+    def test_count_probe_stays_single_table(self):
+        # count by a dimension on a different table would fan out → fall back (None)
+        sql = _compile(Probe(measures=[], dimensions=["marketing_channel"]))
+        # marketing_channel is on orders; a bare count there is single-table and fine
+        assert sql is None or "JOIN" not in sql
+
+
 class TestStarJoin:
     def test_fact_measure_by_joined_dimension(self):
         # measure on order_items, dimension on orders → grain-safe star join
