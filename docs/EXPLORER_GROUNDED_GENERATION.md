@@ -81,9 +81,31 @@ The compiler is the bulk of the work. Two scopes:
   (pre-agg CTEs). Maximal expressiveness, more engineering + risk. Extend to B if the
   fallback rate proves material.
 
-## Success criteria (measured on missimi)
+## Success criteria (measured on missimi) — RESULTS
 
-- Invented-identifier drops per run: ~25–40 → **~0**.
-- Phase-8 token spend per kept finding: down sharply (the ~40% waste recovered).
-- Kept domain findings per run: up → more synthesis pairs + forward-chain drills.
-- No regression in finding quality (grain-correct; guards still green).
+Verified live on the `workspace`/missimi connection, 3-run sweeps:
+
+| Metric | Before | After |
+|---|---|---|
+| `line_total` inventions | 150+ | ~1 |
+| invented-identifier drops / run | ~36–40 | 4 / 0 / 4 |
+| domain findings kept / run | ~1 | 9 / 9 / 6 |
+| forward-chain drills / run | 0–1 | 3 / 3 / 2 |
+| tokens → yield | ~190k → 1 finding | 168k → 9 findings |
+
+**THE root cause** (commit `566a40c`): the ontology's `entity.source_tables` are BARE
+names (`order_payments`) but `sql_writer.table_cols` is keyed QUALIFIED
+(`missimi.order_payments`); the lookup never matched, so `domain_table_cols` was EMPTY
+for every domain → the generator got an EMPTY schema block → it invented every column.
+Fixed by resolving bare→qualified. Grounded generation (`probe.py` + `_grounded_probe_nq`,
+default-on, free-form fallback) then makes invention structurally impossible: measure
+domains compile aggregates, dim-only domains compile COUNT-by-dimension.
+
+### Honest remainders (next, smaller)
+
+- Runs can still hit the 200k cap and cancel at the very end when Phase 8 + synthesis
+  are productive (findings are saved; status=failed). Tune reserve / budget.
+- ~4 residual inventions/run from the free-form fallback on cross-table composites
+  (`city`, `objective`) — extend the compiler (scope B) or tighten the fallback.
+- Occasional trivial synth finding (novelty 1) stored — consider a novelty≥2 gate.
+- Phase 9 grounding still drops parent-echo claims (gate working; yield could improve).
