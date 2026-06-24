@@ -2082,6 +2082,7 @@ class SchemaExplorer:
 
             _dup_streak = 0   # consecutive structural-duplicate findings → stop a looping domain
             _followup_hint = ""   # Layer 3: drill instruction carried to the next iteration
+            _drill_parent = None  # id of the finding the current drill is explaining (observability)
             _chain_depth = 0      # consecutive drills, bounded so a thread deepens but never runs away
             while used < budgets.get(f"{domain}__cap", HARD_BUDGET):
                 cap = budgets.get(f"{domain}__cap", HARD_BUDGET)
@@ -3277,6 +3278,10 @@ class SchemaExplorer:
                     "canvas_id": self.canvas_id,
                     "promoted_to_org": False,
                     "promotion_confidence": 0.0,
+                    # Forward-chaining (L3) observability: set when THIS question was a drill
+                    # of a prior notable finding, naming that parent — so we can measure
+                    # whether forward-chaining actually yields findings.
+                    "drill_of": (_drill_parent if _followup_hint else None),
                 }
                 self._state.setdefault("insights", []).append(insight)
                 if hasattr(self, "_insight_vecs"):
@@ -3345,6 +3350,7 @@ class SchemaExplorer:
                 # without running away; a flat finding resets the chain.
                 if clamp_novelty(interp.novelty) >= 4 and _chain_depth < 2:
                     _chain_depth += 1
+                    _drill_parent = insight_id
                     _followup_hint = (
                         "DRILL THIS FINDING (explain it, do not restate it): "
                         f"\"{interp.finding[:160]}\". Propose the single question that reveals WHY "
@@ -3352,6 +3358,7 @@ class SchemaExplorer:
                     )
                 else:
                     _followup_hint = ""
+                    _drill_parent = None
                     _chain_depth = 0
 
             # Incremental synthesis (opt-in, `explorer.synthesis_incremental`): the moment
