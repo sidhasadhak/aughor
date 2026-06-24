@@ -189,6 +189,51 @@ def _extract_dead_refs(error: str) -> set:
     return out
 
 
+# SQL function/keyword tokens to ignore when checking whether a recipe formula's
+# identifiers bind to a schema (so SUM/COUNT/NULLIF/etc. aren't mistaken for columns).
+_SQL_FORMULA_WORDS = frozenset({
+    "sum", "count", "avg", "min", "max", "distinct", "nullif", "coalesce", "case", "when",
+    "then", "else", "end", "cast", "round", "filter", "where", "over", "partition", "by",
+    "group", "order", "and", "or", "not", "null", "as", "on", "join", "left", "right", "inner",
+    "outer", "from", "select", "per", "with", "countif", "date", "extract", "interval", "having",
+    "between", "in", "like", "abs", "floor", "ceil", "div", "mod", "asc", "desc",
+})
+
+
+def _norm_ident(s: str) -> str:
+    return (s or "").replace("_", "").replace("-", "").replace(" ", "").lower()
+
+
+def _recipe_binds(formula: str, real_cols: set, real_tables: set, *, min_frac: float = 0.5) -> bool:
+    """True if a recipe's formula references THIS schema's columns/tables — i.e. its
+    column-like identifiers mostly exist. A profile's generic recipes
+    (``SUM(revenue - cogs)``, ``customer_id``, ``ecommerce.orders``) don't bind to a
+    connection whose real columns are ``unit_price``/``customer_unique_id`` on
+    ``missimi.*``; injecting them verbatim steers the generator to INVENT those names
+    (the dominant Phase-8 token sink). Drop the non-binding ones. Fail-open (keep) when
+    the formula has no judgeable identifiers."""
+    import re as _re
+    fake_table = False
+    cols: list[str] = []
+    for tok in _re.findall(r"[A-Za-z_][A-Za-z0-9_.]*", formula or ""):
+        if "." in tok:                       # qualified ref: schema.table or table.col
+            parts = tok.split(".")
+            tbl = _norm_ident(parts[-2]) if len(parts) >= 2 else ""
+            if tbl and tbl not in real_tables and tbl not in real_cols:
+                fake_table = True            # an explicit non-existent table ref → non-binding
+            cols.append(_norm_ident(parts[-1]))
+            continue
+        n = _norm_ident(tok)
+        if len(n) >= 3 and n not in _SQL_FORMULA_WORDS:
+            cols.append(n)
+    if fake_table:
+        return False
+    if not cols:
+        return True                          # nothing to judge → keep
+    hits = sum(1 for c in cols if c in real_cols or c in real_tables)
+    return (hits / len(cols)) >= min_frac
+
+
 def _query_columns(sql: str) -> set:
     """Lowercased bare column names referenced by a SQL string (best-effort, via sqlglot).
     Used to tell a meaning-changing repair (one column SUBSTITUTED for another) apart from a
@@ -268,7 +313,10 @@ class SchemaExplorer:
         self._last_query_at: float = 0.0
         self._rate_seconds: float = _RATE_SECONDS_SCHEMA
         self._time_window: Optional[tuple[str, str]] = None  # (start_iso, end_iso) — 12-month window
-        self._dead_refs: set = set()  # column/table names the engine reported as nonexistent
+        # Negative knowledge — column/table names found not to exist — restored from a
+        # prior run so the generator avoids them from iteration 1 instead of re-learning
+        # (and re-paying tokens for) the same dead names every run.
+        self._dead_refs: set = set(self._state.get("dead_refs", []) or [])
         self._macro_context: Optional[dict] = None  # Tier 2 full-span long-arc rollup
         self._cost_large: bool = False               # Tier 3 — connection big enough for approx
         self._prev_watermark: Optional[str] = None   # Tier 3 — anchor edge at the last run
@@ -288,6 +336,13 @@ class SchemaExplorer:
             if isinstance(self._status.phase, ExplorationPhase)
             else self._status.phase
         )
+        # Persist negative knowledge (columns/tables the generator invented that don't
+        # exist) so a connection LEARNS them once instead of re-paying tokens to
+        # re-discover the same dead names (e.g. line_total, customer_id, ecommerce.*)
+        # on every run. Reloaded in __init__ and seeded into the generator's avoid-list.
+        _dr = getattr(self, "_dead_refs", None)
+        if _dr:
+            self._state["dead_refs"] = sorted(_dr)
         if self.canvas_id:
             _store.save_canvas(self.canvas_id, self._state)
         else:
@@ -1876,6 +1931,25 @@ class SchemaExplorer:
                 # authoritatively so generated SQL gets the join/grain right.
                 from aughor.profile import store as _pstore
                 _recipes = _pstore.load_recipes(self.connection_id, _conn_schema)
+                # Drop recipes whose formula columns don't exist in THIS schema: a generic
+                # profile recipe (SUM(revenue - cogs), customer_id, ecommerce.orders) doesn't
+                # bind to missimi (unit_price/customer_unique_id), and injecting it verbatim
+                # steers the generator to INVENT those names — the dominant Phase-8 token sink.
+                if _recipes:
+                    _real_cols: set = set()
+                    _real_tbls: set = set()
+                    for _wt, _wcols in (getattr(sql_writer, "table_cols", {}) or {}).items():
+                        _real_tbls.add(_norm_ident(str(_wt).split(".")[-1]))
+                        for _wc in (_wcols or []):
+                            _real_cols.add(_norm_ident(str(_wc)))
+                    if _real_cols:
+                        _n_before = len(_recipes)
+                        _recipes = [r for r in _recipes
+                                    if _recipe_binds(r.get("formula", ""), _real_cols, _real_tbls)]
+                        if len(_recipes) < _n_before:
+                            logger.info("[explorer:%s] Phase 8: dropped %d/%d unbound recipe(s) "
+                                        "(formula columns absent from this schema)",
+                                        self.connection_id, _n_before - len(_recipes), _n_before)
                 _rlines = ""
                 if _recipes:
                     _parts = []
@@ -2484,7 +2558,7 @@ class SchemaExplorer:
                     # generator off repeated hallucinations (the #1 wasted-budget failure class).
                     dead_refs_block = ""
                     if self._dead_refs:
-                        _avoid = ", ".join(sorted(self._dead_refs)[:30])
+                        _avoid = ", ".join(sorted(self._dead_refs)[:60])
                         dead_refs_block = (
                             f"NONEXISTENT NAMES — earlier queries failed because these columns/tables "
                             f"do not exist in the table they were used on. Do NOT reference any of them "
