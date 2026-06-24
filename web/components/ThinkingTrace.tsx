@@ -2,6 +2,7 @@
 
 import type { InvestigationState } from "@/lib/types";
 import type { ChatTurn } from "@/lib/useChat";
+import { localizeCurrency } from "@/lib/orgSettings";
 
 // Map a ChatTurn → InvestigationState so the trace can be rendered both inline
 // (ChatMessage) and, historically, in a side panel. `running` reflects whether
@@ -166,7 +167,9 @@ function deriveSteps(state: InvestigationState): Step[] {
       const errored = p.status === "error";
       const done = p.status === "complete" || p.status === "partial" || skipped;
       const running = p.status === "running";
-      const summary = (p.summary || "").trim();
+      // The trace renders plain text (no markdown), so strip **bold** (else "**gift_sets**"
+      // leaks literal asterisks) and honour the configured currency.
+      const summary = localizeCurrency((p.summary || "").trim()).replace(/\*+/g, "");
       steps.push({
         id: `ph-${p.phase_id}`,
         label: PHASE_ACTION[p.phase_id] ?? p.phase_name,

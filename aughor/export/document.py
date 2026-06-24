@@ -66,6 +66,15 @@ def _date(iso: Optional[str]) -> str:
         return str(iso)[:10]
 
 
+def _round_cell(v):
+    """Trim floating-point display noise in a table cell (39.97968526236183 -> 39.98) so the
+    printed table matches the clean numbers on the chart beside it. Non-floats pass through."""
+    if isinstance(v, float) and v == v and v not in (float("inf"), float("-inf")):
+        r = round(v, 2) if abs(v) >= 1 else round(v, 6)
+        return int(r) if r == int(r) else r
+    return v
+
+
 def _chart_or_table(columns, rows, chart_type, title) -> list[Block]:
     """Render a chart if the data supports it; always include the data table too
     (capped) so the document carries the underlying numbers."""
@@ -74,7 +83,8 @@ def _chart_or_table(columns, rows, chart_type, title) -> list[Block]:
     if png:
         out.append(Block("chart", png=png, caption=title))
     if columns and rows:
-        out.append(Block("table", columns=columns, rows=rows[:25], caption="" if png else title))
+        table_rows = [[_round_cell(v) for v in row] for row in rows[:25]]
+        out.append(Block("table", columns=columns, rows=table_rows, caption="" if png else title))
     return out
 
 
@@ -262,9 +272,17 @@ def build_export_doc(inv: dict, *, narrate: bool = False) -> ExportDoc:
     if narrate:
         summary = _llm_executive_summary(inv, doc)
         if summary:
-            # Lead with an LLM-authored executive summary, tagged so the reader knows.
-            doc.blocks.insert(0, Block("prose", text=summary, tag="AI executive summary"))
-            doc.blocks.insert(0, _h("Executive summary"))
+            ai_block = Block("prose", text=summary, tag="AI executive summary")
+            # Avoid TWO "Executive summary" sections: if the builder already led with one
+            # (from the report's executive_summary), REPLACE its prose with the AI-authored
+            # version rather than inserting a duplicate heading + paragraph above it.
+            if (len(doc.blocks) >= 2 and doc.blocks[0].kind == "heading"
+                    and "executive summary" in (doc.blocks[0].text or "").lower()
+                    and doc.blocks[1].kind == "prose"):
+                doc.blocks[1] = ai_block
+            else:
+                doc.blocks.insert(0, ai_block)
+                doc.blocks.insert(0, _h("Executive summary"))
     return doc
 
 
