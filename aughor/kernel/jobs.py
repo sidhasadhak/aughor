@@ -399,3 +399,26 @@ def kernel() -> JobKernel:
     if _kernel is None:
         _kernel = JobKernel()
     return _kernel
+
+
+def budget_fraction_used(job_id: Optional[str] = None) -> Optional[float]:
+    """Fraction (0..1+) of the active job's token budget already consumed, or None
+    when there is no job / no token budget. A long-running agent can use this to
+    RESERVE headroom for a final, high-value phase instead of spending the whole
+    budget on earlier work and being hard-cancelled before it runs. Best-effort —
+    any resolution failure yields None (caller proceeds as if unbounded)."""
+    job_id = job_id or current_job_id()
+    if not job_id:
+        return None
+    try:
+        gov, _ = kernel()._resolve_governance(job_id)
+        budget = getattr(gov, "token_budget", None)
+        if not budget:
+            return None
+        from aughor.kernel import metering
+        m = metering.metrics_for_job(job_id)
+        used = m.total_tokens if m else 0
+        return used / budget
+    except Exception:
+        logger.debug("budget_fraction_used resolve failed for %s", job_id, exc_info=True)
+        return None

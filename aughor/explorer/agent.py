@@ -44,6 +44,7 @@ from aughor.explorer.models import (
     OntologyInsight,
 )
 from aughor.explorer import store as _store
+from aughor.explorer.frontier import signature_fields
 from aughor.explorer.episodes import EpisodeCollector
 from aughor.explorer.grounding import (
     GroundingResult,
@@ -74,6 +75,11 @@ logger = logging.getLogger(__name__)
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
 _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
 _COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
+SYNTH_RESERVE_FRACTION = 0.80  # stop Phase 8 at this share of the token budget, leaving the rest for Phase 9 synthesis
+# (0.80 not 0.85: a single Phase-8 iteration can overshoot the threshold by a few %, and
+#  the now-higher-yield Phase 8 + synthesis was crossing 100% and getting heartbeat-cancelled
+#  at the very end — 20% headroom lets synthesis finish cleanly.)
+_NEG_PCT_RE = re.compile(r"-\s*\d+(?:\.\d+)?\s*%")  # an impossible negative percentage in a share/rate claim
 
 # Bound how many explorations run their phases at once. The kernel spawns each as its
 # own asyncio.Task with no cap, so onboarding N connections at once (or boot recovery)
@@ -186,6 +192,51 @@ def _extract_dead_refs(error: str) -> set:
     return out
 
 
+# SQL function/keyword tokens to ignore when checking whether a recipe formula's
+# identifiers bind to a schema (so SUM/COUNT/NULLIF/etc. aren't mistaken for columns).
+_SQL_FORMULA_WORDS = frozenset({
+    "sum", "count", "avg", "min", "max", "distinct", "nullif", "coalesce", "case", "when",
+    "then", "else", "end", "cast", "round", "filter", "where", "over", "partition", "by",
+    "group", "order", "and", "or", "not", "null", "as", "on", "join", "left", "right", "inner",
+    "outer", "from", "select", "per", "with", "countif", "date", "extract", "interval", "having",
+    "between", "in", "like", "abs", "floor", "ceil", "div", "mod", "asc", "desc",
+})
+
+
+def _norm_ident(s: str) -> str:
+    return (s or "").replace("_", "").replace("-", "").replace(" ", "").lower()
+
+
+def _recipe_binds(formula: str, real_cols: set, real_tables: set, *, min_frac: float = 0.5) -> bool:
+    """True if a recipe's formula references THIS schema's columns/tables — i.e. its
+    column-like identifiers mostly exist. A profile's generic recipes
+    (``SUM(revenue - cogs)``, ``customer_id``, ``ecommerce.orders``) don't bind to a
+    connection whose real columns are ``unit_price``/``customer_unique_id`` on
+    ``missimi.*``; injecting them verbatim steers the generator to INVENT those names
+    (the dominant Phase-8 token sink). Drop the non-binding ones. Fail-open (keep) when
+    the formula has no judgeable identifiers."""
+    import re as _re
+    fake_table = False
+    cols: list[str] = []
+    for tok in _re.findall(r"[A-Za-z_][A-Za-z0-9_.]*", formula or ""):
+        if "." in tok:                       # qualified ref: schema.table or table.col
+            parts = tok.split(".")
+            tbl = _norm_ident(parts[-2]) if len(parts) >= 2 else ""
+            if tbl and tbl not in real_tables and tbl not in real_cols:
+                fake_table = True            # an explicit non-existent table ref → non-binding
+            cols.append(_norm_ident(parts[-1]))
+            continue
+        n = _norm_ident(tok)
+        if len(n) >= 3 and n not in _SQL_FORMULA_WORDS:
+            cols.append(n)
+    if fake_table:
+        return False
+    if not cols:
+        return True                          # nothing to judge → keep
+    hits = sum(1 for c in cols if c in real_cols or c in real_tables)
+    return (hits / len(cols)) >= min_frac
+
+
 def _query_columns(sql: str) -> set:
     """Lowercased bare column names referenced by a SQL string (best-effort, via sqlglot).
     Used to tell a meaning-changing repair (one column SUBSTITUTED for another) apart from a
@@ -265,10 +316,14 @@ class SchemaExplorer:
         self._last_query_at: float = 0.0
         self._rate_seconds: float = _RATE_SECONDS_SCHEMA
         self._time_window: Optional[tuple[str, str]] = None  # (start_iso, end_iso) — 12-month window
-        self._dead_refs: set = set()  # column/table names the engine reported as nonexistent
+        # Negative knowledge — column/table names found not to exist — restored from a
+        # prior run so the generator avoids them from iteration 1 instead of re-learning
+        # (and re-paying tokens for) the same dead names every run.
+        self._dead_refs: set = set(self._state.get("dead_refs", []) or [])
         self._macro_context: Optional[dict] = None  # Tier 2 full-span long-arc rollup
         self._cost_large: bool = False               # Tier 3 — connection big enough for approx
         self._prev_watermark: Optional[str] = None   # Tier 3 — anchor edge at the last run
+        self._activity_unchanged: bool = False        # no new activity since last run → pinned findings reproducible-by-read
 
     # ── State persistence helpers ─────────────────────────────────────────────
 
@@ -284,6 +339,13 @@ class SchemaExplorer:
             if isinstance(self._status.phase, ExplorationPhase)
             else self._status.phase
         )
+        # Persist negative knowledge (columns/tables the generator invented that don't
+        # exist) so a connection LEARNS them once instead of re-paying tokens to
+        # re-discover the same dead names (e.g. line_total, customer_id, ecommerce.*)
+        # on every run. Reloaded in __init__ and seeded into the generator's avoid-list.
+        _dr = getattr(self, "_dead_refs", None)
+        if _dr:
+            self._state["dead_refs"] = sorted(_dr)
         if self.canvas_id:
             _store.save_canvas(self.canvas_id, self._state)
         else:
@@ -391,6 +453,22 @@ class SchemaExplorer:
         if journal_extra:
             payload.update(journal_extra)
         self._journal("exploration.insight", payload)
+
+    def _read_prior_pinned(self, qi: int) -> Optional[dict]:
+        """The latest stored pinned finding for slot ``qi`` from the ledger, or None.
+        Lets the pinned pass REPRODUCE a finding (read) instead of re-running identical
+        SQL when the data hasn't moved — killing the visible 'asks the same question
+        every run' symptom while keeping the briefing reproducible."""
+        try:
+            from aughor.kernel.ledger import Ledger
+            rec = Ledger.default().receipt(f"insight:{self.connection_id}:pinned__{qi}")
+            payload = ((rec or {}).get("artifact", {}) or {}).get("payload", {}) or {}
+            if isinstance(payload, dict) and payload.get("finding") and payload.get("sql"):
+                return payload
+        except Exception:
+            logger.debug("[explorer:%s] prior pinned read failed (q%d)",
+                         self.connection_id, qi, exc_info=True)
+        return None
 
     def pause(self) -> None:
         """Yield execution — called when a user investigation begins."""
@@ -645,6 +723,11 @@ class SchemaExplorer:
                 from aughor.explorer.watermark import get_watermark, set_watermark
                 _anchor, _rec, _ = anchor_activity(tp, cp)
                 self._prev_watermark = get_watermark(self.connection_id, _anchor) if _anchor else None
+                # If the activity high-water mark hasn't advanced since the last run, the
+                # data behind a pinned finding hasn't moved — so it's reproducible from the
+                # ledger (read, don't re-run identical SQL every exploration). Refresh only
+                # when activity moved.
+                self._activity_unchanged = bool(_anchor and _rec and self._prev_watermark == _rec)
                 if _anchor and _rec:
                     set_watermark(self.connection_id, _anchor, _rec)
                 self._cost_large = any((profile_field(p, "row_count") or 0) >= _COST_LARGE_ROWS
@@ -731,6 +814,20 @@ class SchemaExplorer:
             self._status.domain_intel_skipped = False   # cleared; set by Phase 8 if it bails
             self._status.domain_intel_note = None
             await self._phase8_domain_intelligence(cp, tp)
+
+            # Phase 9 — Synthesis: compose pairs of existing findings into emergent
+            # insights neither parent holds (build on what we know; zero new scans for
+            # discovery). Runs at end-of-run over the full ledger. Best-effort — a
+            # synthesis failure must never fail the run or block COMPLETE.
+            try:
+                self._status.phase = ExplorationPhase.SYNTHESIS
+                self._journal("exploration.phase", {"phase": "synthesis"})
+                await self._phase9_synthesis(cp, tp)
+            except asyncio.CancelledError:
+                raise
+            except Exception as _se:
+                logger.warning("[explorer:%s] Phase 9 synthesis failed (non-fatal): %s",
+                               self.connection_id, _se)
 
             # Done — persist runtime counters so the status fallback can restore them
             self._status.phase = ExplorationPhase.COMPLETE
@@ -1423,6 +1520,31 @@ class SchemaExplorer:
             await self._gate()
             if self._stopped:
                 break
+
+            # Reproduce-by-read: when activity hasn't moved since the last run, a pinned
+            # finding is reproducible from the ledger — read it back instead of re-executing
+            # identical SQL every exploration (the visible "asking the same question again"
+            # symptom). Refresh (re-run below) only when the data actually moved.
+            if self._activity_unchanged:
+                prior = self._read_prior_pinned(qi)
+                if prior:
+                    _pdoss = prior.pop("dossier", None) if isinstance(prior, dict) else None
+                    if not prior.get("signature"):
+                        _psf = signature_fields(prior.get("sql", ""), getattr(self._conn, "dialect", "duckdb"))
+                        prior["dimensions"], prior["measures"], prior["signature"] = (
+                            _psf["dimensions"], _psf["measures"], _psf)
+                    prior["reproduced"] = True
+                    self._state.setdefault("insights", []).append(prior)
+                    if hasattr(self, "_insight_vecs"):
+                        self._insight_vecs.append(None)
+                    self._emit_insight(prior, prior.get("sql", ""), dossier=_pdoss,
+                                       journal_extra={"pinned": True, "reproduced": True})
+                    stored += 1
+                    from aughor.stats import stats as _s; _s.inc("explorer.pinned_reproduced")
+                    logger.info("[explorer:%s] Phase 8 (pinned): reproduced Q%d from ledger "
+                                "(activity unchanged — no re-run)", self.connection_id, qi)
+                    continue
+
             try:
                 _cached = _kq_sql[qi].strip() if qi < len(_kq_sql) and _kq_sql[qi] else ""
                 if _cached:
@@ -1525,14 +1647,16 @@ class SchemaExplorer:
                 except Exception:
                     _pvec = None
 
+                _psigf = signature_fields(sql, getattr(self._conn, "dialect", "duckdb"))
                 insight = {
                     "id": f"pinned__{qi}",
                     "domain": "Key Questions",
                     "angle": "pinned-question",
                     "question": q,
                     "entities_involved": [],
-                    "dimensions": [],
-                    "measures": [],
+                    "dimensions": _psigf["dimensions"],
+                    "measures": _psigf["measures"],
+                    "signature": _psigf,
                     "finding": interp.finding,
                     "sql": sql,
                     "confidence": min(0.95, 0.4 + clamp_novelty(interp.novelty) * 0.1),
@@ -1590,6 +1714,122 @@ class SchemaExplorer:
                           angle=f"{cell.metric}:{cell.axis}",
                           why="manifest baseline coverage (deterministic, no LLM)")
         return None
+
+    async def _grounded_probe_nq(self, domain, domain_table_cols, cp, NQ, llm, steering: str):
+        """Grounded generation — the SOTA fix for column hallucination. The LLM fills a
+        STRUCTURED probe by CHOOSING measures/dimensions/filters from this domain's REAL
+        columns (never writing SQL); we validate the picks by set-membership and COMPILE
+        to grain-safe SQL deterministically. A non-existent column is structurally
+        impossible to emit. Returns an NQ with compiled SQL, or None when the probe can't
+        be grounded/compiled — the caller then falls back to the free-form generator."""
+        from pydantic import BaseModel as _BM
+        from typing import Optional as _Opt
+        from aughor.explorer.probe import Probe, ProbeFilter, ProbeHaving, validate_probe, probe_to_sql
+
+        # Enumerate this domain's allowed REAL columns (same source as the frontier).
+        meas: list[str] = []
+        dims: list[str] = []
+        for _t in domain_table_cols:
+            _cps = (cp or {}).get(_t) or (cp or {}).get(_t.lower()) or {}
+            for _cn, _cpf in _cps.items():
+                _st = (getattr(_cpf, "semantic_type", "") or "")
+                if _st == "measure":
+                    meas.append(_cn)
+                elif _st in ("dimension", "flag", "ordinal") and not getattr(_cpf, "is_fk", False):
+                    dims.append(_cn)
+        meas = sorted(set(meas))
+        dims = sorted(set(dims))
+        logger.debug("[explorer:%s] grounded probe: domain=%s tables=%s measures=%d dims=%d",
+                     self.connection_id, domain, list(domain_table_cols.keys()), len(meas), len(dims))
+        if not meas and not dims:
+            return None                       # nothing to count or aggregate → free-form fallback
+
+        class _PFilter(_BM):
+            column: str = ""
+            op: str = "="
+            value: str = ""
+
+        class _PHaving(_BM):
+            measure: str = ""
+            op: str = ">"
+            value: float = 0.0
+
+        class _ProbeGen(_BM):
+            question: str
+            angle: str = "grounded"
+            why: str = ""
+            measures: list[str]
+            dimensions: list[str] = []
+            filters: list[_PFilter] = []
+            having: _Opt[_PHaving] = None
+            sort_desc: bool = True
+
+        _sys = (
+            "You are a data analyst choosing the next analytical probe to run. You do NOT write "
+            "SQL. Choose `measures` and `dimensions` ONLY from the column lists provided — never "
+            "invent or rename a column, and never name a column that isn't listed. Prefer an "
+            "uncovered, high-value cut. If NO measure columns are listed, leave `measures` empty — "
+            "the probe will COUNT rows by your chosen dimension(s). For a COMPOSITE question (a "
+            "threshold on a metric across a group — e.g. SKUs whose avg margin > 0.6), set `having` "
+            "to {measure, op, value}. Keep it to 1-2 dimensions."
+        )
+        _usr = (
+            steering +
+            f"MEASURE COLUMNS you may aggregate (use these names EXACTLY; empty = COUNT rows): "
+            f"{', '.join(meas) or '(none — use a COUNT-by-dimension probe)'}\n"
+            f"DIMENSION COLUMNS you may group/filter by (EXACTLY): {', '.join(dims) or '(none)'}\n\n"
+            "Fill the probe with the single most valuable next question, using ONLY listed columns."
+        )
+
+        _loop = asyncio.get_running_loop()
+
+        def _to_probe(g) -> Probe:
+            return Probe(
+                question=g.question, angle=g.angle or "grounded", why=g.why or "",
+                measures=list(g.measures or []), dimensions=list(g.dimensions or []),
+                filters=[ProbeFilter(f.column, f.op, f.value) for f in (g.filters or []) if f.column],
+                having=(ProbeHaving(g.having.measure, g.having.op, g.having.value)
+                        if g.having and g.having.measure else None),
+                sort_desc=bool(g.sort_desc),
+            )
+
+        try:
+            gen = await _loop.run_in_executor(
+                None, lambda: llm.complete(system=_sys, user=_usr, response_model=_ProbeGen))
+        except Exception as _ge:
+            logger.info("[explorer:%s] grounded probe gen ERRORED (%s) → free-form",
+                        self.connection_id, type(_ge).__name__)
+            return None
+        probe = _to_probe(gen)
+
+        # Validate by set-membership; one cheap structured repair if a pick strays.
+        bad = validate_probe(probe, meas, dims, dims)
+        if bad:
+            _rusr = (_usr + f"\n\nINVALID columns (not in the lists): {', '.join(map(str, bad))}. "
+                     "Re-choose using ONLY the listed columns.")
+            try:
+                gen = await _loop.run_in_executor(
+                    None, lambda: llm.complete(system=_sys, user=_rusr, response_model=_ProbeGen))
+                probe = _to_probe(gen)
+                bad = validate_probe(probe, meas, dims, dims)
+            except Exception:
+                return None
+            if bad:
+                return None
+
+        # Authoritative real-column lists come from domain_table_cols ({table: [cols]}),
+        # not cp.keys() (cp may profile only a subset → resolution fails → needless fallback).
+        _tcols = {_t: list(_cols or []) for _t, _cols in (domain_table_cols or {}).items()}
+        _cprof = {_t: ((cp or {}).get(_t) or (cp or {}).get(_t.lower()) or {}) for _t in domain_table_cols}
+        sql = probe_to_sql(probe, tables_cols=_tcols, col_profiles=_cprof,
+                           joins=self._state.get("join_verifications", []) or [],
+                           dialect=getattr(self._conn, "dialect", "duckdb"))
+        if not sql:
+            logger.info("[explorer:%s] grounded probe not compilable (measures=%s dims=%s) → free-form",
+                        self.connection_id, probe.measures, probe.dimensions)
+            return None                       # compiler can't express it → free-form fallback
+        return NQ(question=probe.question or "grounded probe", sql=sql,
+                  angle=probe.angle or "grounded", why=probe.why or "grounded generation")
 
     async def _phase8_domain_intelligence(
         self,
@@ -1810,6 +2050,25 @@ class SchemaExplorer:
                 # authoritatively so generated SQL gets the join/grain right.
                 from aughor.profile import store as _pstore
                 _recipes = _pstore.load_recipes(self.connection_id, _conn_schema)
+                # Drop recipes whose formula columns don't exist in THIS schema: a generic
+                # profile recipe (SUM(revenue - cogs), customer_id, ecommerce.orders) doesn't
+                # bind to missimi (unit_price/customer_unique_id), and injecting it verbatim
+                # steers the generator to INVENT those names — the dominant Phase-8 token sink.
+                if _recipes:
+                    _real_cols: set = set()
+                    _real_tbls: set = set()
+                    for _wt, _wcols in (getattr(sql_writer, "table_cols", {}) or {}).items():
+                        _real_tbls.add(_norm_ident(str(_wt).split(".")[-1]))
+                        for _wc in (_wcols or []):
+                            _real_cols.add(_norm_ident(str(_wc)))
+                    if _real_cols:
+                        _n_before = len(_recipes)
+                        _recipes = [r for r in _recipes
+                                    if _recipe_binds(r.get("formula", ""), _real_cols, _real_tbls)]
+                        if len(_recipes) < _n_before:
+                            logger.info("[explorer:%s] Phase 8: dropped %d/%d unbound recipe(s) "
+                                        "(formula columns absent from this schema)",
+                                        self.connection_id, _n_before - len(_recipes), _n_before)
                 _rlines = ""
                 if _recipes:
                     _parts = []
@@ -1925,7 +2184,16 @@ class SchemaExplorer:
                 logger.info("[explorer:%s] Phase 8: +%d KPI cells (value_sql, bind-validated) → %d cells",
                             self.connection_id, len(_kpi_cells), len(self._manifest_cells))
 
+        # Reserve a slice of the token budget for Phase 9 (synthesis): synthesis is the
+        # cheapest, highest-value phase (it composes findings already in hand), yet it runs
+        # last — so without a reserve, a token-hungry Phase 8 exhausts the budget and the
+        # heartbeat hard-cancels the run BEFORE synthesis ever fires. Stop Phase 8 once it
+        # has spent SYNTH_RESERVE_FRACTION of the budget, leaving the remainder for Phase 9.
+        _reserve_hit = False
+
         for domain, _base_domain, entities in passes:
+            if _reserve_hit:
+                break
             await self._gate()
             if self._stopped:
                 return
@@ -1982,12 +2250,49 @@ class SchemaExplorer:
 
             logger.info(f"[explorer:{self.connection_id}] Phase 8: {domain} domain — {len(entities)} entities, used={used}")
 
+            # Playbook hypotheses (Layer 2): consult the org playbook — the causal
+            # "when metric X behaves like Y, investigate Z" knowledge — for this domain's
+            # metrics, and offer the matching plays as patterns to look for. This is the
+            # explorer finally BUILDING ON the playbook (it was Analyst-only before): the
+            # generator gets known cause→effect patterns to test, not just blank angles.
+            playbook_block = ""
+            try:
+                from aughor.playbook.retriever import retrieve_for_metric_and_phases
+                _pb_labels = [domain] + list(profile_angles) + list(angles)
+                _plays = retrieve_for_metric_and_phases(_pb_labels, limit=4)
+                if _plays:
+                    _pb_lines = "\n".join(
+                        f"  • When {p.trigger_metric} {p.trigger_condition}: {(p.recommendation or '')[:140]}"
+                        for p in _plays)
+                    playbook_block = (
+                        "KNOWN PATTERNS (from the playbook) — if the data shows one of these triggers, "
+                        "prefer surfacing it as the finding:\n" + _pb_lines + "\n\n"
+                    )
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "playbook hypotheses are best-effort prompt context; on failure omit",
+                         counter="explorer.playbook_hint_failed")
+
             _dup_streak = 0   # consecutive structural-duplicate findings → stop a looping domain
+            _followup_hint = ""   # Layer 3: drill instruction carried to the next iteration
+            _drill_parent = None  # id of the finding the current drill is explaining (observability)
+            _chain_depth = 0      # consecutive drills, bounded so a thread deepens but never runs away
             while used < budgets.get(f"{domain}__cap", HARD_BUDGET):
                 cap = budgets.get(f"{domain}__cap", HARD_BUDGET)
                 await self._gate()
                 if self._stopped:
                     return
+
+                # Budget reserve for synthesis: once Phase 8 has spent its share of the
+                # token budget, stop here (and skip the remaining domains) so Phase 9 has
+                # headroom to run instead of being hard-cancelled by the heartbeat.
+                from aughor.kernel.jobs import budget_fraction_used
+                _bf = budget_fraction_used()
+                if _bf is not None and _bf >= SYNTH_RESERVE_FRACTION:
+                    _reserve_hit = True
+                    logger.info("[explorer:%s] Phase 8: budget %.0f%% spent — reserving the rest "
+                                "for synthesis, stopping domain intel", self.connection_id, _bf * 100)
+                    break
 
                 covered_angles = coverage.get(domain, [])
 
@@ -2104,16 +2409,27 @@ class SchemaExplorer:
                 domain_schema_lines: list[str] = []
                 domain_cols: set[str] = set()
                 domain_table_cols: dict[str, list] = {}   # scoped to THIS domain's tables
+                _wkeys = sql_writer.table_cols
+                _bare = lambda s: str(s).split(".")[-1].lower()
                 for tbl in sorted(domain_tables):
-                    cols = (
-                        sql_writer.table_cols.get(tbl)
-                        or sql_writer.table_cols.get(tbl.lower())
-                        or next((v for k, v in sql_writer.table_cols.items() if k.lower() == tbl.lower()), None)
-                    )
+                    # Resolve the ontology's BARE table name (`order_payments`) to the SQL
+                    # writer's QUALIFIED schema key (`missimi.order_payments`) — they never
+                    # matched before, so domain_table_cols came back EMPTY for every domain
+                    # and the generator got NO schema block (→ it invented every column, the
+                    # real origin of the line_total waste). Key by the qualified name so the
+                    # schema block AND the compiled SQL use the runnable table reference.
+                    if tbl in _wkeys:
+                        _key = tbl
+                    elif tbl.lower() in _wkeys:
+                        _key = tbl.lower()
+                    else:
+                        _key = next((k for k in _wkeys if k.lower() == tbl.lower()), None) \
+                            or next((k for k in _wkeys if _bare(k) == _bare(tbl)), None)
+                    cols = _wkeys.get(_key) if _key else None
                     if cols:
-                        domain_schema_lines.append(f"  {tbl}: {', '.join(cols)}")
+                        domain_schema_lines.append(f"  {_key}: {', '.join(cols)}")
                         domain_cols.update(str(c).lower() for c in cols)
-                        domain_table_cols[tbl] = cols
+                        domain_table_cols[_key] = cols
 
                 # Joinable-neighbour grounding: a domain often analyses a metric that lives on a
                 # SIBLING fact table reached by a verified FK (Customer 'value' lives on
@@ -2137,6 +2453,12 @@ class SchemaExplorer:
                         _nbr_lines.append(f"  {nt}: {', '.join(cols)}")
                         domain_table_cols[nt] = cols                 # so measure-grains sees its grain too
                         domain_cols.update(str(c).lower() for c in cols)
+
+                if not domain_table_cols:
+                    logger.info("[explorer:%s] Phase 8: %s — domain_table_cols EMPTY; "
+                                "domain_tables=%s writer_keys=%s",
+                                self.connection_id, domain, sorted(domain_tables)[:8],
+                                sorted(sql_writer.table_cols.keys())[:8])
 
                 domain_schema_block = (
                     "EXACT COLUMN NAMES — use ONLY these, never invent:\n"
@@ -2372,12 +2694,41 @@ class SchemaExplorer:
                     # generator off repeated hallucinations (the #1 wasted-budget failure class).
                     dead_refs_block = ""
                     if self._dead_refs:
-                        _avoid = ", ".join(sorted(self._dead_refs)[:30])
+                        _avoid = ", ".join(sorted(self._dead_refs)[:60])
                         dead_refs_block = (
                             f"NONEXISTENT NAMES — earlier queries failed because these columns/tables "
                             f"do not exist in the table they were used on. Do NOT reference any of them "
                             f"unless it appears verbatim in the SCHEMA above: {_avoid}\n\n"
                         )
+                    # Cut-level FRONTIER (Layer 1): name the concrete measure×dimension cells
+                    # this domain has NOT covered yet, so the generator targets a real unexplored
+                    # cut instead of re-deriving a covered one or guessing at "deeper analysis".
+                    # Built from the SAME signature vocabulary the dedup gate uses, so "covered"
+                    # (parsed from executed SQL) and the universe (profiled columns) align.
+                    frontier_block = ""
+                    try:
+                        from aughor.explorer.frontier import (
+                            build_universe, covered_cuts, rank_frontier, render_frontier_block)
+                        _meas: list[str] = []
+                        _dims: list[str] = []
+                        for _ftbl in domain_table_cols:
+                            _fcps = (cp or {}).get(_ftbl) or (cp or {}).get(_ftbl.lower()) or {}
+                            for _fcn, _fcpf in _fcps.items():
+                                _fst = (getattr(_fcpf, "semantic_type", "") or "")
+                                if _fst == "measure":
+                                    _meas.append(_fcn)
+                                elif _fst in ("dimension", "flag", "ordinal") and not getattr(_fcpf, "is_fk", False):
+                                    _dims.append(_fcn)
+                        if _meas and _dims:
+                            _universe = build_universe(_meas, _dims)
+                            _covered = covered_cuts(domain_insights, getattr(self._conn, "dialect", "duckdb"))
+                            _frontier = rank_frontier(_universe, _covered)
+                            frontier_block = render_frontier_block(_frontier, k=8)
+                    except Exception as _exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_exc, "cut-level frontier is best-effort prompt context; on failure omit it",
+                                 counter="explorer.frontier_failed")
+
                     _usr1 = (
                         f"DOMAIN: {domain}\n\n"
                         f"{profile_block}"
@@ -2394,8 +2745,15 @@ class SchemaExplorer:
                         f"ANGLES ALREADY COVERED: {', '.join(covered_angles) or 'none'}\n\n"
                         f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n"
                         f"{diversity_block}"
+                        f"{frontier_block}"
+                        f"{playbook_block}"
+                        f"{_followup_hint}"
                         "Propose the single most valuable next question. "
-                        "Choose an uncovered angle. Write grain-correct SQL."
+                        "Choose an uncovered angle. Write grain-correct SQL. "
+                        "CRITICAL: every table and column you reference MUST appear VERBATIM in the "
+                        "SCHEMA above — do NOT use any other name (no line_total, no quantity, no "
+                        "city/objective unless listed). If the column you want isn't there, pick a "
+                        "different question that the listed columns can answer."
                     )
                     # Tier-1 #4: a manifest cell IS the query spec — synthesise it deterministically
                     # (no generation LLM call) when manifest-driven; the entire downstream pipeline
@@ -2403,6 +2761,19 @@ class SchemaExplorer:
                     # generator when no manifest cell applies (deeper/cross-cutting tail).
                     nq = self._manifest_nq(domain_table_cols, _NextQuestion) if self._manifest_driven else None
                     if nq is None:
+                        # PRIMARY: grounded generation — the LLM picks columns from the real
+                        # schema and we COMPILE the SQL, so a non-existent column can't be
+                        # emitted (kills the line_total invention class + its ~40% token waste).
+                        _steer = (f"DOMAIN: {domain}\n\n{frontier_block}{playbook_block}{_followup_hint}"
+                                  f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n")
+                        nq = await self._grounded_probe_nq(domain, domain_table_cols, cp,
+                                                           _NextQuestion, llm, _steer)
+                        if nq is not None:
+                            from aughor.stats import stats as _s; _s.inc("explorer.grounded_probe")
+                    if nq is None:
+                        # FALLBACK: free-form generation for probes the compiler can't express
+                        # (rare cross-table composites). Bounded by the same downstream guards.
+                        from aughor.stats import stats as _s; _s.inc("explorer.grounded_fallback")
                         nq = await _loop.run_in_executor(
                             None,
                             lambda: llm.complete(system=_sys1, user=_usr1, response_model=_NextQuestion),
@@ -3109,13 +3480,19 @@ class SchemaExplorer:
 
                 # Step 4: Store the insight
                 insight_id = f"{domain}__{nq.angle}__{used}"
+                # Structured cut coordinates (measure×dimension×tables) parsed from the
+                # executed SQL — populates the hitherto-empty dimensions/measures and a
+                # `signature` block, the substrate the cut-frontier and the synthesis
+                # findings-graph read. Best-effort: unparseable SQL → empty lists.
+                _sigf = signature_fields(sql, getattr(self._conn, "dialect", "duckdb"))
                 insight = {
                     "id": insight_id,
                     "domain": domain,
                     "angle": interp.angle_covered or nq.angle,
                     "entities_involved": [e.id for e in entities[:4]],
-                    "dimensions": [],
-                    "measures": [],
+                    "dimensions": _sigf["dimensions"],
+                    "measures": _sigf["measures"],
+                    "signature": _sigf,
                     "finding": interp.finding,
                     # The query that ACTUALLY produced the result — after the self-repair
                     # loop fixed column/binder errors (and any Tier-3 approx rewrite). Storing
@@ -3128,6 +3505,10 @@ class SchemaExplorer:
                     "canvas_id": self.canvas_id,
                     "promoted_to_org": False,
                     "promotion_confidence": 0.0,
+                    # Forward-chaining (L3) observability: set when THIS question was a drill
+                    # of a prior notable finding, naming that parent — so we can measure
+                    # whether forward-chaining actually yields findings.
+                    "drill_of": (_drill_parent if _followup_hint else None),
                 }
                 self._state.setdefault("insights", []).append(insight)
                 if hasattr(self, "_insight_vecs"):
@@ -3188,6 +3569,311 @@ class SchemaExplorer:
                     f"[explorer:{self.connection_id}] Phase 8: {domain}/{angle_key} — "
                     f"novelty={interp.novelty} — \"{interp.finding[:80]}…\""
                 )
+
+                # Forward-chaining (Layer 3): a non-trivial finding (novelty ≥3) spawns a
+                # targeted drill as the NEXT question — explain WHY (which driver/segment
+                # accounts for it), reusing this same pipeline rather than returning to a
+                # blank frontier cut. Threshold is ≥3 not ≥4: real runs almost never produce
+                # a ≥4, so ≥4 meant forward-chaining never fired. Bounded to 2 consecutive
+                # drills so a thread deepens without running away; a flat (≤2) finding
+                # resets the chain.
+                if clamp_novelty(interp.novelty) >= 3 and _chain_depth < 2:
+                    _chain_depth += 1
+                    _drill_parent = insight_id
+                    _followup_hint = (
+                        "DRILL THIS FINDING (explain it, do not restate it): "
+                        f"\"{interp.finding[:160]}\". Propose the single question that reveals WHY "
+                        "— which segment, driver or sub-population accounts for it — at the correct grain.\n\n"
+                    )
+                else:
+                    _followup_hint = ""
+                    _drill_parent = None
+                    _chain_depth = 0
+
+            # Incremental synthesis (opt-in, `explorer.synthesis_incremental`): the moment
+            # a domain has accumulated findings that form combinable pairs, compose a few —
+            # the "more alive" cadence. Bounded + dedup-gated; the full end-of-run Phase 9
+            # still runs. Best-effort; never breaks the domain loop.
+            try:
+                from aughor.kernel.flags import flag_enabled
+                if flag_enabled("explorer.synthesis_incremental"):
+                    await self._phase9_synthesis(cp, tp, max_findings=2, max_pairs=8)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.debug("[explorer:%s] incremental synthesis (non-fatal)",
+                             self.connection_id, exc_info=True)
+
+    async def _phase9_synthesis(self, cp, tp, *, max_findings: int = 8, max_pairs: int = 24) -> int:
+        """Phase 9 — cross-finding SYNTHESIS. Compose pairs of existing findings that
+        share a join key into emergent claims neither parent holds (the five operators
+        in ``explorer/synthesis.py``). This is where Scout *builds on what it knows*:
+        discovery costs ZERO new scans — only the ONE confirming query per surviving
+        hypothesis touches the DB.
+
+        Every emergent NUMBER is re-derived by a confirming query generated through the
+        same ``SqlWriter`` + bind-check + fan-out/grain/join guards a normal finding
+        runs, then the final finding is interpreted FROM the real result rows and
+        grounded — so a composed claim can never narrate a fabricated number. Returns
+        the count of synthesized findings stored. Best-effort throughout."""
+        from pydantic import BaseModel as _BM
+        from aughor.llm.provider import get_provider
+        from aughor.sql.writer import SqlWriter
+        from aughor.sql.shape import is_redundant_insight, is_semantically_redundant
+        from aughor.sql.fanout import (
+            integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
+            avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
+            measure_times_key_arithmetic, avg_of_row_ratios,
+        )
+        from aughor.sql.join_guard import check_join_value_domains
+        from aughor.explorer.synthesis import candidate_pairs, render_pair_prompt, OPERATORS
+
+        insights = list(self._state.get("insights", []) or [])
+        if len(insights) < 2:
+            return 0
+        candidates = candidate_pairs(insights, max_pairs=max_pairs)
+        if not candidates:
+            logger.info("[explorer:%s] Phase 9: no combinable finding-pairs", self.connection_id)
+            return 0
+        logger.info("[explorer:%s] Phase 9: %d candidate pairs from %d findings",
+                    self.connection_id, len(candidates), len(insights))
+
+        class _SynthPlan(_BM):
+            applies: bool          # does composing A+B yield a genuinely NOVEL emergent claim?
+            composition_type: str  # one of the candidate operators
+            hypothesis: str        # the emergent claim neither parent states (1-2 sentences)
+            confirm_question: str  # the plain-English question whose answer proves the number
+
+        class _SynthInterp(_BM):
+            finding: str           # the emergent insight, stated from the confirming result
+            novelty: int           # 1-5 vs the two parent findings
+
+        _loop = asyncio.get_running_loop()
+        llm = get_provider("coder")
+        sql_writer = SqlWriter(self._conn)
+        _dialect = getattr(self._conn, "dialect", "duckdb")
+        _tc = getattr(sql_writer, "table_cols", {})
+        stored = 0
+
+        _sys_plan = (
+            "You are a senior analyst COMBINING two existing findings into one emergent insight "
+            "the business would miss if it read them separately. The composition operators are: "
+            "share (a magnitude + a rate → contribution/importance), tension (two measures opposing "
+            "on the same entity → a trade-off), concentration (a total + a subset's large share → "
+            "fragility/leverage), confound (an aggregate vs a reversing split → the headline is "
+            "misleading), chain (two metrics linked via a shared segment → a causal narrative). "
+            "Set applies=false UNLESS the combination yields a claim NEITHER finding states alone. "
+            "Pick composition_type ONLY from the candidate types given. The confirm_question must be "
+            "answerable by ONE SQL query that re-derives the emergent quantity (e.g. the revenue "
+            "share, the trade-off magnitude) — do NOT restate either parent."
+        )
+
+        # Pairs already composed in a prior run (by parent-id set) — skip them so synthesis
+        # spends its budget on NEW pairs instead of re-evaluating + re-deriving the same
+        # findings the dedup gate would drop anyway. Diversifies output across runs.
+        _done_pairs = {frozenset(p) for p in (self._state.get("synthesized_pairs") or [])}
+
+        from aughor.kernel.jobs import budget_fraction_used
+        for c in candidates:
+            if stored >= max_findings:
+                break
+            # Self-limit: stop synthesis just shy of the token cap so a productive Phase 9
+            # finishes cleanly instead of being heartbeat-cancelled at the very end.
+            _bf9 = budget_fraction_used()
+            if _bf9 is not None and _bf9 >= 0.97:
+                logger.info("[explorer:%s] Phase 9: budget %.0f%% spent — stopping synthesis "
+                            "short of the cap", self.connection_id, _bf9 * 100)
+                break
+            if frozenset(c.parent_ids) in _done_pairs:
+                continue
+            await self._gate()
+            if self._stopped:
+                break
+            try:
+                plan: _SynthPlan = await _loop.run_in_executor(
+                    None,
+                    lambda c=c: llm.complete(
+                        system=_sys_plan,
+                        user=render_pair_prompt(c) + "\nCompose these into one emergent insight.",
+                        response_model=_SynthPlan,
+                    ),
+                )
+            except Exception:
+                logger.debug("[explorer:%s] Phase 9: plan LLM call failed for pair %s",
+                             self.connection_id, c.parent_ids, exc_info=True)
+                continue
+            if not plan.applies or not (plan.confirm_question or "").strip():
+                continue
+            ctype = plan.composition_type if plan.composition_type in OPERATORS else (c.operators[0] if c.operators else "share")
+
+            # Confirming query — generated through the SAME grounded writer a pinned
+            # question uses, so it binds to the real schema (never LLM-composed SQL).
+            _ctx = (
+                "This question COMBINES two findings to confirm an emergent quantity.\n"
+                f"FINDING A: {c.a.finding}\nFINDING B: {c.b.finding}\n"
+                f"COMPOSITION: {ctype}. HYPOTHESIS: {plan.hypothesis}\n"
+                "Compute EACH metric in its OWN CTE keyed by the shared entity/segment, then JOIN "
+                "the CTEs — never aggregate across a multi-table join directly (fan-out). "
+                "Every rate = SUM(numerator)/NULLIF(SUM(denominator),0) at the correct grain.\n"
+            )
+            try:
+                sql = await _loop.run_in_executor(
+                    None, lambda: sql_writer.write(plan.confirm_question, extra_context=_ctx))
+            except Exception:
+                logger.debug("[explorer:%s] Phase 9: confirm-SQL write failed (%s)",
+                             self.connection_id, ctype, exc_info=True)
+                continue
+            if not sql or not sql.strip():
+                continue
+
+            ok, berr = self._conn.dry_run(sql)
+            if not ok:
+                fix = await _loop.run_in_executor(None, lambda: sql_writer.fix(sql, berr, max_retries=3))
+                if not (getattr(fix, "ok", False) and getattr(fix, "sql", "")):
+                    continue
+                sql = fix.sql
+
+            grain = (integer_division_risk(sql)
+                     or count_star_entity_fanout(sql, _tc)
+                     or count_star_chasm_fanout(sql, _tc, dialect=_dialect)
+                     or avg_over_chasm_fanout(sql, _tc, dialect=_dialect)
+                     or sum_over_chasm_fanout(sql, _tc, dialect=_dialect)
+                     or cte_grain_mismatch_fanout(sql, _tc, dialect=_dialect)
+                     or measure_times_key_arithmetic(sql, _tc, dialect=_dialect)
+                     or avg_of_row_ratios(sql, _tc, dialect=_dialect))
+            if grain:
+                logger.info("[explorer:%s] Phase 9: dropping %s pair — grain bug: %s",
+                            self.connection_id, ctype, grain)
+                continue
+            try:
+                if check_join_value_domains(self._conn, sql):
+                    continue
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "synth join value-domain probe is best-effort; on failure keep the candidate",
+                         counter="explorer.synth_join_guard_failed")
+
+            rows = await self._run(sql, think=f"[synth:{ctype}] {plan.confirm_question[:50]}")
+            if not rows or self._leaks_schema(sql):
+                continue
+
+            # Interpret the EMERGENT finding from the real result — the number is the
+            # query's, never the LLM's prediction.
+            _result_text = "\n".join(str(r) for r in rows[:20])
+            try:
+                interp: _SynthInterp = await _loop.run_in_executor(
+                    None,
+                    lambda: llm.complete(
+                        system=("You are a precise analyst. State the SINGLE emergent insight this "
+                                "result proves — the claim that comes from COMBINING the two findings. "
+                                "CRITICAL: every number you state MUST be a value that appears in the "
+                                "CONFIRMING RESULT below. Do NOT reuse, restate, or recompute any figure "
+                                "from Finding A or Finding B — those are the inputs, not the answer. If the "
+                                "result contains no new combined quantity, the composition failed: say so "
+                                "plainly with novelty=1 and cite no numbers. novelty is 1-5."),
+                        user=(f"FINDING A (input — do NOT quote its numbers): {c.a.finding}\n"
+                              f"FINDING B (input — do NOT quote its numbers): {c.b.finding}\n"
+                              f"COMPOSITION: {ctype}\n\n"
+                              f"CONFIRMING RESULT — state the emergent number FROM HERE (first 20 rows):\n{_result_text}"),
+                        response_model=_SynthInterp,
+                    ),
+                )
+            except Exception:
+                logger.debug("[explorer:%s] Phase 9: interpret call failed (%s)",
+                             self.connection_id, ctype, exc_info=True)
+                continue
+
+            # Plausibility hardening (same authorities Phase 8 applies): fix a mislabeled
+            # metric against the real vocab, then reject an impossible value. A share or
+            # concentration is a rate — a NEGATIVE share/% is self-contradictory and signals
+            # a mis-derived confirming query or a mislabel (the live "-4.33% repeat share"
+            # defect), so drop it rather than ship a number a reader can't trust.
+            _rl = relabel_mislabeled_finding(interp.finding, sql, metric_vocab_for(self._conn), rows)
+            if _rl:
+                interp.finding = _rl
+            if ctype in ("share", "concentration") and _NEG_PCT_RE.search(interp.finding or ""):
+                logger.info("[explorer:%s] Phase 9: dropping %s finding — implausible negative "
+                            "share/rate", self.connection_id, ctype)
+                continue
+
+            _ok, _why = verify_insight(rows, interp.finding, sql, None, conn=self._conn)
+            if not _ok:
+                logger.info("[explorer:%s] Phase 9: dropping %s finding — %s",
+                            self.connection_id, ctype, _why)
+                continue
+            _g = verify_finding(interp.finding, rows)
+            if not _g.grounded:
+                logger.info("[explorer:%s] Phase 9: dropping %s finding — ungrounded number(s) %s",
+                            self.connection_id, ctype, _g.ungrounded)
+                continue
+            # Synthesis exists to surface NOVEL composed views — drop a trivial one (the
+            # interpreter rating it ≤1, e.g. "repeat AOV $69.39 vs $69.34") rather than
+            # spend a briefing slot on a non-insight.
+            if clamp_novelty(interp.novelty) < 2:
+                logger.info("[explorer:%s] Phase 9: dropping %s finding — trivial (novelty<2)",
+                            self.connection_id, ctype)
+                continue
+            _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
+            if is_semantically_redundant(interp.finding, _prior_findings):
+                continue
+            _prior_sqls = [i.get("sql", "") for i in self._state.get("insights", [])]
+            if is_redundant_insight(sql, _prior_sqls, _dialect):
+                continue
+
+            _sigf = signature_fields(sql, _dialect)
+            insight = {
+                "id": f"synth__{ctype}__{stored}",
+                "domain": "Synthesis",
+                "angle": ctype,
+                "entities_involved": [],
+                "dimensions": _sigf["dimensions"],
+                "measures": _sigf["measures"],
+                "signature": _sigf,
+                "finding": interp.finding,
+                "sql": sql,
+                "confidence": min(0.95, 0.4 + clamp_novelty(interp.novelty) * 0.1),
+                "novelty": clamp_novelty(interp.novelty),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "canvas_id": self.canvas_id,
+                "promoted_to_org": False,
+                "promotion_confidence": 0.0,
+                "synthesized": True,
+                "composition_type": ctype,
+                "parents": [c.a.id, c.b.id],
+            }
+            self._state.setdefault("insights", []).append(insight)
+            if hasattr(self, "_insight_vecs"):
+                try:
+                    from aughor.semantic.finding_dedup import embed_text
+                    self._insight_vecs.append(embed_text(interp.finding))
+                except Exception:
+                    self._insight_vecs.append(None)
+
+            _dossier = None
+            try:
+                from aughor.explorer.dossier import build_dossier
+                _dossier = build_dossier(
+                    question=plan.confirm_question, sql=sql, finding=interp.finding,
+                    rationale=plan.hypothesis, rows=rows, grounding=_g,
+                    tables=tables_in_sql(sql), state=self._state,
+                    generated_at=insight["generated_at"],
+                    data_fingerprint=self._state.get("schema_fingerprint"),
+                )
+            except Exception:
+                logger.debug("synth dossier build failed (non-fatal)", exc_info=True)
+
+            self._emit_insight(insight, sql, dossier=_dossier,
+                               journal_extra={"synthesized": True, "composition_type": ctype,
+                                              "parents": [c.a.id, c.b.id]})
+            stored += 1
+            # Remember this pair so future runs don't re-compose it (cross-run dedup).
+            _done_pairs.add(frozenset(c.parent_ids))
+            self._state["synthesized_pairs"] = [sorted(p) for p in _done_pairs]
+            self._save_state()
+            logger.info("[explorer:%s] Phase 9: SYNTH %s from (%s + %s) — \"%s…\"",
+                        self.connection_id, ctype, c.a.id, c.b.id, interp.finding[:80])
+        logger.info("[explorer:%s] Phase 9: synthesized %d findings", self.connection_id, stored)
+        return stored
 
 
 # ── Helpers (module-level) ────────────────────────────────────────────────────

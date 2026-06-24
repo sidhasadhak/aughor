@@ -31,6 +31,7 @@ class ExplorationPhase(str, Enum):
     DISTRIBUTION       = "distribution"
     CROSS_TABLE        = "cross_table"
     DOMAIN_INTEL       = "domain_intel"
+    SYNTHESIS          = "synthesis"
     COMPLETE           = "complete"
     FAILED             = "failed"
 

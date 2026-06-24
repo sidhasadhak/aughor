@@ -12,6 +12,7 @@ const PHASE_LABELS: Record<string, string> = {
   lifecycle_mapping:  "Lifecycles",
   distribution:       "Distributions",
   cross_table:        "Patterns",
+  synthesis:          "Synthesis",
   complete:           "Explored",
   failed:             "Failed",
 };
