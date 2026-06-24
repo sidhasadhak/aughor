@@ -1715,6 +1715,113 @@ class SchemaExplorer:
                           why="manifest baseline coverage (deterministic, no LLM)")
         return None
 
+    async def _grounded_probe_nq(self, domain, domain_table_cols, cp, NQ, llm, steering: str):
+        """Grounded generation — the SOTA fix for column hallucination. The LLM fills a
+        STRUCTURED probe by CHOOSING measures/dimensions/filters from this domain's REAL
+        columns (never writing SQL); we validate the picks by set-membership and COMPILE
+        to grain-safe SQL deterministically. A non-existent column is structurally
+        impossible to emit. Returns an NQ with compiled SQL, or None when the probe can't
+        be grounded/compiled — the caller then falls back to the free-form generator."""
+        from pydantic import BaseModel as _BM
+        from typing import Optional as _Opt
+        from aughor.explorer.probe import Probe, ProbeFilter, ProbeHaving, validate_probe, probe_to_sql
+
+        # Enumerate this domain's allowed REAL columns (same source as the frontier).
+        meas: list[str] = []
+        dims: list[str] = []
+        for _t in domain_table_cols:
+            _cps = (cp or {}).get(_t) or (cp or {}).get(_t.lower()) or {}
+            for _cn, _cpf in _cps.items():
+                _st = (getattr(_cpf, "semantic_type", "") or "")
+                if _st == "measure":
+                    meas.append(_cn)
+                elif _st in ("dimension", "flag", "ordinal") and not getattr(_cpf, "is_fk", False):
+                    dims.append(_cn)
+        meas = sorted(set(meas))
+        dims = sorted(set(dims))
+        if not meas:
+            return None                       # nothing to ground → free-form fallback
+
+        class _PFilter(_BM):
+            column: str = ""
+            op: str = "="
+            value: str = ""
+
+        class _PHaving(_BM):
+            measure: str = ""
+            op: str = ">"
+            value: float = 0.0
+
+        class _ProbeGen(_BM):
+            question: str
+            angle: str = "grounded"
+            why: str = ""
+            measures: list[str]
+            dimensions: list[str] = []
+            filters: list[_PFilter] = []
+            having: _Opt[_PHaving] = None
+            sort_desc: bool = True
+
+        _sys = (
+            "You are a data analyst choosing the next analytical probe to run. You do NOT write "
+            "SQL. Choose `measures` and `dimensions` ONLY from the column lists provided — never "
+            "invent or rename a column. Prefer an uncovered, high-value cut. For a COMPOSITE "
+            "question (a threshold on a metric across a group — e.g. SKUs whose avg margin > 0.6), "
+            "set `having` to {measure, op, value}. Keep it to 1-2 dimensions."
+        )
+        _usr = (
+            steering +
+            f"MEASURE COLUMNS you may aggregate (use these names EXACTLY): {', '.join(meas)}\n"
+            f"DIMENSION COLUMNS you may group/filter by (EXACTLY): {', '.join(dims) or '(none)'}\n\n"
+            "Fill the probe with the single most valuable next question, using ONLY listed columns."
+        )
+
+        _loop = asyncio.get_running_loop()
+
+        def _to_probe(g) -> Probe:
+            return Probe(
+                question=g.question, angle=g.angle or "grounded", why=g.why or "",
+                measures=list(g.measures or []), dimensions=list(g.dimensions or []),
+                filters=[ProbeFilter(f.column, f.op, f.value) for f in (g.filters or []) if f.column],
+                having=(ProbeHaving(g.having.measure, g.having.op, g.having.value)
+                        if g.having and g.having.measure else None),
+                sort_desc=bool(g.sort_desc),
+            )
+
+        try:
+            gen = await _loop.run_in_executor(
+                None, lambda: llm.complete(system=_sys, user=_usr, response_model=_ProbeGen))
+        except Exception:
+            logger.debug("[explorer:%s] grounded probe gen failed", self.connection_id, exc_info=True)
+            return None
+        probe = _to_probe(gen)
+
+        # Validate by set-membership; one cheap structured repair if a pick strays.
+        bad = validate_probe(probe, meas, dims, dims)
+        if bad:
+            _rusr = (_usr + f"\n\nINVALID columns (not in the lists): {', '.join(map(str, bad))}. "
+                     "Re-choose using ONLY the listed columns.")
+            try:
+                gen = await _loop.run_in_executor(
+                    None, lambda: llm.complete(system=_sys, user=_rusr, response_model=_ProbeGen))
+                probe = _to_probe(gen)
+                bad = validate_probe(probe, meas, dims, dims)
+            except Exception:
+                return None
+            if bad:
+                return None
+
+        _tcols = {_t: list(((cp or {}).get(_t) or (cp or {}).get(_t.lower()) or {}).keys())
+                  for _t in domain_table_cols}
+        _cprof = {_t: ((cp or {}).get(_t) or (cp or {}).get(_t.lower()) or {}) for _t in domain_table_cols}
+        sql = probe_to_sql(probe, tables_cols=_tcols, col_profiles=_cprof,
+                           joins=self._state.get("join_verifications", []) or [],
+                           dialect=getattr(self._conn, "dialect", "duckdb"))
+        if not sql:
+            return None                       # compiler can't express it → free-form fallback
+        return NQ(question=probe.question or "grounded probe", sql=sql,
+                  angle=probe.angle or "grounded", why=probe.why or "grounded generation")
+
     async def _phase8_domain_intelligence(
         self,
         cp: dict | None = None,
@@ -2624,6 +2731,19 @@ class SchemaExplorer:
                     # generator when no manifest cell applies (deeper/cross-cutting tail).
                     nq = self._manifest_nq(domain_table_cols, _NextQuestion) if self._manifest_driven else None
                     if nq is None:
+                        # PRIMARY: grounded generation — the LLM picks columns from the real
+                        # schema and we COMPILE the SQL, so a non-existent column can't be
+                        # emitted (kills the line_total invention class + its ~40% token waste).
+                        _steer = (f"DOMAIN: {domain}\n\n{frontier_block}{playbook_block}{_followup_hint}"
+                                  f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n")
+                        nq = await self._grounded_probe_nq(domain, domain_table_cols, cp,
+                                                           _NextQuestion, llm, _steer)
+                        if nq is not None:
+                            from aughor.stats import stats as _s; _s.inc("explorer.grounded_probe")
+                    if nq is None:
+                        # FALLBACK: free-form generation for probes the compiler can't express
+                        # (rare cross-table composites). Bounded by the same downstream guards.
+                        from aughor.stats import stats as _s; _s.inc("explorer.grounded_fallback")
                         nq = await _loop.run_in_executor(
                             None,
                             lambda: llm.complete(system=_sys1, user=_usr1, response_model=_NextQuestion),
