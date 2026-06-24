@@ -13,6 +13,7 @@ import { uploadDocument } from "@/lib/api";
 import { useChat, type DebugEvent } from "@/lib/useChat";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
 import { TrustReceipt } from "./TrustReceipt";
+import { InvestigationConsole } from "./InvestigationConsole";
 
 import { API_BASE as BASE } from "@/lib/config";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
@@ -138,10 +139,10 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             style={{
               display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
               borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
-              cursor: "pointer", border: mode === "investigate" ? "1px solid var(--vio2)" : "1px solid transparent",
+              cursor: "pointer", border: mode === "investigate" ? "1px solid var(--blue2)" : "1px solid transparent",
               transition: "all .12s",
-              background: mode === "investigate" ? "var(--vio1)" : "transparent",
-              color: mode === "investigate" ? "var(--vio5)" : "var(--t3)",
+              background: mode === "investigate" ? "var(--blue1)" : "transparent",
+              color: mode === "investigate" ? "var(--blue5)" : "var(--t3)",
               boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
@@ -242,7 +243,7 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
 
   const TYPE_COLOR: Record<string, string> = {
     start: "text-sky-400", done: "text-emerald-400", error: "text-red-400",
-    ada_report: "text-violet-400", explore_report: "text-teal-400", report: "text-blue-400",
+    ada_report: "text-amber-400", explore_report: "text-teal-400", report: "text-blue-400",
     phase_complete: "text-amber-400", tables_used: "text-zinc-400", followups: "text-zinc-400",
   };
 
@@ -432,6 +433,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   }, [input, state.streaming, ask, connectionId, canvasId, mode, attachedFile]);
 
   const isEmpty = state.turns.length === 0;
+  // Console mode: when the active turn is a Deep Analysis, render the 3-column
+  // operations console (reasoning · finding · evidence) instead of the transcript.
+  const lastTurn = state.turns[state.turns.length - 1];
+  const consoleMode = !!lastTurn && lastTurn.mode === "investigate";
 
   // ── Feedback submission ───────────────────────────────────────────────────────
   async function handleFeedbackSubmit(invId: string, feedback: string) {
@@ -474,7 +479,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                 <p className="text-[12px] font-bold text-zinc-200">Ask your data anything</p>
                 <p className="text-[12px] text-zinc-500 mt-1.5">
                   Use <span className="text-zinc-400 font-bold">Quick</span> for fast SQL answers ·{" "}
-                  <span className="text-violet-400/90 font-bold">Agentic</span> for deep root-cause analysis
+                  <span className="text-amber-400/90 font-bold">Agentic</span> for deep root-cause analysis
                 </p>
               </div>
             )}
@@ -547,7 +552,21 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           {/* ── Chat column (scroll + floating input) ── */}
           <div className="flex-1 min-h-0 overflow-hidden" style={{ position: "relative" }}>
 
-            {/* Scrollable messages */}
+            {/* Console mode — the 3-column Investigation screen for the active Deep Analysis */}
+            {consoleMode && lastTurn ? (
+              <div className="h-full min-h-0">
+                <InvestigationConsole
+                  turn={lastTurn}
+                  running={state.streaming}
+                  connectionId={connectionId}
+                  canvasId={canvasId ?? undefined}
+                  onOpenQuery={(sql) => setSourcePanel({ columns: [], rows: [], sql, title: "Source query" })}
+                  onConfirm={() => handleSend("Draft the final report for this investigation, with recommendations and next steps.", "investigate")}
+                  onBranch={() => textareaRef.current?.focus()}
+                />
+              </div>
+            ) : (
+            /* Scrollable messages */
             <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 h-full">
               <div className="py-8 w-[90%] mx-auto">
                 {state.turns.map((turn, i) => (
@@ -597,6 +616,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                 <div style={{ height: 172 }} />
               </div>
             </div>
+            )}
 
             {/* Gradient fade — blends messages into the float */}
             <div style={{

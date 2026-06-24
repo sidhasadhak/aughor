@@ -284,8 +284,8 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
     display: "inline-flex", alignItems: "center", gap: 6,
     padding: "5px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500,
     cursor: syncing || uploading ? "not-allowed" : "pointer",
-    background: "var(--blue1, #152B50)", border: "1px solid var(--blue2, #1A3A6E)",
-    color: "var(--blue5, #88BAFF)", transition: "all .12s",
+    background: "var(--blue1, #2A2310)", border: "1px solid var(--blue2, #574616)",
+    color: "var(--blue5, #FBE3A6)", transition: "all .12s",
     opacity: syncing || uploading ? 0.5 : 1,
   };
 
@@ -1240,9 +1240,9 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
               return (
                 <button key={c.id} onClick={() => setView(c.id)}
                   style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 500, padding: "6px 14px", borderRadius: 999, cursor: "pointer",
-                    background: on ? "rgba(45,114,210,0.13)" : "transparent",
+                    background: on ? "var(--bg-sel)" : "transparent",
                     color: on ? "var(--blue5)" : "var(--t2)",
-                    border: `1px solid ${on ? "rgba(45,114,210,0.45)" : "var(--b1)"}`, transition: "all .1s" }}
+                    border: `1px solid ${on ? "var(--blue2)" : "var(--b1)"}`, transition: "all .1s" }}
                   onMouseEnter={e => { if (!on) (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)"; }}
                   onMouseLeave={e => { if (!on) (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; }}
                 >
@@ -1350,7 +1350,7 @@ function TreeRow({
         display: "flex", alignItems: "center", gap: 7,
         padding: `6px 10px 6px ${10 + depth * 15}px`,
         cursor: "pointer", userSelect: "none",
-        background: isSelected ? "rgba(45,114,210,0.11)" : "transparent",
+        background: isSelected ? "var(--bg-sel)" : "transparent",
         borderLeft: `2px solid ${isSelected ? "var(--blue3)" : "transparent"}`,
         transition: "background .08s", minWidth: 0,
       }}

@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aughor · Shell & Navigation Redesign (Interactive Mockup)</title>
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   AUGHOR — Shell & Nav redesign prototype
+   Tokens mirror web/aughor-v2 (Blueprint blue on Databricks near-black).
+   This is a DESIGN MOCKUP — not wired to the real app. Suggestions only.
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --bg-0:#0A0D13; --bg-1:#0E121A; --bg-2:#141925; --bg-3:#1A2030; --bg-4:#232C3E;
+  --bg-hover:rgba(255,255,255,.045); --bg-sel:rgba(59,130,246,.14);
+  --b0:#11151D; --b1:#1B2130; --b2:#252E40; --b3:#334056; --bfocus:#3B82F6;
+  --t1:#EAEDF3; --t2:#9BA6B8; --t3:#6B7689; --t4:#4A5468;
+  --blue1:#11233F; --blue2:#1C3A66; --blue3:#3B82F6; --blue4:#5B9DFF; --blue5:#BFDBFF;
+  --grn1:#0C2417; --grn3:#1FA968; --grn4:#34D399; --grn5:#86EFC0;
+  --amb1:#2A1E05; --amb3:#D9A013; --amb4:#F5C542; --amb5:#FFE08A;
+  --red1:#2A0F12; --red3:#E0444E; --red5:#FFA9AE;
+  --vio1:#1B1340; --vio3:#7C5CE0; --vio5:#CBB8FF;
+  --r1:4px; --r2:6px; --r3:10px;
+  --dur-fast:100ms; --dur-norm:200ms; --dur-slow:400ms; --dur-breath:700ms;
+  --ease-out:cubic-bezier(0,0,.2,1); --ease-pop:cubic-bezier(.34,1.56,.64,1);
+  --ease-spring:cubic-bezier(.16,1,.3,1);
+  --shadow-sm:0 1px 4px rgba(0,0,0,.35); --shadow-md:0 4px 16px rgba(0,0,0,.45);
+  --shadow-lg:0 8px 28px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.4);
+  --acc-glow:color-mix(in srgb,var(--blue3) 42%,transparent);
+  --shadow-acc:0 4px 20px var(--acc-glow);
+  --glass-bg:color-mix(in srgb,var(--bg-1) 72%,transparent);
+  --sidebar:240px; --rail:60px; --topbar:52px;
+  --font-ui:"DM Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  --font-code:"IBM Plex Mono",Consolas,monospace;
+}
+[data-theme="light"]{
+  --bg-0:#F7F9FC; --bg-1:#FFFFFF; --bg-2:#FFFFFF; --bg-3:#F1F4F9; --bg-4:#E6EBF2;
+  --bg-hover:rgba(15,30,60,.04); --bg-sel:rgba(59,130,246,.10);
+  --b0:#EEF1F6; --b1:#E3E8F0; --b2:#D5DCE6; --b3:#C2CBD9;
+  --t1:#141925; --t2:#52607A; --t3:#7A879B; --t4:#A6B0C0;
+  --glass-bg:color-mix(in srgb,#FFFFFF 72%,transparent);
+  --shadow-sm:0 1px 3px rgba(20,40,80,.08); --shadow-md:0 4px 16px rgba(20,40,80,.10);
+  --shadow-lg:0 10px 30px rgba(20,40,80,.12),0 2px 8px rgba(20,40,80,.06);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  font-family:var(--font-ui); font-size:13px; background:var(--bg-0); color:var(--t1);
+  line-height:1.5; -webkit-font-smoothing:antialiased; overflow:hidden;
+}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+:focus-visible{outline:2px solid var(--bfocus); outline-offset:2px; border-radius:var(--r1)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-thumb{background:var(--b2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--b3)}
+
+/* ── App shell ─────────────────────────────────────────────────────────── */
+.app{height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.body{flex:1;display:flex;overflow:hidden;min-height:0}
+
+/* ── Topbar (glass, command-first) ─────────────────────────────────────── */
+.topbar{
+  height:var(--topbar); display:flex; align-items:center; gap:12px; padding:0 14px;
+  background:var(--glass-bg); backdrop-filter:blur(16px) saturate(1.4);
+  -webkit-backdrop-filter:blur(16px) saturate(1.4);
+  border-bottom:1px solid var(--b1); z-index:50; flex-shrink:0; position:relative;
+}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;letter-spacing:.02em;font-size:14px}
+.brand .glyph{
+  width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--blue3),var(--vio3));
+  box-shadow:var(--shadow-acc); color:#fff;font-weight:700;font-size:14px;
+}
+.rail-toggle{
+  width:30px;height:30px;border-radius:var(--r2);display:grid;place-items:center;
+  color:var(--t2);transition:background var(--dur-fast),color var(--dur-fast);
+}
+.rail-toggle:hover{background:var(--bg-hover);color:var(--t1)}
+
+/* Command bar — the centerpiece of the new topbar */
+.cmdbar{
+  flex:1; max-width:560px; margin:0 auto; height:34px; display:flex; align-items:center;
+  gap:9px; padding:0 12px; border-radius:var(--r2); background:var(--bg-2);
+  border:1px solid var(--b2); color:var(--t3); cursor:text;
+  transition:border-color var(--dur-norm) var(--ease-spring),box-shadow var(--dur-norm) var(--ease-spring),background var(--dur-norm);
+}
+.cmdbar:hover{border-color:var(--b3)}
+.cmdbar.focus{border-color:var(--bfocus);box-shadow:0 0 0 3px var(--bg-sel);background:var(--bg-1)}
+.cmdbar svg{flex-shrink:0}
+.cmdbar .ph{flex:1;font-size:12.5px}
+.kbd{
+  font-family:var(--font-code);font-size:10.5px;color:var(--t2);
+  border:1px solid var(--b2);border-bottom-width:2px;border-radius:var(--r1);
+  padding:1px 6px;background:var(--bg-3);
+}
+.topbar-right{display:flex;align-items:center;gap:6px;margin-left:auto}
+.icon-btn{
+  width:32px;height:32px;border-radius:var(--r2);display:grid;place-items:center;color:var(--t2);
+  position:relative;transition:background var(--dur-fast),color var(--dur-fast),transform var(--dur-fast)
+}
+.icon-btn:hover{background:var(--bg-hover);color:var(--t1)}
+.icon-btn:active{transform:scale(.92)}
+.icon-btn .badge{
+  position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;
+  background:var(--red3);border:2px solid var(--bg-1);
+}
+.avatar{
+  width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:12px;
+  background:linear-gradient(135deg,var(--grn3),var(--blue3));color:#fff;margin-left:4px;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────────────────── */
+.sidebar{
+  width:var(--sidebar); flex-shrink:0; display:flex; flex-direction:column;
+  background:var(--bg-1); border-right:1px solid var(--b1); overflow:hidden;
+  transition:width var(--dur-slow) var(--ease-spring); position:relative; z-index:40;
+}
+.app.rail .sidebar{width:var(--rail)}
+.nav-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:8px 10px 4px}
+.app.rail .nav-scroll{padding:8px 8px 4px}
+
+/* Primary "Ask" launcher — always-available entry to the core flow */
+.ask-launch{
+  display:flex;align-items:center;gap:9px;width:100%;height:38px;padding:0 12px;margin-bottom:10px;
+  border-radius:var(--r2);font-weight:600;font-size:12.5px;color:#fff;
+  background:linear-gradient(135deg,var(--blue3),var(--blue4));
+  box-shadow:var(--shadow-acc);
+  transition:transform var(--dur-norm) var(--ease-spring),box-shadow var(--dur-norm) var(--ease-spring);
+  overflow:hidden;white-space:nowrap;
+}
+.ask-launch:hover{transform:translateY(-1px);box-shadow:0 6px 24px var(--acc-glow)}
+.ask-launch:active{transform:translateY(0) scale(.99)}
+.app.rail .ask-launch{padding:0;justify-content:center}
+.ask-launch .lbl{transition:opacity var(--dur-fast)}
+.app.rail .ask-launch .lbl{opacity:0;width:0}
+
+.nav-group{
+  font-size:10.5px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--t4);
+  padding:14px 11px 5px;white-space:nowrap;display:flex;align-items:center;gap:6px;
+  transition:opacity var(--dur-fast);
+}
+.app.rail .nav-group{opacity:0;height:14px;padding:10px 0 0}
+.app.rail .nav-group span{display:none}
+.app.rail .nav-group::after{content:"";display:block;width:18px;height:1px;background:var(--b1);margin:0 auto}
+
+/* Nav item with sliding active indicator */
+.nav-item{
+  display:flex;align-items:center;gap:11px;width:100%;height:34px;padding:0 11px;border-radius:var(--r2);
+  font-size:12.5px;font-weight:450;color:var(--t2);position:relative;white-space:nowrap;
+  transition:background var(--dur-fast),color var(--dur-fast);
+}
+.nav-item:hover{background:var(--bg-hover);color:var(--t1)}
+.nav-item .ic{flex-shrink:0;width:18px;height:18px;display:grid;place-items:center}
+.nav-item .lbl{transition:opacity var(--dur-fast)}
+.app.rail .nav-item{justify-content:center;padding:0}
+.app.rail .nav-item .lbl,.app.rail .nav-item .count,.app.rail .nav-item .pulse{display:none}
+.nav-item .count{
+  margin-left:auto;font-size:10.5px;font-weight:600;color:var(--t3);
+  background:var(--bg-3);border-radius:20px;padding:1px 7px;min-width:20px;text-align:center;
+}
+.nav-item.has-pulse .count{color:var(--amb5);background:var(--amb1)}
+.nav-item.active{color:var(--blue5);font-weight:550}
+/* Shared sliding pill (FLIP-style "magic move") */
+#nav-pill{
+  position:absolute;left:10px;right:10px;height:34px;border-radius:var(--r2);
+  background:var(--bg-sel);pointer-events:none;z-index:0;
+  transition:transform var(--dur-slow) var(--ease-spring),opacity var(--dur-norm);
+}
+#nav-pill::before{
+  content:"";position:absolute;left:-10px;top:50%;transform:translateY(-50%);
+  width:3px;height:16px;border-radius:0 3px 3px 0;background:var(--blue3);
+}
+.nav-item>*{position:relative;z-index:1}
+
+/* Status footer in sidebar */
+.side-foot{
+  border-top:1px solid var(--b1);padding:10px;display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--t2);
+  white-space:nowrap;overflow:hidden;
+}
+.app.rail .side-foot{justify-content:center}
+.app.rail .side-foot .foot-txt{display:none}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dot.grn{background:var(--grn4);box-shadow:0 0 0 3px color-mix(in srgb,var(--grn4) 22%,transparent)}
+
+/* ── Screen / content ──────────────────────────────────────────────────── */
+.screen{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg-0);overflow:hidden}
+.content-header{
+  height:46px;flex-shrink:0;display:flex;align-items:center;gap:10px;padding:0 22px;
+  border-bottom:1px solid var(--b1);background:var(--glass-bg);backdrop-filter:blur(12px);
+}
+.crumbs{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t3)}
+.crumbs .here{color:var(--t1);font-weight:600}
+.crumbs .sep{color:var(--t4)}
+.header-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.btn{
+  display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 13px;border-radius:var(--r2);
+  font-size:12px;font-weight:550;border:1px solid transparent;white-space:nowrap;
+  transition:background var(--dur-fast),border-color var(--dur-fast),transform var(--dur-fast);
+}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--blue3);color:#fff}
+.btn.primary:hover{background:var(--blue4)}
+.btn.ghost{color:var(--t2);border-color:var(--b2)}
+.btn.ghost:hover{background:var(--bg-hover);color:var(--t1);border-color:var(--b3)}
+
+.content{flex:1;overflow-y:auto;padding:22px}
+/* View Transition: each screen content stagger-reveals */
+.view{display:none}
+.view.active{display:block;animation:viewIn var(--dur-slow) var(--ease-spring) both}
+@keyframes viewIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+.view h2{margin:0 0 4px;font-size:19px;font-weight:650;letter-spacing:-.01em}
+.view .sub{color:var(--t2);font-size:13px;margin:0 0 20px;max-width:60ch}
+
+/* Cards / grid */
+.grid{display:grid;gap:14px}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:1100px){.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(2,1fr)}}
+.card{
+  background:var(--bg-2);border:1px solid var(--b1);border-radius:var(--r3);padding:16px;
+  transition:transform var(--dur-norm) var(--ease-spring),box-shadow var(--dur-norm) var(--ease-spring),border-color var(--dur-norm);
+}
+.card.lift:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg);border-color:var(--b2)}
+.stat .k{font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+.stat .v{font-size:28px;font-weight:680;letter-spacing:-.02em;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+.stat .d{font-size:11.5px;color:var(--t2);display:flex;align-items:center;gap:5px}
+.delta.up{color:var(--grn4)} .delta.dn{color:var(--red5)}
+
+.tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:var(--r1);font-size:10.5px;font-weight:600;letter-spacing:.02em}
+.tag.blue{color:var(--blue5);background:var(--blue1)} .tag.grn{color:var(--grn5);background:var(--grn1)}
+.tag.amb{color:var(--amb5);background:var(--amb1)} .tag.vio{color:var(--vio5);background:var(--vio1)}
+
+/* Stagger children reveal */
+.stagger>*{animation:stagIn var(--dur-slow) var(--ease-spring) both}
+.stagger>*:nth-child(1){animation-delay:.02s}.stagger>*:nth-child(2){animation-delay:.07s}
+.stagger>*:nth-child(3){animation-delay:.12s}.stagger>*:nth-child(4){animation-delay:.17s}
+.stagger>*:nth-child(5){animation-delay:.22s}.stagger>*:nth-child(6){animation-delay:.27s}
+@keyframes stagIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+.row-list{display:flex;flex-direction:column;gap:1px;margin-top:6px}
+.row{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:var(--r2);transition:background var(--dur-fast)}
+.row:hover{background:var(--bg-hover)}
+.row .ti{font-weight:550;font-size:13px}
+.row .mt{font-size:11.5px;color:var(--t3);margin-top:1px}
+.row .rt{margin-left:auto;font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums}
+.spark{height:30px;display:flex;align-items:flex-end;gap:3px}
+.spark i{width:6px;background:var(--blue3);border-radius:2px;opacity:.85;display:block}
+
+/* Skeleton shimmer */
+.sk{background:linear-gradient(90deg,var(--bg-2) 25%,var(--bg-3) 50%,var(--bg-2) 75%);background-size:200% 100%;animation:shim 1.4s infinite;border-radius:var(--r2)}
+@keyframes shim{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* ── Command palette (⌘K) overlay ──────────────────────────────────────── */
+.scrim{position:fixed;inset:0;background:rgba(4,7,12,.55);backdrop-filter:blur(3px);z-index:200;opacity:0;pointer-events:none;transition:opacity var(--dur-norm)}
+.scrim.show{opacity:1;pointer-events:auto}
+.palette{
+  position:fixed;top:14vh;left:50%;transform:translateX(-50%) scale(.96) translateY(8px);
+  width:min(620px,92vw);background:var(--bg-2);border:1px solid var(--b2);border-radius:14px;
+  box-shadow:var(--shadow-lg);z-index:201;opacity:0;pointer-events:none;overflow:hidden;
+  transition:opacity var(--dur-norm) var(--ease-spring),transform var(--dur-norm) var(--ease-spring);
+}
+.palette.show{opacity:1;pointer-events:auto;transform:translateX(-50%) scale(1) translateY(0)}
+.pal-input{display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid var(--b1)}
+.pal-input input{flex:1;background:none;border:none;outline:none;color:var(--t1);font-size:15px}
+.pal-input input::placeholder{color:var(--t3)}
+.pal-list{max-height:46vh;overflow-y:auto;padding:8px}
+.pal-sec{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t4);padding:10px 12px 5px}
+.pal-item{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:var(--r2);font-size:13px;color:var(--t1)}
+.pal-item .ic{color:var(--t3)}
+.pal-item .hint{margin-left:auto;font-size:11px;color:var(--t3)}
+.pal-item.sel,.pal-item:hover{background:var(--bg-sel);color:var(--blue5)}
+.pal-item.sel .ic,.pal-item:hover .ic{color:var(--blue4)}
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+.toast-wrap{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:300;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{
+  display:flex;align-items:center;gap:10px;padding:11px 16px;border-radius:var(--r3);
+  background:var(--bg-3);border:1px solid var(--b2);box-shadow:var(--shadow-lg);font-size:12.5px;
+  animation:toastIn var(--dur-slow) var(--ease-pop) both;
+}
+@keyframes toastIn{from{opacity:0;transform:translateY(16px) scale(.95)}to{opacity:1;transform:none}}
+
+/* ── Annotation layer ──────────────────────────────────────────────────── */
+.app.annotate .anno{opacity:1;pointer-events:auto}
+.anno{
+  position:absolute;z-index:120;opacity:0;pointer-events:none;transition:opacity var(--dur-norm);
+  background:linear-gradient(135deg,var(--vio3),var(--blue3));color:#fff;border-radius:var(--r2);
+  font-size:11px;font-weight:600;padding:5px 9px;box-shadow:var(--shadow-md);max-width:200px;line-height:1.35;
+}
+.anno::after{content:"";position:absolute;width:8px;height:8px;background:var(--blue3);transform:rotate(45deg)}
+.anno.n1{top:9px;left:calc(50% - 270px)} .anno.n1::after{left:24px;bottom:-4px}
+.anno.n2{top:9px;left:50%;transform:translateX(-50%)} .anno.n2::after{left:50%;bottom:-4px;margin-left:-4px}
+.anno.n3{top:58px;left:14px} .anno.n3::after{left:24px;top:-4px}
+.anno.n4{top:118px;left:14px} .anno.n4::after{left:24px;top:-4px}
+.anno.n5{top:9px;right:120px;left:auto} .anno.n5::after{right:30px;bottom:-4px}
+.anno.n6{bottom:58px;left:14px} .anno.n6::after{left:24px;bottom:-4px}
+
+/* Annotation FAB */
+.fab{
+  position:fixed;bottom:22px;right:22px;z-index:130;height:42px;padding:0 16px;border-radius:21px;
+  display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:#fff;
+  background:linear-gradient(135deg,var(--vio3),var(--blue3));box-shadow:var(--shadow-lg);
+  transition:transform var(--dur-norm) var(--ease-spring)
+}
+.fab:hover{transform:translateY(-2px)}
+.app.annotate .fab{background:linear-gradient(135deg,var(--blue3),var(--grn3))}
+
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ── Topbar ──────────────────────────────────────────────────────── -->
+  <header class="topbar">
+    <button class="rail-toggle" id="railBtn" title="Collapse sidebar (toggle rail)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <div class="brand"><span class="glyph">A</span> Aughor</div>
+
+    <button class="cmdbar" id="cmdbarBtn">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <span class="ph">Ask a question, jump to anything, run a command…</span>
+      <span class="kbd">⌘K</span>
+    </button>
+
+    <div class="topbar-right">
+      <button class="icon-btn" title="What's new"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v2M5 7l1.5 1.5M19 7l-1.5 1.5M12 8a5 5 0 0 0-3 9h6a5 5 0 0 0-3-9zM9 21h6"/></svg></button>
+      <button class="icon-btn" id="bellBtn" title="Inbox"><span class="badge"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg></button>
+      <button class="icon-btn" id="themeBtn" title="Toggle theme"><svg id="themeIco" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <div class="avatar">S</div>
+    </div>
+  </header>
+
+  <div class="body">
+    <!-- ── Sidebar ───────────────────────────────────────────────────── -->
+    <nav class="sidebar">
+      <div class="nav-scroll" id="navScroll">
+        <button class="ask-launch" data-nav="chat"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l2.5 6L13 11.5 7.5 14 5 20 2.5 14 -3 11.5 2.5 9z" transform="translate(7 0)"/><path d="M19 14l1 3 3 1-3 1-1 3-1-3-3-1 3-1z"/></svg><span class="lbl">New investigation</span></button>
+
+        <div id="navPillHost" style="position:relative">
+          <div id="nav-pill"></div>
+          <a class="nav-item active" data-nav="home"><span class="ic">${''}</span></a>
+        </div>
+      </div>
+      <div class="side-foot">
+        <span class="dot grn"></span>
+        <span class="foot-txt">3 sources synced · fresh 2m ago</span>
+      </div>
+    </nav>
+
+    <!-- ── Screen ────────────────────────────────────────────────────── -->
+    <section class="screen">
+      <div class="content-header">
+        <div class="crumbs" id="crumbs">
+          <span>Aughor</span><span class="sep">/</span><span class="here">Home</span>
+        </div>
+        <div class="header-actions">
+          <button class="btn ghost">Share</button>
+          <button class="btn primary" data-nav="chat">+ Ask</button>
+        </div>
+      </div>
+
+      <div class="content" id="content"><!-- views injected by JS --></div>
+    </section>
+  </div>
+
+  <!-- Annotation callouts (overlaid on shell) -->
+  <div class="anno n1">Persistent “New investigation” — the core flow is one click from anywhere</div>
+  <div class="anno n2">Command-first omnibar: search + navigate + run, unified</div>
+  <div class="anno n3">Sliding active pill (FLIP “magic move”) — spatial continuity between tabs</div>
+  <div class="anno n4">Grouped, scannable nav with live counts & status dots</div>
+  <div class="anno n5">Quiet utilities: notifications, theme, account — out of the way</div>
+  <div class="anno n6">Live connection status anchored in the footer, not buried in settings</div>
+
+  <button class="fab" id="fab"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg> Show design notes</button>
+</div>
+
+<!-- ── Command palette ─────────────────────────────────────────────────── -->
+<div class="scrim" id="scrim"></div>
+<div class="palette" id="palette">
+  <div class="pal-input">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <input id="palInput" placeholder="Ask a question or jump to…" />
+    <span class="kbd">esc</span>
+  </div>
+  <div class="pal-list" id="palList"></div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* ── Icon set (stroke paths) ─────────────────────────────────────────── */
+const I = {
+  home:'<path d="M3 11l9-8 9 8M5 9v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9"/>',
+  inbox:'<path d="M3 12h5l2 3h4l2-3h5M4 12V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6"/>',
+  canvas:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
+  brief:'<path d="M4 4h16v14H4zM8 9h8M8 13h5"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  node:'<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.8 7.6l3 8.4M16.2 7.6l-3 8.4"/>',
+  activity:'<path d="M3 12h4l3 8 4-16 3 8h4"/>',
+  playbook:'<path d="M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2zM8 7h8M8 11h6"/>',
+  db:'<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  builder:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+  layers:'<path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5M3 17l9 5 9-5"/>',
+  spark:'<path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>',
+  shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15H4.5a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1A2 2 0 1 1 8.5 5.2l.1.1A1.7 1.7 0 0 0 11 4.6V4.5a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21.4 11h.1a2 2 0 1 1 0 4z"/>'
+};
+const svg = (p,s=18)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+
+/* ── Nav model (mirrors web/app/page.tsx) ────────────────────────────── */
+const NAV = [
+  {type:'item', id:'home',   icon:'home',   label:'Home'},
+  {type:'item', id:'inbox',  icon:'inbox',  label:'Inbox', count:4, pulse:true},
+  {type:'item', id:'canvases',icon:'canvas',label:'Data Canvas'},
+  {type:'group', label:'Intelligence'},
+  {type:'item', id:'briefing',icon:'brief',   label:'Briefing'},
+  {type:'item', id:'recents', icon:'search',  label:'Investigations', count:12},
+  {type:'item', id:'fleet',   icon:'node',    label:'Fleet', count:3},
+  {type:'item', id:'health',  icon:'activity',label:'Health'},
+  {type:'item', id:'playbook',icon:'playbook',label:'Playbook'},
+  {type:'group', label:'Data'},
+  {type:'item', id:'catalog', icon:'db',      label:'Catalog'},
+  {type:'item', id:'builder', icon:'builder', label:'Query Builder'},
+  {type:'item', id:'semantic',icon:'layers',  label:'Semantic Layer'},
+  {type:'group', label:'Operations'},
+  {type:'item', id:'monitors',icon:'activity',label:'Monitors'},
+  {type:'item', id:'actions', icon:'spark',   label:'Action Hub'},
+  {type:'item', id:'security',icon:'shield',  label:'Security & Audit'},
+];
+
+const TITLES = {
+  home:'Home', inbox:'Inbox', canvases:'Data Canvas', chat:'New investigation',
+  briefing:'Briefing', recents:'Investigations', fleet:'Fleet', health:'Health',
+  playbook:'Playbook', catalog:'Catalog', builder:'Query Builder', semantic:'Semantic Layer',
+  monitors:'Monitors', actions:'Action Hub', security:'Security & Audit', settings:'Settings'
+};
+const SECTION = {
+  briefing:'Intelligence', recents:'Intelligence', fleet:'Intelligence', health:'Intelligence', playbook:'Intelligence',
+  catalog:'Data', builder:'Data', semantic:'Data',
+  monitors:'Operations', actions:'Operations', security:'Operations'
+};
+
+/* ── Build sidebar ───────────────────────────────────────────────────── */
+const navScroll = document.getElementById('navScroll');
+const askBtn = navScroll.querySelector('.ask-launch');
+const pillHost = document.createElement('div');
+pillHost.style.position='relative';
+const pill = document.createElement('div'); pill.id='nav-pill'; pillHost.appendChild(pill);
+NAV.forEach(n=>{
+  if(n.type==='group'){
+    const g=document.createElement('div'); g.className='nav-group';
+    g.innerHTML=`<span>${n.label}</span>`; pillHost.appendChild(g);
+  } else {
+    const a=document.createElement('button'); a.className='nav-item'; a.dataset.nav=n.id;
+    a.innerHTML=`<span class="ic">${svg(I[n.icon])}</span><span class="lbl">${n.label}</span>`+
+      (n.count!=null?`<span class="count">${n.count}</span>`:'');
+    if(n.pulse) a.classList.add('has-pulse');
+    pillHost.appendChild(a);
+  }
+});
+// settings pinned at bottom of scroll
+const sg=document.createElement('div'); sg.className='nav-group'; sg.innerHTML='<span>Account</span>'; pillHost.appendChild(sg);
+const setBtn=document.createElement('button'); setBtn.className='nav-item'; setBtn.dataset.nav='settings';
+setBtn.innerHTML=`<span class="ic">${svg(I.settings)}</span><span class="lbl">Settings</span>`; pillHost.appendChild(setBtn);
+// replace the placeholder host
+document.getElementById('navPillHost').replaceWith(pillHost);
+
+/* ── View content (lightweight mockups per screen) ───────────────────── */
+function statCard(k,v,d,cls){return `<div class="card lift stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d"><span class="delta ${cls}">${d}</span></div></div>`}
+function bars(arr){return `<div class="spark">${arr.map(h=>`<i style="height:${h}%"></i>`).join('')}</div>`}
+
+const VIEWS = {
+  home:`
+    <h2>Good morning, Sadhak</h2>
+    <p class="sub">Here's what Aughor learned about your data overnight — and what needs you.</p>
+    <div class="grid g4 stagger">
+      ${statCard('Active investigations','7','▲ 2 since yesterday','up')}
+      ${statCard('Data freshness','98%','▲ 3 sources synced','up')}
+      ${statCard('Open anomalies','3','▼ 1 resolved','dn')}
+      ${statCard('Spend this week','$142','▲ 11% vs last','up')}
+    </div>
+    <div class="grid g2 stagger" style="margin-top:14px">
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><strong>Recent investigations</strong><span class="tag blue">live</span></div>
+        <div class="row-list">
+          <div class="row"><div><div class="ti">Why did EU checkout conversion drop?</div><div class="mt">3 hypotheses · 2 verified</div></div><div class="rt">8m ago</div></div>
+          <div class="row"><div><div class="ti">Top SKUs driving Q2 margin</div><div class="mt">complete · report ready</div></div><div class="rt">1h ago</div></div>
+          <div class="row"><div><div class="ti">Cohort retention by acquisition channel</div><div class="mt">running…</div></div><div class="rt">now</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <strong>This week's volume</strong>
+        <div style="margin-top:14px">${bars([30,45,38,60,52,74,48])}</div>
+        <div class="mt" style="margin-top:10px;color:var(--t3)">Queries answered per day · trending up</div>
+        <div style="display:flex;gap:8px;margin-top:14px"><span class="tag grn">+18% WoW</span><span class="tag vio">142 queries</span></div>
+      </div>
+    </div>`,
+  chat:`
+    <h2>New investigation</h2>
+    <p class="sub">Ask in plain language. Aughor explores your warehouse, forms hypotheses, and shows its work.</p>
+    <div class="card" style="max-width:760px">
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 4px">
+        <span style="color:var(--blue4)">${svg(I.spark,20)}</span>
+        <input class="ph" placeholder="e.g. Which regions are dragging Q2 net revenue, and why?" style="flex:1;background:none;border:none;outline:none;color:var(--t1);font-size:15px" />
+        <button class="btn primary">Investigate</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <span class="tag blue">↳ Revenue by region</span><span class="tag blue">↳ Funnel drop-off</span>
+      <span class="tag blue">↳ Anomaly last 24h</span><span class="tag blue">↳ Cohort retention</span>
+    </div>`,
+  inbox:`<h2>Inbox</h2><p class="sub">Recommendations, anomalies, and approvals waiting on you.</p>
+    <div class="card stagger">
+      <div class="row-list">
+        <div class="row"><span class="tag amb">anomaly</span><div><div class="ti">Refund rate spiked 2.3× in DACH</div><div class="mt">detected 22m ago · confidence high</div></div><button class="btn ghost rt">Review</button></div>
+        <div class="row"><span class="tag vio">recommendation</span><div><div class="ti">Add index on orders.created_at</div><div class="mt">would cut 4 slow queries ~70%</div></div><button class="btn ghost rt">Review</button></div>
+        <div class="row"><span class="tag blue">approval</span><div><div class="ti">Publish "Net Revenue" metric to semantic layer</div><div class="mt">requested by you</div></div><button class="btn ghost rt">Review</button></div>
+      </div>
+    </div>`,
+  catalog:`<h2>Catalog</h2><p class="sub">Every table, column, and relationship Aughor has profiled.</p>
+    <div class="grid g3 stagger">
+      ${['orders','customers','line_items','refunds','sessions','products'].map(t=>`<div class="card lift"><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--blue4)">${svg(I.db,18)}</span><strong>${t}</strong></div><div class="mt" style="margin-top:8px">${Math.floor(Math.random()*18+6)} cols · profiled · ${Math.floor(Math.random()*900+50)}k rows</div><div style="margin-top:10px"><span class="tag grn">verified</span></div></div>`).join('')}
+    </div>`,
+  fleet:`<h2>Fleet</h2><p class="sub">Agents currently working — runs, status, and cost.</p>
+    <div class="card stagger"><div class="row-list">
+      <div class="row"><span class="dot grn"></span><div><div class="ti">Explorer · profiling refunds</div><div class="mt">step 3 of 5 · 12s</div></div><div class="rt">$0.04</div></div>
+      <div class="row"><span class="dot grn"></span><div><div class="ti">Verifier · checking hypothesis #2</div><div class="mt">running SQL</div></div><div class="rt">$0.02</div></div>
+      <div class="row"><span class="dot grn"></span><div><div class="ti">Reporter · drafting summary</div><div class="mt">queued</div></div><div class="rt">—</div></div>
+    </div></div>`,
+  _skeleton:`<h2 id="skTitle">Loading…</h2><p class="sub">This screen is mocked to demonstrate shell navigation & transitions.</p>
+    <div class="grid g3 stagger">${'<div class="card"><div class="sk" style="height:14px;width:55%"></div><div class="sk" style="height:34px;width:40%;margin-top:14px"></div><div class="sk" style="height:11px;width:80%;margin-top:14px"></div></div>'.repeat(6)}</div>`
+};
+
+/* ── Navigation logic w/ View Transitions + sliding pill ─────────────── */
+const content = document.getElementById('content');
+const crumbs  = document.getElementById('crumbs');
+let current = 'home';
+
+function renderView(id){
+  const html = VIEWS[id] || VIEWS._skeleton;
+  content.innerHTML = `<div class="view active">${html}</div>`;
+  if(!VIEWS[id]){ const t=document.getElementById('skTitle'); if(t) t.textContent=TITLES[id]||id; }
+  // breadcrumb
+  const sec = SECTION[id];
+  crumbs.innerHTML = `<span>Aughor</span>`+(sec?`<span class="sep">/</span><span>${sec}</span>`:'')+`<span class="sep">/</span><span class="here">${TITLES[id]||id}</span>`;
+}
+
+function movePill(el){
+  if(!el || el.dataset.nav==='settings' && false){}
+  if(!el){ pill.style.opacity='0'; return; }
+  const top = el.offsetTop;
+  pill.style.opacity='1';
+  pill.style.transform=`translateY(${top}px)`;
+}
+
+function navTo(id){
+  current = id;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.nav===id));
+  const active = document.querySelector(`.nav-item[data-nav="${id}"]`);
+  movePill(active);
+  // View Transitions API where supported, else animate via CSS class
+  if(document.startViewTransition){ document.startViewTransition(()=>renderView(id)); }
+  else renderView(id);
+}
+
+/* click delegation for any [data-nav] */
+document.addEventListener('click',e=>{
+  const t = e.target.closest('[data-nav]');
+  if(t){ navTo(t.dataset.nav); if(t.dataset.nav==='chat') toast('Started a new investigation'); }
+});
+
+/* initial */
+renderView('home');
+requestAnimationFrame(()=>movePill(document.querySelector('.nav-item[data-nav="home"]')));
+
+/* ── Rail collapse ───────────────────────────────────────────────────── */
+const app = document.getElementById('app');
+document.getElementById('railBtn').onclick=()=>{ app.classList.toggle('rail');
+  setTimeout(()=>movePill(document.querySelector('.nav-item.active')), 60); };
+
+/* ── Theme toggle (smooth) ───────────────────────────────────────────── */
+const sun='<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+const moon='<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+document.getElementById('themeBtn').onclick=()=>{
+  const html=document.documentElement;
+  const next = html.getAttribute('data-theme')==='dark' ? 'light':'dark';
+  html.setAttribute('data-theme',next);
+  document.getElementById('themeIco').innerHTML = next==='dark'?moon:sun;
+  toast(next==='dark'?'Dark theme':'Light theme');
+};
+
+/* ── Command palette ─────────────────────────────────────────────────── */
+const scrim=document.getElementById('scrim'), palette=document.getElementById('palette'),
+      palInput=document.getElementById('palInput'), palList=document.getElementById('palList');
+const PAL = [
+  {sec:'Actions',items:[
+    {ic:'spark',label:'New investigation',hint:'↵',nav:'chat'},
+    {ic:'db',label:'Browse catalog',nav:'catalog'},
+    {ic:'node',label:'Open ontology graph',nav:'fleet'},
+  ]},
+  {sec:'Go to',items:[
+    {ic:'home',label:'Home',nav:'home'},{ic:'brief',label:'Briefing',nav:'briefing'},
+    {ic:'search',label:'Investigations',nav:'recents'},{ic:'layers',label:'Semantic Layer',nav:'semantic'},
+    {ic:'shield',label:'Security & Audit',nav:'security'},{ic:'settings',label:'Settings',nav:'settings'},
+  ]}
+];
+function renderPal(q=''){
+  q=q.toLowerCase(); palList.innerHTML='';
+  PAL.forEach(g=>{
+    const items=g.items.filter(i=>i.label.toLowerCase().includes(q));
+    if(!items.length) return;
+    const sec=document.createElement('div'); sec.className='pal-sec'; sec.textContent=g.sec; palList.appendChild(sec);
+    items.forEach(i=>{
+      const el=document.createElement('div'); el.className='pal-item';
+      el.innerHTML=`<span class="ic">${svg(I[i.ic],17)}</span><span>${i.label}</span>`+(i.hint?`<span class="hint">${i.hint}</span>`:'');
+      el.onclick=()=>{ navTo(i.nav); closePal(); };
+      palList.appendChild(el);
+    });
+  });
+  const first=palList.querySelector('.pal-item'); if(first) first.classList.add('sel');
+}
+function openPal(){ scrim.classList.add('show'); palette.classList.add('show'); palInput.value=''; renderPal(); setTimeout(()=>palInput.focus(),40); }
+function closePal(){ scrim.classList.remove('show'); palette.classList.remove('show'); }
+document.getElementById('cmdbarBtn').onclick=openPal;
+document.getElementById('cmdbarBtn').addEventListener('focus',()=>document.getElementById('cmdbarBtn').classList.add('focus'));
+scrim.onclick=closePal;
+palInput.oninput=e=>renderPal(e.target.value);
+palInput.onkeydown=e=>{
+  const sel=palList.querySelector('.pal-item.sel'); const all=[...palList.querySelectorAll('.pal-item')];
+  if(e.key==='Enter'&&sel){ sel.click(); }
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){ e.preventDefault();
+    let i=all.indexOf(sel); i+= e.key==='ArrowDown'?1:-1; i=(i+all.length)%all.length;
+    all.forEach(x=>x.classList.remove('sel')); all[i].classList.add('sel'); all[i].scrollIntoView({block:'nearest'});
+  }
+};
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){ e.preventDefault(); palette.classList.contains('show')?closePal():openPal(); }
+  if(e.key==='Escape') closePal();
+});
+
+/* ── Toast ───────────────────────────────────────────────────────────── */
+const toastWrap=document.getElementById('toastWrap');
+function toast(msg){
+  const t=document.createElement('div'); t.className='toast';
+  t.innerHTML=`<span class="dot grn"></span> ${msg}`; toastWrap.appendChild(t);
+  setTimeout(()=>{ t.style.transition='opacity .3s,transform .3s'; t.style.opacity='0'; t.style.transform='translateY(8px)'; setTimeout(()=>t.remove(),320); },2200);
+}
+
+/* ── Annotation toggle ───────────────────────────────────────────────── */
+document.getElementById('fab').onclick=function(){
+  app.classList.toggle('annotate');
+  this.lastChild.textContent = app.classList.contains('annotate')?' Hide design notes':' Show design notes';
+};
+</script>
+</body>
+</html>

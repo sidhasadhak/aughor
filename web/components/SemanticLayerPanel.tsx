@@ -44,10 +44,10 @@ function TabBar({ tabs, active, onChange }: { tabs: string[]; active: string; on
             padding: "6px 14px",
             fontSize: 12,
             fontWeight: active === t ? 600 : 400,
-            color: active === t ? "var(--blue4, #60a5fa)" : "var(--t3, #888)",
+            color: active === t ? "var(--blue4, #F6CB66)" : "var(--t3, #888)",
             background: "none",
             border: "none",
-            borderBottom: active === t ? "2px solid var(--blue4, #60a5fa)" : "2px solid transparent",
+            borderBottom: active === t ? "2px solid var(--blue4, #F6CB66)" : "2px solid transparent",
             cursor: "pointer",
             transition: "color 0.15s",
           }}
@@ -75,7 +75,7 @@ function Btn({ children, onClick, variant = "default", disabled }: {
   disabled?: boolean;
 }) {
   const colors: Record<string, React.CSSProperties> = {
-    default: { background: "var(--blue4, #3b82f6)", color: "#fff" },
+    default: { background: "var(--blue4, #EAB23E)", color: "#fff" },
     danger:  { background: "transparent", color: "var(--red4, #f87171)", border: "1px solid var(--red4, #f87171)" },
     ghost:   { background: "transparent", color: "var(--t3, #888)", border: "1px solid var(--border-0, #2a2a2a)" },
   };
@@ -140,8 +140,8 @@ function EmptyState({ text }: { text: string }) {
 
 function TabIntro({ text }: { text: string }) {
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 16, padding: "10px 12px", borderRadius: 8, background: "color-mix(in srgb, var(--blue4, #60a5fa) 7%, transparent)", border: "1px solid color-mix(in srgb, var(--blue4, #60a5fa) 22%, transparent)" }}>
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--blue4, #60a5fa)" strokeWidth="1.5" style={{ marginTop: 1, flexShrink: 0 }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 16, padding: "10px 12px", borderRadius: 8, background: "color-mix(in srgb, var(--blue4, #F6CB66) 7%, transparent)", border: "1px solid color-mix(in srgb, var(--blue4, #F6CB66) 22%, transparent)" }}>
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--blue4, #F6CB66)" strokeWidth="1.5" style={{ marginTop: 1, flexShrink: 0 }}>
         <circle cx="8" cy="8" r="6.5" /><path d="M8 7.2v3.4M8 5.2h.01" strokeLinecap="round" />
       </svg>
       <p style={{ fontSize: 11.5, color: "var(--t2, #bbb)", lineHeight: 1.55, margin: 0 }}>{text}</p>
@@ -674,7 +674,7 @@ function BenchmarksTab({ connId }: { connId: string }) {
               {/* Constraints badges */}
               <div style={{ marginTop: 6, paddingLeft: res ? 0 : 0, display: "flex", flexWrap: "wrap", gap: 4 }}>
                 {c.expected_cols.map(col => (
-                  <span key={col} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: "#3b82f620", color: "#60a5fa" }}>col:{col}</span>
+                  <span key={col} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: "var(--bg-3)", color: "var(--t2)" }}>col:{col}</span>
                 ))}
                 {c.must_contain.map(s => (
                   <span key={s} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: "#10b98120", color: "#6ee7b7" }}>✓ {s}</span>

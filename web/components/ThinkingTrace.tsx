@@ -242,7 +242,8 @@ function StepDot({ status, verdict }: { status: StepStatus; verdict?: Verdict })
   if (status === "done") {
     const tone = verdict === "refuted" ? "text-red-400 border-red-500/40"
       : verdict === "inconclusive" ? "text-amber-400 border-amber-500/40"
-      : "text-emerald-400 border-emerald-500/40";
+      : verdict === "confirmed" ? "text-emerald-400 border-emerald-500/40"
+      : "text-zinc-300 border-zinc-600/60"; // generic "done" stays neutral ink (console discipline)
     return (
       <span className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border bg-zinc-900 shrink-0 aug-check-pop ${tone}`}>
         <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor"
@@ -276,13 +277,13 @@ export function ThinkingTrace({ state }: Props) {
     <div className="px-4 py-3">
       {/* Header — live position + animated progress bar */}
       <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-violet-400/70 uppercase tracking-wide font-mono">Analysis</p>
+        <p className="text-[10px] text-amber-400/80 uppercase tracking-[0.14em] font-mono">Reasoning</p>
         <span className="text-[10px] text-zinc-500 font-mono tabular-nums">
           {hasRunning ? `step ${Math.min(doneCount + 1, total)} of ${total}` : `${doneCount} of ${total}`}
         </span>
       </div>
-      <div className="h-1 rounded-full bg-violet-500/10 overflow-hidden mb-3">
-        <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-400 transition-[width] duration-700 ease-out"
+      <div className="h-1 rounded-full bg-zinc-700/40 overflow-hidden mb-3">
+        <div className="h-full rounded-full bg-amber-400 transition-[width] duration-700 ease-out"
           style={{ width: `${pct}%` }} />
       </div>
 
@@ -298,9 +299,9 @@ export function ThinkingTrace({ state }: Props) {
                 <StepDot status={step.status} verdict={step.verdict} />
                 {!isLast && (
                   <span className={`flex-1 w-0.5 my-0.5 min-h-[16px] rounded-full ${
-                    step.status === "done" ? "bg-emerald-500/40"
+                    step.status === "done" ? "bg-zinc-600/50"
                     : step.status === "running" ? "aug-flow-y"
-                    : "bg-violet-500/15"
+                    : "bg-zinc-700/40"
                   }`} />
                 )}
               </div>

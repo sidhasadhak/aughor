@@ -38,7 +38,7 @@ export function HypothesisCard({ hypothesis, index, stats = [] }: Props) {
           {topStat && (
             <Badge
               variant="outline"
-              className="text-xs font-mono border-violet-500/30 bg-violet-500/10 text-violet-400"
+              className="text-xs font-mono border-amber-500/30 bg-amber-500/10 text-amber-400"
               title={topStat.interpretation}
             >
               {topStat.sigma!.toFixed(1)}σ

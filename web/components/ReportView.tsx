@@ -36,8 +36,8 @@ const VERDICT_STYLE: Record<Verdict, { label: string; chip: string; bar: string 
 
 const STAT_STYLE: Record<StatResult["type"], { icon: string; chip: string }> = {
   anomaly:      { icon: "⚡", chip: "border-amber-500/20 bg-amber-500/5 text-amber-300"   },
-  trend:        { icon: "↗",  chip: "border-blue-500/20 bg-blue-500/5 text-blue-300"      },
-  comparison:   { icon: "⟺", chip: "border-violet-500/20 bg-violet-500/5 text-violet-300" },
+  trend:        { icon: "↗",  chip: "border-amber-500/20 bg-amber-500/5 text-amber-300"      },
+  comparison:   { icon: "⟺", chip: "border-amber-500/20 bg-amber-500/5 text-amber-300" },
   distribution: { icon: "≈",  chip: "border-zinc-600 bg-zinc-800/50 text-zinc-400"         },
 };
 
@@ -417,8 +417,8 @@ function KeyFindingCard({
 // ── Outcome status styles ─────────────────────────────────────────────────────
 
 const STATUS_STYLE: Record<RecStatus, { label: string; chip: string }> = {
-  accepted:    { label: "Accepted",    chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"       },
-  implemented: { label: "Implemented", chip: "border-violet-500/30 bg-violet-500/10 text-violet-400" },
+  accepted:    { label: "Accepted",    chip: "border-amber-500/30 bg-amber-500/10 text-amber-400"       },
+  implemented: { label: "Implemented", chip: "border-amber-500/30 bg-amber-500/10 text-amber-400" },
   verified:    { label: "Verified",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
   rejected:    { label: "Rejected",    chip: "border-red-500/30 bg-red-500/10 text-red-400"          },
   dismissed:   { label: "Dismissed",   chip: "border-zinc-600 bg-zinc-800/50 text-zinc-500"          },
@@ -455,8 +455,8 @@ function RecommendationCard({
   const current = outcome ? STATUS_STYLE[outcome.status] : null;
 
   return (
-    <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
-      <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/20 border border-violet-500/30 text-xs font-mono text-violet-300 mt-0.5">
+    <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 flex items-start gap-3">
+      <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/20 border border-amber-500/30 text-xs font-mono text-amber-300 mt-0.5">
         {index + 1}
       </span>
       <p className="text-sm text-zinc-300 leading-relaxed flex-1">{action}</p>
@@ -622,8 +622,8 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
                   existingOutcome={outcomes.find(o => o.rec_index === i)}
                 />
               ) : (
-                <div key={i} className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
-                  <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/20 border border-violet-500/30 text-xs font-mono text-violet-300 mt-0.5">
+                <div key={i} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 flex items-start gap-3">
+                  <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/20 border border-amber-500/30 text-xs font-mono text-amber-300 mt-0.5">
                     {i + 1}
                   </span>
                   <p className="text-sm text-zinc-300 leading-relaxed">{action}</p>

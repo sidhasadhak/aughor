@@ -5,7 +5,7 @@ import { getHealthScorecard, getPlatformMetrics, getAuditStats, type ScorecardIt
 import { compactNumber, formatVariance } from "@/lib/format";
 
 const STATUS_COLORS: Record<HealthStatus, { bg: string; border: string; dot: string; text: string; label: string }> = {
-  green:   { bg: "var(--grn1)", border: "var(--grn2)", dot: "var(--grn4)", text: "var(--grn4)", label: "On target" },
+  green:   { bg: "var(--bg-1)", border: "var(--b1)", dot: "var(--t3)", text: "var(--t3)", label: "On target" },
   yellow:  { bg: "var(--amb1)", border: "var(--amb2)", dot: "var(--amb4)", text: "var(--amb4)", label: "Warning" },
   red:     { bg: "var(--red1)", border: "var(--red2)", dot: "var(--red4)", text: "var(--red4)", label: "Off target" },
   unknown: { bg: "var(--bg-1)", border: "var(--b1)", dot: "var(--t3)", text: "var(--t3)", label: "No data" },
@@ -70,7 +70,7 @@ function MetricHealthCard({
           <p className="text-[11px] mt-1 font-mono text-[--t3]">
             target {fmtValue(item.target, item.unit)}
             {item.variance !== null && (
-              <span className="ml-1.5" style={{ color: item.variance < 0 ? "var(--red5)" : "var(--grn4)" }}>
+              <span className="ml-1.5" style={{ color: item.variance < 0 ? "var(--red5)" : "var(--t3)" }}>
                 {fmtVariance(item.variance)}
               </span>
             )}
@@ -148,7 +148,7 @@ export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealt
             )}
             {redYellow.length === 0 && green.length > 0 && (
               <span className="text-[11px] px-2 py-0.5 rounded-full font-mono"
-                style={{ background: "var(--grn1)", border: "0.5px solid var(--grn2)", color: "var(--grn4)" }}>
+                style={{ background: "var(--bg-1)", border: "0.5px solid var(--b1)", color: "var(--t3)" }}>
                 all on target
               </span>
             )}

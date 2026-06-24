@@ -18,7 +18,7 @@ export function Sparkline({
   values,
   width = 72,
   height = 18,
-  color = "#818cf8",
+  color = "var(--blue4)",
   showDot = true,
 }: {
   values: number[];

@@ -49,8 +49,8 @@
   /* One platform font. --font-mono is an ALIAS of the UI font (legacy inline
      `var(--font-mono)` data labels collapse onto the single sans). Real code
      uses --font-code only — see globals.css @theme + the SQL <pre> blocks. */
-  --font-ui:   var(--font-dm-sans), system-ui, sans-serif;
-  --font-mono: var(--font-dm-sans), system-ui, sans-serif;
+  --font-ui:   var(--font-ibm-plex-sans), var(--font-dm-sans), system-ui, sans-serif;
+  --font-mono: var(--font-ibm-plex-sans), var(--font-dm-sans), system-ui, sans-serif;
   --font-code: var(--font-ibm-plex-mono), 'Consolas', monospace;
 
   /* ── Motion vocabulary (WCH-15) ──

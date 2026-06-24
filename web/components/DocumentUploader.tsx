@@ -23,11 +23,11 @@ function timeAgo(iso: string): string {
 function FileTypeChip({ filename }: { filename: string }) {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, { label: string; chip: string }> = {
-    pdf:      { label: "PDF",      chip: "border-red-500/30 bg-red-500/10 text-red-400"          },
-    docx:     { label: "Word",     chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"       },
-    doc:      { label: "Word",     chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"       },
-    md:       { label: "MD",       chip: "border-violet-500/30 bg-violet-500/10 text-violet-400" },
-    markdown: { label: "MD",       chip: "border-violet-500/30 bg-violet-500/10 text-violet-400" },
+    pdf:      { label: "PDF",      chip: "border-zinc-600 bg-zinc-800 text-zinc-400"             },
+    docx:     { label: "Word",     chip: "border-zinc-600 bg-zinc-800 text-zinc-400"             },
+    doc:      { label: "Word",     chip: "border-zinc-600 bg-zinc-800 text-zinc-400"             },
+    md:       { label: "MD",       chip: "border-zinc-600 bg-zinc-800 text-zinc-400"             },
+    markdown: { label: "MD",       chip: "border-zinc-600 bg-zinc-800 text-zinc-400"             },
     txt:      { label: "TXT",      chip: "border-zinc-600 bg-zinc-800 text-zinc-400"             },
   };
   const style = map[ext] ?? { label: ext.toUpperCase(), chip: "border-zinc-600 bg-zinc-800 text-zinc-400" };
@@ -113,7 +113,7 @@ export function DocumentUploader() {
         onClick={() => inputRef.current?.click()}
         className={`relative rounded-md border-2 border-dashed p-8 text-center cursor-pointer transition-all ${
           dragging
-            ? "border-violet-500 bg-violet-500/10"
+            ? "border-amber-500 bg-amber-500/10"
             : "border-zinc-600 hover:border-zinc-500 hover:bg-zinc-800/50"
         }`}
       >
@@ -127,7 +127,7 @@ export function DocumentUploader() {
         />
         {uploading ? (
           <div className="space-y-2">
-            <div className="h-5 w-5 rounded-full border-2 border-violet-500 border-t-transparent animate-spin mx-auto" />
+            <div className="h-5 w-5 rounded-full border-2 border-amber-500 border-t-transparent animate-spin mx-auto" />
             <p className="text-sm text-zinc-400">Indexing…</p>
           </div>
         ) : (

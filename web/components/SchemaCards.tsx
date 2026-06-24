@@ -16,7 +16,7 @@ function typeChip(rawType: string): { label: string; cls: string } {
   if (/^(DATE|TIME|TIMESTAMP|INTERVAL)/.test(t))
     return { label: short, cls: "bg-amber-500/15 text-amber-300" };
   if (/^(BOOL|BOOLEAN)/.test(t))
-    return { label: short, cls: "bg-violet-500/15 text-violet-300" };
+    return { label: short, cls: "bg-amber-500/15 text-amber-300" };
   return { label: short, cls: "bg-zinc-700/60 text-zinc-400" };
 }
 
@@ -81,11 +81,11 @@ function JoinPaths({ joins }: { joins: SchemaJoin[] }) {
           >
             <span className="text-zinc-300">{j.t1}</span>
             <span className="text-zinc-500">.</span>
-            <span className="text-violet-400">{j.c1}</span>
+            <span className="text-amber-400">{j.c1}</span>
             <span className="text-zinc-500 mx-1">→</span>
             <span className="text-zinc-300">{j.t2}</span>
             <span className="text-zinc-500">.</span>
-            <span className="text-violet-400">{j.c2}</span>
+            <span className="text-amber-400">{j.c2}</span>
             <span className={`ml-auto text-[11px] px-1.5 py-0.5 rounded ${
               j.match === "exact"
                 ? "bg-emerald-500/15 text-emerald-400"

@@ -15,7 +15,7 @@ import { API_BASE as BASE } from "@/lib/config";
 // Status display config
 const STATUS_STYLE: Record<RecStatus, { label: string; chip: string }> = {
   accepted:    { label: "Accepted",    chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"          },
-  implemented: { label: "Implemented", chip: "border-violet-500/30 bg-violet-500/10 text-violet-400"    },
+  implemented: { label: "Implemented", chip: "border-amber-500/30 bg-amber-500/10 text-amber-400"    },
   verified:    { label: "Verified",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
   rejected:    { label: "Rejected",    chip: "border-red-500/30 bg-red-500/10 text-red-400"             },
   dismissed:   { label: "Dismissed",   chip: "border-zinc-600 bg-zinc-800/50 text-zinc-500"             },
@@ -64,7 +64,7 @@ function ExecuteButton({ invId, index, text }: { invId: string; index: number; t
       <button
         onClick={() => setOpen(o => !o)}
         disabled={!!firing}
-        className="text-[11px] text-violet-400 hover:text-violet-300 border border-violet-500/30 hover:border-violet-400/50 rounded px-2 py-1 transition whitespace-nowrap"
+        className="text-[11px] text-amber-400 hover:text-amber-300 border border-amber-500/30 hover:border-amber-400/50 rounded px-2 py-1 transition whitespace-nowrap"
       >
         {firing ? "…" : "Execute →"}
       </button>

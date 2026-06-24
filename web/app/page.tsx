@@ -429,6 +429,68 @@ function Topbar({
   );
 }
 
+// ── Telemetry status strip ───────────────────────────────────────────────────
+// The Bloomberg-style instrument strip under the topbar (console design). Every
+// field is backed by real fleet/connection state — no fabricated figures. It
+// self-fetches so the big shell component's state is untouched.
+function StatusStrip({
+  connCount,
+  selectedConn,
+  canvasName,
+}: {
+  connCount: number;
+  selectedConn: string;
+  canvasName: string | null;
+}) {
+  const [fresh, setFresh] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<FleetJob[]>([]);
+
+  useEffect(() => {
+    if (!selectedConn) { setFresh(null); return; }
+    getConnectionFreshness(selectedConn)
+      .then(f => setFresh(freshnessLabel(f.freshness)))
+      .catch(() => setFresh(null));
+  }, [selectedConn]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => getJobs({ limit: 100 })
+      .then(j => { if (alive) setJobs(j); })
+      .catch(() => {});
+    load();
+    const iv = setInterval(load, 30_000);   // gentle live refresh
+    return () => { alive = false; clearInterval(iv); };
+  }, []);
+
+  const active   = jobs.filter(j => j.state === "RUNNING" || j.state === "PENDING").length;
+  const failed   = jobs.filter(j => j.state === "FAILED").length;
+  const tokens   = jobs.reduce((sum, j) => sum + (j.cost?.total_tokens ?? 0), 0);
+  const finished = jobs.filter(j => j.duration_ms != null).map(j => j.duration_ms as number).sort((a, b) => a - b);
+  const p95      = finished.length ? finished[Math.min(finished.length - 1, Math.floor(finished.length * 0.95))] : null;
+  const nominal  = failed === 0;
+
+  return (
+    <div className="aug-statusbar" role="status" aria-label="System telemetry">
+      <div className="aug-st">
+        <span className={`aug-pdot${nominal ? "" : " aug-pdot--crit"}`} /> SYSTEM{" "}
+        <b className={nominal ? "v-ok" : "v-crit"}>{nominal ? "NOMINAL" : "DEGRADED"}</b>
+      </div>
+      <div className="aug-st">CONN <b>{connCount}</b>{fresh && <> · FRESH <b className="v-ok">{fresh}</b></>}</div>
+      <div className="aug-st">
+        <span className={`aug-pdot${active > 0 ? " aug-pdot--sig" : ""}`} /> AGENTS{" "}
+        <b className={active > 0 ? "v-sig" : undefined}>{active} LIVE</b>
+      </div>
+      <div className="aug-st">TOKENS <b>{tokens > 0 ? fmtCompact(tokens) : "0"}</b></div>
+      <div className="aug-st">
+        <span className={`aug-pdot${failed > 0 ? " aug-pdot--crit" : ""}`} /> SIGNALS{" "}
+        {failed > 0 ? <><b className="v-crit">{failed} CRITICAL</b> · {active} OPEN</> : <><b>0 CRITICAL</b> · {active} OPEN</>}
+      </div>
+      {canvasName && <div className="aug-st aug-st--right">CANVAS <b>{canvasName.toUpperCase().replace(/\s+/g, "_")}</b></div>}
+      {p95 != null && <div className={`aug-st${canvasName ? "" : " aug-st--right"}`}>LAT <b>{fmtMs(p95)}</b> p95</div>}
+    </div>
+  );
+}
+
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 
 // ── Two-tier nav (SOTA pattern: ≤5 primary rail + collapsible secondary) ────────
@@ -1975,6 +2037,13 @@ export default function Home() {
           await reloadWorkspaces();
           setSelectedWorkspace(ws.id);
         }}
+      />
+
+      {/* Telemetry status strip (console design) */}
+      <StatusStrip
+        connCount={wsConnections.length}
+        selectedConn={selectedConn}
+        canvasName={activeCanvas?.name ?? null}
       />
 
       {/* Body */}

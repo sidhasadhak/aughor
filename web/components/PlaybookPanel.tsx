@@ -150,7 +150,7 @@ export function PlaybookPanel() {
                 className="text-[9.5px] px-2 py-0.5 rounded-full font-mono transition-all"
                 style={{
                   background: statusFilter === s ? "var(--blue1)" : "transparent",
-                  border: `0.5px solid ${statusFilter === s ? "#3d6bff55" : "var(--b2)"}`,
+                  border: `0.5px solid ${statusFilter === s ? "color-mix(in srgb, var(--blue4) 33%, transparent)" : "var(--b2)"}`,
                   color: statusFilter === s ? "var(--blue4)" : "var(--t4)",
                 }}
               >
@@ -181,7 +181,7 @@ export function PlaybookPanel() {
               className="w-full text-left px-4 py-2.5 transition-colors"
               style={{
                 background: selected === e.id ? "var(--bg-1)" : "transparent",
-                borderLeft: selected === e.id ? "2px solid #3d6bff" : "2px solid transparent",
+                borderLeft: selected === e.id ? "2px solid var(--blue4)" : "2px solid transparent",
               }}
               onMouseEnter={ev => { if (selected !== e.id) ev.currentTarget.style.background = "var(--bg-2)"; }}
               onMouseLeave={ev => { if (selected !== e.id) ev.currentTarget.style.background = "transparent"; }}

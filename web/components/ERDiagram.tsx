@@ -164,7 +164,7 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
           className="flex items-center gap-2.5 px-3 bg-zinc-900 border-b border-zinc-700/80"
           style={{ height: HEADER_H }}
         >
-          <div className="w-7 h-7 rounded bg-indigo-950/80 border border-indigo-800/50 flex items-center justify-center text-indigo-300 shrink-0">
+          <div className="w-7 h-7 rounded bg-zinc-800/80 border border-zinc-700/50 flex items-center justify-center text-zinc-400 shrink-0">
             <TableIcon label="Table" size="small" />
           </div>
           <div className="min-w-0 flex-1">
@@ -198,7 +198,7 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
                       PK
                     </span>
                   ) : col.is_fk ? (
-                    <span className="text-[11px] font-bold text-violet-400 border border-violet-400/50 rounded px-[3px] py-px leading-tight">
+                    <span className="text-[11px] font-bold text-zinc-400 border border-zinc-500/50 rounded px-[3px] py-px leading-tight">
                       FK
                     </span>
                   ) : null}
@@ -247,10 +247,10 @@ function Connections({ lines, w, h }: { lines: Conn[]; w: number; h: number }) {
     >
       <defs>
         <marker id="mk-inf"   markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-          <path d="M0,1 L6,3.5 L0,6 Z" fill="#575755" />
+          <path d="M0,1 L6,3.5 L0,6 Z" fill="var(--b2)" />
         </marker>
         <marker id="mk-exact" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-          <path d="M0,1 L6,3.5 L0,6 Z" fill="#7c6fd4" />
+          <path d="M0,1 L6,3.5 L0,6 Z" fill="var(--blue4)" />
         </marker>
       </defs>
       {lines.map((c, i) => {
@@ -265,7 +265,7 @@ function Connections({ lines, w, h }: { lines: Conn[]; w: number; h: number }) {
             key={i}
             d={d}
             fill="none"
-            stroke={exact ? "#7c6fd4" : "#575755"}
+            stroke={exact ? "var(--blue4)" : "var(--b2)"}
             strokeWidth={exact ? 1.5 : 1}
             strokeDasharray={exact ? undefined : "5 3"}
             markerEnd={exact ? "url(#mk-exact)" : "url(#mk-inf)"}
@@ -356,7 +356,7 @@ export function ERDiagram({ schema }: { schema: RichSchema }) {
       ref={containerRef}
       className="w-full h-full overflow-auto"
       style={{
-        backgroundImage: "radial-gradient(circle, #3f3f3d 1px, transparent 1px)",
+        backgroundImage: "radial-gradient(circle, var(--b2) 1px, transparent 1px)",
         backgroundSize: "20px 20px",
       }}
     >

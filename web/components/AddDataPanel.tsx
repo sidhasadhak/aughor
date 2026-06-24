@@ -103,7 +103,7 @@ function ConnectorCard({ info, onClick }: { info: ConnectorTypeInfo; onClick: ()
       <span style={{ minWidth: 0, flex: 1 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.label}</span>
-          {m.badge && <span style={{ fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--blue4,#60a5fa) 16%, transparent)", color: "var(--blue4,#60a5fa)", whiteSpace: "nowrap" }}>{m.badge}</span>}
+          {m.badge && <span style={{ fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--blue4) 16%, transparent)", color: "var(--blue4)", whiteSpace: "nowrap" }}>{m.badge}</span>}
         </span>
         <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.blurb}</span>
       </span>
@@ -292,7 +292,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                   <span style={{ flex: "1 1 0", minWidth: 0, fontSize: 12, fontWeight: 500, color: "var(--t1)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
                   <span style={{ fontSize: 10.5, color: "var(--t4)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{c.detected_type}</span>
                   <select value={chosen[c.name] ?? detected} onChange={e => setChosen(p => ({ ...p, [c.name]: e.target.value }))}
-                    style={{ fontSize: 11.5, padding: "5px 8px", borderRadius: 5, background: "var(--bg-2)", color: changed ? "var(--blue4,#60a5fa)" : "var(--t2)", border: `1px solid ${changed ? "var(--blue4,#60a5fa)" : "var(--b1)"}`, cursor: "pointer", fontFamily: "var(--font-mono)", flexShrink: 0, width: 120 }}>
+                    style={{ fontSize: 11.5, padding: "5px 8px", borderRadius: 5, background: "var(--bg-2)", color: changed ? "var(--blue4)" : "var(--t2)", border: `1px solid ${changed ? "var(--blue4)" : "var(--b1)"}`, cursor: "pointer", fontFamily: "var(--font-mono)", flexShrink: 0, width: 120 }}>
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                   {suggest && (
@@ -382,7 +382,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         style={{
           border: `1.5px dashed ${drag ? brandColor("local_upload") : "var(--b1)"}`,
           borderRadius: 12, padding: "34px 24px", textAlign: "center", cursor: "pointer",
-          background: drag ? "color-mix(in srgb, var(--blue4,#60a5fa) 8%, var(--bg-1))" : "var(--bg-1)",
+          background: drag ? "color-mix(in srgb, var(--blue4) 8%, var(--bg-1))" : "var(--bg-1)",
           transition: "all .12s",
         }}
       >

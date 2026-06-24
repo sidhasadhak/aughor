@@ -332,7 +332,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
           <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Metrics</span>
           <button
             onClick={startAdd}
-            className="text-xs text-violet-400 hover:text-violet-300 transition-colors"
+            className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
           >
             + Add
           </button>
@@ -351,7 +351,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
               onClick={() => startEdit(m)}
               className={`group flex items-start justify-between rounded-md px-3 py-2 cursor-pointer transition-colors ${
                 selected === m.name
-                  ? "bg-violet-500/15 border border-violet-500/30"
+                  ? "bg-amber-500/15 border border-amber-500/30"
                   : "hover:bg-zinc-700/60 border border-transparent"
               }`}
             >
@@ -631,7 +631,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                 size="sm"
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-violet-600 hover:bg-violet-500 text-white"
+                className="bg-amber-600 hover:bg-amber-500 text-white"
               >
                 {saving ? "Saving…" : adding ? "Create" : "Update"}
               </Button>
@@ -711,7 +711,7 @@ function FreshnessResultBlock({ result }: { result: MetricFreshnessResult }) {
 }
 
 const inputCls =
-  "w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500 transition-colors";
+  "w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 transition-colors";
 
 function Field({
   label, required, hint, children,
@@ -722,7 +722,7 @@ function Field({
     <div className="flex flex-col gap-1">
       <label className="text-xs text-zinc-400">
         {label}
-        {required && <span className="text-violet-400 ml-0.5">*</span>}
+        {required && <span className="text-amber-400 ml-0.5">*</span>}
         {hint && <span className="text-zinc-500 ml-1">— {hint}</span>}
       </label>
       {children}

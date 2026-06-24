@@ -5,6 +5,11 @@
 @import "../aughor-v2/theme/tokens-v2.css";
 @import "../aughor-v2/theme/elevation-motion.css";
 @import "../styles/type.css";
+@import "../aughor-v2/theme/tokens-console.css";
+@import "../aughor-v2/theme/console-components.css";
+/* ^ Operations-console skin (additive): graphite + amber re-skin + .aug-* console
+   primitives. Remove those two import lines to revert. Keep them bare and
+   contiguous — a multi-line comment between @imports drops them from the Tailwind v4 bundle. */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -16,8 +21,8 @@
    monospace family survives ONLY as `font-code` (Tailwind) / `--font-code`
    (inline), used exclusively on real code/SQL `<pre>` blocks. */
 @theme inline {
-  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
-  --font-mono: var(--font-dm-sans), system-ui, sans-serif;
+  --font-sans: var(--font-ibm-plex-sans), var(--font-dm-sans), system-ui, sans-serif;
+  --font-mono: var(--font-ibm-plex-sans), var(--font-dm-sans), system-ui, sans-serif;
   --font-code: var(--font-ibm-plex-mono), 'Consolas', monospace;
 }
 

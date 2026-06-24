@@ -427,7 +427,7 @@ export function SourcePanel({
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ background: "#0f1923" }}>
+    <div className="flex flex-col h-full" style={{ background: "var(--bg-1)" }}>
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700/60 flex-shrink-0">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -465,7 +465,7 @@ export function SourcePanel({
       {/* Data table — scrollable */}
       <div className="flex-1 overflow-auto min-h-0">
         <table className="text-[12px] w-full">
-          <thead className="sticky top-0 z-10" style={{ background: "#0f1923" }}>
+          <thead className="sticky top-0 z-10" style={{ background: "var(--bg-1)" }}>
             <tr className="border-b border-zinc-700/60">
               {columns.map((c, ci) => (
                 <th key={ci} className="px-3 py-1.5 text-left text-zinc-400 whitespace-nowrap font-medium">
@@ -507,7 +507,7 @@ export function SourcePanel({
             </span>
           </button>
           {showCode && (
-            <div className="border-t border-zinc-700/40 overflow-auto" style={{ background: "#0a1018", maxHeight: 320 }}>
+            <div className="border-t border-zinc-700/40 overflow-auto" style={{ background: "var(--bg-0)", maxHeight: 320 }}>
               <FormattedSql sql={sql} />
             </div>
           )}
@@ -743,11 +743,11 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-3 py-2 group/trace"
       >
-        <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-violet-400/80">
+        <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-amber-400/80">
           {running ? (
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-60" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-400" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
             </span>
           ) : (
             <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
@@ -774,14 +774,14 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
 function ClarifyingQuestionsBanner({ questions, contextNote }: { questions: string[]; contextNote: string }) {
   if (!questions || questions.length === 0) return null;
   return (
-    <div className="mt-3 mb-3 rounded-lg border border-blue-700/30 p-3" style={{ background: 'color-mix(in srgb, #3b82f6 6%, transparent)' }}>
+    <div className="mt-3 mb-3 rounded-lg border border-amber-700/30 p-3" style={{ background: 'color-mix(in srgb, var(--blue3) 6%, transparent)' }}>
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-blue-400">Clarifying questions</span>
+        <span className="text-[11px] font-medium uppercase tracking-wide text-amber-400">Clarifying questions</span>
       </div>
-      {contextNote && <p className="text-[11px] text-blue-300/70 mb-2">{contextNote}</p>}
+      {contextNote && <p className="text-[11px] text-amber-300/70 mb-2">{contextNote}</p>}
       <div className="flex flex-wrap gap-1.5">
         {questions.map((q, i) => (
-          <span key={i} className="text-[11px] px-2 py-0.5 rounded-full border border-blue-700/40 text-blue-300">{q}</span>
+          <span key={i} className="text-[11px] px-2 py-0.5 rounded-full border border-amber-700/40 text-amber-300">{q}</span>
         ))}
       </div>
     </div>
@@ -1037,7 +1037,7 @@ export function ChatMessage({
           )}
           <div
             className="px-3 py-2 rounded-md text-[12px] font-semibold text-white leading-snug"
-            style={{ background: isInvestigate ? "#633D96" : "#05355D" }}
+            style={{ background: isInvestigate ? "var(--blue3)" : "var(--blue3)" }}
           >
             {turn.question}
           </div>
@@ -1086,7 +1086,7 @@ export function ChatMessage({
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <span className="text-[12px] text-zinc-500">Found relevant data</span>
           {turn.tablesUsed.map(t => (
-            <span key={t} className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-0.5 rounded-md border border-zinc-700/60 text-zinc-400" style={{ background: "#1e2d3d" }}>
+            <span key={t} className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-0.5 rounded-md border border-zinc-700/60 text-zinc-400" style={{ background: "var(--bg-3)" }}>
               <span className="shrink-0 text-zinc-500"><TableIcon label="Table" size="small" /></span>
               {t}
             </span>
@@ -1191,7 +1191,7 @@ function SaveAsSkillButton({ invId, connectionId }: { invId: string; connectionI
       onClick={save}
       disabled={state === "saving"}
       title={msg || "Crystallize this investigation into a reusable, governed skill (Ontology ▸ Learned skills)"}
-      className="text-[11px] text-violet-400 hover:text-violet-300 border border-violet-500/30 rounded px-2.5 py-1 transition disabled:opacity-50"
+      className="text-[11px] text-amber-400 hover:text-amber-300 border border-amber-500/30 rounded px-2.5 py-1 transition disabled:opacity-50"
     >
       {state === "saving" ? "Saving…" : state === "error" ? "Retry — not skill-worthy?" : "Save as skill"}
     </button>

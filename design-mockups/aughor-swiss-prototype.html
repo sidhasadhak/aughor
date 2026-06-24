@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aughor · Swiss Redesign (Prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   AUGHOR — SWISS / INTERNATIONAL TYPOGRAPHIC REDESIGN  ·  PROTOTYPE ONLY
+   Discipline: one grotesque (Inter) + one mono (IBM Plex Mono). Monochrome
+   ink on warm paper-white. A single signal accent (vermillion), used rarely.
+   The grid, the rules, and the type carry the design — not colour or effects.
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --paper:#F3F2EC; --surface:#FBFAF5; --surface-2:#ECEAE0; --sink:#E6E4D8;
+  --ink:#1A1913; --ink-2:#54534A; --ink-3:#8A8979; --ink-4:#B3B1A2;
+  --line:#E0DDD0; --line-2:#CFCBBA; --line-strong:#1A1913;
+  --accent:#CF3A21; --accent-2:#A52E1A; --accent-tint:#F4E2DC;
+  --pos:#1A1913; --neg:#CF3A21;            /* monochrome status: ink vs red */
+  --sans:"Inter",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r1:3px; --r2:5px; --r3:8px;
+  --topbar:54px; --sidebar:236px; --rail:60px;
+  --gut:36px;
+  --dur:160ms; --ease:cubic-bezier(.2,0,0,1);
+}
+[data-theme="dark"]{
+  --paper:#16150F; --surface:#1D1C14; --surface-2:#26241A; --sink:#211F16;
+  --ink:#F1EEE1; --ink-2:#A6A493; --ink-3:#777566; --ink-4:#54524A;
+  --line:#2C2A1F; --line-2:#3B3930; --line-strong:#F1EEE1;
+  --accent:#E5563E; --accent-2:#F0735E; --accent-tint:#33231C;
+  --pos:#F1EEE1; --neg:#E5563E;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--sans);font-size:13px;background:var(--paper);color:var(--ink);line-height:1.55;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow:hidden;letter-spacing:-.005em}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:0}
+::selection{background:var(--accent);color:#fff}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--mono);font-feature-settings:"tnum" 1}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* Typographic primitives */
+.eyebrow{font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.kicker{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+h1.display{font-size:34px;font-weight:600;letter-spacing:-.025em;line-height:1.08;margin:8px 0 0}
+h2.head{font-size:19px;font-weight:600;letter-spacing:-.02em;margin:0}
+.lede{font-size:14.5px;color:var(--ink-2);line-height:1.55;max-width:62ch;margin:10px 0 0;font-weight:400}
+.sectitle{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);padding-bottom:10px;border-bottom:1px solid var(--line-strong);margin-bottom:2px}
+
+/* App shell */
+.app{height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--paper)}
+.body{flex:1;display:flex;overflow:hidden;min-height:0}
+
+/* Topbar */
+.topbar{height:var(--topbar);display:flex;align-items:center;gap:18px;padding:0 18px 0 16px;border-bottom:1px solid var(--line-strong);background:var(--paper);flex-shrink:0;z-index:30}
+.brand{display:flex;align-items:baseline;gap:8px;font-weight:700;font-size:15px;letter-spacing:-.03em}
+.brand .mk{width:22px;height:22px;background:var(--ink);color:var(--paper);display:grid;place-items:center;font-weight:700;font-size:13px;border-radius:2px;transform:translateY(3px)}
+.brand sup{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--ink-3);font-weight:500}
+.rail-toggle{width:30px;height:30px;display:grid;place-items:center;color:var(--ink-2);border-radius:var(--r1)}
+.rail-toggle:hover{background:var(--surface-2)}
+.cmdbar{flex:1;max-width:480px;margin:0 auto;height:33px;display:flex;align-items:center;gap:10px;padding:0 12px;border:1px solid var(--line-2);border-radius:var(--r2);background:var(--surface);color:var(--ink-3);cursor:text;transition:border-color var(--dur)}
+.cmdbar:hover{border-color:var(--ink-3)}
+.cmdbar .ph{flex:1;text-align:left;font-size:12.5px}
+.kbd{font-family:var(--mono);font-size:10px;color:var(--ink-3);border:1px solid var(--line-2);border-radius:var(--r1);padding:1px 5px}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:4px}
+.ibtn{width:32px;height:32px;display:grid;place-items:center;color:var(--ink-2);border-radius:var(--r1);position:relative;transition:background var(--dur)}
+.ibtn:hover{background:var(--surface-2);color:var(--ink)}
+.ibtn .dot-badge{position:absolute;top:6px;right:6px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--ink);color:var(--paper);display:grid;place-items:center;font-weight:600;font-size:11px;margin-left:6px;font-family:var(--mono)}
+
+/* Sidebar */
+.sidebar{width:var(--sidebar);flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--line-strong);background:var(--paper);overflow:hidden;transition:width var(--dur) var(--ease)}
+.app.rail .sidebar{width:var(--rail)}
+.nav-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 12px}
+.app.rail .nav-scroll{padding:14px 8px}
+.ask{display:flex;align-items:center;gap:9px;width:100%;height:36px;padding:0 13px;margin-bottom:18px;background:var(--ink);color:var(--paper);font-weight:600;font-size:12.5px;border-radius:var(--r2);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;transition:opacity var(--dur)}
+.ask:hover{opacity:.88}
+.app.rail .ask{padding:0;justify-content:center}
+.app.rail .ask .lbl{display:none}
+.nav-grp{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-4);padding:16px 11px 7px;white-space:nowrap}
+.app.rail .nav-grp{height:14px;padding:12px 0 0;color:transparent}
+.app.rail .nav-grp span{display:none}
+.app.rail .nav-grp::after{content:"";display:block;width:16px;height:1px;background:var(--line-2);margin:0 auto}
+.nav-item{position:relative;display:flex;align-items:center;gap:11px;width:100%;height:32px;padding:0 11px;font-size:12.5px;font-weight:500;color:var(--ink-2);white-space:nowrap;border-radius:var(--r2);transition:color var(--dur)}
+.nav-item .ic{width:17px;height:17px;display:grid;place-items:center;flex-shrink:0;color:var(--ink-3);transition:color var(--dur)}
+.nav-item:hover{color:var(--ink)}
+.nav-item:hover .ic{color:var(--ink)}
+.nav-item .count{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+.app.rail .nav-item{justify-content:center;padding:0}
+.app.rail .nav-item .lbl,.app.rail .nav-item .count{display:none}
+.nav-item.active{color:var(--ink);font-weight:600}
+.nav-item.active .ic{color:var(--accent)}
+.nav-item>*{position:relative;z-index:1}
+#pill{position:absolute;left:8px;right:8px;height:32px;background:var(--surface-2);border-radius:var(--r2);z-index:0;transition:transform var(--dur) var(--ease),opacity var(--dur);pointer-events:none}
+#pill::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:2px;background:var(--accent)}
+.app.rail #pill::before{display:none}
+.side-foot{border-top:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden}
+.app.rail .side-foot .ft{display:none}
+.app.rail .side-foot{justify-content:center}
+
+/* Screen */
+.screen{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.chead{height:46px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 var(--gut);border-bottom:1px solid var(--line);background:var(--paper)}
+.crumbs{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--ink-3);display:flex;align-items:center;gap:8px}
+.crumbs .here{color:var(--ink)}
+.crumbs .sep{color:var(--ink-4)}
+.chead-act{margin-left:auto;display:flex;gap:8px}
+.content{flex:1;overflow-y:auto;overflow-x:hidden}
+.pad{padding:var(--gut)}
+.maxw{max-width:1080px}
+.view{animation:fade var(--dur) var(--ease) both}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:7px;height:31px;padding:0 14px;font-size:12px;font-weight:600;letter-spacing:-.01em;border-radius:var(--r2);border:1px solid transparent;white-space:nowrap;transition:background var(--dur),border-color var(--dur),color var(--dur)}
+.btn.ink{background:var(--ink);color:var(--paper)}
+.btn.ink:hover{opacity:.88}
+.btn.line{border-color:var(--line-2);color:var(--ink)}
+.btn.line:hover{border-color:var(--ink);background:var(--surface)}
+.btn.bare{color:var(--ink-2)}
+.btn.bare:hover{color:var(--ink);background:var(--surface-2)}
+.btn.sm{height:26px;padding:0 10px;font-size:11px}
+.btn.acc{background:var(--accent);color:#fff}
+.btn.acc:hover{background:var(--accent-2)}
+
+/* Grid + ruled blocks */
+.grid{display:grid;gap:0}
+.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}.g2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:1180px){.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(2,1fr)}}
+.cols{display:grid;gap:var(--gut)}
+
+/* KPI cell — Swiss number block, divided by rules not boxes */
+.kpis{display:grid;border-top:1px solid var(--line-strong)}
+.kpis.k4{grid-template-columns:repeat(4,1fr)}.kpis.k3{grid-template-columns:repeat(3,1fr)}.kpis.k2{grid-template-columns:repeat(2,1fr)}
+.kpi{padding:18px 20px 18px 0;border-right:1px solid var(--line)}
+.kpi:last-child{border-right:none}
+.kpi .lab{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.kpi .val{font-family:var(--mono);font-size:30px;font-weight:500;letter-spacing:-.03em;margin:8px 0 3px;line-height:1}
+.kpi .d{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.kpi .d.neg{color:var(--accent)}
+
+/* Ruled list */
+.rlist{border-top:1px solid var(--line-strong)}
+.rrow{display:flex;align-items:center;gap:16px;padding:14px 4px;border-bottom:1px solid var(--line);cursor:pointer;transition:background var(--dur),padding var(--dur)}
+.rrow:hover{background:var(--surface);padding-left:10px}
+.rrow .idx{font-family:var(--mono);font-size:11px;color:var(--ink-4);width:22px;flex-shrink:0}
+.rrow .ti{font-weight:500;font-size:13.5px;letter-spacing:-.01em}
+.rrow .mt{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:2px;letter-spacing:.02em}
+.rrow .rt{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-3);white-space:nowrap;display:flex;align-items:center;gap:10px}
+.chev{color:var(--ink-4);transition:transform var(--dur),color var(--dur)}
+.rrow:hover .chev{transform:translateX(3px);color:var(--ink)}
+
+/* Status marks (monochrome) */
+.mk-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;display:inline-block;background:var(--ink)}
+.mk-dot.alert{background:var(--accent)}
+.mk-dot.idle{background:transparent;border:1.5px solid var(--ink-3)}
+.mk-dot.live{background:var(--accent);animation:blink 1.5s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.flag{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.flag.alert{color:var(--accent)}
+
+/* Chip / meta tag — outline, monochrome */
+.chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);border:1px solid var(--line-2);border-radius:var(--r1);padding:2px 7px;white-space:nowrap}
+.chip.acc{color:var(--accent);border-color:var(--accent)}
+.chip.fill{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* Card — used sparingly; mostly we use ruled sections */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r3);padding:20px}
+.frame{border:1px solid var(--line-strong);border-radius:var(--r3);overflow:hidden;background:var(--surface)}
+
+/* Segmented = underline tabs */
+.utabs{display:flex;gap:24px;border-bottom:1px solid var(--line)}
+.utab{position:relative;padding:0 0 11px;font-size:12.5px;font-weight:500;color:var(--ink-3);letter-spacing:-.01em;transition:color var(--dur)}
+.utab:hover{color:var(--ink)}
+.utab.on{color:var(--ink);font-weight:600}
+.utab.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--accent)}
+
+/* Filters (text) */
+.filterbar{display:flex;gap:18px;font-family:var(--mono);font-size:11px;letter-spacing:.04em}
+.filterbar a{color:var(--ink-3);text-transform:uppercase;cursor:pointer;transition:color var(--dur);text-decoration:none;padding-bottom:3px;border-bottom:1.5px solid transparent}
+.filterbar a:hover{color:var(--ink)}
+.filterbar a.on{color:var(--ink);border-color:var(--accent)}
+
+/* Table */
+.dt{width:100%;border-collapse:collapse}
+.dt thead th{text-align:left;padding:9px 14px 9px 0;font-family:var(--mono);font-size:9.5px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);border-bottom:1px solid var(--line-strong);white-space:nowrap}
+.dt tbody td{padding:11px 14px 11px 0;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:middle}
+.dt tbody td.num,.dt thead th.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.dt tbody tr:hover td{background:var(--surface)}
+.dt .sql{font-family:var(--mono);font-size:11px;color:var(--ink-2);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Master–detail */
+.md{display:flex;height:calc(100vh - var(--topbar) - 46px)}
+.md-l{width:330px;flex-shrink:0;border-right:1px solid var(--line-strong);overflow-y:auto;padding:24px}
+.md-r{flex:1;overflow-y:auto;padding:32px 40px}
+.mrow{padding:13px 12px;border-radius:var(--r2);cursor:pointer;border-left:2px solid transparent;transition:background var(--dur)}
+.mrow:hover{background:var(--surface)}
+.mrow.sel{background:var(--surface-2);border-left-color:var(--accent)}
+.mrow .ti{font-weight:500;font-size:13px;letter-spacing:-.01em}
+.mrow .mt{font-family:var(--mono);font-size:10px;color:var(--ink-3);margin-top:3px;letter-spacing:.03em}
+
+/* Bars + mini chart */
+.hbar{display:grid;grid-template-columns:120px 1fr 48px;align-items:center;gap:14px;padding:7px 0;font-family:var(--mono);font-size:11px}
+.hbar .k{color:var(--ink-2);text-align:right;text-transform:uppercase;letter-spacing:.06em;font-size:10px}
+.hbar .tr{height:6px;background:var(--surface-2)}
+.hbar .tr i{display:block;height:100%;background:var(--ink)}
+.hbar .v{color:var(--ink-3);text-align:right}
+.spark{display:flex;align-items:flex-end;gap:4px;height:36px}
+.spark i{flex:1;background:var(--ink-3);min-width:5px}
+.spark i.hot{background:var(--accent)}
+
+/* Timeline (investigation) */
+.tl{border-left:1px solid var(--line-strong);margin-left:6px}
+.tstep{position:relative;padding:2px 0 20px 26px}
+.tstep::before{content:"";position:absolute;left:-5px;top:5px;width:9px;height:9px;border-radius:50%;background:var(--paper);border:1.5px solid var(--ink-3)}
+.tstep.done::before{background:var(--ink);border-color:var(--ink)}
+.tstep.run::before{border-color:var(--accent);background:var(--accent);animation:blink 1.4s infinite}
+.tstep .n{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-4)}
+.tstep .l{font-weight:500;font-size:13px;margin-top:2px;letter-spacing:-.01em}
+.tstep.run .l{color:var(--accent)}
+.tstep .m{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:3px;line-height:1.5}
+
+/* Evidence */
+.claim{border-bottom:1px solid var(--line);padding:14px 0}
+.conf{height:3px;background:var(--surface-2);margin-top:9px}
+.conf i{display:block;height:100%;background:var(--ink)}
+
+/* Graph */
+.graph{position:relative;height:360px;border:1px solid var(--line-strong);border-radius:var(--r3);background:var(--surface);background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:22px 22px;overflow:hidden}
+.gn{position:absolute;display:flex;align-items:center;gap:7px;padding:7px 13px;background:var(--paper);border:1px solid var(--ink);font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.02em;border-radius:2px}
+.gn.acc{background:var(--ink);color:var(--paper)}
+.ge{position:absolute;height:1px;background:var(--ink-3);transform-origin:left center}
+
+/* Command palette */
+.scrim{position:fixed;inset:0;background:color-mix(in srgb,var(--ink) 28%,transparent);z-index:200;opacity:0;pointer-events:none;transition:opacity var(--dur)}
+.scrim.show{opacity:1;pointer-events:auto}
+.pal{position:fixed;top:14vh;left:50%;transform:translateX(-50%) translateY(6px);width:min(600px,92vw);background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--r3);box-shadow:0 24px 60px color-mix(in srgb,var(--ink) 22%,transparent);z-index:201;opacity:0;pointer-events:none;overflow:hidden;transition:opacity var(--dur),transform var(--dur) var(--ease)}
+.pal.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+.pal-in{display:flex;align-items:center;gap:11px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.pal-in input{flex:1;background:none;border:none;outline:none;font-size:15px;letter-spacing:-.01em}
+.pal-list{max-height:46vh;overflow-y:auto;padding:8px}
+.pal-sec{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-4);padding:11px 12px 6px}
+.pal-i{display:flex;align-items:center;gap:13px;padding:9px 12px;border-radius:var(--r2);font-size:13px}
+.pal-i .ic{color:var(--ink-3)}
+.pal-i .h{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--ink-4)}
+.pal-i.sel{background:var(--surface-2)}
+.pal-i.sel .ic{color:var(--accent)}
+
+/* Toast */
+.toasts{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:300;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{display:flex;align-items:center;gap:10px;padding:11px 16px;background:var(--ink);color:var(--paper);border-radius:var(--r2);font-size:12px;font-weight:500;animation:tin var(--dur) var(--ease) both}
+.toast .mk-dot{background:var(--accent)}
+@keyframes tin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* Design note (Swiss sidenote) */
+.note{display:none;margin:0 0 26px;padding:0 0 0 16px;border-left:2px solid var(--accent)}
+.note .nl{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:5px}
+.note p{margin:0;font-size:12.5px;color:var(--ink-2);line-height:1.6;max-width:74ch}
+.note b{color:var(--ink);font-weight:600}
+.app.notes .note{display:block;animation:fade var(--dur) both}
+.fab{position:fixed;bottom:24px;right:24px;z-index:130;height:38px;padding:0 16px;display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:500;color:var(--paper);background:var(--ink);border-radius:var(--r2);transition:opacity var(--dur)}
+.fab:hover{opacity:.88}
+.app.notes .fab{background:var(--accent)}
+
+.flex{display:flex}.ac{align-items:center}.jb{justify-content:space-between}.wrap{flex-wrap:wrap}
+.g8{gap:8px}.g12{gap:12px}.g16{gap:16px}.g24{gap:24px}
+.mt6{margin-top:6px}.mt10{margin-top:10px}.mt16{margin-top:16px}.mt24{margin-top:24px}.mt32{margin-top:32px}.mt40{margin-top:40px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="topbar">
+    <button class="rail-toggle" id="railBtn" title="Toggle rail"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <div class="brand"><span class="mk">A</span>Aughor<sup>DATA INTELLIGENCE</sup></div>
+    <button class="cmdbar" id="cmdBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span class="ph">Ask, search, or run a command</span><span class="kbd">⌘K</span></button>
+    <div class="top-right">
+      <button class="ibtn" data-nav="inbox" title="Inbox"><span class="dot-badge"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h5l2 3h4l2-3h5M4 12V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6"/></svg></button>
+      <button class="ibtn" id="themeBtn" title="Theme"><svg id="themeIco" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <div class="avatar" data-nav="settings">S</div>
+    </div>
+  </header>
+  <div class="body">
+    <nav class="sidebar">
+      <div class="nav-scroll">
+        <button class="ask" data-nav="chat"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">New investigation</span></button>
+        <div id="navHost" style="position:relative"></div>
+      </div>
+      <div class="side-foot"><span class="mk-dot live"></span><span class="ft">3 sources · synced 2m</span></div>
+    </nav>
+    <section class="screen">
+      <div class="chead"><div class="crumbs" id="crumbs"></div><div class="chead-act" id="cact"></div></div>
+      <div class="content" id="content"></div>
+    </section>
+  </div>
+  <button class="fab" id="fab"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 8h.01M11 12h1v4h1"/><circle cx="12" cy="12" r="9"/></svg><span>Design notes</span></button>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="pal" id="pal">
+  <div class="pal-in"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="palIn" placeholder="Ask a question or jump to…"/><span class="kbd">esc</span></div>
+  <div class="pal-list" id="palList"></div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+const I={
+ home:'<path d="M3 11l9-7 9 7M5 9.5V20h14V9.5"/>',
+ inbox:'<path d="M3 12h5l2 3h4l2-3h5M4 12V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6"/>',
+ canvas:'<rect x="3" y="3" width="18" height="18" rx="1.5"/><path d="M3 9h18M9 21V9"/>',
+ brief:'<path d="M5 4h14v16H5zM8 9h8M8 13h6"/>',
+ search:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+ node:'<circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7.6 7.4l3 9M16.4 7.4l-3 9"/>',
+ bolt:'<path d="M13 2L4 14h6l-1 8 9-12h-6z"/>',
+ activity:'<path d="M3 12h4l3 8 4-16 3 8h4"/>',
+ playbook:'<path d="M5 4h13v15H6a1 1 0 0 0-1 1zM8 8h7M8 12h5"/>',
+ db:'<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.6 3.1 3 7 3s7-1.4 7-3V6M5 12c0 1.6 3.1 3 7 3s7-1.4 7-3"/>',
+ builder:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
+ layers:'<path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/>',
+ spark:'<path d="M12 3v18M3 12h18M6 6l12 12M18 6L6 18"/>',
+ shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+ settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+ alert:'<path d="M12 9v4M12 17h.01M10.3 4l-7 12a2 2 0 0 0 1.7 3h14a2 2 0 0 0 1.7-3l-7-12a2 2 0 0 0-3.4 0z"/>',
+ check:'<path d="M20 6L9 17l-5-5"/>',
+ arrow:'<path d="M5 12h14M13 6l6 6-6 6"/>'
+};
+const svg=(p,s=17)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+
+const NAV=[
+ {id:'home',icon:'home',label:'Home'},
+ {id:'inbox',icon:'inbox',label:'Inbox',count:'4'},
+ {id:'canvases',icon:'canvas',label:'Data Canvas'},
+ {group:'Intelligence'},
+ {id:'briefing',icon:'brief',label:'Briefing'},
+ {id:'recents',icon:'search',label:'Investigations',count:'12'},
+ {id:'intelligence',icon:'node',label:'Intelligence Map'},
+ {id:'fleet',icon:'bolt',label:'Fleet',count:'3'},
+ {id:'health',icon:'activity',label:'Health'},
+ {id:'playbook',icon:'playbook',label:'Playbook'},
+ {group:'Data'},
+ {id:'catalog',icon:'db',label:'Catalog'},
+ {id:'builder',icon:'builder',label:'Query Builder'},
+ {id:'semantic',icon:'layers',label:'Semantic Layer'},
+ {group:'Operations'},
+ {id:'monitors',icon:'alert',label:'Monitors'},
+ {id:'actions',icon:'spark',label:'Action Hub'},
+ {id:'security',icon:'shield',label:'Security & Audit'},
+ {group:'Account'},
+ {id:'settings',icon:'settings',label:'Settings'}
+];
+const TITLES={home:'Home',inbox:'Inbox',canvases:'Data Canvas',chat:'New Investigation',briefing:'Briefing',recents:'Investigations',intelligence:'Intelligence Map',fleet:'Fleet',health:'Health',playbook:'Playbook',catalog:'Catalog',builder:'Query Builder',semantic:'Semantic Layer',monitors:'Monitors',actions:'Action Hub',security:'Security & Audit',settings:'Settings'};
+const SECTION={briefing:'Intelligence',recents:'Intelligence',intelligence:'Intelligence',fleet:'Intelligence',health:'Intelligence',playbook:'Intelligence',catalog:'Data',builder:'Data',semantic:'Data',monitors:'Operations',actions:'Operations',security:'Operations'};
+
+const navHost=document.getElementById('navHost');
+const pill=document.createElement('div');pill.id='pill';navHost.appendChild(pill);
+NAV.forEach(n=>{
+ if(n.group){const g=document.createElement('div');g.className='nav-grp';g.innerHTML=`<span>${n.group}</span>`;navHost.appendChild(g);}
+ else{const a=document.createElement('button');a.className='nav-item';a.dataset.nav=n.id;a.innerHTML=`<span class="ic">${svg(I[n.icon],17)}</span><span class="lbl">${n.label}</span>`+(n.count?`<span class="count">${n.count}</span>`:'');navHost.appendChild(a);}
+});
+
+/* helpers */
+const note=(label,txt)=>`<div class="note"><div class="nl">Note · ${label}</div><p>${txt}</p></div>`;
+const eyebrow=t=>`<div class="eyebrow">${t}</div>`;
+const head=(eye,title,lede)=>`${eyebrow(eye)}<h1 class="display">${title}</h1>${lede?`<p class="lede">${lede}</p>`:''}`;
+const kpi=(lab,val,d,neg)=>`<div class="kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="d ${neg?'neg':''}">${d}</div></div>`;
+const sparkEl=a=>`<div class="spark">${a.map((h,i)=>`<i class="${i===a.length-1?'hot':''}" style="height:${h}%"></i>`).join('')}</div>`;
+const hbar=(k,p,v)=>`<div class="hbar"><span class="k">${k}</span><span class="tr"><i style="width:${p}%"></i></span><span class="v">${v}</span></div>`;
+/* monochrome line chart */
+function line(data,w=460,h=150){
+ const max=Math.max(...data),min=Math.min(...data),pad=10;
+ const pts=data.map((d,i)=>[pad+i*((w-pad*2)/(data.length-1)),h-pad-((d-min)/(max-min||1))*(h-pad*2)]);
+ const path=pts.map((p,i)=>`${i?'L':'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
+ const last=pts[pts.length-1];
+ return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block"><path d="${path}" fill="none" stroke="var(--ink)" stroke-width="1.5"/><circle cx="${last[0]}" cy="${last[1]}" r="3.5" fill="var(--accent)"/></svg>`;
+}
+
+const SUB={catalog:'orders',semantic:'metrics',intelligence:'briefing',monitors:'monitors',actions:'triggers',security:'security',settings:'organization',playbook:'p1',recents:'i1',builder:'chart',inbox:'pending',fleet:'activity'};
+function setSub(v,x){SUB[v]=x;renderView(current,true);}
+
+/* ═══════════ VIEWS ═══════════ */
+const V={};
+
+V.home=()=>`
+${note('Home','Reframed from a metric wall into an editorial front page — a single dateline, one question field, and a ruled "needs attention" ledger. Numbers live in a quiet KPI strip below, not in twelve competing cards. Hierarchy is set by type and rule weight, not colour.')}
+${head('Wednesday · 24 June','Good morning, Sadhak.','Aughor reviewed your data overnight. Three things moved enough to mention — and one question is worth asking first.')}
+<div class="frame mt24" style="display:flex;align-items:center;gap:14px;padding:16px 18px">
+  <span style="color:var(--ink-3)">${svg(I.search,18)}</span>
+  <input style="flex:1;background:none;border:none;outline:none;font-size:15px;letter-spacing:-.01em" placeholder="Ask anything — e.g. Why did EU conversion drop last week?"/>
+  <button class="btn ink" data-nav="chat">Investigate ${svg(I.arrow,15)}</button>
+</div>
+<div class="filterbar mt16" style="gap:14px">${['Revenue by region','Funnel drop-off','Anomalies · 24h','Churn drivers'].map(s=>`<a data-nav="chat">↳ ${s}</a>`).join('')}</div>
+
+<div class="mt40"><div class="sectitle">Needs attention · 3</div>
+<div class="rlist">
+ <div class="rrow" data-nav="inbox"><span class="mk-dot alert"></span><div><div class="ti">Refund rate spiked 2.3× in DACH</div><div class="mt">Anomaly · detected 22m ago · high confidence</div></div><span class="rt"><span class="flag alert">Investigate</span>${svg(I.arrow,14)}</span></div>
+ <div class="rrow" data-nav="health"><span class="mk-dot"></span><div><div class="ti">Net revenue 8% below Q2 target</div><div class="mt">Health · 3 KPIs off target</div></div><span class="rt">REVIEW ${svg(I.arrow,14)}</span></div>
+ <div class="rrow" data-nav="inbox"><span class="mk-dot idle"></span><div><div class="ti">Add index on orders.created_at</div><div class="mt">Recommendation · speeds 4 queries ~70%</div></div><span class="rt">APPLY ${svg(I.arrow,14)}</span></div>
+</div></div>
+
+<div class="cols g2 mt40" style="gap:48px">
+ <div><div class="sectitle">Recent investigations</div>
+  <div class="rlist">
+   ${[['01','Why did EU checkout conversion drop?','3 hypotheses · 2 verified','8m','live'],['02','Top SKUs driving Q2 margin','report ready','1h',''],['03','Cohort retention by channel','running','now','run']].map(([i,t,m,r,s])=>`<div class="rrow" data-nav="recents"><span class="idx">${i}</span><div><div class="ti">${t}</div><div class="mt">${m}</div></div><span class="rt">${s==='live'||s==='run'?'<span class="mk-dot live"></span>':''}${r}</span></div>`).join('')}
+  </div></div>
+ <div><div class="sectitle">At a glance</div>
+  <div class="kpis k2"><div class="kpi" style="border-bottom:1px solid var(--line)">${''}<div class="lab">Investigations</div><div class="val">7</div><div class="d">▲ 2 wk</div></div><div class="kpi" style="border-bottom:1px solid var(--line)"><div class="lab">Freshness</div><div class="val">98%</div><div class="d">3 synced</div></div><div class="kpi"><div class="lab">Anomalies</div><div class="val">3</div><div class="d neg">1 open</div></div><div class="kpi"><div class="lab">Spend · wk</div><div class="val">$142</div><div class="d">▲ 11%</div></div></div>
+ </div>
+</div>`;
+
+V.chat=()=>`
+${note('Investigation','The core flow, set like a printed analysis. The question is the headline; mode is a quiet underline tab. A single-rule timeline streams the agent\'s reasoning; the answer reads as Finding → Evidence → Receipt. One chart, drawn as a line — no bar-confetti. The only colour on the page is the live marker and the loss figure.')}
+<div class="flex jb ac"><div>${eyebrow('Investigation · live')}<h1 class="display" style="font-size:26px;max-width:24ch">Why did EU checkout conversion drop last week?</h1></div>
+<div class="utabs" style="border:none"><button class="utab on">Deep analysis</button><button class="utab" onclick="toast('Quick mode: instant SQL answers')">Quick answer</button></div></div>
+<div class="cols mt32" style="grid-template-columns:1.5fr 1fr;gap:48px;align-items:start">
+ <div><div class="sectitle">Reasoning <span style="float:right;color:var(--accent)">● verifying · step 4 / 5</span></div>
+  <div class="tl mt16">
+   <div class="tstep done"><div class="n">01 · Scope</div><div class="l">Understood question & scope</div><div class="m">EU region · checkout funnel · last 7 days vs prior 7</div></div>
+   <div class="tstep done"><div class="n">02 · Baseline</div><div class="l">Established baseline</div><div class="m">Conversion 3.1% → 2.4% (−22%), confirmed in orders + sessions</div></div>
+   <div class="tstep done"><div class="n">03 · Decompose</div><div class="l">Decomposed by step & segment</div><div class="m">Isolates to payment step · mobile · DACH market</div></div>
+   <div class="tstep run"><div class="n">04 · Verify</div><div class="l">Testing hypothesis — payment-provider latency</div><div class="m">Running SQL against payment_events…</div></div>
+   <div class="tstep"><div class="n">05 · Synthesise</div><div class="l">Report & recommendations</div><div class="m">pending</div></div>
+  </div>
+ </div>
+ <div>
+  <div class="sectitle">Finding so far</div>
+  <p style="font-size:14px;line-height:1.6;margin:14px 0 0">Checkout conversion fell <b style="color:var(--accent)">−22%</b> week-over-week, concentrated in <b>mobile DACH</b> at the <b>payment step</b>. Leading cause, under verification: a payment-provider latency spike.</p>
+  <div class="mt24">${line([62,60,58,40,38,30,33],420,120)}</div>
+  <div class="kicker mt6">Daily conversion · last 7 days</div>
+
+  <div class="sectitle mt40">Evidence · 2 claims</div>
+  ${[['Payment-step drop-off rose 11% → 29% in DACH','88'],['Provider p95 latency 1.2s → 6.8s, same window','82']].map(([t,c])=>`<div class="claim"><div style="font-weight:500;font-size:12.5px">${t}</div><div class="conf"><i style="width:${c}%"></i></div><div class="flex jb mt6" style="font-family:var(--mono);font-size:10px;color:var(--ink-3)"><span>confidence ${c}% · fresh 4m</span><span style="color:var(--accent);cursor:pointer">view sql →</span></div></div>`).join('')}
+
+  <div class="flex ac g8 mt24" style="font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);flex-wrap:wrap">
+   <span style="color:var(--ink)">${svg(I.shield,14)}</span> Receipt:<span class="chip">metric governed</span><span class="chip">3 tables</span><span class="chip">0 guards</span><span class="chip">$0.06 · 11s</span>
+  </div>
+ </div>
+</div>
+<div class="frame mt40" style="display:flex;align-items:center;gap:14px;padding:14px 16px;position:sticky;bottom:0"><span style="color:var(--ink-3)">${svg(I.search,17)}</span><input style="flex:1;background:none;border:none;outline:none;font-size:13.5px" placeholder="Ask a follow-up — break this down by device & browser…"/><button class="btn line sm">Quick</button><button class="btn ink sm">Send</button></div>`;
+
+V.inbox=()=>{
+ const items=[['ANOMALY','alert','Refund rate spiked 2.3× in DACH','Overnight anomaly sweep · 22m','Investigate'],['RECOMMENDATION','idle','Add index on orders.created_at','Query Builder performance scan','Apply'],['APPROVAL','dot','Publish "Net Revenue" to semantic layer','Requested by you · governance gate','Review'],['FINDING','dot','Cart-abandon spikes Fridays 5–7pm','Domain intelligence · novelty 8/10','Add to playbook']];
+ return `
+${note('Inbox','One triage queue for everything that wants a decision — anomalies, recommendations, approvals, findings. Type label and a single status mark replace four colours of pill; each row resolves to exactly one verb.')}
+${head('Decisions','Four things want a decision.','Anomalies, recommendations, approvals and promotable findings, triaged in one ledger.')}
+<div class="filterbar mt24">${['Pending','All','Done'].map((x,i)=>`<a class="${SUB.inbox===x.toLowerCase()?'on':''}" onclick="setSub('inbox','${x.toLowerCase()}')">${x}</a>`).join('')}</div>
+<div class="rlist mt16">
+ ${items.map(([k,m,t,src,act])=>`<div class="rrow"><span style="width:118px;flex-shrink:0" class="kicker">${k}</span><span class="mk-dot ${m==='dot'?'':m}"></span><div style="flex:1"><div class="ti">${t}</div><div class="mt">${src}</div></div><button class="btn bare sm">Dismiss</button><button class="btn ${k==='ANOMALY'?'acc':'ink'} sm">${act} →</button></div>`).join('')}
+</div>
+<div class="kpis k4 mt40">${kpi('Open','4','▲ 1 today',1)}${kpi('Done · wk','9','▲ 3')}${kpi('Verified impact','$4.2k','saved')}${kpi('Time to act','1.3d','▼ 0.4d')}</div>`;
+};
+
+V.canvases=()=>`
+${note('Data Canvas','A canvas is a bounded workspace — a connection plus chosen tables — where investigations and learned knowledge accumulate. Presented as an index, not a card wall: scope and last activity read as metadata in mono, the way a catalogue entry would.')}
+<div class="flex jb ac">${head('Workspaces','Data Canvas','A canvas bounds analysis to a connection and a chosen set of tables, so investigations, findings and learned skills stay in a known scope.').replace('</p>','</p>')}<button class="btn ink" onclick="toast('Create canvas: pick connection → choose tables')">+ New canvas</button></div>
+<div class="filterbar mt24">${['All','Created by me','Recently active'].map((x,i)=>`<a class="${i===0?'on':''}">${x}</a>`).join('')}</div>
+<div class="rlist mt16">
+ ${[['Revenue & Orders','postgres','12 tables','active 2m'],['Marketing Funnel','bigquery','8 tables','active 1h'],['Support & Refunds','snowflake','6 tables','active yesterday'],['Product Analytics','postgres','all tables','3d'],['Finance Close','snowflake','5 tables','1w']].map(([n,c,t,a],i)=>`<div class="rrow" data-nav="chat"><span class="idx">${String(i+1).padStart(2,'0')}</span><span style="color:var(--ink-3)">${svg(I.canvas,16)}</span><div style="flex:1"><div class="ti">${n}</div><div class="mt">scope · ${c} · ${t}</div></div><span class="rt">${a} ${svg(I.arrow,14)}</span></div>`).join('')}
+</div>`;
+
+V.briefing=()=>`
+${note('Briefing','A weekly brief, typeset like an editorial. One headline signal at full width, supporting signals as a ruled index, coverage as monochrome bars. The trust gate\'s suppressed signals get an honest, expandable footnote — building credibility through disclosure.')}
+${head('Week of 24 June · generated just now','This week across your data','A synthesis of what moved, why it matters, and what to do — drawn from 38 findings across five domains.')}
+<div class="mt32" style="border-top:1px solid var(--line-strong);border-bottom:1px solid var(--line-strong);padding:24px 0">
+ <div class="flex ac g12"><span class="chip fill">Headline signal</span><span class="kicker">novelty 9 / 10</span></div>
+ <h2 class="head mt16" style="font-size:23px;max-width:30ch;line-height:1.2">EU checkout conversion is down 22% — concentrated in mobile DACH, at the payment step.</h2>
+ <p class="lede" style="max-width:72ch">A provider latency spike <span class="mono" style="color:var(--accent)">[1]</span> coincides with the drop <span class="mono" style="color:var(--accent)">[2]</span>. Net-revenue exposure ≈ <b style="color:var(--ink)">$38k / week</b> if sustained. Recommended: fail over to the backup provider and re-test.</p>
+ <div class="flex g8 mt24"><button class="btn ink sm" data-nav="chat">Open investigation</button><button class="btn line sm" data-nav="playbook">Add to playbook</button><button class="btn bare sm">Share</button></div>
+</div>
+<div class="cols g2 mt40" style="gap:48px">
+ <div><div class="sectitle">Supporting signals</div><div class="rlist">${[['Revenue','Top 5 SKUs now drive 61% of margin'],['Marketing','CAC up 14% on paid social'],['Support','Refund-SLA breaches doubled'],['Product','Onboarding v2 lifts D7 retention +6pt']].map(([d,t],i)=>`<div class="rrow"><span class="idx">${i+1}</span><span class="kicker" style="width:84px">${d}</span><div class="ti" style="font-weight:500;flex:1">${t}</div>${svg(I.arrow,14)}</div>`).join('')}</div></div>
+ <div><div class="sectitle">Domain coverage</div><div class="mt16">${hbar('Revenue',90,'18')}${hbar('Marketing',70,'12')}${hbar('Support',55,'9')}${hbar('Product',40,'6')}${hbar('Finance',25,'4')}</div>
+  <details class="mt24"><summary style="cursor:pointer;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)">3 signals held back by the trust gate</summary><p style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:10px;line-height:1.7">Suppressed as confounded or below plausibility: "returns correlate with moon phase" (spurious) · "APAC +300%" (single-row artifact) · "churn = pricing" (insufficient evidence).</p></details>
+ </div>
+</div>`;
+
+V.recents=()=>{
+ const list=[['i1','Why did EU checkout conversion drop?','Inv','done','3 hypotheses · 2 verified','8m'],['i2','Top SKUs driving Q2 margin','Inv','done','report ready','1h'],['i3','Cohort retention by channel','Inv','run','running','now'],['i4','Average order value by country','Ask','done','quick answer','2h'],['i5','Refund reasons breakdown','Ask','done','quick answer','1d'],['i6','Did the May promo lift LTV?','Inv','fail','timed out','2d']];
+ const cur=list.find(x=>x[0]===SUB.recents)||list[0];
+ const mark=s=>s==='run'?'live':s==='fail'?'alert':'';
+ return `
+${note('Investigations','A master–detail archive that reads like a research index. Left: ruled, searchable history with kind and a single status mark. Right: the report set as a document, with an Evidence tab of claims you can validate or dispute.')}
+<div class="md">
+ <div class="md-l">
+  <div class="frame" style="display:flex;align-items:center;gap:9px;padding:9px 12px;margin-bottom:18px"><span style="color:var(--ink-3)">${svg(I.search,15)}</span><span style="font-size:12px;color:var(--ink-3)">Search investigations…</span></div>
+  <div class="filterbar" style="margin-bottom:16px;gap:13px">${['All','Inv','Quick','Running'].map((x,i)=>`<a class="${i===0?'on':''}">${x}</a>`).join('')}</div>
+  ${list.map(x=>`<div class="mrow ${x[0]===SUB.recents?'sel':''}" onclick="setSub('recents','${x[0]}')"><div class="flex ac g8"><span class="mk-dot ${mark(x[3])}"></span><span class="kicker">${x[2]}</span><span class="mt" style="margin-left:auto">${x[5]}</span></div><div class="ti mt6">${x[1]}</div><div class="mt">${x[4]}</div></div>`).join('')}
+ </div>
+ <div class="md-r">
+  <div class="flex jb ac"><span class="chip ${cur[2]==='Inv'?'acc':''}">${cur[2]==='Inv'?'Deep analysis':'Quick answer'}</span><div class="utabs" style="border:none;gap:20px"><button class="utab on">Report</button><button class="utab" onclick="toast('Evidence: claims with confidence + validate/dispute')">Evidence</button></div></div>
+  <h1 class="display mt16" style="font-size:24px;max-width:26ch">${cur[1]}</h1>
+  <p class="lede" style="font-size:13px">${cur[3]==='fail'?'Timed out before completing — re-run with a narrower scope.':'Completed · '+cur[4]}</p>
+  ${cur[3]==='fail'?`<div class="frame mt24" style="padding:20px;border-color:var(--accent)"><div class="flex ac g8" style="color:var(--accent)">${svg(I.alert,16)}<b style="color:var(--ink)">Timed out at the decomposition step</b></div><button class="btn ink sm mt16">Re-run narrower →</button></div>`:`
+  <div class="mt32"><div class="sectitle">Executive summary</div><p style="font-size:14px;line-height:1.65;margin-top:14px">${cur[1].includes('SKU')?'Five SKUs now account for 61% of gross margin, up from 48% a quarter ago — concentration risk is rising, and two are low-stock.':'Conversion fell 22% WoW, isolated to mobile DACH at the payment step. Root cause: a payment-provider latency spike. Estimated exposure $38k / week.'}</p><div class="flex g8 mt16"><span class="chip">confidence high</span><span class="chip">3 sources</span><span class="chip">2 verified</span></div></div>
+  <div class="mt32"><div class="sectitle">Recommended actions</div><div class="rlist">${[['Fail over to backup payment provider',''],['Add latency monitor on payment_events','Create monitor']].map(([t,a])=>`<div class="rrow"><span class="mk-dot idle"></span><div class="ti" style="font-weight:500;flex:1">${t}</div>${a?`<span class="rt" data-nav="monitors">${a} →</span>`:''}</div>`).join('')}</div></div>`}
+  <div class="frame mt32" style="display:flex;align-items:center;gap:11px;padding:13px 15px"><span style="color:var(--ink-3)">${svg(I.search,16)}</span><input style="flex:1;background:none;border:none;outline:none;font-size:13px" placeholder="Ask a follow-up…"/><button class="btn ink sm">Send</button></div>
+ </div>
+</div>`;
+};
+
+V.intelligence=()=>{
+ const L=SUB.intelligence,tabs=[['briefing','Briefing'],['hub','Hub'],['ontology','Ontology'],['domains','Domains'],['evidence','Evidence'],['org','Org']];
+ const B={
+  briefing:`<div class="kpis k3 mt24">${kpi('Findings','38','▲ 6 wk')}${kpi('Entities mapped','142','▲ 9')}${kpi('Avg novelty','6.4','steady')}</div><p class="lede mt24">An executive roll-up of what Aughor knows right now — KPIs, key findings, and links into live investigation threads.</p>`,
+  hub:`<p class="lede mt24">Per-domain insight libraries, ranked by novelty.</p><div class="rlist mt16">${['Revenue 12','Marketing 9','Support 7','Product 6','Finance 4','Logistics 3'].map((d,i)=>{const[n,c]=d.split(' ');return `<div class="rrow"><span class="idx">${i+1}</span><div class="ti" style="flex:1">${n}</div><span class="rt"><span class="num">${c}</span> insights</span></div>`}).join('')}</div>`,
+  ontology:`<div class="flex jb ac mt24"><div class="sectitle" style="border:none;padding:0">Object model</div><span class="kicker">142 entities · 218 relations</span></div>
+   <div class="graph mt16">
+    <div class="gn acc" style="left:42%;top:13%">CUSTOMER</div><div class="gn" style="left:13%;top:42%">ORDER</div><div class="gn" style="left:70%;top:38%">PRODUCT</div><div class="gn" style="left:28%;top:72%">REFUND</div><div class="gn" style="left:60%;top:72%">SESSION</div>
+    <div class="ge" style="left:22%;top:22%;width:210px;transform:rotate(33deg)"></div><div class="ge" style="left:50%;top:22%;width:200px;transform:rotate(18deg)"></div><div class="ge" style="left:20%;top:50%;width:130px;transform:rotate(54deg)"></div><div class="ge" style="left:38%;top:78%;width:180px;transform:rotate(-5deg)"></div>
+   </div><p class="kicker mt16">Select an entity to inspect properties, lifecycle, synonyms & learned skills. Merge tool resolves duplicates.</p>`,
+  domains:`<p class="lede mt24">Domain-scoped exploration insights, with a novelty breakdown and query-budget usage.</p><div class="mt16">${hbar('High novelty',30,'11')}${hbar('Mid novelty',50,'18')}${hbar('Low novelty',20,'9')}</div><div class="flex jb mt24" style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em"><span>Query budget used</span><span style="color:var(--accent)">68% of daily cap</span></div>`,
+  evidence:`<p class="lede mt24">Promoted claims, organised by domain, with validation feedback.</p>${[['Top 5 SKUs drive 61% of margin','Revenue',92],['Refund-SLA breaches doubled','Support',85],['Onboarding v2 lifts D7 +6pt','Product',79]].map(([t,d,c])=>`<div class="claim"><div class="flex jb ac"><div style="font-weight:500;font-size:12.5px">${t}</div><span class="chip">${d}</span></div><div class="conf"><i style="width:${c}%"></i></div><div class="flex g8 mt6"><button class="btn line sm">✓ Validate</button><button class="btn bare sm">✗ Dispute</button><span class="rt" style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--ink-3)">confidence ${c}%</span></div></div>`).join('')}`,
+  org:`<div class="kpis k3 mt24">${kpi('Promoted','24','▲ 5')}${kpi('Across canvases','7','—')}${kpi('Shared metrics','11','▲ 2')}</div><p class="lede mt24">Org-wide knowledge, promoted from individual canvases — decoupled from any single connection.</p>`
+ };
+ return `
+${note('Intelligence Map','The six legacy lenses (Briefing / Hub / Ontology / Domains / Evidence / Org) unified under one workspace with a single underline switcher and a persistent scope line — so users stop hunting across separate screens. The ontology graph goes monochrome on a dotted grid, reading like a schematic.')}
+<div class="flex jb ac">${head('Knowledge','Intelligence Map','Everything Aughor has learned about your data, through six lenses.')}<span class="chip">Revenue & Orders canvas ▾</span></div>
+<div class="utabs mt24">${tabs.map(([id,l])=>`<button class="utab ${L===id?'on':''}" onclick="setSub('intelligence','${id}')">${l}</button>`).join('')}</div>
+${B[L]}`;
+};
+
+V.fleet=()=>{
+ const t=SUB.fleet;
+ return `
+${note('Fleet','A control room for the agents. Activity: live runs as a precise table with mono cost and duration. Agents: per-agent governance — enable/pause, token budget, model. Status is text and a mark, never a traffic-light.')}
+<div class="flex jb ac">${head('Agents','Fleet','Scout, Analyst, Watcher, Briefer and Curator — what they\'re doing, and what it costs.')}<div class="utabs" style="border:none;gap:18px">${['activity','agents'].map(x=>`<button class="utab ${t===x?'on':''}" onclick="setSub('fleet','${x}')">${x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div></div>
+<div class="kpis k4 mt24">${kpi('Running','3','live')}${kpi('Succeeded · 24h','41','▲ 12')}${kpi('Failed','1','▼ 2')}${kpi('Spend · 24h','$3.80','within cap')}</div>
+${t==='activity'?`<table class="dt mt32"><thead><tr><th>Agent</th><th>Task</th><th>State</th><th class="num">Cost</th><th>When</th><th></th></tr></thead><tbody>
+${[['Scout','Profiling refunds table','running','$0.04','12s ago'],['Analyst','Verifying hypothesis #2','running','$0.02','8s ago'],['Reporter','Drafting EU summary','queued','—','—'],['Watcher','Anomaly sweep · hourly','done','$0.09','2m ago'],['Briefer','Weekly brief','done','$0.21','1h ago']].map(([a,tk,s,c,w])=>`<tr><td><b>${a}</b></td><td style="color:var(--ink-2)">${tk}</td><td><span class="flag ${s==='running'?'alert':''}">${s==='running'?'<span class="mk-dot live"></span> ':''}${s}</span></td><td class="num">${c}</td><td class="num" style="color:var(--ink-3)">${w}</td><td>${s==='running'?'<button class="btn bare sm">Cancel</button>':''}</td></tr>`).join('')}
+</tbody></table>`:`<table class="dt mt32"><thead><tr><th>Agent</th><th>Lane</th><th>Status</th><th class="num">Budget / run</th><th>Model</th></tr></thead><tbody>
+${[['Scout','Interactive · exploration','enabled','6k tok','Sonnet 4.6'],['Analyst','Interactive · deep analysis','enabled','12k tok','Opus 4.8'],['Watcher','Background · monitors','enabled','4k tok','Haiku 4.5'],['Briefer','Background · briefings','enabled','8k tok','Sonnet 4.6'],['Curator','Background · knowledge','paused','5k tok','Haiku 4.5']].map(([n,l,s,b,m])=>`<tr><td><b>${n}</b></td><td style="color:var(--ink-2)">${l}</td><td><span class="flag ${s==='paused'?'':''}"><span class="mk-dot ${s==='paused'?'idle':''}"></span> ${s}</span></td><td class="num">${b}</td><td class="num">${m}</td></tr>`).join('')}
+</tbody></table>`}`;
+};
+
+V.health=()=>`
+${note('Health','A scorecard with a strict rule: on-target KPIs recede to ink-grey, off-target ones turn red and rise to the top. No amber/green/red rainbow — just signal vs quiet. Each off-target metric carries a direct Investigate path.')}
+<div class="flex jb ac">${head('Scorecard','Business KPIs vs targets','Every metric scored against its target. The three that are off rise to the top.')}<span class="flag alert">3 off target</span></div>
+<table class="dt mt24"><thead><tr><th>Metric</th><th class="num">Current</th><th class="num">Target</th><th class="num">Variance</th><th>Status</th><th></th></tr></thead><tbody>
+${[['Net Revenue','$1.18M','$1.28M','−8%',1],['Checkout Conversion','2.4%','3.0%','−20%',1],['Refund Rate','4.1%','2.5%','+64%',1],['Gross Margin','61%','60%','+1%',0],['CAC','$42','$40','+5%',0],['D7 Retention','38%','35%','+9%',0],['NPS','46','45','+2%',0],['Avg Order Value','$84','$80','+5%',0],['Fulfilment SLA','94%','97%','−3%',0]].sort((a,b)=>b[4]-a[4]).map(([n,v,t,d,off])=>`<tr><td><b style="${off?'':'color:var(--ink-2);font-weight:500'}">${n}</b></td><td class="num">${v}</td><td class="num" style="color:var(--ink-3)">${t}</td><td class="num" style="${off?'color:var(--accent)':'color:var(--ink-2)'}">${d}</td><td><span class="flag ${off?'alert':''}"><span class="mk-dot ${off?'alert':'idle'}"></span> ${off?'off target':'on target'}</span></td><td>${off?'<button class="btn line sm" data-nav="chat">Investigate →</button>':''}</td></tr>`).join('')}
+</tbody></table>`;
+
+V.playbook=()=>{
+ const list=[['p1','cart_abandonment','Trigger 1-hr reminder + 5% incentive','Active','72%'],['p2','refund_rate','Route DACH refunds to manual review','Active','64%'],['p3','payment_latency','Fail over to backup provider > 3s p95','Draft','—'],['p4','low_stock','Auto-reorder when cover < 7 days','Active','81%'],['p5','churn_risk','CSM outreach for accounts > 0.7','Deprecated','—']];
+ const cur=list.find(x=>x[0]===SUB.playbook)||list[0];
+ return `
+${note('Playbook','If-this-then-that for the business. Master–detail: left lists trigger→action rules with status and proven success rate; right reads the rule with expected impact, owner, evidence and a version history tied to receipts.')}
+<div class="md">
+ <div class="md-l">
+  <div class="flex jb ac" style="margin-bottom:16px"><span class="sectitle" style="border:none;padding:0">Playbook</span><button class="btn ink sm">+ New</button></div>
+  <div class="filterbar" style="margin-bottom:16px;gap:13px">${['All','Active','Draft','Proven'].map((x,i)=>`<a class="${i===0?'on':''}">${x}</a>`).join('')}</div>
+  ${list.map(x=>`<div class="mrow ${x[0]===SUB.playbook?'sel':''}" onclick="setSub('playbook','${x[0]}')"><div class="flex jb ac"><span class="mono" style="font-size:10.5px;color:var(--accent)">${x[1]}</span><span class="kicker">${x[3]}</span></div><div class="ti mt6" style="font-weight:500">${x[2]}</div>${x[4]!=='—'?`<div class="mt">success ${x[4]}</div>`:''}</div>`).join('')}
+ </div>
+ <div class="md-r">
+  <div class="flex jb ac"><span class="mono chip acc">${cur[1]}</span><button class="btn line sm">${cur[3]==='Active'?'Deprecate':'Promote'}</button></div>
+  <h1 class="display mt16" style="font-size:24px;max-width:26ch">${cur[2]}</h1>
+  <p class="lede" style="font-size:13px"><i>When <span class="mono" style="color:var(--ink)">${cur[1]}</span> crosses its threshold, Aughor recommends this action.</i></p>
+  <div class="kpis k3 mt24">${kpi('Expected impact','−18%','abandons')}${kpi('Timeline','2 wk','to effect')}${kpi('Owner','Growth','lead')}</div>
+  <div class="mt32"><div class="sectitle">Historical success</div><div class="flex ac jb mt16"><span class="mono" style="font-size:28px;letter-spacing:-.02em">${cur[4]==='—'?'—':cur[4]}</span><span class="kicker">6 evidence sources · 4 investigations</span></div></div>
+  <details class="mt24"><summary style="cursor:pointer;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)">Version history · 3 frozen</summary><div class="rlist mt10">${['v3 — added incentive cap · 2d','v2 — narrowed to mobile · 3w','v1 — seed from KB · 2mo'].map((v,i)=>`<div class="rrow"><span class="idx">v${3-i}</span><div class="ti" style="font-weight:450;font-size:12px">${v}</div></div>`).join('')}</div></details>
+ </div>
+</div>`;
+};
+
+V.catalog=()=>{
+ const tbl={orders:['14','892k'],customers:['9','124k'],line_items:['11','2.4M'],refunds:['8','18k'],sessions:['16','4.1M'],products:['12','3.2k']};
+ const sel=SUB.catalog,t=tbl[sel];
+ return `
+${note('Catalog','A data browser, not a query screen. Left index (connection → table); right adapts to the selection. Columns show type, distribution and nulls as a clean table — understanding a table never requires writing SQL. The ER diagram is one tab away.')}
+<div class="md">
+ <div class="md-l">
+  <div class="frame" style="display:flex;align-items:center;gap:9px;padding:9px 12px;margin-bottom:16px"><span style="color:var(--ink-3)">${svg(I.search,15)}</span><span style="font-size:12px;color:var(--ink-3)">Search tables & columns…</span></div>
+  <div class="kicker" style="padding:4px 8px 8px">postgres · public</div>
+  ${Object.keys(tbl).map(n=>`<div class="mrow ${n===sel?'sel':''}" onclick="setSub('catalog','${n}')"><div class="flex ac g8"><span style="color:var(--ink-3)">${svg(I.db,15)}</span><span class="ti mono" style="font-weight:500">${n}</span><span class="mt" style="margin-left:auto">${tbl[n][1]}</span></div></div>`).join('')}
+ </div>
+ <div class="md-r">
+  <div class="flex jb ac"><div class="flex ac g12"><h1 class="display" style="font-size:24px" class="mono">${sel}</h1><span class="chip">verified</span></div><div class="utabs" style="border:none;gap:18px"><button class="utab on">Overview</button><button class="utab" onclick="toast('Sample data')">Sample</button><button class="utab" onclick="toast('ER diagram')">ERD</button></div></div>
+  <div class="flex g8 mt16">${[`${t[0]} columns`,`${t[1]} rows`,'2 foreign keys','profiled 1h ago'].map(s=>`<span class="chip">${s}</span>`).join('')}</div>
+  <table class="dt mt32"><thead><tr><th>Column</th><th>Type</th><th>Distribution</th><th class="num">Nulls</th></tr></thead><tbody>
+  ${[['id','int','100% unique','0%'],['customer_id','int','fk → customers','0%'],['status','enum','5 values','0%'],['total','decimal','$4 – $2,140','0%'],['country','text','38 values','0.2%'],['created_at','timestamp','2yr range','0%']].map(([n,ty,ds,nu])=>`<tr><td class="mono"><b>${n}</b></td><td><span class="chip">${ty}</span></td><td style="color:var(--ink-2)">${ds}</td><td class="num" style="color:var(--ink-3)">${nu}</td></tr>`).join('')}
+  </tbody></table>
+  <div class="frame mt32" style="display:flex;align-items:center;gap:11px;padding:13px 15px"><span style="color:var(--ink-3)">${svg(I.search,16)}</span><span class="kicker">Ask</span><input style="flex:1;background:none;border:none;outline:none;font-size:13px" placeholder="orders per country, last 30 days"/><button class="btn ink sm" data-nav="chat">Ask →</button></div>
+ </div>
+</div>`;
+};
+
+V.builder=()=>{
+ const m=SUB.builder;
+ return `
+${note('Query Builder','Visual analysis without SQL. Three columns: a column shelf, the dimension / measure / filter definition, and results that auto-pick chart / table / pivot — with the generated SQL always one click away. Grain warnings guard against double-counting.')}
+<div class="flex jb ac">${head('Compose','Query Builder','Revenue by country & month — built from shelves, not syntax.')}<div class="flex g8"><button class="btn line sm">View SQL</button><button class="btn ink sm">Save to canvas</button></div></div>
+<div class="cols mt24" style="grid-template-columns:190px 1fr 1.25fr;gap:32px;align-items:start">
+ <div><div class="sectitle">Columns · orders</div>${['country','created_at','total','status','customer_id','channel'].map(c=>`<div class="rrow" style="padding:8px 0"><span class="mono" style="font-size:11.5px">${c}</span><span class="rt">⋮⋮</span></div>`).join('')}</div>
+ <div>
+  <div class="sectitle">Dimensions</div><div class="flex wrap g8 mt10" style="margin-bottom:24px"><span class="chip acc">country</span><span class="chip acc">month(created_at)</span></div>
+  <div class="flex jb ac" style="border-bottom:1px solid var(--line-strong);padding-bottom:10px"><span class="sectitle" style="border:none;padding:0">Measures</span><span class="flag">grain ok</span></div><div class="flex wrap g8 mt10" style="margin-bottom:24px"><span class="chip">sum(total)</span><span class="chip">count(*)</span></div>
+  <div class="sectitle">Filters</div><div class="flex wrap g8 mt10"><span class="chip">status = paid</span><span class="chip">last 6 months</span></div>
+ </div>
+ <div>
+  <div class="flex jb ac" style="border-bottom:1px solid var(--line-strong);padding-bottom:10px"><span class="sectitle" style="border:none;padding:0">Results</span><div class="utabs" style="border:none;gap:14px">${['chart','table','pivot'].map(x=>`<button class="utab ${m===x?'on':''}" style="padding-bottom:0;font-size:11px" onclick="setSub('builder','${x}')">${x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div></div>
+  ${m==='chart'?`<div class="mt24" style="height:200px;display:flex;align-items:flex-end;gap:12px;padding:0 4px">${[55,68,72,60,84,90].map((h,i)=>`<div style="flex:1;text-align:center"><div style="height:${h*1.7}px;background:${i===5?'var(--accent)':'var(--ink)'}"></div><div class="kicker mt6">${['Jan','Feb','Mar','Apr','May','Jun'][i]}</div></div>`).join('')}</div>`:m==='table'?`<table class="dt mt16"><thead><tr><th>Country</th><th>Month</th><th class="num">Revenue</th></tr></thead><tbody>${[['US','Jun','$184k'],['DE','Jun','$92k'],['UK','Jun','$71k'],['FR','Jun','$54k']].map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td class="num">${r[2]}</td></tr>`).join('')}</tbody></table>`:`<table class="dt mt16"><thead><tr><th></th><th class="num">US</th><th class="num">DE</th><th class="num">UK</th></tr></thead><tbody>${[['Apr','$160k','$80k','$62k'],['May','$172k','$86k','$66k'],['Jun','$184k','$92k','$71k']].map(r=>`<tr><td><b>${r[0]}</b></td><td class="num">${r[1]}</td><td class="num">${r[2]}</td><td class="num">${r[3]}</td></tr>`).join('')}</tbody></table>`}
+ </div>
+</div>`;
+};
+
+V.semantic=()=>{
+ const tab=SUB.semantic,tabs=[['annotations','Annotations'],['knowledge','Knowledge'],['metrics','Metrics'],['benchmarks','Benchmarks']];
+ const B={
+  annotations:`<p class="lede mt24">Business descriptions attached to tables & columns — injected into the model\'s prompts.</p><div class="rlist mt16">${[['orders.total','Gross order value incl. tax, excl. shipping'],['orders.status','Lifecycle: cart→paid→fulfilled→refunded'],['customers.tier','Loyalty tier: bronze/silver/gold/platinum']].map(([k,v])=>`<div class="rrow"><span class="mono" style="width:150px;color:var(--accent);font-size:11px">${k}</span><div class="ti" style="font-weight:450;flex:1;font-size:12.5px">${v}</div><button class="btn bare sm">Edit</button></div>`).join('')}</div>`,
+  knowledge:`<p class="lede mt24">Reusable definitions — formulas, synonyms, join guidance, rules.</p><div class="rlist mt16">${[['formula','Net Revenue','gross − refunds − discounts'],['synonym','"churn"','= cancelled within 90d'],['join','orders ⋈ customers','on customer_id, left']].map(([t,k,v])=>`<div class="rrow"><span class="kicker" style="width:80px">${t}</span><div style="flex:1"><div class="ti">${k}</div><div class="mt">${v}</div></div></div>`).join('')}</div>`,
+  metrics:`<div class="cols mt24" style="grid-template-columns:240px 1fr;gap:32px"><div>${[['Net Revenue','approved'],['Conversion Rate','approved'],['CAC','proposed'],['LTV','draft']].map(([n,s],i)=>`<div class="mrow ${i===0?'sel':''}"><div class="flex jb ac"><span class="ti">${n}</span><span class="kicker">${s}</span></div></div>`).join('')}</div><div><div class="flex jb ac"><h2 class="head">Net Revenue</h2><span class="chip">approved</span></div><div class="frame mono mt16" style="padding:14px;font-size:12px;color:var(--accent)">SUM(orders.total) − SUM(refunds.amount) − SUM(discounts.amount)</div><div class="kpis k3 mt24">${kpi('Unit','USD','')}${kpi('Owner','Finance','')}${kpi('Tests','4/4','pass')}</div><div class="flex ac g8 mt24" style="color:var(--ink-2);font-family:var(--mono);font-size:11px">${svg(I.check,15)} Validation passed · freshness OK · last run 1h ago</div></div></div>`,
+  benchmarks:`<div class="flex jb ac mt24"><p class="lede" style="margin:0">Gold questions with expected columns & rules — a regression suite for SQL quality.</p><span class="flag">92% pass</span></div><div class="rlist mt16">${[['What was net revenue in Q2?',1],['Top 5 customers by LTV',1],['Refund rate by country',0],['MoM conversion trend',1]].map(([q,p])=>`<div class="rrow"><span class="mk-dot ${p?'':'alert'}"></span><div class="ti" style="font-weight:450;flex:1;font-size:12.5px">${q}</div><span class="flag ${p?'':'alert'}">${p?'pass':'fail'}</span></div>`).join('')}</div>`
+ };
+ return `
+${note('Semantic Layer','The governance home for business meaning. Four tabs — Annotations, Knowledge, Metrics, Benchmarks — over a scope line. Metrics carries an approval lifecycle and a live validation read-out, so "what the numbers mean" is owned and tested.')}
+<div class="flex jb ac">${head('Meaning','Semantic Layer','The definitions, rules and tests behind every number.')}<span class="chip">postgres · public ▾</span></div>
+<div class="utabs mt24">${tabs.map(([id,l])=>`<button class="utab ${tab===id?'on':''}" onclick="setSub('semantic','${id}')">${l}</button>`).join('')}</div>
+${B[tab]}`;
+};
+
+V.monitors=()=>{
+ const t=SUB.monitors;
+ return `
+${note('Monitors','Set-and-forget watchers. Monitors: rules with on/off, type, cadence and a recent-values sparkline. Alerts: a severity-sorted queue you acknowledge. A monitor starts from a metric, not raw SQL.')}
+<div class="flex jb ac">${head('Watchers','Monitors','Aughor watches your metrics and tells you when something breaks pattern.')}<div class="flex g8 ac"><div class="utabs" style="border:none;gap:16px">${['monitors','alerts'].map(x=>`<button class="utab ${t===x?'on':''}" onclick="setSub('monitors','${x}')">${x[0].toUpperCase()+x.slice(1)}${x==='alerts'?' · 2':''}</button>`).join('')}</div><button class="btn ink sm">+ New</button></div></div>
+${t==='monitors'?`<table class="dt mt24"><thead><tr><th></th><th>Monitor</th><th>Type</th><th>Cadence</th><th>Recent</th><th>State</th></tr></thead><tbody>
+${[['Refund rate','anomaly','hourly','on',[30,40,35,55,45,60,42]],['Net revenue vs target','threshold','daily','on',[60,58,55,52,50,48,46]],['Payment p95 latency','spike','every 15m','on',[20,22,21,25,30,55,80]],['Daily active users','drop','daily','off',[50,52,51,53,52,54,53]]].map(([n,ty,c,s,sp])=>`<tr><td><span class="mk-dot ${s==='on'?'live':'idle'}"></span></td><td><b>${n}</b></td><td><span class="chip">${ty}</span></td><td class="num" style="color:var(--ink-3)">${c}</td><td style="width:120px">${sparkEl(sp)}</td><td><span class="flag">${s}</span></td></tr>`).join('')}
+</tbody></table>`:`<div class="rlist mt24">${[['HIGH','alert','Refund rate 4.1% > 2.5% threshold','12m'],['MED','','Payment p95 6.8s > 3s','1h']].map(([sev,m,t2,w])=>`<div class="rrow"><span class="kicker ${m==='alert'?'':''}" style="width:54px;color:${m==='alert'?'var(--accent)':'var(--ink-3)'}">${sev}</span><span class="mk-dot ${m}"></span><div style="flex:1"><div class="ti">${t2}</div><div class="mt">${w} ago</div></div><button class="btn line sm" data-nav="chat">Investigate</button><button class="btn ink sm">Acknowledge</button></div>`).join('')}</div>`}`;
+};
+
+V.actions=()=>{
+ const t=SUB.actions;
+ return `
+${note('Action Hub','Where insight becomes action. Triggers: webhook / Slack / Jira destinations with a Test and a clear state. Logs: an execution audit with HTTP results — automations stay transparent and debuggable.')}
+<div class="flex jb ac">${head('Act','Action Hub','Send findings to where the team already works.')}<div class="flex g8 ac"><div class="utabs" style="border:none;gap:16px">${['triggers','logs'].map(x=>`<button class="utab ${t===x?'on':''}" onclick="setSub('actions','${x}')">${x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div><button class="btn ink sm">+ New</button></div></div>
+${t==='triggers'?`<table class="dt mt24"><thead><tr><th></th><th>Trigger</th><th>Type</th><th>Destination</th><th>State</th><th></th></tr></thead><tbody>
+${[['#growth-alerts','Slack','channel connected','ok'],['Jira · DATA board','Jira','project: DATA','ok'],['Ops webhook','Webhook','https://…/hook','untested'],['PagerDuty','Webhook','events.pagerduty','ok']].map(([n,ty,d,s])=>`<tr><td><span class="mk-dot ${s==='ok'?'':'idle'}"></span></td><td><b>${n}</b></td><td><span class="chip">${ty}</span></td><td class="mono" style="font-size:11px;color:var(--ink-3)">${d}</td><td><span class="flag ${s==='ok'?'':''}">${s}</span></td><td><button class="btn line sm">Test</button></td></tr>`).join('')}
+</tbody></table>`:`<table class="dt mt24"><thead><tr><th>Time</th><th>Trigger</th><th>From recommendation</th><th class="num">HTTP</th></tr></thead><tbody>
+${[['12m ago','#growth-alerts','Refund spike in DACH','200'],['1h ago','Jira · DATA','Add index on orders','201'],['3h ago','Ops webhook','Failover provider','500']].map(([t2,tg,r,s])=>`<tr><td class="num" style="color:var(--ink-3)">${t2}</td><td><b>${tg}</b></td><td style="color:var(--ink-2)">${r}</td><td class="num" style="${s[0]==='5'?'color:var(--accent)':''}">${s}</td></tr>`).join('')}
+</tbody></table>`}`;
+};
+
+V.security=()=>{
+ const t=SUB.security;
+ return `
+${note('Security & Audit','Trust and control in one place. A KPI strip (queries, blocked, suspicious, PII redactions), a verdict-filtered audit table with the SQL inline, and a collapsible per-connection budget. Blocked rows carry the only red on the page.')}
+<div class="flex jb ac">${head('Control','Security & Audit','Every query the platform ran — verdict, cost, and what it touched.')}<div class="utabs" style="border:none;gap:16px">${['security','activity'].map(x=>`<button class="utab ${t===x?'on':''}" onclick="setSub('security','${x}')">${x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div></div>
+<div class="kpis" style="grid-template-columns:repeat(6,1fr)">${[['Queries','3,182',0],['Blocked','4',1],['Suspicious','11',0],['Errors','7',0],['PII redactions','146',0],['Avg dur','0.8s',0]].map(([k,v,n])=>kpi(k,v,n?'flagged':'',n)).join('')}</div>
+<div class="flex jb ac mt32"><div class="filterbar">${['All','Safe','Suspicious','Blocked'].map((x,i)=>`<a class="${i===0?'on':''}">${x}</a>`).join('')}</div><span class="chip">All connections ▾</span></div>
+<table class="dt mt16"><thead><tr><th>Time</th><th>Connection</th><th>Verdict</th><th>SQL</th><th class="num">Rows</th><th class="num">Dur</th><th class="num">PII</th></tr></thead><tbody>
+${[['12:04','postgres','safe','SELECT … FROM orders WHERE …','892','0.3s','—',0],['12:01','snowflake','suspicious','SELECT * FROM customers','124k','2.1s','3',0],['11:58','postgres','blocked','DROP TABLE staging_*','—','—','—',1],['11:55','bigquery','safe','SELECT country, SUM(total) …','38','0.4s','—',0]].map(([t2,c,v,q,r,d,p,bl])=>`<tr><td class="num" style="color:var(--ink-3)">${t2}</td><td>${c}</td><td><span class="flag ${bl?'alert':''}">${v}</span></td><td class="sql">${q}</td><td class="num">${r}</td><td class="num">${d}</td><td class="num">${p}</td></tr>`).join('')}
+</tbody></table>
+<details class="mt24"><summary style="cursor:pointer;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)">Query budgets · per connection</summary><div class="kpis k3 mt16">${kpi('Max rows','100,000','')}${kpi('Warn after','5s','')}${kpi('Hard cap','30s','')}</div></details>`;
+};
+
+V.settings=()=>{
+ const tab=SUB.settings,tabs=[['organization','Organization'],['localization','Localization'],['models','Models'],['appearance','Appearance'],['connections','Connections'],['system','System']];
+ const fld=(l,v)=>`<div style="margin-bottom:18px"><div class="kicker" style="margin-bottom:6px">${l}</div><div class="frame" style="padding:10px 13px;font-size:13px">${v}</div></div>`;
+ const B={
+  organization:`<div class="cols g2" style="gap:24px">${fld('Company name','Acme Commerce')}${fld('Website','acme.com')}${fld('HQ location','Berlin, DE')}${fld('Industry','E-commerce')}</div>`,
+  localization:`<div class="cols g2" style="gap:24px">${fld('Currency','EUR (€)')}${fld('Timezone','Europe/Berlin')}${fld('Date format','DD/MM/YYYY')}${fld('Fiscal year starts','January')}</div>`,
+  models:`<table class="dt"><thead><tr><th>Lane</th><th>Model</th><th></th></tr></thead><tbody>${[['Interactive · Analyst','Opus 4.8'],['Interactive · Scout','Sonnet 4.6'],['Background · Watcher','Haiku 4.5'],['Embeddings','text-embedding-3']].map(([r,m])=>`<tr><td><b>${r}</b></td><td class="mono">${m}</td><td><button class="btn bare sm">Change</button></td></tr>`).join('')}</tbody></table>`,
+  appearance:`<div class="kicker">Theme</div><div class="utabs mt10" style="border:none;gap:18px"><button class="utab on">Light</button><button class="utab" onclick="document.getElementById('themeBtn').click()">Dark</button><button class="utab">System</button></div><div class="kicker mt32">Accent</div><div class="flex g8 mt10">${['#CF3A21','#1A1913','#2E4F7A','#3F6B4F','#6B4E7A'].map((c,i)=>`<span style="width:26px;height:26px;background:${c};border-radius:3px;outline:${i===0?'2px solid var(--ink);outline-offset:2px':'none'}"></span>`).join('')}</div>`,
+  connections:`<table class="dt"><thead><tr><th></th><th>Connection</th><th>Status</th></tr></thead><tbody>${[['live','postgres · prod','synced 2m ago'],['live','snowflake · analytics','synced 8m ago'],['idle','bigquery · marketing','sync due'],['','+ Add connection','PostgreSQL, Snowflake, BigQuery, Stripe…']].map(([m,n,s],i)=>`<tr><td><span class="mk-dot ${m}"></span></td><td><b style="${i===3?'color:var(--accent)':''}">${n}</b></td><td class="mono" style="color:var(--ink-3);font-size:11px">${s}</td></tr>`).join('')}</tbody></table>`,
+  system:`<div class="kpis k4">${[['Ontology expansions','1,204'],['SQL corrections','98%'],['RAG cache hits','87%'],['ADA tier skips','312']].map(([k,v])=>kpi(k,v,'')).join('')}</div><p class="kicker mt16">Kernel uptime 4d 6h · auto-refresh 60s</p>`
+ };
+ return `
+${note('Settings','Consolidated the scattered Org / System / Configure panels into one home with a clear left rail and a single consistent form rhythm — app-vs-workspace scope where it matters.')}
+<div class="md">
+ <div class="md-l" style="width:220px">${tabs.map(([id,l])=>`<div class="mrow ${tab===id?'sel':''}" onclick="setSub('settings','${id}')"><span class="ti" style="font-weight:450">${l}</span></div>`).join('')}</div>
+ <div class="md-r" style="max-width:760px">
+  <h1 class="display" style="font-size:24px">${tabs.find(t=>t[0]===tab)[1]}</h1>
+  <p class="lede" style="font-size:13px">${{organization:'Company identity, used across briefings and reports.',localization:'Defaults for currency, dates and fiscal periods.',models:'Which model powers each agent lane.',appearance:'Theme and accent.',connections:'Data sources Aughor can read.',system:'Internal kernel stats and feature flags.'}[tab]}</p>
+  <div class="mt32">${B[tab]}</div>
+  <div class="mt40"><button class="btn ink" onclick="toast('Saved ✓')">Save changes</button></div>
+ </div>
+</div>`;
+};
+
+/* ═══════════ engine ═══════════ */
+const content=document.getElementById('content'),crumbs=document.getElementById('crumbs'),cact=document.getElementById('cact');
+let current='home';
+const FULL=['recents','catalog','playbook','settings'];
+const ACT={home:'<button class="btn line sm">Customize</button><button class="btn ink sm" data-nav="chat">+ Ask</button>',chat:'<button class="btn bare sm">Share</button><button class="btn bare sm">Export</button>',def:'<button class="btn line sm">Share</button>'};
+function renderView(id,keep){
+ const sc=content.scrollTop;
+ const html=(V[id]||(()=>`${head('','+'+(TITLES[id]||id))}<p class="lede">Screen mocked for navigation.</p>`))();
+ const wrap=FULL.includes(id)?'view':'view pad maxw';
+ content.innerHTML=`<div class="${wrap}">${html}</div>`;
+ if(keep)content.scrollTop=sc;
+ const sec=SECTION[id];
+ crumbs.innerHTML=`<span>Aughor</span>`+(sec?`<span class="sep">/</span><span>${sec}</span>`:'')+`<span class="sep">/</span><span class="here">${TITLES[id]||id}</span>`;
+ cact.innerHTML=ACT[id]||ACT.def;
+}
+function movePill(el){if(!el){pill.style.opacity='0';return}pill.style.opacity='1';pill.style.transform=`translateY(${el.offsetTop}px)`}
+function navTo(id){current=id;document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.nav===id));movePill(document.querySelector(`.nav-item[data-nav="${id}"]`));if(document.startViewTransition)document.startViewTransition(()=>renderView(id));else renderView(id)}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-nav]');if(t){navTo(t.dataset.nav);if(t.dataset.nav==='chat')toast('Started a new investigation')}});
+renderView('home');requestAnimationFrame(()=>movePill(document.querySelector('.nav-item[data-nav="home"]')));
+
+const app=document.getElementById('app');
+document.getElementById('railBtn').onclick=()=>{app.classList.toggle('rail');setTimeout(()=>movePill(document.querySelector('.nav-item.active')),60)};
+const sun='<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',moon='<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+document.getElementById('themeBtn').onclick=()=>{const h=document.documentElement,n=h.getAttribute('data-theme')==='light'?'dark':'light';h.setAttribute('data-theme',n);document.getElementById('themeIco').innerHTML=n==='dark'?sun:moon;toast(n==='dark'?'Dark · ink':'Light · paper')};
+
+const scrim=document.getElementById('scrim'),pal=document.getElementById('pal'),palIn=document.getElementById('palIn'),palList=document.getElementById('palList');
+const PAL=[{sec:'Actions',items:[{ic:'spark',label:'New investigation',hint:'↵',nav:'chat'},{ic:'db',label:'Browse catalog',nav:'catalog'},{ic:'node',label:'Open Intelligence Map',nav:'intelligence'},{ic:'alert',label:'Create a monitor',nav:'monitors'}]},{sec:'Go to',items:NAV.filter(n=>n.id).map(n=>({ic:n.icon,label:n.label,nav:n.id}))}];
+function renderPal(q=''){q=q.toLowerCase();palList.innerHTML='';PAL.forEach(g=>{const items=g.items.filter(i=>i.label.toLowerCase().includes(q));if(!items.length)return;const s=document.createElement('div');s.className='pal-sec';s.textContent=g.sec;palList.appendChild(s);items.forEach(i=>{const el=document.createElement('div');el.className='pal-i';el.innerHTML=`<span class="ic">${svg(I[i.ic]||I.spark,16)}</span><span>${i.label}</span>`+(i.hint?`<span class="h">${i.hint}</span>`:'');el.onclick=()=>{navTo(i.nav);closePal()};palList.appendChild(el)})});const f=palList.querySelector('.pal-i');if(f)f.classList.add('sel')}
+function openPal(){scrim.classList.add('show');pal.classList.add('show');palIn.value='';renderPal();setTimeout(()=>palIn.focus(),40)}
+function closePal(){scrim.classList.remove('show');pal.classList.remove('show')}
+document.getElementById('cmdBtn').onclick=openPal;scrim.onclick=closePal;palIn.oninput=e=>renderPal(e.target.value);
+palIn.onkeydown=e=>{const sel=palList.querySelector('.pal-i.sel'),all=[...palList.querySelectorAll('.pal-i')];if(e.key==='Enter'&&sel)sel.click();if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();let i=all.indexOf(sel);i+=e.key==='ArrowDown'?1:-1;i=(i+all.length)%all.length;all.forEach(x=>x.classList.remove('sel'));all[i].classList.add('sel');all[i].scrollIntoView({block:'nearest'})}};
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();pal.classList.contains('show')?closePal():openPal()}if(e.key==='Escape')closePal()});
+
+const toasts=document.getElementById('toasts');
+function toast(m){const t=document.createElement('div');t.className='toast';t.innerHTML=`<span class="mk-dot"></span> ${m}`;toasts.appendChild(t);setTimeout(()=>{t.style.transition='opacity .25s,transform .25s';t.style.opacity='0';t.style.transform='translateY(8px)';setTimeout(()=>t.remove(),260)},2000)}
+
+document.getElementById('fab').onclick=function(){app.classList.toggle('notes');this.querySelector('span').textContent=app.classList.contains('notes')?'Hide notes':'Design notes'};
+</script>
+</body>
+</html>

@@ -66,7 +66,7 @@ function SemanticStepPanel({
   result: SemanticOpResult | null;
   onApply: () => void; onRevert: () => void;
 }) {
-  const inputCls = "text-[11px] px-2 py-1 rounded border border-zinc-700 bg-transparent text-zinc-200 focus:border-violet-500/60 outline-none";
+  const inputCls = "text-[11px] px-2 py-1 rounded border border-zinc-700 bg-transparent text-zinc-200 focus:border-amber-500/60 outline-none";
   const canApply = Boolean(col && (
     op === "filter" ? predicate.trim()
     : op === "extract" ? fields.some(f => f.name.trim())
@@ -75,9 +75,9 @@ function SemanticStepPanel({
     : false
   ));
   return (
-    <div className="rounded border border-violet-500/25 bg-violet-500/[0.04]">
+    <div className="rounded border border-amber-500/25 bg-amber-500/[0.04]">
       <button onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-violet-300 hover:text-violet-200 transition">
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-amber-300 hover:text-amber-200 transition">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l1.9 5.8L20 10l-5.1 2.2L12 18l-2.9-5.8L4 10l6.1-1.2z"/></svg>
         Semantic step
         <span className="text-zinc-500">— reason over a text column with an LLM</span>
@@ -132,14 +132,14 @@ function SemanticStepPanel({
                 </div>
               ))}
               <button onClick={() => setFields([...fields, { name: "", description: "" }])}
-                className="text-[11px] text-violet-400 hover:text-violet-300 self-start">+ field</button>
+                className="text-[11px] text-amber-400 hover:text-amber-300 self-start">+ field</button>
             </div>
           )}
 
           <div className="flex items-center gap-2">
             <button onClick={onApply} disabled={!canApply || applying}
-              className="text-[11px] px-3 py-1 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40 flex items-center gap-1.5">
-              {applying && <span className="w-3 h-3 border border-violet-300 border-t-transparent rounded-full animate-spin" />}
+              className="text-[11px] px-3 py-1 rounded border border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25 transition disabled:opacity-40 flex items-center gap-1.5">
+              {applying && <span className="w-3 h-3 border border-amber-300 border-t-transparent rounded-full animate-spin" />}
               {applying ? "Applying…" : "Apply"}
             </button>
             {result && (
@@ -168,7 +168,7 @@ function SemanticStepPanel({
 const AGG_OPTIONS = [
   { fn: "SUM",            label: "SUM",    hint: "Sum of values",            cls: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10" },
   { fn: "AVG",            label: "AVG",    hint: "Average value",            cls: "text-blue-400   border-blue-500/30   bg-blue-500/10"    },
-  { fn: "COUNT",          label: "COUNT",  hint: "Row count",                cls: "text-violet-400 border-violet-500/30 bg-violet-500/10"  },
+  { fn: "COUNT",          label: "COUNT",  hint: "Row count",                cls: "text-amber-400 border-amber-500/30 bg-amber-500/10"  },
   { fn: "COUNT DISTINCT", label: "C.DIST", hint: "Count unique values",      cls: "text-purple-400 border-purple-500/30 bg-purple-500/10"  },
   { fn: "MIN",            label: "MIN",    hint: "Minimum value",            cls: "text-amber-400  border-amber-500/30  bg-amber-500/10"   },
   { fn: "MAX",            label: "MAX",    hint: "Maximum value",            cls: "text-orange-400 border-orange-500/30 bg-orange-500/10"  },
@@ -604,14 +604,14 @@ function SqlEditor({ value, rows, taRef, onChange, onKeyDown, onClick, placehold
     <div className="relative">
       <pre ref={preRef} aria-hidden
         className="absolute inset-0 overflow-auto pointer-events-none"
-        style={{ ...metrics, background: "rgba(24,24,27,0.8)" }}
+        style={{ ...metrics, background: "var(--bg-1)" }}
         dangerouslySetInnerHTML={{ __html: highlightSql(value) + "\n" }} />
       <textarea
         ref={taRef} value={value} onChange={onChange} onKeyDown={onKeyDown} onClick={onClick}
         onScroll={e => { if (preRef.current) { preRef.current.scrollTop = e.currentTarget.scrollTop; preRef.current.scrollLeft = e.currentTarget.scrollLeft; } }}
         spellCheck={false} rows={rows} placeholder={placeholder}
         className="relative w-full outline-none resize-none focus:border-zinc-500"
-        style={{ ...metrics, background: "transparent", color: "transparent", caretColor: "#f4f4f5", borderColor: "#3f3f46" }} />
+        style={{ ...metrics, background: "transparent", color: "transparent", caretColor: "var(--t1)", borderColor: "var(--b2)" }} />
     </div>
   );
 }
@@ -643,7 +643,7 @@ function ColRow({ col, tableName, onAddDim, onAddMeasure }: {
         <button onMouseDown={e=>{e.stopPropagation();onAddDim();}} title="Add as dimension"
           className="px-1.5 py-0.5 rounded text-[11px] font-bold bg-blue-500/20 text-blue-400 hover:bg-blue-500/40 transition">D</button>
         <button onMouseDown={e=>{e.stopPropagation();onAddMeasure();}} title="Add as metric"
-          className="px-1.5 py-0.5 rounded text-[11px] font-bold bg-violet-500/20 text-violet-400 hover:bg-violet-500/40 transition">M</button>
+          className="px-1.5 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-400 hover:bg-amber-500/40 transition">M</button>
       </div>
     </div>
   );
@@ -956,11 +956,11 @@ function ResultsPane({
           <button
             onClick={handleCreateCanvas}
             disabled={creatingCanvas}
-            className="text-[11px] px-3 py-1.5 rounded border border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition disabled:opacity-50 flex items-center gap-1.5"
+            className="text-[11px] px-3 py-1.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition disabled:opacity-50 flex items-center gap-1.5"
           >
             {creatingCanvas ? (
               <>
-                <span className="w-3 h-3 border border-violet-400 border-t-transparent rounded-full animate-spin" />
+                <span className="w-3 h-3 border border-amber-400 border-t-transparent rounded-full animate-spin" />
                 Creating…
               </>
             ) : (
@@ -1627,8 +1627,8 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
             })}
           </div>
         ) : result ? (
-          <span className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full border shrink-0 bg-violet-500/10 border-violet-500/30 text-violet-300 ml-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+          <span className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full border shrink-0 bg-amber-500/10 border-amber-500/30 text-amber-300 ml-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
             imported query · edit SQL below
           </span>
         ) : (
@@ -1733,7 +1733,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
             );
           })()}
           <label className="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" checked={useCache} onChange={e=>setUseCache(e.target.checked)} className="w-3 h-3 accent-violet-500" />
+            <input type="checkbox" checked={useCache} onChange={e=>setUseCache(e.target.checked)} className="w-3 h-3 accent-amber-500" />
             <span className="text-[11px] text-zinc-500">Cache</span>
           </label>
           <button onClick={triggerRun} disabled={running||!sql.trim()}
@@ -2141,12 +2141,12 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node))setOverMeasures(false);}}
                     onDrop={onDropMeasures}
                     className={`min-h-[42px] rounded-md border-2 border-dashed p-2 flex flex-wrap gap-2 items-center content-start transition-all ${
-                      overMeasures ? "border-violet-500 bg-violet-500/5 shadow-[0_0_0_1px_rgba(139,92,246,0.2)]"
+                      overMeasures ? "border-amber-500 bg-amber-500/5 shadow-[0_0_0_1px_rgba(234,178,62,0.2)]"
                                    : "border-zinc-600 bg-zinc-800/10 hover:border-zinc-500"
                     }`}
                   >
                     {measures.length === 0 && (
-                      <p className={`w-full px-1 text-[11px] italic ${overMeasures?"text-violet-400":"text-zinc-500"}`}>{overMeasures ? "Release to configure metric" : "Drop a column or click M"}</p>
+                      <p className={`w-full px-1 text-[11px] italic ${overMeasures?"text-amber-400":"text-zinc-500"}`}>{overMeasures ? "Release to configure metric" : "Drop a column or click M"}</p>
                     )}
                     {measures.map(m => {
                       const ao = AGG_OPTIONS.find(o=>o.fn===m.agg);
@@ -2155,7 +2155,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                         <span key={m.id} title={warn || `${measureExpr(m,isMulti)} AS ${m.alias}`}
                           className={`inline-flex items-center gap-1.5 text-[12px] font-mono px-2.5 py-1 rounded-lg border ${
                             warn ? "text-amber-200 border-amber-500/50 bg-amber-500/10"
-                                 : (ao?.cls ?? "text-violet-300 border-violet-500/30 bg-violet-500/10")}`}>
+                                 : (ao?.cls ?? "text-amber-300 border-amber-500/30 bg-amber-500/10")}`}>
                           <span className="text-[11px] font-sans opacity-70">{m.fromMetric?"📊":m.agg==="CUSTOM"?"fx":m.agg}</span>
                           <span className="max-w-[120px] truncate">{m.alias||measureExpr(m,isMulti)}</span>
                           {warn && (
@@ -2446,7 +2446,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                   {result && !result.error && (
                     <span className="text-[12px] text-zinc-400">
                       {fmtN(result.row_count)} rows · {fmtMs(result.duration_ms)}
-                      {result.cached && <span className="ml-2 text-[11px] text-violet-400 border border-violet-500/30 rounded-md px-1.5 py-0.5">cached</span>}
+                      {result.cached && <span className="ml-2 text-[11px] text-amber-400 border border-amber-500/30 rounded-md px-1.5 py-0.5">cached</span>}
                     </span>
                   )}
                 </div>

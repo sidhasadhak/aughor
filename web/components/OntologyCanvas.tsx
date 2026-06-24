@@ -301,10 +301,10 @@ function computeLayout(graph: OntologyGraph, opts: { compact?: boolean; radial?:
 
 // Dot colour per entity type — used by the compact card.
 const TYPE_DOT: Record<string, string> = {
-  reference_data:  "bg-emerald-400",
-  event:           "bg-violet-400",
-  standalone:      "bg-zinc-500",
-  business_object: "bg-sky-400",
+  reference_data:  "bg-zinc-400",
+  event:           "bg-zinc-600",
+  standalone:      "bg-zinc-700",
+  business_object: "bg-zinc-500",
 };
 
 function EntityNode({
@@ -379,14 +379,14 @@ function EntityNode({
 
   // Entity-type colour palette
   const typeTheme = isSelected
-    ? { ring: "bg-violet-600/30 text-violet-200 ring-1 ring-violet-500/30", border: "border-violet-400/60 bg-[#1a1f2e] shadow-xl shadow-violet-500/10 ring-1 ring-violet-500/15" }
+    ? { ring: "bg-amber-600/30 text-amber-200 ring-1 ring-amber-500/30", border: "border-amber-400/60 bg-[var(--bg-3)] shadow-xl shadow-amber-500/10 ring-1 ring-amber-500/15" }
     : entity.entity_type === "reference_data"
-    ? { ring: "bg-emerald-700/20 text-emerald-300 ring-1 ring-emerald-600/25", border: "border-zinc-700/50 bg-zinc-900/80 hover:border-emerald-600/40 hover:bg-zinc-900" }
+    ? { ring: "bg-zinc-700/30 text-zinc-300 ring-1 ring-zinc-600/30", border: "border-zinc-700/50 bg-zinc-900/80 hover:border-zinc-500/60 hover:bg-zinc-900" }
     : entity.entity_type === "event"
-    ? { ring: "bg-violet-700/20 text-violet-300 ring-1 ring-violet-600/25", border: "border-zinc-700/50 bg-zinc-900/80 hover:border-violet-600/40 hover:bg-zinc-900" }
+    ? { ring: "bg-zinc-700/30 text-zinc-400 ring-1 ring-zinc-600/30", border: "border-zinc-700/50 bg-zinc-900/80 hover:border-zinc-500/60 hover:bg-zinc-900" }
     : entity.entity_type === "standalone"
     ? { ring: "bg-zinc-700/40 text-zinc-500 ring-1 ring-zinc-700/30", border: "border-zinc-700/40 bg-zinc-900/60 hover:border-zinc-600/60" }
-    : { ring: "bg-sky-700/20 text-sky-300 ring-1 ring-sky-600/25", border: "border-zinc-700/50 bg-zinc-900/80 hover:border-sky-600/40 hover:bg-zinc-900" }; // business_object
+    : { ring: "bg-zinc-700/30 text-zinc-300 ring-1 ring-zinc-600/30", border: "border-zinc-700/50 bg-zinc-900/80 hover:border-zinc-500/60 hover:bg-zinc-900" }; // business_object
 
   // ── Compact "light" card — a single pill: type dot + name + degree badge.
   if (compact) {
@@ -396,9 +396,9 @@ function EntityNode({
           "absolute rounded-lg border select-none transition-colors duration-150 flex items-center gap-2 px-2.5",
           draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
           isSelected
-            ? "border-violet-400/60 bg-[#1b2030] ring-1 ring-violet-500/20"
+            ? "border-amber-400/60 bg-[var(--bg-3)] ring-1 ring-amber-500/20"
             : isNeighbour
-            ? "border-violet-600/35 bg-zinc-900/90"
+            ? "border-amber-600/35 bg-zinc-900/90"
             : "border-zinc-700/45 bg-zinc-900/70 hover:border-zinc-600/70 hover:bg-zinc-900",
           isDimmed && "opacity-20",
         )}
@@ -410,8 +410,8 @@ function EntityNode({
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
-        <span className={cn("w-2 h-2 rounded-full shrink-0", TYPE_DOT[entity.entity_type ?? "business_object"] ?? "bg-sky-400")} />
-        <span className={cn("text-[12px] font-medium leading-tight truncate flex-1", isSelected ? "text-violet-100" : "text-zinc-200")}>
+        <span className={cn("w-2 h-2 rounded-full shrink-0", TYPE_DOT[entity.entity_type ?? "business_object"] ?? "bg-zinc-500")} />
+        <span className={cn("text-[12px] font-medium leading-tight truncate flex-1", isSelected ? "text-amber-100" : "text-zinc-200")}>
           {entity.display_name}
         </span>
         {(actionCount > 0 || metricCount > 0) && (
@@ -427,7 +427,7 @@ function EntityNode({
     <div
       className={cn(
         "absolute rounded-md border cursor-pointer select-none transition-all duration-200",
-        isNeighbour && !isSelected ? "border-violet-600/35 bg-zinc-900/90" : typeTheme.border,
+        isNeighbour && !isSelected ? "border-amber-600/35 bg-zinc-900/90" : typeTheme.border,
         isDimmed && "opacity-20 pointer-events-none",
         draggable && "cursor-grab active:cursor-grabbing",
       )}
@@ -451,7 +451,7 @@ function EntityNode({
             <p
               className={cn(
                 "text-[16px] font-semibold leading-tight truncate",
-                isSelected ? "text-violet-100" : "text-zinc-100",
+                isSelected ? "text-amber-100" : "text-zinc-100",
               )}
             >
               {entity.display_name}
@@ -489,7 +489,7 @@ function EntityNode({
                     "text-[11px] font-mono rounded-md px-1.5 py-0.5 border",
                     isTerminal
                       ? "text-zinc-500 border-zinc-700/60 bg-zinc-800/40"
-                      : "text-sky-300 border-sky-500/20 bg-sky-500/8",
+                      : "text-zinc-200 border-zinc-500/40 bg-zinc-700/30",
                   )}
                 >
                   {s}
@@ -514,7 +514,7 @@ function EntityNode({
         )}
         {onInvestigate && (
           <button
-            className="ml-auto text-[11px] text-violet-400/60 hover:text-violet-300 border border-violet-500/15 hover:border-violet-400/35 rounded-md px-1.5 py-0.5 transition"
+            className="ml-auto text-[11px] text-amber-400/60 hover:text-amber-300 border border-amber-500/15 hover:border-amber-400/35 rounded-md px-1.5 py-0.5 transition"
             onClick={(e) => {
               e.stopPropagation();
               const q = entity.active_filter
@@ -588,7 +588,7 @@ function FlowEdges({
           <path d="M1,1.5 L7,4 L1,6.5 Z" fill="var(--grn4)" opacity="0.8" />
         </marker>
         <marker id="arr-hi" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="var(--vio4)" />
+          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="var(--blue4)" />
         </marker>
       </defs>
 
@@ -613,7 +613,7 @@ function FlowEdges({
         const my = cubicBezier(y1, y1, y2, y2, 0.5);
 
         const baseColor   = verified ? "var(--grn4)" : "var(--blue4)";
-        const hoverColor  = "var(--vio4)";
+        const hoverColor  = "var(--blue4)";
         const stroke      = isHovered ? hoverColor : baseColor;
         const markerEnd   = isHovered ? "url(#arr-hi)" : verified ? "url(#arr-ver)" : "url(#arr-inf)";
         const opacity     = isDimmed
@@ -693,7 +693,7 @@ function FlowEdges({
                 <g transform={`translate(${mx},${my})`}>
                   <rect
                     x={-verbW / 2} y={-9} width={verbW} height={18} rx={5}
-                    fill={isHovered ? "var(--vio1)" : "var(--bg-1)"}
+                    fill={isHovered ? "var(--blue1)" : "var(--bg-1)"}
                     stroke={isHovered ? hoverColor : baseColor}
                     strokeWidth={isHovered ? 1 : 0.7}
                     opacity={0.97}
@@ -739,7 +739,7 @@ function FlowEdges({
 }
 
 // ── Causal edges overlay ──────────────────────────────────────────────────────
-// Rendered on top of structural edges; dashed orange arrows between entities.
+// Rendered on top of structural edges; dashed amber arrows between entities.
 
 function CausalEdges({
   causalEdges,
@@ -827,15 +827,15 @@ function CanvasLegend({ showCausal }: { showCausal: boolean }) {
       {/* Entity types */}
       <span className="text-[11px] text-zinc-500 uppercase tracking-wider font-semibold">Objects</span>
       <div className="flex items-center gap-1.5">
-        <span className="w-3 h-3 rounded-md bg-emerald-700/25 border border-emerald-600/30" />
+        <span className="w-3 h-3 rounded-md bg-zinc-700/40 border border-zinc-500/40" />
         <span className="text-[11px] text-zinc-500">reference data</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="w-3 h-3 rounded-md bg-sky-700/25 border border-sky-600/30" />
+        <span className="w-3 h-3 rounded-md bg-zinc-700/30 border border-zinc-600/40" />
         <span className="text-[11px] text-zinc-500">business object</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="w-3 h-3 rounded-md bg-violet-700/25 border border-violet-600/30" />
+        <span className="w-3 h-3 rounded-md bg-zinc-700/20 border border-zinc-700/40" />
         <span className="text-[11px] text-zinc-500">event</span>
       </div>
       {/* Divider */}
@@ -870,9 +870,9 @@ function CanvasLegend({ showCausal }: { showCausal: boolean }) {
 
 // Colour mapping per semantic column type
 const COL_LABEL_STYLE: Record<string, string> = {
-  Foundation: "text-emerald-600/70",
-  Objects:    "text-sky-600/60",
-  Events:     "text-violet-600/60",
+  Foundation: "text-zinc-400/80",
+  Objects:    "text-zinc-500/80",
+  Events:     "text-zinc-600/80",
   Standalone: "text-zinc-500",
 };
 
@@ -1180,7 +1180,7 @@ export function OntologyCanvas({
           className={cn(
             "flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border transition",
             showCausal
-              ? "text-orange-400 border-orange-500/30 bg-orange-500/10 hover:bg-orange-500/15"
+              ? "text-amber-400 border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15"
               : "text-zinc-500 border-zinc-700/50 hover:text-zinc-400",
           )}
         >
@@ -1197,7 +1197,7 @@ export function OntologyCanvas({
         <button
           onClick={tidyLayout}
           title="Tidy — reset to auto-layout"
-          className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border text-zinc-400 border-zinc-700/50 hover:text-violet-300 hover:border-violet-500/30 transition"
+          className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border text-zinc-400 border-zinc-700/50 hover:text-amber-300 hover:border-amber-500/30 transition"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" className="shrink-0">
             <path d="M3 12a9 9 0 1 0 3-6.7L3 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

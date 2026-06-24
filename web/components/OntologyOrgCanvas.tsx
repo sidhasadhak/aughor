@@ -42,7 +42,7 @@ const SHELL_W    = 320;   // placeholder size while a graph loads
 const SHELL_H    = 180;
 
 const DOTS = {
-  backgroundImage: "radial-gradient(circle, #2a3140 1.2px, transparent 1.2px)",
+  backgroundImage: "radial-gradient(circle, var(--b2) 1.2px, transparent 1.2px)",
   backgroundSize: "26px 26px",
 } as const;
 
@@ -105,8 +105,8 @@ function ClusterTile({
       className="group flex items-center gap-2 mb-1.5 max-w-full text-left"
       title={`Open ${connName} → ${schema}`}
     >
-      <span className="w-2 h-2 rounded-full bg-violet-400 shrink-0" />
-      <span className="text-[12px] font-semibold text-zinc-200 group-hover:text-violet-200 transition truncate">
+      <span className="w-2 h-2 rounded-full bg-zinc-500 shrink-0" />
+      <span className="text-[12px] font-semibold text-zinc-200 group-hover:text-amber-200 transition truncate">
         {connName}
       </span>
       <span className="text-zinc-500 text-[12px]">·</span>
@@ -127,7 +127,7 @@ function ClusterTile({
       <div style={{ width: SHELL_W }}>
         {label}
         <div className="flex items-center justify-center" style={{ height: SHELL_H }}>
-          <div className="w-5 h-5 border-2 border-violet-500/60 border-t-transparent rounded-full animate-spin" />
+          <div className="w-5 h-5 border-2 border-amber-500/60 border-t-transparent rounded-full animate-spin" />
         </div>
       </div>
     );
@@ -237,7 +237,7 @@ export function OntologyOrgCanvas({
   const schemaCount = models.length;
 
   return (
-    <div className="w-full h-full relative" style={{ background: "#11171D" }}>
+    <div className="w-full h-full relative" style={{ background: "var(--bg-1)" }}>
       {/* Title */}
       <div className="absolute top-3 left-3 z-20 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-lg px-3.5 py-2 pointer-events-none">
         <p className="text-[12px] font-semibold text-zinc-200">Organization Ontology</p>
@@ -259,7 +259,7 @@ export function OntologyOrgCanvas({
 
       {loading ? (
         <div className="w-full h-full flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (
         <div ref={scrollRef} className="w-full h-full overflow-auto" style={DOTS}>

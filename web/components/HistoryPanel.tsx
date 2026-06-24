@@ -113,7 +113,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                 className={cn(
                   "w-full text-left px-4 py-3 transition group border-l-2 pr-10",
                   isSelected
-                    ? "bg-violet-500/5 border-violet-500"
+                    ? "bg-amber-500/5 border-amber-500"
                     : "border-transparent hover:bg-zinc-700/50 hover:border-zinc-600"
                 )}
               >
@@ -123,8 +123,8 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                     <span className={cn(
                       "inline-flex shrink-0 items-center px-1 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wider",
                       isChat
-                        ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
-                        : "bg-violet-500/10 text-violet-400 border border-violet-500/20"
+                        ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+                        : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                     )}>
                       {isChat ? "Ask" : "Inv"}
                     </span>

@@ -49,7 +49,7 @@ function PhaseBar({ status }: { status: ExplorationStatus }) {
               <div className={[
                 "h-1 rounded-full transition-colors",
                 done ? "bg-emerald-500" :
-                active ? "bg-violet-400 animate-pulse" :
+                active ? "bg-amber-400 animate-pulse" :
                 isFailed && i === cur ? "bg-red-500" :
                 "bg-white/10",
               ].join(" ")} />
@@ -84,10 +84,10 @@ function PhaseBar({ status }: { status: ExplorationStatus }) {
 // ── Null Meanings ─────────────────────────────────────────────────────────────
 
 const NULL_LABELS: Record<string, { label: string; color: string }> = {
-  pending:                 { label: "Pending event",    color: "text-sky-400" },
+  pending:                 { label: "Pending event",    color: "text-amber-400" },
   not_applicable_terminal: { label: "Terminal state",   color: "text-zinc-500" },
   missing:                 { label: "Data quality gap", color: "text-amber-400" },
-  mixed:                   { label: "Mixed pattern",    color: "text-violet-400" },
+  mixed:                   { label: "Mixed pattern",    color: "text-zinc-400" },
   not_applicable:          { label: "Always populated", color: "text-emerald-400" },
   unknown:                 { label: "Unknown",          color: "text-zinc-500" },
 };
@@ -288,7 +288,7 @@ export function ExplorationPanel({ connectionId, initialSection, schema }: Props
       badge: findings.insights.filter(i => !!i.domain).length > 0
         ? String(findings.insights.filter(i => !!i.domain).length)
         : undefined,
-      badgeColor: "text-violet-400",
+      badgeColor: "text-amber-400",
     },
   ];
 
@@ -308,7 +308,7 @@ export function ExplorationPanel({ connectionId, initialSection, schema }: Props
             className={[
               "flex items-center gap-1.5 px-3 py-2 text-[11px] border-b-2 transition-colors whitespace-nowrap",
               activeSection === s.key
-                ? "border-violet-400 text-zinc-200"
+                ? "border-amber-400 text-zinc-200"
                 : "border-transparent text-zinc-500 hover:text-zinc-300",
             ].join(" ")}
           >

@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Aughor · Intelligence Console — Direction Sample</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   AUGHOR — "ANALYST'S OPERATIONS CONSOLE"  ·  DIRECTION SAMPLE (2 hero screens)
+   Lineage: Palantir (object + graph + provenance) · Bloomberg (mono authority)
+   · Honeycomb (surface the signal) · Linear (restraint) · HUD (reticle cues).
+   Low-chroma graphite instrument surface. ONE disciplined amber signal.
+   Provenance & confidence are a first-class visual language.
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --bg-0:#0A0D12; --bg-1:#0E1219; --bg-2:#121822; --bg-3:#19212E; --bg-4:#212B3B;
+  --line-0:#151B24; --line-1:#1E2632; --line-2:#2A3543; --line-3:#3A4757;
+  --ink-0:#E8EDF5; --ink-1:#9FA9BA; --ink-2:#6B7585; --ink-3:#454E5C;
+  --signal:#EAB23E; --signal-2:#F6CB66; --signal-dim:#3A2F16;
+  --scan:#52CFE0; --scan-dim:#10303A;
+  --crit:#F05A5F; --crit-dim:#39181C;
+  --ok:#46C58B;
+  --sans:"Inter",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r1:2px; --r2:4px; --r3:7px;
+  --topbar:46px; --status:26px; --rail:208px;
+  --dur:150ms; --ease:cubic-bezier(.2,0,0,1);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--sans);font-size:13px;background:var(--bg-0);color:var(--ink-0);line-height:1.5;-webkit-font-smoothing:antialiased;overflow:hidden;letter-spacing:-.003em}
+button,input{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+::selection{background:var(--signal);color:#0A0D12}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--line-2)}
+::-webkit-scrollbar-track{background:transparent}
+:focus-visible{outline:1px solid var(--signal);outline-offset:2px}
+.mono{font-family:var(--mono)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.tabular{font-variant-numeric:tabular-nums}
+
+/* mono micro-labels — the console's voice */
+.lbl{font-family:var(--mono);font-size:9.5px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+.lbl.sig{color:var(--signal)}
+.lbl.scan{color:var(--scan)}
+.lbl.crit{color:var(--crit)}
+
+/* App frame */
+.app{height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg-0)}
+
+/* Topbar */
+.topbar{height:var(--topbar);display:flex;align-items:center;gap:16px;padding:0 14px;background:var(--bg-1);border-bottom:1px solid var(--line-1);flex-shrink:0;z-index:30}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:13.5px;letter-spacing:-.01em}
+.brand .mk{width:20px;height:20px;border:1px solid var(--signal);color:var(--signal);display:grid;place-items:center;font-weight:700;font-size:11px;border-radius:var(--r1);font-family:var(--mono)}
+.brand .v{font-family:var(--mono);font-size:9px;color:var(--ink-2);letter-spacing:.1em;border:1px solid var(--line-2);padding:1px 4px;border-radius:var(--r1)}
+.cmd{flex:1;max-width:520px;margin:0 auto;height:30px;display:flex;align-items:center;gap:10px;padding:0 11px;background:var(--bg-0);border:1px solid var(--line-2);border-radius:var(--r2);color:var(--ink-2);cursor:text;transition:border-color var(--dur)}
+.cmd:hover{border-color:var(--line-3)}
+.cmd .ph{flex:1;font-size:12px;text-align:left}
+.cmd .kbd{font-family:var(--mono);font-size:10px;border:1px solid var(--line-2);border-radius:var(--r1);padding:0 5px;color:var(--ink-2)}
+.tr{margin-left:auto;display:flex;align-items:center;gap:3px}
+.ic{width:30px;height:30px;display:grid;place-items:center;color:var(--ink-1);border-radius:var(--r2);transition:background var(--dur),color var(--dur);position:relative}
+.ic:hover{background:var(--bg-3);color:var(--ink-0)}
+.ic .b{position:absolute;top:6px;right:6px;width:5px;height:5px;border-radius:50%;background:var(--signal)}
+.av{width:26px;height:26px;border-radius:var(--r2);background:var(--bg-4);border:1px solid var(--line-3);color:var(--ink-0);display:grid;place-items:center;font-weight:600;font-size:11px;margin-left:6px;font-family:var(--mono)}
+
+/* Telemetry status strip */
+.status{height:var(--status);display:flex;align-items:center;gap:0;padding:0 14px;background:var(--bg-1);border-bottom:1px solid var(--line-1);flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--ink-2);overflow:hidden}
+.st{display:flex;align-items:center;gap:7px;padding:0 16px;border-right:1px solid var(--line-1);height:100%;white-space:nowrap}
+.st:first-child{padding-left:0}
+.st b{color:var(--ink-0);font-weight:500}
+.st .v-sig{color:var(--signal)}
+.st .v-ok{color:var(--ok)}
+.st .v-crit{color:var(--crit)}
+.st.right{margin-left:auto;border-right:none;border-left:1px solid var(--line-1)}
+.pdot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+.pdot.sig{background:var(--signal);animation:bl 1.5s infinite}
+.pdot.crit{background:var(--crit)}
+@keyframes bl{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* Body = rail + screen */
+.body{flex:1;display:flex;overflow:hidden;min-height:0}
+.rail{width:var(--rail);flex-shrink:0;background:var(--bg-1);border-right:1px solid var(--line-1);display:flex;flex-direction:column;overflow:hidden}
+.rail-s{flex:1;overflow-y:auto;padding:12px 10px}
+.ask{display:flex;align-items:center;gap:8px;width:100%;height:32px;padding:0 11px;margin-bottom:14px;background:var(--signal);color:#0A0D12;font-weight:600;font-size:12px;border-radius:var(--r2);letter-spacing:-.01em}
+.ask:hover{background:var(--signal-2)}
+.grp{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);padding:14px 10px 6px}
+.ni{display:flex;align-items:center;gap:10px;width:100%;height:30px;padding:0 10px;font-size:12px;font-weight:500;color:var(--ink-1);border-radius:var(--r2);position:relative;transition:color var(--dur),background var(--dur)}
+.ni svg{color:var(--ink-2);flex-shrink:0;transition:color var(--dur)}
+.ni:hover{background:var(--bg-3);color:var(--ink-0)}
+.ni:hover svg{color:var(--ink-0)}
+.ni .c{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--ink-2)}
+.ni.on{color:var(--ink-0);background:var(--bg-3)}
+.ni.on svg{color:var(--signal)}
+.ni.on::before{content:"";position:absolute;left:-10px;top:6px;bottom:6px;width:2px;background:var(--signal)}
+.rail-f{border-top:1px solid var(--line-1);padding:10px 14px;font-family:var(--mono);font-size:9.5px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+
+.screen{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+/* Screen tab strip */
+.tabs{height:38px;display:flex;align-items:stretch;border-bottom:1px solid var(--line-1);background:var(--bg-1);flex-shrink:0;padding:0 10px}
+.tab{display:flex;align-items:center;gap:8px;padding:0 16px;font-size:12.5px;font-weight:500;color:var(--ink-2);position:relative;letter-spacing:-.01em;transition:color var(--dur)}
+.tab:hover{color:var(--ink-0)}
+.tab.on{color:var(--ink-0)}
+.tab.on::after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;background:var(--signal)}
+.tab .tn{font-family:var(--mono);font-size:9px;color:var(--ink-3)}
+.tab.on .tn{color:var(--signal)}
+.tab-act{margin-left:auto;display:flex;align-items:center;gap:8px}
+
+.canvas{flex:1;overflow:auto;min-height:0}
+.view{animation:fade var(--dur) var(--ease) both}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 12px;font-size:11.5px;font-weight:600;border-radius:var(--r2);border:1px solid transparent;white-space:nowrap;letter-spacing:-.01em;transition:background var(--dur),border-color var(--dur),color var(--dur)}
+.btn.sig{background:var(--signal);color:#0A0D12}
+.btn.sig:hover{background:var(--signal-2)}
+.btn.line{border-color:var(--line-2);color:var(--ink-0)}
+.btn.line:hover{border-color:var(--line-3);background:var(--bg-2)}
+.btn.bare{color:var(--ink-1)}
+.btn.bare:hover{color:var(--ink-0);background:var(--bg-3)}
+.btn.sm{height:24px;padding:0 9px;font-size:11px}
+
+/* Panel + HUD reticle */
+.panel{background:var(--bg-1);border:1px solid var(--line-1);border-radius:var(--r3);position:relative}
+.panel.flush{border-radius:0;border:none}
+.ph{display:flex;align-items:center;gap:10px;height:34px;padding:0 14px;border-bottom:1px solid var(--line-1)}
+.ph .t{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-1)}
+.ph .r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.pb{padding:16px}
+/* reticle corner ticks — used only on signature panels */
+.reticle::before,.reticle::after{content:"";position:absolute;width:9px;height:9px;pointer-events:none}
+.reticle::before{top:-1px;left:-1px;border-top:1px solid var(--signal);border-left:1px solid var(--signal);opacity:.6}
+.reticle::after{bottom:-1px;right:-1px;border-bottom:1px solid var(--signal);border-right:1px solid var(--signal);opacity:.6}
+.reticle>.tk2::before,.reticle>.tk2::after{content:"";position:absolute;width:9px;height:9px;pointer-events:none}
+.reticle>.tk2::before{top:-1px;right:-1px;border-top:1px solid var(--signal);border-right:1px solid var(--signal);opacity:.6}
+.reticle>.tk2::after{bottom:-1px;left:-1px;border-bottom:1px solid var(--signal);border-left:1px solid var(--signal);opacity:.6}
+
+h1.h{font-size:21px;font-weight:600;letter-spacing:-.02em;margin:0;line-height:1.18}
+.lede{color:var(--ink-1);font-size:13px;margin:8px 0 0;max-width:62ch}
+
+/* INVESTIGATION layout */
+.inv{display:grid;grid-template-columns:300px 1fr 320px;height:100%;min-height:0}
+.col{overflow-y:auto;min-height:0}
+.col.l{border-right:1px solid var(--line-1)}
+.col.r{border-left:1px solid var(--line-1)}
+.colhead{display:flex;align-items:center;gap:8px;height:34px;padding:0 16px;border-bottom:1px solid var(--line-1);position:sticky;top:0;background:var(--bg-1);z-index:2}
+
+/* reasoning timeline */
+.tl{padding:14px 16px}
+.ts{position:relative;padding:0 0 18px 24px;border-left:1px solid var(--line-2);margin-left:5px}
+.ts:last-child{border-color:transparent}
+.ts .nd{position:absolute;left:-5px;top:2px;width:9px;height:9px;border-radius:50%;background:var(--bg-1);border:1px solid var(--ink-2)}
+.ts.done .nd{background:var(--ink-1);border-color:var(--ink-1)}
+.ts.run .nd{background:var(--signal);border-color:var(--signal);box-shadow:0 0 0 3px var(--signal-dim);animation:bl 1.4s infinite}
+.ts .k{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.ts .l{font-size:12.5px;font-weight:500;margin-top:3px;letter-spacing:-.01em}
+.ts.run .l{color:var(--signal-2)}
+.ts .m{font-family:var(--mono);font-size:10px;color:var(--ink-2);margin-top:4px;line-height:1.55}
+
+/* finding + chart */
+.find{padding:20px}
+.find .big{font-size:17px;font-weight:600;letter-spacing:-.02em;line-height:1.3;max-width:46ch}
+.metric-loss{color:var(--crit)}
+.chartwrap{margin-top:20px;border:1px solid var(--line-1);border-radius:var(--r3);background:var(--bg-2);padding:14px 14px 8px}
+
+/* evidence / provenance — first-class */
+.ev{padding:8px 16px 16px}
+.claim{padding:14px 0;border-bottom:1px solid var(--line-1)}
+.claim .ct{font-size:12px;font-weight:500;line-height:1.45;letter-spacing:-.01em}
+.conf{display:flex;gap:3px;margin-top:9px}
+.conf i{height:4px;flex:1;background:var(--line-2);border-radius:1px}
+.conf i.on{background:var(--signal)}
+.prov{display:flex;align-items:center;gap:10px;margin-top:8px;font-family:var(--mono);font-size:9.5px;color:var(--ink-2);letter-spacing:.04em}
+.prov .src{color:var(--scan);cursor:pointer}
+.receipt{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}
+.rc{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-1);border:1px solid var(--line-2);border-radius:var(--r1);padding:2px 6px}
+.rc.ok{border-color:var(--line-2)}
+.rc .d{width:5px;height:5px;border-radius:50%;background:var(--ok)}
+
+/* INTELLIGENCE MAP */
+.map{display:grid;grid-template-columns:280px 1fr 320px;height:100%;min-height:0}
+.glist{padding:12px}
+.gitem{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r2);cursor:pointer;border-left:2px solid transparent;transition:background var(--dur)}
+.gitem:hover{background:var(--bg-3)}
+.gitem.sel{background:var(--bg-3);border-left-color:var(--signal)}
+.gitem .gt{font-size:12px;font-weight:500}
+.gitem .gm{font-family:var(--mono);font-size:9.5px;color:var(--ink-2);margin-top:2px}
+.gcanvas{position:relative;background:var(--bg-0);background-image:linear-gradient(var(--line-0) 1px,transparent 1px),linear-gradient(90deg,var(--line-0) 1px,transparent 1px);background-size:26px 26px;overflow:hidden}
+.gcanvas .axis{position:absolute;font-family:var(--mono);font-size:9px;color:var(--ink-3);letter-spacing:.1em}
+
+/* object inspector */
+.insp{padding:0}
+.insp .ih{padding:16px;border-bottom:1px solid var(--line-1)}
+.insp .obj-t{font-size:16px;font-weight:600;letter-spacing:-.01em}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:9px 16px;border-bottom:1px solid var(--line-0);font-size:11.5px}
+.kv .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.kv .v{color:var(--ink-0);text-align:right}
+.kv .v.mono{font-family:var(--mono)}
+
+.divlabel{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);padding:14px 16px 4px}
+
+/* command palette */
+.scrim{position:fixed;inset:0;background:rgba(4,6,10,.62);z-index:200;opacity:0;pointer-events:none;transition:opacity var(--dur)}
+.scrim.show{opacity:1;pointer-events:auto}
+.pal{position:fixed;top:14vh;left:50%;transform:translateX(-50%) translateY(6px);width:min(580px,92vw);background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r3);box-shadow:0 30px 70px rgba(0,0,0,.6);z-index:201;opacity:0;pointer-events:none;overflow:hidden;transition:opacity var(--dur),transform var(--dur) var(--ease)}
+.pal.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+.pal-in{display:flex;align-items:center;gap:11px;padding:15px 17px;border-bottom:1px solid var(--line-1)}
+.pal-in input{flex:1;background:none;border:none;outline:none;font-size:15px}
+.pal-l{max-height:44vh;overflow-y:auto;padding:8px}
+.pal-s{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);padding:11px 11px 5px}
+.pi{display:flex;align-items:center;gap:12px;padding:9px 11px;border-radius:var(--r2);font-size:13px}
+.pi .pic{color:var(--ink-2)}
+.pi.sel{background:var(--bg-3)}
+.pi.sel .pic{color:var(--signal)}
+.pi .ph2{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--ink-3)}
+
+/* toast */
+.toasts{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:300;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{display:flex;align-items:center;gap:10px;padding:10px 15px;background:var(--bg-3);border:1px solid var(--line-2);border-radius:var(--r2);font-size:12px;font-family:var(--mono);letter-spacing:.02em;animation:tin var(--dur) var(--ease) both}
+@keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* design notes */
+.note{display:none;margin:16px;padding:0 0 0 14px;border-left:2px solid var(--signal)}
+.note .nl{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--signal);margin-bottom:5px}
+.note p{margin:0;font-size:12px;color:var(--ink-1);line-height:1.65;max-width:88ch}
+.note b{color:var(--ink-0);font-weight:600}
+.app.notes .note{display:block;animation:fade var(--dur) both}
+.fab{position:fixed;bottom:22px;right:22px;z-index:130;height:34px;padding:0 14px;display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#0A0D12;background:var(--signal);border-radius:var(--r2);transition:background var(--dur)}
+.fab:hover{background:var(--signal-2)}
+
+.flex{display:flex}.ac{align-items:center}.jb{justify-content:space-between}.wrap{flex-wrap:wrap}.g8{gap:8px}.g12{gap:12px}.mt8{margin-top:8px}.mt16{margin-top:16px}.mt24{margin-top:24px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="topbar">
+    <div class="brand"><span class="mk">A</span>Aughor<span class="v">v2</span></div>
+    <button class="cmd" id="cmdBtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span class="ph">Query, command, or jump — natural language or /command</span><span class="kbd">⌘K</span></button>
+    <div class="tr">
+      <button class="ic" title="Signals"><span class="b"></span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h5l2 3h4l2-3h5M4 12V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6"/></svg></button>
+      <button class="ic" title="Console settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2 2M16.4 16.4l2 2M18.4 5.6l-2 2M7.6 16.4l-2 2"/></svg></button>
+      <div class="av">S</div>
+    </div>
+  </header>
+
+  <!-- Telemetry status strip -->
+  <div class="status">
+    <div class="st"><span class="pdot"></span> SYSTEM <b class="v-ok">NOMINAL</b></div>
+    <div class="st">CONN <b>3</b> · FRESH <b class="v-ok">2m</b></div>
+    <div class="st"><span class="pdot sig"></span> AGENTS <b class="v-sig">3 LIVE</b></div>
+    <div class="st">BUDGET <b>$3.80</b> / $20.00</div>
+    <div class="st"><span class="pdot crit"></span> SIGNALS <b class="v-crit">1 CRITICAL</b> · 3 OPEN</div>
+    <div class="st right">CANVAS <b>REVENUE_&amp;_ORDERS</b></div>
+    <div class="st">LAT <b>0.8s</b> p95</div>
+  </div>
+
+  <div class="body">
+    <nav class="rail">
+      <div class="rail-s">
+        <button class="ask"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> New investigation</button>
+        <div id="railHost"></div>
+      </div>
+      <div class="rail-f"><span class="pdot"></span> KERNEL · UP 4d 6h</div>
+    </nav>
+
+    <section class="screen">
+      <div class="tabs">
+        <button class="tab on" data-tab="inv"><span class="tn">01</span> Investigation</button>
+        <button class="tab" data-tab="map"><span class="tn">02</span> Intelligence Map</button>
+        <div class="tab-act"><button class="btn bare sm">Export</button><button class="btn line sm">Share</button></div>
+      </div>
+      <div class="canvas" id="canvas"></div>
+    </section>
+  </div>
+
+  <button class="fab" id="fab"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg> Design notes</button>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="pal" id="pal">
+  <div class="pal-in"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--ink-2)" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="palIn" placeholder="Ask a question, run a /command, or jump to an object…"/><span class="kbd">esc</span></div>
+  <div class="pal-l" id="palL"></div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+const ic=(p,s=16)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const P={
+ home:'<path d="M3 11l9-7 9 7M5 9.5V20h14V9.5"/>',inbox:'<path d="M3 12h5l2 3h4l2-3h5M4 12V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6"/>',canvas:'<rect x="3" y="3" width="18" height="18" rx="1.5"/><path d="M3 9h18M9 21V9"/>',brief:'<path d="M5 4h14v16H5zM8 9h8M8 13h6"/>',search:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',node:'<circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7.6 7.4l3 9M16.4 7.4l-3 9"/>',bolt:'<path d="M13 2L4 14h6l-1 8 9-12h-6z"/>',activity:'<path d="M3 12h4l3 8 4-16 3 8h4"/>',db:'<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.6 3.1 3 7 3s7-1.4 7-3V6M5 12c0 1.6 3.1 3 7 3s7-1.4 7-3"/>',shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',alert:'<path d="M12 9v4M12 17h.01M10.3 4l-7 12a2 2 0 0 0 1.7 3h14a2 2 0 0 0 1.7-3l-7-12a2 2 0 0 0-3.4 0z"/>',spark:'<path d="M12 3v18M3 12h18"/>'
+};
+const NAV=[['home','home','Home'],['inbox','inbox','Inbox','4'],['canvas','canvas','Data Canvas'],['__','','Intelligence'],['brief','brief','Briefing'],['inv','search','Investigations','12'],['map','node','Intelligence Map'],['fleet','bolt','Fleet','3'],['health','activity','Health'],['__','','Data'],['catalog','db','Catalog'],['monitors','alert','Monitors'],['security','shield','Security']];
+const rh=document.getElementById('railHost');
+NAV.forEach(n=>{
+ if(n[0]==='__'){const g=document.createElement('div');g.className='grp';g.textContent=n[2];rh.appendChild(g);}
+ else{const a=document.createElement('button');a.className='ni'+(n[0]==='inv'?' on':'');a.dataset.go=n[0];a.innerHTML=`${ic(P[n[1]],17)}<span>${n[2]}</span>`+(n[3]?`<span class="c">${n[3]}</span>`:'');rh.appendChild(a);}
+});
+
+/* monochrome console line chart with threshold + marker */
+function lineChart(data,opts={}){
+ const w=opts.w||520,h=opts.h||150,pad=14,max=Math.max(...data),min=Math.min(...data);
+ const X=i=>pad+i*((w-pad*2)/(data.length-1)),Y=v=>h-pad-((v-min)/(max-min||1))*(h-pad*2);
+ const path=data.map((d,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(d).toFixed(1)}`).join(' ');
+ const area=`${path} L${X(data.length-1)} ${h-pad} L${X(0)} ${h-pad} Z`;
+ const last=[X(data.length-1),Y(data[data.length-1])];
+ let grid='';for(let g=0;g<4;g++){const yy=pad+g*((h-pad*2)/3);grid+=`<line x1="${pad}" y1="${yy}" x2="${w-pad}" y2="${yy}" stroke="var(--line-1)" stroke-width="1"/>`}
+ return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block">${grid}<path d="${area}" fill="var(--signal-dim)" opacity=".5"/><path d="${path}" fill="none" stroke="var(--signal)" stroke-width="1.6"/><circle cx="${last[0]}" cy="${last[1]}" r="3" fill="var(--signal)"/><circle cx="${last[0]}" cy="${last[1]}" r="6" fill="none" stroke="var(--signal)" opacity=".4"/></svg>`;
+}
+
+/* ─────────── INVESTIGATION ─────────── */
+function viewInv(){
+ return `<div class="view" style="height:100%">
+ <div class="note"><div class="nl">Direction · why this reads as intelligence</div><p>Borrowed from <b>Palantir</b> (the investigation framing, provenance on every claim), <b>Bloomberg</b> (mono figures, the telemetry status strip up top), <b>Honeycomb</b> (the one critical signal is the only red on screen), and <b>HUD instruments</b> (reticle ticks on the live panel). Three fixed columns — <b>reasoning · finding · evidence</b> — so the analyst always sees the chain from question to proof. One amber signal; everything else is calm graphite.</p></div>
+ <div class="inv">
+   <div class="col l">
+     <div class="colhead"><span class="lbl">Reasoning</span><span class="lbl sig" style="margin-left:auto">● STEP 4/5</span></div>
+     <div class="tl">
+       <div class="ts done"><span class="nd"></span><div class="k">01 · Scope</div><div class="l">Question understood</div><div class="m">EU · checkout funnel · 7d vs prior 7d</div></div>
+       <div class="ts done"><span class="nd"></span><div class="k">02 · Baseline</div><div class="l">Baseline established</div><div class="m">conv 3.1% → 2.4% (−22%) · orders ∩ sessions</div></div>
+       <div class="ts done"><span class="nd"></span><div class="k">03 · Decompose</div><div class="l">Isolated the drop</div><div class="m">payment step · mobile · DACH market</div></div>
+       <div class="ts run"><span class="nd"></span><div class="k">04 · Verify</div><div class="l">Testing — provider latency</div><div class="m">running SQL · payment_events…</div></div>
+       <div class="ts"><span class="nd"></span><div class="k">05 · Synthesise</div><div class="l">Report &amp; actions</div><div class="m">pending</div></div>
+     </div>
+     <div class="divlabel">Objects in scope</div>
+     <div style="padding:0 12px 16px">
+       ${[['ORDER','892k rows'],['SESSION','4.1M rows'],['PAYMENT_EVENT','1.2M rows']].map(o=>`<div class="gitem"><span style="color:var(--scan)">${ic(P.db,15)}</span><div><div class="gt mono">${o[0]}</div><div class="gm">${o[1]}</div></div></div>`).join('')}
+     </div>
+   </div>
+
+   <div class="col" style="background:var(--bg-0)">
+     <div class="colhead"><span class="lbl">Finding · live</span><span class="lbl" style="margin-left:auto">CONFIDENCE 0.85</span></div>
+     <div class="find">
+       <div class="lbl sig" style="margin-bottom:10px">PRIMARY SIGNAL</div>
+       <div class="big">EU checkout conversion fell <span class="metric-loss">−22%</span> WoW — concentrated in <b>mobile DACH</b>, at the <b>payment step</b>.</div>
+       <p class="lede">Leading cause under verification: a payment-provider latency spike coincident with the drop. Net-revenue exposure ≈ <b class="num" style="color:var(--ink-0)">$38,000/wk</b> if sustained.</p>
+       <div class="chartwrap reticle"><span class="tk2"></span>
+         <div class="flex jb ac" style="margin-bottom:6px"><span class="lbl">CONVERSION · DAILY</span><span class="lbl crit">−22% Δ7d</span></div>
+         ${lineChart([3.1,3.05,3.0,2.7,2.55,2.4,2.42],{w:560,h:150})}
+       </div>
+       <div class="flex g8 mt16 wrap">
+         <button class="btn sig sm">Confirm &amp; draft report</button>
+         <button class="btn line sm">Branch hypothesis</button>
+         <button class="btn bare sm">Open query →</button>
+       </div>
+     </div>
+   </div>
+
+   <div class="col r">
+     <div class="colhead"><span class="lbl">Evidence · provenance</span><span class="lbl" style="margin-left:auto">2 CLAIMS</span></div>
+     <div class="ev">
+       ${[['Payment drop-off 11% → 29% in DACH',5,'orders · payment_events','88%','4m'],['Provider p95 latency 1.2s → 6.8s','postgres · payment_events',4,'82%','4m']].map(()=>'').join('')}
+       <div class="claim">
+         <div class="ct">Payment-step drop-off rose 11% → 29% in DACH</div>
+         <div class="conf">${'<i class="on"></i>'.repeat(8)}${'<i></i>'.repeat(2)}</div>
+         <div class="prov"><span>conf 0.88</span>·<span>fresh 4m</span>·<span class="src">view sql ↗</span></div>
+         <div class="receipt"><span class="rc ok"><span class="d"></span>metric governed</span><span class="rc">2 tables</span><span class="rc">0 guards</span></div>
+       </div>
+       <div class="claim">
+         <div class="ct">Provider p95 latency 1.2s → 6.8s, same window</div>
+         <div class="conf">${'<i class="on"></i>'.repeat(8)}${'<i></i>'.repeat(2)}</div>
+         <div class="prov"><span>conf 0.82</span>·<span>fresh 4m</span>·<span class="src">view sql ↗</span></div>
+         <div class="receipt"><span class="rc ok"><span class="d"></span>source verified</span><span class="rc">payment_events</span></div>
+       </div>
+       <div class="divlabel">Trust receipt</div>
+       <div style="padding:0 0 8px">
+         <div class="kv"><span class="k">Cost</span><span class="v mono">$0.06</span></div>
+         <div class="kv"><span class="k">Wall time</span><span class="v mono">11.3s</span></div>
+         <div class="kv"><span class="k">Rows scanned</span><span class="v mono">6.1M</span></div>
+         <div class="kv"><span class="k">Guards fired</span><span class="v mono">0</span></div>
+         <div class="kv"><span class="k">Metric lineage</span><span class="v mono" style="color:var(--ok)">GOVERNED</span></div>
+       </div>
+     </div>
+   </div>
+ </div></div>`;
+}
+
+/* ─────────── INTELLIGENCE MAP ─────────── */
+const OBJ={
+ customer:{t:'Customer',m:'business entity',rows:'124,309',kind:'Entity',syn:'account, buyer, user',links:'4 relations',skills:'segment(), ltv()',novelty:'—'},
+ order:{t:'Order',m:'transaction',rows:'892,104',kind:'Entity',syn:'purchase, sale',links:'5 relations',skills:'aov(), refund_rate()',novelty:'8.2'},
+ product:{t:'Product',m:'catalog item',rows:'3,210',kind:'Entity',syn:'SKU, item',links:'3 relations',skills:'margin(), stock_cover()',novelty:'6.1'},
+ refund:{t:'Refund',m:'reversal event',rows:'18,442',kind:'Event',syn:'return, chargeback',links:'2 relations',skills:'reason_mix()',novelty:'9.1'},
+ session:{t:'Session',m:'behavioural event',rows:'4,118,990',kind:'Event',syn:'visit, journey',links:'3 relations',skills:'funnel(), bounce()',novelty:'7.4'}
+};
+let selObj='refund';
+function viewMap(){
+ const o=OBJ[selObj];
+ const nodes=[['customer',46,18],['order',16,46],['product',74,40],['refund',30,74],['session',62,76]];
+ const edges=[[0,1],[0,2],[1,3],[1,4],[2,1]];
+ const NP=Object.fromEntries(nodes.map(n=>[n[0],[n[1],n[2]]]));
+ let svgEdges=edges.map(([a,b])=>{const A=NP[nodes[a][0]],B=NP[nodes[b][0]];return `<line x1="${A[0]}%" y1="${A[1]}%" x2="${B[0]}%" y2="${B[1]}%" stroke="var(--line-2)" stroke-width="1"/>`}).join('');
+ return `<div class="view" style="height:100%">
+ <div class="note"><div class="nl">Direction · the object/graph signature</div><p>The piece that most says <b>"intelligence platform"</b>. Straight from <b>Palantir's object model</b>: the world is entities and relations, each with provenance and learned skills. The graph is a <b>schematic on a coordinate grid</b> (not a decorative blob), high-novelty objects glow amber (<b>Honeycomb's "surface the signal"</b>), and selecting one drives a structured <b>object inspector</b>. Mono labels and an axis frame give it instrument precision.</p></div>
+ <div class="map">
+   <div class="col l">
+     <div class="colhead"><span class="lbl">Objects · by novelty</span></div>
+     <div class="glist">
+       ${Object.entries(OBJ).sort((a,b)=>(parseFloat(b[1].novelty)||0)-(parseFloat(a[1].novelty)||0)).map(([k,v])=>`<div class="gitem ${k===selObj?'sel':''}" onclick="selectObj('${k}')"><span style="color:${parseFloat(v.novelty)>=8?'var(--signal)':'var(--ink-2)'}">${ic(P.db,15)}</span><div style="flex:1"><div class="gt mono">${v.t.toUpperCase()}</div><div class="gm">${v.kind} · ${v.rows} rows</div></div>${v.novelty!=='—'?`<span class="lbl ${parseFloat(v.novelty)>=8?'sig':''}">N ${v.novelty}</span>`:''}</div>`).join('')}
+     </div>
+   </div>
+   <div class="col gcanvas">
+     <span class="axis" style="top:8px;left:10px">ONTOLOGY · 142 ENTITIES · 218 RELATIONS</span>
+     <span class="axis" style="bottom:8px;right:10px">SCOPE: REVENUE_&amp;_ORDERS</span>
+     <svg width="100%" height="100%" style="position:absolute;inset:0">${svgEdges}</svg>
+     ${nodes.map(n=>{const k=n[0],v=OBJ[k],hot=parseFloat(v.novelty)>=8,sel=k===selObj;return `<button onclick="selectObj('${k}')" style="position:absolute;left:${n[1]}%;top:${n[2]}%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;padding:7px 12px;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.04em;border-radius:var(--r2);white-space:nowrap;background:${sel?'var(--signal)':'var(--bg-2)'};color:${sel?'#0A0D12':hot?'var(--signal)':'var(--ink-0)'};border:1px solid ${sel?'var(--signal)':hot?'var(--signal)':'var(--line-2)'}">${v.t.toUpperCase()}${hot?' ◆':''}</button>`}).join('')}
+   </div>
+   <div class="col r insp">
+     <div class="ih">
+       <div class="lbl sig">OBJECT INSPECTOR</div>
+       <div class="obj-t mt8">${o.t}</div>
+       <div class="lbl" style="margin-top:4px">${o.m.toUpperCase()}</div>
+       ${o.novelty!=='—'?`<div class="flex ac g8 mt16"><span class="lbl">NOVELTY</span><div class="conf" style="flex:1">${Array.from({length:10},(_,i)=>`<i class="${i<Math.round(parseFloat(o.novelty))?'on':''}"></i>`).join('')}</div><span class="num lbl ${parseFloat(o.novelty)>=8?'sig':''}">${o.novelty}</span></div>`:''}
+     </div>
+     <div class="kv"><span class="k">Kind</span><span class="v">${o.kind}</span></div>
+     <div class="kv"><span class="k">Rows</span><span class="v mono">${o.rows}</span></div>
+     <div class="kv"><span class="k">Synonyms</span><span class="v">${o.syn}</span></div>
+     <div class="kv"><span class="k">Relations</span><span class="v">${o.links}</span></div>
+     <div class="kv"><span class="k">Learned skills</span><span class="v mono">${o.skills}</span></div>
+     <div class="divlabel">Latest signal</div>
+     <div style="padding:0 16px 16px">
+       <div class="claim" style="border:none;padding-top:6px">
+         <div class="ct">${selObj==='refund'?'Refund rate spiked 2.3× in DACH — concentrated mobile, payment-declined reason.':'High-novelty patterns detected in the last sweep.'}</div>
+         <div class="prov mt8"><span class="lbl crit">● CRITICAL</span>·<span>22m ago</span>·<span class="src">investigate →</span></div>
+       </div>
+     </div>
+   </div>
+ </div></div>`;
+}
+window.selectObj=k=>{selObj=k;render()};
+
+/* engine */
+let tab='inv';
+const canvas=document.getElementById('canvas');
+function render(){canvas.innerHTML=tab==='inv'?viewInv():viewMap();}
+document.querySelectorAll('.tab[data-tab]').forEach(t=>t.onclick=()=>{tab=t.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));if(document.startViewTransition)document.startViewTransition(render);else render();});
+document.querySelectorAll('.ni[data-go]').forEach(n=>n.onclick=()=>{const g=n.dataset.go;if(g==='inv'||g==='map'){document.querySelector(`.tab[data-tab="${g}"]`).click();document.querySelectorAll('.ni').forEach(x=>x.classList.toggle('on',x===n));}else toast('› '+g.toUpperCase()+' (sample shows Investigation + Intelligence Map)')});
+render();
+
+/* command palette */
+const scrim=document.getElementById('scrim'),pal=document.getElementById('pal'),palIn=document.getElementById('palIn'),palL=document.getElementById('palL');
+const PAL=[['Commands',[['spark','/investigate — new investigation','↵'],['db','/catalog — browse objects',''],['node','/map — open intelligence map','']]],['Objects',[['db','Customer',''],['db','Order',''],['db','Refund ◆',''],['db','Session','']]]];
+function rp(q=''){q=q.toLowerCase();palL.innerHTML='';PAL.forEach(([s,items])=>{const f=items.filter(i=>i[1].toLowerCase().includes(q));if(!f.length)return;const d=document.createElement('div');d.className='pal-s';d.textContent=s;palL.appendChild(d);f.forEach(i=>{const e=document.createElement('div');e.className='pi';e.innerHTML=`<span class="pic">${ic(P[i[0]]||P.spark,16)}</span><span>${i[1]}</span>`+(i[2]?`<span class="ph2">${i[2]}</span>`:'');e.onclick=()=>{closeP();if(i[1].includes('map')){document.querySelector('.tab[data-tab="map"]').click()}else if(i[1].includes('Refund')){selObj='refund';document.querySelector('.tab[data-tab="map"]').click()}else toast('› '+i[1])};palL.appendChild(e)})});const f=palL.querySelector('.pi');if(f)f.classList.add('sel')}
+function openP(){scrim.classList.add('show');pal.classList.add('show');palIn.value='';rp();setTimeout(()=>palIn.focus(),30)}
+function closeP(){scrim.classList.remove('show');pal.classList.remove('show')}
+document.getElementById('cmdBtn').onclick=openP;scrim.onclick=closeP;palIn.oninput=e=>rp(e.target.value);
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();pal.classList.contains('show')?closeP():openP()}if(e.key==='Escape')closeP()});
+
+const toasts=document.getElementById('toasts');
+function toast(m){const t=document.createElement('div');t.textContent=m;t.className='toast';toasts.appendChild(t);setTimeout(()=>{t.style.transition='opacity .25s';t.style.opacity='0';setTimeout(()=>t.remove(),260)},1900)}
+
+document.getElementById('fab').onclick=function(){document.getElementById('app').classList.toggle('notes')};
+</script>
+</body>
+</html>

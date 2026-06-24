@@ -184,9 +184,9 @@ function TableDetail({
   }, [subtab, connId, table.name, loaded]);
 
   const TYPE_COLOR: Record<string, string> = {
-    VARCHAR: "text-sky-400", BIGINT: "text-amber-400", INTEGER: "text-amber-400",
-    DOUBLE: "text-violet-400", FLOAT: "text-violet-400", DATE: "text-emerald-400",
-    TIMESTAMP: "text-emerald-400", BOOLEAN: "text-rose-400",
+    VARCHAR: "text-cyan-400", BIGINT: "text-amber-400", INTEGER: "text-amber-400",
+    DOUBLE: "text-zinc-400", FLOAT: "text-zinc-400", DATE: "text-zinc-400",
+    TIMESTAMP: "text-zinc-400", BOOLEAN: "text-zinc-400",
   };
 
   function typeColor(t: string) {

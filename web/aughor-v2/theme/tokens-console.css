@@ -1,0 +1,133 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   AUGHOR — "OPERATIONS CONSOLE" TOKEN SKIN  (drop-in override, additive)
+   ────────────────────────────────────────────────────────────────────────────
+   Re-skins the platform to the analyst's-console direction: low-chroma graphite
+   surfaces + a single disciplined AMBER signal accent (Palantir/Bloomberg/HUD
+   lineage). Re-declares ONLY primitive tokens — every Tailwind/shadcn bridge and
+   the .aug-* component classes read these via var(), so the change cascades with
+   no component edits.
+
+   ── WIRE IT ──────────────────────────────────────────────────────────────────
+   In app/globals.css, import AFTER tokens-v2.css so this wins the cascade:
+
+       @import "../styles/tokens.css";
+       @import "../aughor-v2/theme/tokens-v2.css";
+       @import "../aughor-v2/theme/elevation-motion.css";
+       @import "../aughor-v2/theme/tokens-console.css";   ← add this line
+
+   To revert: delete that one line. Nothing else changes.
+
+   KEY MOVE: the accent the bridges read is --blue3. We re-point the --blue* ramp
+   to amber, so --primary/--accent/--ring/sidebar-selection all become amber at
+   once. Status amber (--amb*) is aligned to the same hue; --red* stays critical;
+   --cyn* becomes the sparse "scan/link" colour.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── DARK · console (default) ───────────────────────────────────────────────── */
+:root {
+  /* Graphite canvas — low chroma, clear per-layer lift */
+  --bg-0: #0A0D12;
+  --bg-1: #0E1219;
+  --bg-2: #121822;
+  --bg-3: #19212E;
+  --bg-4: #212B3B;
+  --bg-hover: rgba(255,255,255,.045);
+  --bg-sel:   rgba(234,178,62,.13);   /* amber selection */
+
+  /* Hairlines */
+  --b0: #151B24;
+  --b1: #1E2632;
+  --b2: #2A3543;
+  --b3: #3A4757;
+  --bfocus: #EAB23E;                   /* amber focus ring */
+
+  /* Inks */
+  --t1: #E8EDF5;
+  --t2: #9FA9BA;
+  --t3: #6B7585;
+  --t4: #454E5C;
+
+  /* Accent = AMBER (this is the load-bearing change).
+     --blue3 is THE accent every bridge reads. */
+  --blue1: #2A2310; --blue2: #574616; --blue3: #EAB23E; --blue4: #F6CB66; --blue5: #FBE3A6;
+
+  /* Status amber — aligned to the signal hue so "warn" == "signal" */
+  --amb1: #2A2310; --amb2: #574616; --amb3: #EAB23E; --amb4: #F6CB66; --amb5: #FBE3A6;
+
+  /* Critical (the only red on a calm screen) */
+  --red1: #2A1216; --red2: #582024; --red3: #F05A5F; --red4: #F47B80; --red5: #FBB6B9;
+
+  /* Scan / links — sparse cyan */
+  --cyn1: #0A2A33; --cyn2: #134B58; --cyn3: #52CFE0; --cyn4: #7FE0EC; --cyn5: #B6F0F6;
+
+  /* Positive — used rarely; muted teal-green */
+  --grn1: #0E241B; --grn2: #145039; --grn3: #46C58B; --grn4: #5FD49E; --grn5: #99E8C2;
+
+  /* Secondary categorical — desaturated violet (kept for charts/tags) */
+  --vio1: #1A1730; --vio2: #2E2A52; --vio3: #8C82C8; --vio4: #ABA2DD; --vio5: #CFC9F0;
+
+  /* Tighter, instrument radii */
+  --r1: 2px;
+  --r2: 4px;
+  --r3: 7px;
+
+  /* Flatter elevation — the console reads on hairlines, not shadows */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.45);
+  --shadow-md: 0 8px 28px rgba(0,0,0,.50), 0 1px 2px rgba(0,0,0,.40);
+
+  /* Chart palette — amber-led, restrained */
+  --chart-1: #EAB23E; --chart-2: #52CFE0; --chart-3: #9FA9BA;
+  --chart-4: #F05A5F; --chart-5: #46C58B; --chart-6: #8C82C8;
+  --chart-threshold-warn:   #EAB23E;
+  --chart-threshold-crit:   #F05A5F;
+  --chart-threshold-target: #46C58B;
+  --chart-axis: rgba(255,255,255,.10);
+  --chart-grid: rgba(255,255,255,.045);
+  --chart-tick: #6B7585;
+
+  --code-bg: #07090E;
+}
+
+/* ── LIGHT · "broadsheet" console (optional) ────────────────────────────────── */
+[data-theme="light"] {
+  --bg-0: #F3F2EC;   /* warm paper */
+  --bg-1: #FBFAF5;
+  --bg-2: #FFFFFF;
+  --bg-3: #F1EFE6;
+  --bg-4: #E8E5DA;
+  --bg-hover: rgba(20,20,15,.04);
+  --bg-sel:   rgba(181,120,26,.12);
+
+  --b0: #EBE8DC;
+  --b1: #E0DDD0;
+  --b2: #CFCBBA;
+  --b3: #B7B2A0;
+  --bfocus: #B5781A;
+
+  --t1: #1A1913;
+  --t2: #54534A;
+  --t3: #8A8979;
+  --t4: #B3B1A2;
+
+  /* On paper, amber must darken to hold text/icon contrast */
+  --blue1: #F4E6C8; --blue2: #E2C57E; --blue3: #B5781A; --blue4: #8F5E12; --blue5: #5E3D0A;
+  --amb1: #F4E6C8; --amb2: #E2C57E; --amb3: #B5781A; --amb4: #8F5E12; --amb5: #5E3D0A;
+  --red1: #F7E3E1; --red2: #E6B6B2; --red3: #C23B2C; --red4: #97291D; --red5: #631810;
+  --cyn1: #DDEEF0; --cyn2: #A9D4DA; --cyn3: #11808E; --cyn4: #0B5C66; --cyn5: #073E45;
+  --grn1: #E4F0E5; --grn2: #B6D9BD; --grn3: #2E7D4F; --grn4: #1F5E3A; --grn5: #143F27;
+  --vio1: #ECE7F2; --vio2: #CFC4E0; --vio3: #6B5C9C; --vio4: #4F4377; --vio5: #342B52;
+
+  --shadow-sm: 0 1px 3px rgba(40,35,20,.07);
+  --shadow-md: 0 10px 30px rgba(40,35,20,.12);
+
+  --chart-1: #B5781A; --chart-2: #11808E; --chart-3: #54534A;
+  --chart-4: #C23B2C; --chart-5: #2E7D4F; --chart-6: #6B5C9C;
+  --chart-threshold-warn:   #B5781A;
+  --chart-threshold-crit:   #C23B2C;
+  --chart-threshold-target: #2E7D4F;
+  --chart-axis: rgba(20,20,15,.12);
+  --chart-grid: rgba(20,20,15,.05);
+  --chart-tick: #8A8979;
+
+  --code-bg: #EFece0;
+}

@@ -196,7 +196,7 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
             <div className="flex items-center gap-2 mb-2">
               <p className="text-xs uppercase tracking-wide" style={{ color: "var(--t3)" }}>Question</p>
                 {(reportType === "investigate" || reportType === "explore") && (
-                <span style={{ fontSize: 11, color: "var(--vio5)", border: "1px solid var(--vio2)", background: "var(--vio1)", borderRadius: "var(--r1)", padding: "1px 8px", fontWeight: 500 }}>Agentic</span>
+                <span style={{ fontSize: 11, color: "var(--blue5)", border: "1px solid var(--blue2)", background: "var(--blue1)", borderRadius: "var(--r1)", padding: "1px 8px", fontWeight: 500 }}>Agentic</span>
               )}
               {reportType === "direct" && (
                 <span style={{ fontSize: 11, color: "var(--blue5)", border: "1px solid var(--blue2)", background: "var(--blue1)", borderRadius: "var(--r1)", padding: "1px 8px", fontWeight: 500 }}>Quick</span>
@@ -263,7 +263,7 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
         <div style={{
           position: "absolute", bottom: 0, left: 0, right: 0,
           height: 260, pointerEvents: "none", zIndex: 1,
-          background: "linear-gradient(to bottom, transparent 0%, #0d0e11 60%)",
+          background: "linear-gradient(to bottom, transparent 0%, var(--bg-0) 60%)",
         }} />
       )}
 
@@ -316,10 +316,10 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
                     style={{
                       display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
                       borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
-                      cursor: "pointer", border: mode === "investigate" ? "1px solid var(--vio2)" : "1px solid transparent",
+                      cursor: "pointer", border: mode === "investigate" ? "1px solid var(--blue2)" : "1px solid transparent",
                       transition: "all .12s",
-                      background: mode === "investigate" ? "var(--vio1)" : "transparent",
-                      color: mode === "investigate" ? "var(--vio5)" : "var(--t3)",
+                      background: mode === "investigate" ? "var(--blue1)" : "transparent",
+                      color: mode === "investigate" ? "var(--blue5)" : "var(--t3)",
                       boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
                     }}
                   >

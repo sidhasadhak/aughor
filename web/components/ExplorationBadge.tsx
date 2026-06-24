@@ -61,7 +61,7 @@ export function ExplorationBadge({ connectionId, className }: Props) {
       <span
         className={cn(
           "w-1.5 h-1.5 rounded-full shrink-0",
-          isActive && !status.paused ? "bg-violet-400 animate-pulse" : "",
+          isActive && !status.paused ? "bg-amber-400 animate-pulse" : "",
           isActive &&  status.paused ? "bg-yellow-500"               : "",
           isComplete                 ? "bg-emerald-500"              : "",
           isFailed                   ? "bg-red-500"                  : "",

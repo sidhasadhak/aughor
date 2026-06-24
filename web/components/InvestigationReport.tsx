@@ -216,7 +216,7 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
           <button
             onClick={() => openInBuilder(finding.sql)}
             title="Open this query in the Query Builder"
-            className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+            className="text-[11px] text-cyan-400 hover:text-cyan-300 transition-colors"
           >
             Open in Query Builder →
           </button>
@@ -478,7 +478,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
       <div className="flex items-center gap-2">
         <span className="text-base leading-none">{phase.phase_icon}</span>
         {isRunning && (
-          <span className="text-sky-400 animate-spin inline-block">
+          <span className="text-amber-400 animate-spin inline-block">
             <RetryIcon label="Loading" size="small" />
           </span>
         )}

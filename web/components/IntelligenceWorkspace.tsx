@@ -161,7 +161,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
           </label>
         )}
 
-        {/* Layer switcher — segmented control */}
+        {/* Layer switcher — underline tabs (console design) */}
         <div
           role="tablist"
           aria-label="Intelligence layers"
@@ -169,10 +169,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
             marginLeft: (showConnPicker || showSchema) ? 0 : "auto",
             display: "flex",
             gap: 2,
-            padding: 2,
-            background: "var(--bg-2)",
-            border: "1px solid var(--b1)",
-            borderRadius: "var(--r3)",
+            alignSelf: "stretch",
           }}
         >
           {LAYERS.map(l => {
@@ -186,11 +183,15 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
                 title={l.blurb}
                 className="aug-btn"
                 style={{
-                  padding: "4px 11px",
-                  borderRadius: "var(--r2)",
-                  border: "1px solid transparent",
-                  background: on ? "var(--bg-sel)" : "transparent",
-                  color: on ? "var(--blue5)" : "var(--t2)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "0 11px",
+                  borderRadius: 0,
+                  border: "none",
+                  borderBottom: on ? "2px solid var(--blue3)" : "2px solid transparent",
+                  background: "transparent",
+                  color: on ? "var(--t1)" : "var(--t2)",
                   fontWeight: on ? 500 : 400,
                 }}
               >

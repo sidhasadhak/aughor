@@ -14,11 +14,11 @@ interface Props {
 // ── Purpose chip (the one allowed accent) ─────────────────────────────────────
 
 const PURPOSE_STYLE: Record<string, { label: string; chip: string; icon: string }> = {
-  landscape:    { label: "Landscape",    icon: "◎", chip: "border-blue-500/30 text-blue-400"     },
-  relationship: { label: "Relationship", icon: "⟺", chip: "border-violet-500/30 text-violet-400" },
+  landscape:    { label: "Landscape",    icon: "◎", chip: "border-amber-500/30 text-amber-400"     },
+  relationship: { label: "Relationship", icon: "⟺", chip: "border-amber-500/30 text-amber-400" },
   threshold:    { label: "Threshold",    icon: "↯", chip: "border-amber-500/30 text-amber-400"    },
   drill_down:   { label: "Drill-down",   icon: "⇣", chip: "border-rose-500/30 text-rose-400"      },
-  confounder:   { label: "Confounder",   icon: "⊕", chip: "border-emerald-500/30 text-emerald-400"},
+  confounder:   { label: "Confounder",   icon: "⊕", chip: "border-zinc-500/30 text-zinc-400"},
   synthesis:    { label: "Synthesis",    icon: "✦", chip: "border-zinc-500/30 text-zinc-400"      },
 };
 

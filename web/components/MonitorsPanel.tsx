@@ -507,7 +507,7 @@ function MonitorForm({
             <button key={at.value} onClick={() => setField("alert_on", at.value)}
               style={{
                 ...segBtn,
-                background: alertOn === at.value ? "var(--vio3, #6366f1)" : "var(--bg-2)",
+                background: alertOn === at.value ? "var(--blue3)" : "var(--bg-2)",
                 color: alertOn === at.value ? "#fff" : "var(--t2)",
                 flexDirection: "column", alignItems: "flex-start", padding: "8px 10px", gap: 2,
               }}>
@@ -687,7 +687,7 @@ function Field({ label, children, style }: { label: string; children: React.Reac
 function TypeBadge({ type }: { type: AlertOn }) {
   const colors: Record<AlertOn, string> = {
     threshold_cross: "var(--blue3)",
-    anomaly:         "var(--vio3, #6366f1)",
+    anomaly:         "var(--blue3)",
     trend_reversal:  "var(--chart-threshold-warn, #f59e0b)",
     segment_drift:   "var(--blue2)",
     data_freshness:  "var(--r2)",

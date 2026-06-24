@@ -19,9 +19,8 @@ import {
 type Feedback = "validated" | "disputed" | "needs_context";
 
 function confColor(c: number): string {
-  if (c >= 0.8) return "var(--grn3)";
-  if (c >= 0.5) return "var(--amb3)";
-  return "var(--t3)";
+  // Console discipline: a confident claim carries the amber signal; a weak one recedes to ink.
+  return c >= 0.5 ? "var(--blue3)" : "var(--t3)";
 }
 
 const FEEDBACK_META: Record<Feedback, { label: string; color: string }> = {
@@ -75,6 +74,13 @@ function ClaimCard({ claim, onInvestigate, onFeedback }: {
 
       {/* Claim */}
       <div style={{ fontSize: 13, color: "var(--t1)", lineHeight: 1.6 }}>{claim.claim_text}</div>
+
+      {/* Confidence meter — console provenance language (segmented, precise) */}
+      <div className="aug-conf" aria-label={`confidence ${Math.round((claim.confidence ?? 0) * 100)} percent`}>
+        {Array.from({ length: 10 }, (_, i) => (
+          <i key={i} className={i < Math.round((claim.confidence ?? 0) * 10) ? "on" : ""} />
+        ))}
+      </div>
 
       {/* Meta row */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const, fontSize: 10, color: "var(--t4)" }}>

@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aughor · Full-App Redesign (Interactive Prototype)</title>
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   AUGHOR — FULL-APP REDESIGN PROTOTYPE
+   Tokens mirror web/aughor-v2 (Blueprint blue on Databricks near-black).
+   Every screen is redesigned around its real purpose. Mockup only — not wired
+   to the backend. Click the sidebar, ⌘K, theme, rail, and "design notes".
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --bg-0:#0A0D13; --bg-1:#0E121A; --bg-2:#141925; --bg-3:#1A2030; --bg-4:#232C3E;
+  --bg-hover:rgba(255,255,255,.045); --bg-sel:rgba(59,130,246,.14);
+  --b0:#11151D; --b1:#1B2130; --b2:#252E40; --b3:#334056; --bfocus:#3B82F6;
+  --t1:#EAEDF3; --t2:#9BA6B8; --t3:#6B7689; --t4:#4A5468;
+  --blue1:#11233F; --blue2:#1C3A66; --blue3:#3B82F6; --blue4:#5B9DFF; --blue5:#BFDBFF;
+  --grn1:#0C2417; --grn3:#1FA968; --grn4:#34D399; --grn5:#86EFC0;
+  --amb1:#2A1E05; --amb3:#D9A013; --amb4:#F5C542; --amb5:#FFE08A;
+  --red1:#2A0F12; --red3:#E0444E; --red4:#F76B73; --red5:#FFA9AE;
+  --vio1:#1B1340; --vio3:#7C5CE0; --vio4:#A285F5; --vio5:#CBB8FF;
+  --cyn1:#06222E; --cyn3:#1AA0C4; --cyn5:#9BE4F7;
+  --r1:4px; --r2:6px; --r3:10px; --r4:14px;
+  --dur-fast:100ms; --dur-norm:200ms; --dur-slow:400ms; --dur-breath:700ms;
+  --ease-out:cubic-bezier(0,0,.2,1); --ease-pop:cubic-bezier(.34,1.56,.64,1);
+  --ease-spring:cubic-bezier(.16,1,.3,1);
+  --shadow-sm:0 1px 4px rgba(0,0,0,.35); --shadow-md:0 4px 16px rgba(0,0,0,.45);
+  --shadow-lg:0 8px 28px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.4);
+  --acc-glow:color-mix(in srgb,var(--blue3) 42%,transparent);
+  --shadow-acc:0 4px 20px var(--acc-glow);
+  --glass-bg:color-mix(in srgb,var(--bg-1) 72%,transparent);
+  --sidebar:242px; --rail:62px; --topbar:52px;
+  --font-ui:"DM Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  --font-code:"IBM Plex Mono",Consolas,monospace;
+}
+[data-theme="light"]{
+  --bg-0:#F6F8FC; --bg-1:#FFFFFF; --bg-2:#FFFFFF; --bg-3:#F1F4F9; --bg-4:#E6EBF2;
+  --bg-hover:rgba(15,30,60,.04); --bg-sel:rgba(59,130,246,.10);
+  --b0:#EEF1F6; --b1:#E3E8F0; --b2:#D5DCE6; --b3:#C2CBD9;
+  --t1:#141925; --t2:#52607A; --t3:#7A879B; --t4:#A6B0C0;
+  --glass-bg:color-mix(in srgb,#FFFFFF 72%,transparent);
+  --shadow-sm:0 1px 3px rgba(20,40,80,.08); --shadow-md:0 4px 16px rgba(20,40,80,.10);
+  --shadow-lg:0 10px 30px rgba(20,40,80,.12),0 2px 8px rgba(20,40,80,.06);
+  --blue1:#E8F0FE; --grn1:#E6F6EE; --amb1:#FBF1DC; --red1:#FBE9EA; --vio1:#F0EBFB; --cyn1:#E4F4F9;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--font-ui);font-size:13px;background:var(--bg-0);color:var(--t1);line-height:1.5;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input,select,textarea{font-family:inherit}
+button{cursor:pointer;border:none;background:none;color:inherit}
+:focus-visible{outline:2px solid var(--bfocus);outline-offset:2px;border-radius:var(--r1)}
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-thumb{background:var(--b2);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--b3)}
+.mono{font-family:var(--font-code)}
+
+/* ── App shell ─────────────────────────────────────────────────────────── */
+.app{height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.body{flex:1;display:flex;overflow:hidden;min-height:0}
+
+/* Topbar */
+.topbar{height:var(--topbar);display:flex;align-items:center;gap:12px;padding:0 14px;background:var(--glass-bg);backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);border-bottom:1px solid var(--b1);z-index:50;flex-shrink:0}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;letter-spacing:.02em;font-size:14px}
+.brand .glyph{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:linear-gradient(135deg,var(--blue3),var(--vio3));box-shadow:var(--shadow-acc);color:#fff;font-weight:700;font-size:14px}
+.rail-toggle{width:30px;height:30px;border-radius:var(--r2);display:grid;place-items:center;color:var(--t2);transition:background var(--dur-fast),color var(--dur-fast)}
+.rail-toggle:hover{background:var(--bg-hover);color:var(--t1)}
+.cmdbar{flex:1;max-width:540px;margin:0 auto;height:34px;display:flex;align-items:center;gap:9px;padding:0 12px;border-radius:var(--r2);background:var(--bg-2);border:1px solid var(--b2);color:var(--t3);cursor:text;transition:border-color var(--dur-norm) var(--ease-spring),box-shadow var(--dur-norm) var(--ease-spring),background var(--dur-norm)}
+.cmdbar:hover{border-color:var(--b3)}
+.cmdbar .ph{flex:1;font-size:12.5px;text-align:left}
+.kbd{font-family:var(--font-code);font-size:10.5px;color:var(--t2);border:1px solid var(--b2);border-bottom-width:2px;border-radius:var(--r1);padding:1px 6px;background:var(--bg-3)}
+.topbar-right{display:flex;align-items:center;gap:6px;margin-left:auto}
+.icon-btn{width:32px;height:32px;border-radius:var(--r2);display:grid;place-items:center;color:var(--t2);position:relative;transition:background var(--dur-fast),color var(--dur-fast),transform var(--dur-fast)}
+.icon-btn:hover{background:var(--bg-hover);color:var(--t1)}
+.icon-btn:active{transform:scale(.92)}
+.icon-btn .badge{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--red3);border:2px solid var(--bg-1)}
+.avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:12px;background:linear-gradient(135deg,var(--grn3),var(--blue3));color:#fff;margin-left:4px}
+
+/* Sidebar */
+.sidebar{width:var(--sidebar);flex-shrink:0;display:flex;flex-direction:column;background:var(--bg-1);border-right:1px solid var(--b1);overflow:hidden;transition:width var(--dur-slow) var(--ease-spring);position:relative;z-index:40}
+.app.rail .sidebar{width:var(--rail)}
+.nav-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px 10px 4px}
+.app.rail .nav-scroll{padding:10px 8px 4px}
+.ask-launch{display:flex;align-items:center;gap:9px;width:100%;height:38px;padding:0 12px;margin-bottom:10px;border-radius:var(--r2);font-weight:600;font-size:12.5px;color:#fff;background:linear-gradient(135deg,var(--blue3),var(--blue4));box-shadow:var(--shadow-acc);transition:transform var(--dur-norm) var(--ease-spring),box-shadow var(--dur-norm) var(--ease-spring);overflow:hidden;white-space:nowrap}
+.ask-launch:hover{transform:translateY(-1px);box-shadow:0 6px 24px var(--acc-glow)}
+.ask-launch:active{transform:translateY(0) scale(.99)}
+.app.rail .ask-launch{padding:0;justify-content:center}
+.app.rail .ask-launch .lbl{opacity:0;width:0}
+.nav-group{font-size:10.5px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--t4);padding:14px 11px 5px;white-space:nowrap}
+.app.rail .nav-group{height:13px;padding:11px 0 0;color:transparent}
+.app.rail .nav-group span{display:none}
+.app.rail .nav-group::after{content:"";display:block;width:18px;height:1px;background:var(--b1);margin:0 auto}
+.nav-item{display:flex;align-items:center;gap:11px;width:100%;height:34px;padding:0 11px;border-radius:var(--r2);font-size:12.5px;font-weight:450;color:var(--t2);position:relative;white-space:nowrap;transition:color var(--dur-fast)}
+.nav-item:hover{color:var(--t1)}
+.nav-item:hover::after{content:"";position:absolute;inset:0;border-radius:var(--r2);background:var(--bg-hover);z-index:0}
+.nav-item .ic{flex-shrink:0;width:18px;height:18px;display:grid;place-items:center}
+.app.rail .nav-item{justify-content:center;padding:0}
+.app.rail .nav-item .lbl,.app.rail .nav-item .count{display:none}
+.nav-item .count{margin-left:auto;font-size:10.5px;font-weight:600;color:var(--t3);background:var(--bg-3);border-radius:20px;padding:1px 7px;min-width:20px;text-align:center}
+.nav-item.has-pulse .count{color:var(--amb5);background:var(--amb1)}
+.nav-item.active{color:var(--blue5);font-weight:550}
+#nav-pill{position:absolute;left:10px;right:10px;height:34px;border-radius:var(--r2);background:var(--bg-sel);pointer-events:none;z-index:0;transition:transform var(--dur-slow) var(--ease-spring),opacity var(--dur-norm)}
+#nav-pill::before{content:"";position:absolute;left:-10px;top:50%;transform:translateY(-50%);width:3px;height:16px;border-radius:0 3px 3px 0;background:var(--blue3)}
+.nav-item>*{position:relative;z-index:1}
+.side-foot{border-top:1px solid var(--b1);padding:10px;display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--t2);white-space:nowrap;overflow:hidden}
+.app.rail .side-foot{justify-content:center}
+.app.rail .side-foot .foot-txt{display:none}
+
+/* Screen + content */
+.screen{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg-0);overflow:hidden}
+.content-header{height:46px;flex-shrink:0;display:flex;align-items:center;gap:10px;padding:0 22px;border-bottom:1px solid var(--b1);background:var(--glass-bg);backdrop-filter:blur(12px);z-index:5}
+.crumbs{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t3)}
+.crumbs .here{color:var(--t1);font-weight:600}
+.crumbs .sep{color:var(--t4)}
+.header-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.content{flex:1;overflow-y:auto;overflow-x:hidden}
+.pad{padding:22px}
+.view{animation:viewIn var(--dur-slow) var(--ease-spring) both}
+@keyframes viewIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.view h2{margin:0 0 4px;font-size:19px;font-weight:650;letter-spacing:-.01em}
+.view .sub{color:var(--t2);font-size:13px;margin:0 0 18px;max-width:64ch}
+.eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--blue4);margin-bottom:6px;display:flex;align-items:center;gap:7px}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 13px;border-radius:var(--r2);font-size:12px;font-weight:550;border:1px solid transparent;white-space:nowrap;transition:background var(--dur-fast),border-color var(--dur-fast),transform var(--dur-fast)}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--blue3);color:#fff}
+.btn.primary:hover{background:var(--blue4)}
+.btn.ghost{color:var(--t2);border-color:var(--b2)}
+.btn.ghost:hover{background:var(--bg-hover);color:var(--t1);border-color:var(--b3)}
+.btn.sm{height:25px;padding:0 9px;font-size:11px}
+.btn.danger{color:var(--red5);border-color:transparent}
+.btn.danger:hover{background:var(--red1)}
+
+/* Cards / grid */
+.grid{display:grid;gap:14px}
+.g4{grid-template-columns:repeat(4,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:1180px){.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(2,1fr)}}
+.card{background:var(--bg-2);border:1px solid var(--b1);border-radius:var(--r3);padding:16px;transition:transform var(--dur-norm) var(--ease-spring),box-shadow var(--dur-norm) var(--ease-spring),border-color var(--dur-norm)}
+.card.lift{cursor:pointer}
+.card.lift:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg);border-color:var(--b2)}
+.card h3{margin:0;font-size:14px;font-weight:600}
+.stat .k{font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+.stat .v{font-size:27px;font-weight:680;letter-spacing:-.02em;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+.stat .d{font-size:11.5px;color:var(--t2);display:flex;align-items:center;gap:5px}
+.delta.up{color:var(--grn4)}.delta.dn{color:var(--red5)}
+
+/* Tags / dots */
+.tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:var(--r1);font-size:10.5px;font-weight:600;letter-spacing:.02em;white-space:nowrap}
+.tag.blue{color:var(--blue5);background:var(--blue1)}.tag.grn{color:var(--grn5);background:var(--grn1)}
+.tag.amb{color:var(--amb5);background:var(--amb1)}.tag.red{color:var(--red5);background:var(--red1)}
+.tag.vio{color:var(--vio5);background:var(--vio1)}.tag.cyn{color:var(--cyn5);background:var(--cyn1)}
+.tag.gray{color:var(--t2);background:var(--bg-3)}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;display:inline-block}
+.dot.grn{background:var(--grn4)}.dot.amb{background:var(--amb4)}.dot.red{background:var(--red4)}.dot.blue{background:var(--blue4)}.dot.gray{background:var(--t3)}
+.dot.live{background:var(--grn4);box-shadow:0 0 0 0 var(--grn4);animation:pulseDot 1.6s infinite}
+@keyframes pulseDot{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--grn4) 55%,transparent)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+/* Segmented control (in-view tabs) */
+.seg{display:inline-flex;gap:2px;padding:3px;background:var(--bg-2);border:1px solid var(--b1);border-radius:var(--r2)}
+.seg button{height:26px;padding:0 13px;border-radius:var(--r1);font-size:12px;font-weight:550;color:var(--t2);transition:color var(--dur-fast),background var(--dur-fast)}
+.seg button:hover{color:var(--t1)}
+.seg button.on{background:var(--bg-sel);color:var(--blue5)}
+
+/* Lists / rows */
+.row-list{display:flex;flex-direction:column;gap:1px}
+.row{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:var(--r2);transition:background var(--dur-fast);cursor:pointer}
+.row:hover{background:var(--bg-hover)}
+.row .ti{font-weight:550;font-size:13px}
+.row .mt{font-size:11.5px;color:var(--t3);margin-top:1px}
+.row .rt{margin-left:auto;font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* Tables */
+.dt{width:100%;border-collapse:collapse;font-size:12px}
+.dt thead th{text-align:left;padding:8px 12px;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);border-bottom:1px solid var(--b2);position:sticky;top:0;background:var(--bg-1);white-space:nowrap}
+.dt tbody td{padding:9px 12px;border-bottom:1px solid var(--b0);font-variant-numeric:tabular-nums;color:var(--t1)}
+.dt tbody tr{transition:background var(--dur-fast)}
+.dt tbody tr:hover td{background:var(--bg-hover)}
+
+/* Master-detail layout */
+.md{display:flex;gap:0;height:calc(100vh - var(--topbar) - 46px)}
+.md-list{width:320px;flex-shrink:0;border-right:1px solid var(--b1);overflow-y:auto;padding:14px}
+.md-detail{flex:1;overflow-y:auto;padding:22px}
+.md-row{padding:11px 12px;border-radius:var(--r2);cursor:pointer;transition:background var(--dur-fast);border:1px solid transparent}
+.md-row:hover{background:var(--bg-hover)}
+.md-row.sel{background:var(--bg-sel);border-color:var(--blue2)}
+.md-row .ti{font-weight:550;font-size:12.5px}
+.md-row .mt{font-size:11px;color:var(--t3);margin-top:2px}
+
+/* Spark bars */
+.spark{height:30px;display:flex;align-items:flex-end;gap:3px}
+.spark i{width:6px;background:var(--blue3);border-radius:2px;opacity:.85;display:block}
+.bar-h{display:flex;align-items:center;gap:9px;margin:5px 0;font-size:11.5px}
+.bar-h .tk{width:96px;color:var(--t2);text-align:right;flex-shrink:0}
+.bar-h .tr{flex:1;height:8px;background:var(--bg-3);border-radius:4px;overflow:hidden}
+.bar-h .tr i{display:block;height:100%;border-radius:4px;background:var(--blue3)}
+.bar-h .vl{width:42px;color:var(--t3);font-variant-numeric:tabular-nums}
+
+/* Skeleton */
+.sk{background:linear-gradient(90deg,var(--bg-2) 25%,var(--bg-3) 50%,var(--bg-2) 75%);background-size:200% 100%;animation:shim 1.4s infinite;border-radius:var(--r2)}
+@keyframes shim{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* Stagger reveal */
+.stagger>*{animation:stagIn var(--dur-slow) var(--ease-spring) both}
+.stagger>*:nth-child(1){animation-delay:.02s}.stagger>*:nth-child(2){animation-delay:.06s}.stagger>*:nth-child(3){animation-delay:.10s}.stagger>*:nth-child(4){animation-delay:.14s}.stagger>*:nth-child(5){animation-delay:.18s}.stagger>*:nth-child(6){animation-delay:.22s}.stagger>*:nth-child(7){animation-delay:.26s}.stagger>*:nth-child(8){animation-delay:.30s}
+@keyframes stagIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+/* ── Investigation: thinking trace timeline ──────────────────────────── */
+.trace{position:relative;padding-left:26px}
+.trace::before{content:"";position:absolute;left:9px;top:6px;bottom:6px;width:2px;background:var(--b2)}
+.tstep{position:relative;padding:8px 0;animation:stepIn .4s var(--ease-out) both}
+@keyframes stepIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.tstep .node{position:absolute;left:-21px;top:11px;width:14px;height:14px;border-radius:50%;background:var(--bg-2);border:2px solid var(--b3)}
+.tstep.done .node{background:var(--grn3);border-color:var(--grn3)}
+.tstep.run .node{border-color:var(--blue3);background:var(--blue1);animation:pulseDot 1.4s infinite}
+.tstep .lab{font-size:12.5px;font-weight:550}
+.tstep .meta{font-size:11px;color:var(--t3);margin-top:1px}
+.tstep.run .lab{color:var(--blue5)}
+
+/* Evidence / claim card */
+.claim{border:1px solid var(--b1);border-radius:var(--r3);padding:13px 14px;background:var(--bg-2);margin-bottom:10px}
+.conf-track{height:5px;border-radius:3px;background:var(--bg-3);overflow:hidden;margin-top:7px}
+.conf-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--grn3),var(--grn4))}
+
+/* Graph (ontology) placeholder */
+.graph{position:relative;height:380px;border:1px solid var(--b1);border-radius:var(--r3);background:radial-gradient(circle at 50% 40%,var(--bg-2),var(--bg-1));overflow:hidden}
+.gnode{position:absolute;display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:20px;background:var(--bg-3);border:1px solid var(--b2);font-size:12px;font-weight:550;box-shadow:var(--shadow-sm);transition:transform var(--dur-norm) var(--ease-spring)}
+.gnode:hover{transform:scale(1.06);border-color:var(--blue3)}
+.gnode.acc{border-color:var(--blue2);background:var(--blue1);color:var(--blue5)}
+.gedge{position:absolute;height:2px;background:var(--b3);transform-origin:left center;opacity:.6}
+
+/* Command palette */
+.scrim{position:fixed;inset:0;background:rgba(4,7,12,.55);backdrop-filter:blur(3px);z-index:200;opacity:0;pointer-events:none;transition:opacity var(--dur-norm)}
+.scrim.show{opacity:1;pointer-events:auto}
+.palette{position:fixed;top:13vh;left:50%;transform:translateX(-50%) scale(.96) translateY(8px);width:min(640px,92vw);background:var(--bg-2);border:1px solid var(--b2);border-radius:14px;box-shadow:var(--shadow-lg);z-index:201;opacity:0;pointer-events:none;overflow:hidden;transition:opacity var(--dur-norm) var(--ease-spring),transform var(--dur-norm) var(--ease-spring)}
+.palette.show{opacity:1;pointer-events:auto;transform:translateX(-50%) scale(1) translateY(0)}
+.pal-input{display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid var(--b1)}
+.pal-input input{flex:1;background:none;border:none;outline:none;color:var(--t1);font-size:15px}
+.pal-input input::placeholder{color:var(--t3)}
+.pal-list{max-height:48vh;overflow-y:auto;padding:8px}
+.pal-sec{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t4);padding:10px 12px 5px}
+.pal-item{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:var(--r2);font-size:13px;color:var(--t1)}
+.pal-item .ic{color:var(--t3)}
+.pal-item .hint{margin-left:auto;font-size:11px;color:var(--t3)}
+.pal-item.sel{background:var(--bg-sel);color:var(--blue5)}
+.pal-item.sel .ic{color:var(--blue4)}
+
+/* Toast */
+.toast-wrap{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:300;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{display:flex;align-items:center;gap:10px;padding:11px 16px;border-radius:var(--r3);background:var(--bg-3);border:1px solid var(--b2);box-shadow:var(--shadow-lg);font-size:12.5px;animation:toastIn var(--dur-slow) var(--ease-pop) both}
+@keyframes toastIn{from{opacity:0;transform:translateY(16px) scale(.95)}to{opacity:1;transform:none}}
+
+/* Annotation FAB */
+.fab{position:fixed;bottom:22px;right:22px;z-index:130;height:42px;padding:0 16px;border-radius:21px;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:#fff;background:linear-gradient(135deg,var(--vio3),var(--blue3));box-shadow:var(--shadow-lg);transition:transform var(--dur-norm) var(--ease-spring)}
+.fab:hover{transform:translateY(-2px)}
+.app.annotate .fab{background:linear-gradient(135deg,var(--blue3),var(--grn3))}
+.note{display:none;margin:0 0 16px;padding:11px 14px;border-radius:var(--r3);background:linear-gradient(135deg,color-mix(in srgb,var(--vio3) 16%,transparent),color-mix(in srgb,var(--blue3) 14%,transparent));border:1px solid var(--vio3);font-size:12px;color:var(--t1);line-height:1.5}
+.app.annotate .note{display:block;animation:viewIn .3s var(--ease-out) both}
+.note b{color:var(--vio5)}
+
+.flex{display:flex}.between{justify-content:space-between}.center{align-items:center}.wrap{flex-wrap:wrap}.gap8{gap:8px}.gap12{gap:12px}.mt8{margin-top:8px}.mt14{margin-top:14px}.mt22{margin-top:22px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="topbar">
+    <button class="rail-toggle" id="railBtn" title="Toggle sidebar rail"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <div class="brand"><span class="glyph">A</span> Aughor</div>
+    <button class="cmdbar" id="cmdbarBtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span class="ph">Ask a question, jump to anything, run a command…</span><span class="kbd">⌘K</span></button>
+    <div class="topbar-right">
+      <button class="icon-btn" id="bellBtn" title="Inbox" data-nav="inbox"><span class="badge"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg></button>
+      <button class="icon-btn" id="themeBtn" title="Toggle theme"><svg id="themeIco" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <div class="avatar" data-nav="settings" title="Account & settings">S</div>
+    </div>
+  </header>
+  <div class="body">
+    <nav class="sidebar">
+      <div class="nav-scroll" id="navScroll">
+        <button class="ask-launch" data-nav="chat"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg><span class="lbl">New investigation</span></button>
+        <div id="navHost" style="position:relative"></div>
+      </div>
+      <div class="side-foot"><span class="dot live"></span><span class="foot-txt">3 sources synced · fresh 2m ago</span></div>
+    </nav>
+    <section class="screen">
+      <div class="content-header">
+        <div class="crumbs" id="crumbs"></div>
+        <div class="header-actions" id="headerActions"></div>
+      </div>
+      <div class="content" id="content"></div>
+    </section>
+  </div>
+  <button class="fab" id="fab"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg><span>Show design notes</span></button>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="palette" id="palette">
+  <div class="pal-input"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="palInput" placeholder="Ask a question or jump to…" /><span class="kbd">esc</span></div>
+  <div class="pal-list" id="palList"></div>
+</div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* ════ Icons ════ */
+const I={
+ home:'<path d="M3 11l9-8 9 8M5 9v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9"/>',
+ inbox:'<path d="M3 12h5l2 3h4l2-3h5M4 12V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6"/>',
+ canvas:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
+ brief:'<path d="M4 4h16v14H4zM8 9h8M8 13h5"/>',
+ search:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+ node:'<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.8 7.6l3 8.4M16.2 7.6l-3 8.4"/>',
+ activity:'<path d="M3 12h4l3 8 4-16 3 8h4"/>',
+ playbook:'<path d="M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2zM8 7h8M8 11h6"/>',
+ db:'<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+ builder:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+ layers:'<path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5M3 17l9 5 9-5"/>',
+ spark:'<path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>',
+ shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+ settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9 2 2 0 1 1-2.8 2.8 1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2 2 2 0 1 1-2.8-2.8A1.7 1.7 0 0 0 4.6 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.2-2.9 2 2 0 1 1 2.8-2.8A1.7 1.7 0 0 0 11 4.6a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2 2 2 0 1 1 2.8 2.8A1.7 1.7 0 0 0 21.4 11a2 2 0 1 1 0 4z"/>',
+ bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/>',
+ check:'<path d="M20 6L9 17l-5-5"/>',
+ alert:'<path d="M12 9v4M12 17h.01M10.3 4l-7 12a2 2 0 0 0 1.7 3h14a2 2 0 0 0 1.7-3l-7-12a2 2 0 0 0-3.4 0z"/>',
+ process:'<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M9 6h6a2 2 0 0 1 2 2v7"/>',
+ bolt:'<path d="M13 2L3 14h7l-1 8 10-12h-7z"/>'
+};
+const svg=(p,s=18)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+
+/* ════ Nav model (mirrors web/app/page.tsx) ════ */
+const NAV=[
+ {id:'home',icon:'home',label:'Home'},
+ {id:'inbox',icon:'inbox',label:'Inbox',count:4,pulse:true},
+ {id:'canvases',icon:'canvas',label:'Data Canvas'},
+ {group:'Intelligence'},
+ {id:'briefing',icon:'brief',label:'Briefing'},
+ {id:'recents',icon:'search',label:'Investigations',count:12},
+ {id:'intelligence',icon:'node',label:'Intelligence Map'},
+ {id:'fleet',icon:'bolt',label:'Fleet',count:3},
+ {id:'health',icon:'activity',label:'Health'},
+ {id:'playbook',icon:'playbook',label:'Playbook'},
+ {group:'Data'},
+ {id:'catalog',icon:'db',label:'Catalog'},
+ {id:'builder',icon:'builder',label:'Query Builder'},
+ {id:'semantic',icon:'layers',label:'Semantic Layer'},
+ {group:'Operations'},
+ {id:'monitors',icon:'alert',label:'Monitors'},
+ {id:'actions',icon:'spark',label:'Action Hub'},
+ {id:'security',icon:'shield',label:'Security & Audit'},
+ {group:'Account'},
+ {id:'settings',icon:'settings',label:'Settings'}
+];
+const TITLES={home:'Home',inbox:'Inbox',canvases:'Data Canvas',chat:'New investigation',briefing:'Briefing',recents:'Investigations',intelligence:'Intelligence Map',fleet:'Fleet',health:'Health',playbook:'Playbook',catalog:'Catalog',builder:'Query Builder',semantic:'Semantic Layer',monitors:'Monitors',actions:'Action Hub',security:'Security & Audit',settings:'Settings'};
+const SECTION={briefing:'Intelligence',recents:'Intelligence',intelligence:'Intelligence',fleet:'Intelligence',health:'Intelligence',playbook:'Intelligence',catalog:'Data',builder:'Data',semantic:'Data',monitors:'Operations',actions:'Operations',security:'Operations'};
+
+/* ════ Build sidebar ════ */
+const navHost=document.getElementById('navHost');
+const pill=document.createElement('div');pill.id='nav-pill';navHost.appendChild(pill);
+NAV.forEach(n=>{
+ if(n.group){const g=document.createElement('div');g.className='nav-group';g.innerHTML=`<span>${n.group}</span>`;navHost.appendChild(g);}
+ else{const a=document.createElement('button');a.className='nav-item';a.dataset.nav=n.id;a.innerHTML=`<span class="ic">${svg(I[n.icon])}</span><span class="lbl">${n.label}</span>`+(n.count!=null?`<span class="count">${n.count}</span>`:'');if(n.pulse)a.classList.add('has-pulse');navHost.appendChild(a);}
+});
+
+/* ════ helpers ════ */
+const stat=(k,v,d,cls)=>`<div class="card lift stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d"><span class="delta ${cls}">${d}</span></div></div>`;
+const bars=a=>`<div class="spark">${a.map(h=>`<i style="height:${h}%"></i>`).join('')}</div>`;
+const barH=(k,pct,v,c='var(--blue3)')=>`<div class="bar-h"><span class="tk">${k}</span><span class="tr"><i style="width:${pct}%;background:${c}"></i></span><span class="vl">${v}</span></div>`;
+const note=t=>`<div class="note">${t}</div>`;
+
+/* ════ in-view sub-state ════ */
+const SUB={catalog:'orders',semantic:'annotations',intelligence:'briefing',monitors:'monitors',actions:'triggers',security:'security',settings:'organization',playbook:'p1',recents:'i1',builder:'chart',inbox:'pending',fleet:'activity'};
+function setSub(view,val){SUB[view]=val;renderView(current,true);}
+
+/* ════════════════════════════ VIEWS ════════════════════════════ */
+const VIEWS={};
+
+VIEWS.home=()=>`
+ ${note('<b>Home redesign:</b> reframed from a generic dashboard into a "what needs me / what changed" surface. One hero ask box, a needs-attention strip, then quietly-supporting stats & recents. New users see a 3-step setup funnel instead of empty cards.')}
+ <div class="eyebrow">${svg(I.home,13)} Good morning, Sadhak · Wednesday</div>
+ <h2>What needs you today</h2>
+ <p class="sub">Aughor watched your data overnight. Here's what changed, and where to look next.</p>
+ <div class="card" style="background:linear-gradient(135deg,var(--blue1),var(--bg-2));border-color:var(--blue2)">
+   <div class="flex center gap12">
+     <span style="color:var(--blue4)">${svg(I.spark,22)}</span>
+     <input class="ph" placeholder="Ask anything about your data — e.g. Why did EU conversion drop last week?" style="flex:1;background:none;border:none;outline:none;color:var(--t1);font-size:15px" />
+     <button class="btn primary" data-nav="chat">Investigate →</button>
+   </div>
+ </div>
+ <div class="flex wrap gap8 mt14">${['Revenue by region','Funnel drop-off','Anomalies (24h)','Churn drivers'].map(s=>`<span class="tag blue" style="cursor:pointer" data-nav="chat">↳ ${s}</span>`).join('')}</div>
+
+ <h3 style="margin:24px 0 10px;font-size:13px;color:var(--t2)">Needs attention</h3>
+ <div class="grid g3 stagger">
+   <div class="card lift" data-nav="inbox" style="border-left:3px solid var(--red3)"><div class="flex center gap8"><span class="tag red">anomaly</span><span class="dot live"></span></div><div style="font-weight:600;margin:9px 0 3px">Refund rate spiked 2.3× in DACH</div><div class="mt" style="color:var(--t3);font-size:11.5px">Detected 22m ago · high confidence</div></div>
+   <div class="card lift" data-nav="health" style="border-left:3px solid var(--amb3)"><div class="flex center gap8"><span class="tag amb">off target</span></div><div style="font-weight:600;margin:9px 0 3px">Net revenue 8% below Q2 target</div><div class="mt" style="color:var(--t3);font-size:11.5px">3 KPIs need a look</div></div>
+   <div class="card lift" data-nav="inbox" style="border-left:3px solid var(--vio3)"><div class="flex center gap8"><span class="tag vio">recommendation</span></div><div style="font-weight:600;margin:9px 0 3px">Add index on orders.created_at</div><div class="mt" style="color:var(--t3);font-size:11.5px">Would speed 4 slow queries ~70%</div></div>
+ </div>
+
+ <div class="grid g2 stagger mt14">
+   <div class="card">
+     <div class="flex between center"><h3>Recent investigations</h3><button class="btn ghost sm" data-nav="recents">View all</button></div>
+     <div class="row-list mt8">
+       <div class="row" data-nav="recents"><span class="dot grn"></span><div><div class="ti">Why did EU checkout conversion drop?</div><div class="mt">3 hypotheses · 2 verified</div></div><div class="rt">8m ago</div></div>
+       <div class="row" data-nav="recents"><span class="dot grn"></span><div><div class="ti">Top SKUs driving Q2 margin</div><div class="mt">report ready</div></div><div class="rt">1h ago</div></div>
+       <div class="row" data-nav="recents"><span class="dot live"></span><div><div class="ti">Cohort retention by channel</div><div class="mt">running…</div></div><div class="rt">now</div></div>
+     </div>
+   </div>
+   <div class="card">
+     <div class="flex between center"><h3>At a glance</h3><span class="tag grn">healthy</span></div>
+     <div class="grid g2 mt14" style="gap:10px">
+       <div><div class="stat"><div class="k">Investigations</div><div class="v" style="font-size:22px">7</div></div></div>
+       <div><div class="stat"><div class="k">Data freshness</div><div class="v" style="font-size:22px">98%</div></div></div>
+       <div><div class="stat"><div class="k">Open anomalies</div><div class="v" style="font-size:22px">3</div></div></div>
+       <div><div class="stat"><div class="k">Spend / week</div><div class="v" style="font-size:22px">$142</div></div></div>
+     </div>
+   </div>
+ </div>`;
+
+VIEWS.chat=()=>`
+ ${note('<b>Investigation redesign:</b> the core flow. A single clear mode switch (Quick answer ↔ Deep analysis), a calm vertical <b>thinking-trace timeline</b> that streams the agent\'s steps, and the answer split into <b>Result → Why (evidence) → Trust receipt</b> so the reasoning is legible without overwhelming. Every claim links to its SQL source.')}
+ <div class="flex between center" style="margin-bottom:14px">
+   <div><div class="eyebrow">${svg(I.spark,13)} Investigation</div><h2 style="margin:0">Why did EU checkout conversion drop last week?</h2></div>
+   <div class="seg"><button class="on">Deep analysis</button><button onclick="toast('Quick mode lets you get instant SQL answers')">Quick answer</button></div>
+ </div>
+ <div class="grid" style="grid-template-columns:1.55fr 1fr;align-items:start;gap:16px">
+   <div>
+     <div class="card">
+       <div class="flex between center"><h3>Reasoning</h3><span class="tag blue"><span class="dot live"></span> verifying step 4 of 5</span></div>
+       <div class="trace mt14">
+         <div class="tstep done"><span class="node"></span><div class="lab">Understood question & scope</div><div class="meta">EU region · checkout funnel · last 7 days vs prior 7</div></div>
+         <div class="tstep done"><span class="node"></span><div class="lab">Established baseline</div><div class="meta">Conversion 3.1% → 2.4% (−22%) · confirmed in orders + sessions</div></div>
+         <div class="tstep done"><span class="node"></span><div class="lab">Decomposed by step & segment</div><div class="meta">Drop isolates to payment step, mobile, DACH market</div></div>
+         <div class="tstep run"><span class="node"></span><div class="lab">Verifying hypothesis: payment provider latency</div><div class="meta">Running SQL against payment_events…</div></div>
+         <div class="tstep"><span class="node"></span><div class="lab">Synthesize report & recommendations</div><div class="meta">pending</div></div>
+       </div>
+     </div>
+   </div>
+   <div>
+     <div class="card" style="margin-bottom:14px">
+       <h3>Result so far</h3>
+       <div class="mt14" style="font-size:13px;line-height:1.6">Checkout conversion fell <b style="color:var(--red5)">−22%</b> WoW, concentrated in <b>mobile DACH</b> at the <b>payment step</b>. Leading cause under verification: a payment-provider latency spike.</div>
+       <div class="mt14">${bars([62,60,58,40,38,30,33])}</div>
+       <div class="mt8" style="font-size:11px;color:var(--t3)">Daily conversion · last 7 days</div>
+     </div>
+     <div class="card" style="margin-bottom:14px">
+       <div class="flex between center"><h3 style="font-size:13px">Evidence</h3><span class="tag gray">2 claims</span></div>
+       <div class="claim mt8" style="margin-bottom:8px"><div style="font-weight:550;font-size:12.5px">Payment-step drop-off rose from 11% to 29% in DACH</div><div class="conf-track"><div class="conf-fill" style="width:88%"></div></div><div class="flex between mt8" style="font-size:10.5px;color:var(--t3)"><span>confidence 88% · fresh 4m</span><span class="mono" style="cursor:pointer;color:var(--blue4)">view SQL ↗</span></div></div>
+       <div class="claim" style="margin-bottom:0"><div style="font-weight:550;font-size:12.5px">Provider p95 latency 1.2s → 6.8s same window</div><div class="conf-track"><div class="conf-fill" style="width:82%"></div></div><div class="flex between mt8" style="font-size:10.5px;color:var(--t3)"><span>confidence 82% · fresh 4m</span><span class="mono" style="cursor:pointer;color:var(--blue4)">view SQL ↗</span></div></div>
+     </div>
+     <div class="card" style="background:var(--bg-1)">
+       <div class="flex center gap8"><span style="color:var(--grn4)">${svg(I.shield,15)}</span><h3 style="font-size:12.5px">Trust receipt</h3></div>
+       <div class="flex wrap gap8 mt8"><span class="tag grn">metric: governed</span><span class="tag gray">3 tables</span><span class="tag blue">0 guards fired</span><span class="tag gray">$0.06 · 11s</span></div>
+     </div>
+   </div>
+ </div>
+ <div class="card mt22" style="position:sticky;bottom:0;background:var(--glass-bg);backdrop-filter:blur(12px)"><div class="flex center gap12"><span style="color:var(--t3)">${svg(I.spark,18)}</span><input class="ph" placeholder="Ask a follow-up — e.g. break this down by device and browser…" style="flex:1;background:none;border:none;outline:none;color:var(--t1);font-size:14px" /><button class="btn ghost sm">Quick</button><button class="btn primary sm">Send</button></div></div>`;
+
+VIEWS.inbox=()=>{
+ const tab=SUB.inbox;
+ const items=[
+   {t:'anomaly',c:'red',ti:'Refund rate spiked 2.3× in DACH',mt:'From: overnight anomaly sweep · 22m ago',act:'Investigate cause'},
+   {t:'recommendation',c:'vio',ti:'Add index on orders.created_at',mt:'From: Query Builder performance scan',act:'Apply & monitor'},
+   {t:'approval',c:'blue',ti:'Publish "Net Revenue" to semantic layer',mt:'Requested by you · governance gate',act:'Review & approve'},
+   {t:'finding',c:'amb',ti:'Cart-abandon spikes Fridays 5–7pm',mt:'From: Domain intelligence · novelty 8/10',act:'Add to playbook'}
+ ];
+ return `
+ ${note('<b>Inbox redesign:</b> a single triage queue for everything that wants a decision — anomalies, recommendations, approvals, promotable findings — each with a clear <b>source</b>, a <b>severity colour</b>, and one obvious next action. Was previously buried as "recommendations" only.')}
+ <div class="flex between center"><div><div class="eyebrow">${svg(I.inbox,13)} Inbox</div><h2 style="margin:0">4 things want a decision</h2></div>
+ <div class="seg">${['pending','all','done'].map(x=>`<button class="${tab===x?'on':''}" onclick="setSub('inbox','${x}')">${x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div></div>
+ <p class="sub mt8">Anomalies, recommendations, approvals and findings — triaged in one place.</p>
+ <div class="card"><div class="row-list">
+ ${items.map(x=>`<div class="row"><span class="tag ${x.c}" style="width:108px;justify-content:center">${x.t}</span><div style="flex:1"><div class="ti">${x.ti}</div><div class="mt">${x.mt}</div></div><button class="btn ghost sm">Dismiss</button><button class="btn primary sm">${x.act} →</button></div>`).join('')}
+ </div></div>
+ <div class="grid g4 mt14 stagger">${stat('Open','4','▲ 1 new today','up')}${stat('Implemented (wk)','9','▲ 3','up')}${stat('Verified impact','6','+$4.2k saved','up')}${stat('Avg time to act','1.3d','▼ 0.4d','dn')}</div>`;
+};
+
+VIEWS.canvases=()=>`
+ ${note('<b>Data Canvas redesign:</b> made the concept obvious — a canvas is a <b>bounded workspace scoped to a connection + chosen tables</b>, where investigations and learned knowledge accumulate. Card grid with clear scope badges, last activity, and a prominent create flow.')}
+ <div class="flex between center"><div><div class="eyebrow">${svg(I.canvas,13)} Data Canvas</div><h2 style="margin:0">Your scoped workspaces</h2></div><button class="btn primary" onclick="toast('Opens the create-canvas flow: pick connection → choose tables')">+ New canvas</button></div>
+ <p class="sub mt8">A canvas bounds all analysis to a connection and a chosen set of tables — so investigations, findings and learned skills stay in a known scope.</p>
+ <div class="flex wrap gap8" style="margin-bottom:14px">${['All','Created by me','Recently active'].map((x,i)=>`<span class="tag ${i===0?'blue':'gray'}" style="cursor:pointer">${x}</span>`).join('')}</div>
+ <div class="grid g3 stagger">
+ ${[['Revenue & Orders','postgres · 12 tables','2m ago','grn'],['Marketing Funnel','bigquery · 8 tables','1h ago','blue'],['Support & Refunds','snowflake · 6 tables','yesterday','vio'],['Product Analytics','postgres · all tables','3d ago','amb'],['Finance Close','snowflake · 5 tables','1w ago','cyn']].map(([n,s,a,c])=>`<div class="card lift"><div class="flex center gap8"><span style="color:var(--${c}5)">${svg(I.canvas,18)}</span><h3>${n}</h3></div><div class="mt8" style="font-size:11.5px;color:var(--t3)">Scope: ${s}</div><div class="flex between center mt14"><span class="tag gray">active ${a}</span><span class="btn ghost sm" data-nav="chat">Open →</span></div></div>`).join('')}
+ <div class="card lift" style="border-style:dashed;display:grid;place-items:center;min-height:128px;color:var(--t3)" onclick="toast('Create a new canvas')"><div style="text-align:center">${svg(I.spark,22)}<div class="mt8" style="font-weight:600">Create a canvas</div></div></div>
+ </div>`;
+
+VIEWS.briefing=()=>`
+ ${note('<b>Briefing redesign:</b> a "Monday-morning brief" — one <b>headline signal</b> at the top, supporting signals one-per-domain, cross-domain patterns, and an AI synthesis with inline citation chips. The held-back/suppressed signals get an honest, collapsible audit trail to build trust.')}
+ <div class="flex between center"><div><div class="eyebrow">${svg(I.brief,13)} Briefing · generated just now</div><h2 style="margin:0">This week across your data</h2></div><button class="btn ghost">↻ Regenerate</button></div>
+ <div class="card mt8" style="background:linear-gradient(135deg,var(--vio1),var(--bg-2));border-color:var(--vio3)">
+   <div class="flex center gap8"><span class="tag vio">headline signal</span><span class="tag gray">novelty 9/10</span></div>
+   <div style="font-size:16px;font-weight:600;margin:10px 0 6px">EU checkout conversion is down 22% — concentrated in mobile DACH at the payment step.</div>
+   <div style="font-size:12.5px;color:var(--t2);line-height:1.6">A provider latency spike <span class="tag blue" style="padding:0 5px">[1]</span> coincides with the drop <span class="tag blue" style="padding:0 5px">[2]</span>. Net revenue exposure ≈ <b>$38k/wk</b> if sustained. Recommended: failover to backup provider and re-test.</div>
+   <div class="flex gap8 mt14"><button class="btn primary sm" data-nav="chat">Open investigation</button><button class="btn ghost sm" data-nav="playbook">Add to playbook</button><button class="btn ghost sm">Share</button></div>
+ </div>
+ <div class="grid g2 mt14">
+   <div class="card"><h3 style="font-size:13px">Supporting signals</h3><div class="row-list mt8">
+   ${[['Revenue','Top 5 SKUs now drive 61% of margin','blue'],['Marketing','CAC up 14% on paid social','amb'],['Support','Refund SLA breaches doubled','red'],['Product','New onboarding lifts D7 retention +6pt','grn']].map(([d,t,c])=>`<div class="row"><span class="tag ${c}" style="width:84px;justify-content:center">${d}</span><div class="ti" style="font-weight:500">${t}</div><span class="rt">↗</span></div>`).join('')}
+   </div></div>
+   <div class="card"><h3 style="font-size:13px">Domain coverage</h3><div class="mt14">
+   ${barH('Revenue',90,'18',`var(--blue3)`)}${barH('Marketing',70,'12',`var(--blue3)`)}${barH('Support',55,'9',`var(--blue3)`)}${barH('Product',40,'6',`var(--blue3)`)}${barH('Finance',25,'4',`var(--blue3)`)}
+   </div>
+   <details class="mt14"><summary style="cursor:pointer;font-size:11.5px;color:var(--t3)">3 signals held back by the trust gate — why?</summary><div style="font-size:11.5px;color:var(--t3);margin-top:8px;line-height:1.6">Suppressed as likely confounded or below plausibility threshold: <i>"Returns correlate with moon phase"</i> (spurious), <i>"APAC up 300%"</i> (single-row artifact), <i>"Churn = pricing"</i> (insufficient evidence).</div></details>
+   </div>
+ </div>`;
+
+VIEWS.recents=()=>{
+ const sel=SUB.recents;
+ const list=[
+   {id:'i1',q:'Why did EU checkout conversion drop?',k:'Inv',st:'done',m:'3 hypotheses · 2 verified',t:'8m'},
+   {id:'i2',q:'Top SKUs driving Q2 margin',k:'Inv',st:'done',m:'report ready',t:'1h'},
+   {id:'i3',q:'Cohort retention by channel',k:'Inv',st:'run',m:'running…',t:'now'},
+   {id:'i4',q:'Average order value by country',k:'Ask',st:'done',m:'quick answer',t:'2h'},
+   {id:'i5',q:'Refund reasons breakdown',k:'Ask',st:'done',m:'quick answer',t:'yesterday'},
+   {id:'i6',q:'Did the May promo lift LTV?',k:'Inv',st:'fail',m:'timed out',t:'2d'}
+ ];
+ const cur=list.find(x=>x.id===sel)||list[0];
+ const dot=s=>s==='run'?'live':s==='fail'?'red':'grn';
+ return `
+ ${note('<b>Investigations redesign:</b> master–detail archive. Left = searchable, filterable history with clear kind (Ask vs Investigation) and status. Right = the full report with an <b>Evidence</b> tab of extracted claims you can validate/dispute, plus an inline follow-up box.')}
+ <div class="md" style="margin:-22px -22px 0">
+   <div class="md-list">
+     <div class="cmdbar" style="max-width:none;margin:0 0 12px"><span class="ph">Search investigations…</span></div>
+     <div class="flex wrap gap8" style="margin-bottom:12px">${['All','Investigations','Quick','Running'].map((x,i)=>`<span class="tag ${i===0?'blue':'gray'}" style="cursor:pointer">${x}</span>`).join('')}</div>
+     ${list.map(x=>`<div class="md-row ${x.id===sel?'sel':''}" onclick="setSub('recents','${x.id}')"><div class="flex center gap8"><span class="dot ${dot(x.st)}"></span><span class="tag gray" style="font-size:9.5px;padding:0 5px">${x.k}</span><span class="rt" style="margin-left:auto">${x.t}</span></div><div class="ti mt8">${x.q}</div><div class="mt">${x.m}</div></div>`).join('')}
+   </div>
+   <div class="md-detail">
+     <div class="flex between center"><div><span class="tag ${cur.k==='Inv'?'vio':'blue'}">${cur.k==='Inv'?'Deep analysis':'Quick answer'}</span></div><div class="seg"><button class="on">Report</button><button onclick="toast('Evidence tab: extracted claims with confidence + validate/dispute')">Evidence</button></div></div>
+     <h2 class="mt14" style="margin:14px 0 4px">${cur.q}</h2>
+     <p class="sub">${cur.st==='fail'?'This investigation timed out before completing — re-run with a narrower scope.':'Completed · '+cur.m}</p>
+     ${cur.st==='fail'?`<div class="card" style="border-color:var(--red2)"><div class="flex center gap8"><span style="color:var(--red4)">${svg(I.alert,16)}</span><b>Timed out at the decomposition step</b></div><button class="btn primary sm mt14">Re-run narrower →</button></div>`:`
+     <div class="card"><h3>Executive summary</h3><p class="mt8" style="font-size:13px;line-height:1.6;color:var(--t1)">${cur.q.includes('SKU')?'Five SKUs now account for 61% of gross margin, up from 48% a quarter ago — concentration risk rising. Two are low-stock.':'Conversion fell 22% WoW, isolated to mobile DACH at the payment step. Root cause: a payment-provider latency spike. Estimated exposure $38k/week.'}</p>
+     <div class="flex wrap gap8 mt14"><span class="tag grn">confidence high</span><span class="tag gray">3 sources</span><span class="tag blue">2 verified claims</span></div></div>
+     <div class="card mt14"><h3>Recommended actions</h3><div class="row-list mt8"><div class="row"><span class="dot blue"></span><div class="ti" style="font-weight:500">Fail over to backup payment provider</div></div><div class="row"><span class="dot blue"></span><div class="ti" style="font-weight:500">Add latency monitor on payment_events</div><span class="btn ghost sm rt" data-nav="monitors">Create monitor</span></div></div></div>`}
+     <div class="card mt14" style="background:var(--bg-1)"><div class="flex center gap8"><span style="color:var(--t3)">${svg(I.spark,16)}</span><input class="ph" placeholder="Ask a follow-up…" style="flex:1;background:none;border:none;outline:none;color:var(--t1);font-size:13px"/><button class="btn primary sm">Send</button></div></div>
+   </div>
+ </div>`;
+};
+
+VIEWS.intelligence=()=>{
+ const layer=SUB.intelligence;
+ const layers=[['briefing','Briefing'],['hub','Hub'],['ontology','Ontology'],['domains','Domains'],['evidence','Evidence'],['org','Org']];
+ const body={
+   briefing:`<div class="card"><h3>Cross-domain synthesis</h3><p class="mt8" style="font-size:13px;line-height:1.6">An executive roll-up of what Aughor knows right now — KPIs with sparklines, key findings, and links into live investigation threads.</p><div class="grid g3 mt14">${stat('Findings','38','▲ 6 this week','up')}${stat('Entities mapped','142','▲ 9','up')}${stat('Avg novelty','6.4','steady','up')}</div></div>`,
+   hub:`<div class="card"><h3>Domain knowledge profiles</h3><p class="mt8" style="font-size:13px;color:var(--t2)">Per-domain insight libraries — high / mid / low novelty cards with confidence and entity tags.</p><div class="grid g3 mt14 stagger">${['Revenue','Marketing','Support','Product','Finance','Logistics'].map((d,i)=>`<div class="card lift" style="padding:13px"><div class="flex between center"><b>${d}</b><span class="tag ${['blue','amb','red','grn','vio','cyn'][i]}">${[12,9,7,6,4,3][i]} insights</span></div><div class="mt8" style="font-size:11px;color:var(--t3)">${[3,2,1,2,1,0][i]} high-novelty · updated 1d</div></div>`).join('')}</div></div>`,
+   ontology:`<div class="card"><div class="flex between center"><h3>Object model & relationships</h3><span class="tag gray">142 entities · 218 relations</span></div>
+     <div class="graph mt14">
+       <div class="gnode acc" style="left:44%;top:14%">${svg(I.db,14)} Customer</div>
+       <div class="gnode" style="left:14%;top:44%">${svg(I.db,14)} Order</div>
+       <div class="gnode" style="left:72%;top:40%">${svg(I.db,14)} Product</div>
+       <div class="gnode" style="left:30%;top:74%">${svg(I.db,14)} Refund</div>
+       <div class="gnode" style="left:62%;top:74%">${svg(I.db,14)} Session</div>
+       <div class="gedge" style="left:24%;top:24%;width:200px;transform:rotate(34deg)"></div>
+       <div class="gedge" style="left:50%;top:24%;width:200px;transform:rotate(20deg)"></div>
+       <div class="gedge" style="left:22%;top:52%;width:120px;transform:rotate(56deg)"></div>
+       <div class="gedge" style="left:40%;top:80%;width:170px;transform:rotate(-6deg)"></div>
+     </div>
+     <p class="mt14" style="font-size:11.5px;color:var(--t3)">Click any entity to inspect its properties, lifecycle, synonyms and learned skills. Drag to explore; use the merge tool to resolve duplicate entities.</p></div>`,
+   domains:`<div class="card"><h3>Process & data intelligence</h3><p class="mt8" style="font-size:13px;color:var(--t2)">Domain-scoped exploration insights with a novelty breakdown and query-budget usage. Open any finding to replay its think → SQL → observation trace.</p><div class="mt14">${barH('high novelty',30,'11',`var(--vio3)`)}${barH('mid novelty',50,'18',`var(--blue3)`)}${barH('low novelty',20,'9',`var(--t3)`)}</div><div class="flex between center mt14" style="font-size:11.5px;color:var(--t3)"><span>Query budget used</span><span>68% of daily cap</span></div><div class="bar-h"><span class="tr"><i style="width:68%;background:var(--amb3)"></i></span></div></div>`,
+   evidence:`<div class="card"><h3>Claim ledger</h3><p class="mt8" style="font-size:13px;color:var(--t2)">Promoted insights organised by domain / angle / novelty, with canvas-scope badges and validation feedback.</p>
+     <div class="mt14">${[['Top 5 SKUs drive 61% of margin','Revenue','92%'],['Refund SLA breaches doubled','Support','85%'],['Onboarding v2 lifts D7 +6pt','Product','79%']].map(([t,d,c])=>`<div class="claim"><div class="flex between center"><div style="font-weight:550;font-size:12.5px">${t}</div><span class="tag gray">${d}</span></div><div class="conf-track"><div class="conf-fill" style="width:${c}"></div></div><div class="flex gap8 mt8"><button class="btn ghost sm">✓ Validate</button><button class="btn ghost sm">✗ Dispute</button><span class="rt" style="margin-left:auto;color:var(--t3);font-size:10.5px">confidence ${c}</span></div></div>`).join('')}</div></div>`,
+   org:`<div class="card"><h3>Organizational knowledge</h3><p class="mt8" style="font-size:13px;color:var(--t2)">Org-wide insight roll-up, promoted from individual canvases — decoupled from any single connection.</p><div class="grid g3 mt14">${stat('Promoted findings','24','▲ 5','up')}${stat('Across canvases','7','—','up')}${stat('Shared metrics','11','▲ 2','up')}</div></div>`
+ };
+ return `
+ ${note('<b>Intelligence Map redesign:</b> the six lenses (Briefing / Hub / Ontology / Domains / Evidence / Org) are unified under one workspace with a single <b>segmented switcher</b> and a persistent scope bar, so users stop hunting across separate legacy screens. Each lens keeps its own state.')}
+ <div class="flex between center"><div><div class="eyebrow">${svg(I.node,13)} Intelligence Map</div><h2 style="margin:0">What Aughor knows about your data</h2></div>
+ <div class="flex gap8 center"><select class="btn ghost" style="height:30px"><option>Revenue & Orders canvas</option><option>All connections</option></select></div></div>
+ <div class="seg mt8" style="margin:8px 0 18px">${layers.map(([id,l])=>`<button class="${layer===id?'on':''}" onclick="setSub('intelligence','${id}')">${l}</button>`).join('')}</div>
+ ${body[layer]}`;
+};
+
+VIEWS.fleet=()=>{
+ const tab=SUB.fleet;
+ return `
+ ${note('<b>Fleet redesign:</b> a control room for the agents. Activity tab = live runs with state, cost, and duration; Agents tab = per-agent governance (enable/pause, token budget, model). Clear status semantics and a cost-at-a-glance header.')}
+ <div class="flex between center"><div><div class="eyebrow">${svg(I.bolt,13)} Fleet</div><h2 style="margin:0">Agents at work</h2></div>
+ <div class="seg">${['activity','agents'].map(x=>`<button class="${tab===x?'on':''}" onclick="setSub('fleet','${x}')">${x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div></div>
+ <div class="grid g4 mt14 stagger">${stat('Running','3','live','up')}${stat('Succeeded (24h)','41','▲ 12','up')}${stat('Failed','1','▼ 2','dn')}${stat('Spend (24h)','$3.80','within budget','up')}</div>
+ ${tab==='activity'?`
+ <div class="card mt14"><table class="dt"><thead><tr><th>Agent</th><th>Task</th><th>State</th><th>Cost</th><th>When</th><th></th></tr></thead><tbody>
+ ${[['Scout','Profiling refunds table','running','live','$0.04','12s'],['Analyst','Verifying hypothesis #2','running','live','$0.02','8s'],['Reporter','Drafting EU summary','queued','gray','—','—'],['Watcher','Anomaly sweep · hourly','succeeded','grn','$0.09','2m'],['Briefer','Weekly brief','succeeded','grn','$0.21','1h']].map(([a,t,s,c,co,w])=>`<tr><td><b>${a}</b></td><td style="color:var(--t2)">${t}</td><td><span class="tag ${c==='live'?'blue':c}">${s==='running'?'<span class="dot live"></span> ':''}${s}</span></td><td>${co}</td><td style="color:var(--t3)">${w} ago</td><td>${s==='running'?'<button class="btn ghost sm">Cancel</button>':''}</td></tr>`).join('')}
+ </tbody></table></div>`:`
+ <div class="grid g2 mt14 stagger">
+ ${[['Scout','Interactive · exploration','on',6,'Sonnet 4.6'],['Analyst','Interactive · deep analysis','on',12,'Opus 4.8'],['Watcher','Background · monitors','on',4,'Haiku 4.5'],['Briefer','Background · briefings','on',8,'Sonnet 4.6'],['Curator','Background · knowledge','paused',5,'Haiku 4.5']].map(([n,l,st,b,m])=>`<div class="card"><div class="flex between center"><div><b>${n}</b><div class="mt" style="color:var(--t3)">${l}</div></div><span class="tag ${st==='on'?'grn':'gray'}">${st==='on'?'enabled':'paused'}</span></div><div class="flex between center mt14" style="font-size:11.5px;color:var(--t2)"><span>Budget: <b class="mono">${b}k</b> tok/run</span><span>Model: <b>${m}</b></span></div></div>`).join('')}
+ </div>`}`;
+};
+
+VIEWS.health=()=>`
+ ${note('<b>Health redesign:</b> a KPI scorecard you can read in two seconds — each card is red / amber / green against target, sorted so the off-target ones surface first, each with a one-click "Investigate" that pre-loads the question. Summary banner up top.')}
+ <div class="flex between center"><div><div class="eyebrow">${svg(I.activity,13)} Health</div><h2 style="margin:0">Business KPIs vs targets</h2></div><span class="tag amb">3 need attention</span></div>
+ <p class="sub mt8">Every metric scored against its target. Off-target cards rise to the top with a direct path to investigate.</p>
+ <div class="grid g3 stagger">
+ ${[['Net Revenue','$1.18M','$1.28M','−8%','red'],['Checkout Conversion','2.4%','3.0%','−20%','red'],['Refund Rate','4.1%','2.5%','+64%','red'],['Gross Margin','61%','60%','+1%','grn'],['CAC','$42','$40','+5%','amb'],['D7 Retention','38%','35%','+9%','grn'],['NPS','46','45','+2%','grn'],['Avg Order Value','$84','$80','+5%','grn'],['Fulfilment SLA','94%','97%','−3%','amb']].map(([n,v,tg,d,c])=>`<div class="card ${c!=='grn'?'lift':''}" style="border-left:3px solid var(--${c==='grn'?'grn3':c==='amb'?'amb3':'red3'})"><div class="flex between center"><span style="font-size:12px;color:var(--t2);font-weight:550">${n}</span><span class="dot ${c==='grn'?'grn':c==='amb'?'amb':'red'}"></span></div><div class="flex center gap8" style="margin:8px 0 2px"><span style="font-size:24px;font-weight:680;letter-spacing:-.02em">${v}</span><span class="tag ${c==='grn'?'grn':c==='amb'?'amb':'red'}">${d}</span></div><div class="flex between center"><span style="font-size:11px;color:var(--t3)">target ${tg}</span>${c!=='grn'?`<button class="btn ghost sm" data-nav="chat">Investigate →</button>`:''}</div></div>`).join('')}
+ </div>`;
+
+VIEWS.playbook=()=>{
+ const sel=SUB.playbook;
+ const list=[
+   {id:'p1',m:'cart_abandonment',r:'Trigger 1-hr reminder + 5% incentive',st:'Active',sr:'72%'},
+   {id:'p2',m:'refund_rate',r:'Route DACH refunds to manual review',st:'Active',sr:'64%'},
+   {id:'p3',m:'payment_latency',r:'Fail over to backup provider > 3s p95',st:'Draft',sr:'—'},
+   {id:'p4',m:'low_stock',r:'Auto-reorder when cover < 7 days',st:'Active',sr:'81%'},
+   {id:'p5',m:'churn_risk',r:'CSM outreach for accounts scoring > 0.7','st':'Deprecated',sr:'—'}
+ ];
+ const cur=list.find(x=>x.id===sel)||list[0];
+ const stc=s=>s==='Active'?'grn':s==='Draft'?'gray':'red';
+ return `
+ ${note('<b>Playbook redesign:</b> "if this, then that" for your business. Master–detail: left lists trigger→action rules with status and proven success rate; right shows the rule, expected impact, owner, evidence and a <b>version history</b> tied to receipts for governance.')}
+ <div class="md" style="margin:-22px -22px 0">
+   <div class="md-list">
+     <div class="flex between center" style="margin-bottom:12px"><b style="font-size:13px">Playbook</b><button class="btn primary sm">+ New rule</button></div>
+     <div class="flex wrap gap8" style="margin-bottom:12px">${['All','Active','Draft','Proven'].map((x,i)=>`<span class="tag ${i===0?'blue':'gray'}" style="cursor:pointer">${x}</span>`).join('')}</div>
+     ${list.map(x=>`<div class="md-row ${x.id===sel?'sel':''}" onclick="setSub('playbook','${x.id}')"><div class="flex between center"><span class="mono" style="font-size:11px;color:var(--blue4)">${x.m}</span><span class="tag ${stc(x.st)}" style="font-size:9.5px;padding:0 6px">${x.st}</span></div><div class="ti mt8" style="font-weight:500">${x.r}</div>${x.sr!=='—'?`<div class="mt">success ${x.sr}</div>`:''}</div>`).join('')}
+   </div>
+   <div class="md-detail">
+     <div class="flex between center"><span class="mono tag blue">${cur.m}</span><div class="flex gap8"><button class="btn ghost sm">${cur.st==='Active'?'Deprecate':'Promote'}</button></div></div>
+     <h2 class="mt14" style="margin:14px 0 4px">${cur.r}</h2>
+     <p class="sub"><i>When <span class="mono" style="color:var(--t1)">${cur.m}</span> crosses its threshold, Aughor recommends this action.</i></p>
+     <div class="grid g3"><div class="card"><div class="k" style="font-size:10px;color:var(--t3);text-transform:uppercase">Expected impact</div><div style="font-weight:600;margin-top:6px">−18% abandons</div></div><div class="card"><div class="k" style="font-size:10px;color:var(--t3);text-transform:uppercase">Timeline</div><div style="font-weight:600;margin-top:6px">2 weeks</div></div><div class="card"><div class="k" style="font-size:10px;color:var(--t3);text-transform:uppercase">Owner</div><div style="font-weight:600;margin-top:6px">Growth lead</div></div></div>
+     <div class="card mt14"><div class="flex between center"><h3 style="font-size:13px">Historical success</h3><span class="tag grn">${cur.sr==='—'?'no data yet':cur.sr}</span></div><div class="mt8" style="font-size:11.5px;color:var(--t3)">Backed by 6 evidence sources across 4 investigations.</div></div>
+     <details class="mt14"><summary style="cursor:pointer;font-size:12px;color:var(--t2)">Version history (3 frozen)</summary><div class="row-list mt8">${['v3 — added incentive cap · 2d ago','v2 — narrowed to mobile · 3w ago','v1 — initial seed from KB · 2mo ago'].map(v=>`<div class="row"><span class="dot gray"></span><span class="ti" style="font-weight:450;font-size:12px">${v}</span></div>`).join('')}</div></details>
+   </div>
+ </div>`;
+};
+
+VIEWS.catalog=()=>{
+ const sel=SUB.catalog;
+ const tables={orders:{cols:14,rows:'892k'},customers:{cols:9,rows:'124k'},line_items:{cols:11,rows:'2.4M'},refunds:{cols:8,rows:'18k'},sessions:{cols:16,rows:'4.1M'},products:{cols:12,rows:'3.2k'}};
+ const t=tables[sel]||tables.orders;
+ const tree=Object.keys(tables);
+ return `
+ ${note('<b>Catalog redesign:</b> a true data browser. Left tree (connection → schema → table); right adapts to the selection with Overview / Sample / Comments. Columns show inline type colours and mini distribution bars, with the ER diagram one tab away — so understanding a table doesn\'t need a query.')}
+ <div class="md" style="margin:-22px -22px 0">
+   <div class="md-list">
+     <div class="cmdbar" style="max-width:none;margin:0 0 12px"><span class="ph">Search tables & columns…</span></div>
+     <div style="font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t4);padding:6px 8px">postgres · public</div>
+     ${tree.map(name=>`<div class="md-row ${name===sel?'sel':''}" onclick="setSub('catalog','${name}')"><div class="flex center gap8"><span style="color:var(--blue4)">${svg(I.db,15)}</span><span class="ti">${name}</span><span class="rt" style="margin-left:auto;color:var(--t4)">${tables[name].rows}</span></div></div>`).join('')}
+   </div>
+   <div class="md-detail">
+     <div class="flex between center"><div class="flex center gap8"><span style="color:var(--blue4)">${svg(I.db,20)}</span><h2 style="margin:0">${sel}</h2><span class="tag grn">verified</span></div><div class="seg"><button class="on">Overview</button><button onclick="toast('Sample data tab')">Sample</button><button onclick="setSub('catalog','${sel}')">ERD</button></div></div>
+     <div class="flex gap8 mt14" style="margin:14px 0">${[`${t.cols} columns`,`${t.rows} rows`,'2 foreign keys','profiled 1h ago'].map(s=>`<span class="tag gray">${s}</span>`).join('')}</div>
+     <div class="card"><table class="dt"><thead><tr><th>Column</th><th>Type</th><th>Distribution</th><th>Nulls</th></tr></thead><tbody>
+     ${[['id','int','100% unique','0%','blue'],['customer_id','int','fk → customers','0%','blue'],['status','enum','5 values','0%','vio'],['total','decimal','$4–$2,140','0%','grn'],['country','text','38 values','0.2%','amb'],['created_at','timestamp','2yr range','0%','cyn']].map(([n,ty,ds,nu,c])=>`<tr><td><b>${n}</b></td><td><span class="tag ${c}" style="font-size:9.5px">${ty}</span></td><td style="color:var(--t2)">${ds} ${['total','country'].includes(n)?bars([20,45,80,60,35,25,15]).replace('height:30px','height:16px'):''}</td><td style="color:var(--t3)">${nu}</td></tr>`).join('')}
+     </tbody></table></div>
+     <div class="card mt14" style="background:var(--bg-1)"><div class="flex center gap8"><span style="color:var(--vio4)">${svg(I.spark,15)}</span><span style="font-size:12.5px;color:var(--t2)">Ask about this table</span><input class="ph" placeholder="e.g. orders per country last 30 days" style="flex:1;background:none;border:none;outline:none;color:var(--t1);font-size:13px"/><button class="btn primary sm" data-nav="chat">Ask →</button></div></div>
+   </div>
+ </div>`;
+};
+
+VIEWS.builder=()=>{
+ const mode=SUB.builder;
+ return `
+ ${note('<b>Query Builder redesign:</b> visual analysis without writing SQL. Left = column shelf; centre = dimension / measure / filter chips with a live time control; right = results that auto-pick chart vs table vs pivot, with the generated SQL always one click away. Grain-warning badges guard against double-counting.')}
+ <div class="flex between center"><div><div class="eyebrow">${svg(I.builder,13)} Query Builder</div><h2 style="margin:0">Revenue by country & month</h2></div><div class="flex gap8"><button class="btn ghost sm">View SQL</button><button class="btn primary sm">Save to canvas</button></div></div>
+ <div class="grid mt14" style="grid-template-columns:200px 1fr 1.3fr;gap:14px;align-items:start">
+   <div class="card" style="padding:12px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--t3);margin-bottom:8px">Columns · orders</div>${['country','created_at','total','status','customer_id','channel'].map(c=>`<div class="row" style="padding:6px 8px"><span class="mono" style="font-size:11.5px">${c}</span><span class="rt">⋮⋮</span></div>`).join('')}</div>
+   <div>
+     <div class="card" style="padding:12px;margin-bottom:12px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--t3);margin-bottom:8px">Dimensions</div><div class="flex wrap gap8"><span class="tag blue">country</span><span class="tag blue">month(created_at)</span></div></div>
+     <div class="card" style="padding:12px;margin-bottom:12px"><div class="flex between center" style="margin-bottom:8px"><span style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--t3)">Measures</span><span class="tag grn" style="font-size:9px">grain ok</span></div><div class="flex wrap gap8"><span class="tag grn">sum(total)</span><span class="tag grn">count(*)</span></div></div>
+     <div class="card" style="padding:12px;margin-bottom:12px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--t3);margin-bottom:8px">Filters</div><div class="flex wrap gap8"><span class="tag amb">status = paid</span><span class="tag amb">last 6 months</span></div></div>
+   </div>
+   <div class="card">
+     <div class="flex between center"><h3 style="font-size:13px">Results</h3><div class="seg">${['chart','table','pivot'].map(x=>`<button class="${mode===x?'on':''}" onclick="setSub('builder','${x}')">${x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div></div>
+     ${mode==='chart'?`<div class="mt14" style="height:200px;display:flex;align-items:flex-end;gap:10px;padding:0 6px">${[55,68,72,60,84,90].map((h,i)=>`<div style="flex:1;text-align:center"><div style="height:${h*1.7}px;background:linear-gradient(180deg,var(--blue4),var(--blue3));border-radius:4px 4px 0 0"></div><div style="font-size:10px;color:var(--t3);margin-top:6px">${['Jan','Feb','Mar','Apr','May','Jun'][i]}</div></div>`).join('')}</div>`:mode==='table'?`<table class="dt mt14"><thead><tr><th>Country</th><th>Month</th><th>Revenue</th></tr></thead><tbody>${[['US','Jun','$184k'],['DE','Jun','$92k'],['UK','Jun','$71k'],['FR','Jun','$54k']].map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</tbody></table>`:`<table class="dt mt14"><thead><tr><th></th><th>US</th><th>DE</th><th>UK</th></tr></thead><tbody>${[['Apr','$160k','$80k','$62k'],['May','$172k','$86k','$66k'],['Jun','$184k','$92k','$71k']].map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('')}</tbody></table>`}
+   </div>
+ </div>`;
+};
+
+VIEWS.semantic=()=>{
+ const tab=SUB.semantic;
+ const tabs=[['annotations','Annotations'],['knowledge','Knowledge'],['metrics','Metrics'],['benchmarks','Benchmarks']];
+ const body={
+   annotations:`<div class="card"><p style="font-size:13px;color:var(--t2);margin:0 0 12px">Business descriptions attached to tables & columns — injected into the AI\'s prompts so it speaks your language.</p><div class="row-list">${[['orders.total','Gross order value incl. tax, excl. shipping'],['orders.status','Lifecycle: cart→paid→fulfilled→refunded'],['customers.tier','Loyalty tier: bronze/silver/gold/platinum']].map(([k,v])=>`<div class="row"><span class="mono tag blue" style="width:140px">${k}</span><span class="ti" style="font-weight:450;font-size:12.5px">${v}</span><button class="btn ghost sm rt">Edit</button></div>`).join('')}</div></div>`,
+   knowledge:`<div class="card"><p style="font-size:13px;color:var(--t2);margin:0 0 12px">Reusable definitions — metric formulas, synonyms, join guidance and rules the AI should always honour.</p><div class="row-list">${[['Net Revenue','formula','gross − refunds − discounts'],['"churn"','synonym','= cancelled within 90d'],['orders ⋈ customers','join','always on customer_id, left']].map(([k,t,v])=>`<div class="row"><span class="tag vio" style="width:78px;justify-content:center">${t}</span><div><div class="ti">${k}</div><div class="mt mono">${v}</div></div></div>`).join('')}</div></div>`,
+   metrics:`<div class="md" style="height:auto;margin:0"><div class="md-list" style="width:240px;border:1px solid var(--b1);border-radius:var(--r3);height:auto;max-height:420px">${[['Net Revenue','approved','grn'],['Conversion Rate','approved','grn'],['CAC','proposed','amb'],['LTV','draft','gray']].map(([n,s,c],i)=>`<div class="md-row ${i===0?'sel':''}"><div class="flex between center"><span class="ti">${n}</span><span class="tag ${c}" style="font-size:9px">${s}</span></div></div>`).join('')}</div><div class="md-detail" style="padding:0 0 0 18px"><div class="card"><div class="flex between center"><h3>Net Revenue</h3><span class="tag grn">approved</span></div><div class="mono mt14" style="background:var(--bg-1);padding:12px;border-radius:var(--r2);font-size:12px;color:var(--blue4)">SUM(orders.total) − SUM(refunds.amount) − SUM(discounts.amount)</div><div class="grid g3 mt14"><div><div class="k" style="font-size:10px;color:var(--t3)">UNIT</div><b>USD</b></div><div><div class="k" style="font-size:10px;color:var(--t3)">OWNER</div><b>Finance</b></div><div><div class="k" style="font-size:10px;color:var(--t3)">TESTS</div><b style="color:var(--grn4)">4/4 pass</b></div></div><div class="card mt14" style="border-color:var(--grn2);background:var(--grn1)"><div class="flex center gap8"><span style="color:var(--grn4)">${svg(I.check,15)}</span><span style="font-size:12px">Validation passed · freshness OK · last run 1h ago</span></div></div></div></div></div>`,
+   benchmarks:`<div class="card"><div class="flex between center"><p style="font-size:13px;color:var(--t2);margin:0">Gold questions with expected columns & rules — a regression suite for SQL quality.</p><span class="tag grn">92% pass</span></div><div class="row-list mt14">${[['What was net revenue in Q2?','pass','grn'],['Top 5 customers by LTV','pass','grn'],['Refund rate by country','fail','red'],['MoM conversion trend','pass','grn']].map(([q,s,c])=>`<div class="row"><span class="dot ${c}"></span><span class="ti" style="font-weight:450;font-size:12.5px">${q}</span><span class="tag ${c}" style="margin-left:auto">${s}</span></div>`).join('')}</div></div>`
+ };
+ return `
+ ${note('<b>Semantic Layer redesign:</b> the governance home for business meaning. Four clear tabs — Annotations, Knowledge, Metrics, Benchmarks — with a scope bar. Metrics gets a master–detail with an approval lifecycle and a live validation/freshness readout, so "what the numbers mean" is owned and tested.')}
+ <div class="flex between center"><div><div class="eyebrow">${svg(I.layers,13)} Semantic Layer</div><h2 style="margin:0">The meaning behind your data</h2></div><select class="btn ghost" style="height:30px"><option>postgres · public</option></select></div>
+ <div class="seg mt8" style="margin:8px 0 18px">${tabs.map(([id,l])=>`<button class="${tab===id?'on':''}" onclick="setSub('semantic','${id}')">${l}</button>`).join('')}</div>
+ ${body[tab]}`;
+};
+
+VIEWS.monitors=()=>{
+ const tab=SUB.monitors;
+ return `
+ ${note('<b>Monitors redesign:</b> set-and-forget watchers. Monitors tab = rules with on/off, type, schedule and a sparkline of recent values; Alerts tab = a severity-sorted inbox you can acknowledge. Creating one starts from a metric, not raw SQL.')}
+ <div class="flex between center"><div><div class="eyebrow">${svg(I.alert,13)} Monitors</div><h2 style="margin:0">Watching your data for you</h2></div><div class="flex gap8 center"><div class="seg">${['monitors','alerts'].map(x=>`<button class="${tab===x?'on':''}" onclick="setSub('monitors','${x}')">${x[0].toUpperCase()+x.slice(1)}${x==='alerts'?' · 2':''}</button>`).join('')}</div><button class="btn primary sm">+ New monitor</button></div></div>
+ ${tab==='monitors'?`<div class="grid g2 mt14 stagger">${[['Refund rate','anomaly','hourly','on'],['Net revenue vs target','threshold','daily','on'],['Payment p95 latency','spike','every 15m','on'],['Daily active users','drop','daily','off']].map(([n,ty,sc,st])=>`<div class="card"><div class="flex between center"><div class="flex center gap8"><span class="dot ${st==='on'?'live':'gray'}"></span><b>${n}</b></div><span class="tag ${st==='on'?'grn':'gray'}">${st}</span></div><div class="flex between center mt14"><div class="flex gap8"><span class="tag gray">${ty}</span><span class="tag gray">${sc}</span></div>${bars([30,40,35,55,45,60,42]).replace('height:30px','height:22px')}</div></div>`).join('')}</div>`:`
+ <div class="card mt14"><div class="row-list">${[['high','Refund rate 4.1% > 2.5% threshold','12m ago','red'],['medium','Payment p95 6.8s > 3s','1h ago','amb']].map(([sev,m,t,c])=>`<div class="row"><span class="tag ${c}" style="width:74px;justify-content:center">${sev}</span><div style="flex:1"><div class="ti">${m}</div><div class="mt">${t}</div></div><button class="btn ghost sm" data-nav="chat">Investigate</button><button class="btn primary sm">Acknowledge</button></div>`).join('')}</div></div>`}`;
+};
+
+VIEWS.actions=()=>{
+ const tab=SUB.actions;
+ return `
+ ${note('<b>Action Hub redesign:</b> where insight becomes action. Triggers tab = webhooks / Slack / Jira destinations with a Test button and clear status; Logs tab = an execution audit with HTTP results — so automations are transparent and debuggable.')}
+ <div class="flex between center"><div><div class="eyebrow">${svg(I.spark,13)} Action Hub</div><h2 style="margin:0">Turn findings into action</h2></div><div class="flex gap8 center"><div class="seg">${['triggers','logs'].map(x=>`<button class="${tab===x?'on':''}" onclick="setSub('actions','${x}')">${x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div><button class="btn primary sm">+ New trigger</button></div></div>
+ ${tab==='triggers'?`<div class="grid g2 mt14 stagger">${[['#growth-alerts','Slack','grn','ok'],['Jira · DATA board','Jira','grn','ok'],['Ops webhook','Webhook','amb','untested'],['PagerDuty','Webhook','grn','ok']].map(([n,ty,c,s])=>`<div class="card"><div class="flex between center"><div class="flex center gap8"><span class="dot ${c}"></span><b>${n}</b></div><span class="tag gray">${ty}</span></div><div class="flex between center mt14"><span class="mono" style="font-size:11px;color:var(--t3)">${ty==='Slack'?'channel connected':ty==='Jira'?'project: DATA':'https://…/hook'}</span><div class="flex gap8"><button class="btn ghost sm">Test</button><span class="tag ${s==='ok'?'grn':'amb'}">${s}</span></div></div></div>`).join('')}</div>`:`
+ <div class="card mt14"><table class="dt"><thead><tr><th>Time</th><th>Trigger</th><th>From recommendation</th><th>Status</th></tr></thead><tbody>${[['12m ago','#growth-alerts','Refund spike in DACH','200'],['1h ago','Jira · DATA','Add index on orders','201'],['3h ago','Ops webhook','Failover provider','500']].map(([t,tg,r,s])=>`<tr><td style="color:var(--t3)">${t}</td><td><b>${tg}</b></td><td style="color:var(--t2)">${r}</td><td><span class="tag ${s[0]==='5'?'red':'grn'}">${s}</span></td></tr>`).join('')}</tbody></table></div>`}`;
+};
+
+VIEWS.security=()=>{
+ const tab=SUB.security;
+ return `
+ ${note('<b>Security & Audit redesign:</b> trust and control in one place. A stat strip (queries, blocked, suspicious, PII redactions), a verdict-filtered audit table with expandable SQL, and a collapsible per-connection budget editor. Activity log is a sibling lens.')}
+ <div class="flex between center"><div><div class="eyebrow">${svg(I.shield,13)} Security & Audit</div><h2 style="margin:0">Every query, accounted for</h2></div><div class="seg">${['security','activity'].map(x=>`<button class="${tab===x?'on':''}" onclick="setSub('security','${x}')">${x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div></div>
+ <div class="grid g4 mt14 stagger" style="grid-template-columns:repeat(6,1fr)">${[['Queries','3,182','blue'],['Blocked','4','red'],['Suspicious','11','amb'],['Errors','7','amb'],['PII redactions','146','vio'],['Avg dur','0.8s','grn']].map(([k,v,c])=>`<div class="card stat" style="padding:13px"><div class="k">${k}</div><div class="v" style="font-size:21px;color:var(--${c}5)">${v}</div></div>`).join('')}</div>
+ <div class="flex wrap gap8 mt14" style="margin:14px 0">${['All','Safe','Suspicious','Blocked'].map((x,i)=>`<span class="tag ${i===0?'blue':'gray'}" style="cursor:pointer">${x}</span>`).join('')}<select class="btn ghost sm" style="margin-left:auto"><option>All connections</option></select></div>
+ <div class="card"><table class="dt"><thead><tr><th>Time</th><th>Connection</th><th>Verdict</th><th>SQL</th><th>Rows</th><th>Dur</th><th>PII</th></tr></thead><tbody>
+ ${[['12:04','postgres','safe','SELECT … FROM orders WHERE …','892','0.3s','—','grn'],['12:01','snowflake','suspicious','SELECT * FROM customers','124k','2.1s','3','amb'],['11:58','postgres','blocked','DROP TABLE staging_*','—','—','—','red'],['11:55','bigquery','safe','SELECT country, SUM(total) …','38','0.4s','—','grn']].map(([t,cn,v,q,r,d,p,c])=>`<tr style="${c==='red'?'background:var(--red1)':c==='amb'?'background:var(--amb1)':''}"><td style="color:var(--t3)">${t}</td><td>${cn}</td><td><span class="tag ${c}">${v}</span></td><td class="mono" style="font-size:11px;color:var(--t2);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q}</td><td>${r}</td><td>${d}</td><td>${p}</td></tr>`).join('')}
+ </tbody></table></div>
+ <details class="mt14"><summary style="cursor:pointer;font-size:12px;color:var(--t2)">Query budgets (per connection)</summary><div class="card mt8"><div class="grid g3"><div><div class="k" style="font-size:10px;color:var(--t3)">MAX ROWS</div><b>100,000</b></div><div><div class="k" style="font-size:10px;color:var(--t3)">WARN AFTER</div><b>5s</b></div><div><div class="k" style="font-size:10px;color:var(--t3)">HARD CAP</div><b>30s</b></div></div></div></details>`;
+};
+
+VIEWS.settings=()=>{
+ const tab=SUB.settings;
+ const tabs=[['organization','Organization'],['localization','Localization'],['models','Models'],['appearance','Appearance'],['connections','Connections'],['system','System']];
+ const field=(l,v)=>`<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--t3);margin-bottom:5px">${l}</div><div class="cmdbar" style="max-width:none;cursor:text"><span class="ph" style="color:var(--t1)">${v}</span></div></div>`;
+ const body={
+   organization:`<div class="grid g2">${field('Company name','Acme Commerce')}${field('Website','acme.com')}${field('HQ location','Berlin, DE')}${field('Industry','E-commerce')}</div>`,
+   localization:`<div class="grid g2">${field('Currency','EUR (€)')}${field('Timezone','Europe/Berlin')}${field('Date format','DD/MM/YYYY')}${field('Fiscal year starts','January')}</div>`,
+   models:`<div class="card"><div class="row-list">${[['Interactive · Analyst','Opus 4.8'],['Interactive · Scout','Sonnet 4.6'],['Background · Watcher','Haiku 4.5'],['Embeddings','text-embedding-3']].map(([r,m])=>`<div class="row"><div class="ti">${r}</div><span class="tag blue" style="margin-left:auto">${m}</span><button class="btn ghost sm">Change</button></div>`).join('')}</div></div>`,
+   appearance:`<div class="card"><div style="font-size:11px;color:var(--t3);margin-bottom:10px">Theme</div><div class="seg"><button class="on">Dark</button><button onclick="document.getElementById('themeBtn').click()">Light</button><button>System</button></div><div style="font-size:11px;color:var(--t3);margin:18px 0 10px">Chart palette</div><div class="flex gap8">${['blue3','grn3','amb3','vio3','red3','cyn3'].map(c=>`<span style="width:26px;height:26px;border-radius:6px;background:var(--${c})"></span>`).join('')}</div></div>`,
+   connections:`<div class="card"><div class="row-list">${[['postgres · prod','grn','synced 2m ago'],['snowflake · analytics','grn','synced 8m ago'],['bigquery · marketing','amb','sync due'],['+ Add connection','blue','PostgreSQL, Snowflake, BigQuery, Stripe…']].map(([n,c,m],i)=>`<div class="row"><span class="dot ${c==='blue'?'blue':c}"></span><div><div class="ti" style="${i===3?'color:var(--blue4)':''}">${n}</div><div class="mt">${m}</div></div></div>`).join('')}</div></div>`,
+   system:`<div class="card"><div class="flex between center"><h3 style="font-size:13px">Kernel</h3><span style="font-size:11px;color:var(--t3)">uptime 4d 6h</span></div><div class="grid g4 mt14">${[['Ontology expansions','1,204'],['SQL corrections','98%'],['RAG cache hits','87%'],['ADA tier skips','312']].map(([k,v])=>`<div><div class="k" style="font-size:10px;color:var(--t3)">${k}</div><b style="font-size:15px">${v}</b></div>`).join('')}</div></div>`
+ };
+ return `
+ ${note('<b>Settings redesign:</b> consolidated the scattered Org / System / Configure panels into one settings home with a clear left rail of sections (Organization, Localization, Models, Appearance, Connections, System) and a consistent form layout — with app-vs-workspace scope where it matters.')}
+ <div class="md" style="margin:-22px -22px 0">
+   <div class="md-list" style="width:210px">
+     ${tabs.map(([id,l])=>`<div class="md-row ${tab===id?'sel':''}" onclick="setSub('settings','${id}')"><span class="ti" style="font-weight:450">${l}</span></div>`).join('')}
+   </div>
+   <div class="md-detail" style="max-width:720px">
+     <h2 style="margin:0 0 4px">${tabs.find(t=>t[0]===tab)[1]}</h2>
+     <p class="sub">${{organization:'Your company identity, used across briefings and reports.',localization:'Defaults for currency, dates and fiscal periods.',models:'Which model powers each agent lane.',appearance:'Theme and chart palette.',connections:'Data sources Aughor can read.',system:'Internal kernel stats and feature flags.'}[tab]}</p>
+     ${body[tab]}
+     <div class="mt22"><button class="btn primary" onclick="toast('Saved ✓')">Save changes</button></div>
+   </div>
+ </div>`;
+};
+
+/* ════ render engine ════ */
+const content=document.getElementById('content'),crumbs=document.getElementById('crumbs'),headerActions=document.getElementById('headerActions');
+let current='home';
+const FULLBLEED=['recents','catalog','playbook','settings'];
+const ACTIONS={
+ home:'<button class="btn ghost">Customize</button><button class="btn primary" data-nav="chat">+ Ask</button>',
+ chat:'<button class="btn ghost">Share</button><button class="btn ghost">Export</button>',
+ default:'<button class="btn ghost">Share</button>'
+};
+function renderView(id,keepScroll){
+ const sc=content.scrollTop;
+ const html=(VIEWS[id]||(()=>`<h2>${TITLES[id]||id}</h2><p class="sub">Screen mocked for navigation.</p>`))();
+ const wrap=FULLBLEED.includes(id)?'view':'view pad';
+ content.innerHTML=`<div class="${wrap}">${html}</div>`;
+ if(keepScroll)content.scrollTop=sc;
+ const sec=SECTION[id];
+ crumbs.innerHTML=`<span>Aughor</span>`+(sec?`<span class="sep">/</span><span>${sec}</span>`:'')+`<span class="sep">/</span><span class="here">${TITLES[id]||id}</span>`;
+ headerActions.innerHTML=ACTIONS[id]||ACTIONS.default;
+}
+function movePill(el){if(!el){pill.style.opacity='0';return}pill.style.opacity='1';pill.style.transform=`translateY(${el.offsetTop}px)`}
+function navTo(id){
+ current=id;
+ document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.nav===id));
+ movePill(document.querySelector(`.nav-item[data-nav="${id}"]`));
+ if(document.startViewTransition)document.startViewTransition(()=>renderView(id));else renderView(id);
+}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-nav]');if(t){navTo(t.dataset.nav);if(t.dataset.nav==='chat')toast('Started a new investigation');}});
+renderView('home');
+requestAnimationFrame(()=>movePill(document.querySelector('.nav-item[data-nav="home"]')));
+
+/* rail */
+const app=document.getElementById('app');
+document.getElementById('railBtn').onclick=()=>{app.classList.toggle('rail');setTimeout(()=>movePill(document.querySelector('.nav-item.active')),80)};
+
+/* theme */
+const sun='<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',moon='<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+document.getElementById('themeBtn').onclick=()=>{const h=document.documentElement,n=h.getAttribute('data-theme')==='dark'?'light':'dark';h.setAttribute('data-theme',n);document.getElementById('themeIco').innerHTML=n==='dark'?moon:sun;toast(n==='dark'?'Dark theme':'Light theme')};
+
+/* command palette */
+const scrim=document.getElementById('scrim'),palette=document.getElementById('palette'),palInput=document.getElementById('palInput'),palList=document.getElementById('palList');
+const PAL=[{sec:'Actions',items:[{ic:'spark',label:'New investigation',hint:'↵',nav:'chat'},{ic:'db',label:'Browse catalog',nav:'catalog'},{ic:'node',label:'Open Intelligence Map',nav:'intelligence'},{ic:'alert',label:'Create a monitor',nav:'monitors'}]},{sec:'Go to',items:NAV.filter(n=>n.id).map(n=>({ic:n.icon,label:n.label,nav:n.id}))}];
+function renderPal(q=''){q=q.toLowerCase();palList.innerHTML='';PAL.forEach(g=>{const items=g.items.filter(i=>i.label.toLowerCase().includes(q));if(!items.length)return;const s=document.createElement('div');s.className='pal-sec';s.textContent=g.sec;palList.appendChild(s);items.forEach(i=>{const el=document.createElement('div');el.className='pal-item';el.innerHTML=`<span class="ic">${svg(I[i.ic]||I.spark,17)}</span><span>${i.label}</span>`+(i.hint?`<span class="hint">${i.hint}</span>`:'');el.onclick=()=>{navTo(i.nav);closePal()};palList.appendChild(el)})});const f=palList.querySelector('.pal-item');if(f)f.classList.add('sel')}
+function openPal(){scrim.classList.add('show');palette.classList.add('show');palInput.value='';renderPal();setTimeout(()=>palInput.focus(),40)}
+function closePal(){scrim.classList.remove('show');palette.classList.remove('show')}
+document.getElementById('cmdbarBtn').onclick=openPal;scrim.onclick=closePal;palInput.oninput=e=>renderPal(e.target.value);
+palInput.onkeydown=e=>{const sel=palList.querySelector('.pal-item.sel'),all=[...palList.querySelectorAll('.pal-item')];if(e.key==='Enter'&&sel)sel.click();if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();let i=all.indexOf(sel);i+=e.key==='ArrowDown'?1:-1;i=(i+all.length)%all.length;all.forEach(x=>x.classList.remove('sel'));all[i].classList.add('sel');all[i].scrollIntoView({block:'nearest'})}};
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();palette.classList.contains('show')?closePal():openPal()}if(e.key==='Escape')closePal()});
+
+/* toast */
+const toastWrap=document.getElementById('toastWrap');
+function toast(msg){const t=document.createElement('div');t.className='toast';t.innerHTML=`<span class="dot grn"></span> ${msg}`;toastWrap.appendChild(t);setTimeout(()=>{t.style.transition='opacity .3s,transform .3s';t.style.opacity='0';t.style.transform='translateY(8px)';setTimeout(()=>t.remove(),320)},2200)}
+
+/* annotations */
+document.getElementById('fab').onclick=function(){app.classList.toggle('annotate');this.querySelector('span').textContent=app.classList.contains('annotate')?'Hide design notes':'Show design notes'};
+</script>
+</body>
+</html>

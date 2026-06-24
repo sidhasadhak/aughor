@@ -236,12 +236,12 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
                   height={NODE_H}
                   rx={8}
                   ry={8}
-                  fill="#18181b"
+                  fill="var(--bg-1)"
                   stroke={
                     ring.includes("red")     ? "#ef4444" :
                     ring.includes("amber")   ? "#f59e0b" :
                     ring.includes("emerald") ? "#22c55e" :
-                    "#3f3f46"
+                    "var(--b2)"
                   }
                   strokeWidth={1.5}
                   strokeOpacity={0.7}
@@ -253,7 +253,7 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
                   textAnchor="middle"
                   fontSize={11}
                   fontWeight={600}
-                  fill="#e4e4e7"
+                  fill="var(--t1)"
                   className="pointer-events-none select-none"
                 >
                   {n.state.length > 14 ? n.state.slice(0, 13) + "…" : n.state}
@@ -264,7 +264,7 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
                   y={n.y + 38}
                   textAnchor="middle"
                   fontSize={10}
-                  fill="#71717a"
+                  fill="var(--t3)"
                   className="pointer-events-none select-none font-mono"
                 >
                   {fmt(n.count)} · {pct.toFixed(0)}%
@@ -276,7 +276,7 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
                     y={n.y + 54}
                     textAnchor="middle"
                     fontSize={9}
-                    fill="#52525b"
+                    fill="var(--t4)"
                     className="pointer-events-none select-none uppercase tracking-widest"
                   >
                     terminal
@@ -296,9 +296,9 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
             const ty = Math.max(tooltip.y - th - 6, 4);
             return (
               <g pointerEvents="none">
-                <rect x={tx} y={ty} width={tw} height={th} rx={6} fill="#18181b" stroke="#3f3f46" strokeWidth={1} />
+                <rect x={tx} y={ty} width={tw} height={th} rx={6} fill="var(--bg-1)" stroke="var(--b2)" strokeWidth={1} />
                 {lines.map((l, i) => (
-                  <text key={i} x={tx + 10} y={ty + 14 + i * 14} fontSize={10} fill="#d4d4d8" fontFamily="monospace">
+                  <text key={i} x={tx + 10} y={ty + 14 + i * 14} fontSize={10} fill="var(--t1)" fontFamily="monospace">
                     {l}
                   </text>
                 ))}
