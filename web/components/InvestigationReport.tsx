@@ -467,7 +467,10 @@ function InvestigationDetails({ report, intakePhase }: { report: ADAReport; inta
 function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
   const isRunning = phase.status === "running";
   const isSkipped = phase.status === "skipped";
-  const findings = phase.findings.filter(f => f.columns.length > 0 || f.is_significant);
+  // Include any finding that carries narrative too — so the interpretation streams WITH its chart
+  // as the phase lands, instead of being withheld until the final report swap (which made the
+  // text, numbers and synthesis all appear at once "to fill the gap").
+  const findings = phase.findings.filter(f => f.columns.length > 0 || f.is_significant || f.interpretation);
 
   return (
     <div className="space-y-2 pl-3 border-l border-zinc-800">
@@ -486,15 +489,28 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
       {phase.summary && !isSkipped && (
         <div className="text-[11px] text-zinc-500 leading-relaxed">{renderEmphasis(phase.summary)}</div>
       )}
-      {findings.map(f => (
-        <div key={f.finding_id} className="space-y-1.5 pl-2">
-          {f.columns.length > 0 && f.rows.length >= 2 && f.chart_type !== "none" && (
-            <div className="rounded-md border border-zinc-800/60 overflow-hidden p-2" style={{ background: "var(--bg-0)" }}>
-              <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} />
-            </div>
-          )}
-        </div>
-      ))}
+      {/* A running phase with nothing rendered yet — name the wait so the gap reads as progress,
+          not a frozen chart (the per-phase interpret is a slow LLM round-trip). */}
+      {isRunning && findings.length === 0 && (
+        <div className="text-[11px] text-zinc-500 italic pl-2 animate-pulse">Reading the results…</div>
+      )}
+      {findings.map(f => {
+        const hasChart = f.columns.length > 0 && f.rows.length >= 2 && f.chart_type !== "none";
+        return (
+          <div key={f.finding_id} className="space-y-1.5 pl-2">
+            {hasChart && (
+              <div className="rounded-md border border-zinc-800/60 overflow-hidden p-2" style={{ background: "var(--bg-0)" }}>
+                <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} />
+              </div>
+            )}
+            {f.key_numbers?.length > 0 && <BriefMetrics metrics={f.key_numbers} />}
+            {f.interpretation && <BriefProse text={f.interpretation} muted />}
+            {(f.stat_note || f.is_significant) && (
+              <SignificanceBadge significant={f.is_significant} note={f.stat_note} />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
