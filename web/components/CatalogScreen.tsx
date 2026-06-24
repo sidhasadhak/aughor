@@ -582,7 +582,7 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
 
 // ── Right: TABLE detail ───────────────────────────────────────────────────────
 
-type TableTab = "overview" | "sample" | "comments";
+type TableTab = "overview" | "sample" | "distribution" | "comments";
 
 function TableDetailPanel({ sel, onAsk, onRemoved }: {
   sel:   Extract<Sel, { level: "table" }>;
@@ -691,7 +691,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
       />
 
       <TabBar
-        tabs={[{ id: "overview", label: "Overview" }, { id: "sample", label: "Sample Data" }, { id: "comments", label: "Comments" }]}
+        tabs={[{ id: "overview", label: "Overview" }, { id: "sample", label: "Sample Data" }, { id: "distribution", label: "Distribution" }, { id: "comments", label: "Comments" }]}
         active={tab}
         onChange={id => setTab(id as TableTab)}
       />
@@ -699,6 +699,14 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
       {/* ── Comments (glossary) tab ── */}
       {tab === "comments" && (
         <GlossaryPanel table={bare(sel.table.name)} columns={cols.map(c => c.name)} />
+      )}
+
+      {/* ── Distribution tab — per-column profile + shape, scoped to this table.
+              Relocated from the (removed) Briefing › Domains › Distributions view. ── */}
+      {tab === "distribution" && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <SchemaShape connectionId={sel.connId} schemaTables={[sel.table.name]} />
+        </div>
       )}
 
       {/* ── Overview tab ── */}

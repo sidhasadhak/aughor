@@ -16,8 +16,6 @@ const loading = () => (
 const BriefingPanel    = dynamic(() => import("@/components/BriefingPanel").then(m => ({ default: m.BriefingPanel })),      { ssr: false, loading });
 const OntologyPanel    = dynamic(() => import("@/components/OntologyPanel").then(m => ({ default: m.OntologyPanel })),       { ssr: false, loading });
 const IntelligenceHub  = dynamic(() => import("@/components/IntelligenceHub").then(m => ({ default: m.IntelligenceHub })),  { ssr: false, loading });
-const ExplorationPanel = dynamic(() => import("@/components/ExplorationPanel").then(m => ({ default: m.ExplorationPanel })),{ ssr: false, loading });
-const DomainIntelPanel = dynamic(() => import("@/components/DomainIntelPanel").then(m => ({ default: m.DomainIntelPanel })),{ ssr: false, loading });
 const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then(m => ({ default: m.OrgIntelPanel })),      { ssr: false, loading });
 const EvidencePanel    = dynamic(() => import("@/components/EvidencePanel").then(m => ({ default: m.EvidencePanel })),      { ssr: false, loading });
 
@@ -40,13 +38,12 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type IntelLayer = "briefing" | "hub" | "ontology" | "domains" | "evidence" | "org";
+export type IntelLayer = "briefing" | "hub" | "ontology" | "evidence" | "org";
 
 const LAYERS: { id: IntelLayer; icon: string; label: string; blurb: string }[] = [
   { id: "briefing", icon: "brief",   label: "Briefing", blurb: "Cross-domain synthesis" },
-  { id: "hub",      icon: "layers",  label: "Hub",      blurb: "Domain knowledge profiles" },
+  { id: "hub",      icon: "layers",  label: "Hub",      blurb: "Domain knowledge & data profile" },
   { id: "ontology", icon: "node",    label: "Ontology", blurb: "Object model & relationships" },
-  { id: "domains",  icon: "process", label: "Domains",  blurb: "Process & data intelligence" },
   { id: "evidence", icon: "check",   label: "Evidence", blurb: "Claim ledger & feedback" },
   { id: "org",      icon: "spark",   label: "Org",      blurb: "Organizational knowledge" },
 ];
@@ -61,8 +58,6 @@ type Props = {
    *  setter to switch the active one. Omitted/short → the picker hides. */
   connections?: { id: string; name: string }[];
   onConnectionChange?: (connectionId: string) => void;
-  /** ExplorationPanel deep-link section, applied when the Domains layer mounts. */
-  domainSection?: "nulls" | "lifecycles" | "distributions" | "insights" | "intelligence";
   /** When set, scope-aware layers (Briefing) reflect this Canvas's curated tables rather
    *  than the whole connection — keeps Briefing consistent with the canvas-scoped Domains. */
   canvasId?: string;
@@ -82,7 +77,7 @@ type Props = {
  * mounted (display toggled), so graph zoom/scroll/fetch state survives layer
  * switches. Layers that have never been visited aren't mounted at all.
  */
-export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, domainSection, canvasId, workspaceId }: Props) {
+export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, canvasId, workspaceId }: Props) {
   // Mount a layer the first time it becomes active, then keep it mounted.
   const [visited, setVisited] = useState<Set<IntelLayer>>(() => new Set([layer]));
   useEffect(() => {
@@ -217,15 +212,6 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         {visited.has("hub") && (
           <Layer show={layer === "hub"}>
             <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />
-          </Layer>
-        )}
-        {visited.has("domains") && (
-          <Layer show={layer === "domains"}>
-            {/* Canvas scope → the canvas-aware domain-intel panel (curated tables);
-                connection scope → the full exploration profile. */}
-            {canvasId
-              ? <DomainIntelPanel connectionId={connectionId} canvasId={canvasId} isActive={layer === "domains"} />
-              : <ExplorationPanel connectionId={connectionId} initialSection={domainSection} schema={schema} />}
           </Layer>
         )}
         {visited.has("evidence") && (

@@ -1684,7 +1684,6 @@ export default function Home() {
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate">("investigate");
   // Drill into a known finding: routes the first chat turn to the Tier-0 Finding Dossier.
   const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
-  const [explorationSection, setExplorationSection] = useState<"nulls" | "lifecycles" | "distributions" | "insights" | "intelligence" | undefined>(undefined);
   const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
   const [secLens, setSecLens] = useState<"security" | "activity">("security");
   const [showHistory, setShowHistory] = useState(false);
@@ -1851,7 +1850,7 @@ export default function Home() {
     briefing:    "briefing",
     ontology:    "ontology",
     "intel-hub": "hub",
-    intel:       "domains",
+    intel:       "hub",   // the former Domains layer folded into the Hub (Data Profile)
     "org-intel":  "org",
   };
 
@@ -1882,7 +1881,6 @@ export default function Home() {
     const layer = LEGACY_INTEL_LAYER[t];
     if (layer) {
       setIntelLayer(layer);
-      if (layer === "domains") setExplorationSection("intelligence");
       setTab("intelligence");
       return;
     }
@@ -2132,7 +2130,6 @@ export default function Home() {
                 onLayerChange={setIntelLayer}
                 connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name }))}
                 onConnectionChange={setSelectedConn}
-                domainSection={explorationSection}
                 workspaceId={selectedWorkspace}
               />
             )}
