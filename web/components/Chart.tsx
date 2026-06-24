@@ -187,14 +187,22 @@ export function Chart({
     );
     const PREFER_COL = /(pct|percent|share|rate|ratio|proportion)/i;
     const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && !isDead(i) && isNumeric(firstNonNull(rows, i)));
+    // Instrumentation columns exist only to make a metric auditable — the numerator/denominator a
+    // ratio is built from, or a bare row-count `n`. They are never the answer, so they must not be
+    // picked as a chart measure (charting `numerator_total` is what made an AOV finding render as a
+    // giant SUM bar with the actual ratio hidden). Exclude them from measure selection; fall back to
+    // the full set only if filtering would leave nothing to plot.
+    const INSTRUMENTATION_COL = /(^|_)(numerator|denominator)(_total)?$|^n$/i;
+    const _filteredNum = numericCols.filter((c) => !INSTRUMENTATION_COL.test(c));
+    const chartNumericCols = _filteredNum.length ? _filteredNum : numericCols;
     const _isChangeMetric = numericCols.some((c) => CHANGE_METRIC_COL.test(c));
     const ID_COL = /(^|_)(id|key|sk|pk|code|uuid|guid|hash)$/i;
     const NAME_COL = /(name|title|label|desc|description|channel|category|region|country|city|state|store|product|customer|item|page|segment|brand|merchant|franchise|email|url)/i;
     const catCol = catCols.find((c) => NAME_COL.test(c) && !ID_COL.test(c)) ?? catCols.find((c) => !ID_COL.test(c)) ?? catCols[0];
     const catCol2 = catCols.find((c) => c !== catCol) ?? catCols[1];
     const CHANGE_PREFER_COL = /(change|delta|growth|pct_change|percent_change|_chg$|_diff$)/i;
-    const baseNumCol = numericCols.find((c) => PREFER_COL.test(c)) ?? numericCols.find((c) => !CHANGE_METRIC_COL.test(c)) ?? numericCols[0];
-    const changeNumCol = numericCols.find((c) => CHANGE_PREFER_COL.test(c)) ?? numericCols.find((c) => PREFER_COL.test(c)) ?? numericCols[0];
+    const baseNumCol = chartNumericCols.find((c) => PREFER_COL.test(c)) ?? chartNumericCols.find((c) => !CHANGE_METRIC_COL.test(c)) ?? chartNumericCols[0];
+    const changeNumCol = chartNumericCols.find((c) => CHANGE_PREFER_COL.test(c)) ?? chartNumericCols.find((c) => PREFER_COL.test(c)) ?? chartNumericCols[0];
     const numCol = (_isChangeMetric && catCol) ? changeNumCol : baseNumCol;
     const hint = (chartType ?? "auto").toLowerCase();
     if (!numCol) return null;
@@ -293,10 +301,10 @@ export function Chart({
     if (!option && hint === "scatter" && numericCols.length >= 2) { option = scatterOption({ rows: data, x: numericCols[0], ys: [numericCols[1]] }); defaultH = 300; }
     // 14. Categorical default → combo / grouped / change-bar / horizontal bar
     if (!option && catCol) {
-      if (numericCols.length >= 2 && catCols.length === 1) {
-        const numericIdxs = numericCols.map((n) => columns.indexOf(n)).filter((i) => i >= 0);
+      if (chartNumericCols.length >= 2 && catCols.length === 1) {
+        const numericIdxs = chartNumericCols.map((n) => columns.indexOf(n)).filter((i) => i >= 0);
         const d = scoreDualAxis(columns, rows, numericIdxs);
-        const primary = columns[d.barIdx] ?? numericCols[0];
+        const primary = columns[d.barIdx] ?? chartNumericCols[0];
         if (d.combo && d.lineIdx != null) { option = comboOption({ rows: data, x: catCol, ys: [primary, columns[d.lineIdx]] }); defaultH = 350; }
         else if (d.groupIdxs.length >= 2) { option = groupedBarOption({ rows: data, x: catCol, ys: d.groupIdxs.map((i) => columns[i]) }); defaultH = 300; }
         else { option = barOption({ rows: data, x: catCol, ys: [primary], labels: lbls }, { horizontal: true }); defaultH = Math.max(350, nCats * 28 + 60); }

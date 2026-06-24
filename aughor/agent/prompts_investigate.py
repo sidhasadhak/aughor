@@ -388,6 +388,22 @@ CROSS_SECTION_RATIO_BLOCK = """\
   5. ORDER BY metric_total ASC (lowest ratio first) so the extremes surface.
   6. LIMIT 15."""
 
+# A bare AVG/MEAN/MEDIAN is a per-record average — non-additive like a ratio, but UNLIKE a
+# composite ratio (SUM(num)/SUM(den), *100) it is SELF-CONTAINED: the AVG re-computes correctly
+# within each GROUP BY on its own. Expanding it into numerator_total/denominator_total columns is
+# pure noise for the reader (and was the source of the "why is SUM/COUNT in my AOV query?" gripe),
+# so this block keeps the SELECT to just the dimension + the average + a row count.
+CROSS_SECTION_AVG_BLOCK = """\
+  1. GROUP BY the dimension value.
+  2. Compute the metric ({metric_sql}) per value AS metric_total. This is a per-record AVERAGE and
+     is already correct within each group — do NOT expand it into separate numerator/denominator
+     columns, do NOT replace it with SUM(...), and do NOT divide it by COUNT(*). The AVG stands alone.
+  3. Also SELECT COUNT(*) AS n — the number of records behind each group's average (context only).
+  4. Do NOT compute avg_per_record (the metric is already an average) and do NOT compute a
+     share-of-total (you cannot meaningfully SUM an average across groups).
+  5. ORDER BY metric_total ASC (weakest first) so the lowest averages surface.
+  6. LIMIT 15."""
+
 CROSS_SECTION_INTERPRET_PROMPT = """\
 DIAGNOSTIC QUESTION: "{question}"
 METRIC: {metric_label}
@@ -396,6 +412,12 @@ PHASE: Cross-Sectional Weakness Scan
 QUERY RESULTS — each dimension value with its metric_total, avg_per_record, n, and
 pct_of_total share, weakest total first:
 {results_text}
+
+POPULATION NOTE: these rows are the LOWEST-ranked values (weakest first) and may be a CAPPED
+subset (the query LIMITs the scan) — they are the BOTTOM of the distribution, never "the top".
+Do NOT generalise "no value underperforms / the spread is tight" to the whole population from this
+truncated tail; speak only about the values actually shown (e.g. "among the lowest-margin brands
+shown") and, if the row count equals the cap, note more values likely exist beyond it.
 
 For EACH dimension, write a finding:
   - title: the dimension (e.g. "By franchise", "By region", "By product"). Use the SAME
@@ -433,6 +455,12 @@ PHASE: Cross-Sectional Weakness Scan
 QUERY RESULTS — each dimension value with its metric_total (the RATIO/percentage itself), n, and
 the numerator_total / denominator_total it was built from, lowest ratio first:
 {results_text}
+
+POPULATION NOTE: these rows are the LOWEST-ranked values (lowest ratio first) and may be a CAPPED
+subset (the query LIMITs the scan) — they are the BOTTOM of the distribution, never "the top". Do
+NOT generalise "no value underperforms / the spread is tight" to the whole population from this
+truncated tail; speak only about the values actually shown, and if the row count equals the cap,
+note more values likely exist beyond it.
 
 For EACH dimension, write a finding:
   - title: the dimension (e.g. "By country", "By category"). Use the SAME dimension wording as the

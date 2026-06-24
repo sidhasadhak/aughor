@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import DeleteIcon from "@atlaskit/icon/core/delete";
 import type { InvestigationSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { localizeCurrency } from "@/lib/orgSettings";
 import { API_BASE } from "@/lib/config";
 import { subscribeKernelEvents } from "@/lib/events";
 
@@ -132,7 +133,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                       "text-sm leading-snug line-clamp-2 flex-1",
                       isSelected ? "text-white" : "text-zinc-200 group-hover:text-white"
                     )}>
-                      {inv.question}
+                      {localizeCurrency(inv.question)}
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
@@ -148,7 +149,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   </div>
                 </div>
                 {inv.headline && (
-                  <p className="mt-1 text-[11px] text-zinc-500 line-clamp-1">{inv.headline}</p>
+                  <p className="mt-1 text-[11px] text-zinc-500 line-clamp-1">{localizeCurrency(inv.headline).replace(/\*+/g, "")}</p>
                 )}
                 <div className="mt-1.5 flex items-center gap-3 text-[11px] text-zinc-500 flex-wrap">
                   {!isChat && <span>{inv.hypothesis_count} hypotheses</span>}

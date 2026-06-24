@@ -17,6 +17,7 @@
 import React, { useState } from "react";
 import { renderEmphasis } from "@/components/brief/BriefProse";
 import { deltaFavorable } from "@/lib/favorability";
+import { localizeCurrency } from "@/lib/orgSettings";
 
 export { BriefProse, renderEmphasis } from "@/components/brief/BriefProse";
 
@@ -144,8 +145,8 @@ export function BriefMetrics({
           <div key={i} className="flex flex-col gap-0.5 min-w-0">
             {m.label && <span className="aug-text-xs text-zinc-500">{m.label}</span>}
             <span className="font-mono tabular-nums text-zinc-100 text-[15px] leading-none">
-              {m.value}
-              {m.delta && <span className={`text-[12px] ml-1.5 ${deltaCls}`}>{m.delta}</span>}
+              {localizeCurrency(m.value)}
+              {m.delta && <span className={`text-[12px] ml-1.5 ${deltaCls}`}>{localizeCurrency(m.delta)}</span>}
             </span>
             {m.context && <span className="aug-text-xs text-zinc-500">{m.context}</span>}
           </div>

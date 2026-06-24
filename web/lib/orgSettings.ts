@@ -48,6 +48,21 @@ export function effectiveCurrencySymbol(): string {
   return _cache?.currency_code ? currencySymbol(_cache.currency_code) : "";
 }
 
+/**
+ * Rewrite hardcoded "$"-prefixed amounts in a DISPLAY string to the configured reporting
+ * currency symbol — e.g. "$69.81" → "€69.81", "-$330K" → "-€330K". The deep-analysis LLM emits
+ * figures with a literal "$" baked in; this is the presentation seam that makes them honour the
+ * workspace/Org currency setting (the same setting the briefing already respects).
+ *
+ * No-op when no currency is configured or it's USD (US workspaces stay byte-identical), and only
+ * a "$" that prefixes a number is touched, so ordinary prose is never mangled.
+ */
+export function localizeCurrency(text: string): string {
+  const sym = effectiveCurrencySymbol();
+  if (!text || !sym || sym === "$") return text;
+  return text.replace(/\$(?=\s?[\d.,])/g, sym);
+}
+
 /** The user's date_format token (e.g. "DD/MM/YYYY"), or "" for the default smart labels. */
 export function effectiveDateFormat(): string {
   return _cache?.date_format ?? "";

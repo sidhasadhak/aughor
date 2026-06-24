@@ -1006,6 +1006,23 @@ def _metric_is_ratio(metric_sql: str, metric_label: str = "") -> bool:
     return False
 
 
+def _metric_is_composite_ratio(metric_sql: str) -> bool:
+    """The subset of ratio metrics that are genuinely BUILT FROM two aggregates — a division
+    between aggregates (SUM(num)/SUM(den)) or a *100 percentage scaling. These NEED their
+    numerator/denominator surfaced so the ratio is auditable and re-aggregates correctly per group.
+
+    A bare AVG/MEAN/MEDIAN is non-additive (so `_metric_is_ratio` is True) but is NOT composite — it
+    is self-contained and needs no numerator/denominator instrumentation. Distinguishing the two
+    lets the cross-section scan emit a clean `AVG(x)`-only query instead of padding it with redundant
+    SUM(x)/COUNT(*) columns."""
+    s = metric_sql or ""
+    if "*100" in s.replace(" ", ""):
+        return True
+    if "/" in s and len(_RATIO_AGG_RE.findall(s)) >= 2:
+        return True
+    return False
+
+
 # The cross-sectional scan defaults to a WEAKNESS frame (rank ascending, surface the lowest).
 # Some diagnostics instead seek the MAXIMUM ("which category carries the HIGHEST out-of-stock
 # burden") — for those the answer is the largest value, not the smallest, so orient the ranking
@@ -1065,6 +1082,53 @@ def _chart_ratio_primary(finding) -> None:
         return
     finding["columns"] = [cols[i] for i in keep]
     finding["rows"] = [[row[i] for i in keep] for row in (finding.get("rows") or [])]
+
+
+def _fix_xsec_extreme_key_numbers(finding: dict) -> None:
+    """F4 — make the 'lowest'/'highest' key numbers agree with the finding's OWN charted rows.
+    The interpret LLM occasionally reports an extreme that is not the actual min/max of the result
+    set (e.g. 'highest 42.68%' when the top bar in the very same chart is 43.07%). Recompute both
+    extremes deterministically from the rows so a key number can never contradict the chart beside
+    it. Runs AFTER chart trimming, so columns are [dimension, metric]. Also strips the misleading
+    '(top N)' parenthetical — the scan is weakest-first, so these are the LOWEST values, not the top."""
+    cols = finding.get("columns") or []
+    rows = finding.get("rows") or []
+    kns = finding.get("key_numbers") or []
+    if len(cols) < 2 or not rows or not kns:
+        return
+    midx = next((i for i, c in enumerate(cols) if _RATIO_METRIC_COL_RE.search(c)), None)
+    if midx is None:
+        midx = len(cols) - 1  # trimmed cross-section findings are [dimension, metric]
+    dim_idx = 1 if midx == 0 else 0
+
+    def _num(v):
+        try:
+            return float(str(v).replace(",", "").replace("%", "").strip())
+        except Exception:
+            return None
+
+    vals = [(_num(r[midx]), r[dim_idx]) for r in rows
+            if midx < len(r) and dim_idx < len(r) and _num(r[midx]) is not None]
+    if not vals:
+        return
+    lo = min(vals, key=lambda x: x[0])
+    hi = max(vals, key=lambda x: x[0])
+
+    def _reformat(template: str, num: float, dim) -> str:
+        """Replace the numeric part of the LLM's value string, preserving its unit (% / €), and
+        keep/refresh a trailing '(dimension)' so value and label stay self-consistent."""
+        t = template or ""
+        unit = "%" if "%" in t else ""
+        return f"{num:.2f}{unit} ({dim})"
+
+    for kn in kns:
+        lbl = (kn.get("label") or "")
+        low = lbl.lower()
+        kn["label"] = re.sub(r"\s*\(top\s*\d+\)", "", lbl).strip()  # weakest-first ⇒ not "top"
+        if any(w in low for w in ("lowest", "weakest", "min")):
+            kn["value"] = _reformat(kn.get("value", ""), lo[0], lo[1])
+        elif any(w in low for w in ("highest", "strongest", "max", "best", "top")):
+            kn["value"] = _reformat(kn.get("value", ""), hi[0], hi[1])
 
 
 def _skipped_finding(phase_id: str, reason: str) -> InvestigationFinding:
@@ -1414,6 +1478,28 @@ def _is_diagnostic_question(q: str) -> bool:
     return bool(_DIAGNOSTIC_RE.search(q or ""))
 
 
+# A TEMPORAL-CHANGE question presupposes a movement over time and asks its cause
+# ("what drove the change", "why did margin drop", "MoM/YoY change"). These are the OPPOSITE
+# of a cross-sectional weakness scan: the honest answer is a period-over-period decomposition,
+# or — when no time axis exists — an explicit "no change could be measured". The intake LLM
+# frequently mislabels them as cross_sectional "driver" questions, which silently answers
+# "where is X weakest" instead of "what changed"; this detector lets us override that.
+_TEMPORAL_CHANGE_RE = re.compile(
+    r"\b(drove|driver[s]?\s+of|caused|cause\s+of|reason[s]?\s+for|behind|why)\b[^?]*\b"
+    r"(change[d]?|drop\w*|fell|fall\w*|declin\w*|decreas\w*|increas\w*|rose|rise|grew|grow\w*|"
+    r"jump\w*|spike[d]?|surg\w*|plung\w*|shift\w*|moved?|swing\w*|trend\w*)\b"
+    r"|\bwhat\s+changed\b"
+    r"|\b(month[-\s]over[-\s]month|year[-\s]over[-\s]year|mom|yoy|qoq|wow)\b"
+    r"|\b(vs\.?|versus|compared\s+to|relative\s+to|since)\s+(last|prior|previous|the\s+previous)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_temporal_change_question(q: str) -> bool:
+    """Does the question ask what changed over time (a period-over-period premise)?"""
+    return bool(_TEMPORAL_CHANGE_RE.search(q or ""))
+
+
 _AGG_RE = r"(?:SUM|AVG|COUNT|MIN|MAX|MEDIAN|STDDEV|VARIANCE)"
 
 # Shared grounding rule appended to every ADA plan node's terse system prompt so the
@@ -1621,6 +1707,14 @@ def ada_intake(state: AgentState) -> dict:
         has_segment = bool((getattr(intake, "comparison_segment_sql", "") or "").strip())
         if _is_diagnostic_question(question) or no_time or has_segment:
             intake.cross_sectional = True
+
+        # F1 — temporal-change premise OVERRIDES the cross-sectional flag. "What drove the CHANGE /
+        # why did X drop" asks about movement over time, not which segment is structurally weakest.
+        # When a usable time axis exists, force the temporal baseline path so the actual change is
+        # measured (it decomposes a real change, or honestly reports "no material change"). With no
+        # time axis we keep the cross-sectional fallback, and ada_synthesize reframes honestly (F2).
+        if _is_temporal_change_question(question) and not no_time:
+            intake.cross_sectional = False
 
     # Post-process: ensure all table references are fully-qualified when the schema uses them
     if intake is not None:
@@ -2608,7 +2702,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
     most-concentrated values, instead of a temporal baseline."""
     from aughor.agent.prompts_investigate import (
         CROSS_SECTION_PLAN_PROMPT, CROSS_SECTION_INTERPRET_PROMPT,
-        CROSS_SECTION_ADDITIVE_BLOCK, CROSS_SECTION_RATIO_BLOCK,
+        CROSS_SECTION_ADDITIVE_BLOCK, CROSS_SECTION_RATIO_BLOCK, CROSS_SECTION_AVG_BLOCK,
         CROSS_SECTION_RATIO_INTERPRET_PROMPT,
         PhasePlan, PhaseInterpretation,
     )
@@ -2629,9 +2723,16 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
     # the denominator and reported SUM(numerator) as the metric (mislabelling $/order as a %).
     # Intake's metric_is_ratio is an OR signal; the deterministic detector is the actual gate.
     is_ratio = bool(intake_data.get("metric_is_ratio")) or _metric_is_ratio(metric_sql, metric_label)
-    metric_computation_block = (
-        CROSS_SECTION_RATIO_BLOCK if is_ratio else CROSS_SECTION_ADDITIVE_BLOCK
-    ).format(metric_sql=metric_sql)
+    # Three-way: a COMPOSITE ratio (SUM(num)/SUM(den), *100) needs its numerator/denominator
+    # surfaced for auditability; a bare AVG/MEAN is non-additive but self-contained, so it gets the
+    # clean AVG block (no redundant SUM/COUNT instrumentation); everything else is additive.
+    if is_ratio and _metric_is_composite_ratio(metric_sql):
+        _block = CROSS_SECTION_RATIO_BLOCK
+    elif is_ratio:
+        _block = CROSS_SECTION_AVG_BLOCK
+    else:
+        _block = CROSS_SECTION_ADDITIVE_BLOCK
+    metric_computation_block = _block.format(metric_sql=metric_sql)
 
     # Direction: default is a weakness frame (lowest first). For a max-seeking question ("HIGHEST
     # burden / MOST X") the answer is the LARGEST value — orient the ranking and interpretation to
@@ -2744,6 +2845,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
             _chart_ratio_primary(f)
         else:
             _chart_primary_is_metric(f)
+        # F4 — key numbers must match the chart they sit beside (recompute extremes from the rows).
+        _fix_xsec_extreme_key_numbers(f)
 
     # Numeric fan-out backstop — the AST chasm detectors miss some join shapes and the coder can
     # reinterpret the metric, so verify the NUMBERS on the RAW results (all columns present). Two
@@ -3055,6 +3158,31 @@ def ada_synthesize(state: AgentState) -> dict:
                 "attributed and no recommendation can be made. " + (synth.executive_summary or "")
             ).strip()[:600]
 
+    # F3/F2 — a CROSS-SECTIONAL scan ranks the metric ACROSS dimensions at a point in time; it
+    # measures no temporal change, so:
+    #   F3: never emit a "share of total CHANGE" attribution waterfall — there is nothing to
+    #       decompose, and "gift_sets = -100% of total change" is fabricated structure.
+    #   F2: if the QUESTION asked what changed over time but ran cross-sectional (no usable time
+    #       axis — F1 routes the rest to the temporal path), lead with that fact instead of
+    #       silently answering "where is the metric weakest". Non-droppable.
+    if synth and intake_data.get("cross_sectional"):
+        synth.attribution_waterfall = []
+        if _is_temporal_change_question(question):
+            _reframe = (
+                "This question asks what changed over time, but no period-over-period comparison "
+                "was possible, so the analysis cannot identify a temporal driver — it shows where "
+                f"{intake_data.get('metric_label') or 'the metric'} is structurally weakest instead. "
+            )
+            _es = synth.executive_summary or ""
+            if "changed over time" not in _es.lower():
+                synth.executive_summary = (_reframe + _es).strip()[:900]
+            _gap = ("No period-over-period analysis was performed, so the temporal driver of any "
+                    "change over time remains unidentified.")
+            _gaps = list(synth.data_gaps or [])
+            if not any("period-over-period" in g.lower() for g in _gaps):
+                _gaps.insert(0, _gap)
+            synth.data_gaps = _gaps
+
     def _coerce_amount_sign(label: str, pct: float) -> str:
         """Keep a waterfall amount_label's leading sign in agreement with its
         pct_of_total, so the two never render with opposite directions."""
@@ -3084,13 +3212,17 @@ def ada_synthesize(state: AgentState) -> dict:
             )
             for r in synth.recommendations
         ]
+        # A cross-sectional weakness scan has NO temporal comparison — it ranks across a dimension.
+        # Don't stamp it with a fabricated MoM/YoY ("vs December 2021") or a "total change" label;
+        # those fields belong only to the temporal baseline path.
+        _xsec = bool(intake_data.get("cross_sectional"))
         ada_report = ADAReport(
             headline=synth.headline,
             executive_summary=synth.executive_summary,
             metric=intake_data.get("metric_label", ""),
-            observation_period=intake_data.get("observation_label", ""),
-            comparison_basis=intake_data.get("comparison_label", ""),
-            total_change_label=synth.total_change_label,
+            observation_period="" if _xsec else intake_data.get("observation_label", ""),
+            comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
+            total_change_label="" if _xsec else synth.total_change_label,
             phases=phases,
             attribution_waterfall=waterfall,
             confidence=synth.confidence,
@@ -3102,12 +3234,13 @@ def ada_synthesize(state: AgentState) -> dict:
             plan_reconciliation=plan_reconciliation,
         )
     else:
+        _xsec = bool(intake_data.get("cross_sectional"))
         ada_report = ADAReport(
             headline="Investigation complete — synthesis failed.",
             executive_summary="See individual phase findings above for details.",
             metric=intake_data.get("metric_label", ""),
-            observation_period=intake_data.get("observation_label", ""),
-            comparison_basis=intake_data.get("comparison_label", ""),
+            observation_period="" if _xsec else intake_data.get("observation_label", ""),
+            comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
             total_change_label="",
             phases=phases,
             attribution_waterfall=[],
