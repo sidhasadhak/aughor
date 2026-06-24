@@ -2749,7 +2749,11 @@ class SchemaExplorer:
                         f"{playbook_block}"
                         f"{_followup_hint}"
                         "Propose the single most valuable next question. "
-                        "Choose an uncovered angle. Write grain-correct SQL."
+                        "Choose an uncovered angle. Write grain-correct SQL. "
+                        "CRITICAL: every table and column you reference MUST appear VERBATIM in the "
+                        "SCHEMA above — do NOT use any other name (no line_total, no quantity, no "
+                        "city/objective unless listed). If the column you want isn't there, pick a "
+                        "different question that the listed columns can answer."
                     )
                     # Tier-1 #4: a manifest cell IS the query spec — synthesise it deterministically
                     # (no generation LLM call) when manifest-driven; the entire downstream pipeline
@@ -3669,8 +3673,16 @@ class SchemaExplorer:
         # findings the dedup gate would drop anyway. Diversifies output across runs.
         _done_pairs = {frozenset(p) for p in (self._state.get("synthesized_pairs") or [])}
 
+        from aughor.kernel.jobs import budget_fraction_used
         for c in candidates:
             if stored >= max_findings:
+                break
+            # Self-limit: stop synthesis just shy of the token cap so a productive Phase 9
+            # finishes cleanly instead of being heartbeat-cancelled at the very end.
+            _bf9 = budget_fraction_used()
+            if _bf9 is not None and _bf9 >= 0.97:
+                logger.info("[explorer:%s] Phase 9: budget %.0f%% spent — stopping synthesis "
+                            "short of the cap", self.connection_id, _bf9 * 100)
                 break
             if frozenset(c.parent_ids) in _done_pairs:
                 continue
@@ -3793,6 +3805,13 @@ class SchemaExplorer:
             if not _g.grounded:
                 logger.info("[explorer:%s] Phase 9: dropping %s finding — ungrounded number(s) %s",
                             self.connection_id, ctype, _g.ungrounded)
+                continue
+            # Synthesis exists to surface NOVEL composed views — drop a trivial one (the
+            # interpreter rating it ≤1, e.g. "repeat AOV $69.39 vs $69.34") rather than
+            # spend a briefing slot on a non-insight.
+            if clamp_novelty(interp.novelty) < 2:
+                logger.info("[explorer:%s] Phase 9: dropping %s finding — trivial (novelty<2)",
+                            self.connection_id, ctype)
                 continue
             _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
             if is_semantically_redundant(interp.finding, _prior_findings):
