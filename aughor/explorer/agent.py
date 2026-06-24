@@ -3514,11 +3514,16 @@ class SchemaExplorer:
                     None,
                     lambda: llm.complete(
                         system=("You are a precise analyst. State the SINGLE emergent insight this "
-                                "result proves — the claim that comes from COMBINING the two findings, "
-                                "with the specific number from the result. Do not restate either parent. "
-                                "novelty is 1-5."),
-                        user=(f"FINDING A: {c.a.finding}\nFINDING B: {c.b.finding}\n"
-                              f"COMPOSITION: {ctype}\n\nCONFIRMING RESULT (first 20 rows):\n{_result_text}"),
+                                "result proves — the claim that comes from COMBINING the two findings. "
+                                "CRITICAL: every number you state MUST be a value that appears in the "
+                                "CONFIRMING RESULT below. Do NOT reuse, restate, or recompute any figure "
+                                "from Finding A or Finding B — those are the inputs, not the answer. If the "
+                                "result contains no new combined quantity, the composition failed: say so "
+                                "plainly with novelty=1 and cite no numbers. novelty is 1-5."),
+                        user=(f"FINDING A (input — do NOT quote its numbers): {c.a.finding}\n"
+                              f"FINDING B (input — do NOT quote its numbers): {c.b.finding}\n"
+                              f"COMPOSITION: {ctype}\n\n"
+                              f"CONFIRMING RESULT — state the emergent number FROM HERE (first 20 rows):\n{_result_text}"),
                         response_model=_SynthInterp,
                     ),
                 )
