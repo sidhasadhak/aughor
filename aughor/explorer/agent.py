@@ -1739,6 +1739,8 @@ class SchemaExplorer:
                     dims.append(_cn)
         meas = sorted(set(meas))
         dims = sorted(set(dims))
+        logger.debug("[explorer:%s] grounded probe: domain=%s tables=%s measures=%d dims=%d",
+                     self.connection_id, domain, list(domain_table_cols.keys()), len(meas), len(dims))
         if not meas:
             return None                       # nothing to ground → free-form fallback
 
@@ -1791,8 +1793,9 @@ class SchemaExplorer:
         try:
             gen = await _loop.run_in_executor(
                 None, lambda: llm.complete(system=_sys, user=_usr, response_model=_ProbeGen))
-        except Exception:
-            logger.debug("[explorer:%s] grounded probe gen failed", self.connection_id, exc_info=True)
+        except Exception as _ge:
+            logger.info("[explorer:%s] grounded probe gen ERRORED (%s) → free-form",
+                        self.connection_id, type(_ge).__name__)
             return None
         probe = _to_probe(gen)
 
@@ -1811,13 +1814,16 @@ class SchemaExplorer:
             if bad:
                 return None
 
-        _tcols = {_t: list(((cp or {}).get(_t) or (cp or {}).get(_t.lower()) or {}).keys())
-                  for _t in domain_table_cols}
+        # Authoritative real-column lists come from domain_table_cols ({table: [cols]}),
+        # not cp.keys() (cp may profile only a subset → resolution fails → needless fallback).
+        _tcols = {_t: list(_cols or []) for _t, _cols in (domain_table_cols or {}).items()}
         _cprof = {_t: ((cp or {}).get(_t) or (cp or {}).get(_t.lower()) or {}) for _t in domain_table_cols}
         sql = probe_to_sql(probe, tables_cols=_tcols, col_profiles=_cprof,
                            joins=self._state.get("join_verifications", []) or [],
                            dialect=getattr(self._conn, "dialect", "duckdb"))
         if not sql:
+            logger.info("[explorer:%s] grounded probe not compilable (measures=%s dims=%s) → free-form",
+                        self.connection_id, probe.measures, probe.dimensions)
             return None                       # compiler can't express it → free-form fallback
         return NQ(question=probe.question or "grounded probe", sql=sql,
                   angle=probe.angle or "grounded", why=probe.why or "grounded generation")
@@ -2400,16 +2406,27 @@ class SchemaExplorer:
                 domain_schema_lines: list[str] = []
                 domain_cols: set[str] = set()
                 domain_table_cols: dict[str, list] = {}   # scoped to THIS domain's tables
+                _wkeys = sql_writer.table_cols
+                _bare = lambda s: str(s).split(".")[-1].lower()
                 for tbl in sorted(domain_tables):
-                    cols = (
-                        sql_writer.table_cols.get(tbl)
-                        or sql_writer.table_cols.get(tbl.lower())
-                        or next((v for k, v in sql_writer.table_cols.items() if k.lower() == tbl.lower()), None)
-                    )
+                    # Resolve the ontology's BARE table name (`order_payments`) to the SQL
+                    # writer's QUALIFIED schema key (`missimi.order_payments`) — they never
+                    # matched before, so domain_table_cols came back EMPTY for every domain
+                    # and the generator got NO schema block (→ it invented every column, the
+                    # real origin of the line_total waste). Key by the qualified name so the
+                    # schema block AND the compiled SQL use the runnable table reference.
+                    if tbl in _wkeys:
+                        _key = tbl
+                    elif tbl.lower() in _wkeys:
+                        _key = tbl.lower()
+                    else:
+                        _key = next((k for k in _wkeys if k.lower() == tbl.lower()), None) \
+                            or next((k for k in _wkeys if _bare(k) == _bare(tbl)), None)
+                    cols = _wkeys.get(_key) if _key else None
                     if cols:
-                        domain_schema_lines.append(f"  {tbl}: {', '.join(cols)}")
+                        domain_schema_lines.append(f"  {_key}: {', '.join(cols)}")
                         domain_cols.update(str(c).lower() for c in cols)
-                        domain_table_cols[tbl] = cols
+                        domain_table_cols[_key] = cols
 
                 # Joinable-neighbour grounding: a domain often analyses a metric that lives on a
                 # SIBLING fact table reached by a verified FK (Customer 'value' lives on
@@ -2433,6 +2450,12 @@ class SchemaExplorer:
                         _nbr_lines.append(f"  {nt}: {', '.join(cols)}")
                         domain_table_cols[nt] = cols                 # so measure-grains sees its grain too
                         domain_cols.update(str(c).lower() for c in cols)
+
+                if not domain_table_cols:
+                    logger.info("[explorer:%s] Phase 8: %s — domain_table_cols EMPTY; "
+                                "domain_tables=%s writer_keys=%s",
+                                self.connection_id, domain, sorted(domain_tables)[:8],
+                                sorted(sql_writer.table_cols.keys())[:8])
 
                 domain_schema_block = (
                     "EXACT COLUMN NAMES — use ONLY these, never invent:\n"
