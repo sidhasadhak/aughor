@@ -75,7 +75,10 @@ logger = logging.getLogger(__name__)
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
 _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
 _COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
-SYNTH_RESERVE_FRACTION = 0.85  # stop Phase 8 at this share of the token budget, leaving the rest for Phase 9 synthesis
+SYNTH_RESERVE_FRACTION = 0.80  # stop Phase 8 at this share of the token budget, leaving the rest for Phase 9 synthesis
+# (0.80 not 0.85: a single Phase-8 iteration can overshoot the threshold by a few %, and
+#  the now-higher-yield Phase 8 + synthesis was crossing 100% and getting heartbeat-cancelled
+#  at the very end — 20% headroom lets synthesis finish cleanly.)
 _NEG_PCT_RE = re.compile(r"-\s*\d+(?:\.\d+)?\s*%")  # an impossible negative percentage in a share/rate claim
 
 # Bound how many explorations run their phases at once. The kernel spawns each as its
