@@ -75,6 +75,8 @@ logger = logging.getLogger(__name__)
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
 _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
 _COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
+SYNTH_RESERVE_FRACTION = 0.85  # stop Phase 8 at this share of the token budget, leaving the rest for Phase 9 synthesis
+_NEG_PCT_RE = re.compile(r"-\s*\d+(?:\.\d+)?\s*%")  # an impossible negative percentage in a share/rate claim
 
 # Bound how many explorations run their phases at once. The kernel spawns each as its
 # own asyncio.Task with no cap, so onboarding N connections at once (or boot recovery)
@@ -1989,7 +1991,16 @@ class SchemaExplorer:
                 logger.info("[explorer:%s] Phase 8: +%d KPI cells (value_sql, bind-validated) → %d cells",
                             self.connection_id, len(_kpi_cells), len(self._manifest_cells))
 
+        # Reserve a slice of the token budget for Phase 9 (synthesis): synthesis is the
+        # cheapest, highest-value phase (it composes findings already in hand), yet it runs
+        # last — so without a reserve, a token-hungry Phase 8 exhausts the budget and the
+        # heartbeat hard-cancels the run BEFORE synthesis ever fires. Stop Phase 8 once it
+        # has spent SYNTH_RESERVE_FRACTION of the budget, leaving the remainder for Phase 9.
+        _reserve_hit = False
+
         for domain, _base_domain, entities in passes:
+            if _reserve_hit:
+                break
             await self._gate()
             if self._stopped:
                 return
@@ -2077,6 +2088,17 @@ class SchemaExplorer:
                 await self._gate()
                 if self._stopped:
                     return
+
+                # Budget reserve for synthesis: once Phase 8 has spent its share of the
+                # token budget, stop here (and skip the remaining domains) so Phase 9 has
+                # headroom to run instead of being hard-cancelled by the heartbeat.
+                from aughor.kernel.jobs import budget_fraction_used
+                _bf = budget_fraction_used()
+                if _bf is not None and _bf >= SYNTH_RESERVE_FRACTION:
+                    _reserve_hit = True
+                    logger.info("[explorer:%s] Phase 8: budget %.0f%% spent — reserving the rest "
+                                "for synthesis, stopping domain intel", self.connection_id, _bf * 100)
+                    break
 
                 covered_angles = coverage.get(domain, [])
 
@@ -3503,6 +3525,19 @@ class SchemaExplorer:
             except Exception:
                 logger.debug("[explorer:%s] Phase 9: interpret call failed (%s)",
                              self.connection_id, ctype, exc_info=True)
+                continue
+
+            # Plausibility hardening (same authorities Phase 8 applies): fix a mislabeled
+            # metric against the real vocab, then reject an impossible value. A share or
+            # concentration is a rate — a NEGATIVE share/% is self-contradictory and signals
+            # a mis-derived confirming query or a mislabel (the live "-4.33% repeat share"
+            # defect), so drop it rather than ship a number a reader can't trust.
+            _rl = relabel_mislabeled_finding(interp.finding, sql, metric_vocab_for(self._conn), rows)
+            if _rl:
+                interp.finding = _rl
+            if ctype in ("share", "concentration") and _NEG_PCT_RE.search(interp.finding or ""):
+                logger.info("[explorer:%s] Phase 9: dropping %s finding — implausible negative "
+                            "share/rate", self.connection_id, ctype)
                 continue
 
             _ok, _why = verify_insight(rows, interp.finding, sql, None, conn=self._conn)
