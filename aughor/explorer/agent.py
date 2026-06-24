@@ -3420,12 +3420,14 @@ class SchemaExplorer:
                     f"novelty={interp.novelty} — \"{interp.finding[:80]}…\""
                 )
 
-                # Forward-chaining (Layer 3): a NOTABLE finding (high novelty) spawns a
+                # Forward-chaining (Layer 3): a non-trivial finding (novelty ≥3) spawns a
                 # targeted drill as the NEXT question — explain WHY (which driver/segment
                 # accounts for it), reusing this same pipeline rather than returning to a
-                # blank frontier cut. Bounded to 2 consecutive drills so a thread deepens
-                # without running away; a flat finding resets the chain.
-                if clamp_novelty(interp.novelty) >= 4 and _chain_depth < 2:
+                # blank frontier cut. Threshold is ≥3 not ≥4: real runs almost never produce
+                # a ≥4, so ≥4 meant forward-chaining never fired. Bounded to 2 consecutive
+                # drills so a thread deepens without running away; a flat (≤2) finding
+                # resets the chain.
+                if clamp_novelty(interp.novelty) >= 3 and _chain_depth < 2:
                     _chain_depth += 1
                     _drill_parent = insight_id
                     _followup_hint = (
@@ -3516,9 +3518,16 @@ class SchemaExplorer:
             "share, the trade-off magnitude) — do NOT restate either parent."
         )
 
+        # Pairs already composed in a prior run (by parent-id set) — skip them so synthesis
+        # spends its budget on NEW pairs instead of re-evaluating + re-deriving the same
+        # findings the dedup gate would drop anyway. Diversifies output across runs.
+        _done_pairs = {frozenset(p) for p in (self._state.get("synthesized_pairs") or [])}
+
         for c in candidates:
             if stored >= max_findings:
                 break
+            if frozenset(c.parent_ids) in _done_pairs:
+                continue
             await self._gate()
             if self._stopped:
                 break
@@ -3692,6 +3701,9 @@ class SchemaExplorer:
                                journal_extra={"synthesized": True, "composition_type": ctype,
                                               "parents": [c.a.id, c.b.id]})
             stored += 1
+            # Remember this pair so future runs don't re-compose it (cross-run dedup).
+            _done_pairs.add(frozenset(c.parent_ids))
+            self._state["synthesized_pairs"] = [sorted(p) for p in _done_pairs]
             self._save_state()
             logger.info("[explorer:%s] Phase 9: SYNTH %s from (%s + %s) — \"%s…\"",
                         self.connection_id, ctype, c.a.id, c.b.id, interp.finding[:80])
