@@ -10,8 +10,6 @@ import {
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner, SkeletonRows } from "@/components/ui/motion";
-import { DomainIntelPanel } from "@/components/DomainIntelPanel";
-import { SchemaShape } from "@/components/SchemaShape";
 
 // ── Phase progress bar ────────────────────────────────────────────────────────
 
@@ -155,10 +153,10 @@ function LifecycleMapsSection({ maps }: { maps: ExplorationFindings["lifecycle_m
   );
 }
 
-// ── Distributions ─────────────────────────────────────────────────────────────
-// The Distributions section is now rendered by the shared <SchemaShape> component
-// (column profile + distribution shape merged), which also lives in the Catalog
-// schema panel. The old standalone shape pills/mini-bars moved there.
+// Distributions moved out of this panel: the per-column profile + shape now lives
+// at table level in the Catalog (Catalog › table › Distribution), and domain-scoped
+// Intelligence is shown in the Hub. This panel keeps the cross-table discoveries
+// (null meanings, lifecycles, patterns) the explorer surfaces.
 
 // Human-readable elapsed for the time-to-first-insight KPI: "8s", "47s", "3m 12s".
 function fmtDuration(seconds: number): string {
@@ -204,7 +202,7 @@ interface Props {
   schema?: string;
 }
 
-type SectionKey = "nulls" | "lifecycles" | "distributions" | "insights" | "intelligence";
+type SectionKey = "nulls" | "lifecycles" | "insights";
 
 export function ExplorationPanel({ connectionId, initialSection, schema }: Props) {
   const [status, setStatus] = useState<ExplorationStatus | null>(null);
@@ -256,7 +254,6 @@ export function ExplorationPanel({ connectionId, initialSection, schema }: Props
   const nullCount = Object.values(findings.null_meanings).filter(
     n => n.meaning !== "not_applicable" && n.meaning !== "unknown"
   ).length;
-  const distCount = Object.keys(findings.distributions).length;
   const lifecycleCount = Object.keys(findings.lifecycle_maps).length;
 
   const sections: { key: SectionKey; label: string; badge?: string; badgeColor?: string }[] = [
@@ -271,24 +268,11 @@ export function ExplorationPanel({ connectionId, initialSection, schema }: Props
       badge: lifecycleCount > 0 ? String(lifecycleCount) : undefined,
     },
     {
-      key: "distributions",
-      label: "Distributions",
-      badge: distCount > 0 ? String(distCount) : undefined,
-    },
-    {
       key: "insights",
       label: "Patterns",
       badge: findings.insights.filter(i => !i.domain).length > 0
         ? String(findings.insights.filter(i => !i.domain).length)
         : undefined,
-    },
-    {
-      key: "intelligence" as SectionKey,
-      label: "Intelligence",
-      badge: findings.insights.filter(i => !!i.domain).length > 0
-        ? String(findings.insights.filter(i => !!i.domain).length)
-        : undefined,
-      badgeColor: "text-violet-400",
     },
   ];
 
@@ -330,14 +314,8 @@ export function ExplorationPanel({ connectionId, initialSection, schema }: Props
         {activeSection === "lifecycles" && (
           <LifecycleMapsSection maps={findings.lifecycle_maps} />
         )}
-        {activeSection === "distributions" && (
-          <SchemaShape connectionId={connectionId} schemaName={schema} />
-        )}
         {activeSection === "insights" && (
           <InsightsSection insights={findings.insights.filter(i => !i.domain)} />
-        )}
-        {activeSection === "intelligence" && (
-          <DomainIntelPanel connectionId={connectionId} isActive={activeSection === "intelligence"} />
         )}
       </div>
     </div>

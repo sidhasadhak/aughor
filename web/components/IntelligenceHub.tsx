@@ -15,6 +15,7 @@ import {
   type ActionTrigger,
 } from "@/lib/api";
 import { FindingActions, EvidenceDrawer } from "./BriefingPanel";
+import { ExplorationPanel } from "./ExplorationPanel";
 
 // Shared context for finding-level actions threaded Hub → DomainProfile → InsightRow.
 interface ActionsCtx {
@@ -344,7 +345,7 @@ function PatternsTab({
 
 // ── Domain profile ─────────────────────────────────────────────────────────────
 
-type ProfileTab = "overview" | "insights" | "org-intel" | "patterns";
+type ProfileTab = "findings" | "org-intel" | "patterns";
 
 function DomainProfile({
   domain,
@@ -367,26 +368,26 @@ function DomainProfile({
   onEvidence: (ins: ExplorationInsight, domain: string) => void;
   onTriggersHint: () => void;
 }) {
-  const [tab, setTab] = useState<ProfileTab>("overview");
+  const [tab, setTab] = useState<ProfileTab>("findings");
   const [search, setSearch] = useState("");
   const actionsCtx: ActionsCtx = { connectionId, canvasId, triggers, domain, onEvidence, onTriggersHint };
 
   const breakdown = noveltyBreakdown(data.insights);
   const pct = coveragePct(data);
   const domainOrg = orgInsights.filter(o => o.domain?.toLowerCase() === domain.toLowerCase());
+  // One list, ranked "top findings first" — novelty, then confidence as a tiebreak
+  // (the same ranking the Hub home uses for its headline findings).
   const sorted = useMemo(() =>
-    [...data.insights].sort((a, b) => b.novelty - a.novelty),
+    [...data.insights].sort((a, b) => (b.novelty - a.novelty) || ((b.confidence ?? 0) - (a.confidence ?? 0))),
     [data.insights]
   );
   const filtered = useMemo(() =>
     sorted.filter(i => !search || i.finding.toLowerCase().includes(search.toLowerCase()) || i.angle.toLowerCase().includes(search.toLowerCase())),
     [sorted, search]
   );
-  const topInsights = sorted.slice(0, 3);
 
   const TABS: { id: ProfileTab; label: string }[] = [
-    { id: "overview",  label: "Overview"  },
-    { id: "insights",  label: `Insights (${data.insights.length})` },
+    { id: "findings",  label: `Findings (${data.insights.length})` },
     { id: "patterns",  label: "Patterns" },
     { id: "org-intel", label: `Org Intel (${domainOrg.length})` },
   ];
@@ -461,113 +462,15 @@ function DomainProfile({
       {/* Tab body */}
       <div style={{ flex: 1, overflowY: "auto" }}>
 
-        {/* ── OVERVIEW ── */}
-        {tab === "overview" && (
-          <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 20 }}>
-
-            {/* Top insights */}
-            <div>
-              <SectionHead
-                title="Top Findings"
-                action={data.insights.length > 3 ? (
-                  <button onClick={() => setTab("insights")} style={{ fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}>
-                    All {data.insights.length} →
-                  </button>
-                ) : undefined}
-              />
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {topInsights.length === 0 ? (
-                  <p style={{ fontSize: 12, color: "var(--t3)" }}>No insights yet for this domain.</p>
-                ) : topInsights.map(ins => {
-                  const nov = noveltyLabel(ins.novelty);
-                  return (
-                    <button key={ins.id} onClick={() => setTab("insights")} style={{
-                      textAlign: "left", background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: 6,
-                      padding: "10px 14px", display: "flex", gap: 10, cursor: "pointer", transition: "all .1s",
-                    }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.background = "var(--bg-2)"; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-1)"; }}
-                    >
-                      <span style={{
-                        flexShrink: 0, marginTop: 2, fontSize: 10, fontWeight: 700,
-                        padding: "1px 6px", borderRadius: 3,
-                        background: `color-mix(in srgb, ${nov.color} 14%, transparent)`,
-                        color: nov.color,
-                      }}>{nov.label}</span>
-                      <p style={{ margin: 0, fontSize: 12, color: "var(--t2)", lineHeight: 1.55 }}>{ins.finding}</p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Angles covered */}
-            {data.angles_covered.length > 0 && (
-              <div>
-                <SectionHead title="Angles Covered" count={data.angles_covered.length} />
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {data.angles_covered.map(a => (
-                    <span key={a} style={{
-                      fontSize: 11, padding: "3px 9px", borderRadius: 4,
-                      background: "color-mix(in srgb, var(--blue3) 10%, transparent)",
-                      border: "1px solid color-mix(in srgb, var(--blue3) 25%, transparent)",
-                      color: "var(--blue4)",
-                    }}>{a}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Budget usage */}
-            <div>
-              <SectionHead title="Query Budget" />
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--t2)" }}>
-                  <span>{data.queries_used} queries used</span>
-                  <span>{data.budget_cap} cap</span>
-                </div>
-                <div style={{ height: 6, background: "var(--bg-3)", borderRadius: 3 }}>
-                  <div style={{
-                    width: `${pct}%`, height: "100%", borderRadius: 3,
-                    background: pct > 85 ? "var(--r3)" : pct > 60 ? "var(--amb3)" : "var(--grn3)",
-                    transition: "width .3s",
-                  }} />
-                </div>
-              </div>
-            </div>
-
-            {/* Org intel preview */}
-            {domainOrg.length > 0 && (
-              <div>
-                <SectionHead
-                  title="Org-Promoted Findings"
-                  action={<button onClick={() => setTab("org-intel")} style={{ fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}>View all →</button>}
-                />
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {domainOrg.slice(0, 2).map(o => (
-                    <div key={o.id} style={{
-                      background: "color-mix(in srgb, var(--vio3) 6%, var(--bg-1))",
-                      border: "1px solid color-mix(in srgb, var(--vio3) 18%, transparent)",
-                      borderRadius: 6, padding: "8px 12px",
-                    }}>
-                      <p style={{ margin: 0, fontSize: 11, color: "var(--t2)", lineHeight: 1.55 }}>{o.text}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── INSIGHTS ── */}
-        {tab === "insights" && (
+        {/* ── FINDINGS — Overview + Insights merged into one ranked list ── */}
+        {tab === "findings" && (
           <div style={{ display: "flex", flexDirection: "column" }}>
             {/* Search */}
             <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--b0)", flexShrink: 0 }}>
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search insights…"
+                placeholder="Search findings…"
                 style={{
                   width: "100%", background: "var(--bg-2)", border: "1px solid var(--b1)",
                   borderRadius: 5, padding: "5px 10px", fontSize: 12,
@@ -577,7 +480,7 @@ function DomainProfile({
             </div>
             {filtered.length === 0 ? (
               <div style={{ padding: "40px", textAlign: "center", color: "var(--t3)", fontSize: 12 }}>
-                {search ? "No insights match your search." : "No insights yet."}
+                {search ? "No findings match your search." : "No findings yet for this domain."}
               </div>
             ) : filtered.map(ins => <InsightRow key={ins.id} insight={ins} ctx={actionsCtx} />)}
           </div>
@@ -926,6 +829,9 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
   const [hubPatterns, setHubPatterns] = useState<Pattern[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  // "Data Profile" view — the explorer's cross-table discoveries (null meanings,
+  // lifecycles, patterns), relocated here from the retired Briefing › Domains tab.
+  const [dataProfile, setDataProfile] = useState(false);
   const [search, setSearch] = useState("");
   const [triggers, setTriggers] = useState<ActionTrigger[]>([]);
   const [evidenceInsight, setEvidenceInsight] = useState<ExplorationInsight | null>(null);
@@ -1012,23 +918,45 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
         {/* Domain list */}
         <div style={{ flex: 1, overflowY: "auto", padding: "6px" }}>
           {/* All domains entry */}
+          {(() => { const on = !selectedDomain && !dataProfile; return (
           <button
-            onClick={() => setSelectedDomain(null)}
+            onClick={() => { setSelectedDomain(null); setDataProfile(false); }}
             style={{
               width: "100%", textAlign: "left", padding: "7px 10px",
               borderRadius: 5, fontSize: 12, fontWeight: 500, cursor: "pointer",
-              background: !selectedDomain ? "var(--bg-sel)" : "transparent",
-              border: `1px solid ${!selectedDomain ? "var(--blue2)" : "transparent"}`,
-              color: !selectedDomain ? "var(--blue5)" : "var(--t2)",
+              background: on ? "var(--bg-sel)" : "transparent",
+              border: `1px solid ${on ? "var(--blue2)" : "transparent"}`,
+              color: on ? "var(--blue5)" : "var(--t2)",
               display: "flex", alignItems: "center", gap: 8, marginBottom: 2,
               transition: "all .1s",
             }}
-            onMouseEnter={e => { if (selectedDomain) e.currentTarget.style.background = "var(--bg-hover)"; }}
-            onMouseLeave={e => { if (selectedDomain) e.currentTarget.style.background = "transparent"; }}
+            onMouseEnter={e => { if (!on) e.currentTarget.style.background = "var(--bg-hover)"; }}
+            onMouseLeave={e => { if (!on) e.currentTarget.style.background = "transparent"; }}
           >
             <span style={{ fontSize: 11 }}>◈</span>
             <span>Hub Home</span>
             <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--t4)" }}>{Object.keys(domainData).length}</span>
+          </button>
+          ); })()}
+
+          {/* Data Profile — explorer discoveries (null meanings · lifecycles · patterns) */}
+          <button
+            onClick={() => { setDataProfile(true); setSelectedDomain(null); }}
+            title="Null meanings, lifecycle state machines, and cross-table patterns the explorer discovered"
+            style={{
+              width: "100%", textAlign: "left", padding: "7px 10px",
+              borderRadius: 5, fontSize: 12, fontWeight: dataProfile ? 600 : 500, cursor: "pointer",
+              background: dataProfile ? "var(--bg-sel)" : "transparent",
+              border: `1px solid ${dataProfile ? "var(--blue2)" : "transparent"}`,
+              color: dataProfile ? "var(--blue5)" : "var(--t2)",
+              display: "flex", alignItems: "center", gap: 8, marginBottom: 2,
+              transition: "all .1s",
+            }}
+            onMouseEnter={e => { if (!dataProfile) e.currentTarget.style.background = "var(--bg-hover)"; }}
+            onMouseLeave={e => { if (!dataProfile) e.currentTarget.style.background = "transparent"; }}
+          >
+            <span style={{ fontSize: 11 }}>⊞</span>
+            <span>Data Profile</span>
           </button>
 
           {loading ? (
@@ -1042,7 +970,7 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
             return (
               <button
                 key={domain}
-                onClick={() => setSelectedDomain(domain)}
+                onClick={() => { setSelectedDomain(domain); setDataProfile(false); }}
                 style={{
                   width: "100%", textAlign: "left", padding: "7px 10px",
                   borderRadius: 5, fontSize: 12, cursor: "pointer",
@@ -1086,6 +1014,8 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
             <div key={i} className="animate-pulse" style={{ height: 140, borderRadius: 8, background: "var(--bg-1)" }} />
           ))}
         </div>
+      ) : dataProfile ? (
+        <ExplorationPanel connectionId={connectionId} schema={schema} />
       ) : selectedDomain && domainData[selectedDomain] ? (
         <DomainProfile
           domain={selectedDomain}

@@ -3039,16 +3039,26 @@ export async function getGlossary(): Promise<Glossary> {
   return res.json();
 }
 
-export async function updateTableGlossary(table: string, description: string): Promise<void> {
+/** Partial table-level glossary patch. Every field the agent reads at query time:
+ *  description + grain + joins all flow into the schema context via apply_glossary(). */
+export async function updateTableGlossary(
+  table: string,
+  patch: { description?: string; grain?: string; joins?: string[] },
+): Promise<void> {
   const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}`, {
-    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description }),
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error("Failed to save table comment");
 }
 
-export async function updateColumnGlossary(table: string, column: string, description: string): Promise<void> {
+/** Partial column-level glossary patch (description + known values + caveats). */
+export async function updateColumnGlossary(
+  table: string,
+  column: string,
+  patch: { description?: string; values?: string; caveats?: string },
+): Promise<void> {
   const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}/${encodeURIComponent(column)}`, {
-    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description }),
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error("Failed to save column comment");
 }

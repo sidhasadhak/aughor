@@ -1238,35 +1238,12 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
   );
 }
 
-// ── Confidence ring ──────────────────────────────────────────────────────────────
-/** A compact circular confidence gauge for the verdict lede — replaces the dense
- *  stat tiles so the hero reads as "verdict + proof + how sure" at a glance. */
-function ConfidenceRing({ pct, color, size = 76 }: { pct: number; color: string; size?: number }) {
-  const stroke = 6;
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const off = circ * (1 - Math.max(0, Math.min(100, pct)) / 100);
-  return (
-    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }} title={`Lead confidence ${pct}%`}>
-      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--bg-4)" strokeWidth={stroke} />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
-          strokeDasharray={circ} strokeDashoffset={off} strokeLinecap="round"
-          style={{ transition: "stroke-dashoffset var(--dur-breath) var(--ease-out)" }} />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontSize: 19, fontWeight: 700, color, lineHeight: 1, fontVariantNumeric: "tabular-nums" as const }}>{pct}%</span>
-        <span style={{ fontSize: 8, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginTop: 3 }}>confidence</span>
-      </div>
-    </div>
-  );
-}
-
 // ── Verdict hero ────────────────────────────────────────────────────────────────
-/** Conclusion-first briefing lede: ONE bold verdict, a one-line proof, a confidence
- *  ring, and the primary action — up front. The scope/provenance ("synthesized from N
- *  domains…") is demoted to a quiet footer so the lede isn't cluttered with background
- *  process. Falls back to the deterministic top finding when no AI narrative exists. */
+/** Conclusion-first briefing lede: ONE bold verdict, a one-line proof, and the
+ *  primary action — up front. The scope/provenance ("synthesized from N domains…")
+ *  is demoted to a quiet footer so the lede isn't cluttered with background process.
+ *  Falls back to the deterministic top finding when no AI narrative exists.
+ *  Confidence % is deliberately NOT shown — it carried no call to action. */
 function VerdictHero({
   narrative, headline, domainCount, totalInsights, synthesizedAt,
   onInvestigate, controls, actions,
@@ -1285,8 +1262,6 @@ function VerdictHero({
   const title   = theme || finding || "Intelligence briefing";
   // When the AI theme is the headline, the top finding becomes the supporting lead.
   const lead    = theme ? finding : undefined;
-  const conf    = headline ? Math.round((headline.insight.confidence ?? 0) * 100) : 0;
-  const confColor = conf >= 80 ? "var(--grn4)" : conf >= 50 ? "var(--amb4)" : "var(--red4)";
 
   return (
     <div style={{
@@ -1310,7 +1285,7 @@ function VerdictHero({
           )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: conf > 0 ? "1fr auto" : "1fr", gap: 28, alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 28, alignItems: "center" }}>
           <div>
             {/* the ONE bold verdict */}
             <div style={{
@@ -1339,8 +1314,6 @@ function VerdictHero({
               </div>
             )}
           </div>
-
-          {conf > 0 && <ConfidenceRing pct={conf} color={confColor} />}
         </div>
 
         {/* quiet provenance — present for trust, but not the headline (click Investigate for the rest) */}
@@ -1356,8 +1329,9 @@ function VerdictHero({
 
 // ── Supporting signals ──────────────────────────────────────────────────────────
 /** A 3-up row of the strongest supporting findings under the verdict (v2 mockup's
- *  hypothesis-card row), each with a confidence meter. Driven by real briefing
- *  signals — every card is a live finding with its own confidence + novelty. */
+ *  hypothesis-card row). Driven by real briefing signals — every card is a live
+ *  finding tagged by novelty. Confidence % is intentionally omitted (no call to
+ *  action); novelty + the Investigate affordance carry the card. */
 function SupportingSignals({ signals, onInvestigate }: {
   signals:       SynthesisSignal[];
   onInvestigate: (q: string, insightId?: string) => void;
@@ -1369,8 +1343,6 @@ function SupportingSignals({ signals, onInvestigate }: {
       <div className="aug-label" style={{ marginBottom: 10 }}>Supporting signals</div>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${top.length}, 1fr)`, gap: 14 }}>
         {top.map(({ insight, domain }) => {
-          const conf      = Math.round((insight.confidence ?? 0) * 100);
-          const confColor = conf >= 80 ? "var(--grn4)" : conf >= 50 ? "var(--amb4)" : "var(--red4)";
           const nColor    = noveltyColor(insight.novelty);
           return (
             <div key={insightKey(insight)} style={{
@@ -1390,18 +1362,9 @@ function SupportingSignals({ signals, onInvestigate }: {
                 textWrap: "pretty" as const, display: "-webkit-box",
                 WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
               }}>{insight.finding}</div>
-              <div style={{ marginTop: "auto" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 5 }}>
-                  <span style={{ color: "var(--t3)" }}>Confidence</span>
-                  <span style={{ color: confColor, fontWeight: 600, fontVariantNumeric: "tabular-nums" as const }}>{conf}%</span>
-                </div>
-                <div style={{ height: 6, borderRadius: 999, background: "var(--bg-4)", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${conf}%`, background: confColor, borderRadius: 999, transition: "width var(--dur-breath) var(--ease-out)" }} />
-                </div>
-              </div>
               <button
                 onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-                style={{ alignSelf: "flex-start", fontSize: 11, color: "var(--blue4)", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                style={{ alignSelf: "flex-start", marginTop: "auto", fontSize: 11, color: "var(--blue4)", background: "none", border: "none", padding: 0, cursor: "pointer" }}
               >Investigate →</button>
             </div>
           );
