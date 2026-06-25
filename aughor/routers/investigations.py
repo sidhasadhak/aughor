@@ -1358,6 +1358,26 @@ async def _stream_chat(
             except Exception as _e:
                 logger.debug("chat ratio-of-sums guard is best-effort; skipped: %s", _e)
 
+        # R1 (mode cross-pollination) — VALIDATE-THEN-EXECUTE. Explorer/Deep dry-run their SQL
+        # before the real execute; Insight used to execute-then-repair, so a hallucinated column
+        # reached the result path as a raw binder error before any repair ran. Dry-run here and
+        # repair binder/parse errors BEFORE the user-facing execute — the deterministic
+        # candidate-binding substitution in SqlWriter.fix (G7) fixes the column class instantly,
+        # with no failed first attempt visible to the user. Fail-open: any hiccup falls through to
+        # the existing execute + post-execute repair, so behaviour only ever improves.
+        if final_sql:
+            try:
+                _pf_ok, _pf_err = await asyncio.to_thread(db.dry_run, final_sql)
+                if not _pf_ok and _pf_err:
+                    _pf_writer = SqlWriter(db, schema_str=schema)
+                    _pf = await asyncio.to_thread(
+                        lambda: _pf_writer.fix(final_sql, _pf_err, max_retries=2)
+                    )
+                    if _pf.ok and _pf.sql and _pf.sql != final_sql:
+                        final_sql = _pf.sql
+            except Exception as _e:
+                logger.debug("chat pre-flight validation is best-effort; skipped: %s", _e)
+
         yield _sse("sql", {"sql": final_sql})
         result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
