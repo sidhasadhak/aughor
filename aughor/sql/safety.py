@@ -18,6 +18,16 @@ from __future__ import annotations
 from typing import Optional
 
 
+def _bump(counter: str) -> None:
+    """Observability receipt — record that a safeguard fired (which one, how often), so we can
+    confirm the shared pipeline is actually doing work across modes (not silently no-op)."""
+    try:
+        from aughor.stats import stats
+        stats.inc(counter)
+    except Exception:
+        pass
+
+
 def preflight_repair(conn, sql: str, schema: Optional[str] = None, *, max_retries: int = 2) -> tuple[str, dict]:
     """Validate ``sql`` against ``conn`` BEFORE the user-facing execute and return
     ``(possibly-repaired sql, receipt)``.
@@ -47,6 +57,7 @@ def preflight_repair(conn, sql: str, schema: Optional[str] = None, *, max_retrie
                 if _ri and _ri.strip() != out.strip() and conn.dry_run(_ri)[0]:
                     out = _ri
                     receipt["identifiers_repaired"] = True
+                    _bump("sql_safety.identifiers_repaired")
             except Exception:
                 pass
 
@@ -70,6 +81,7 @@ def preflight_repair(conn, sql: str, schema: Optional[str] = None, *, max_retrie
                 receipt["fixed"] = True
                 receipt["dry_run_ok"] = True
                 receipt["error_class"] = getattr(fixed, "error_class", "") or ""
+                _bump(f"sql_safety.preflight_fixed.{receipt['error_class'] or 'unknown'}")
         except Exception:
             pass
     except Exception:
