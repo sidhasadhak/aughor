@@ -129,20 +129,27 @@ without a caveat.* (F2/F3/G1 are the Deep-side instances; Insight needs the same
 
 ---
 
-## 6. Prioritised recommendations
+## 6. Prioritised recommendations — ALL SHIPPED (2026-06-25, this branch)
 
-| # | Move | Direction | Risk | Leverage |
-|---|---|---|---|---|
-| **R1** | Pre-flight `dry_run` + repair in Insight (validate-then-execute) | Deep→Insight | Low | High — kills the raw-error class at the source |
-| **R2** | Extract the shared SQL-safety pipeline (R1 generalised) | Platform | Med | Highest — one chain, three callers |
-| **R3** | Trusted-queries + grounded assembly into ADA phases | Insight→Deep | Med | High — correctness + less re-derivation |
-| **R4** | Shared data-understanding context object (metric+grain+date-range+domains+trusted) | Platform | Med | High — prevents the G2-class blindness |
-| **R5** | Measure-grain prevention in the ADA phase planner | Insight→Deep | Low | Medium |
-| **R6** | Receipt/provenance on ADA findings; Verifier verdict surfaced in Insight | Both | Low | Medium |
+| # | Move | Direction | Status |
+|---|---|---|---|
+| **R1** | Pre-flight `dry_run` + repair in Insight (validate-then-execute) | Deep→Insight | ✅ Shipped — folded into R2 |
+| **R2** | Shared SQL-safety pipeline (`aughor/sql/safety.py: preflight_repair`) | Platform | ✅ Shipped — wired into Insight + ADA |
+| **R3** | Trusted-query reuse in ADA phases | Insight→Deep | ✅ Shipped — dormant until a connection's library populates |
+| **R4** | Shared data-understanding builder (`aughor/semantic/data_understanding.py`) | Platform | ✅ Shipped — both modes consume it |
+| **R5** | Measure-grain prevention in the ADA phase planner | Insight→Deep | ✅ Shipped |
+| **R6** | Verifier chasm battery in Insight + safety-pipeline observability receipts | Both | ✅ Shipped (user-facing per-finding badge deferred) |
 
-**Starting point (this branch): R1** — pre-flight validation in Insight. It's low-risk, continues
-the Insight-hardening arc, directly closes the "raw error reaches the user" class, and is the first
-concrete step toward the shared pipeline (R2).
+**Implementation notes:**
+- The shared SQL-safety pipeline is `preflight_repair(conn, sql, schema) -> (sql, receipt)`. Both
+  Insight (before the user-facing execute) and ADA (`_execute_safe`, before each phase execute) call it.
+- The shared grounding is `build_data_understanding(conn, …).grounding_block()` (grain + trusted,
+  extensible to metric/date-range). The ADA phase planner and Insight's chat grain block both use it.
+- R3's trusted-query reuse is wired but **dormant** until a connection accumulates trusted queries —
+  the mechanism is unit-verified; real-data leverage activates as the library fills.
+- Remaining future work: migrate Insight's *remaining* piecemeal grounding (metric, value-domain,
+  trusted-block surfacing) onto the shared builder; add user-facing per-finding provenance badges; add
+  date-range/coverage to the shared builder for the Insight path.
 
 ---
 
