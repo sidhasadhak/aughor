@@ -583,6 +583,17 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
         except Exception:
             pass
 
+    # R2 (mode cross-pollination) — pre-flight the planned query through the SHARED safety pipeline
+    # (identifier repair -> dry-run -> deterministic candidate substitution -> typed LLM fix) so a
+    # binder error (e.g. a hallucinated column DuckDB can name the fix for) is repaired BEFORE this
+    # execute rather than only by the post-execute retry below. Fail-open.
+    if schema:
+        try:
+            from aughor.sql.safety import preflight_repair
+            sql, _ = preflight_repair(conn, sql, schema)
+        except Exception:
+            pass
+
     result = conn.execute(phase_id, sql)
 
     # Determine whether to retry: hard error OR suspicious zero-row result
