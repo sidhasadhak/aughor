@@ -315,14 +315,24 @@ PRIOR CONTEXT: {prior_summary}
 QUERY RESULTS:
 {results_text}
 
-For each dimension analysed, interpret the contribution analysis:
+BASELINE GUARD (read FIRST): contribution / abs_change is a real "driver of the change" ONLY when
+the prior-period comparison values are present. If the comparison column (comp_*, *_prior, yoy_*) is
+NULL / empty / 0 for the rows, there is NO measured change — abs_change has collapsed to the current
+LEVEL, and any "contribution_pct" is a share of the current total, NOT of a decline. In that case you
+MUST NOT name a "primary driver", MUST NOT raise a "severity alert", and MUST NOT claim "X% of the
+decline came from" any value. Say plainly that segment-level attribution is impossible without a
+baseline, and report only the current-period levels. Do this even if a contribution_pct column exists.
+
+For each dimension analysed (ONLY when a real baseline is present), interpret the contribution analysis:
   - Which dimension value(s) account for > 30% of the total change? (primary drivers)
   - Is the decline concentrated (1–2 values driving 60%+ of change) or diffuse (uniform across all)?
   - Any dimension where one value has > 50% relative decline, even if small absolute? (severity alert)
 
 Write dimension-by-dimension findings with specific numbers; bold the decisive number in each with **double asterisks**.
 Highlight the SINGLE most actionable finding across all dimensions.
-phase_summary: "**X%** of the total decline came from [dimension: value]" — bold the share; if concentration exists.
+phase_summary: when a baseline exists and concentration exists, "**X%** of the total decline came from
+[dimension: value]" (bold the share); when the baseline is missing, state that no prior-period data is
+available so the late-period change cannot be attributed to any segment.
 """
 
 # ── Cross-sectional weakness scan (non-temporal diagnostic) ───────────────────

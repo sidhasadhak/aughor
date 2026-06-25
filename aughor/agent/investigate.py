@@ -1038,6 +1038,67 @@ def _xsec_max_seeking(question: str) -> bool:
 
 _RATIO_METRIC_COL_RE = re.compile(r"metric_total|metric_value|\bratio\b|pct|percent|\brate\b", re.I)
 
+# Columns that carry the PRIOR-PERIOD baseline a temporal change is measured against, and the
+# columns that express the CHANGE / its attribution. When the baseline is entirely empty the latter
+# are meaningless (a "change" with nothing to change from) — see _neutralize_baseless_contribution.
+_COMP_COL_RE = re.compile(r"(^|_)comp(_|$)|comparison|baseline|prior[_-]|[_-]prior|prev[_-]|[_-]prev|\byoy\b", re.I)
+_CONTRIB_COL_RE = re.compile(r"contribut|abs[_-]?change|absolute[_-]?change|(^|_)delta(_|$)|[_-]change(_|$)", re.I)
+
+
+def _neutralize_baseless_contribution(finding: dict) -> None:
+    """G1 — a temporal dimensional finding computes abs_change / contribution_pct against a
+    prior-period baseline. When that baseline is ENTIRELY missing (the comp column is all-NULL),
+    abs_change collapses to the current-period LEVEL and contribution_pct becomes a fabricated
+    "share of the decline" — the "fragrance_women = 57.8% of the decline / severity alert" class,
+    which directly contradicts a top-level "100% unexplained" attribution. Detect the empty baseline
+    and strip the change/contribution columns (chart + key numbers), drop the significance flag, and
+    caveat the finding, so neither the chart nor synthesis can name a driver of a change never measured.
+    No-op when a real baseline is present."""
+    cols = finding.get("columns") or []
+    rows = finding.get("rows") or []
+    if not cols or not rows:
+        return
+
+    def _is_null(v) -> bool:
+        if v is None:
+            return True
+        if isinstance(v, float):
+            return v != v  # NaN
+        if isinstance(v, str):
+            return v.strip().upper() in ("", "NULL", "NONE", "NAN")
+        return False
+
+    comp_idxs = [i for i, c in enumerate(cols) if i != 0 and _COMP_COL_RE.search(str(c))]
+    if not comp_idxs:
+        return
+    baseline_missing = all(
+        all(_is_null(r[i]) for r in rows if i < len(r))
+        for i in comp_idxs
+    )
+    if not baseline_missing:
+        return
+
+    # Drop the change/contribution columns AND the now-empty comp columns from the rendered view,
+    # keeping the dimension (col 0) + the honest current-period level columns.
+    drop = {i for i, c in enumerate(cols)
+            if i != 0 and (_CONTRIB_COL_RE.search(str(c)) or _COMP_COL_RE.search(str(c)))}
+    keep = [i for i in range(len(cols)) if i not in drop]
+    if len(keep) >= 2:
+        finding["columns"] = [cols[i] for i in keep]
+        finding["rows"] = [[row[i] for i in keep if i < len(row)] for row in rows]
+
+    # Neutralize the contribution/severity key numbers and the significance flag.
+    finding["key_numbers"] = [
+        kn for kn in (finding.get("key_numbers") or [])
+        if not _CONTRIB_COL_RE.search((kn.get("label", "") or "") + " " + (kn.get("value", "") or ""))
+        and "decline" not in (kn.get("label", "") or "").lower()
+    ]
+    finding["is_significant"] = False
+    finding["trust_caveat"] = finding.get("trust_caveat") or (
+        "No prior-period baseline (comparison data is empty), so change-contribution cannot be "
+        "computed — the figures shown are current-period levels, not drivers of any change."
+    )
+
 
 def _suppress_fanned_ratio(findings: list, metric_label: str, eff_caveat: str) -> str:
     """Fix B — when a RATIO metric fans out (a join multiplies its rows), the value is CORRUPTED,
@@ -2563,6 +2624,9 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     if interpretation and interpretation.findings:
         findings = _assemble_phase_findings(results, interpretation.findings, "dim")
+        # G1 — strip fabricated change-attribution from any finding whose prior-period baseline is empty.
+        for f in findings:
+            _neutralize_baseless_contribution(f)
         summary = interpretation.phase_summary
         passes_to_next = interpretation.passes_to_next
     else:
