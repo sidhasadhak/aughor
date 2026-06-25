@@ -981,9 +981,11 @@ async def _stream_chat(
         except Exception:
             metrics_section = ""
         # Measure-additivity PREVENTION: tell the generator each measure's grain (per-unit
-        # → SUM(x*quantity); per-line → SUM(x)). No-op safe; data-detected + cached.
-        from aughor.semantic.measure_grain import measure_grains_block as _grains_block
-        _gb = _grains_block(connection_id, db, schema_text=schema)
+        # → SUM(x*quantity); per-line → SUM(x)). No-op safe; data-detected + cached. R4 — via the
+        # SHARED data-understanding builder, the same module the ADA phase planner now grounds on,
+        # so the two modes can never silently carry a different grain understanding.
+        from aughor.semantic.data_understanding import build_data_understanding as _build_du
+        _gb = _build_du(db, connection_id=connection_id, schema=schema).grain_block
         if _gb:
             metrics_section += _gb + "\n\n"
         # Metric-feasibility: if the question needs a metric this connection can't support

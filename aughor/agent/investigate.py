@@ -2093,33 +2093,21 @@ def run_analysis_phase(
     fan-out) are then skipped, since re-planning would defeat the reuse."""
     from aughor.agent.prompts_investigate import PhasePlan, PhaseInterpretation
 
-    # R5 (mode cross-pollination) — measure-grain PREVENTION. Insight injects each measure's grain
-    # (per-unit vs per-line vs per-order) into the generator so it never SUMs across the wrong grain;
-    # ADA only caught grain misuse post-hoc via the Verifier. Compute the grain block once (cached
-    # per connection) and append it to the planner's system prompt so the phase SQL is grain-correct
-    # by construction. No-op safe (returns "" on any trouble).
+    # R4 (mode cross-pollination) — ground the phase planner with the SHARED data-understanding bundle
+    # (R5 measure-grain PREVENTION + R3 trusted-query reuse), built once behind one module so the
+    # assembly never drifts across modes. Grain prevents SUM-at-wrong-grain by construction; trusted
+    # patterns let the planner reuse known-correct join/aggregation shapes instead of re-deriving them
+    # (and re-risking the fan-outs the library already solved). No-op safe — an empty bundle leaves the
+    # planner prompt unchanged.
     plan_system_eff = plan_system
     if schema:
         try:
-            from aughor.semantic.measure_grain import measure_grains_block
-            _cid = getattr(conn, "connection_id", "") or getattr(conn, "_connection_id", "") or ""
-            _gb = measure_grains_block(_cid, conn, schema_text=schema)
-            if _gb:
-                plan_system_eff = f"{plan_system}\n\n{_gb}"
-        except Exception:
-            pass
-
-    # R3 (mode cross-pollination) — reuse KNOWN-GOOD queries. Insight retrieves trusted queries and
-    # feeds their structure to the generator; ADA re-derived every phase query from scratch, re-risking
-    # fan-outs the library already solved. Inject the trusted-query block into the planner. No-op until
-    # the connection's trusted library has matches; fail-open.
-    _tcid = connection_id or getattr(conn, "connection_id", "") or getattr(conn, "_connection_id", "") or ""
-    if question and _tcid:
-        try:
-            from aughor.semantic.trusted_queries import retrieve_trusted, build_trusted_block
-            _tb = build_trusted_block(retrieve_trusted(question, _tcid))
-            if _tb:
-                plan_system_eff = f"{plan_system_eff}\n\n{_tb}"
+            from aughor.semantic.data_understanding import build_data_understanding
+            _block = build_data_understanding(
+                conn, connection_id=connection_id, schema=schema, question=question
+            ).grounding_block()
+            if _block:
+                plan_system_eff = f"{plan_system}\n\n{_block}"
         except Exception:
             pass
 
