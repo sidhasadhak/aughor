@@ -1,19 +1,45 @@
 <div align="center">
-  <img src="web/public/aughor-logo.jpeg" width="120" alt="Aughor" />
+  <img src="web/public/aughor-logo.jpeg" width="110" alt="Aughor" />
   <h1>Aughor</h1>
-  <p><strong>Autonomous Intelligence Platform</strong></p>
+  <p><strong>The autonomous intelligence platform for your data warehouse.</strong></p>
   <p><em>Your warehouse, always thinking.</em></p>
+
+  <p>
+    <img src="https://img.shields.io/badge/license-MIT-black" alt="License: MIT" />
+    <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status: alpha" />
+    <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+" />
+    <img src="https://img.shields.io/badge/runs-fully%20local-success" alt="Runs fully local" />
+  </p>
+
+  <p>
+    <a href="#quick-start"><strong>Quick start</strong></a> ·
+    <a href="#whats-inside"><strong>What's inside</strong></a> ·
+    <a href="ROADMAP.md"><strong>Roadmap</strong></a> ·
+    <a href="FEATURES.md"><strong>Features</strong></a>
+  </p>
+
+  <img src="design-mockups/01-intelligence-overview.svg" width="820" alt="Aughor intelligence overview" />
 </div>
 
 ---
 
-Aughor connects to your database and never stops learning from it. It builds a living map of your business — entities, relationships, metrics, lifecycles — explores the data on its own, and answers hard analytical questions in plain English with **evidence, citations, and statistical confidence**.
+Aughor connects to your database and **never stops learning from it**. It builds a living map of your business — entities, relationships, metrics, lifecycles — explores the data on its own, and answers hard analytical questions in plain English with **evidence, citations, and statistical confidence**.
 
 No dashboards to maintain. No SQL to write. No analyst backlog.
 
+> **The thesis:** most AI data tools are query wrappers — you ask, they translate. Aughor explores *continuously in the background*, forms a business ontology, surfaces domain insights, and is engineered so the numbers it reports are **trustworthy, not just plausible**.
+
 ## Why Aughor
 
-Most AI data tools are query wrappers — you ask, they translate. Aughor explores **continuously in the background**, forms a business ontology, surfaces domain insights, and is engineered so the numbers it reports are **trustworthy, not just plausible**.
+- 🔭 **It explores on its own.** The moment you connect, it starts learning your business — no prompts — and keeps a living frontier of what it's already covered.
+- 🧠 **It builds an ontology, not a dashboard.** Entities, relationships, governed metrics, and lifecycles, inferred from real data and human-editable.
+- 🏭 **It adapts to your industry.** An airline gets load-factor and on-time-performance; a DTC retailer gets AOV and repeat-rate — not one generic lens.
+- 🛡 **It refuses to be confidently wrong.** Deterministic, engine-driven trust guards keep fabricated numbers out of every answer.
+- 🕰 **It discovers *when* matters.** You never tell it the date range; it anchors the window to the data's own activity.
+- 🔌 **It runs fully local.** Your warehouse, your models (Ollama / local / private endpoint) — nothing has to leave your machine.
+
+<details>
+<summary><strong>How it compares</strong></summary>
 
 | | SQL Copilots | BI Tools | **Aughor** |
 |---|---|---|---|
@@ -26,93 +52,24 @@ Most AI data tools are query wrappers — you ask, they translate. Aughor explor
 | Discovers *when matters* (adaptive time window) | ❌ | ❌ | ✅ |
 | Runs fully local | ⚠️ Some | ❌ | ✅ |
 
-## Major capabilities
+</details>
 
-### 🔭 Autonomous background exploration
-The moment you connect, Aughor starts exploring — no prompts — through structured phases: **null-meaning resolution** (event-not-yet vs data gap), **join verification**, **lifecycle mapping** (state machines per entity), **distribution profiling** (catalog stats, no full scans), **cross-table patterns**, a per-domain **domain-intelligence** curiosity loop, and a closing **synthesis** pass. Everything is visible and cancellable in the Activity log. **Generation is grounded in your real schema by construction:** rather than writing SQL free-form — and hallucinating columns the post-hoc guards then have to discard — the explorer **chooses** measures and dimensions from the connection's *actual* columns and **compiles** grain-safe SQL, so a non-existent column can't be emitted (this took Phase-8 from ~190k tokens per kept finding to several findings per run on a 13-table warehouse, and runs now complete instead of exhausting their budget). And it **builds on what it already knows**: a **cut-level frontier** tracks coverage at the measure×dimension level so it never re-asks a covered cut; a **cross-finding synthesis** pass composes pairs of existing findings into emergent insights neither states alone — *"the top 20 SKUs account for 8.13% of all out-of-stock days"* — each one **proven by a confirming query**, not narrated; the org **playbook** steers what to look for next; and a surprising finding **drills itself** for the cause. An opt-in **manifest-driven mode** (`explorer.manifest_driven`, Settings → System) makes that loop *deterministic*: a data-derived **coverage manifest** — the business KPIs first, then every material measure × dimension × time-grain — drives the questions, so the loop spends ~1 LLM call per finding (interpretation only) instead of generating SQL by trial-and-error. The generated SQL is bound by the same trust guards (a naïve proposal is *skipped*, never wrong), and a **coverage tracker** lets each run advance the frontier instead of re-deriving — **~17× fewer tokens per finding, grounded, KPI-led, and it completes within budget instead of getting cancelled** (measured live; off by default pending broad validation).
-
-### 🗂 Per-schema intelligence — true multi-schema isolation
-The unit of intelligence is **(connection, schema)**, not the connection. A workspace that folds several schemas (e.g. `ecommerce` + a 13-table `missimi` + `bakehouse` + `netflix`) gets a **separate, fully-isolated run per schema** — its own ontology, business profile, findings, and KPIs — instead of one run where the largest schema starves the rest to zero coverage. Each schema is scoped at the connection so it can only see *and only execute against* its own tables (a cross-schema leak guard drops any finding whose SQL escapes the schema, since the underlying engine can still resolve another schema's tables). The Briefing's **schema selector** shows exactly the selected schema's intelligence; **"All schemas"** merges every per-schema run into one aggregate view — and the runs fan out concurrently under a bounded semaphore.
-
-### 🧠 Auto-built business ontology
-A queryable ontology built from your data, not docs you write: **entities** (mapped to tables, with grain + domain), **relationships** (inferred cardinality + join paths), **metrics** (formulas with governance: owner, SLA, quality tests, lineage), **lifecycle states** (terminal vs active, false-positive-guarded), and deterministic **actions**. Rendered as an interactive canvas that refreshes automatically. The ontology is also **human-editable and version-controlled** — overrides apply with override-wins semantics over the inferred graph, survive re-builds, and round-trip through a version-controllable file tree, with self-improving recommendations surfaced on the board.
-
-### 🏭 Industry-aware intelligence
-Aughor detects what **kind of business** the data represents and adapts what it measures. A `BusinessProfile` — industry, business model, and 6–8 **north-star metrics** grounded to your real columns — is inferred per connection, then resolved against a **per-industry metric knowledge base** (retail, airline, SaaS, logistics, food-delivery, manufacturing: ~50 formula + grain + anti-pattern recipes). So an airline gets load-factor / on-time-performance / fleet-utilization and a DTC retailer gets AOV / contribution-margin / repeat-rate — not one generic lens. Each metric carries **build-time audited SQL** (a scalar value, a trend/breakdown chart, and the answer to each key question), validated through the same fan-out/grain/range guards and recipe-grounded-regenerated if a draft is wrong — so the Briefing computes the right number, reproducibly, every run.
-
-### 🌍 Org & workspace settings — identity + localization, override-wins
-What Aughor *infers* about your business is a default, not a verdict. App-wide **organization settings** and per-**workspace** overrides (hybrid scope, **override-wins** over the inferred `BusinessProfile`) let you pin identity (company, website, HQ, industry) and localization — **reporting currency, date format, timezone, fiscal-year start, chart palette**. These flow everywhere: the briefing prose and KPIs render in the business's own currency (a workspace override beating the app default), tables / pivots / chart axes reformat reactively, fiscal-year start shifts quarter/year buckets in compiled time-series, the timezone applies to time-of-day labels, and the selected industry steers the explorer's metric KB.
-
-### 🕰 Adaptive Temporal Scope — the USP
-*We don't ask you when — we discover when matters.* Aughor anchors the analytical window to the data itself, in four tiers:
-- **Tier 0** — recency on the trailing edge of *activity* (measure-bearing facts), so a calendar/date-dimension running to 2100 can't drag the window past the last real fact.
-- **Tier 1** — narrows to the *current regime* via changepoint detection on the activity-density series.
-- **Tier 2** — a cheap full-span macro rollup juxtaposed with the regime window ("up 4× over 8 yrs, now flat").
-- **Tier 3** — a cost governor (approximate aggregates + sampling-with-scaling + incremental watermark) for TB-scale warehouses.
-
-### 💬 Grounded NL2SQL + Semantic Compiler
-Aughor doesn't hand the raw schema to an LLM and hope. Every question runs a grounding pipeline — **schema-linking**, a MindsDB-style **Data Catalog**, **FK / star-schema join grounding** (prefixed/fused/surrogate keys, fact→dimension routing), **trusted query templates** (data-team-verified, injected authoritatively, marked **Verified**), the **metrics catalog**, and **dialect-aware self-correcting retry**. For the safest intent shapes a **Semantic Compiler** assembles SQL *deterministically* from the verified ontology (typed Intent IR → `synthesize_sql`), bypassing the model entirely.
-
-### 🧱 Query Builder — visual + SQL, one trust-native surface
-A drag-to-build query surface that auto-resolves **multi-hop joins** along the studied schema and reconciles catalog/rich-schema names so it works on schema-qualified connections. It's a real **workflow loop**, not a dead-end: **saved queries** persist the full visual spec (table, joins, dimensions, measures, filters, time, HAVING) and reload the *builder*, not just the SQL. First-class **time range + grain** controls (relative presets + custom → `WHERE`; grain → `DATE_TRUNC` + `GROUP BY`), **HAVING** on aggregates, a **distinct-value filter picker** (values inserted as valid SQL literals), and **CSV export**. The SQL pane is a real editor — syntax highlighting + a tokenizer-aware **Format** that never touches strings/identifiers. Laid out as an **Explore** surface — the chart is the hero (taller by default), with a collapsible **DATA / CUSTOMIZE** control panel and Dimensions + Metrics side by side. One **Display** dropdown drives everything: Auto plus the chart type the data supports (line / area / bar / combo / pie / heatmap / treemap / scatter / stacked), a raw **Table**, and a client-side **Pivot** cross-tab (rows × columns × value × aggregate). **Customize** actually applies across every chart shape — color scheme, number format, legend, axis titles, non-overlapping data labels, a nice Y-axis headroom margin, and hour/minute grain the axis honours. And the loop runs both ways: **Open in Query Builder** on any Insight or Deep Analysis result carries its generated SQL — grain, aggregation, HAVING — straight in, ready to re-chart, pivot, and export. The differentiator: the **measure-additivity grain layer surfaces on the metric chips** — sum a per-unit price without `× quantity` and the chip warns with a one-click fix (the same guard that turns a $252M under-count into the correct $503M). Results pin to a **Canvas** for AI investigation.
-
-### 🔬 Deep Analysis — evidence-based answers
-For "why did revenue drop 8%?" Aughor runs a LangGraph investigative loop: **decompose → plan & execute → score evidence → synthesise**, producing a ranked-hypothesis brief. Resumable mid-run. Vague, time-less questions ("where are we losing money?") trigger a **cross-sectional weakness scan** instead of a forced temporal frame, and **driver questions** ("do late deliveries lower review scores?") compare the metric **across the implied condition** rather than a blind weekly trend — so a relationship that holds in *every* period is no longer invisible. Synthesis is grounded: it **never manufactures a percentage** it didn't compute. Every claim lands in the **Evidence Ledger** (confidence, source SQL, freshness, validate/dispute feedback). And when you drill into an *existing* finding to understand it, you get its **Finding Dossier** — the derivation the explorer already produced (question, SQL, grounded cells, structural facts) served instantly as a **read, not a second analysis**; "Investigate deeper" escalates to a fresh ADA run **seeded** with that dossier, and **Re-validate** re-runs the finding's query against current data to confirm it still holds.
-
-### 🛡 Trust guards — numbers you can act on
-The layer that separates Aughor from a plausible-sounding demo. Deterministic, engine-driven guards keep wrong numbers out of the intelligence:
-- **Numeral grounding** — every magnitude-bearing figure in a finding is verified against the actual result cells (catches the "2.49M" for a 2.49 cell, the `$3T` product-of-aggregates).
-- **Measure-additivity (grain) awareness** — detects from the data whether a measure is *per-unit* (a unit price → `SUM(price × quantity)`) or *per-line* (an already-totalled margin → `SUM(margin)`), so a SUM aggregates at the right grain. Catches the ~50% revenue under-count *and* the margin double-count that come from treating the two the same.
-- **Fan-out / symmetric-aggregate guard** — chasm `COUNT(*)` / `AVG` / **`SUM`** drops, integer-division-of-aggregates, and the **grain-mismatch-CTE** case the chasm guards miss (two pre-aggregated CTEs joined on only the coarser one's grain — the bug behind a fabricated −149% margin). A chasm is also **deterministically de-fanned** when it can be safely rewritten — including **`AVG` decomposed** into per-satellite `SUM(x)+COUNT(x)` divided as a ratio-of-sums (the only correct un-fanned mean), and the **ratio-across-a-dimension-join** (two fact tables joined on the categorical dimension they're grouped by with a cross-table ratio of sums — the revenue÷spend drill-down the FK-root chasm guards can't see, which otherwise fans to near-zero) pre-aggregated to the dimension grain per side then divided — rather than merely dropped. Plus **id/key-arithmetic** (`SUM(unit_price × order_item_id)` — a measure multiplied by a nominal id, which fabricates a magnitude), **dataset isolation** (no cross-dataset hallucinated joins), **timestamp typing** (a date-named integer can't pose as a date), **dead-reference memory** (stops re-proposing hallucinated columns), shared **repair-diagnosis branches**.
-- **Declared-range degenerate gate** — a finding's metric is matched to its profile-declared range, so a bounded conversion at 1.41 (or pinned at 100% across every segment) is dropped while an *unbounded* ROAS at 2.3 is kept; the page never shows an impossible rate as a confident result.
-- **Pre-emission verification gate** — every candidate finding is *untrusted until verified*: a deterministic battery at the single emission chokepoint catches **self-referential ratios** (`SUM(x)/SUM(x)` ≡ 100%), **CTE-hidden fan-out** (the ROAS-by-channel bug that the outer-scope guards miss), **part > whole** impossibilities ("category GMV > total GMV"), **scale-robust boundary saturation** (a rate pinned at its ceiling even when the SQL emits the other scale), and **claim-grounding** (figures the narration asserts must trace to the result rows). It also enforces **metric-name ↔ SQL coherence**: a finding whose query computes one metric but whose prose asserts another (an AOV query narrated as "ROAS") is **relabelled to what the SQL computes when the number is grounded** (the real signal is kept, not dropped) and rejected otherwise, and a finding naming a *registered* metric whose SQL drifts from its governed formula is caught even with no revealing alias — the metric vocabulary comes from the per-industry KB + the org registry, no hardcoded list. Validated by replay over real generated findings: it drops the genuine artifacts and keeps every sound insight, including a correct weighted-attribution metric a naïve fan-out guard would wrongly kill.
-- **Operating-band + vacuous-CASE gates** — beyond bounded rates, an **operating-band KB** catches an impossible *open-ended* magnitude the declared-range gate can't (an inventory turnover of 96,295× from a grain-broken `SUM/AVG`), and a **vacuous-CASE guard** rejects a categorization that collapses entirely into its `ELSE` default (hardcoded labels matching no rows, while a real category column is ignored). Both run at the emission chokepoint, so they protect every surface — the brief, the insight cards, and ADA / deep analysis.
-- **Three-tier de-duplication** — structural (same grain + measures), token-semantic (same claim, different SQL), and **embedding/paraphrase** (cosine similarity over the finding text) so the same insight doesn't surface three times under three domains.
-- **Metric unification** — one canonical, governance-approved formula per metric, resolved through a **single grounding source the `/chat` and Deep-Analysis paths both consume** (so a metric computes identically across surfaces, not two different "revenue"s), schema-filtered — *including* ontology-overlay-injected metrics — so a metric authored for one connection can never leak its (column-mismatched) formula into another's prompt. A declared `additivity` can override the SQL inference, and the prompt tags a non-additive metric so the generator never shares-of-total a ratio.
-- **Filter value-domain repair** — a misspelled enum literal (`status = 'cancelled'` when the data holds `'canceled'`) runs clean but matches zero rows — or, with `!=` / `NOT IN`, *excludes* zero rows ("you have no cancellations" over 15,737). The column's real domain is probed and the near-miss is repaired, on every SQL path (chat + Deep).
-- **Narration-inversion guard** — drops/caveats a claim that over-generalises a per-group value into a universal one ("3 orders × 1 item" narrated as "all orders have 3 items").
-- **Angle-feasibility + intent-preservation** — won't ask a time-based question of a dateless table, and drops/flags a repair that silently changed the question's meaning.
-- **Snapshot-pinned, reproducible receipts** — a finding can be pinned to the *data version* it ran against (a portable per-table fingerprint, or an exact DuckLake snapshot id), so re-validate tells a *moved dataset* apart from a *mis-derived finding* — and on a version-aware store it **proves** the verdict by reproducing the query `AT` the pinned snapshot. Every answer becomes reproducible-*as-of*, not merely re-runnable. (Opt-in; the foundation for the lakehouse direction in [`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md).)
-- **Graceful by contract** — bad inputs, dead dependencies, and crashes surface an error or recover; never a 500, a hang, or a silent-wrong success (locked by a failure-path + fault-injection + crash-recovery test suite).
-
-### 📡 Intelligence surfaces + actionability
-One corpus at three altitudes — **Briefing → Hub → Domains** — plus the **Evidence** layer. The Briefing is **conclusion-first and impact-ranked**: it leads with the **biggest business move** (magnitude-of-change × north-star × confidence, risk-tilted so a margin/AOV/retention *decline* edges out an equal-size gain — "lead with the fire"), not the newest finding. A **Verdict Hero** carries the synthesized answer, proof-stat tiles (domains · findings · confidence) and the primary action, backed by a 3-up **supporting-signals** row, the live **industry KPI strip**, **top-3 key-metric explainer charts** (each metric drawn as the trend or breakdown that explains it), and the full synthesis prose with inline citations below. The brief is also **interrogable**, not just readable — one model, **Explain / Drill / Ask**: **pull the thread** on any finding or citation and an investigation streams *in place* (seeded with that finding's own query); **click any number** to re-run its query live and see the exact cell that grounds it; **click a chart bar** to decompose that slice or filter to it; re-window the trend charts with a **time-lens**; or **ask the briefing** anything in an anchored box. Signals the trust gate **suppressed or demoted** surface in a **held-back audit strip** (with the reason), and every figure renders in the **business's own currency** (€ not $). Findings are actionable: **Monitor**, **Promote to Org**, **Share** (Slack/webhook/Jira), and scheduled **Brief delivery**. From the Activity log, a successful **Run fix** is *saved* as a finding (through the same guards), and **Fix all** repairs the errored set visible under your current filter — never starting a fresh crawl. Because a brief that headlines a fabricated number is worse than no brief, the intelligence behind it is **gated on the governed metric layer and re-validated against live data before it can headline**: the explorer and ADA bind to each connection's audited `north_star_metrics` formula instead of free-forming one, a feasibility gate refuses to fabricate a metric the data can't support (no cost column → no margin), implausible magnitudes (a 96,295× turnover) are suppressed, and the top findings are re-run live before each brief — anything that no longer reproduces is dropped.
-
-### 🔌 Connectors & federation
-DuckDB · PostgreSQL · BigQuery · Snowflake · MySQL · local upload (CSV/Parquet/Excel) · S3 · Google Sheets · Stripe / HubSpot / Salesforce · Confluence / Notion. Connections are **pooled** and credentials **Fernet-encrypted at rest**; a virtual **federation** layer joins across sources.
-
-### 🧩 Inference Plane — bring-your-own-model, governed
-LLM access is a **vended resource** like storage and compute. A binding (backend · model · endpoint · key) resolves **Org → Workspace → Agent** and is handed to call sites as a scoped **capability** carrying a declared profile — `cache_mode`, `tooling`, `structured_output`, `token_accounting`, `max_context`, `privacy_class`, `cost` — so nothing branches on provider identity. Bring a **local model, a public API** (Anthropic / OpenAI / …), **Ollama Cloud, or a private endpoint**, and **Settings → Inference** shows each role's capability (and warns when a bound model is `public_api` — i.e. prompts leave your machine). A **prefix-cache probe** *measures* whether a backend actually reuses its KV-cache across requests and feeds the verdict back to the capability (no guessing — it found Ollama Cloud does not), and ADA's intake context auto-sizes to the bound model's window with a warn-only overflow guard. Doc: [`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md) §5b.
-
-### 📊 Eval suite — measured on real, unseen schemas
-NL2SQL quality validated against ground truth, not vibes: TPC-H (5/7), TPC-DS (4/5), ClickBench (10/10), a 53-question golden set, and a **reference-free** real-DB harness (executes-clean + self-consistency + cross-model LLM-as-judge). Generated SQL runs through the *full* pipeline, so the number reflects the product. Model-agnostic via `AUGHOR_CODER_MODEL`.
-
-### 🔗 MCP server — Aughor in your AI client
-Aughor's governed intelligence is exposed as **[Model Context Protocol](https://modelcontextprotocol.io) tools**, so any MCP client — **Claude Desktop, Claude Code, Cursor** — can ask Aughor and get a **verified answer with a Trust Receipt**, not raw SQL: `ask` (NL → grounded answer + receipt), `deep_analysis`, `get_metric` (governed value), `list_findings`, `get_briefing`, `explore`, and the agent-fleet `jobs` tools — deliberately **no raw `query`**. MotherDuck makes the client smart; Aughor makes the *tool* smart. `python -m aughor.mcp` (stdio) — see [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
-
-## Stack
-
-| Layer | Technology |
-|---|---|
-| Backend | Python 3.11+, FastAPI, LangGraph |
-| Frontend | Next.js 16 (App Router, Turbopack), TypeScript, Tailwind |
-| Analytics | DuckDB, PostgreSQL |
-| LLM runtime | Ollama / Groq / Together / Anthropic (configurable) |
-| Statistics · SQL | scipy, statsmodels, numpy · SQLGlot |
-| Vector · Observability | Qdrant + ChromaDB · Langfuse, OpenTelemetry |
-| State · Packaging | SQLite (history, registry, evidence, audit) · uv |
+---
 
 ## Quick start
 
 ```bash
 git clone https://github.com/sidhasadhak/aughor.git && cd aughor
-uv sync                          # Python deps
-cd web && npm install && cd ..   # frontend deps
-cp .env.example .env             # set your LLM backend + model names
-./start.sh                       # → http://localhost:3000
+uv sync                          # 1. Python deps
+cd web && npm install && cd ..   # 2. frontend deps
+cp .env.example .env             # 3. set your LLM backend + model names
+./start.sh                       # 4. → http://localhost:3000
 ```
 
-Minimal local `.env` (Ollama):
+Then click **+ Add** in the sidebar → paste a DuckDB path or PostgreSQL DSN → Aughor starts exploring immediately.
+
+<details>
+<summary><strong>Minimal local <code>.env</code> (Ollama)</strong></summary>
 
 ```env
 AUGHOR_BACKEND=ollama
@@ -122,7 +79,123 @@ EMBEDDER_BASE_URL=http://localhost:11434/v1
 EMBEDDER_MODEL=nomic-embed-text
 ```
 
-Then click **+ Add** in the sidebar → paste a DuckDB path or PostgreSQL DSN → Aughor starts exploring immediately.
+> **Tip — models are pluggable per role.** SQL generation (`coder`), report synthesis (`narrator`), and the per-phase interpret sub-tier (`fast`) each resolve independently, so you can run a fast structured model for SQL and a stronger model for prose. Set them in `.env`, in `data/llm_config.json` (`models: {coder, narrator, fast}`), or per-agent. Backends: Ollama (local + cloud), Groq, Together, Anthropic, or any private endpoint.
+
+</details>
+
+---
+
+## What's inside
+
+> Fifteen capabilities, one corpus of intelligence. Expand any section for how it works and the trade-offs behind it.
+
+<details>
+<summary>🔭 <strong>Autonomous background exploration</strong> — it learns your business with no prompts</summary>
+
+The moment you connect, Aughor starts exploring through structured phases: **null-meaning resolution** (event-not-yet vs data gap), **join verification**, **lifecycle mapping** (state machines per entity), **distribution profiling** (catalog stats, no full scans), **cross-table patterns**, a per-domain **domain-intelligence** curiosity loop, and a closing **synthesis** pass — all visible and cancellable in the Activity log.
+
+**Generation is grounded in your real schema by construction:** the explorer *chooses* measures and dimensions from the connection's *actual* columns and *compiles* grain-safe SQL, so a non-existent column can't be emitted (this took Phase-8 from ~190k tokens per kept finding to several findings per run on a 13-table warehouse). It **builds on what it knows**: a **cut-level frontier** never re-asks a covered measure×dimension cut; a **cross-finding synthesis** pass composes existing findings into emergent insights — *"the top 20 SKUs account for 8.13% of all out-of-stock days"* — each **proven by a confirming query**, not narrated; the org **playbook** steers what to look for next; a surprising finding **drills itself**. An opt-in **manifest-driven mode** (`explorer.manifest_driven`) makes the loop deterministic and KPI-led — **~17× fewer tokens per finding**, completing within budget.
+
+</details>
+
+<details>
+<summary>🗂 <strong>Per-schema intelligence</strong> — true multi-schema isolation</summary>
+
+The unit of intelligence is **(connection, schema)**, not the connection. A workspace folding several schemas gets a **separate, fully-isolated run per schema** — its own ontology, profile, findings, and KPIs — instead of one run where the largest schema starves the rest. Each schema is scoped so it can only *see and execute against* its own tables (a cross-schema leak guard drops any finding whose SQL escapes the schema). The Briefing's **schema selector** shows one schema's intelligence; **"All schemas"** merges every per-schema run; runs fan out concurrently under a bounded semaphore.
+
+</details>
+
+<details>
+<summary>🧠 <strong>Auto-built business ontology</strong> — queryable, human-editable, version-controlled</summary>
+
+An ontology built from your data, not docs you write: **entities** (table + grain + domain), **relationships** (inferred cardinality + join paths), **metrics** (formulas with owner, SLA, quality tests, lineage), **lifecycle states** (terminal vs active, false-positive-guarded), and deterministic **actions** — rendered as an interactive canvas that refreshes automatically. It's **human-editable and version-controlled**: overrides apply with override-wins semantics, survive re-builds, and round-trip through a version-controllable file tree, with self-improving recommendations on the board.
+
+</details>
+
+<details>
+<summary>🏭 <strong>Industry-aware intelligence</strong> — the right metrics for your business</summary>
+
+Aughor detects what **kind of business** the data represents and adapts what it measures. A `BusinessProfile` — industry, model, and 6–8 **north-star metrics** grounded to real columns — is inferred per connection, then resolved against a **per-industry metric knowledge base** (retail, airline, SaaS, logistics, food-delivery, manufacturing: ~50 formula + grain + anti-pattern recipes). Each metric carries **build-time audited SQL** (scalar, trend/breakdown chart, and each key-question answer), validated through the fan-out/grain/range guards and recipe-grounded-regenerated if a draft is wrong.
+
+</details>
+
+<details>
+<summary>🌍 <strong>Org & workspace settings</strong> — identity + localization, override-wins</summary>
+
+What Aughor *infers* about your business is a default, not a verdict. App-wide **organization settings** and per-**workspace** overrides (hybrid scope, **override-wins** over the inferred `BusinessProfile`) let you pin identity (company, website, HQ, industry) and localization — **reporting currency, date format, timezone, fiscal-year start, chart palette**. These flow everywhere: briefing prose and KPIs render in the business's own currency, tables/pivots/chart axes reformat reactively, fiscal-year start shifts quarter/year buckets, the timezone applies to time-of-day labels, and the selected industry steers the explorer's metric KB.
+
+</details>
+
+<details>
+<summary>🕰 <strong>Adaptive Temporal Scope</strong> — the USP: we discover <em>when</em> matters</summary>
+
+*We don't ask you when — we discover when matters.* Aughor anchors the analytical window to the data itself, in four tiers:
+- **Tier 0** — recency on the trailing edge of *activity* (measure-bearing facts), so a date dimension running to 2100 can't drag the window past the last real fact.
+- **Tier 1** — narrows to the *current regime* via changepoint detection on the activity-density series.
+- **Tier 2** — a cheap full-span macro rollup juxtaposed with the regime window ("up 4× over 8 yrs, now flat").
+- **Tier 3** — a cost governor (approximate aggregates + sampling-with-scaling + incremental watermark) for TB-scale warehouses.
+
+</details>
+
+<details>
+<summary>💬 <strong>Grounded NL2SQL + Semantic Compiler</strong> — not raw-schema-and-hope</summary>
+
+Every question runs a grounding pipeline — **schema-linking**, a MindsDB-style **Data Catalog**, **FK / star-schema join grounding**, **trusted query templates** (data-team-verified, injected authoritatively, marked **Verified**), the **metrics catalog**, and **dialect-aware self-correcting retry**. For the safest intent shapes a **Semantic Compiler** assembles SQL *deterministically* from the verified ontology (typed Intent IR → `synthesize_sql`), bypassing the model entirely.
+
+</details>
+
+<details>
+<summary>🔬 <strong>Deep Analysis</strong> — evidence-based answers to "why did X change?"</summary>
+
+A LangGraph investigative loop — **intake → baseline → decompose → dimensional → synthesise** — producing a ranked-hypothesis brief, resumable mid-run. **"What drove the *change*"** questions run a real **period-over-period decomposition anchored to the data's most-recent window** (it picks the latest full period vs the prior one from the actual date range, not an arbitrary year), surfacing temporal signals a static scan would miss. Vague, time-less questions ("where are we losing money?") trigger a **cross-sectional weakness scan**; **driver questions** compare the metric **across the implied condition**. Synthesis is grounded — it **never manufactures a percentage** it didn't compute, **never attributes a change to a segment when the baseline is missing**, and **bounds the synthesis call with a deterministic fallback** so a slow model can't cost you the analysis that ran. Every claim lands in the **Evidence Ledger**; drilling an existing finding serves its **Finding Dossier** ($0 read), and **Re-validate** re-runs the query against live data.
+
+</details>
+
+<details>
+<summary>🛡 <strong>Trust guards</strong> — numbers you can act on</summary>
+
+The layer that separates Aughor from a plausible-sounding demo. Deterministic, engine-driven guards keep wrong numbers out:
+- **Numeral grounding** — every magnitude is verified against the actual result cells.
+- **Measure-additivity (grain) awareness** — per-unit vs per-line, so a SUM aggregates at the right grain (catches the ~50% under-count *and* the margin double-count). **Prevented at generation time** in every mode, not just caught after.
+- **Fan-out / chasm guard** — `SUM`/`AVG`/`COUNT(*)`-over-chasm, integer-division-of-aggregates, grain-mismatch-CTE, **id/key-arithmetic** (`SUM(price × order_item_id)` — *repaired*, not just flagged), dataset isolation, timestamp typing, dead-reference memory.
+- **Pre-emission verification gate** — self-referential ratios, CTE-hidden fan-out, part > whole, boundary saturation, claim-grounding, and metric-name ↔ SQL coherence — every candidate is *untrusted until verified*.
+- **Operating-band, vacuous-CASE, declared-range, filter-domain, narration-inversion** gates, **three-tier de-duplication**, **metric unification** (one governed formula, one shared grounding source for Insight + Deep), and **snapshot-pinned reproducible receipts**.
+- **One shared SQL-safety pipeline** — identifier repair → dry-run → deterministic candidate-binding substitution → typed fix — that **Insight, Deep, and Explorer all call**, so a hallucinated column is repaired *before* it ever reaches a result.
+- **Graceful by contract** — never a 500, a hang, or a silent-wrong success (locked by a failure-path + fault-injection + crash-recovery suite).
+
+</details>
+
+<details>
+<summary>📡 <strong>Intelligence surfaces + actionability</strong> — Briefing → Hub → Domains</summary>
+
+One corpus at three altitudes plus the **Evidence** layer. The Briefing is **conclusion-first and impact-ranked** — it leads with the **biggest business move** (magnitude × north-star × confidence, risk-tilted so a decline edges out an equal gain), not the newest finding. A **Verdict Hero** carries the answer, proof-stat tiles, and the primary action; a supporting-signals row, live **industry KPI strip**, top-3 explainer charts, and cited synthesis follow. It's **interrogable** — Explain / Drill / Ask, click any number to re-run its query, click a bar to decompose. Suppressed/demoted findings surface in a **held-back audit strip** (with the reason), every figure renders in the **business's own currency**, and findings are actionable: **Monitor · Promote to Org · Share (Slack/webhook/Jira) · scheduled delivery**. The brief is **gated on the governed metric layer and re-validated against live data before it can headline**.
+
+</details>
+
+<details>
+<summary>🧱 <strong>Query Builder · 🔌 Connectors · 🧩 Inference Plane · 📊 Evals · 🔗 MCP server</strong></summary>
+
+- **🧱 Query Builder** — a drag-to-build surface that auto-resolves multi-hop joins, with saved queries (full visual spec), time-range + grain controls, HAVING, a distinct-value filter picker, CSV export, a tokenizer-aware Format, and a Display dropdown driving line/bar/combo/pie/heatmap/treemap/scatter/table/pivot. **Open in Query Builder** carries any Insight or Deep Analysis result's SQL straight in, ready to re-chart and pivot.
+- **🔌 Connectors & federation** — DuckDB · PostgreSQL · BigQuery · Snowflake · MySQL · local upload (CSV/Parquet/Excel) · S3 · Google Sheets · Stripe / HubSpot / Salesforce · Confluence / Notion. Pooled, Fernet-encrypted at rest, with a virtual federation layer.
+- **🧩 Inference Plane** — LLM access is a **vended resource**. A binding (backend · model · endpoint · key) resolves Org → Workspace → Agent as a scoped capability (`cache_mode`, `privacy_class`, `max_context`, …), so nothing branches on provider identity. Bring a local model, a public API, Ollama Cloud, or a private endpoint.
+- **📊 Eval suite** — NL2SQL validated against ground truth: TPC-H (5/7), TPC-DS (4/5), ClickBench (10/10), a 53-question golden set, and a reference-free real-DB harness. The generated SQL runs the *full* pipeline, so the number reflects the product.
+- **🔗 MCP server** — Aughor's governed intelligence as [Model Context Protocol](https://modelcontextprotocol.io) tools, so Claude Desktop / Claude Code / Cursor get a **verified answer with a Trust Receipt**, not raw SQL. `python -m aughor.mcp`.
+
+</details>
+
+---
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Python 3.11+, FastAPI, LangGraph |
+| Frontend | Next.js 16 (App Router, Turbopack), TypeScript, Tailwind |
+| Analytics | DuckDB, PostgreSQL |
+| LLM runtime | Ollama / Groq / Together / Anthropic (configurable per role) |
+| Statistics · SQL | scipy, statsmodels, numpy · SQLGlot |
+| Vector · Observability | Qdrant + ChromaDB · Langfuse, OpenTelemetry |
+| State · Packaging | SQLite (history, registry, evidence, audit) · uv |
 
 ## Project structure
 
@@ -131,19 +204,18 @@ aughor/
 ├── aughor/
 │   ├── agent/        # LangGraph investigative loop + ADA phase prompts
 │   ├── connectors/   # DuckDB, Postgres, Snowflake, BigQuery, Stripe, Salesforce, …
-│   ├── db/           # DatabaseConnection, registry, schema/mat cache
 │   ├── evidence/     # Evidence ledger — claims, confidence, feedback
 │   ├── explorer/     # Background exploration agent, grounding, fix-persist, cost/watermark
 │   ├── knowledge/    # Doc indexer, Confluence/Notion sync, briefing, org intelligence
 │   ├── ontology/     # Ontology builder, enricher, validator, store
 │   ├── routers/      # FastAPI domain routers (async, SSE)
 │   ├── security/     # Safety checker, PII scanner, audit log, query budget
-│   ├── semantic/     # Glossary, metrics, compiler, canonical resolver, measure-grain, KB
-│   ├── sql/          # SqlWriter, cost governor, fan-out + grain guards
+│   ├── semantic/     # Glossary, metrics, compiler, canonical resolver, measure-grain, data-understanding
+│   ├── sql/          # SqlWriter, shared safety pipeline, cost governor, fan-out + grain guards
 │   └── tools/        # schema-linker, data catalog, profiler, stats
 ├── evals/            # run_tpch / run_tpcds / run_clickbench / run_golden / run_realdb
 ├── web/              # Next.js App Router — components, lib (api.ts), design tokens
-├── docs/             # Adaptive-temporal-scope, intelligence-unification, rebuild/audit
+├── docs/             # architecture, adaptive-temporal-scope, mode cross-pollination, audits
 └── tests/            # pytest suite (1,500+ unit + integration; failure-path / fault-injection / chaos)
 ```
 
@@ -151,7 +223,17 @@ aughor/
 
 - **[ROADMAP.md](ROADMAP.md)** — prioritized backlog, shipped milestones, what's next.
 - **[FEATURES.md](FEATURES.md)** — a living reference of every major feature (160+ and counting), how it works, and the files behind it.
-- **[docs/PLATFORM_ARCHITECTURE.md](docs/PLATFORM_ARCHITECTURE.md)** — the platform direction: org-tenancy, the catalog & storage model (Unity-Catalog-aligned), and the control-plane / data-plane split for multi-tenant SaaS.
+- **[docs/MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md](docs/MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md)** — how the Insight / Deep / Explorer modes share one SQL-safety pipeline and one data-understanding context.
+- **[docs/PLATFORM_ARCHITECTURE.md](docs/PLATFORM_ARCHITECTURE.md)** — org-tenancy, the catalog & storage model (Unity-Catalog-aligned), and the control-plane / data-plane split.
+
+## Contributing
+
+Aughor is in active alpha. Issues, ideas, and PRs are welcome.
+
+1. Fork and branch off `main`.
+2. `uv sync && cd web && npm install` — then `./start.sh`.
+3. Run the suite: `uv run pytest` (backend) and `npx tsc --noEmit` in `web/` (frontend).
+4. Keep changes **build → wire → test → leverage on the real path** — every guard ships with a test that proves it fires, and no change should raise the test-ratchet baseline.
 
 ## License
 
