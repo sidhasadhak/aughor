@@ -2079,6 +2079,8 @@ def run_analysis_phase(
     exec_status: str = "error",
     exec_skipped_reason: str = "No results.",
     preplanned=None,
+    question: str = "",
+    connection_id: str = "",
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
@@ -2091,6 +2093,36 @@ def run_analysis_phase(
     fan-out) are then skipped, since re-planning would defeat the reuse."""
     from aughor.agent.prompts_investigate import PhasePlan, PhaseInterpretation
 
+    # R5 (mode cross-pollination) — measure-grain PREVENTION. Insight injects each measure's grain
+    # (per-unit vs per-line vs per-order) into the generator so it never SUMs across the wrong grain;
+    # ADA only caught grain misuse post-hoc via the Verifier. Compute the grain block once (cached
+    # per connection) and append it to the planner's system prompt so the phase SQL is grain-correct
+    # by construction. No-op safe (returns "" on any trouble).
+    plan_system_eff = plan_system
+    if schema:
+        try:
+            from aughor.semantic.measure_grain import measure_grains_block
+            _cid = getattr(conn, "connection_id", "") or getattr(conn, "_connection_id", "") or ""
+            _gb = measure_grains_block(_cid, conn, schema_text=schema)
+            if _gb:
+                plan_system_eff = f"{plan_system}\n\n{_gb}"
+        except Exception:
+            pass
+
+    # R3 (mode cross-pollination) — reuse KNOWN-GOOD queries. Insight retrieves trusted queries and
+    # feeds their structure to the generator; ADA re-derived every phase query from scratch, re-risking
+    # fan-outs the library already solved. Inject the trusted-query block into the planner. No-op until
+    # the connection's trusted library has matches; fail-open.
+    _tcid = connection_id or getattr(conn, "connection_id", "") or getattr(conn, "_connection_id", "") or ""
+    if question and _tcid:
+        try:
+            from aughor.semantic.trusted_queries import retrieve_trusted, build_trusted_block
+            _tb = build_trusted_block(retrieve_trusted(question, _tcid))
+            if _tb:
+                plan_system_eff = f"{plan_system_eff}\n\n{_tb}"
+        except Exception:
+            pass
+
     # Step 1 — plan (or reuse a preplanned, grain-correct query).
     _preplanned = bool(preplanned is not None and getattr(preplanned, "queries", None))
     if _preplanned:
@@ -2098,7 +2130,7 @@ def run_analysis_phase(
     else:
         try:
             plan: PhasePlan = _provider("coder").complete(
-                system=plan_system, user=plan_user, response_model=PhasePlan)
+                system=plan_system_eff, user=plan_user, response_model=PhasePlan)
         except Exception as e:
             return _PhaseRun(ok=False, error_phase=_phase_result(
                 phase_id, title, emoji, "error", plan_error_msg, [_skipped_finding(phase_id, str(e))]))
@@ -2112,7 +2144,7 @@ def run_analysis_phase(
         from aughor.stats import stats as _s; _s.inc("temporal_guard_retries")
         try:
             _fixed = _provider("coder").complete(
-                system=plan_system,
+                system=plan_system_eff,
                 user=plan_user + (
                     "\n\nCORRECTION REQUIRED: a previous attempt used CURRENT_DATE / NOW() / "
                     "DATE_SUB / DATE_ADD / relative date arithmetic. That is FORBIDDEN — the data "
@@ -2193,7 +2225,7 @@ def run_analysis_phase(
             from aughor.stats import stats as _s; _s.inc("ada.fanout_guard_retries")
             try:
                 _fixed = _provider("coder").complete(
-                    system=plan_system,
+                    system=plan_system_eff,
                     user=plan_user + (
                         "\n\nCORRECTION REQUIRED — FAN-OUT DETECTED: a previous attempt aggregated a "
                         "metric across a join that MULTIPLIES its home table's rows, inflating the "
@@ -2326,6 +2358,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
             z_threshold=2.0, pct_threshold=10),
         plan_error_msg="Could not plan baseline queries.",
         exec_error_msg="All baseline queries failed to execute.",
+        question=question, connection_id=state.get("connection_id", ""),
         exec_skipped_reason="No queries produced results.",
     )
     if not _run.ok:
@@ -2568,6 +2601,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
             question=question, baseline_summary=baseline_summary, results_text=results_text),
         plan_error_msg="Could not plan decomposition queries.",
         exec_error_msg="Decomposition queries failed.",
+        question=question, connection_id=state.get("connection_id", ""),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -2672,6 +2706,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
             question=question, prior_summary=prior_summary, results_text=results_text),
         plan_error_msg="Could not plan dimensional queries.",
         exec_error_msg="Dimensional queries failed.",
+        question=question, connection_id=state.get("connection_id", ""),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -2780,6 +2815,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         plan_error_msg="Could not plan behavioral queries.",
         exec_status="skipped",
         exec_error_msg="Behavioral/operational tables not available in this schema.",
+        question=question, connection_id=state.get("connection_id", ""),
         exec_skipped_reason="Required tables (sessions, refunds, etc.) not in schema.",
     )
     if not _run.ok:
@@ -2937,6 +2973,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
             question=question, metric_label=metric_label, results_text=results_text)),
         plan_error_msg="Cross-sectional planning failed.",
         exec_error_msg="Cross-sectional queries failed.",
+        question=question, connection_id=state.get("connection_id", ""),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
