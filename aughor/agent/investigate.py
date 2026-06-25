@@ -1358,7 +1358,22 @@ def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
         from aughor.db.connection import open_connection_for
         db = open_connection_for(conn_id)
         col = str(date_column).split(".")[-1].replace('"', "").replace(";", "")
-        ref = str(table).replace('"', "").replace(";", "")
+        # The date column frequently lives in a DIFFERENT table than the metric table — the metric
+        # is in order_items but order_purchase_ts is in orders, reachable only via a join. Probing
+        # the metric table then errors ("column not found"), the bounds come back empty, and the
+        # window clamp/re-anchor silently no-ops — which is exactly how an investigation ends up
+        # observing the OLDEST year (2022) and comparing to a non-existent prior year (2021) when the
+        # data actually runs to 2025. When date_column is qualified, probe the table it names.
+        _dc = str(date_column).replace('"', "").replace(";", "").strip()
+        _dparts = [p for p in _dc.split(".") if p]
+        if len(_dparts) >= 3:
+            ref = ".".join(_dparts[:-1])                       # schema.table.col → schema.table
+        elif len(_dparts) == 2:
+            _sch = str(table).replace('"', "").split(".")
+            ref = f"{_sch[0]}.{_dparts[0]}" if len(_sch) >= 2 else _dparts[0]   # borrow metric schema
+        else:
+            ref = str(table).replace('"', "").replace(";", "")
+        ref = ref.replace(";", "")
         res = db.execute("intake_span", f"SELECT MIN({col}), MAX({col}) FROM {ref}")
         if res.error or not res.rows or len(res.rows[0]) < 2:
             return None, None
@@ -1559,6 +1574,26 @@ _TEMPORAL_CHANGE_RE = re.compile(
 def _is_temporal_change_question(q: str) -> bool:
     """Does the question ask what changed over time (a period-over-period premise)?"""
     return bool(_TEMPORAL_CHANGE_RE.search(q or ""))
+
+
+def _scrub_xsec_reasoning(notes: str) -> str:
+    """After F1 forces the TEMPORAL route, the intake LLM's own prose may still argue the opposite
+    ("cross_sectional=true … compare ACROSS dimensions, not over time"). Displaying that verbatim
+    makes the spec contradict the analysis that actually ran. Drop the sentences that assert the
+    cross-sectional conclusion; the authoritative routing line we prepend says what we actually did.
+    Conservative — only removes clauses that name the cross-sectional decision."""
+    if not notes:
+        return notes
+    out = notes
+    for pat in (
+        r"[^.]*\bcross[_\s-]?sectional\s*=?\s*true[^.]*\.",
+        r"[^.]*\bset\s+cross[_\s-]?sectional[^.]*\.",
+        r"[^.]*\bRevised:\s*cross[_\s-]?sectional[^.]*\.",
+        r"[^.]*\btreat\s+(?:this\s+)?as\s+cross[_\s-]?sectional[^.]*\.",
+        r"[^.]*compare[^.]*\bacross\b[^.]*\bdimensions?\b[^.]*\.",
+    ):
+        out = re.sub(pat, "", out, flags=re.I)
+    return re.sub(r"\s{2,}", " ", out).strip()
 
 
 _AGG_RE = r"(?:SUM|AVG|COUNT|MIN|MAX|MEDIAN|STDDEV|VARIANCE)"
@@ -1776,6 +1811,15 @@ def ada_intake(state: AgentState) -> dict:
         # time axis we keep the cross-sectional fallback, and ada_synthesize reframes honestly (F2).
         if _is_temporal_change_question(question) and not no_time:
             intake.cross_sectional = False
+            # G3 — make the displayed spec self-consistent with the route we forced: lead with an
+            # authoritative routing statement and strip the LLM's now-contradicted cross-sectional
+            # conclusion, so the intake doesn't argue "compare across dimensions" above a temporal run.
+            intake.intake_notes = (
+                "ROUTING: this is a temporal-change question (\"what drove the change\") — running a "
+                "period-over-period analysis of the most recent period vs the prior period. An initial "
+                "cross-sectional lean was overridden because the data has a usable time axis. "
+                + _scrub_xsec_reasoning(intake.intake_notes or "")
+            ).strip()
 
     # Post-process: ensure all table references are fully-qualified when the schema uses them
     if intake is not None:
