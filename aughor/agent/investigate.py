@@ -583,6 +583,17 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
         except Exception:
             pass
 
+    # R2 (mode cross-pollination) — pre-flight the planned query through the SHARED safety pipeline
+    # (identifier repair -> dry-run -> deterministic candidate substitution -> typed LLM fix) so a
+    # binder error (e.g. a hallucinated column DuckDB can name the fix for) is repaired BEFORE this
+    # execute rather than only by the post-execute retry below. Fail-open.
+    if schema:
+        try:
+            from aughor.sql.safety import preflight_repair
+            sql, _ = preflight_repair(conn, sql, schema)
+        except Exception:
+            pass
+
     result = conn.execute(phase_id, sql)
 
     # Determine whether to retry: hard error OR suspicious zero-row result
@@ -615,7 +626,19 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
         tolerate(_exc, "ada filter-guard probe best-effort; query proceeds",
                  counter="filter_guard.ada_probe")
 
-    if result.error or _zero_diag or _domain_warnings or _filter_warnings:
+    # Id-arithmetic guard: SUM(measure * key_id) multiplies a measure by a surrogate key/id — a
+    # meaningless inflation (the "SUM(unit_price * order_item_id)" the dimensional planner wrote). It
+    # executes without error and returns rows, so the error/zero/domain triggers miss it; ADA only
+    # caveated it. Detect it and feed the SAME repair loop, with the specific diagnosis — parity with
+    # Insight, which repairs id-arithmetic rather than just flagging it.
+    _idmath_warn = ""
+    try:
+        from aughor.sql.fanout import measure_times_key_arithmetic
+        _idmath_warn = measure_times_key_arithmetic(sql, dialect=getattr(conn, "dialect", "duckdb")) or ""
+    except Exception:
+        _idmath_warn = ""
+
+    if result.error or _zero_diag or _domain_warnings or _filter_warnings or _idmath_warn:
         class _Fix(BaseModel):
             fixed_sql: str
             explanation: str
@@ -644,6 +667,11 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
             if _filter_warnings:
                 _fw_text = "\n".join(w.to_prompt_text() for w in _filter_warnings)
                 _diag = (f"{_diag}\n{_fw_text}" if _diag else f"DIAGNOSIS: {_fw_text}").strip() + "\n"
+            if _idmath_warn:
+                _diag = (f"{_diag}\n{_idmath_warn}" if _diag else f"DIAGNOSIS: {_idmath_warn}").strip() + (
+                    "\nRemove the multiplication by the id/key column — a measure is never multiplied "
+                    "by a row identifier. Aggregate the measure itself (e.g. SUM(unit_price), or "
+                    "SUM(unit_price * quantity) only if a real quantity column is intended).\n")
 
             # Synthesise a fake "error" message so FIX_SQL_PROMPT has something
             # useful in the ERROR MESSAGE field when there was no hard error.
@@ -653,6 +681,8 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
                 fix_error = "A join is on value-disjoint columns (see DIAGNOSIS) — the result is unreliable."
             elif _filter_warnings:
                 fix_error = "A filter literal is absent from the column's value domain (see DIAGNOSIS) — the result silently includes/excludes the wrong rows."
+            elif _idmath_warn:
+                fix_error = "A measure is multiplied by an id/key column (see DIAGNOSIS) — the aggregate is meaninglessly inflated."
             else:
                 fix_error = "Query returned 0 rows — the SQL logic is likely wrong (see DIAGNOSIS)."
 
@@ -687,6 +717,13 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
                 try:
                     from aughor.sql.join_guard import check_filter_value_domains as _cfvd
                     _accept = not _cfvd(conn, fix.fixed_sql)
+                except Exception:
+                    _accept = False
+            # Never accept a "fix" that still multiplies the measure by a key/id column.
+            if _accept and _idmath_warn:
+                try:
+                    from aughor.sql.fanout import measure_times_key_arithmetic as _mtka
+                    _accept = not _mtka(fix.fixed_sql, dialect=getattr(conn, "dialect", "duckdb"))
                 except Exception:
                     _accept = False
             if _accept:
@@ -2068,6 +2105,8 @@ def run_analysis_phase(
     exec_status: str = "error",
     exec_skipped_reason: str = "No results.",
     preplanned=None,
+    question: str = "",
+    connection_id: str = "",
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
@@ -2080,6 +2119,24 @@ def run_analysis_phase(
     fan-out) are then skipped, since re-planning would defeat the reuse."""
     from aughor.agent.prompts_investigate import PhasePlan, PhaseInterpretation
 
+    # R4 (mode cross-pollination) — ground the phase planner with the SHARED data-understanding bundle
+    # (R5 measure-grain PREVENTION + R3 trusted-query reuse), built once behind one module so the
+    # assembly never drifts across modes. Grain prevents SUM-at-wrong-grain by construction; trusted
+    # patterns let the planner reuse known-correct join/aggregation shapes instead of re-deriving them
+    # (and re-risking the fan-outs the library already solved). No-op safe — an empty bundle leaves the
+    # planner prompt unchanged.
+    plan_system_eff = plan_system
+    if schema:
+        try:
+            from aughor.semantic.data_understanding import build_data_understanding
+            _block = build_data_understanding(
+                conn, connection_id=connection_id, schema=schema, question=question
+            ).grounding_block()
+            if _block:
+                plan_system_eff = f"{plan_system}\n\n{_block}"
+        except Exception:
+            pass
+
     # Step 1 — plan (or reuse a preplanned, grain-correct query).
     _preplanned = bool(preplanned is not None and getattr(preplanned, "queries", None))
     if _preplanned:
@@ -2087,7 +2144,7 @@ def run_analysis_phase(
     else:
         try:
             plan: PhasePlan = _provider("coder").complete(
-                system=plan_system, user=plan_user, response_model=PhasePlan)
+                system=plan_system_eff, user=plan_user, response_model=PhasePlan)
         except Exception as e:
             return _PhaseRun(ok=False, error_phase=_phase_result(
                 phase_id, title, emoji, "error", plan_error_msg, [_skipped_finding(phase_id, str(e))]))
@@ -2101,7 +2158,7 @@ def run_analysis_phase(
         from aughor.stats import stats as _s; _s.inc("temporal_guard_retries")
         try:
             _fixed = _provider("coder").complete(
-                system=plan_system,
+                system=plan_system_eff,
                 user=plan_user + (
                     "\n\nCORRECTION REQUIRED: a previous attempt used CURRENT_DATE / NOW() / "
                     "DATE_SUB / DATE_ADD / relative date arithmetic. That is FORBIDDEN — the data "
@@ -2182,7 +2239,7 @@ def run_analysis_phase(
             from aughor.stats import stats as _s; _s.inc("ada.fanout_guard_retries")
             try:
                 _fixed = _provider("coder").complete(
-                    system=plan_system,
+                    system=plan_system_eff,
                     user=plan_user + (
                         "\n\nCORRECTION REQUIRED — FAN-OUT DETECTED: a previous attempt aggregated a "
                         "metric across a join that MULTIPLIES its home table's rows, inflating the "
@@ -2315,6 +2372,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
             z_threshold=2.0, pct_threshold=10),
         plan_error_msg="Could not plan baseline queries.",
         exec_error_msg="All baseline queries failed to execute.",
+        question=question, connection_id=state.get("connection_id", ""),
         exec_skipped_reason="No queries produced results.",
     )
     if not _run.ok:
@@ -2557,6 +2615,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
             question=question, baseline_summary=baseline_summary, results_text=results_text),
         plan_error_msg="Could not plan decomposition queries.",
         exec_error_msg="Decomposition queries failed.",
+        question=question, connection_id=state.get("connection_id", ""),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -2661,6 +2720,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
             question=question, prior_summary=prior_summary, results_text=results_text),
         plan_error_msg="Could not plan dimensional queries.",
         exec_error_msg="Dimensional queries failed.",
+        question=question, connection_id=state.get("connection_id", ""),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -2769,6 +2829,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         plan_error_msg="Could not plan behavioral queries.",
         exec_status="skipped",
         exec_error_msg="Behavioral/operational tables not available in this schema.",
+        question=question, connection_id=state.get("connection_id", ""),
         exec_skipped_reason="Required tables (sessions, refunds, etc.) not in schema.",
     )
     if not _run.ok:
@@ -2926,6 +2987,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
             question=question, metric_label=metric_label, results_text=results_text)),
         plan_error_msg="Cross-sectional planning failed.",
         exec_error_msg="Cross-sectional queries failed.",
+        question=question, connection_id=state.get("connection_id", ""),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -3205,18 +3267,36 @@ def ada_synthesize(state: AgentState) -> dict:
         org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
     ) + contradiction_section + early_stop_note + cross_section_note
+    # Issue-1 fix (frugal) — BOUND the synthesis LLM call. The cloud narrator can stall for many
+    # minutes, and a hung synthesis used to leave the user with no report at all even though every
+    # phase had finished. Run it under a hard timeout; on timeout we fall through to the SAME
+    # deterministic fallback report (assembled from the phase findings below) that an LLM error
+    # already triggers — no extra model call, no new code path. Tunable via AUGHOR_SYNTH_TIMEOUT_S.
+    import os as _os
+    import concurrent.futures as _cf
+    _synth_timeout = float(_os.getenv("AUGHOR_SYNTH_TIMEOUT_S", "120"))
+    _synth_ex = _cf.ThreadPoolExecutor(max_workers=1)
     try:
-        synth: ADASynthesisModel = _provider("narrator").complete(
-            system=(
-                "You are a senior data analyst writing a board-level investigation report. "
-                "Every number must trace to the evidence log. No fabrication. "
-                "Be definitive where evidence is strong; honest about uncertainty where it isn't."
-            ),
-            user=synth_prompt,
-            response_model=ADASynthesisModel,
+        _synth_fut = _synth_ex.submit(
+            lambda: _provider("narrator").complete(
+                system=(
+                    "You are a senior data analyst writing a board-level investigation report. "
+                    "Every number must trace to the evidence log. No fabrication. "
+                    "Be definitive where evidence is strong; honest about uncertainty where it isn't."
+                ),
+                user=synth_prompt,
+                response_model=ADASynthesisModel,
+            )
         )
+        synth: ADASynthesisModel = _synth_fut.result(timeout=_synth_timeout)
     except Exception as e:
         synth = None
+        if isinstance(e, _cf.TimeoutError):
+            from aughor.stats import stats as _s
+            _s.inc("ada.synthesis_timeout")
+    finally:
+        # Don't block the investigation on a hung LLM call — abandon the worker, keep the fallback.
+        _synth_ex.shutdown(wait=False)
 
     # Save causal proposals from this investigation (outcome-gated promotion)
     inv_id = state.get("investigation_id") or ""
@@ -3342,10 +3422,22 @@ def ada_synthesize(state: AgentState) -> dict:
             plan_reconciliation=plan_reconciliation,
         )
     else:
+        # Issue-1 fix — when the narrator is slow/failed, assemble a DETERMINISTIC report from the
+        # phase summaries instead of a bare "synthesis failed". Every phase already produced a
+        # one-line summary; stitch them into a readable headline + exec summary so a stalled narrator
+        # never costs the user the analysis that actually ran. (Frugal: no extra model call.)
         _xsec = bool(intake_data.get("cross_sectional"))
+        _clean = lambda s: re.sub(r"\s+", " ", re.sub(r"\*+", "", (s or ""))).strip()
+        _summaries = [_clean(p.get("summary")) for p in phases
+                      if p.get("phase_id") != "intake"
+                      and p.get("status") not in ("skipped", "error")
+                      and _clean(p.get("summary"))]
+        _headline = re.split(r"(?<=[.!?])\s", _summaries[0])[0][:160] if _summaries \
+            else "Investigation complete — see the phase findings below."
+        _exec = (" ".join(_summaries))[:900] or "See the individual phase findings below for details."
         ada_report = ADAReport(
-            headline="Investigation complete — synthesis failed.",
-            executive_summary="See individual phase findings above for details.",
+            headline=_headline,
+            executive_summary=_exec,
             metric=intake_data.get("metric_label", ""),
             observation_period="" if _xsec else intake_data.get("observation_label", ""),
             comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
@@ -3353,7 +3445,11 @@ def ada_synthesize(state: AgentState) -> dict:
             phases=phases,
             attribution_waterfall=[],
             confidence="LOW",
-            confidence_justification="Synthesis LLM call failed.",
+            confidence_justification=(
+                "Narrative synthesis was unavailable (the model was slow or failed); this report is "
+                "assembled deterministically from the phase findings, so treat the framing as "
+                "provisional even though the underlying queries ran."
+            ),
             recommendations=[],
             data_gaps=[],
             contradiction_report=contradiction_report.to_dict(),

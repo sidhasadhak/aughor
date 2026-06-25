@@ -981,9 +981,11 @@ async def _stream_chat(
         except Exception:
             metrics_section = ""
         # Measure-additivity PREVENTION: tell the generator each measure's grain (per-unit
-        # → SUM(x*quantity); per-line → SUM(x)). No-op safe; data-detected + cached.
-        from aughor.semantic.measure_grain import measure_grains_block as _grains_block
-        _gb = _grains_block(connection_id, db, schema_text=schema)
+        # → SUM(x*quantity); per-line → SUM(x)). No-op safe; data-detected + cached. R4 — via the
+        # SHARED data-understanding builder, the same module the ADA phase planner now grounds on,
+        # so the two modes can never silently carry a different grain understanding.
+        from aughor.semantic.data_understanding import build_data_understanding as _build_du
+        _gb = _build_du(db, connection_id=connection_id, schema=schema).grain_block
         if _gb:
             metrics_section += _gb + "\n\n"
         # Metric-feasibility: if the question needs a metric this connection can't support
@@ -1358,6 +1360,35 @@ async def _stream_chat(
             except Exception as _e:
                 logger.debug("chat ratio-of-sums guard is best-effort; skipped: %s", _e)
 
+        # R6 (mode cross-pollination) — Insight had parent-fanout + dimension-ratio-chasm, but ADA's
+        # Verifier also runs the three aggregate-over-chasm detectors (the "SUM(inventory) after
+        # joining 2.4M line-items, inflating ~1000x" class) that Insight could miss. Run the full
+        # Verifier battery for parity and feed any hit into the same repair path. Best-effort.
+        _chasm_fix_hint = ""
+        if final_sql:
+            try:
+                from aughor.agent.verifier import Verifier as _Verifier
+                from aughor.tools.schema import parse_schema_tables as _pst_chasm
+                _vhits = _Verifier.scan([final_sql], _pst_chasm(schema), db.dialect)
+                if _vhits:
+                    _chasm_fix_hint = " | ".join(_vhits)
+            except Exception as _e:
+                logger.debug("chat chasm battery is best-effort; skipped: %s", _e)
+
+        # R1/R2 (mode cross-pollination) — VALIDATE-THEN-EXECUTE via the SHARED safety pipeline.
+        # Insight used to execute-then-repair, so a hallucinated column reached the result path as a
+        # raw binder error before any repair ran. preflight_repair runs the one chain all modes share
+        # (identifier repair -> dry-run -> deterministic candidate substitution -> typed LLM fix)
+        # BEFORE the user-facing execute, so there is no failed first attempt visible to the user.
+        if final_sql:
+            try:
+                from aughor.sql.safety import preflight_repair
+                final_sql, _pf_receipt = await asyncio.to_thread(
+                    preflight_repair, db, final_sql, schema
+                )
+            except Exception as _e:
+                logger.debug("chat pre-flight validation is best-effort; skipped: %s", _e)
+
         yield _sse("sql", {"sql": final_sql})
         result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
@@ -1368,7 +1399,7 @@ async def _stream_chat(
 
         # Also trigger a rewrite when semantic column warnings exist, even if
         # the SQL executed successfully (wrong columns produce wrong results silently).
-        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint:
+        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint or _chasm_fix_hint:
             _writer2 = SqlWriter(db, schema_str=schema)
             _fix_error = (
                 result.error or
@@ -1381,7 +1412,7 @@ async def _stream_chat(
                 (_fanout_fix_hint if _fanout_fix_hint else None) or
                 "Query returned 0 rows — the SQL logic is likely wrong."
             )
-            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _idmath_fix_hint, _ratio_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
+            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _idmath_fix_hint, _ratio_fix_hint, _semantic_fix_hint, _fanout_fix_hint, _chasm_fix_hint]))
             try:
                 fix = await asyncio.to_thread(
                     lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=2)
