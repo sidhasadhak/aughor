@@ -315,14 +315,24 @@ PRIOR CONTEXT: {prior_summary}
 QUERY RESULTS:
 {results_text}
 
-For each dimension analysed, interpret the contribution analysis:
+BASELINE GUARD (read FIRST): contribution / abs_change is a real "driver of the change" ONLY when
+the prior-period comparison values are present. If the comparison column (comp_*, *_prior, yoy_*) is
+NULL / empty / 0 for the rows, there is NO measured change — abs_change has collapsed to the current
+LEVEL, and any "contribution_pct" is a share of the current total, NOT of a decline. In that case you
+MUST NOT name a "primary driver", MUST NOT raise a "severity alert", and MUST NOT claim "X% of the
+decline came from" any value. Say plainly that segment-level attribution is impossible without a
+baseline, and report only the current-period levels. Do this even if a contribution_pct column exists.
+
+For each dimension analysed (ONLY when a real baseline is present), interpret the contribution analysis:
   - Which dimension value(s) account for > 30% of the total change? (primary drivers)
   - Is the decline concentrated (1–2 values driving 60%+ of change) or diffuse (uniform across all)?
   - Any dimension where one value has > 50% relative decline, even if small absolute? (severity alert)
 
 Write dimension-by-dimension findings with specific numbers; bold the decisive number in each with **double asterisks**.
 Highlight the SINGLE most actionable finding across all dimensions.
-phase_summary: "**X%** of the total decline came from [dimension: value]" — bold the share; if concentration exists.
+phase_summary: when a baseline exists and concentration exists, "**X%** of the total decline came from
+[dimension: value]" (bold the share); when the baseline is missing, state that no prior-period data is
+available so the late-period change cannot be attributed to any segment.
 """
 
 # ── Cross-sectional weakness scan (non-temporal diagnostic) ───────────────────
@@ -388,6 +398,22 @@ CROSS_SECTION_RATIO_BLOCK = """\
   5. ORDER BY metric_total ASC (lowest ratio first) so the extremes surface.
   6. LIMIT 15."""
 
+# A bare AVG/MEAN/MEDIAN is a per-record average — non-additive like a ratio, but UNLIKE a
+# composite ratio (SUM(num)/SUM(den), *100) it is SELF-CONTAINED: the AVG re-computes correctly
+# within each GROUP BY on its own. Expanding it into numerator_total/denominator_total columns is
+# pure noise for the reader (and was the source of the "why is SUM/COUNT in my AOV query?" gripe),
+# so this block keeps the SELECT to just the dimension + the average + a row count.
+CROSS_SECTION_AVG_BLOCK = """\
+  1. GROUP BY the dimension value.
+  2. Compute the metric ({metric_sql}) per value AS metric_total. This is a per-record AVERAGE and
+     is already correct within each group — do NOT expand it into separate numerator/denominator
+     columns, do NOT replace it with SUM(...), and do NOT divide it by COUNT(*). The AVG stands alone.
+  3. Also SELECT COUNT(*) AS n — the number of records behind each group's average (context only).
+  4. Do NOT compute avg_per_record (the metric is already an average) and do NOT compute a
+     share-of-total (you cannot meaningfully SUM an average across groups).
+  5. ORDER BY metric_total ASC (weakest first) so the lowest averages surface.
+  6. LIMIT 15."""
+
 CROSS_SECTION_INTERPRET_PROMPT = """\
 DIAGNOSTIC QUESTION: "{question}"
 METRIC: {metric_label}
@@ -396,6 +422,12 @@ PHASE: Cross-Sectional Weakness Scan
 QUERY RESULTS — each dimension value with its metric_total, avg_per_record, n, and
 pct_of_total share, weakest total first:
 {results_text}
+
+POPULATION NOTE: these rows are the LOWEST-ranked values (weakest first) and may be a CAPPED
+subset (the query LIMITs the scan) — they are the BOTTOM of the distribution, never "the top".
+Do NOT generalise "no value underperforms / the spread is tight" to the whole population from this
+truncated tail; speak only about the values actually shown (e.g. "among the lowest-margin brands
+shown") and, if the row count equals the cap, note more values likely exist beyond it.
 
 For EACH dimension, write a finding:
   - title: the dimension (e.g. "By franchise", "By region", "By product"). Use the SAME
@@ -433,6 +465,12 @@ PHASE: Cross-Sectional Weakness Scan
 QUERY RESULTS — each dimension value with its metric_total (the RATIO/percentage itself), n, and
 the numerator_total / denominator_total it was built from, lowest ratio first:
 {results_text}
+
+POPULATION NOTE: these rows are the LOWEST-ranked values (lowest ratio first) and may be a CAPPED
+subset (the query LIMITs the scan) — they are the BOTTOM of the distribution, never "the top". Do
+NOT generalise "no value underperforms / the spread is tight" to the whole population from this
+truncated tail; speak only about the values actually shown, and if the row count equals the cap,
+note more values likely exist beyond it.
 
 For EACH dimension, write a finding:
   - title: the dimension (e.g. "By country", "By category"). Use the SAME dimension wording as the

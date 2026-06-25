@@ -16,6 +16,7 @@
  */
 
 import React from "react";
+import { localizeCurrency } from "@/lib/orgSettings";
 
 const EMPHASIS_RE =
   /(\*\*[^*]+\*\*|\*[^*\n]+\*|[+]\$?[\d,]+(?:\.\d+)?[KMBk]?%?|-\$?[\d,]+(?:\.\d+)?[KMBk]?%?|\$[\d,]+(?:\.\d+)?[KMBk]?|\d+(?:\.\d+)?%|\b\d{4,}(?:,\d{3})*\b)/g;
@@ -23,6 +24,9 @@ const EMPHASIS_RE =
 /** Parse a narrative string into emphasized inline nodes. Reused by bullets. */
 export function renderEmphasis(text: string): React.ReactNode[] {
   if (!text) return [];
+  // Honour the configured reporting currency before emphasis is applied, so "$69.81" → "€69.81"
+  // everywhere prose, headlines and bullets render (no-op for USD / unset).
+  text = localizeCurrency(text);
   return text.split(EMPHASIS_RE).map((part, i) => {
     if (!part) return null;
     if (part.startsWith("**") && part.endsWith("**"))

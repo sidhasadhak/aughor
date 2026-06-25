@@ -66,6 +66,27 @@ def _date(iso: Optional[str]) -> str:
         return str(iso)[:10]
 
 
+def _round_cell(v):
+    """Trim floating-point display noise in a table cell (39.97968526236183 -> 39.98) so the
+    printed table matches the clean numbers on the chart beside it. Handles float, Decimal, and
+    pure-numeric strings — DuckDB returns DECIMAL columns as Decimal/str, which a float-only check
+    misses (the '711231.2900000175' the dimensional tables still showed). Non-numeric passes through."""
+    import re as _re
+    from decimal import Decimal
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, Decimal):
+        v = float(v)
+    if isinstance(v, float) and v == v and v not in (float("inf"), float("-inf")):
+        r = round(v, 2) if abs(v) >= 1 else round(v, 6)
+        return int(r) if r == int(r) else r
+    if isinstance(v, str) and _re.fullmatch(r'-?\d+\.\d{4,}', v.strip()):
+        f = float(v.strip())
+        r = round(f, 2) if abs(f) >= 1 else round(f, 6)
+        return int(r) if r == int(r) else r
+    return v
+
+
 def _chart_or_table(columns, rows, chart_type, title) -> list[Block]:
     """Render a chart if the data supports it; always include the data table too
     (capped) so the document carries the underlying numbers."""
@@ -74,7 +95,8 @@ def _chart_or_table(columns, rows, chart_type, title) -> list[Block]:
     if png:
         out.append(Block("chart", png=png, caption=title))
     if columns and rows:
-        out.append(Block("table", columns=columns, rows=rows[:25], caption="" if png else title))
+        table_rows = [[_round_cell(v) for v in row] for row in rows[:25]]
+        out.append(Block("table", columns=columns, rows=table_rows, caption="" if png else title))
     return out
 
 
@@ -154,8 +176,11 @@ def _build_ada(inv: dict) -> ExportDoc:
             ))
             kns = f.get("key_numbers") or []
             if kns:
+                # Strip any **markdown** the model wrapped a figure in — the export renders these as
+                # plain text, so "**57.8%**" would otherwise print literal asterisks.
+                _nm = lambda s: (s or "").replace("*", "")
                 blocks.append(Block("keynums", keynums=[
-                    KeyNumber(k.get("label", ""), k.get("value", ""), k.get("delta"), k.get("context"))
+                    KeyNumber(_nm(k.get("label", "")), _nm(k.get("value", "")), _nm(k.get("delta")) or None, _nm(k.get("context")) or None)
                     for k in kns
                 ]))
             blocks.extend(_chart_or_table(f.get("columns"), f.get("rows"), f.get("chart_type"), f.get("title") or ""))
@@ -262,9 +287,17 @@ def build_export_doc(inv: dict, *, narrate: bool = False) -> ExportDoc:
     if narrate:
         summary = _llm_executive_summary(inv, doc)
         if summary:
-            # Lead with an LLM-authored executive summary, tagged so the reader knows.
-            doc.blocks.insert(0, Block("prose", text=summary, tag="AI executive summary"))
-            doc.blocks.insert(0, _h("Executive summary"))
+            ai_block = Block("prose", text=summary, tag="AI executive summary")
+            # Avoid TWO "Executive summary" sections: if the builder already led with one
+            # (from the report's executive_summary), REPLACE its prose with the AI-authored
+            # version rather than inserting a duplicate heading + paragraph above it.
+            if (len(doc.blocks) >= 2 and doc.blocks[0].kind == "heading"
+                    and "executive summary" in (doc.blocks[0].text or "").lower()
+                    and doc.blocks[1].kind == "prose"):
+                doc.blocks[1] = ai_block
+            else:
+                doc.blocks.insert(0, ai_block)
+                doc.blocks.insert(0, _h("Executive summary"))
     return doc
 
 

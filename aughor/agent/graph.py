@@ -254,7 +254,9 @@ def run_investigation(
     }
 
     final_state = initial_state.copy()
-    for event in agent.stream(initial_state):
+    import uuid
+    config = {"configurable": {"thread_id": f"cli-{uuid.uuid4().hex[:12]}"}}
+    for event in agent.stream(initial_state, config=config):
         node_name = next(iter(event))
         partial_state = event[node_name]
         final_state = {**final_state, **partial_state}

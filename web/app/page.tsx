@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { ChatPanel } from "@/components/ChatPanel";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
-import { setOrgSettingsCache } from "@/lib/orgSettings";
+import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInBuilderProvider } from "@/lib/openInBuilder";
@@ -179,6 +179,12 @@ function AughorLogo() {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+/** A finding headline shown as a plain one-line list subtitle: strip markdown emphasis (no bold
+ *  rendering here, so `**…**` would otherwise leak literal asterisks) and honour the currency. */
+function plainSubtitle(text: string): string {
+  return localizeCurrency(text).replace(/\*+/g, "");
+}
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -805,8 +811,8 @@ function HomeScreen({
                   {recentInvs.slice(0, 5).map((inv) => (
                     <tr key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id, "investigation", inv.connection_id, inv.canvas_id)}>
                       <td style={{ maxWidth: 400 }}>
-                        <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-ui)" }}>{inv.question}</div>
-                        {inv.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{inv.headline}</div>}
+                        <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-ui)" }}>{plainSubtitle(inv.question)}</div>
+                        {inv.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{plainSubtitle(inv.headline)}</div>}
                       </td>
                       <td style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(inv.started_at)}</td>
                       <td>
@@ -891,8 +897,8 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
                 {shown.map(a => (
                   <tr key={a.id} onClick={() => onOpenInvestigation(a.id, a.kind === "chat" ? "chat" : "investigation", a.connection_id, a.canvas_id)} style={{ cursor: "pointer" }}>
                     <td style={{ maxWidth: 420 }}>
-                      <div style={{ fontSize: 12, color: "var(--t1)", fontFamily: "var(--font-ui)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.question}</div>
-                      {a.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{a.headline}</div>}
+                      <div style={{ fontSize: 12, color: "var(--t1)", fontFamily: "var(--font-ui)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{plainSubtitle(a.question)}</div>
+                      {a.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{plainSubtitle(a.headline)}</div>}
                     </td>
                     <td>
                       <span className={`aug-tag ${a.kind === "chat" ? "aug-tag-blue" : "aug-tag-violet"}`}>

@@ -1384,7 +1384,7 @@ async def _stream_chat(
             _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _idmath_fix_hint, _ratio_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
             try:
                 fix = await asyncio.to_thread(
-                    lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=1)
+                    lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=2)
                 )
                 if fix.ok:
                     retry = await asyncio.to_thread(db.execute, "chat", fix.sql)

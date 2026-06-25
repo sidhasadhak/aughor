@@ -43,6 +43,28 @@ def validate_sql(sql: str) -> tuple[bool, str]:
     return True, "ok"
 
 
+def _round_cell(v) -> str:
+    """Trim floating-point display noise before a value reaches the LLM (or a rendered table).
+    A raw '39.99999999998568' becomes '40' and '39.97968526236183' becomes '39.98', so the model
+    never copies a 15-digit float into a headline. Values |v|>=1 round to 2dp (percentages,
+    currency, counts); smaller values keep more precision so rates like 0.0034 survive. Handles
+    float, Decimal, and pure-numeric STRINGS (DuckDB returns DECIMAL columns as Decimal/str, which
+    the float-only check used to miss — '711231.2900000175' stayed raw). Bools/text pass through."""
+    if isinstance(v, bool):
+        return str(v)
+    from decimal import Decimal
+    if isinstance(v, Decimal):
+        v = float(v)
+    if isinstance(v, float) and v == v and v not in (float("inf"), float("-inf")):
+        r = round(v, 2) if abs(v) >= 1 else round(v, 6)
+        return str(int(r) if r == int(r) else r)
+    if isinstance(v, str) and re.fullmatch(r'-?\d+\.\d{4,}', v.strip()):
+        f = float(v.strip())
+        r = round(f, 2) if abs(f) >= 1 else round(f, 6)
+        return str(int(r) if r == int(r) else r)
+    return str(v)
+
+
 def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
     """Render a QueryResult as a compact text table for LLM context."""
     if result.error:
@@ -74,7 +96,7 @@ def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
         lines.append(col_str)
         lines.append("-" * len(col_str))
         for row in result.rows[:max_rows]:
-            lines.append(" | ".join(str(v) for v in row))
+            lines.append(" | ".join(_round_cell(v) for v in row))
         if result.row_count > max_rows:
             lines.append(f"... ({result.row_count - max_rows} more rows)")
 

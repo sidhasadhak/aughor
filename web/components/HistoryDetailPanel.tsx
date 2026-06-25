@@ -10,6 +10,7 @@ import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import type { Hypothesis, QueryCitation, Report, ADAReport, ExplorationReport, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import { API_BASE } from "@/lib/config";
+import { localizeCurrency } from "@/lib/orgSettings";
 import { getEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/lib/api";
 import { ExportButton } from "@/components/ExportButton";
 
@@ -207,7 +208,7 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
                 </div>
               )}
             </div>
-            <p style={{ fontSize: 15, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5 }}>{inv.question}</p>
+            <p style={{ fontSize: 15, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5 }}>{localizeCurrency(inv.question)}</p>
             <p style={{ marginTop: 4, fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)" }}>{inv.connection_id}</p>
           </div>
 

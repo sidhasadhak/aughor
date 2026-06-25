@@ -49,6 +49,10 @@ export interface InferredChart {
 const DATE_NAME = /(_date|_at|_time|created_at|updated_at|timestamp|^date$|^month$|^week$|^period$|^quarter$|^day$|^year$)/i;
 const DATE_VAL  = /^\d{4}-\d{2}/;
 const SKIP_ID   = /(_id$|^id$)/i;
+// Audit-only instrumentation: the numerator/denominator a ratio is built from, or a bare row-count
+// `n`. These exist so a ratio is checkable, never as a measure to plot — charting them buries the
+// real metric (an AOV finding rendered as a giant SUM bar). Excluded from chart measure selection.
+const INSTRUMENTATION = /(^|_)(numerator|denominator)(_total)?$|^n$/i;
 const SHARE_COL = /(share|pct|percent|rate|ratio|proportion)/i;
 // Change/delta/period-over-period metric column names.
 // When ANY numeric column matches, the question is a COMPARISON question
@@ -139,9 +143,11 @@ export function scoreDualAxis(
     const v = nums(i);
     return v.length > 0 && SHARE_COL.test(columns[i]) && v.every((n) => Math.abs(n) <= 1.0001);
   };
-  // Real measures only: not an id/key, and has at least one non-null numeric value
-  // (an all-null column carries nothing and must never reach a chart).
-  const measures = numericIdxs.filter((i) => !SKIP_ID.test(columns[i]) && nums(i).length > 0);
+  // Real measures only: not an id/key, not audit-only instrumentation, and has at least one
+  // non-null numeric value (an all-null column carries nothing and must never reach a chart).
+  // Fall back to the unfiltered set only if excluding instrumentation would leave nothing.
+  const _real = numericIdxs.filter((i) => !SKIP_ID.test(columns[i]) && !INSTRUMENTATION.test(columns[i]) && nums(i).length > 0);
+  const measures = _real.length ? _real : numericIdxs.filter((i) => !SKIP_ID.test(columns[i]) && nums(i).length > 0);
   const rates     = measures.filter(isShare).sort((a, b) => maxAbs(b) - maxAbs(a));
   const absolutes = measures.filter((i) => !isShare(i)).sort((a, b) => maxAbs(b) - maxAbs(a));
   const primary   = absolutes[0] ?? rates[0] ?? measures[0] ?? numericIdxs[0];

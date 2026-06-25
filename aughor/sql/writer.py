@@ -76,6 +76,48 @@ def _extract_candidate_bindings(error: str) -> list[str]:
     return re.findall(r'"(\w+)"', m.group(1))
 
 
+def _repair_from_candidates(error: str, sql: str, table_cols: dict[str, list[str]]) -> str | None:
+    """Deterministically repair a "Table X does not have a column named Y" binder error by
+    substituting Y with the engine's closest candidate binding (or the closest real column of the
+    table). Returns the rewritten SQL, or None when there is no confident single match — the caller
+    MUST dry-run the result before trusting it.
+
+    This catches the abbreviation/synonym class that `repair_identifiers` (case/separator only) and
+    the LLM fix both miss or fumble: e.g. `order_purchase_timestamp` -> `order_purchase_ts`, where
+    DuckDB literally hands us `Candidate bindings: "order_purchase_ts"`. Deterministic and instant —
+    no LLM round-trip, no retry budget spent."""
+    import difflib
+    m = re.search(r'[Tt]able\s+"?(\w+)"?\s+does not have a column named\s+"?(\w+)"?', error)
+    if not m:
+        return None
+    alias_ref, bad_col = m.group(1).lower(), m.group(2)
+    candidates = _extract_candidate_bindings(error)
+    if not candidates:
+        aliases = _resolve_aliases(sql)
+        real_table = aliases.get(alias_ref, alias_ref)
+        candidates = (
+            table_cols.get(real_table)
+            or table_cols.get(real_table.lower())
+            or next((v for k, v in table_cols.items() if k.lower() == real_table.lower()), None)
+            or []
+        )
+    if not candidates:
+        return None
+    scored = sorted(
+        ((difflib.SequenceMatcher(None, bad_col.lower(), c.lower()).ratio(), c) for c in candidates),
+        key=lambda t: t[0], reverse=True,
+    )
+    best_ratio, best = scored[0]
+    second_ratio = scored[1][0] if len(scored) > 1 else 0.0
+    # Only act on a confident, UNAMBIGUOUS winner — otherwise leave it to the LLM fix.
+    if best_ratio < 0.6 or best.lower() == bad_col.lower():
+        return None
+    if len(scored) > 1 and (best_ratio - second_ratio) < 0.1:
+        return None
+    new_sql = re.sub(rf'\b{re.escape(bad_col)}\b', best, sql)
+    return new_sql if new_sql != sql else None
+
+
 def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]]) -> str:
     """
     Turn a raw SQL error into an actionable DIAGNOSIS block for the fix prompt.
@@ -364,6 +406,20 @@ class SqlWriter:
         current_sql = sql
         current_error = error
         last_class = ""
+
+        # Deterministic fast-path: a "column does not exist" binder error whose engine candidate
+        # bindings (or schema) contain ONE unambiguous closest match — substitute it and dry-run,
+        # no LLM round-trip. Fixes the abbreviation class (order_purchase_timestamp -> _ts) that an
+        # LLM with a tight retry budget otherwise fumbles.
+        _det = _repair_from_candidates(current_error, current_sql, self._table_cols)
+        if _det:
+            _dok, _ = self._db.dry_run(_det)
+            if _dok:
+                return FixResult(
+                    ok=True, sql=_det,
+                    explanation="Deterministic candidate-binding substitution.",
+                    attempts=0, error_class="binder",
+                )
 
         for attempt in range(1, max_retries + 1):
             # R3 — route the fix by the error's TYPE, not a blind retry: a binder

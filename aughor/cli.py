@@ -20,9 +20,11 @@ from rich.columns import Columns
 from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.rule import Rule
+from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
@@ -116,7 +118,13 @@ def investigate(question: str, db: str, model: Optional[str], backend: str):
     elapsed_total = time.monotonic() - start
     conn.close()
 
-    _print_final_report(final_state, elapsed_total)
+    # The deep-analysis (ADA) path produces a rich ada_report (phases, per-finding SQL,
+    # key numbers, real significance). Render that directly — the legacy AnalysisReport
+    # flattens away the SQL and the logic. Fall back to legacy only when no ada_report exists.
+    if final_state.get("ada_report"):
+        _print_ada_report(final_state["ada_report"], elapsed_total)
+    else:
+        _print_final_report(final_state, elapsed_total)
 
 
 # ── Rendering helpers ────────────────────────────────────────────────────────
@@ -154,6 +162,128 @@ def _print_node_update(node_name: str, state: Any, elapsed: float):
                 f"[{verdict_color}]{bar}[/{verdict_color}] {latest.confidence:.0%}"
             )
             console.print(f"   [dim]{latest.key_finding}[/dim]")
+
+
+def _print_ada_report(report: dict, elapsed: float):
+    """Render the rich deep-analysis (ADA) report: phases, per-finding SQL, key numbers,
+    real significance and confidence. Prose is rendered as Markdown (so **bold** doesn't leak
+    as literal asterisks), and the actual query for each finding is shown — the terminal user
+    gets the same access to query + logic the web report gives."""
+    phases = report.get("phases") or []
+    analysis_phases = [p for p in phases if p.get("phase_id") != "intake" and p.get("status") != "skipped"]
+    findings_with_sql = [
+        f for p in phases for f in (p.get("findings") or [])
+        if f.get("sql") and not f.get("error")
+    ]
+
+    console.print()
+    console.print(Rule("[bold cyan]Investigation Complete[/bold cyan]", style="cyan"))
+    console.print(
+        f"[dim]{elapsed:.1f}s · {len(findings_with_sql)} queries · "
+        f"{len(analysis_phases)} phases[/dim]"
+    )
+    console.print()
+
+    # Headline
+    if report.get("headline"):
+        console.print(Panel(
+            Markdown(report["headline"]),
+            title="[bold green]Verdict[/bold green]",
+            border_style="green",
+            padding=(1, 2),
+        ))
+
+    # Metadata line — only the parts that actually apply (a cross-sectional scan has no period)
+    meta_bits = [b for b in (
+        report.get("metric"),
+        report.get("observation_period"),
+        f"vs {report['comparison_basis']}" if report.get("comparison_basis") else "",
+        report.get("total_change_label"),
+        f"{report['confidence'].title()} confidence" if report.get("confidence") else "",
+    ) if b]
+    if meta_bits:
+        console.print(f"[dim]{'  ·  '.join(meta_bits)}[/dim]")
+    console.print()
+
+    # Executive summary
+    if report.get("executive_summary"):
+        console.print(Panel(
+            Markdown(report["executive_summary"]),
+            title="[bold]Diagnosis[/bold]",
+            border_style="white",
+            padding=(1, 2),
+        ))
+
+    # Phases — each a section with its findings, key numbers, significance, and SQL
+    for p in analysis_phases:
+        icon = p.get("phase_icon") or "•"
+        console.print(f"\n[bold]{icon}  {p.get('phase_name', p.get('phase_id', 'Phase'))}[/bold]")
+        if p.get("summary"):
+            console.print(Markdown(p["summary"]))
+        for f in p.get("findings") or []:
+            if f.get("error"):
+                console.print(f"  [red]✗ {f.get('title', 'finding')}: {f['error']}[/red]")
+                continue
+            console.print(f"\n  [italic]{f.get('title', '')}[/italic]")
+
+            key_numbers = f.get("key_numbers") or []
+            if key_numbers:
+                parts = []
+                for kn in key_numbers:
+                    seg = f"[bold]{kn.get('value', '')}[/bold] {kn.get('label', '')}"
+                    if kn.get("delta"):
+                        seg += f" ([cyan]{kn['delta']}[/cyan])"
+                    parts.append(seg.strip())
+                console.print("  " + "   ".join(parts))
+
+            if f.get("interpretation"):
+                console.print(Padding(Markdown(f["interpretation"]), (0, 0, 0, 2)))
+
+            sig = f.get("stat_note") or ("Significant" if f.get("is_significant") else "Within noise")
+            sig_color = "green" if f.get("is_significant") else "dim"
+            console.print(f"  [{sig_color}]▸ {sig}[/{sig_color}]")
+
+            if f.get("trust_caveat"):
+                console.print(f"  [yellow]⚠ Trust advisory: {f['trust_caveat']}[/yellow]")
+
+            if f.get("sql"):
+                console.print(Padding(
+                    Syntax(f["sql"].strip(), "sql", theme="ansi_dark", word_wrap=True, background_color="default"),
+                    (0, 0, 0, 2),
+                ))
+
+    # Attribution waterfall
+    waterfall = report.get("attribution_waterfall") or []
+    if waterfall:
+        console.print("\n[bold]Attribution[/bold]")
+        wt = Table(box=box.SIMPLE, show_header=True, header_style="bold dim")
+        wt.add_column("Cause")
+        wt.add_column("Amount", width=14)
+        wt.add_column("Share", width=8, justify="right")
+        wt.add_column("Type", width=14)
+        for w in waterfall:
+            kind = "controllable" if w.get("controllable") else ("structural" if w.get("structural") else "transient")
+            wt.add_row(w.get("cause", ""), w.get("amount_label", ""), f"{w.get('pct_of_total', 0):.0f}%", kind)
+        console.print(wt)
+
+    # Data gaps
+    if report.get("data_gaps"):
+        console.print("\n[bold dim]Data gaps[/bold dim]")
+        for g in report["data_gaps"]:
+            console.print(f"  [dim]✗ {g}[/dim]")
+
+    # Recommendations
+    recs = report.get("recommendations") or []
+    if recs:
+        console.print("\n[bold]Recommended Actions[/bold]")
+        for i, r in enumerate(recs, 1):
+            line = f"  {i}. {r.get('action', '')}"
+            tail = "  ".join(b for b in (r.get("expected_impact"), r.get("owner"), r.get("timeline")) if b)
+            console.print(Markdown(line))
+            if tail:
+                console.print(f"     [dim]{tail}[/dim]")
+
+    console.print()
 
 
 def _print_final_report(state: Any, elapsed: float):
