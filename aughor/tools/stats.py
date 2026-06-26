@@ -314,8 +314,10 @@ def analyze_query_result(columns: list[str], rows: list[list], sql: Optional[str
         rate_stat = _analyze_rate_segments(columns, rows)
         if rate_stat:
             results.append(rate_stat)
-    except Exception:
-        pass
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "rate-segment uniformity analysis best-effort; other stats proceed",
+                 counter="stats.rate_segments")
 
     # Find numeric column indices
     numeric_idxs = _numeric_column_indices(columns, rows)
