@@ -41,6 +41,8 @@ from aughor.agent.state import (
     ReasoningOutput,
     SubQuestion,
     SubQuestionAnswer,
+    VerificationCheck,
+    VerificationManifest,
 )
 from aughor.llm.provider import get_provider
 from aughor.tools.executor import format_result_for_llm
@@ -190,6 +192,8 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
         "pitfalls": [],
         "iteration": 0,
         "analysis_ledger": analysis_ledger,
+        # Liveness: the pre-flight temporal prune ran (record outcome too).
+        "verification_checks": [f"temporal_prune:{len(dropped)}"],
     }
 
 
@@ -446,6 +450,7 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
 
     results: list[QueryResult] = []
     new_pitfalls: list[Pitfall] = []
+    ran_checks: list[str] = []          # liveness: guards that actually executed (Bet 0)
     allowed_schema = (state.get("scope_schema") or "").strip()
 
     for sql in queries[:2]:  # explore mode: cap at 2 queries per sub-question
@@ -492,6 +497,8 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
         # regenerate branch below. Filter warnings are folded into domain_warnings so the
         # identical regenerate-and-reverify path handles them too.
         domain_warnings = []
+        if "join_value_domain" not in ran_checks:
+            ran_checks.append("join_value_domain")   # liveness: the value-domain probe ran
         try:
             from aughor.sql.join_guard import check_join_value_domains
             domain_warnings = check_join_value_domains(conn, sql)
@@ -597,6 +604,8 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
             # join (#9): COUNT(child)/COUNT(parent) silently overstates the rate if any
             # parent has >1 child. Surface as a data-quality caveat (no auto-rewrite).
             if not result.error:
+                if "cardinality_guard" not in ran_checks:
+                    ran_checks.append("cardinality_guard")   # liveness: the count-ratio lint ran
                 try:
                     from aughor.sql.fanout import count_ratio_distinct_risk
                     _cr = count_ratio_distinct_risk(sql, conn.dialect)
@@ -615,6 +624,7 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
     return {
         "query_history": results,   # operator.add appends — stays compatible with investigate mode
         "pitfalls": new_pitfalls,
+        "verification_checks": ran_checks,   # liveness: guards that fired this sub-question
     }
 
 
@@ -980,6 +990,59 @@ def _uniform_dimensions(query_history: list) -> list[str]:
     ]
 
 
+def _build_verification_manifest(state: AgentState) -> VerificationManifest:
+    """Prove which guards actually ran on this investigation (Bet 0, increment 0-I).
+
+    Combines the liveness recorder (`verification_checks`, appended by each guard when it
+    fires) with derived evidence. The key payoff is the `stats_attached` canary: if no
+    statistical signals attached to numeric results, a guard silently failed (the exact
+    `_attach_stats` class-E bug) — surfaced as not_run, never assumed passed."""
+    recorded: set[str] = set()
+    temporal_detail = None
+    for c in (state.get("verification_checks", []) or []):
+        head, _, tail = c.partition(":")
+        recorded.add(head)
+        if head == "temporal_prune" and tail:
+            temporal_detail = (f"pruned {tail} temporal sub-question(s)"
+                               if tail != "0" else "ran — nothing to prune")
+
+    history = state.get("query_history", []) or []
+    had_numeric = any((not r.error) and r.rows for r in history)
+    stats_attached = any(getattr(r, "stats", None) for r in history)
+    significance_ran = any(
+        getattr(s, "type", "") == "uniformity"
+        for r in history for s in (getattr(r, "stats", None) or [])
+    )
+
+    checks: list[VerificationCheck] = [
+        VerificationCheck(name="temporal_prune", label="Pre-flight temporal prune",
+                          status="ran" if "temporal_prune" in recorded else "not_run",
+                          detail=temporal_detail),
+        VerificationCheck(name="join_value_domain", label="Join / filter value-domain guard",
+                          status="ran" if "join_value_domain" in recorded else "not_run"),
+        VerificationCheck(name="cardinality_guard", label="Raw-COUNT rate cardinality guard",
+                          status="ran" if "cardinality_guard" in recorded else "not_run"),
+    ]
+    if not had_numeric:
+        checks.append(VerificationCheck(name="stats_attached", label="Statistical signals attached",
+                                        status="n/a", detail="no numeric results to analyse"))
+    else:
+        checks.append(VerificationCheck(
+            name="stats_attached", label="Statistical signals attached",
+            status="ran" if stats_attached else "not_run",
+            detail=None if stats_attached
+            else "NO stats attached to numeric results — a guard may have silently failed"))
+    checks.append(VerificationCheck(
+        name="segment_significance", label="Segment-uniformity significance test",
+        status="ran" if significance_ran else "n/a",
+        detail=None if significance_ran else "no rate-by-segment result to test"))
+
+    applicable = [c for c in checks if c.status != "n/a"]
+    ran = sum(1 for c in applicable if c.status == "ran")
+    coverage = round(ran / len(applicable), 3) if applicable else 1.0
+    return VerificationManifest(checks=checks, coverage=coverage)
+
+
 def _honesty_preamble(answers: list, planned: list, uniform_dims: list[str]) -> str:
     """Build the directive prefix prepended to the synthesis evidence so the report stays
     honest about (a) completeness and (b) signal. Pure/testable — no LLM, no state.
@@ -1084,6 +1147,12 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
     if dq_notes:
         existing = list(report.data_quality_notes or [])
         report = ExplorationReport(**{**report.model_dump(), "data_quality_notes": existing + dq_notes})
+
+    # Bet 0: attach the verification manifest (which guards actually ran). The LLM never
+    # fills this — it's stamped from the run's liveness record so the user sees what was
+    # (and wasn't) checked, defeating silent guard failures.
+    manifest = _build_verification_manifest(state)
+    report = ExplorationReport(**{**report.model_dump(), "verification": manifest})
 
     # ── Learning loop: persist schema discoveries back to the glossary ────────
     conn_id = state.get("connection_id", "")
