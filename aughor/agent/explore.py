@@ -907,6 +907,60 @@ def _uniform_dimensions(query_history: list) -> list[str]:
     ]
 
 
+def _honesty_preamble(answers: list, planned: list, uniform_dims: list[str]) -> str:
+    """Build the directive prefix prepended to the synthesis evidence so the report stays
+    honest about (a) completeness and (b) signal. Pure/testable — no LLM, no state.
+
+    Two independent guards, in order:
+      • Completeness — if planned steps did NOT run, say so. Distinguish a DELIBERATE
+        convergence stop (#3/#13: metric uniform ⇒ remaining drills skipped as redundant)
+        from a genuine partial/salvaged run, since the right framing differs.
+      • No-signal (#1) — if ≥2 dimensions read uniform, forbid segment-rate driver claims
+        and flag a likely data-generation artifact / exogenous process; keep confidence low.
+    """
+    parts: list[str] = []
+    answered_ids = {a.subq_id for a in answers}
+    unanswered = [sq for sq in planned if sq.id not in answered_ids and not getattr(sq, "done", False)]
+    converged_early = bool(unanswered) and len(uniform_dims) >= _UNIFORM_CONVERGENCE
+
+    if converged_early:
+        gap = "; ".join(f"{sq.id}: {sq.question}" for sq in unanswered[:6]) or "further segment drills"
+        parts.append(
+            f"✅ CONVERGED EARLY — the metric proved statistically uniform across "
+            f"{len(uniform_dims)} dimensions, so the remaining planned drills were "
+            f"intentionally skipped as redundant (they would re-confirm the flat baseline, "
+            f"not reveal a new driver): {gap}. This is a deliberate, evidence-based stop, "
+            f"NOT a failure or a data gap. Conclude that the metric is flat across the "
+            f"tested dimensions and that further segment-level drilling is unwarranted; "
+            f"pivot recommendations to baseline / policy-level levers. Do NOT imply the "
+            f"skipped cuts were each individually tested.\n\n"
+        )
+    elif planned and (len(answers) < len(planned) or unanswered):
+        gap = "; ".join(f"{sq.id}: {sq.question}" for sq in unanswered[:6]) or "later planned steps"
+        parts.append(
+            f"⚠️ INCOMPLETE CHAIN — only {len(answers)} of {len(planned)} planned sub-questions "
+            f"actually ran. The following were NOT investigated and have NO data: {gap}. "
+            f"Do NOT claim a comprehensive analysis or use phrases like 'given all of the above'. "
+            f"Answer only from the completed steps below and explicitly note what remains unknown.\n\n"
+        )
+
+    if len(uniform_dims) >= 2:
+        parts.append(
+            f"⚠️ NO CAUSAL SIGNAL — {len(uniform_dims)} separate dimensions tested showed the "
+            f"metric statistically UNIFORM across all their segments (every segment within "
+            f"sampling noise of the pooled baseline; significance tests are in the evidence "
+            f"below). Apparent segment differences are noise, not drivers. You MUST: "
+            f"(1) state plainly that the metric is statistically flat across the tested "
+            f"dimensions; (2) NOT recommend any segment-specific intervention justified by a "
+            f"rate difference (cost concentration by volume/value is fine, a rate-driver claim "
+            f"is not); (3) explicitly flag that a metric this uniform is typically a "
+            f"data-generation artifact or an exogenous/discretionary process — recommend "
+            f"validating the data-generating process before acting, and keep the headline "
+            f"confidence LOW.\n\n"
+        )
+    return "".join(parts)
+
+
 def synthesize_exploration(state: AgentState) -> dict[str, Any]:
     """Produce the final ExplorationReport from the completed Q→A chain."""
     answers = state.get("subq_answers", [])
@@ -922,64 +976,9 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
             )
         }
 
-    chain_summary = _format_chain_summary(answers)
-
-    # Honesty guard: if the chain ended early (fewer answered sub-questions than
-    # planned, e.g. a salvaged partial run), tell the writer NOT to present the
-    # report as comprehensive. Prevents "given all of the above" on a 1-step chain.
     planned = state.get("sub_questions", []) or []
-    answered_ids = {a.subq_id for a in answers}
-    unanswered = [sq for sq in planned if sq.id not in answered_ids and not getattr(sq, "done", False)]
     uniform_dims = _uniform_dimensions(state.get("query_history", []))
-    converged_early = bool(unanswered) and len(uniform_dims) >= _UNIFORM_CONVERGENCE
-    if converged_early:
-        # Deliberate, evidence-based stop (#3/#13): the metric proved uniform, so the
-        # remaining segment drills were skipped as redundant. Frame as convergence, NOT
-        # failure — but still forbid claiming the skipped cuts were individually tested.
-        gap = "; ".join(f"{sq.id}: {sq.question}" for sq in unanswered[:6]) or "further segment drills"
-        chain_summary = (
-            f"✅ CONVERGED EARLY — the metric proved statistically uniform across "
-            f"{len(uniform_dims)} dimensions, so the remaining planned drills were "
-            f"intentionally skipped as redundant (they would re-confirm the flat baseline, "
-            f"not reveal a new driver): {gap}. This is a deliberate, evidence-based stop, "
-            f"NOT a failure or a data gap. Conclude that the metric is flat across the "
-            f"tested dimensions and that further segment-level drilling is unwarranted; "
-            f"pivot recommendations to baseline / policy-level levers. Do NOT imply the "
-            f"skipped cuts were each individually tested.\n\n"
-            + chain_summary
-        )
-    elif planned and (len(answers) < len(planned) or unanswered):
-        gap = "; ".join(f"{sq.id}: {sq.question}" for sq in unanswered[:6]) or "later planned steps"
-        chain_summary = (
-            f"⚠️ INCOMPLETE CHAIN — only {len(answers)} of {len(planned)} planned sub-questions "
-            f"actually ran. The following were NOT investigated and have NO data: {gap}. "
-            f"Do NOT claim a comprehensive analysis or use phrases like 'given all of the above'. "
-            f"Answer only from the completed steps below and explicitly note what remains unknown.\n\n"
-            + chain_summary
-        )
-
-    # No-signal honesty guard: if multiple sub-questions found the metric statistically
-    # UNIFORM across their segments (every segment within sampling noise of the pooled
-    # baseline — see the uniformity StatResults attached during execution), the apparent
-    # segment-to-segment variation is noise, not a driver. A metric this flat across every
-    # dimension is often a data-generation artifact or a genuinely exogenous/discretionary
-    # process — NOT something to attribute to, or fix via, any single segment.
-    # (uniform_dims computed above for the convergence check.)
-    if len(uniform_dims) >= 2:
-        chain_summary = (
-            f"⚠️ NO CAUSAL SIGNAL — {len(uniform_dims)} separate dimensions tested showed the "
-            f"metric statistically UNIFORM across all their segments (every segment within "
-            f"sampling noise of the pooled baseline; significance tests are in the evidence "
-            f"below). Apparent segment differences are noise, not drivers. You MUST: "
-            f"(1) state plainly that the metric is statistically flat across the tested "
-            f"dimensions; (2) NOT recommend any segment-specific intervention justified by a "
-            f"rate difference (cost concentration by volume/value is fine, a rate-driver claim "
-            f"is not); (3) explicitly flag that a metric this uniform is typically a "
-            f"data-generation artifact or an exogenous/discretionary process — recommend "
-            f"validating the data-generating process before acting, and keep the headline "
-            f"confidence LOW.\n\n"
-            + chain_summary
-        )
+    chain_summary = _honesty_preamble(answers, planned, uniform_dims) + _format_chain_summary(answers)
 
     # Collect data quality notes from pitfalls
     dq_notes: list[DataQualityNote] = []
