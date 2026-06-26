@@ -241,6 +241,57 @@ def integer_division_risk(sql: str) -> str | None:
     return None
 
 
+def count_ratio_distinct_risk(sql: str, dialect: str = "duckdb") -> str | None:
+    """A rate computed as one non-DISTINCT COUNT divided by ANOTHER non-DISTINCT COUNT,
+    in a query that JOINs ≥2 tables.
+
+    When a parent row matches multiple child rows, a LEFT JOIN fans BOTH counts out, so
+    ``COUNT(child_pk) / COUNT(parent_pk)`` is not matched_parents / total_parents — it
+    collapses to child_rows / joined_rows, which overstates the rate whenever any parent
+    has >1 child. (The Swiss-Air refund rate: COUNT(refund_id)/NULLIF(COUNT(ticket_id),0)
+    silently assumes ≤1 refund per ticket.) The always-correct form counts DISTINCT keys.
+
+    Conservative + static: fires only on COUNT(a)/COUNT(b) with a≠b (different columns,
+    neither '*'), neither DISTINCT, over a join. Looks THROUGH NULLIF/CAST/parens to find
+    the COUNTs. Returns a reason or None; never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None or not list(tree.find_all(exp.Join)):
+        return None
+
+    def _count_in(node):
+        if node is None:
+            return None
+        return node if isinstance(node, exp.Count) else node.find(exp.Count)
+
+    def _is_distinct(count_node):
+        # sqlglot models COUNT(DISTINCT x) as Count(this=Distinct(...)) on most versions,
+        # and as args['distinct'] on some — check both.
+        return isinstance(count_node.this, exp.Distinct) or bool(count_node.args.get("distinct"))
+
+    for div in tree.find_all(exp.Div):
+        nc, dc = _count_in(div.this), _count_in(div.expression)
+        if not nc or not dc:
+            continue
+        if _is_distinct(nc) or _is_distinct(dc):
+            continue
+        n_arg = nc.this.sql().lower() if nc.this else "*"
+        d_arg = dc.this.sql().lower() if dc.this else "*"
+        if "*" in (n_arg, d_arg) or n_arg == d_arg:
+            continue
+        return ("rate divides two raw COUNT()s across a join — if a parent row matches "
+                "multiple child rows both counts fan out and the rate is distorted "
+                "(it becomes child_rows / joined_rows, not matched_parents / total_parents). "
+                "Validate the ticket↔child cardinality; use COUNT(DISTINCT <parent_key>) for "
+                "the denominator and COUNT(DISTINCT CASE WHEN <child_key> IS NOT NULL THEN "
+                "<parent_key> END) for the numerator.")
+    return None
+
+
 _COUNT_STAR_AS = re.compile(r"count\s*\(\s*\*\s*\)\s+as\s+([a-z_][a-z0-9_]*)", re.I)
 _FROM_JOIN_TBL = re.compile(r"(?:from|join)\s+([a-z_][a-z0-9_.]*)", re.I)
 

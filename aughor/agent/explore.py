@@ -593,6 +593,22 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
                          counter="join_guard.explore_repair")
                 results.append(_attach_stats(result))
         else:
+            # Clean execution, no domain warning — still lint for a raw-COUNT rate over a
+            # join (#9): COUNT(child)/COUNT(parent) silently overstates the rate if any
+            # parent has >1 child. Surface as a data-quality caveat (no auto-rewrite).
+            if not result.error:
+                try:
+                    from aughor.sql.fanout import count_ratio_distinct_risk
+                    _cr = count_ratio_distinct_risk(sql, conn.dialect)
+                    if _cr:
+                        new_pitfalls.append(Pitfall(
+                            original_sql=sql, error=_cr, fixed_sql=sql,
+                            fix_explanation=_cr, data_quality_issue=_cr,
+                        ))
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "explore count-ratio lint best-effort; query proceeds",
+                             counter="count_ratio.explore_lint")
             results.append(_attach_stats(result))
 
     # Stash results in state temporarily (reason_over_result picks them up)
