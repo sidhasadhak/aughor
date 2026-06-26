@@ -72,3 +72,77 @@ def test_unrecorded_guard_shows_not_run():
 def test_empty_state_is_safe():
     m = _build_verification_manifest({})
     assert any(c.name == "stats_attached" for c in m.checks)
+
+
+# ── 0-II: earned confidence + data-trust ──────────────────────────────────────
+
+def _sq(i):
+    from aughor.agent.state import SubQuestion
+    return SubQuestion(id=f"Q{i}", purpose="relationship", question=f"q{i}", expected_output="agg")
+
+
+def _ans(i):
+    from aughor.agent.state import SubQuestionAnswer
+    return SubQuestionAnswer(subq_id=f"Q{i}", question="q", purpose="relationship", sql="",
+                             columns=[], rows=[], row_count=0, answer="a", insight="i")
+
+
+def _pitfall(issue):
+    from aughor.agent.state import Pitfall
+    return Pitfall(original_sql="", error=issue, fixed_sql="", fix_explanation=issue,
+                   data_quality_issue=issue)
+
+
+def test_healthy_run_high_confidence():
+    state = {
+        "verification_checks": ["temporal_prune:0", "join_value_domain", "cardinality_guard"],
+        "query_history": [_qr(stats=[_uni_stat()])],
+        "sub_questions": [_sq(1), _sq(2)],
+        "subq_answers": [_ans(1), _ans(2)],
+    }
+    m = _build_verification_manifest(state)
+    assert m.data_trust == 1.0
+    assert m.confidence_band == "high"
+    assert m.earned_confidence >= 0.9
+
+
+def test_swiss_air_shape_low_trust():
+    # Uniform across 6 dims + single-period (temporal pruned) + a raw-COUNT cardinality caveat.
+    hist = [_qr(hid=f"Q{i}", stats=[_uni_stat()]) for i in range(6)]
+    state = {
+        "verification_checks": ["temporal_prune:1", "join_value_domain", "cardinality_guard"],
+        "query_history": hist,
+        "sub_questions": [_sq(i) for i in range(1, 8)],
+        "subq_answers": [_ans(i) for i in range(1, 8)],
+        "pitfalls": [_pitfall("rate divides two raw COUNT()s across a join — ...")],
+    }
+    m = _build_verification_manifest(state)
+    assert m.data_trust <= 0.3                  # 1 - 0.4 (uniform≥3) - 0.2 (single period) - 0.2 (count ratio)
+    assert m.confidence_band == "low"
+    assert any("suspiciously flat" in s for s in m.signals)
+    assert any("single period" in s for s in m.signals)
+
+
+def test_genuine_partial_run_penalised():
+    state = {
+        "verification_checks": ["temporal_prune:0", "join_value_domain", "cardinality_guard"],
+        "query_history": [_qr(stats=[])],   # numeric? rows default [[1]] but stats empty
+        "sub_questions": [_sq(i) for i in range(1, 7)],
+        "subq_answers": [_ans(1)],          # only 1 of 6 ran, nothing converged
+    }
+    m = _build_verification_manifest(state)
+    assert any("1/6 planned" in s for s in m.signals)
+    assert m.earned_confidence < 0.7
+
+
+def test_converged_early_not_penalised_for_completeness():
+    # ≥3 uniform dims + unanswered planned steps = deliberate convergence, not incompleteness.
+    hist = [_qr(hid=f"Q{i}", stats=[_uni_stat()]) for i in range(3)]
+    state = {
+        "verification_checks": ["temporal_prune:0", "join_value_domain", "cardinality_guard"],
+        "query_history": hist,
+        "sub_questions": [_sq(i) for i in range(1, 7)],
+        "subq_answers": [_ans(1), _ans(2), _ans(3)],   # stopped at 3 of 6 on purpose
+    }
+    m = _build_verification_manifest(state)
+    assert not any("planned sub-questions" in s for s in m.signals)  # no completeness penalty

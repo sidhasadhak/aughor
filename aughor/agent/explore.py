@@ -1040,7 +1040,56 @@ def _build_verification_manifest(state: AgentState) -> VerificationManifest:
     applicable = [c for c in checks if c.status != "n/a"]
     ran = sum(1 for c in applicable if c.status == "ran")
     coverage = round(ran / len(applicable), 3) if applicable else 1.0
-    return VerificationManifest(checks=checks, coverage=coverage)
+
+    # ── Earned confidence (computed, not asserted) = coverage × completeness × data_trust ──
+    answers = state.get("subq_answers", []) or []
+    planned = state.get("sub_questions", []) or []
+    pitfalls = state.get("pitfalls", []) or []
+    uniform_dims = _uniform_dimensions(history)
+    signals: list[str] = []
+
+    # data_trust — does the underlying data look like it can support a conclusion?
+    data_trust = 1.0
+    nud = len(uniform_dims)
+    if nud >= 3:
+        data_trust -= 0.4
+        signals.append(f"metric uniform across {nud} dimensions — suspiciously flat (possibly "
+                       f"synthetic or exogenous); data-trust reduced")
+    elif nud >= 2:
+        data_trust -= 0.2
+        signals.append(f"metric uniform across {nud} dimensions — limited signal; data-trust reduced")
+    if "temporal_prune" in recorded and temporal_detail and "pruned" in temporal_detail \
+            and "nothing to prune" not in temporal_detail:
+        data_trust -= 0.2
+        signals.append("data spans a single period — no temporal variance; data-trust reduced")
+    if any("raw COUNT" in (getattr(p, "data_quality_issue", "") or "") for p in pitfalls):
+        data_trust -= 0.2
+        signals.append("a key rate divides raw COUNTs over a join — denominator may be distorted")
+    data_trust = max(0.0, round(data_trust, 3))
+
+    # completeness — a deliberate convergence stop (≥ _UNIFORM_CONVERGENCE uniform dims) is
+    # NOT incomplete; only a genuine partial run is penalised.
+    answered = len({a.subq_id for a in answers})
+    total = len(planned) or answered or 1
+    if nud >= _UNIFORM_CONVERGENCE:
+        completeness = 1.0
+    else:
+        completeness = min(1.0, answered / total)
+        if completeness < 1.0:
+            signals.append(f"chain ran {answered}/{total} planned sub-questions")
+
+    if coverage < 1.0:
+        signals.append("not every guard ran — see the verification checks")
+    earned = round(coverage * completeness * data_trust, 3)
+    band = "high" if earned >= 0.7 else "medium" if earned >= 0.4 else "low"
+    if not signals:
+        signals.append("all guards fired, chain complete, data looks trustworthy")
+
+    return VerificationManifest(
+        checks=checks, coverage=coverage,
+        earned_confidence=earned, confidence_band=band,
+        data_trust=data_trust, signals=signals,
+    )
 
 
 def _honesty_preamble(answers: list, planned: list, uniform_dims: list[str]) -> str:

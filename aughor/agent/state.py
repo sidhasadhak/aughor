@@ -232,10 +232,16 @@ class VerificationCheck(BaseModel):
 
 
 class VerificationManifest(BaseModel):
-    """The liveness record for an investigation: which guards fired. `coverage` is the
-    fraction of applicable checks that ran (n/a checks excluded)."""
+    """The liveness + trust record for an investigation. `coverage` = fraction of applicable
+    guards that ran. `earned_confidence`/`data_trust` are COMPUTED (never asserted by the
+    LLM) so the report's confidence reflects evidence, not a vibe; `signals` is the
+    provenance ('why this score')."""
     checks: list[VerificationCheck] = Field(default_factory=list)
     coverage: float = 0.0
+    earned_confidence: float = 1.0          # 0-1: coverage × completeness × data_trust
+    confidence_band: str = "high"           # high | medium | low
+    data_trust: float = 1.0                 # 0-1: how trustworthy the underlying data looks
+    signals: list[str] = Field(default_factory=list)   # why the score is what it is
 
 
 class ExplorationReport(BaseModel):
