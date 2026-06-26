@@ -162,8 +162,12 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
     if not sub_questions:
         sub_questions = _floor_chain(state)
 
+    # Reindex to canonical, unique ids BEFORE truncation so the retained chain is a
+    # contiguous Q1..Qn with no duplicate keys (planner can emit two 'Q3').
+    sub_questions = _canonicalize_subq_ids(sub_questions[:MAX_SUBQ])
+
     return {
-        "sub_questions": sub_questions[:MAX_SUBQ],
+        "sub_questions": sub_questions,
         "current_subq_idx": 0,
         "subq_answers": [],
         "pitfalls": [],
@@ -226,6 +230,48 @@ def _floor_chain(state: AgentState) -> list[SubQuestion]:
             expected_output="A focused aggregate (grouped/ranked as needed) that directly addresses the original question.",
         ),
     ]
+
+
+def _canonicalize_subq_ids(sqs: list[SubQuestion]) -> list[SubQuestion]:
+    """Assign canonical, unique, execution-order ids (Q1..Qn) to the planned chain,
+    regardless of what the LLM emitted.
+
+    The planner sometimes returns duplicate ids (two 'Q3') or gaps. Downstream state —
+    subq_answers, subq_data_portrait, refinement injection, and the frontend stepper key —
+    all key off the sub-question id, so a collision silently cross-contaminates two
+    distinct questions (answers/portraits overwrite each other) AND crashes the React
+    stepper with a duplicate-key error. Reindexing by position guarantees uniqueness.
+
+    depends_on is advisory (execution is sequential by index), so we remap it best-effort
+    through the old→new mapping, keeping only backward references that resolve."""
+    if not sqs:
+        return sqs
+    new_ids = [f"Q{i + 1}" for i in range(len(sqs))]
+    # An old id may appear more than once; record every replacement so a backward
+    # depends_on reference resolves to the most recent earlier occurrence.
+    old_to_new: dict[str, list[str]] = {}
+    for sq, nid in zip(sqs, new_ids):
+        old_to_new.setdefault(sq.id, []).append(nid)
+
+    out: list[SubQuestion] = []
+    for i, sq in enumerate(sqs):
+        remapped: list[str] = []
+        for dep in (sq.depends_on or []):
+            earlier = [c for c in old_to_new.get(dep, []) if int(c[1:]) < i + 1]
+            if earlier and earlier[-1] not in remapped:
+                remapped.append(earlier[-1])
+        out.append(SubQuestion(**{**sq.model_dump(), "id": new_ids[i], "depends_on": remapped}))
+    return out
+
+
+def _unique_subq_id(existing: set[str]) -> str:
+    """Mint a sub-question id not already in `existing`. Used when a sub-question is
+    promoted at runtime (reason_over_result) so an LLM-chosen id can't collide with a
+    planned one — a collision would attribute the new step's answer to an existing id."""
+    n = len(existing) + 1
+    while f"Q{n}" in existing:
+        n += 1
+    return f"Q{n}"
 
 
 # ── Node: plan_and_execute_subq ───────────────────────────────────────────────
@@ -661,9 +707,14 @@ def reason_over_result(state: AgentState) -> dict[str, Any]:
     updated_subqs = list(sub_questions)
     updated_subqs[idx] = SubQuestion(**{**subq.model_dump(), "done": True, "answer": answer_obj.answer, "refinement": answer_obj.refinement})
 
-    # Insert promoted sub-question if data revealed one
+    # Insert promoted sub-question if data revealed one, guaranteeing its id can't
+    # collide with a planned one (a collision would mis-attribute its answer/portrait).
     if answer_obj.new_sub_question:
-        updated_subqs.insert(idx + 1, answer_obj.new_sub_question)
+        nsq = answer_obj.new_sub_question
+        existing_ids = {s.id for s in updated_subqs}
+        if nsq.id in existing_ids or not (nsq.id or "").strip():
+            nsq = SubQuestion(**{**nsq.model_dump(), "id": _unique_subq_id(existing_ids)})
+        updated_subqs.insert(idx + 1, nsq)
 
     # Inject refinement text into the next sub-question's expected_output description
     if answer_obj.refinement and idx + 1 < len(updated_subqs):
