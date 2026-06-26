@@ -740,6 +740,28 @@ def reason_over_result(state: AgentState) -> dict[str, Any]:
 
 # ── Routing ───────────────────────────────────────────────────────────────────
 
+# Segment-style drills whose only job is to test the metric on another cut — once the
+# metric has proven uniform, more of these re-confirm the baseline rather than add signal.
+_DRILL_PURPOSES = {"relationship", "drill_down", "confounder", "threshold"}
+
+# How many uniform dimensions before further drilling is judged redundant.
+_UNIFORM_CONVERGENCE = int(__import__("os").getenv("AUGHOR_UNIFORM_CONVERGENCE", "3"))
+
+
+def _should_early_stop(state: AgentState) -> bool:
+    """Has the investigation converged? If the metric read statistically UNIFORM across
+    several dimensions already AND the next planned step is just another segment drill,
+    stop — it would re-confirm the flat baseline, not reveal a driver (#3 adaptivity,
+    #13 redundancy). The synthesis (wrap-up) step is never skipped this way."""
+    if len(_uniform_dimensions(state.get("query_history", []))) < _UNIFORM_CONVERGENCE:
+        return False
+    idx = state.get("current_subq_idx", 0)
+    sub_questions = state.get("sub_questions", [])
+    if idx >= len(sub_questions):
+        return False  # nothing left to skip — normal completion handles it
+    return getattr(sub_questions[idx], "purpose", "") in _DRILL_PURPOSES
+
+
 def route_after_reason(state: AgentState) -> str:
     idx = state.get("current_subq_idx", 0)
     sub_questions = state.get("sub_questions", [])
@@ -748,6 +770,10 @@ def route_after_reason(state: AgentState) -> str:
     if iteration >= MAX_SUBQ:
         return "synthesize_exploration"
     if idx >= len(sub_questions):
+        return "synthesize_exploration"
+    if _should_early_stop(state):
+        logger.info("[explore] converged early — metric uniform across ≥%d dimensions; "
+                    "skipping remaining segment drills", _UNIFORM_CONVERGENCE)
         return "synthesize_exploration"
     return "plan_and_execute_subq"
 
@@ -904,7 +930,25 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
     planned = state.get("sub_questions", []) or []
     answered_ids = {a.subq_id for a in answers}
     unanswered = [sq for sq in planned if sq.id not in answered_ids and not getattr(sq, "done", False)]
-    if planned and (len(answers) < len(planned) or unanswered):
+    uniform_dims = _uniform_dimensions(state.get("query_history", []))
+    converged_early = bool(unanswered) and len(uniform_dims) >= _UNIFORM_CONVERGENCE
+    if converged_early:
+        # Deliberate, evidence-based stop (#3/#13): the metric proved uniform, so the
+        # remaining segment drills were skipped as redundant. Frame as convergence, NOT
+        # failure — but still forbid claiming the skipped cuts were individually tested.
+        gap = "; ".join(f"{sq.id}: {sq.question}" for sq in unanswered[:6]) or "further segment drills"
+        chain_summary = (
+            f"✅ CONVERGED EARLY — the metric proved statistically uniform across "
+            f"{len(uniform_dims)} dimensions, so the remaining planned drills were "
+            f"intentionally skipped as redundant (they would re-confirm the flat baseline, "
+            f"not reveal a new driver): {gap}. This is a deliberate, evidence-based stop, "
+            f"NOT a failure or a data gap. Conclude that the metric is flat across the "
+            f"tested dimensions and that further segment-level drilling is unwarranted; "
+            f"pivot recommendations to baseline / policy-level levers. Do NOT imply the "
+            f"skipped cuts were each individually tested.\n\n"
+            + chain_summary
+        )
+    elif planned and (len(answers) < len(planned) or unanswered):
         gap = "; ".join(f"{sq.id}: {sq.question}" for sq in unanswered[:6]) or "later planned steps"
         chain_summary = (
             f"⚠️ INCOMPLETE CHAIN — only {len(answers)} of {len(planned)} planned sub-questions "
@@ -920,7 +964,7 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
     # segment-to-segment variation is noise, not a driver. A metric this flat across every
     # dimension is often a data-generation artifact or a genuinely exogenous/discretionary
     # process — NOT something to attribute to, or fix via, any single segment.
-    uniform_dims = _uniform_dimensions(state.get("query_history", []))
+    # (uniform_dims computed above for the convergence check.)
     if len(uniform_dims) >= 2:
         chain_summary = (
             f"⚠️ NO CAUSAL SIGNAL — {len(uniform_dims)} separate dimensions tested showed the "
