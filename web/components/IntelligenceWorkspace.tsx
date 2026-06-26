@@ -97,7 +97,9 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         const entry = tree.sections.flatMap(s => s.entries).find(e => e.conn_id === connectionId);
         const names = entry?.schemas.map(s => s.name) ?? [];
         setSchemas(names);
-        setSelectedSchema(names.length === 1 ? names[0] : null);
+        // TEMP (2026-06-26): "All schemas" removed — each schema is selected individually,
+        // so default to the first concrete schema rather than the all-schemas (null) scope.
+        setSelectedSchema(names[0] ?? null);
       })
       .catch(() => { if (alive) setSchemas([]); });
     return () => { alive = false; };
@@ -150,7 +152,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
                 padding: "3px 8px", cursor: "pointer",
               }}
             >
-              <option value="">All schemas</option>
+              {/* TEMP (2026-06-26): "All schemas" option removed — select each schema individually. */}
               {schemas.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
