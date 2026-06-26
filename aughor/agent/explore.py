@@ -100,8 +100,14 @@ def _format_chain_summary(answers: list[SubQuestionAnswer]) -> str:
 
 def _attach_stats(result: QueryResult) -> QueryResult:
     try:
-        stats = analyze_query_result(result)
-        return QueryResult(**{**result.model_dump(), "stats": [s for s in stats]})
+        # NOTE: analyze_query_result takes (columns, rows, sql) — passing the bare
+        # QueryResult silently raised TypeError and the except swallowed it, so the
+        # whole stats-injection feature was dead in the explore path until this fix.
+        # analyze_query_result returns tools.stats.StatResult (dataclass); QueryResult.stats
+        # is the pydantic state.StatResult — bridge via asdict so pydantic validates.
+        from dataclasses import asdict
+        stats = analyze_query_result(result.columns, result.rows, result.sql)
+        return QueryResult(**{**result.model_dump(), "stats": [asdict(s) for s in stats]})
     except Exception:
         return result
 
@@ -863,6 +869,18 @@ def _learn_from_exploration(
         return 0  # Never crash the pipeline
 
 
+def _uniform_dimensions(query_history: list) -> list[str]:
+    """Interpretations of every sub-question result whose rate was UNIFORM across its
+    segments (a uniformity StatResult with is_significant=False). Two or more such
+    dimensions ⇒ the metric is statistically flat and the report must not claim drivers."""
+    return [
+        s.interpretation
+        for r in (query_history or [])
+        for s in (getattr(r, "stats", None) or [])
+        if getattr(s, "type", "") == "uniformity" and not getattr(s, "is_significant", True)
+    ]
+
+
 def synthesize_exploration(state: AgentState) -> dict[str, Any]:
     """Produce the final ExplorationReport from the completed Q→A chain."""
     answers = state.get("subq_answers", [])
@@ -893,6 +911,29 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
             f"actually ran. The following were NOT investigated and have NO data: {gap}. "
             f"Do NOT claim a comprehensive analysis or use phrases like 'given all of the above'. "
             f"Answer only from the completed steps below and explicitly note what remains unknown.\n\n"
+            + chain_summary
+        )
+
+    # No-signal honesty guard: if multiple sub-questions found the metric statistically
+    # UNIFORM across their segments (every segment within sampling noise of the pooled
+    # baseline — see the uniformity StatResults attached during execution), the apparent
+    # segment-to-segment variation is noise, not a driver. A metric this flat across every
+    # dimension is often a data-generation artifact or a genuinely exogenous/discretionary
+    # process — NOT something to attribute to, or fix via, any single segment.
+    uniform_dims = _uniform_dimensions(state.get("query_history", []))
+    if len(uniform_dims) >= 2:
+        chain_summary = (
+            f"⚠️ NO CAUSAL SIGNAL — {len(uniform_dims)} separate dimensions tested showed the "
+            f"metric statistically UNIFORM across all their segments (every segment within "
+            f"sampling noise of the pooled baseline; significance tests are in the evidence "
+            f"below). Apparent segment differences are noise, not drivers. You MUST: "
+            f"(1) state plainly that the metric is statistically flat across the tested "
+            f"dimensions; (2) NOT recommend any segment-specific intervention justified by a "
+            f"rate difference (cost concentration by volume/value is fine, a rate-driver claim "
+            f"is not); (3) explicitly flag that a metric this uniform is typically a "
+            f"data-generation artifact or an exogenous/discretionary process — recommend "
+            f"validating the data-generating process before acting, and keep the headline "
+            f"confidence LOW.\n\n"
             + chain_summary
         )
 
