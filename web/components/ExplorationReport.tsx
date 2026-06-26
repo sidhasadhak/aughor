@@ -118,6 +118,64 @@ function SubQuestionCard({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+const BAND_STYLE: Record<string, string> = {
+  high:   "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+  medium: "border-amber-500/40 bg-amber-500/10 text-amber-300",
+  low:    "border-rose-500/40 bg-rose-500/10 text-rose-300",
+};
+
+function ConfidenceChip({ band, earned }: { band: string; earned: number }) {
+  return (
+    <span className={`shrink-0 text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded border ${BAND_STYLE[band] ?? BAND_STYLE.low}`}
+      title="Computed from guard coverage × chain completeness × data trust — not asserted by the model.">
+      {band} confidence · {Math.round(earned * 100)}%
+    </span>
+  );
+}
+
+const CHECK_MARK: Record<string, { sym: string; cls: string }> = {
+  ran:     { sym: "✓", cls: "text-emerald-400" },
+  not_run: { sym: "⊘", cls: "text-rose-400" },
+  "n/a":   { sym: "–", cls: "text-zinc-600" },
+};
+
+function VerificationPanel({ v }: { v: NonNullable<ExplorationReportType["verification"]> }) {
+  return (
+    <div className="border-t border-zinc-800/60 pt-4 space-y-3">
+      <SectionLabel>Verification</SectionLabel>
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-zinc-400 font-mono">
+        <span>earned confidence <span className="text-zinc-200">{Math.round(v.earned_confidence * 100)}%</span></span>
+        <span>data trust <span className="text-zinc-200">{Math.round(v.data_trust * 100)}%</span></span>
+        <span>guard coverage <span className="text-zinc-200">{Math.round(v.coverage * 100)}%</span></span>
+      </div>
+      <ul className="space-y-1">
+        {v.checks.map((c) => {
+          const m = CHECK_MARK[c.status] ?? CHECK_MARK["n/a"];
+          return (
+            <li key={c.name} className="flex items-start gap-2 leading-relaxed">
+              <span className={`shrink-0 mt-0.5 w-3 text-center ${m.cls}`}>{m.sym}</span>
+              <span>
+                <span className={c.status === "not_run" ? "text-rose-300" : "text-zinc-300"}>{c.label}</span>
+                {c.status === "not_run" && <span className="text-rose-400/80"> — did not run</span>}
+                {c.detail && <span className="text-zinc-500"> · {c.detail}</span>}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {v.signals.length > 0 && (
+        <ul className="space-y-1 pt-1">
+          {v.signals.map((s, i) => (
+            <li key={i} className="text-[11px] text-zinc-500 flex items-start gap-2">
+              <span className="shrink-0 mt-0.5">·</span><span>{s}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function ExplorationReportView({ report, subqAnswers, queryCount }: Props) {
   const dqNotes = report.data_quality_notes ?? [];
   const showNarrative = report.narrative && report.narrative.trim() !== (report.conclusion ?? "").trim();
@@ -126,7 +184,12 @@ export function ExplorationReportView({ report, subqAnswers, queryCount }: Props
     <div className="space-y-6 text-[13px] text-zinc-300">
       {/* Answer */}
       <div className="space-y-1.5">
-        <SectionLabel>Answer</SectionLabel>
+        <div className="flex items-center justify-between gap-3">
+          <SectionLabel>Answer</SectionLabel>
+          {report.verification && (
+            <ConfidenceChip band={report.verification.confidence_band} earned={report.verification.earned_confidence} />
+          )}
+        </div>
         <p className="text-[15px] font-medium text-zinc-100 leading-snug">{report.headline}</p>
       </div>
 
@@ -186,6 +249,9 @@ export function ExplorationReportView({ report, subqAnswers, queryCount }: Props
           </ul>
         </div>
       )}
+
+      {/* Verification — which guards ran + why the confidence is what it is (Bet 0) */}
+      {report.verification && <VerificationPanel v={report.verification} />}
 
       <p className="text-[11px] text-zinc-500 pt-1">
         {queryCount} quer{queryCount === 1 ? "y" : "ies"} · {subqAnswers.length} step{subqAnswers.length !== 1 ? "s" : ""}

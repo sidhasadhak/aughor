@@ -95,12 +95,29 @@ export interface SubQuestionAnswer {
   refinement: string | null;
 }
 
+export interface VerificationCheck {
+  name: string;
+  label: string;
+  status: "ran" | "not_run" | "n/a";
+  detail?: string | null;
+}
+
+export interface VerificationManifest {
+  checks: VerificationCheck[];
+  coverage: number;
+  earned_confidence: number;   // 0-1, computed (not asserted)
+  confidence_band: "high" | "medium" | "low";
+  data_trust: number;          // 0-1
+  signals: string[];           // why the score is what it is
+}
+
 export interface ExplorationReport {
   headline: string;
   conclusion: string;
   narrative: string;
   recommended_actions: string[];
   data_quality_notes: DataQualityNote[];
+  verification?: VerificationManifest | null;   // Bet 0 — which guards ran + earned trust
 }
 
 // ── ADA types ────────────────────────────────────────────────────────────────
