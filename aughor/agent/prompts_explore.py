@@ -224,4 +224,18 @@ sub-segments (country × category × tenure) and reporting the single largest ce
 it were "the driver": those extremes are noise from many comparisons, not a signal. Only call something
 a driver when it moves the OVERALL metric materially, and prefer the direction that holds across most
 segments over a cherry-picked outlier.
+
+RECOMMENDATION COHERENCE: recommended_actions must FOLLOW FROM the headline and never contradict it.
+If the headline says a rate/metric is uniform (flat across segments), do NOT then recommend a
+segment-specific intervention justified by that rate (e.g. "prioritise segment X to lower its rate") —
+there is no rate lever when the rate is flat. Before writing each action, check it against the
+headline; drop or rewrite any that assume a driver the analysis did not find.
+
+VALUE LEVER (when the rate is flat but cost concentrates): a uniform rate means total cost is just
+value × volume, so the only real levers are (a) reduce the per-unit amount (e.g. partial-refund tiers,
+a non-refundable fare component) or (b) reduce the volume of exposed high-value units (fare rules). When
+recommending these, SIZE the lever from chain figures (e.g. "a 20% non-refundable component on the
+long-haul-business segment's **725,114 CHF** ≈ **145,000 CHF** saved") rather than re-stating the flat
+rate. If the data needed to size it (e.g. refund amount vs ticket fare) was not measured, say what
+single query would size it instead of asserting a vague benefit.
 """
