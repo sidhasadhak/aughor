@@ -168,6 +168,17 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
     if not sub_questions:
         sub_questions = _floor_chain(state)
 
+    # Pre-flight prune: if the data spans a single period, drop seasonality/temporal
+    # sub-questions before they cost a planning slot + a query (the Swiss-Air case that
+    # "discovered" the data was single-month June only after running the step).
+    span = _data_span_months(scan_context)
+    sub_questions, dropped = _prune_impossible_subqs(sub_questions, span)
+    if dropped:
+        logger.info("[explore] pruned %d temporal sub-question(s) — data spans ~%.1f month(s): %s",
+                    len(dropped), span or 0.0, "; ".join(s.question[:48] for s in dropped))
+    if not sub_questions:
+        sub_questions = _floor_chain(state)
+
     # Reindex to canonical, unique ids BEFORE truncation so the retained chain is a
     # contiguous Q1..Qn with no duplicate keys (planner can emit two 'Q3').
     sub_questions = _canonicalize_subq_ids(sub_questions[:MAX_SUBQ])
@@ -268,6 +279,52 @@ def _canonicalize_subq_ids(sqs: list[SubQuestion]) -> list[SubQuestion]:
                 remapped.append(earlier[-1])
         out.append(SubQuestion(**{**sq.model_dump(), "id": new_ids[i], "depends_on": remapped}))
     return out
+
+
+# Sub-questions that only make sense with multiple time periods. Pruned pre-flight when
+# the data spans a single period — otherwise the planner spends a query to "discover" the
+# obvious (the Swiss-Air seasonality step that found the data was single-month June).
+_TEMPORAL_KEYWORDS = (
+    "season", "seasonal", "quarter", "month-over-month", "monthly trend", "year-over-year",
+    "yoy", "over time", "trend over", "by month", "by quarter", "by season", "across month",
+    "across quarter", "seasonality", "time series", "per month", "per quarter", "monthly",
+    "quarterly", "temporal",
+)
+
+
+def _data_span_months(scan_context: str) -> Optional[float]:
+    """Approximate span (in months) of the data's date range, parsed from the DATA
+    PORTRAIT text. Returns None when no date range is discoverable (→ don't prune)."""
+    try:
+        from aughor.agent.investigate import _extract_data_date_range
+        lo, hi = _extract_data_date_range(scan_context or "")
+        if not lo or not hi:
+            return None
+        from datetime import date
+        span_days = (date.fromisoformat(hi) - date.fromisoformat(lo)).days
+        return max(0.0, span_days / 30.44)
+    except Exception:
+        return None
+
+
+def _prune_impossible_subqs(
+    sub_questions: list[SubQuestion], span_months: Optional[float]
+) -> tuple[list[SubQuestion], list[SubQuestion]]:
+    """Drop temporal/seasonality sub-questions when the data spans a single period
+    (<2 months) — they can only return one group and waste a planning slot + a query.
+    landscape/synthesis steps are never pruned. Returns (kept, dropped)."""
+    if span_months is None or span_months >= 2.0:
+        return sub_questions, []
+    kept: list[SubQuestion] = []
+    dropped: list[SubQuestion] = []
+    for sq in sub_questions:
+        text = f"{sq.question} {sq.expected_output}".lower()
+        temporal = any(k in text for k in _TEMPORAL_KEYWORDS)
+        if temporal and sq.purpose not in ("landscape", "synthesis"):
+            dropped.append(sq)
+        else:
+            kept.append(sq)
+    return kept, dropped
 
 
 def _unique_subq_id(existing: set[str]) -> str:
