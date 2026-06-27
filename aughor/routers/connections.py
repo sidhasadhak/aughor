@@ -668,8 +668,9 @@ async def analyze_connection_file(conn_id: str, file: UploadFile = File(...)):
         info = await loop.run_in_executor(None, lambda: db.analyze_file(tmp_path))
         info["filename"] = tmp_path.name
         return info
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Analyze failed: {e}")
+    except Exception:
+        logger.exception("file analyze failed")
+        raise HTTPException(status_code=400, detail="Analyze failed")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -718,8 +719,9 @@ async def upload_file_to_connection(
             None, lambda: db.ingest_file(tmp_path, table_name=(table_name or None))
         )
         return {"table_name": tname, "filename": tmp_path.name, "message": "File ingested"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Ingestion failed: {e}")
+    except Exception:
+        logger.exception("file ingestion failed")
+        raise HTTPException(status_code=400, detail="Ingestion failed")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 

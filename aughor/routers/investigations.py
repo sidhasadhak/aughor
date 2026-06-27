@@ -2463,9 +2463,9 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
         raise HTTPException(status_code=400, detail="format must be 'pdf' or 'pptx'")
     try:
         data, filename, media_type = export_report(inv, fmt, narrate=narrate)
-    except Exception as e:  # never leak a stack trace to the client
+    except Exception:  # never leak a stack trace to the client
         logger.exception("export failed for %s", inv_id)
-        raise HTTPException(status_code=500, detail=f"export failed: {e}")
+        raise HTTPException(status_code=500, detail="export failed")
     return Response(
         content=data,
         media_type=media_type,

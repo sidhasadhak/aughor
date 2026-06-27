@@ -698,8 +698,9 @@ async def retry_query(conn_id: str, body: RetryQueryRequest):
             "rows": [[str(c) for c in r] for r in (result.rows or [])[:50]],
             "columns": result.columns or [], "row_count": result.row_count,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Query execution failed: {e}")
+    except Exception:
+        logger.exception("query execution failed for %s", conn_id)
+        raise HTTPException(status_code=500, detail="Query execution failed")
 
 
 @router.post("/exploration/{conn_id}/fix-episode", dependencies=[gate(Capability.FIX_SAVE)])
@@ -714,8 +715,9 @@ def fix_episode(conn_id: str, body: FixEpisodeRequest):
             think=body.think, phase=body.phase, hint=body.hint,
             canvas_id=body.canvas_id or None,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"fix-and-save failed: {e}")
+    except Exception:
+        logger.exception("fix-and-save failed for %s", conn_id)
+        raise HTTPException(status_code=500, detail="fix-and-save failed")
 
 
 @router.post("/exploration/{conn_id}/fix-all", dependencies=[gate(Capability.FIX_SAVE)])
