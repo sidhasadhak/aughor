@@ -1336,14 +1336,16 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
         _steered = [c.split(":", 1)[1] for c in (state.get("verification_checks", []) or [])
                     if isinstance(c, str) and c.startswith("specialist:")]
         if _steered:
-            from aughor.packs.flywheel import distill_deltas
+            from aughor.packs.flywheel import distill_deltas, llm_distill_deltas
             from aughor.packs.deltastore import record_deltas
+            _inv = state.get("investigation_id", "") or ""
             _res = distill_deltas(_steered[0], manifest,
-                                  data_quality_notes=report.data_quality_notes,
-                                  source_run=state.get("investigation_id", "") or "")
-            if _res.compounded and _res.deltas:
-                n = record_deltas(_steered[0], state.get("connection_id", ""), _res.deltas,
-                                  source_run=state.get("investigation_id", "") or "")
+                                  data_quality_notes=report.data_quality_notes, source_run=_inv)
+            _deltas = list(_res.deltas)
+            if _res.compounded:   # only LLM-distil a verified run (gate already passed)
+                _deltas += llm_distill_deltas(_steered[0], manifest, chain_summary, source_run=_inv)
+            if _deltas:
+                n = record_deltas(_steered[0], state.get("connection_id", ""), _deltas, source_run=_inv)
                 logger.info("[explore] flywheel proposed %d delta(s) for pack '%s'", n, _steered[0])
     except Exception as _exc:
         from aughor.kernel.errors import tolerate

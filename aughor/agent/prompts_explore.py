@@ -166,6 +166,28 @@ value was returned as a column by the query. If a derived metric matters, it mus
 from your own arithmetic (which is often wrong). Cite only what the query actually returned.
 """
 
+DISTILL_PACK_DELTAS_PROMPT = """\
+You are improving a domain-expert PACK from a completed, VERIFIED investigation it steered.
+Propose ONLY concrete, durable improvements to the expert that THIS run revealed — either:
+  • a schema caveat (a column-level gotcha an analyst must know to avoid a wrong result), or
+  • a diagnostic question the expert should always ask on this kind of question.
+
+Be conservative and specific. Return an EMPTY list if nothing durable was learned. Do NOT
+restate the findings, recommendations, or generic advice — only pack-level learnings grounded
+in what the data actually showed here.
+
+PACK: {pack_id}
+
+INVESTIGATION SUMMARY (the chain that just ran):
+{chain_summary}
+
+Return deltas: a list where each item has
+  kind: "caveat" (a column gotcha) or "diagnostic" (a question to always ask),
+  target: "table.column" for a caveat, "" for a diagnostic,
+  content: one precise sentence.
+"""
+
+
 REFUTE_FINDING_PROMPT = """\
 You are a SKEPTICAL senior analyst. Your ONLY job is to REFUTE the headline finding below —
 find the single strongest reason it could be WRONG, given the evidence actually gathered.
