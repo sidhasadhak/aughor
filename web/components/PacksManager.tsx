@@ -62,7 +62,7 @@ function PackDeploy({ packId }: { packId: string }) {
   const [schemas, setSchemas] = useState<string[]>([]);
   const [schema, setSchema] = useState("");
   const [proposals, setProposals] = useState<Record<string, BindingCandidateDTO> | null>(null);
-  const [fullyBound, setFullyBound] = useState(false);
+  const [fullyGroundable, setFullyGroundable] = useState(false);
   const [verified, setVerified] = useState<boolean | null>(null);
   const [evalRes, setEvalRes] = useState<Awaited<ReturnType<typeof evaluatePack>> | null>(null);
   const [deltas, setDeltas] = useState<PackDeltaDTO[]>([]);
@@ -97,7 +97,7 @@ function PackDeploy({ packId }: { packId: string }) {
   const propose = () => run("propose", async () => {
     setVerified(null); setEvalRes(null);
     const r = await proposePackBindings(packId, conn, schema || undefined, "");
-    setProposals(r.proposals); setFullyBound(r.fully_bound);
+    setProposals(r.proposals); setFullyGroundable(r.fully_groundable);
   });
 
   const deploy = () => run("deploy", async () => {
@@ -133,48 +133,54 @@ function PackDeploy({ packId }: { packId: string }) {
           {schemas.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <button className={btn} disabled={!conn || busy !== ""} onClick={propose}>
-          {busy === "propose" ? "Proposing…" : "Propose bindings"}
+          {busy === "propose" ? "Proposing…" : "1 · Propose bindings"}
         </button>
         <button className={btn} disabled={!proposals || busy !== ""} onClick={deploy}>
-          {busy === "deploy" ? "Binding…" : "Bind + verify"}
+          {busy === "deploy" ? "Binding…" : "2 · Bind + verify"}
         </button>
-        <button className={btn} disabled={busy !== ""} onClick={evaluate}>
-          {busy === "evaluate" ? "Evaluating…" : "Evaluate"}
+        <button className={btn} disabled={verified !== true || busy !== ""} onClick={evaluate}
+          title={verified !== true ? "Deploy first: run Bind + verify" : ""}>
+          {busy === "evaluate" ? "Evaluating…" : "3 · Evaluate"}
         </button>
       </div>
+      <p className="text-[10px] text-zinc-600">Deploy a pack: propose → bind + verify → evaluate → (set status active + enable the flag to steer runs).</p>
       {err && <p className="text-[11px] text-rose-400">{err}</p>}
 
-      {/* Proposals */}
-      {proposals && (
-        <div className="text-[11px]">
-          <div className="text-zinc-500 mb-1">
-            Proposed bindings — {fullyBound ? <span className="text-emerald-400">fully bound</span>
-              : <span className="text-amber-400">incomplete</span>}
-            {verified !== null && (verified
-              ? <span className="text-emerald-400"> · verified ✓</span>
-              : <span className="text-rose-400"> · not verified</span>)}
+      {/* Step 1 — groundability (a PROPOSAL, not a deployment) */}
+      {proposals && (() => {
+        const total = Object.keys(proposals).length;
+        const groundable = Object.values(proposals).filter(c => c.bound).length;
+        return (
+          <div className="text-[11px]">
+            <div className="text-zinc-500 mb-1">
+              Proposed bindings — {fullyGroundable
+                ? <span className="text-emerald-400">all {total} roles groundable</span>
+                : <span className="text-amber-400">{groundable}/{total} roles groundable</span>}
+              {verified !== null && (verified
+                ? <span className="text-emerald-400"> · deployed ✓ verified</span>
+                : <span className="text-rose-400"> · pinned but not verified</span>)}
+            </div>
+            <div className="font-mono space-y-0.5">
+              {Object.entries(proposals).map(([role, c]) => (
+                <div key={role} className="flex justify-between gap-3">
+                  <span className="text-zinc-300">{role}</span>
+                  <span className={c.bound ? "text-zinc-400" : "text-rose-400"}>
+                    {c.value || `${c.table ?? "?"}.${c.column ?? "?"}`} <span className="text-zinc-600">({Math.round(c.confidence * 100)}%)</span>
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="font-mono space-y-0.5">
-            {Object.entries(proposals).map(([role, c]) => (
-              <div key={role} className="flex justify-between gap-3">
-                <span className="text-zinc-300">{role}</span>
-                <span className={c.bound ? "text-zinc-400" : "text-rose-400"}>
-                  {c.value || `${c.table ?? "?"}.${c.column ?? "?"}`} <span className="text-zinc-600">({Math.round(c.confidence * 100)}%)</span>
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {/* Evaluation */}
+      {/* Step 3 — evals (pass/fail) shown SEPARATELY from activation readiness */}
       {evalRes && (
-        <div className="text-[11px]">
-          <div className="text-zinc-500 mb-1">
-            Evaluation — {evalRes.can_activate
-              ? <span className="text-emerald-400">can activate ✓</span>
-              : <span className="text-amber-400">blocked</span>}
-            {evalRes.pass_rate != null && <span className="text-zinc-500"> · {Math.round(evalRes.pass_rate * 100)}% pass</span>}
+        <div className="text-[11px] space-y-1">
+          <div className="text-zinc-500">
+            Evals — {evalRes.pass_rate != null
+              ? <span className={evalRes.pass_rate === 1 ? "text-emerald-400" : "text-amber-400"}>{Math.round(evalRes.pass_rate * 100)}% pass</span>
+              : "not run"}
           </div>
           {evalRes.results.map((r, i) => (
             <div key={i} className="flex gap-2">
@@ -182,7 +188,12 @@ function PackDeploy({ packId }: { packId: string }) {
               <span className="text-zinc-400">{r.question}</span>
             </div>
           ))}
-          {evalRes.reasons.map((r, i) => <p key={i} className="text-amber-400/80">· {r}</p>)}
+          <div className="text-zinc-500 pt-0.5">
+            Activation — {evalRes.can_activate
+              ? <span className="text-emerald-400">ready ✓</span>
+              : <span className="text-amber-400">blocked</span>}
+          </div>
+          {evalRes.reasons.map((r, i) => <p key={i} className="text-amber-400/80 pl-3">· {r}</p>)}
         </div>
       )}
 

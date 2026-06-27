@@ -240,13 +240,14 @@ def verify_binding_columns(binding: dict, table_cols: dict) -> tuple[bool, list[
 
 
 def binding_report(entities: dict[str, RoleSpec], facts: SchemaFacts) -> dict:
-    """Convenience summary: the proposals plus how many roles bound (the deployer's at-a-glance
-    'is this pack groundable here?'). The dry-run verification of recipes is a separate P1b step."""
+    """Convenience summary: the proposals plus how many roles the resolver could GROUND (find a
+    candidate for) — the deployer's at-a-glance 'is this pack groundable here?'. This is a
+    PROPOSAL, distinct from a pinned/deployed binding; the dry-run verify is a separate step."""
     props = propose_bindings(entities, facts)
-    bound = sum(1 for c in props.values() if c.bound)
+    groundable = sum(1 for c in props.values() if c.bound)
     return {
         "proposals": props,
-        "bound": bound,
+        "groundable_roles": groundable,
         "total": len(props),
-        "fully_bound": bound == len(props) and len(props) > 0,
+        "fully_groundable": groundable == len(props) and len(props) > 0,
     }

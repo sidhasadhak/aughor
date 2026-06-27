@@ -3174,7 +3174,7 @@ export interface BindingCandidateDTO {
 
 export async function proposePackBindings(
   packId: string, connectionId: string, schema?: string, businessModel = "",
-): Promise<{ fully_bound: boolean; bound: number; total: number; proposals: Record<string, BindingCandidateDTO> }> {
+): Promise<{ fully_groundable: boolean; groundable_roles: number; total: number; proposals: Record<string, BindingCandidateDTO> }> {
   const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/propose-bindings`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connection_id: connectionId, schema, business_model: businessModel }),
@@ -3197,7 +3197,8 @@ export async function bindPack(
 export async function evaluatePack(
   packId: string, connectionId: string, schema?: string,
 ): Promise<{ can_activate: boolean; pass_rate: number | null; reasons: string[];
-            results: { question: string; passed: boolean; detail: string }[]; fully_bound: boolean }> {
+            results: { question: string; passed: boolean; detail: string }[];
+            deployed: boolean; verified: boolean }> {
   const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/evaluate`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connection_id: connectionId, schema }),

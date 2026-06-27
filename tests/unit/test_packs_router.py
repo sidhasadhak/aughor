@@ -45,5 +45,5 @@ def test_propose_bindings_over_table_cols():
     r = client.post("/packs/customer-analytics/propose-bindings", json=payload)
     assert r.status_code == 200
     body = r.json()
-    assert body["fully_bound"] is True
+    assert body["fully_groundable"] is True
     assert body["proposals"]["customer"]["table"] == "dim_customers"

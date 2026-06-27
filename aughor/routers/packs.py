@@ -117,7 +117,10 @@ def post_propose_bindings(pack_id: str, body: ProposeIn):
                                 detail="provide table_cols or a reachable connection_id")
     rep = binding_report(pack.entities, facts)
     return {
-        "fully_bound": rep["fully_bound"], "bound": rep["bound"], "total": rep["total"],
+        # "groundable" = the resolver found a candidate for every role (a PROPOSAL).
+        # Distinct from a pinned/deployed binding — see Bind + verify.
+        "fully_groundable": rep["fully_groundable"],
+        "groundable_roles": rep["groundable_roles"], "total": rep["total"],
         "proposals": {role: vars(cand) for role, cand in rep["proposals"].items()},
     }
 
@@ -215,12 +218,17 @@ def post_evaluate(pack_id: str, body: EvalIn):
 
     results = run_pack_evals(pack, ask)
     binding = load_binding(pack_id, body.connection_id, body.schema or "")
-    fully_bound = bool(binding) and all(r in (binding.get("bindings") or {}) for r in pack.entities)
-    decision = evaluate_activation(pack, results, fully_bound)
+    pinned = bool(binding)
+    bmap = (binding or {}).get("bindings") or {}
+    missing = [r for r in pack.entities if r not in bmap]
+    verified = bool(binding and binding.get("verified"))
+    decision = evaluate_activation(pack, results, binding_pinned=pinned,
+                                   binding_verified=verified, missing_roles=missing)
     return {
         "can_activate": decision.can_activate,
         "pass_rate": decision.pass_rate,
         "reasons": decision.reasons,
         "results": [{"question": r.question, "passed": r.passed, "detail": r.detail} for r in results],
-        "fully_bound": fully_bound,
+        # deployment state, surfaced separately from the eval pass rate
+        "deployed": pinned, "verified": verified,
     }

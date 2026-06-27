@@ -48,30 +48,47 @@ def _pack_with_evals(n=2):
                 evals=[PackEval(question=f"q{i}") for i in range(n)])
 
 
-def test_activation_blocked_until_evals_pass_and_bound():
+def test_activation_blocked_until_evals_pass_and_deployed():
     pack = _pack_with_evals()
     results = [EvalResult("q0", True), EvalResult("q1", False)]
-    d = evaluate_activation(pack, results, binding_fully_bound=True)
+    d = evaluate_activation(pack, results, binding_pinned=True, binding_verified=True)
     assert not d.can_activate
     assert d.pass_rate == 0.5
     assert any("failing" in r for r in d.reasons)
 
 
-def test_activation_allowed_when_all_pass_and_bound():
+def test_activation_allowed_when_all_pass_and_deployed():
     pack = _pack_with_evals()
     results = [EvalResult("q0", True), EvalResult("q1", True)]
-    d = evaluate_activation(pack, results, binding_fully_bound=True)
+    d = evaluate_activation(pack, results, binding_pinned=True, binding_verified=True)
     assert d.can_activate and d.pass_rate == 1.0 and d.reasons == []
 
 
-def test_activation_blocked_when_unbound():
+def test_activation_blocked_when_not_deployed_even_if_evals_pass():
+    # The exact confusing case: 100% pass but blocked because nothing is pinned.
     pack = _pack_with_evals()
     d = evaluate_activation(pack, [EvalResult("q0", True), EvalResult("q1", True)],
-                            binding_fully_bound=False)
-    assert not d.can_activate and any("not fully bound" in r for r in d.reasons)
+                            binding_pinned=False)
+    assert not d.can_activate
+    assert d.pass_rate == 1.0                                   # evals DID pass
+    assert any("not deployed" in r for r in d.reasons)         # but it's not deployed
+
+
+def test_activation_blocked_when_pinned_but_unverified():
+    pack = _pack_with_evals()
+    d = evaluate_activation(pack, [EvalResult("q0", True), EvalResult("q1", True)],
+                            binding_pinned=True, binding_verified=False)
+    assert not d.can_activate and any("not verified" in r for r in d.reasons)
+
+
+def test_activation_blocked_when_pinned_missing_roles():
+    pack = _pack_with_evals()
+    d = evaluate_activation(pack, [EvalResult("q0", True), EvalResult("q1", True)],
+                            binding_pinned=True, missing_roles=["cohort_anchor"])
+    assert not d.can_activate and any("missing role" in r for r in d.reasons)
 
 
 def test_activation_blocked_without_evals():
     pack = Pack(manifest=PackManifest(id="p", name="P"))
-    d = evaluate_activation(pack, [], binding_fully_bound=True)
+    d = evaluate_activation(pack, [], binding_pinned=True, binding_verified=True)
     assert not d.can_activate and any("no evals" in r for r in d.reasons)

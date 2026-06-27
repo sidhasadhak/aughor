@@ -31,16 +31,32 @@ class ActivationDecision:
 def evaluate_activation(
     pack: Pack,
     eval_results: list[EvalResult],
-    binding_fully_bound: bool,
+    *,
+    binding_pinned: bool,
+    binding_verified: bool = True,
+    missing_roles: Optional[list[str]] = None,
 ) -> ActivationDecision:
-    """Decide whether `pack` may be promoted to active. Requires: it declares evals, every
-    eval passed, and all its roles bound on the target connection."""
+    """Decide whether `pack` may be promoted to active on a connection. Activation needs THREE
+    distinct things, reported as separate, actionable blockers so 'evals pass' is never confused
+    with 'not deployed':
+      1. a DEPLOYED binding — pinned + verified (run Bind + verify), covering every role;
+      2. the pack declares evals;
+      3. every eval passes.
+    `binding_pinned` = a binding is saved for this connection; `binding_verified` = it dry-ran;
+    `missing_roles` = declared roles absent from the pinned binding."""
     reasons: list[str] = []
 
+    # ── deployment (separate from evals) ────────────────────────────────────────
+    if not binding_pinned:
+        reasons.append("not deployed on this connection — run Bind + verify first")
+    elif missing_roles:
+        reasons.append(f"pinned binding is missing role(s): {missing_roles}")
+    elif not binding_verified:
+        reasons.append("binding is pinned but not verified — re-run Bind + verify")
+
+    # ── evals ───────────────────────────────────────────────────────────────────
     if not pack.evals:
         reasons.append("pack declares no evals — cannot be promotion-gated")
-    if not binding_fully_bound:
-        reasons.append("pack is not fully bound on this connection")
 
     pass_rate: Optional[float] = None
     if eval_results:

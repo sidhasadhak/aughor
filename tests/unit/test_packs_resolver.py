@@ -91,12 +91,12 @@ def test_unbindable_entity_is_surfaced_not_guessed():
 def test_binding_report_summary():
     rep = binding_report(_roles(), _retail_facts())
     assert rep["total"] == 4
-    assert rep["bound"] == 4
-    assert rep["fully_bound"] is True
+    assert rep["groundable_roles"] == 4
+    assert rep["fully_groundable"] is True
 
 
 def test_resolver_grounds_the_shipped_pack():
     # The dogfooded pack's declared roles all bind against a typical retail schema.
     pack = load_pack(REPO / "packs" / "customer-analytics")
     rep = binding_report(pack.entities, _retail_facts())
-    assert rep["fully_bound"], {k: v.evidence for k, v in rep["proposals"].items()}
+    assert rep["fully_groundable"], {k: v.evidence for k, v in rep["proposals"].items()}
