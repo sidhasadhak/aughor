@@ -280,7 +280,7 @@ async def _aiter_sync(sync_iter):
     except/salvage path instead of clean post-loop finalization. `next(it, _AITER_DONE)`
     returns the sentinel on exhaustion, so the loop ends cleanly.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     it = iter(sync_iter)
     while True:
         item = await loop.run_in_executor(None, next, it, _AITER_DONE)

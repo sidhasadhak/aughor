@@ -87,7 +87,7 @@ async def query_run(body: _QueryRunRequest):
                 pass
         return result, (_t.monotonic() - t0) * 1000
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         result, duration_ms = await loop.run_in_executor(None, _work)
     except Exception as e:
@@ -196,7 +196,7 @@ async def query_semantic(body: _SemanticOpRequest):
         )
         return op, base
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         op, base = await loop.run_in_executor(None, _work)
     except Exception as e:
@@ -250,7 +250,7 @@ async def query_semantic_text_columns(body: _QueryRunRequest):
                 tolerate(_e, "query/semantic/text-columns: best-effort connection close",
                          counter="query.semantic.text_columns.close_failed")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         result = await loop.run_in_executor(None, _work)
     except Exception as e:

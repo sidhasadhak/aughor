@@ -55,7 +55,7 @@ async def run_eval_endpoint(
     except Exception:
         pass
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     def _work():
         results = []
         for rec in records:
@@ -169,7 +169,7 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
     )
     from aughor.db.connection import open_connection_for
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     try:
         db = open_connection_for(connection_id)

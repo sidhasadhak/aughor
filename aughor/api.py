@@ -127,7 +127,7 @@ def _install_context_executor() -> None:
     try:
         from aughor.kernel.concurrency import ContextThreadPoolExecutor
         _CTX_EXECUTOR = ContextThreadPoolExecutor(thread_name_prefix="aughor-exec")
-        asyncio.get_event_loop().set_default_executor(_CTX_EXECUTOR)
+        asyncio.get_running_loop().set_default_executor(_CTX_EXECUTOR)
     except Exception as exc:
         logger.warning("context executor install failed (non-fatal): %s", exc)
 
@@ -145,7 +145,7 @@ async def _kernel_journal_boot() -> None:
 
 async def _setup_samples() -> None:
     # Run synchronous DB seeding off the event loop so startup returns instantly.
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         from aughor.samples.setup import ensure_samples_db
 

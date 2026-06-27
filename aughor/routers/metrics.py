@@ -148,7 +148,7 @@ async def run_metric_validation(name: str, conn_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     def _work():
         try:
             return validate_metric(metric, db)
@@ -178,7 +178,7 @@ async def get_metric_freshness(name: str, conn_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     def _work():
         try:
             return check_freshness(metric, db)
@@ -248,7 +248,7 @@ async def get_metric_value(name: str, conn_id: str):
                 tolerate(exc, "metric-value connection close is best-effort",
                          counter="metrics.value.close")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     value, err = await loop.run_in_executor(None, _work)
     out = {
         "name": metric.name,
@@ -325,7 +325,7 @@ async def get_health_scorecard(conn_id: str):
             pass
         return results
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         return await loop.run_in_executor(None, _work)
     except Exception as e:

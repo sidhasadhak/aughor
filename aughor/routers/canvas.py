@@ -216,7 +216,7 @@ async def suggest_canvas_name(req: SuggestNameRequest):
     of the selected tables (or the whole connection when none are given)."""
     from aughor.db.connection import open_connection_for
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         db = open_connection_for(req.connection_id)
     except KeyError:
