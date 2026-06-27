@@ -464,6 +464,7 @@ from aughor.routers import (  # noqa: E402
     orgsettings,
     metastore,
     volumes,
+    verify,
 )
 
 app.include_router(system.router)
@@ -491,3 +492,4 @@ app.include_router(metastore.grants_router)
 app.include_router(volumes.router)
 app.include_router(profile.router)
 app.include_router(orgsettings.router)
+app.include_router(verify.router)

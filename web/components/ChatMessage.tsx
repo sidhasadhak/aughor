@@ -566,11 +566,12 @@ function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onD
 
 // ── Investigate body — delegates to the appropriate rich report view ──────────
 function InvestigateBody({
-  turn, onShowSource, onDeeper,
+  turn, onShowSource, onDeeper, connectionId,
 }: {
   turn: ChatTurn;
   onShowSource?: (data: SourcePanelData) => void;
   onDeeper?: (question: string, insightId: string | null) => void;
+  connectionId?: string;
 }) {
   const qm = turn.queryMode;
 
@@ -600,6 +601,8 @@ function InvestigateBody({
         subQuestions={turn.subQuestions}
         subqAnswers={turn.subqAnswers}
         queryCount={turn.subqAnswers.length}
+        connectionId={connectionId}
+        investigationId={turn.investigationId ?? undefined}
       />
     );
   }
@@ -1133,7 +1136,7 @@ export function ChatMessage({
             </div>
           )}
           <div className="mb-1">
-            <InvestigateBody turn={turn} onShowSource={onShowSource} onDeeper={onDeeper} />
+            <InvestigateBody turn={turn} onShowSource={onShowSource} onDeeper={onDeeper} connectionId={connectionId} />
           </div>
           {turn.playbookRefs.length > 0 && <PlaybookRefs refs={turn.playbookRefs} />}
           {turn.followups.length > 0 && (

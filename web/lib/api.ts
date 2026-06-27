@@ -136,6 +136,31 @@ export async function updateOrgSettings(settings: OrgSettings): Promise<OrgSetti
   return res.json();
 }
 
+/** Record a human verdict on an investigation finding (Bet 0 — ground-truth capture). */
+export async function recordVerdict(input: {
+  verdict: "accept" | "correct" | "reject";
+  connectionId?: string;
+  investigationId?: string;
+  headline?: string;
+  note?: string;
+}): Promise<void> {
+  const res = await fetch(`${BASE}/verify/verdict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      verdict: input.verdict,
+      connection_id: input.connectionId ?? "",
+      investigation_id: input.investigationId ?? "",
+      headline: input.headline ?? "",
+      note: input.note ?? "",
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to record verdict");
+  }
+}
+
 export async function getEffectiveSettings(workspaceId?: string): Promise<OrgSettings> {
   const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
   const res = await fetch(`${BASE}/org-settings/effective${q}`);

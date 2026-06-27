@@ -3,12 +3,15 @@
 import { useState } from "react";
 import type { ExplorationReport as ExplorationReportType, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { recordVerdict } from "@/lib/api";
 
 interface Props {
   report: ExplorationReportType;
   subQuestions: SubQuestion[];
   subqAnswers: SubQuestionAnswer[];
   queryCount: number;
+  connectionId?: string;
+  investigationId?: string;
 }
 
 // ── Purpose chip (the one allowed accent) ─────────────────────────────────────
@@ -176,7 +179,45 @@ function VerificationPanel({ v }: { v: NonNullable<ExplorationReportType["verifi
   );
 }
 
-export function ExplorationReportView({ report, subqAnswers, queryCount }: Props) {
+function FindingVerdict({ headline, connectionId, investigationId }: {
+  headline: string; connectionId?: string; investigationId?: string;
+}) {
+  const [done, setDone] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const send = async (verdict: "accept" | "correct" | "reject") => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await recordVerdict({ verdict, connectionId, investigationId, headline });
+      setDone(verdict);
+    } catch {
+      setDone(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (done) {
+    return (
+      <div className="border-t border-zinc-800/60 pt-4 text-[11px] text-zinc-500">
+        Thanks — recorded as <span className="text-zinc-300">{done}</span>. This calibrates future confidence.
+      </div>
+    );
+  }
+  const btn = "text-[11px] px-2.5 py-1 rounded border transition-colors disabled:opacity-50";
+  return (
+    <div className="border-t border-zinc-800/60 pt-4 flex items-center gap-2 flex-wrap">
+      <span className="text-[11px] text-zinc-500 mr-1">Was this finding right?</span>
+      <button disabled={busy} onClick={() => send("accept")}
+        className={`${btn} border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10`}>Accept</button>
+      <button disabled={busy} onClick={() => send("correct")}
+        className={`${btn} border-amber-500/40 text-amber-300 hover:bg-amber-500/10`}>Partly</button>
+      <button disabled={busy} onClick={() => send("reject")}
+        className={`${btn} border-rose-500/40 text-rose-300 hover:bg-rose-500/10`}>Reject</button>
+    </div>
+  );
+}
+
+export function ExplorationReportView({ report, subqAnswers, queryCount, connectionId, investigationId }: Props) {
   const dqNotes = report.data_quality_notes ?? [];
   const showNarrative = report.narrative && report.narrative.trim() !== (report.conclusion ?? "").trim();
 
@@ -252,6 +293,11 @@ export function ExplorationReportView({ report, subqAnswers, queryCount }: Props
 
       {/* Verification — which guards ran + why the confidence is what it is (Bet 0) */}
       {report.verification && <VerificationPanel v={report.verification} />}
+
+      {/* Human ground-truth capture (Bet 0, 0-V) — the non-circular calibration anchor */}
+      {investigationId && (
+        <FindingVerdict headline={report.headline} connectionId={connectionId} investigationId={investigationId} />
+      )}
 
       <p className="text-[11px] text-zinc-500 pt-1">
         {queryCount} quer{queryCount === 1 ? "y" : "ies"} · {subqAnswers.length} step{subqAnswers.length !== 1 ? "s" : ""}
