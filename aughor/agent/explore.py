@@ -28,6 +28,7 @@ from aughor.agent.prompts_explore import (
     DECOMPOSE_EXPLORATION_PROMPT,
     PLAN_SUBQ_PROMPT,
     REASON_OVER_RESULT_PROMPT,
+    REFUTE_FINDING_PROMPT,
     SYNTHESIZE_EXPLORATION_PROMPT,
 )
 from aughor.agent.prompts import format_pitfall_section
@@ -1017,17 +1018,40 @@ def _uniform_dimensions(query_history: list) -> list[str]:
     ]
 
 
-def _build_verification_manifest(state: AgentState) -> VerificationManifest:
-    """Prove which guards actually ran on this investigation (Bet 0, increment 0-I).
+class _RefutationVerdict(BaseModel):
+    refuted: bool = Field(description="True if the headline finding does NOT hold up to scrutiny.")
+    reason: str = Field(default="", description="One-sentence strongest objection.")
+    alternative: Optional[str] = Field(default=None, description="Plausible alternative explanation, or null.")
+
+
+def _run_refutation(question: str, conclusion: str, chain_summary: str) -> Optional[_RefutationVerdict]:
+    """Adversarial self-verification (Bet 0, 0-IV): an independent skeptic pass that TRIES to
+    refute the headline. Best-effort — returns None on any provider/parse failure so synthesis
+    is never blocked. Gated by the caller to load-bearing (non-no-signal) conclusions only."""
+    try:
+        return get_provider("coder").complete(
+            system="You are a skeptical analyst whose only job is to refute a finding.",
+            user=REFUTE_FINDING_PROMPT.format(
+                question=question, conclusion=conclusion, chain_summary=chain_summary[:6000]),
+            response_model=_RefutationVerdict,
+        )
+    except Exception:
+        return None
+
+
+def _build_verification_manifest(state: AgentState, extra_checks: Optional[list[str]] = None) -> VerificationManifest:
+    """Prove which guards actually ran on this investigation (Bet 0, increments 0-I…0-IV).
 
     Combines the liveness recorder (`verification_checks`, appended by each guard when it
-    fires) with derived evidence. The key payoff is the `stats_attached` canary: if no
-    statistical signals attached to numeric results, a guard silently failed (the exact
-    `_attach_stats` class-E bug) — surfaced as not_run, never assumed passed."""
+    fires) + `extra_checks` (synthesis-time outcomes like adversarial refutation) with derived
+    evidence. The key payoff is the `stats_attached` canary: if no statistical signals attached
+    to numeric results, a guard silently failed (the exact `_attach_stats` class-E bug) —
+    surfaced as not_run, never assumed passed."""
     recorded: set[str] = set()
     temporal_detail = None
     triangulation_outcome = None   # "agree" | "diverge" | None
-    for c in (state.get("verification_checks", []) or []):
+    refute_outcome = None          # "survived" | "refuted" | None
+    for c in (list(state.get("verification_checks", []) or []) + list(extra_checks or [])):
         head, _, tail = c.partition(":")
         recorded.add(head)
         if head == "temporal_prune" and tail:
@@ -1037,6 +1061,8 @@ def _build_verification_manifest(state: AgentState) -> VerificationManifest:
             # diverge anywhere in the run is the signal that matters; it sticks.
             if tail == "diverge" or triangulation_outcome != "diverge":
                 triangulation_outcome = tail
+        if head == "adversarial_refute" and tail:
+            refute_outcome = tail
 
     history = state.get("query_history", []) or []
     had_numeric = any((not r.error) and r.rows for r in history)
@@ -1077,6 +1103,15 @@ def _build_verification_manifest(state: AgentState) -> VerificationManifest:
     else:
         checks.append(VerificationCheck(name="triangulation", label="Independent-path triangulation",
                                         status="n/a", detail="no raw-COUNT rate over a join to triangulate"))
+    if refute_outcome == "survived":
+        checks.append(VerificationCheck(name="adversarial_refute", label="Adversarial refutation pass",
+                                        status="ran", detail="headline survived an independent skeptic"))
+    elif refute_outcome == "refuted":
+        checks.append(VerificationCheck(name="adversarial_refute", label="Adversarial refutation pass",
+                                        status="ran", detail="a skeptic REFUTED the headline — confidence demoted"))
+    else:
+        checks.append(VerificationCheck(name="adversarial_refute", label="Adversarial refutation pass",
+                                        status="n/a", detail="not run for this conclusion"))
 
     applicable = [c for c in checks if c.status != "n/a"]
     ran = sum(1 for c in applicable if c.status == "ran")
@@ -1125,7 +1160,11 @@ def _build_verification_manifest(state: AgentState) -> VerificationManifest:
 
     if coverage < 1.0:
         signals.append("not every guard ran — see the verification checks")
-    earned = round(coverage * completeness * data_trust, 3)
+    earned = coverage * completeness * data_trust
+    if refute_outcome == "refuted":
+        earned *= 0.5
+        signals.append("an independent skeptic refuted the headline — confidence halved")
+    earned = round(earned, 3)
     band = "high" if earned >= 0.7 else "medium" if earned >= 0.4 else "low"
     if not signals:
         signals.append("all guards fired, chain complete, data looks trustworthy")
@@ -1237,7 +1276,23 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
         response_model=ExplorationReport,
     )
 
-    # Merge any dq_notes found during execution
+    # Bet 0 (0-IV): adversarial self-verification. Gate to load-bearing conclusions — when
+    # the run already converged to "no signal", refuting "it's flat" adds little. One skeptic
+    # pass tries to refute the headline; a refutation halves earned confidence and is surfaced.
+    extra_checks: list[str] = []
+    if len(uniform_dims) < 2 and (report.conclusion or "").strip():
+        verdict = _run_refutation(state["question"], report.conclusion, chain_summary)
+        if verdict is not None:
+            extra_checks.append(f"adversarial_refute:{'refuted' if verdict.refuted else 'survived'}")
+            if verdict.refuted and verdict.reason:
+                dq_notes.append(DataQualityNote(
+                    table="Adversarial check", column=None,
+                    issue=f"An independent skeptic refuted the headline: {verdict.reason}",
+                    impact="Headline confidence was reduced accordingly.",
+                    recommended_fix=verdict.alternative or "Re-examine the claim against this objection.",
+                ))
+
+    # Merge any dq_notes found during execution (after refutation so its note is included)
     if dq_notes:
         existing = list(report.data_quality_notes or [])
         report = ExplorationReport(**{**report.model_dump(), "data_quality_notes": existing + dq_notes})
@@ -1245,7 +1300,7 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
     # Bet 0: attach the verification manifest (which guards actually ran). The LLM never
     # fills this — it's stamped from the run's liveness record so the user sees what was
     # (and wasn't) checked, defeating silent guard failures.
-    manifest = _build_verification_manifest(state)
+    manifest = _build_verification_manifest(state, extra_checks=extra_checks)
     report = ExplorationReport(**{**report.model_dump(), "verification": manifest})
 
     # ── Learning loop: persist schema discoveries back to the glossary ────────

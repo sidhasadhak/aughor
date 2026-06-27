@@ -166,6 +166,30 @@ value was returned as a column by the query. If a derived metric matters, it mus
 from your own arithmetic (which is often wrong). Cite only what the query actually returned.
 """
 
+REFUTE_FINDING_PROMPT = """\
+You are a SKEPTICAL senior analyst. Your ONLY job is to REFUTE the headline finding below —
+find the single strongest reason it could be WRONG, given the evidence actually gathered.
+
+Default to refuted=true when: the sample is small, an obvious confound is unaddressed, the
+number could be a data artifact (e.g. a fan-out/cardinality issue, a single time period, a
+single category value), the conclusion overclaims beyond what the queries measured, or the
+"driver" is one cherry-picked cell among many comparisons. Be adversarial, not agreeable.
+
+ORIGINAL QUESTION: {question}
+
+HEADLINE FINDING (the claim to attack):
+{conclusion}
+
+EVIDENCE — the investigative chain that produced it:
+{chain_summary}
+
+Return:
+- refuted: true if the finding does NOT hold up to scrutiny, false only if it is genuinely robust.
+- reason: one sentence — the strongest specific objection (cite the weak point in the evidence).
+- alternative: a plausible alternative explanation for the same data, or null.
+"""
+
+
 SYNTHESIZE_EXPLORATION_PROMPT = """\
 You are a senior data analyst writing the final answer to an investigative question.
 You have completed a chain of sub-questions and now have all the evidence needed.

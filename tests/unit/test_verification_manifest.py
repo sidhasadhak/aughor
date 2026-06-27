@@ -135,6 +135,38 @@ def test_genuine_partial_run_penalised():
     assert m.earned_confidence < 0.7
 
 
+def test_adversarial_refutation_halves_confidence():
+    # Healthy run, but an independent skeptic refuted the headline → earned confidence halved.
+    base_state = {
+        "verification_checks": ["temporal_prune:0", "join_value_domain", "cardinality_guard"],
+        "query_history": [_qr(stats=[_uni_stat()])],
+        "sub_questions": [_sq(1), _sq(2)], "subq_answers": [_ans(1), _ans(2)],
+    }
+    healthy = _build_verification_manifest(base_state)
+    refuted = _build_verification_manifest(base_state, extra_checks=["adversarial_refute:refuted"])
+    assert refuted.earned_confidence <= round(healthy.earned_confidence * 0.5 + 1e-9, 3)
+    chk = next(c for c in refuted.checks if c.name == "adversarial_refute")
+    assert chk.status == "ran" and "REFUTED" in (chk.detail or "")
+    assert any("refuted the headline" in s for s in refuted.signals)
+
+
+def test_adversarial_survived_recorded():
+    state = {
+        "verification_checks": ["temporal_prune:0", "join_value_domain", "cardinality_guard"],
+        "query_history": [_qr(stats=[_uni_stat()])],
+        "sub_questions": [_sq(1)], "subq_answers": [_ans(1)],
+    }
+    m = _build_verification_manifest(state, extra_checks=["adversarial_refute:survived"])
+    chk = next(c for c in m.checks if c.name == "adversarial_refute")
+    assert chk.status == "ran" and "survived" in (chk.detail or "")
+
+
+def test_adversarial_na_when_not_run():
+    m = _build_verification_manifest({"verification_checks": [], "query_history": [_qr()]})
+    chk = next(c for c in m.checks if c.name == "adversarial_refute")
+    assert chk.status == "n/a"
+
+
 def test_converged_early_not_penalised_for_completeness():
     # ≥3 uniform dims + unanswered planned steps = deliberate convergence, not incompleteness.
     hist = [_qr(hid=f"Q{i}", stats=[_uni_stat()]) for i in range(3)]
