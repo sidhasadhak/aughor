@@ -31,6 +31,13 @@ An **autonomous data-analysis platform** that replaces the dashboard-and-analyst
 
 Grouped by area; each ✅ is verified shipped (git + code). Representative commits/PRs in parentheses.
 
+### Audit hardening + investigation delete (2026-06-27, branch `2026-06-27-audit-fixes`)
+*Verified an external coding-agent audit ([`AUDIT_2026-06-27.md`](AUDIT_2026-06-27.md)) against code and fixed findings #1–#11. 1859 tests green.*
+- ✅ **Closed the Query Builder / `bulk_read` SQL-safety bypass (Critical)** — user SQL was dispatched under the `__querybuilder__`/`__bulk__` dunder ids that match the internal-query bypass, so `DROP`/`DELETE` ran ungated+unaudited; the runner's subquery-wrap also defeated the inner gate and `bulk_read` reaches ConnectorX directly. New `gate_user_sql()` gates RAW user SQL at `/query/run` before wrap/dispatch (+regression tests).
+- ✅ **Bounded the system** — `asyncio.Semaphore(AUGHOR_MAX_CONCURRENT_JOBS)` on user-initiated kernel jobs (explorers exempt); scheduled `matcache.evict_expired` hourly + purge-on-delete; `AUGHOR_MAX_UPLOAD_MB` upload cap (413).
+- ✅ **Discipline + safety** — restored the silent-swallow ratchet (302→**265**, 38 `tolerate()` conversions, baseline only moves down); stopped leaking exception detail to clients; wired the optional `AUGHOR_API_KEY` front-door gate; `get_event_loop`→`get_running_loop` (39 sites); Pydantic `schema`→`schema_name` (alias-preserved); deleted dead `aughor-v2/charts/` + `_ConnectionsScreen_DEPRECATED` + renamed `useLearnedSkill`.
+- ✅ **Delete investigations (user feature)** — per-investigation delete now cascades the history row + evidence claims + RAG vector entry (was row-only, leaving deleted runs steering future analysis); new bulk `DELETE /investigations` (platform-wide or workspace-scoped) + a "Clear all" UI button beside the per-row delete.
+
 ### Investigation hardening, verification substrate & Specialist Agents (2026-06-26/27)
 - ✅ **Investigation correctness/honesty (13 fixes)** — sub-question id canonicalization (dup-key crash + state-corruption), segment-uniformity significance test + no-signal guard (also un-broke a dead `_attach_stats`), early-stop on convergence, pre-flight temporal prune, raw-COUNT-over-join cardinality guard, synthesis coherence/value-lever, column-currency (CHF) + temporal-keys-as-dimensions. See FEATURES #169.
 - ✅ **Bet 0 — verification substrate** — run **verification manifest** (liveness assertions), **computed earned-confidence + data-trust**, **triangulation**, **adversarial refutation**, **human-verdict capture**, and the executable **trust gate** (`is_compoundable` / `can_act_autonomously`). Surfaced on the report (confidence chip + Verification panel + Accept/Partly/Reject). Docs: [`docs/DOMAIN_EXPERTISE_PACKS_10X.md`](docs/DOMAIN_EXPERTISE_PACKS_10X.md) §0.
@@ -225,6 +232,12 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 ## 3 · What's left
 
 Verified pending against code/git. `⬜` not started · `◑` partial.
+
+### ▶ Trust Receipt — make verification externally inspectable (10x, from [`AUDIT_2026-06-27.md`](AUDIT_2026-06-27.md) #5b)
+*The single highest-leverage open bet. The guard substrate (Trust Receipt / Evidence Ledger — `_write_answer_receipt`, `kernel/ledger.py`) is far ahead of its surface area: it's enforced internally but not exposed. The move is to turn "trustworthy by construction" into "trustworthy by inspection" — the one thing a competitor can't copy with a prompt.*
+- ⬜ **Public `GET /receipt/{id}`** returning the signed lineage for *every* answer (chat, Query Builder, monitor, deep): the executed SQLs, input tables, which guards fired, earned-confidence + data-trust. There are already per-mode receipt routes (`/ada/{conn}/{inv}/receipt`, `/chat/{conn}/{turn}/receipt`) — unify them behind one id-addressable endpoint and extend to the Query Builder path (now gated, so it can carry a receipt too).
+- ⬜ **Inline "why this number"** — a one-click receipt view rendered on every answer/KPI/briefing figure, reading the unified endpoint.
+- ⬜ *Effort ~1 week. Impact: the trust story becomes externally verifiable, not just internally asserted.*
 
 ### ▶ Platform direction — org tenancy + lakehouse (active arc)
 *Decided 2026-06-22 — see [`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md). Aughor is a platform provider; catalog & storage belong at the **Org/metastore** level, workspaces are grant-scoped boundaries that own no storage (Databricks / Unity-Catalog model). Build single-org now but **tenant-key everything** and split **control plane** from **data plane**, so multi-tenant SaaS is a config flip, not a rewrite. All work below on branch `2026-06-22-org-tenant-spine`, build→wire→test→live-verify, zero net ratchet debt (293==HEAD).*
