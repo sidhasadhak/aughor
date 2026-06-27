@@ -150,3 +150,42 @@ def post_bind(pack_id: str, body: BindIn):
 def get_binding(pack_id: str, connection_id: str):
     """The pinned binding for (org, pack, connection), or null."""
     return load_binding(pack_id, connection_id)
+
+
+class EvalIn(BaseModel):
+    connection_id: str
+    schema: Optional[str] = None
+
+
+@router.post("/packs/{pack_id}/evaluate")
+def post_evaluate(pack_id: str, body: EvalIn):
+    """Run the pack's golden questions through the engine on this connection and return the
+    activation decision (Bet 2). Promotion to active requires every eval to pass AND the pack to
+    be fully bound. NOTE: runs one planner pass per eval — a deliberate, on-demand gate."""
+    pack_dir = PACKS_DIR / pack_id
+    if not (pack_dir / "pack.yaml").is_file():
+        raise HTTPException(status_code=404, detail=f"no pack {pack_id!r}")
+    try:
+        pack = load_pack(pack_dir)
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    from aughor.packs.engine_eval import make_ask_fn
+    from aughor.packs.evalrunner import run_pack_evals
+    from aughor.packs.evalgate import evaluate_activation
+    try:
+        ask = make_ask_fn(body.connection_id, body.schema, pack)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"could not open connection: {e}")
+
+    results = run_pack_evals(pack, ask)
+    binding = load_binding(pack_id, body.connection_id)
+    fully_bound = bool(binding) and all(r in (binding.get("bindings") or {}) for r in pack.entities)
+    decision = evaluate_activation(pack, results, fully_bound)
+    return {
+        "can_activate": decision.can_activate,
+        "pass_rate": decision.pass_rate,
+        "reasons": decision.reasons,
+        "results": [{"question": r.question, "passed": r.passed, "detail": r.detail} for r in results],
+        "fully_bound": fully_bound,
+    }

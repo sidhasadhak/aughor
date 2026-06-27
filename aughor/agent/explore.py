@@ -162,12 +162,20 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
     # connection, prepend its persona + grounded recipes + diagnostics to the planner context.
     steered_by = None
     try:
-        from aughor.packs.intake import injection_for_question, render_injection
-        _inj = injection_for_question(state.get("question", ""), state.get("connection_id", ""))
-        if _inj is not None:
-            scan_section = render_injection(_inj) + scan_section
-            steered_by = _inj.pack_id
-            logger.info("[explore] specialist pack '%s' is steering this run", _inj.pack_id)
+        # An explicit pre-rendered block (e.g. from the pack eval harness) forces steering for
+        # this run, bypassing the flag/active/select path; otherwise use the live gated path.
+        _pre = state.get("_pack_injection_block")
+        if _pre:
+            scan_section = _pre + scan_section
+            steered_by = state.get("_pack_id")
+            logger.info("[explore] specialist pack '%s' steering (forced) this run", steered_by)
+        else:
+            from aughor.packs.intake import injection_for_question, render_injection
+            _inj = injection_for_question(state.get("question", ""), state.get("connection_id", ""))
+            if _inj is not None:
+                scan_section = render_injection(_inj) + scan_section
+                steered_by = _inj.pack_id
+                logger.info("[explore] specialist pack '%s' is steering this run", _inj.pack_id)
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "specialist-pack intake best-effort; run proceeds ungrounded",

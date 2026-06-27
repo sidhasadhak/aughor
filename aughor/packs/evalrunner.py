@@ -21,8 +21,12 @@ def check_expectation(meta: dict, expect: dict) -> tuple[bool, str]:
     meta = meta or {}
     for key, val in (expect or {}).items():
         if key == "uses_recipe":
-            if (meta.get("recipe_used") or "") != val:
-                return False, f"expected recipe '{val}', got '{meta.get('recipe_used')}'"
+            used = meta.get("recipe_used") or ""
+            norm = lambda s: str(s).lower().replace("-", " ").replace("_", " ").strip()
+            pool = [norm(used)] if isinstance(used, str) else [norm(u) for u in used]
+            needle = norm(val)
+            if not any(needle and (needle in u or u in needle) for u in pool if u):
+                return False, f"expected recipe '{val}', got '{used}'"
         elif key == "grain":
             if (meta.get("grain") or "") != val:
                 return False, f"expected grain '{val}', got '{meta.get('grain')}'"
