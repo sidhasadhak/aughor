@@ -16,6 +16,10 @@ Design:
     cascade is observable (a silent purge that secretly no-ops is the bug we are
     guarding against, per the connection-delete history).
   • **Idempotent** — safe to run twice; a missing artifact is a no-op, not an error.
+
+Adding a new connection-keyed store: give it its own ``purge_connection(conn_id)``
+(the store owns its DB/lock/path), add a guarded call below, and a case to
+``tests/unit/test_connection_purge.py`` — otherwise a deleted catalog orphans it.
 """
 from __future__ import annotations
 
@@ -99,14 +103,14 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
         tolerate(e, "purge: upload dir", counter="conn.purge.uploads")
 
     # ── Business profile + ontology + materialisation/profile caches ────────────
-    for label, fn in (
-        ("profile", lambda: _invalidate("aughor.profile.store", conn_id)),
-        ("ontology", lambda: _invalidate("aughor.ontology.store", conn_id)),
-        ("matcache", lambda: _invalidate("aughor.db.matcache", conn_id)),
-        ("profile_cache", lambda: _invalidate("aughor.tools.profile_cache", conn_id)),
-    ):
+    from aughor.db import matcache
+    from aughor.ontology import store as ontology_store
+    from aughor.profile import store as profile_store
+    from aughor.tools import profile_cache
+    for label, mod in (("profile", profile_store), ("ontology", ontology_store),
+                       ("matcache", matcache), ("profile_cache", profile_cache)):
         try:
-            fn()
+            mod.invalidate(conn_id)
             counts[label] = 1
         except Exception as e:
             tolerate(e, f"purge: {label}", counter=f"conn.purge.{label}")
@@ -185,10 +189,3 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
     if removed:
         logger.info("Purged artifacts for deleted connection %s: %s", conn_id, removed)
     return counts
-
-
-def _invalidate(module_path: str, conn_id: str) -> None:
-    """Call a store module's ``invalidate(conn_id)`` by dotted path."""
-    import importlib
-    mod = importlib.import_module(module_path)
-    mod.invalidate(conn_id)

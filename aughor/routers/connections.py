@@ -15,7 +15,6 @@ from aughor.db.connection import open_connection, open_connection_for
 from aughor.db.registry import (
     get_dsn,
     BUILTIN_ID,
-    POSTGRES_BUILTIN_ID,
     add_connection,
     delete_connection,
     get_connection_settings,
@@ -150,15 +149,15 @@ def remove_connection(conn_id: str):
                        conn_id, exc_info=True)
     _invalidate_schema_cache(conn_id)
     try:
-        delete_connection(conn_id)
+        deleted = delete_connection(conn_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     # Cascade: a genuinely-deleted catalog takes its whole intelligence footprint
     # (profiles, investigations, briefings, monitors, packs, vectors, uploads) with
-    # it. Builtins are only *hidden* (restorable), so their artifacts are preserved.
-    if conn_id not in (BUILTIN_ID, POSTGRES_BUILTIN_ID):
+    # it. A *hidden* builtin (delete_connection → False) keeps its artifacts.
+    if deleted:
         from aughor.db.purge import purge_connection_artifacts
         purge_connection_artifacts(conn_id)
 

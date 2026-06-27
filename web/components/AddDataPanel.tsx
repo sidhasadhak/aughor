@@ -215,29 +215,20 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
 
   const cancelReview = () => { setStaged(null); setQueue([]); setError(""); };
 
-  const addSchema = async () => {
+  // Create a schema and select it (review mode targets `schema`, bulk targets `bulkSchema`).
+  const addSchemaInto = async (select: (s: string) => void) => {
     const name = newSchema.trim();
     if (!name) return;
     setAddingSchema(true);
     try {
       const created = await createConnectionSchema(WORKSPACE_ID, name);
       const next = await listConnectionSchemas(WORKSPACE_ID);
-      setSchemas(next); setSchema(created); setNewSchema("");
+      setSchemas(next); select(created); setNewSchema("");
     } catch (ex: unknown) { setError((ex as Error).message); }
     finally { setAddingSchema(false); }
   };
-
-  const bulkAddSchema = async () => {
-    const name = newSchema.trim();
-    if (!name) return;
-    setAddingSchema(true);
-    try {
-      const created = await createConnectionSchema(WORKSPACE_ID, name);
-      const next = await listConnectionSchemas(WORKSPACE_ID);
-      setSchemas(next); setBulkSchema(created); setNewSchema("");
-    } catch (ex: unknown) { setError((ex as Error).message); }
-    finally { setAddingSchema(false); }
-  };
+  const addSchema = () => addSchemaInto(setSchema);
+  const bulkAddSchema = () => addSchemaInto(setBulkSchema);
 
   const bulkUpload = useCallback(async (list: FileList | null) => {
     if (!list || list.length === 0) return;
