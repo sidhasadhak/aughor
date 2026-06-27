@@ -292,6 +292,76 @@ def count_ratio_distinct_risk(sql: str, dialect: str = "duckdb") -> str | None:
     return None
 
 
+def count_distinct_variant(sql: str, dialect: str = "duckdb") -> str | None:
+    """Rewrite a raw-COUNT rate into its COUNT(DISTINCT) twin for TRIANGULATION (Bet 0,
+    0-III): every non-DISTINCT ``COUNT(x)`` that participates in a ``COUNT/COUNT`` ratio
+    becomes ``COUNT(DISTINCT x)``. Running both and comparing the rate column proves whether
+    a join fans the counts out — if the two paths disagree, the original number is distorted.
+
+    Returns the rewritten SQL, or None when there's no such ratio (nothing to triangulate).
+    Mechanical + safe; never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+
+    def _count_in(node):
+        if node is None:
+            return None
+        return node if isinstance(node, exp.Count) else node.find(exp.Count)
+
+    def _is_distinct(c):
+        return isinstance(c.this, exp.Distinct) or bool(c.args.get("distinct"))
+
+    changed = False
+    for div in tree.find_all(exp.Div):
+        for side in (div.this, div.expression):
+            c = _count_in(side)
+            if not c or _is_distinct(c) or c.this is None:
+                continue
+            arg = c.this.sql().lower()
+            if arg == "*":
+                continue
+            c.set("this", exp.Distinct(expressions=[c.this]))
+            changed = True
+    return tree.sql(dialect=dialect) if changed else None
+
+
+def rate_columns_diverge(
+    cols_a: list[str], rows_a: list[list],
+    cols_b: list[str], rows_b: list[list],
+    tol: float = 0.02,
+) -> bool | None:
+    """Do two result sets disagree on their rate column beyond `tol` (absolute)? Used to
+    compare a raw-COUNT rate against its COUNT(DISTINCT) twin (0-III triangulation).
+
+    Returns True (diverge), False (agree within tol), or None (can't compare — no shared
+    rate column, mismatched row counts, or non-numeric values). Pure; never raises."""
+    rate_kw = ("rate", "ratio", "pct", "percent", "proportion", "share", "conversion")
+    la = [c.lower() for c in (cols_a or [])]
+    lb = [c.lower() for c in (cols_b or [])]
+    ia = next((i for i, c in enumerate(la) if any(k in c for k in rate_kw)), None)
+    ib = next((i for i, c in enumerate(lb) if la and ia is not None and c == la[ia]), None)
+    if ia is None or ib is None:
+        return None
+    if not rows_a or len(rows_a) != len(rows_b):
+        return None
+    try:
+        for ra, rb in zip(rows_a, rows_b):
+            va, vb = ra[ia], rb[ib]
+            if va in (None, "") or vb in (None, ""):
+                continue
+            if abs(float(va) - float(vb)) > tol:
+                return True
+        return False
+    except (ValueError, TypeError, IndexError):
+        return None
+
+
 _COUNT_STAR_AS = re.compile(r"count\s*\(\s*\*\s*\)\s+as\s+([a-z_][a-z0-9_]*)", re.I)
 _FROM_JOIN_TBL = re.compile(r"(?:from|join)\s+([a-z_][a-z0-9_.]*)", re.I)
 

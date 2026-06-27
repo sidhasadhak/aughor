@@ -614,6 +614,33 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
                             original_sql=sql, error=_cr, fixed_sql=sql,
                             fix_explanation=_cr, data_quality_issue=_cr,
                         ))
+                        # 0-III triangulation: run the COUNT(DISTINCT) twin and compare the
+                        # rate column. Agreement = the number survives an independent path;
+                        # divergence = the join fans out and the number is unreliable.
+                        try:
+                            from aughor.sql.fanout import count_distinct_variant, rate_columns_diverge
+                            variant = count_distinct_variant(sql, conn.dialect)
+                            if variant and variant != sql:
+                                vres = conn.execute(subq.id + "_triangulate", variant)
+                                if not vres.error:
+                                    diverge = rate_columns_diverge(
+                                        result.columns, result.rows, vres.columns, vres.rows)
+                                    if diverge is True:
+                                        ran_checks.append("triangulation:diverge")
+                                        new_pitfalls.append(Pitfall(
+                                            original_sql=sql, error="triangulation divergence",
+                                            fixed_sql=variant,
+                                            fix_explanation="The COUNT(DISTINCT) twin disagrees with the "
+                                            "raw-COUNT rate — the join fans out, so the number is distorted.",
+                                            data_quality_issue="rate FAILED triangulation: the raw-COUNT and "
+                                            "COUNT(DISTINCT) paths disagree — treat the number as unreliable.",
+                                        ))
+                                    elif diverge is False:
+                                        ran_checks.append("triangulation:agree")
+                        except Exception as _exc2:
+                            from aughor.kernel.errors import tolerate
+                            tolerate(_exc2, "explore triangulation best-effort; original kept",
+                                     counter="triangulation.explore")
                 except Exception as _exc:
                     from aughor.kernel.errors import tolerate
                     tolerate(_exc, "explore count-ratio lint best-effort; query proceeds",
@@ -999,12 +1026,17 @@ def _build_verification_manifest(state: AgentState) -> VerificationManifest:
     `_attach_stats` class-E bug) — surfaced as not_run, never assumed passed."""
     recorded: set[str] = set()
     temporal_detail = None
+    triangulation_outcome = None   # "agree" | "diverge" | None
     for c in (state.get("verification_checks", []) or []):
         head, _, tail = c.partition(":")
         recorded.add(head)
         if head == "temporal_prune" and tail:
             temporal_detail = (f"pruned {tail} temporal sub-question(s)"
                                if tail != "0" else "ran — nothing to prune")
+        if head == "triangulation" and tail:
+            # diverge anywhere in the run is the signal that matters; it sticks.
+            if tail == "diverge" or triangulation_outcome != "diverge":
+                triangulation_outcome = tail
 
     history = state.get("query_history", []) or []
     had_numeric = any((not r.error) and r.rows for r in history)
@@ -1036,6 +1068,15 @@ def _build_verification_manifest(state: AgentState) -> VerificationManifest:
         name="segment_significance", label="Segment-uniformity significance test",
         status="ran" if significance_ran else "n/a",
         detail=None if significance_ran else "no rate-by-segment result to test"))
+    if triangulation_outcome == "agree":
+        checks.append(VerificationCheck(name="triangulation", label="Independent-path triangulation",
+                                        status="ran", detail="COUNT(DISTINCT) twin agrees with the raw-COUNT rate"))
+    elif triangulation_outcome == "diverge":
+        checks.append(VerificationCheck(name="triangulation", label="Independent-path triangulation",
+                                        status="ran", detail="paths DISAGREE — the rate is unreliable"))
+    else:
+        checks.append(VerificationCheck(name="triangulation", label="Independent-path triangulation",
+                                        status="n/a", detail="no raw-COUNT rate over a join to triangulate"))
 
     applicable = [c for c in checks if c.status != "n/a"]
     ran = sum(1 for c in applicable if c.status == "ran")
@@ -1062,7 +1103,11 @@ def _build_verification_manifest(state: AgentState) -> VerificationManifest:
             and "nothing to prune" not in temporal_detail:
         data_trust -= 0.2
         signals.append("data spans a single period — no temporal variance; data-trust reduced")
-    if any("raw COUNT" in (getattr(p, "data_quality_issue", "") or "") for p in pitfalls):
+    if triangulation_outcome == "diverge":
+        data_trust -= 0.4
+        signals.append("a rate FAILED triangulation — its raw-COUNT and COUNT(DISTINCT) paths "
+                       "disagree, so the number is unreliable")
+    elif any("raw COUNT" in (getattr(p, "data_quality_issue", "") or "") for p in pitfalls):
         data_trust -= 0.2
         signals.append("a key rate divides raw COUNTs over a join — denominator may be distorted")
     data_trust = max(0.0, round(data_trust, 3))
