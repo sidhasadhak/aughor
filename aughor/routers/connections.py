@@ -645,14 +645,42 @@ def _open_file_connector(conn_id: str, need: str):
     return db
 
 
+def _max_upload_bytes() -> int:
+    """Per-file upload ceiling (MB) from AUGHOR_MAX_UPLOAD_MB; default 512 MB."""
+    import os
+    try:
+        mb = int(os.getenv("AUGHOR_MAX_UPLOAD_MB", "512"))
+    except ValueError:
+        mb = 512
+    return max(1, mb) * 1024 * 1024
+
+
 def _stage_upload(file: UploadFile):
-    """Write an UploadFile to a temp dir under its original name; return (tmp_dir, tmp_path)."""
+    """Write an UploadFile to a temp dir under its original name; return (tmp_dir, tmp_path).
+
+    Streams in chunks and enforces AUGHOR_MAX_UPLOAD_MB so an oversized upload is
+    aborted (and its partial temp removed) before it can fill the disk — rather
+    than copying the whole stream first.
+    """
     import shutil, tempfile
     original = Path(file.filename or "upload.csv").name
     tmp_dir = Path(tempfile.mkdtemp())
     tmp_path = tmp_dir / original
-    with tmp_path.open("wb") as out:
-        shutil.copyfileobj(file.file, out)
+    cap = _max_upload_bytes()
+    written = 0
+    try:
+        with tmp_path.open("wb") as out:
+            while chunk := file.file.read(1024 * 1024):
+                written += len(chunk)
+                if written > cap:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"file exceeds the {cap // (1024 * 1024)} MB upload limit",
+                    )
+                out.write(chunk)
+    except BaseException:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
     return tmp_dir, tmp_path
 
 
