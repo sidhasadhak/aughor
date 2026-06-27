@@ -136,13 +136,25 @@ def post_bind(pack_id: str, body: BindIn):
     bound columns are checked to actually exist and `verified` reflects that (column-existence
     half of verification; recipe dry-run is the live step)."""
     from aughor.packs import verify_binding_columns
+    from aughor.packs.dryrun import dry_run_binding
     verified = body.verified
     missing: list[str] = []
     if body.table_cols is not None:
         verified, missing = verify_binding_columns(body.bindings, body.table_cols)
+    # Stronger verify: dry-run each bound column against the live connection when reachable.
+    dry_errors: list[str] = []
+    try:
+        from aughor.routers.connections import open_connection_for
+        conn = open_connection_for(body.connection_id)
+        ok_dry, dry_errors = dry_run_binding(conn, body.bindings)
+        verified = verified and ok_dry if body.table_cols is not None else ok_dry
+    except Exception as e:
+        from aughor.kernel.errors import tolerate
+        tolerate(e, "bind dry-run skipped; connection unreachable", counter="packs.bind_dryrun")
     rec = save_binding(pack_id, body.connection_id, body.bindings,
                        version=body.version, verified=verified)
     rec["missing"] = missing
+    rec["dry_run_errors"] = dry_errors
     return rec
 
 
