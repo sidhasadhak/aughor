@@ -112,8 +112,10 @@ LIMIT 500
     finally:
         try:
             db.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "process-map DB close is best-effort; the map is already built",
+                     counter="mapper.db.close")
 
     return ProcessMap(
         entity_id=entity_id,

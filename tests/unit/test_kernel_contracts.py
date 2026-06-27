@@ -15,7 +15,9 @@ import glob
 from pathlib import Path
 
 # Lower these as offences are converted — never raise them.
-SILENT_SWALLOW_BASELINE = 268
+# 2026-06-27: converted 38 best-effort store/cache/registry/scheduler swallows to
+# tolerate() (AUDIT_2026-06-27.md #3), ratcheting 302 → 265.
+SILENT_SWALLOW_BASELINE = 265
 PRIVATE_IMPORT_BASELINE = 22
 
 REPO = Path(__file__).parent.parent.parent

@@ -41,8 +41,9 @@ def load(connection_id: str) -> dict:
     if p.exists():
         try:
             return json.loads(p.read_text())
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "exploration state read is best-effort; empty state used on corrupt file", counter="explorer.store.read")
     return _empty()
 
 
@@ -50,8 +51,9 @@ def save(connection_id: str, state: dict) -> None:
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     try:
         _path(connection_id).write_text(json.dumps(state, indent=2, default=str))
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "exploration state write is best-effort; next save retries", counter="explorer.store.write")
 
 
 def is_complete(connection_id: str, schema_fingerprint: str | None = None) -> bool:
@@ -269,8 +271,9 @@ def load_canvas(canvas_id: str) -> dict:
     if p.exists():
         try:
             return json.loads(p.read_text())
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "canvas exploration state read is best-effort; empty state used on corrupt file", counter="explorer.store.read_canvas")
     return _empty()
 
 
@@ -278,8 +281,9 @@ def save_canvas(canvas_id: str, state: dict) -> None:
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     try:
         _canvas_path(canvas_id).write_text(json.dumps(state, indent=2, default=str))
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "canvas exploration state write is best-effort; next save retries", counter="explorer.store.write_canvas")
 
 
 def get_insights_canvas(canvas_id: str, include_invalid: bool = False) -> list[dict]:
@@ -346,8 +350,9 @@ def _log_dismissal(scope: str, insight: dict, reason: str) -> None:
         }
         with (_DATA_DIR / "finding_dismissals.jsonl").open("a") as fh:
             fh.write(json.dumps(rec, default=str) + "\n")
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "dismissal-log append is best-effort feedback signal; dismissal itself still applied", counter="explorer.store.dismissal_log")
 
 
 def _dismiss(state: dict, insight_id: str, reason: str, scope: str) -> Optional[dict]:

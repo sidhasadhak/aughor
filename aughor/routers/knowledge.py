@@ -39,9 +39,9 @@ async def upload_document(file: UploadFile = File(...)):
         return entry
     except RuntimeError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
+    except Exception:
         logger.exception("Document indexing failed")
-        raise HTTPException(status_code=500, detail=f"Indexing failed: {e}")
+        raise HTTPException(status_code=500, detail="Indexing failed")
     finally:
         tmp_path.unlink(missing_ok=True)
 

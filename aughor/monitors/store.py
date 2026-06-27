@@ -103,8 +103,10 @@ def _row_to_monitor(row: sqlite3.Row) -> Monitor:
     if extra_raw:
         try:
             d.update(json.loads(extra_raw))
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the extra JSON blob is optional post-schema fields; a corrupt blob just leaves defaults",
+                     counter="monitors.store.extra_decode")
     return Monitor(**{k: v for k, v in d.items() if v is not None or k in {
         "metric_name", "custom_sql", "warning_threshold", "critical_threshold",
         "dimension_column", "freshness_table",

@@ -10,14 +10,13 @@ from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aughor.agent.state import AgentState
 from aughor.db.connection import open_connection_for
 from aughor.db.history import (
     complete_investigation,
     create_investigation,
-    delete_investigation,
     fail_investigation,
     get_investigation,
     get_session_turns,
@@ -280,7 +279,7 @@ async def _aiter_sync(sync_iter):
     except/salvage path instead of clean post-loop finalization. `next(it, _AITER_DONE)`
     returns the sentinel on exhaustion, so the loop ends cleanly.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     it = iter(sync_iter)
     while True:
         item = await loop.run_in_executor(None, next, it, _AITER_DONE)
@@ -442,6 +441,7 @@ async def salvage_orphaned_investigation(
 # ── Request models ────────────────────────────────────────────────────────────
 
 class InvestigateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     question: str
     connection_id: str = BUILTIN_ID
     canvas_id: Optional[str] = None
@@ -449,7 +449,7 @@ class InvestigateRequest(BaseModel):
     skip_cache: bool = False
     # Scope a non-canvas investigation to a specific schema (multi-schema
     # connections) — mirrors how a canvas scopes. None = whole connection.
-    schema: Optional[str] = None
+    schema_name: Optional[str] = Field(default=None, alias="schema")
     # Seed context for "pull the thread" from a briefing: the originating finding
     # text (seed_context) and the exact query that produced it (seed_sql). ada_intake
     # already reads scan_context, so seeding is additive — no graph change.
@@ -2375,7 +2375,7 @@ async def investigate(req: InvestigateRequest, request: Request):
         _investigation_job_streamed(
             req.question, conn_id, request,
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
-            schema_scope=req.schema, seed_sql=req.seed_sql, seed_context=req.seed_context,
+            schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
             insight_id=req.insight_id, deep=req.deep,
         ),
         media_type="text/event-stream",
@@ -2463,9 +2463,9 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
         raise HTTPException(status_code=400, detail="format must be 'pdf' or 'pptx'")
     try:
         data, filename, media_type = export_report(inv, fmt, narrate=narrate)
-    except Exception as e:  # never leak a stack trace to the client
+    except Exception:  # never leak a stack trace to the client
         logger.exception("export failed for %s", inv_id)
-        raise HTTPException(status_code=500, detail=f"export failed: {e}")
+        raise HTTPException(status_code=500, detail="export failed")
     return Response(
         content=data,
         media_type=media_type,
@@ -2473,9 +2473,26 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
     )
 
 
+@router.delete("/investigations", status_code=200)
+def clear_investigations(workspace_id: str | None = None):
+    """Bulk-delete investigations the caller can see — platform-wide, or scoped to a
+    workspace's connections when `workspace_id` is given. Cascades evidence claims
+    and the RAG vector index. Returns a count summary of what was removed."""
+    from aughor.db.purge import purge_investigations_bulk
+    from aughor.metastore import accessible_catalog_ids
+
+    allowed = accessible_catalog_ids(workspace_id)
+    # allowed is None → unscoped (clear everything); else restrict to those connections.
+    return purge_investigations_bulk(None if allowed is None else list(allowed))
+
+
 @router.delete("/investigations/{inv_id}", status_code=204)
 def delete_investigation_endpoint(inv_id: str):
-    if not delete_investigation(inv_id):
+    """Delete one investigation and its full footprint (history row, evidence
+    claims, RAG vector entry). 404 if it doesn't exist."""
+    from aughor.db.purge import purge_investigation_artifacts
+    counts = purge_investigation_artifacts(inv_id)
+    if not counts.get("investigations"):
         raise HTTPException(status_code=404, detail="Investigation not found")
 
 

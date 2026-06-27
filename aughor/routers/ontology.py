@@ -608,7 +608,7 @@ async def get_entity_lifecycle_counts(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     graph = await loop.run_in_executor(None, lambda: _get_ontology_graph(connection_id, schema_name))
     if graph is None:

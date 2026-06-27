@@ -16,7 +16,7 @@ import {
   getDuplicateEntities,
   mergeOntologyEntities,
   getLearnedSkills,
-  useLearnedSkill,
+  activateLearnedSkill,
   deleteLearnedSkill,
   getAutonomy,
   type OntologyGraph,
@@ -954,7 +954,7 @@ function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void
 
   const doUse = async (id: string) => {
     setBusy(id); setError(null);
-    try { await useLearnedSkill(id, connId); }
+    try { await activateLearnedSkill(id, connId); }
     catch (e) { setError((e as Error).message || "Use failed"); }
     finally { setBusy(null); load(); }   // always clear busy (else later actions stay disabled)
   };

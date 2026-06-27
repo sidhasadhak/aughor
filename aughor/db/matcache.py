@@ -111,8 +111,10 @@ def put_cache(conn_id: str, sql: str, result: QueryResult) -> None:
                 time.time(),
             ],
         )
-    except Exception:
-        pass   # cache failures are non-fatal
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "materialized-cache write is non-fatal; the query just recomputes next time",
+                 counter="matcache.write")
 
 
 def invalidate(conn_id: str) -> int:
@@ -127,12 +129,20 @@ def invalidate(conn_id: str) -> int:
 
 
 def evict_expired(ttl: float = DEFAULT_TTL) -> int:
-    """Remove all entries older than *ttl* seconds. Returns count evicted."""
+    """Remove all entries older than *ttl* seconds. Returns count evicted.
+
+    The cache is TTL-on-read, so an entry that is never read again lives forever
+    until this runs — call it on a schedule (see monitors.scheduler) so the file
+    can't grow unbounded on a long-running server."""
     try:
         c = _db()
         cutoff = time.time() - ttl
+        n = c.execute(
+            "SELECT COUNT(*) FROM mat_cache WHERE stored_at < ?", [cutoff]
+        ).fetchone()
+        evicted = int(n[0]) if n and n[0] is not None else 0
         c.execute("DELETE FROM mat_cache WHERE stored_at < ?", [cutoff])
-        return 0
+        return evicted
     except Exception:
         return 0
 

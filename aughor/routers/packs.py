@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.kernel.flags import flag_enabled
 from aughor.packs import (
@@ -74,8 +74,9 @@ def get_pack(pack_id: str):
 
 
 class ProposeIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     connection_id: str = ""
-    schema: Optional[str] = None
+    schema_name: Optional[str] = Field(default=None, alias="schema")
     table_cols: Optional[dict[str, list[str]]] = None    # omit to introspect the connection
     business_model: str = ""
 
@@ -111,7 +112,7 @@ def post_propose_bindings(pack_id: str, body: ProposeIn):
     if body.table_cols:
         facts = schema_facts_from_table_cols(body.table_cols, business_model=body.business_model)
     else:
-        facts = _facts_for_connection(body.connection_id, body.schema, body.business_model)
+        facts = _facts_for_connection(body.connection_id, body.schema_name, body.business_model)
         if facts is None:
             raise HTTPException(status_code=422,
                                 detail="provide table_cols or a reachable connection_id")
@@ -126,11 +127,12 @@ def post_propose_bindings(pack_id: str, body: ProposeIn):
 
 
 class BindIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     connection_id: str
     bindings: dict
     verified: bool = False
     version: int = 1
-    schema: Optional[str] = None                         # dataset on a multi-schema connection
+    schema_name: Optional[str] = Field(default=None, alias="schema")  # dataset on a multi-schema connection
     table_cols: Optional[dict[str, list[str]]] = None   # if given, verify columns exist
 
 
@@ -156,7 +158,7 @@ def post_bind(pack_id: str, body: BindIn):
         from aughor.kernel.errors import tolerate
         tolerate(e, "bind dry-run skipped; connection unreachable", counter="packs.bind_dryrun")
     rec = save_binding(pack_id, body.connection_id, body.bindings,
-                       version=body.version, verified=verified, schema=body.schema or "")
+                       version=body.version, verified=verified, schema=body.schema_name or "")
     rec["missing"] = missing
     rec["dry_run_errors"] = dry_errors
     return rec
@@ -191,8 +193,9 @@ def post_delta_status(delta_id: int, body: DeltaStatusIn):
 
 
 class EvalIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     connection_id: str
-    schema: Optional[str] = None
+    schema_name: Optional[str] = Field(default=None, alias="schema")
 
 
 @router.post("/packs/{pack_id}/evaluate")
@@ -212,12 +215,12 @@ def post_evaluate(pack_id: str, body: EvalIn):
     from aughor.packs.evalrunner import run_pack_evals
     from aughor.packs.evalgate import evaluate_activation
     try:
-        ask = make_ask_fn(body.connection_id, body.schema, pack)
+        ask = make_ask_fn(body.connection_id, body.schema_name, pack)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"could not open connection: {e}")
 
     results = run_pack_evals(pack, ask)
-    binding = load_binding(pack_id, body.connection_id, body.schema or "")
+    binding = load_binding(pack_id, body.connection_id, body.schema_name or "")
     pinned = bool(binding)
     bmap = (binding or {}).get("bindings") or {}
     missing = [r for r in pack.entities if r not in bmap]

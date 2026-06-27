@@ -28,6 +28,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
   const [indexedIds, setIndexedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
 
   const load = useCallback(() => {
     const controller = new AbortController();
@@ -66,6 +67,20 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     }
   }
 
+  async function handleClearAll() {
+    if (clearing || items.length === 0) return;
+    if (!window.confirm(`Delete all ${items.length} investigations and chats? This also removes their evidence and search index, and can't be undone.`)) {
+      return;
+    }
+    setClearing(true);
+    try {
+      const res = await fetch(`${API_BASE}/investigations`, { method: "DELETE" });
+      if (res.ok) setItems([]);
+    } finally {
+      setClearing(false);
+    }
+  }
+
   if (items.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-6">
@@ -88,7 +103,19 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
       <div className="px-3 py-2.5 border-b border-zinc-600 shrink-0 space-y-2">
         <div className="flex items-center justify-between">
           <p className="aug-label">History</p>
-          <span className="text-[11px] text-[--t3]">{items.length}</span>
+          <div className="flex items-center gap-2">
+            {items.length > 0 && (
+              <button
+                onClick={handleClearAll}
+                disabled={clearing}
+                title="Delete all investigations and chats"
+                className="text-[11px] text-zinc-500 hover:text-red-400 transition disabled:opacity-50"
+              >
+                {clearing ? "Clearing…" : "Clear all"}
+              </button>
+            )}
+            <span className="text-[11px] text-[--t3]">{items.length}</span>
+          </div>
         </div>
         <input
           type="text"

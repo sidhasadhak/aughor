@@ -263,7 +263,9 @@ def run_benchmarks(connection_id: str) -> BenchmarkRun:
 
     try:
         db.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "benchmark DB close is best-effort; results already collected",
+                 counter="benchmarks.db.close")
 
     return run

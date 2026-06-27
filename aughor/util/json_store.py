@@ -57,16 +57,18 @@ class KeyedJsonStore:
         try:
             if self.path.exists():
                 return json.loads(self.path.read_text())
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "JSON store read is best-effort; empty container returned on missing/corrupt file", counter="json_store.read")
         return {}
 
     def _file_save(self, data: dict) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps(data, indent=self.indent, default=str))
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "JSON store write is best-effort; a failed write never raises into the caller", counter="json_store.write")
 
     # ── public API (unchanged) ───────────────────────────────────────────────
 
@@ -126,16 +128,18 @@ class JsonListStore:
             if self.path.exists():
                 data = json.loads(self.path.read_text())
                 return data if isinstance(data, list) else []
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "JSON list-store read is best-effort; empty list returned on missing/corrupt file", counter="json_store.list_read")
         return []
 
     def save_all(self, items: list[dict]) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps(items, indent=self.indent, default=str))
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "JSON list-store write is best-effort; a failed write never raises into the caller", counter="json_store.list_write")
 
     def get(self, id_: str) -> Optional[dict]:
         return next((d for d in self.all() if d.get(self.id_field) == id_), None)

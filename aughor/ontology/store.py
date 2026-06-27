@@ -350,8 +350,10 @@ def _overlay_learned_actions(graph, connection_id: str, schema_name: str):
         from aughor.memory.skills import load_learned_actions
         for aid, action in load_learned_actions(connection_id, schema_name).items():
             graph.actions.setdefault(aid, action)
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "learned-action overlay is additive procedural memory; the structural graph is usable without it",
+                 counter="ontology.store.overlay_learned", conn_id=connection_id or None)
     return graph
 
 

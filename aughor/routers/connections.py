@@ -81,7 +81,7 @@ async def create_connection(req: AddConnectionRequest):
 
     # Test the connection off the event loop — large files (e.g. 8GB DuckDB) can
     # take 60+ seconds to open; blocking here would freeze all HTTP handling.
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         def _test():
             db = open_connection(req.conn_type, req.dsn, schema_name=req.schema_name, meta=combined_meta)
@@ -116,7 +116,7 @@ async def create_connection(req: AddConnectionRequest):
 
 @router.post("/connections/{conn_id}/test")
 async def test_connection(conn_id: str):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         def _test():
             db = open_connection_for(conn_id)
@@ -166,7 +166,7 @@ def remove_connection(conn_id: str):
 
 @router.get("/connections/{conn_id}/schema")
 async def connection_schema(conn_id: str):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
@@ -186,7 +186,7 @@ async def connection_schema(conn_id: str):
 async def refresh_schema_cache(conn_id: str):
     """Bust the server-side schema cache for a connection and return the fresh schema."""
     _invalidate_schema_cache(conn_id)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
@@ -204,7 +204,7 @@ async def refresh_schema_cache(conn_id: str):
 
 @router.get("/connections/{conn_id}/schema/rich")
 async def connection_schema_rich(conn_id: str):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
@@ -232,7 +232,7 @@ async def connection_schema_rich(conn_id: str):
 
 @router.get("/connections/{conn_id}/schema/mermaid")
 async def connection_schema_mermaid(conn_id: str):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
@@ -253,7 +253,7 @@ async def connection_schema_mermaid(conn_id: str):
 @router.get("/connections/{conn_id}/schema/profile")
 async def connection_schema_profile(conn_id: str):
     """Return cached column/table profiles for the Schema Shape tab."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
@@ -288,7 +288,7 @@ async def connection_schema_profile(conn_id: str):
 
 @router.get("/connections/{conn_id}/freshness")
 async def connection_freshness(conn_id: str):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
@@ -331,7 +331,7 @@ async def connection_freshness(conn_id: str):
 
 @router.get("/connections/{conn_id}/tables/{table}/sample")
 async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str = ""):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
@@ -372,7 +372,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
     """Reliable per-table column list (name + type) via a direct query — the
     same lightweight path as the sample reader, so Overview and Sample Data stay
     in sync even when the heavy whole-connection rich schema is unavailable."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     safe_table = table.replace('"', "").replace(";", "")
     safe_schema = schema.replace('"', "").replace(";", "") if schema else ""
     ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
@@ -494,7 +494,7 @@ class _AlterColumnRequest(BaseModel):
 @router.post("/connections/{conn_id}/tables/{table}/alter-column")
 async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest, schema: str = ""):
     """Alter the type of a single column. Best-effort for DuckDB/SQLite connectors."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
@@ -645,14 +645,42 @@ def _open_file_connector(conn_id: str, need: str):
     return db
 
 
+def _max_upload_bytes() -> int:
+    """Per-file upload ceiling (MB) from AUGHOR_MAX_UPLOAD_MB; default 512 MB."""
+    import os
+    try:
+        mb = int(os.getenv("AUGHOR_MAX_UPLOAD_MB", "512"))
+    except ValueError:
+        mb = 512
+    return max(1, mb) * 1024 * 1024
+
+
 def _stage_upload(file: UploadFile):
-    """Write an UploadFile to a temp dir under its original name; return (tmp_dir, tmp_path)."""
+    """Write an UploadFile to a temp dir under its original name; return (tmp_dir, tmp_path).
+
+    Streams in chunks and enforces AUGHOR_MAX_UPLOAD_MB so an oversized upload is
+    aborted (and its partial temp removed) before it can fill the disk — rather
+    than copying the whole stream first.
+    """
     import shutil, tempfile
     original = Path(file.filename or "upload.csv").name
     tmp_dir = Path(tempfile.mkdtemp())
     tmp_path = tmp_dir / original
-    with tmp_path.open("wb") as out:
-        shutil.copyfileobj(file.file, out)
+    cap = _max_upload_bytes()
+    written = 0
+    try:
+        with tmp_path.open("wb") as out:
+            while chunk := file.file.read(1024 * 1024):
+                written += len(chunk)
+                if written > cap:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"file exceeds the {cap // (1024 * 1024)} MB upload limit",
+                    )
+                out.write(chunk)
+    except BaseException:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
     return tmp_dir, tmp_path
 
 
@@ -664,12 +692,13 @@ async def analyze_connection_file(conn_id: str, file: UploadFile = File(...)):
     db = _open_file_connector(conn_id, "analyze_file")
     tmp_dir, tmp_path = _stage_upload(file)
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         info = await loop.run_in_executor(None, lambda: db.analyze_file(tmp_path))
         info["filename"] = tmp_path.name
         return info
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Analyze failed: {e}")
+    except Exception:
+        logger.exception("file analyze failed")
+        raise HTTPException(status_code=400, detail="Analyze failed")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -679,7 +708,7 @@ async def upload_file_to_connection(
     conn_id: str,
     file: UploadFile = File(...),
     table_name: Optional[str] = Form(None),
-    schema: Optional[str] = Form(None),
+    schema_name: Optional[str] = Form(None, alias="schema"),
     column_types: Optional[str] = Form(None),
 ):
     """Ingest a file as a table. Optional table_name, schema, and column_types
@@ -696,30 +725,31 @@ async def upload_file_to_connection(
             raise HTTPException(status_code=400, detail="column_types must be valid JSON")
     tmp_dir, tmp_path = _stage_upload(file)
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         tname = await loop.run_in_executor(
             None,
             lambda: db.ingest_file(
                 tmp_path,
                 table_name=(table_name or None),
-                schema=(schema or "main"),
+                schema=(schema_name or "main"),
                 column_types=types,
             ),
         )
         return {
             "table_name": tname,
-            "schema": schema or "main",
+            "schema": schema_name or "main",
             "filename": tmp_path.name,
             "message": "File ingested",
         }
     except TypeError:
         # Connector without the extended signature — fall back to plain ingest.
-        tname = await asyncio.get_event_loop().run_in_executor(
+        tname = await asyncio.get_running_loop().run_in_executor(
             None, lambda: db.ingest_file(tmp_path, table_name=(table_name or None))
         )
         return {"table_name": tname, "filename": tmp_path.name, "message": "File ingested"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Ingestion failed: {e}")
+    except Exception:
+        logger.exception("file ingestion failed")
+        raise HTTPException(status_code=400, detail="Ingestion failed")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -728,15 +758,15 @@ async def upload_file_to_connection(
 async def bulk_upload_files_to_connection(
     conn_id: str,
     files: list[UploadFile] = File(...),
-    schema: Optional[str] = Form(None),
+    schema_name: Optional[str] = Form(None, alias="schema"),
 ):
     """Ingest many files into a single schema in one request, with DuckDB's
     inferred column types (no per-file review). One bad file doesn't sink the
     batch — every file gets an independent ok/error result."""
     import shutil
     db = _open_file_connector(conn_id, "ingest_file")
-    target = schema or "main"
-    loop = asyncio.get_event_loop()
+    target = schema_name or "main"
+    loop = asyncio.get_running_loop()
 
     def _ingest_one(tmp_path: Path) -> str:
         return db.ingest_file(tmp_path, table_name=None, schema=target)
@@ -771,7 +801,7 @@ async def bulk_upload_files_to_connection(
 
 @router.get("/connections/{conn_id}/files")
 async def list_connection_files(conn_id: str):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
@@ -783,7 +813,7 @@ async def list_connection_files(conn_id: str):
 
 @router.delete("/connections/{conn_id}/files/{filename}", status_code=200)
 async def delete_connection_file(conn_id: str, filename: str, schema: str = "main"):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     def _delete():
         try:
             db = open_connection_for(conn_id)
@@ -802,7 +832,7 @@ async def delete_connection_file(conn_id: str, filename: str, schema: str = "mai
 
 @router.get("/connections/{conn_id}/schemas")
 async def list_connection_schemas(conn_id: str):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     def _work():
         db = _open_file_connector(conn_id, "list_schemas")
         result = db.list_schemas()
@@ -817,7 +847,7 @@ class _SchemaCreate(BaseModel):
 
 @router.post("/connections/{conn_id}/schemas", status_code=201)
 async def create_connection_schema(conn_id: str, body: _SchemaCreate):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     db = _open_file_connector(conn_id, "create_schema")
     name = (body.name or "").strip()
     if not name:
@@ -839,7 +869,7 @@ def _purge_schema_artifacts(conn_id: str, schema: str) -> None:
 async def delete_connection_schema(conn_id: str, schema: str):
     """Remove a whole schema from a workspace connection — drops its DuckDB schema +
     every backing upload file, then purges the schema's derived profile/exploration."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     def _work():
         db = _open_file_connector(conn_id, "drop_schema")
         if not hasattr(db, "drop_schema"):
@@ -859,7 +889,7 @@ async def delete_connection_schema(conn_id: str, schema: str):
 async def delete_connection_table(conn_id: str, table: str, schema: str = "main"):
     """Remove a single table from a workspace connection — drops it from DuckDB and
     deletes its backing upload file(s)."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     def _work():
         db = _open_file_connector(conn_id, "delete_table")
         if not hasattr(db, "delete_table"):
@@ -876,7 +906,7 @@ async def delete_connection_table(conn_id: str, table: str, schema: str = "main"
 async def restore_connection_samples(conn_id: str, schema: str | None = None):
     """Undo a sample-schema removal — clear the removed-seed tombstone so the bundled sample
     catalog re-materializes on the next request. Optional ``schema`` restores just one."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     def _work():
         db = _open_file_connector(conn_id, "restore_seeds")
         try:

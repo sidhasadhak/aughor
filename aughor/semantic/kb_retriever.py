@@ -22,8 +22,9 @@ from pathlib import Path
 try:
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).parent.parent.parent / ".env")
-except ImportError:
-    pass
+except ImportError as exc:
+    from aughor.kernel.errors import tolerate
+    tolerate(exc, "python-dotenv is optional; env vars from the real environment are used when it is absent", counter="kb_retriever.dotenv")
 
 KB_COLLECTION = "sql_knowledge_base"
 KB_PATH = os.getenv("AUGHOR_KB_PATH", "")

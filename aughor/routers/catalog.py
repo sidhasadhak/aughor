@@ -17,7 +17,7 @@ router = APIRouter(tags=["catalog"])
 async def get_catalog_tree(workspace_id: str | None = None):
     """Return the full 4-level catalog hierarchy: Section → Catalog → Schema → Table.
     Scoped to `workspace_id`'s connections when given (data-path tenancy)."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _quick_schemas(conn_id: str, conn_type: str) -> list[dict]:
         try:

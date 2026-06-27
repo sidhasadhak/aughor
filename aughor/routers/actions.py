@@ -259,7 +259,7 @@ async def create_federated_connection(req: _FederateRequest):
 
 @router.get("/connections/{conn_id}/federation-members")
 async def get_federation_members(conn_id: str):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         conn = open_connection_for(conn_id)
     except KeyError:
@@ -306,7 +306,7 @@ async def trigger_sync(conn_id: str, incremental: bool = True):
 
 @router.get("/connections/{conn_id}/sync-status")
 async def get_sync_status(conn_id: str):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         conn = open_connection_for(conn_id)
     except KeyError:

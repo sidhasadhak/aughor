@@ -105,8 +105,10 @@ def stop() -> None:
     if _started:
         try:
             _scheduler.shutdown(wait=False)
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "scheduler shutdown is best-effort; the process is stopping anyway",
+                     counter="briefs.scheduler.stop")
         _started = False
 
 

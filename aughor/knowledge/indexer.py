@@ -82,8 +82,9 @@ def _delete_doc_chunks(doc_id: str) -> None:
                 must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
             ),
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "Qdrant chunk deletion is best-effort; registry deregister still proceeds and stale vectors are harmless", counter="indexer.delete_chunks")
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

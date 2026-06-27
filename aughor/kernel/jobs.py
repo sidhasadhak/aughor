@@ -76,6 +76,21 @@ _LEGAL = {
 _HEARTBEAT_SECONDS = 15
 _STALE_SECONDS = 120
 
+# Concurrency cap for user-initiated jobs. Without a bound, a client (or a script
+# loop) hammering /investigate spawns unbounded supervised jobs + SSE streams +
+# LLM calls and exhausts the single process. Background explorers are exempt:
+# they are already bounded one-per-connection by idempotency key, and capping
+# them here would let a few long-lived explorers starve user investigations.
+_UNBOUNDED_KINDS = frozenset({"exploration"})
+
+
+def _max_concurrent_jobs() -> int:
+    import os
+    try:
+        return max(1, int(os.getenv("AUGHOR_MAX_CONCURRENT_JOBS", "8")))
+    except ValueError:
+        return 8
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -85,6 +100,18 @@ class JobKernel:
     def __init__(self, ledger: Optional[Ledger] = None):
         self.ledger = ledger or Ledger.default()
         self._tasks: dict[str, asyncio.Task] = {}
+        # Lazily created on the running loop (a kernel built off-loop in a test
+        # otherwise binds the semaphore to the wrong loop).
+        self._job_sem: Optional[asyncio.Semaphore] = None
+
+    def _slot_for(self, kind: str) -> Optional[asyncio.Semaphore]:
+        """The concurrency semaphore a job of *kind* must hold to run, or None
+        when the kind is exempt from the cap."""
+        if kind in _UNBOUNDED_KINDS:
+            return None
+        if self._job_sem is None:
+            self._job_sem = asyncio.Semaphore(_max_concurrent_jobs())
+        return self._job_sem
 
     # ── state transitions (the ONLY writer of job.state) ─────────────────────
 
@@ -145,9 +172,26 @@ class JobKernel:
         })
         self.ledger.emit("job.state", {"state": JobState.PENDING, "kind": kind},
                          conn_id=conn_id, canvas_id=canvas_id, job_id=job_id)
-        task = asyncio.create_task(
-            self._run(job_id, coro_factory, on_finish), name=f"job-{kind}-{job_id}"
-        )
+
+        sem = self._slot_for(kind)
+
+        async def _gated() -> None:
+            # Hold a concurrency slot for the whole run; the job sits PENDING
+            # until a slot frees. Cancelling a still-queued job closes its row.
+            if sem is not None:
+                try:
+                    await sem.acquire()
+                except asyncio.CancelledError:
+                    self._transition(job_id, JobState.CANCELLED)
+                    self._tasks.pop(job_id, None)
+                    raise
+            try:
+                await self._run(job_id, coro_factory, on_finish)
+            finally:
+                if sem is not None:
+                    sem.release()
+
+        task = asyncio.create_task(_gated(), name=f"job-{kind}-{job_id}")
         self._tasks[job_id] = task
         return job_id
 
