@@ -525,3 +525,21 @@ def get_briefing(
         pass
 
     return briefing
+
+
+def invalidate(connection_id: str) -> int:
+    """Drop every cached briefing for a connection (key == conn_id or 'conn_id:schema').
+    Used by the catalog-delete cascade. Returns the number of entries removed."""
+    if not _CACHE_PATH.exists():
+        return 0
+    try:
+        cache = json.loads(_CACHE_PATH.read_text())
+    except Exception:
+        return 0
+    prefix = f"{connection_id}:"
+    kept = {k: v for k, v in cache.items()
+            if k != connection_id and not k.startswith(prefix)}
+    removed = len(cache) - len(kept)
+    if removed:
+        _CACHE_PATH.write_text(json.dumps(kept, indent=2))
+    return removed

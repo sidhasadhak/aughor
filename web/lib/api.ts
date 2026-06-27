@@ -304,6 +304,39 @@ export async function uploadFileToConnection(
   return res.json();
 }
 
+export interface BulkUploadResult {
+  filename: string;
+  table_name?: string;
+  status: "ok" | "error";
+  error?: string;
+}
+
+export interface BulkUploadResponse {
+  schema: string;
+  results: BulkUploadResult[];
+  added: number;
+  failed: number;
+}
+
+export async function bulkUploadFilesToConnection(
+  connId: string,
+  files: File[],
+  schema: string,
+): Promise<BulkUploadResponse> {
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  if (schema) form.append("schema", schema);
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/files/bulk`,
+    { method: "POST", body: form },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Bulk upload failed");
+  }
+  return res.json();
+}
+
 export interface ColumnAnalysis {
   name: string;
   detected_type: string;

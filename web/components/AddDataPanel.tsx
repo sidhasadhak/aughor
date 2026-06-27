@@ -17,6 +17,7 @@ import {
   addConnection,
   getConnectorTypes,
   uploadFileToConnection,
+  bulkUploadFilesToConnection,
   analyzeConnectionFile,
   listConnectionFiles,
   deleteConnectionFile,
@@ -25,6 +26,7 @@ import {
   type ConnectorTypeInfo,
   type ConnectionFile,
   type FileAnalysis,
+  type BulkUploadResult,
 } from "@/lib/api";
 import { BrandLogo, brandColor } from "@/components/BrandLogos";
 
@@ -145,6 +147,13 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
   const [newSchema, setNewSchema] = useState("");
   const [addingSchema, setAddingSchema] = useState(false);
 
+  // Bulk-import state (skip per-file review; ingest many files into one schema)
+  const [mode, setMode]           = useState<"review" | "bulk">("review");
+  const [bulkSchema, setBulkSchema] = useState("main");
+  const [bulkBusy, setBulkBusy]   = useState(false);
+  const [bulkResults, setBulkResults] = useState<BulkUploadResult[] | null>(null);
+  const bulkInputRef = useRef<HTMLInputElement>(null);
+
   const reload = useCallback(() => {
     listConnectionFiles(WORKSPACE_ID).then(setFiles).catch(() => setFiles([]));
     listConnectionSchemas(WORKSPACE_ID).then(setSchemas).catch(() => setSchemas(["main"]));
@@ -217,6 +226,34 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
     } catch (ex: unknown) { setError((ex as Error).message); }
     finally { setAddingSchema(false); }
   };
+
+  const bulkAddSchema = async () => {
+    const name = newSchema.trim();
+    if (!name) return;
+    setAddingSchema(true);
+    try {
+      const created = await createConnectionSchema(WORKSPACE_ID, name);
+      const next = await listConnectionSchemas(WORKSPACE_ID);
+      setSchemas(next); setBulkSchema(created); setNewSchema("");
+    } catch (ex: unknown) { setError((ex as Error).message); }
+    finally { setAddingSchema(false); }
+  };
+
+  const bulkUpload = useCallback(async (list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    const arr = Array.from(list);
+    setBulkBusy(true); setError(""); setBulkResults(null);
+    try {
+      const res = await bulkUploadFilesToConnection(WORKSPACE_ID, arr, bulkSchema);
+      setBulkResults(res.results);
+      reload(); onAdded();
+    } catch (ex: unknown) {
+      setError((ex as Error).message);
+    } finally {
+      setBulkBusy(false);
+      if (bulkInputRef.current) bulkInputRef.current.value = "";
+    }
+  }, [bulkSchema, reload, onAdded]);
 
   const remove = async (f: ConnectionFile) => {
     try { await deleteConnectionFile(WORKSPACE_ID, f.filename, f.schema); reload(); onAdded(); }
@@ -368,12 +405,28 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Create or modify table</p>
           <p style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 1 }}>
             Upload files into your <strong style={{ color: "var(--t2)" }}>Workspace</strong> — a DuckDB-backed
-            space. Review column types and pick a schema before each table is created.
+            space. {mode === "review"
+              ? "Review column types and pick a schema before each table is created."
+              : "Drop many files at once — all land in the chosen schema with inferred types."}
           </p>
         </div>
       </div>
 
-      {/* Dropzone */}
+      {/* Mode toggle: review each file vs. bulk import into one schema */}
+      <div style={{ display: "inline-flex", gap: 2, padding: 3, borderRadius: 8, background: "var(--bg-2)", border: "1px solid var(--b1)", alignSelf: "flex-start" }}>
+        {(["review", "bulk"] as const).map(m => (
+          <button key={m} type="button" onClick={() => { setMode(m); setError(""); setBulkResults(null); }}
+            style={{ fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 6, cursor: "pointer", border: "none",
+              background: mode === m ? "var(--bg-0)" : "transparent",
+              color: mode === m ? "var(--t1)" : "var(--t3)",
+              boxShadow: mode === m ? "0 1px 2px rgba(0,0,0,.15)" : "none" }}>
+            {m === "review" ? "Review each" : "Bulk import"}
+          </button>
+        ))}
+      </div>
+
+      {/* Dropzone — per-file review flow */}
+      {mode === "review" && (
       <div
         onClick={() => inputRef.current?.click()}
         onDragOver={e => { e.preventDefault(); setDrag(true); }}
@@ -396,6 +449,69 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           CSV · TSV · Parquet · Excel (xlsx/xls) · JSON
         </p>
       </div>
+      )}
+
+      {/* Bulk import — pick a target schema, drop many files at once */}
+      {mode === "bulk" && (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ flex: "1 1 200px" }}>
+            <label style={L}>Target schema</label>
+            <select style={{ ...S, cursor: "pointer" }} value={bulkSchema} onChange={e => setBulkSchema(e.target.value)}>
+              {schemas.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input style={{ ...S, maxWidth: 200 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
+              placeholder="New schema name…" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); bulkAddSchema(); } }} />
+            <button type="button" onClick={bulkAddSchema} disabled={!newSchema.trim() || addingSchema}
+              style={{ fontSize: 12, padding: "8px 12px", borderRadius: 6, cursor: newSchema.trim() ? "pointer" : "not-allowed", background: "transparent", color: "var(--t2)", border: "1px solid var(--b1)", whiteSpace: "nowrap" }}>
+              + Add schema
+            </button>
+          </div>
+        </div>
+
+        <div
+          onClick={() => { if (!bulkBusy) bulkInputRef.current?.click(); }}
+          onDragOver={e => { e.preventDefault(); if (!bulkBusy) setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={e => { e.preventDefault(); setDrag(false); if (!bulkBusy) bulkUpload(e.dataTransfer.files); }}
+          style={{
+            border: `1.5px dashed ${drag ? brandColor("local_upload") : "var(--b1)"}`,
+            borderRadius: 12, padding: "34px 24px", textAlign: "center", cursor: bulkBusy ? "wait" : "pointer",
+            background: drag ? "color-mix(in srgb, var(--blue4,#60a5fa) 8%, var(--bg-1))" : "var(--bg-1)",
+            transition: "all .12s", opacity: bulkBusy ? 0.7 : 1,
+          }}
+        >
+          <input ref={bulkInputRef} type="file" accept={ACCEPT} multiple hidden
+            onChange={e => bulkUpload(e.target.files)} />
+          <BrandLogo type="local_upload" size={30} />
+          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginTop: 10 }}>
+            {bulkBusy ? "Importing…" : <>Drop files to add to <span style={{ fontFamily: "var(--font-mono)" }}>{bulkSchema}</span></>}
+          </p>
+          <p style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 4 }}>
+            Each file becomes a table named after its filename · types inferred automatically
+          </p>
+        </div>
+
+        {bulkResults && (
+          <div style={{ border: "1px solid var(--b1)", borderRadius: 8, overflow: "hidden" }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: "var(--t2)", padding: "8px 12px", background: "var(--bg-2)", borderBottom: "1px solid var(--b1)" }}>
+              {bulkResults.filter(r => r.status === "ok").length} added{bulkResults.some(r => r.status === "error") ? ` · ${bulkResults.filter(r => r.status === "error").length} failed` : ""} → {bulkSchema}
+            </p>
+            {bulkResults.map((r, i) => (
+              <div key={`${r.filename}-${i}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderTop: i ? "1px solid var(--b0)" : "none", fontSize: 12 }}>
+                <span style={{ color: r.status === "ok" ? "var(--grn4,#34d399)" : "var(--red4)", fontWeight: 700, flexShrink: 0 }}>{r.status === "ok" ? "✓" : "✕"}</span>
+                <span style={{ flex: 1, minWidth: 0, color: "var(--t2)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {r.filename}{r.status === "ok" && r.table_name ? ` → ${r.table_name}` : ""}
+                </span>
+                {r.status === "error" && <span style={{ color: "var(--red4)", fontSize: 11, flexShrink: 0 }}>{r.error}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      )}
 
       {error && <p style={{ fontSize: 12, color: "var(--red4)" }}>{error}</p>}
 

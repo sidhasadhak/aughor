@@ -100,6 +100,22 @@ def load_binding(pack_id: str, connection_id: str, schema: str = "") -> Optional
     }
 
 
+def purge_connection(connection_id: str) -> int:
+    """Delete every pack binding for a connection in the current org (catalog
+    delete cascade). Returns the number of bindings removed."""
+    org = current_org_id()
+    c = _conn()
+    try:
+        n = c.execute(
+            "DELETE FROM pack_bindings WHERE org_id=? AND connection_id=?",
+            (org, connection_id),
+        ).rowcount
+        c.commit()
+        return n
+    finally:
+        c.close()
+
+
 def is_bound(pack_id: str, connection_id: str, schema: str = "", *, require_verified: bool = False) -> bool:
     """Is the pack bound on this connection+schema? `require_verified` additionally insists the
     recipes dry-ran (the gate a pack must pass before it can answer)."""

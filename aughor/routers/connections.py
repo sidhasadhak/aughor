@@ -15,6 +15,7 @@ from aughor.db.connection import open_connection, open_connection_for
 from aughor.db.registry import (
     get_dsn,
     BUILTIN_ID,
+    POSTGRES_BUILTIN_ID,
     add_connection,
     delete_connection,
     get_connection_settings,
@@ -154,6 +155,12 @@ def remove_connection(conn_id: str):
         raise HTTPException(status_code=400, detail=str(e))
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
+    # Cascade: a genuinely-deleted catalog takes its whole intelligence footprint
+    # (profiles, investigations, briefings, monitors, packs, vectors, uploads) with
+    # it. Builtins are only *hidden* (restorable), so their artifacts are preserved.
+    if conn_id not in (BUILTIN_ID, POSTGRES_BUILTIN_ID):
+        from aughor.db.purge import purge_connection_artifacts
+        purge_connection_artifacts(conn_id)
 
 
 # ── Schema ────────────────────────────────────────────────────────────────────
@@ -716,6 +723,51 @@ async def upload_file_to_connection(
         raise HTTPException(status_code=400, detail=f"Ingestion failed: {e}")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@router.post("/connections/{conn_id}/files/bulk", status_code=201)
+async def bulk_upload_files_to_connection(
+    conn_id: str,
+    files: list[UploadFile] = File(...),
+    schema: Optional[str] = Form(None),
+):
+    """Ingest many files into a single schema in one request, with DuckDB's
+    inferred column types (no per-file review). One bad file doesn't sink the
+    batch — every file gets an independent ok/error result."""
+    import shutil
+    db = _open_file_connector(conn_id, "ingest_file")
+    target = schema or "main"
+    loop = asyncio.get_event_loop()
+
+    def _ingest_one(tmp_path: Path) -> str:
+        return db.ingest_file(tmp_path, table_name=None, schema=target)
+
+    results: list[dict] = []
+    for file in files:
+        tmp_dir, tmp_path = _stage_upload(file)
+        try:
+            tname = await loop.run_in_executor(None, lambda p=tmp_path: _ingest_one(p))
+            results.append({
+                "filename": tmp_path.name,
+                "table_name": tname,
+                "status": "ok",
+            })
+        except Exception as e:
+            results.append({
+                "filename": tmp_path.name,
+                "status": "error",
+                "error": str(e),
+            })
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    added = sum(1 for r in results if r["status"] == "ok")
+    return {
+        "schema": target,
+        "results": results,
+        "added": added,
+        "failed": len(results) - added,
+    }
 
 
 @router.get("/connections/{conn_id}/files")

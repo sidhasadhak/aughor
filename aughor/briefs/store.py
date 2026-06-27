@@ -72,3 +72,14 @@ def delete_subscription(sub_id: str) -> bool:
         return False
     _save(new_rows)
     return True
+
+
+def delete_for_connection(conn_id: str) -> int:
+    """Remove every brief subscription bound to a connection (catalog delete
+    cascade). Returns the number removed."""
+    rows = _load()
+    kept = [r for r in rows if r.get("conn_id") != conn_id]
+    removed = len(rows) - len(kept)
+    if removed:
+        _save(kept)
+    return removed

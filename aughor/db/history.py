@@ -439,6 +439,18 @@ def delete_investigation(inv_id: str) -> bool:
     return deleted
 
 
+def purge_connection(connection_id: str) -> int:
+    """Delete every investigation/chat row for a connection (catalog delete
+    cascade). Returns the number of rows removed."""
+    c = _conn()
+    _ensure_schema(c)
+    n = c.execute("DELETE FROM investigations WHERE connection_id = ?",
+                  (connection_id,)).rowcount
+    c.commit()
+    c.close()
+    return n
+
+
 def list_investigation_ids(connection_id: str, canvas_id: Optional[str] = None,
                            limit: int = 500) -> list[str]:
     """Return investigation IDs in a scope, newest-first. Used to scope the evidence

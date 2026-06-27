@@ -205,6 +205,20 @@ def delete_monitor(monitor_id: str) -> bool:
             conn.close()
 
 
+def purge_connection(conn_id: str) -> int:
+    """Delete every monitor and alert for a connection (catalog delete cascade).
+    Returns the total rows removed across both tables."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            n = conn.execute("DELETE FROM monitors WHERE conn_id = ?", (conn_id,)).rowcount
+            n += conn.execute("DELETE FROM monitor_alerts WHERE conn_id = ?", (conn_id,)).rowcount
+            conn.commit()
+            return n
+        finally:
+            conn.close()
+
+
 def set_monitor_enabled(monitor_id: str, enabled: bool) -> Optional[Monitor]:
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
