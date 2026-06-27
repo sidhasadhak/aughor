@@ -31,6 +31,11 @@ An **autonomous data-analysis platform** that replaces the dashboard-and-analyst
 
 Grouped by area; each ✅ is verified shipped (git + code). Representative commits/PRs in parentheses.
 
+### Investigation hardening, verification substrate & Specialist Agents (2026-06-26/27)
+- ✅ **Investigation correctness/honesty (13 fixes)** — sub-question id canonicalization (dup-key crash + state-corruption), segment-uniformity significance test + no-signal guard (also un-broke a dead `_attach_stats`), early-stop on convergence, pre-flight temporal prune, raw-COUNT-over-join cardinality guard, synthesis coherence/value-lever, column-currency (CHF) + temporal-keys-as-dimensions. See FEATURES #169.
+- ✅ **Bet 0 — verification substrate** — run **verification manifest** (liveness assertions), **computed earned-confidence + data-trust**, **triangulation**, **adversarial refutation**, **human-verdict capture**, and the executable **trust gate** (`is_compoundable` / `can_act_autonomously`). Surfaced on the report (confidence chip + Verification panel + Accept/Partly/Reject). Docs: [`docs/DOMAIN_EXPERTISE_PACKS_10X.md`](docs/DOMAIN_EXPERTISE_PACKS_10X.md) §0.
+- ✅ **Specialist Agents (Domain Expertise Packs) — Phase A** (behind `specialist_packs` flag): pack spec/loader/validator, **entity-binding resolver** (+ dtype-aware profiler adapter, prefix-tolerant matching, per-schema bindings), routing + intake **steering**, **evals-as-spec** activation gate, **trust economy**, **flywheel** (deterministic + LLM distiller, propose-only), the other bets' logic (org/standing/marketplace/instruments), `/packs` API + System deploy console. **Live-verified on missimi**: grounds, steers a cohort-aware plan, evaluates, activates. Docs: [`docs/DOMAIN_EXPERTISE_PACKS.md`](docs/DOMAIN_EXPERTISE_PACKS.md), [`_10X.md`](docs/DOMAIN_EXPERTISE_PACKS_10X.md). **NEXT:** P1b recipe dry-run depth, fleet of packs (Supply-Chain/Finance/Airline), marketplace import.
+
 ### Foundation — the Aughor Kernel
 - ✅ **K0 Ledger** — one transactional state store + append-only event journal (`2631d4e`).
 - ✅ **K1 Job Kernel** — supervised state machines over background work; heartbeat + crash-recovery (`82c5b4d`); investigations/monitors/briefs run as first-class jobs (`78ee842`, `cf853e1`).

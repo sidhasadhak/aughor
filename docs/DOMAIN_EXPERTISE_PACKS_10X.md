@@ -2,6 +2,12 @@
 
 *Companion to [`DOMAIN_EXPERTISE_PACKS.md`](DOMAIN_EXPERTISE_PACKS.md). Drafted 2026-06-26.*
 
+> **Status (2026-06-27): §0 verification substrate and Phase A SHIPPED** behind the `specialist_packs`
+> flag, live-verified on missimi/swiss_air (see FEATURES #169). Bet 0 (manifest · earned-confidence ·
+> triangulation · adversarial refute · human verdicts · trust gate) and the packs spine (resolver ·
+> per-schema bindings · steering · evals-as-spec · flywheel) are built; remaining: deeper recipe
+> dry-run, a fleet of packs, and marketplace import.
+
 > **Thesis.** v1 makes aughor *configurable per domain* — a themed lens authored once. The
 > ceiling is low: the folder format is copyable in a weekend, and a pack is only as good as the
 > day it was written. The 10x is not more pack features — it is changing **what a specialist is**:
