@@ -29,6 +29,13 @@ from aughor.packs.adapter import schema_facts_from_table_cols
 from aughor.packs.bindings import save_binding, load_binding, is_bound
 from aughor.packs.routing import select_pack, rank_packs, score_pack
 from aughor.packs.inject import build_injection, PackInjection
+from aughor.packs.trust import autonomy_tier, routing_weight, tier_allows
+from aughor.packs.evalgate import evaluate_activation, EvalResult, ActivationDecision
+from aughor.packs.flywheel import distill_deltas, PackDelta, DistillResult
+from aughor.packs.org import resolve_metric_definition, MetricClaim, route_escalation
+from aughor.packs.mandate import Mandate, evaluate_mandate, MandateOutcome
+from aughor.packs.marketplace import import_readiness, ImportReadiness
+from aughor.packs.instruments import Instrument, can_invoke
 
 __all__ = [
     "Pack", "PackManifest", "PackMetric", "PackQuestions", "PackPlaybook",
