@@ -64,6 +64,22 @@ def clear_watermark(connection_id: str, table: Optional[str] = None) -> None:
     _save(data)
 
 
+def clear_schema(connection_id: str, schema: str) -> int:
+    """Forget watermarks for every table of a schema (keys are ``schema.table``) —
+    used when a schema is removed. Returns the number of table entries dropped."""
+    data = _load()
+    tables = data.get(connection_id)
+    if not tables:
+        return 0
+    prefix = f"{schema}."
+    drop = [t for t in tables if t == schema or t.startswith(prefix)]
+    for t in drop:
+        tables.pop(t, None)
+    if drop:
+        _save(data)
+    return len(drop)
+
+
 def delta_clause(ts_col: str, watermark: Optional[str]) -> str:
     """A SQL AND-fragment selecting only rows newer than the watermark, or '' when there's
     no watermark / no timestamp column (→ a full scan)."""

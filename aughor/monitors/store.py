@@ -205,6 +205,43 @@ def delete_monitor(monitor_id: str) -> bool:
             conn.close()
 
 
+def purge_connection(conn_id: str) -> int:
+    """Delete every monitor and alert for a connection (catalog delete cascade).
+    Returns the total rows removed across both tables."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            n = conn.execute("DELETE FROM monitors WHERE conn_id = ?", (conn_id,)).rowcount
+            n += conn.execute("DELETE FROM monitor_alerts WHERE conn_id = ?", (conn_id,)).rowcount
+            conn.commit()
+            return n
+        finally:
+            conn.close()
+
+
+def purge_schema(conn_id: str, schema: str) -> int:
+    """Delete monitors (and their alerts) for a connection whose SQL/metric references a
+    removed schema (schema-qualified ``schema.``). Best-effort schema scoping. Returns
+    the number of monitors removed."""
+    like = f"%{schema}.%"
+    with _LOCK:
+        conn = _connect()
+        try:
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM monitors WHERE conn_id=? AND "
+                "(COALESCE(custom_sql,'') LIKE ? OR COALESCE(metric_name,'') LIKE ?)",
+                (conn_id, like, like),
+            ).fetchall()]
+            n = 0
+            for mid in ids:
+                n += conn.execute("DELETE FROM monitors WHERE id=?", (mid,)).rowcount
+                conn.execute("DELETE FROM monitor_alerts WHERE monitor_id=?", (mid,))
+            conn.commit()
+            return n
+        finally:
+            conn.close()
+
+
 def set_monitor_enabled(monitor_id: str, enabled: bool) -> Optional[Monitor]:
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()

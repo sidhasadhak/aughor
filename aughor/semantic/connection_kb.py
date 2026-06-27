@@ -95,6 +95,29 @@ def _path(connection_id: str) -> Path:
     return _DATA_DIR / f"knowledge_{connection_id}.json"
 
 
+def purge_connection(connection_id: str) -> int:
+    """Delete this connection's entire knowledge store — the JSON file (source of
+    truth) and all its vector points (catalog-delete cascade). Returns 1 if a JSON
+    file was removed, else 0. The vector purge is best-effort."""
+    try:
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+        _qdrant().delete(
+            collection_name=_COLLECTION,
+            points_selector=Filter(must=[
+                FieldCondition(key="connection_id", match=MatchValue(value=connection_id)),
+            ]),
+        )
+    except Exception as e:
+        # Vector index is best-effort; the JSON file is the source of truth.
+        from aughor.kernel.errors import tolerate
+        tolerate(e, "connection_kb purge: vector delete", counter="connection_kb.purge.vector")
+    p = _path(connection_id)
+    if p.exists():
+        p.unlink()
+        return 1
+    return 0
+
+
 def load_entries(connection_id: str) -> list[KnowledgeEntry]:
     p = _path(connection_id)
     if not p.exists():

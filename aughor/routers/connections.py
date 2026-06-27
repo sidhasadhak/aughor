@@ -149,11 +149,17 @@ def remove_connection(conn_id: str):
                        conn_id, exc_info=True)
     _invalidate_schema_cache(conn_id)
     try:
-        delete_connection(conn_id)
+        deleted = delete_connection(conn_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
+    # Cascade: a genuinely-deleted catalog takes its whole intelligence footprint
+    # (profiles, investigations, briefings, monitors, packs, vectors, uploads) with
+    # it. A *hidden* builtin (delete_connection → False) keeps its artifacts.
+    if deleted:
+        from aughor.db.purge import purge_connection_artifacts
+        purge_connection_artifacts(conn_id)
 
 
 # ── Schema ────────────────────────────────────────────────────────────────────
@@ -718,6 +724,51 @@ async def upload_file_to_connection(
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+@router.post("/connections/{conn_id}/files/bulk", status_code=201)
+async def bulk_upload_files_to_connection(
+    conn_id: str,
+    files: list[UploadFile] = File(...),
+    schema: Optional[str] = Form(None),
+):
+    """Ingest many files into a single schema in one request, with DuckDB's
+    inferred column types (no per-file review). One bad file doesn't sink the
+    batch — every file gets an independent ok/error result."""
+    import shutil
+    db = _open_file_connector(conn_id, "ingest_file")
+    target = schema or "main"
+    loop = asyncio.get_event_loop()
+
+    def _ingest_one(tmp_path: Path) -> str:
+        return db.ingest_file(tmp_path, table_name=None, schema=target)
+
+    results: list[dict] = []
+    for file in files:
+        tmp_dir, tmp_path = _stage_upload(file)
+        try:
+            tname = await loop.run_in_executor(None, lambda p=tmp_path: _ingest_one(p))
+            results.append({
+                "filename": tmp_path.name,
+                "table_name": tname,
+                "status": "ok",
+            })
+        except Exception as e:
+            results.append({
+                "filename": tmp_path.name,
+                "status": "error",
+                "error": str(e),
+            })
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    added = sum(1 for r in results if r["status"] == "ok")
+    return {
+        "schema": target,
+        "results": results,
+        "added": added,
+        "failed": len(results) - added,
+    }
+
+
 @router.get("/connections/{conn_id}/files")
 async def list_connection_files(conn_id: str):
     loop = asyncio.get_event_loop()
@@ -776,25 +827,12 @@ async def create_connection_schema(conn_id: str, body: _SchemaCreate):
 
 
 def _purge_schema_artifacts(conn_id: str, schema: str) -> None:
-    """Delete the derived intelligence for a (connection, schema) so a removed schema
-    leaves no stale profile/exploration behind in the Briefing/KPI strip. Best-effort."""
-    from aughor.kernel.errors import tolerate
-    try:
-        from aughor.profile import store as _pstore
-        _pstore.invalidate(conn_id, schema)
-    except Exception as e:
-        tolerate(e, "remove-schema: profile invalidate", counter="schema.remove.profile")
-    import re as _re
-    from pathlib import Path as _Path
-    safe = lambda s: _re.sub(r"[^A-Za-z0-9._-]", "_", s)  # noqa: E731
-    for pat in (f"exploration_{safe(conn_id)}__{safe(schema)}.json",
-                f"episodes_{safe(conn_id)}__{safe(schema)}.jsonl"):
-        try:
-            p = _Path("data") / pat
-            if p.exists():
-                p.unlink()
-        except Exception as e:
-            tolerate(e, "remove-schema: artifact unlink", counter="schema.remove.artifact")
+    """Delete every derived artifact tied to a removed (connection, schema) — profile,
+    ontology, explorer findings, briefings/patterns, canvases, investigations + evidence,
+    monitors. Delegates to the schema-scoped cascade. Best-effort. (A whole-connection
+    delete goes through purge_connection_artifacts.)"""
+    from aughor.db.purge import purge_schema_artifacts
+    purge_schema_artifacts(conn_id, schema)
 
 
 @router.delete("/connections/{conn_id}/schemas/{schema}", status_code=200)

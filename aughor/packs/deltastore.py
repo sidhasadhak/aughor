@@ -82,6 +82,24 @@ def record_deltas(pack_id: str, connection_id: str, deltas: list, source_run: st
     return written
 
 
+def purge_connection(connection_id: str) -> int:
+    """Delete every proposed/accepted delta tied to a connection in the current org
+    (catalog delete cascade). Returns the number removed."""
+    if not connection_id:
+        return 0
+    org = current_org_id()
+    c = _conn()
+    try:
+        n = c.execute(
+            "DELETE FROM pack_deltas WHERE org_id=? AND connection_id=?",
+            (org, connection_id),
+        ).rowcount
+        c.commit()
+        return n
+    finally:
+        c.close()
+
+
 def list_deltas(pack_id: Optional[str] = None, status: str = "proposed") -> list[dict]:
     """Proposed (or other-status) deltas for the current org, newest first."""
     org = current_org_id()

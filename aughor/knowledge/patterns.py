@@ -236,3 +236,21 @@ def get_patterns(
         pass
 
     return patterns
+
+
+def invalidate(connection_id: str) -> int:
+    """Drop the cached patterns for a connection (the cache is keyed by bare
+    connection_id, connection-level not per-schema). Used by the catalog-delete
+    cascade and on schema removal — patterns recompute cheaply from current
+    findings. Returns 1 if an entry was removed, else 0."""
+    if not _CACHE_PATH.exists():
+        return 0
+    try:
+        cache = json.loads(_CACHE_PATH.read_text())
+    except Exception:
+        return 0
+    if connection_id not in cache:
+        return 0
+    del cache[connection_id]
+    _CACHE_PATH.write_text(json.dumps(cache, indent=2))
+    return 1

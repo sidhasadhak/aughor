@@ -256,12 +256,16 @@ def get_dsn(conn_id: str) -> tuple[str, str]:
     return row["conn_type"], _decrypt(row["dsn_enc"])
 
 
-def delete_connection(conn_id: str) -> None:
+def delete_connection(conn_id: str) -> bool:
+    """Delete a connection, or *hide* a builtin (which is restorable). Returns True
+    when the row was genuinely removed — the caller's signal that the connection's
+    derived intelligence should be purged (a hidden builtin keeps its artifacts)."""
     if conn_id == SAMPLES_ID:
         raise ValueError("The Sample Catalog cannot be deleted.")
     if conn_id == WORKSPACE_ID:
         raise ValueError("The Workspace cannot be deleted.")
-    if conn_id in (BUILTIN_ID, POSTGRES_BUILTIN_ID):
+    deleted = conn_id not in (BUILTIN_ID, POSTGRES_BUILTIN_ID)
+    if not deleted:
         # Hide the builtin so it won't reappear on restart
         settings = _load_settings()
         hidden = set(settings.get("hidden_builtins", []))
@@ -284,6 +288,7 @@ def delete_connection(conn_id: str) -> None:
         evict_conn(conn_id)
     except Exception:
         pass
+    return deleted
 
 
 def _dsn_preview(conn_type: str) -> str:

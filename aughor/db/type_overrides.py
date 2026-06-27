@@ -32,6 +32,16 @@ def set_override(conn_id: str, table: str, column: str, new_type: str) -> None:
     _save(data)
 
 
+def purge_connection(conn_id: str) -> bool:
+    """Drop every column-type override for a connection (catalog delete cascade)."""
+    data = _load()
+    if conn_id not in data:
+        return False
+    del data[conn_id]
+    _save(data)
+    return True
+
+
 def get_table_overrides(conn_id: str, table: str) -> dict[str, str]:
     """Return all type overrides for a given table."""
     data = _load()

@@ -103,6 +103,27 @@ def get_claims_for_investigation(investigation_id: str) -> list[EvidenceClaim]:
             conn.close()
 
 
+def purge_investigations(investigation_ids: list[str]) -> int:
+    """Delete every claim belonging to the given investigations (catalog delete
+    cascade — the ledger keys only by investigation_id, so the caller resolves a
+    connection to its investigation IDs first). Returns the rows removed."""
+    if not investigation_ids:
+        return 0
+    placeholders = ",".join("?" for _ in investigation_ids)
+    with _LOCK:
+        conn = _get_conn()
+        try:
+            _init_schema(conn)
+            n = conn.execute(
+                f"DELETE FROM evidence_claims WHERE investigation_id IN ({placeholders})",
+                investigation_ids,
+            ).rowcount
+            conn.commit()
+            return n
+        finally:
+            conn.close()
+
+
 def get_recent_claims_for_investigations(
     investigation_ids: list[str], limit: int = 50,
 ) -> list[EvidenceClaim]:
