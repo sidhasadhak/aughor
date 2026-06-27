@@ -17,7 +17,6 @@ from aughor.db.connection import open_connection_for
 from aughor.db.history import (
     complete_investigation,
     create_investigation,
-    delete_investigation,
     fail_investigation,
     get_investigation,
     get_session_turns,
@@ -2474,9 +2473,26 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
     )
 
 
+@router.delete("/investigations", status_code=200)
+def clear_investigations(workspace_id: str | None = None):
+    """Bulk-delete investigations the caller can see — platform-wide, or scoped to a
+    workspace's connections when `workspace_id` is given. Cascades evidence claims
+    and the RAG vector index. Returns a count summary of what was removed."""
+    from aughor.db.purge import purge_investigations_bulk
+    from aughor.metastore import accessible_catalog_ids
+
+    allowed = accessible_catalog_ids(workspace_id)
+    # allowed is None → unscoped (clear everything); else restrict to those connections.
+    return purge_investigations_bulk(None if allowed is None else list(allowed))
+
+
 @router.delete("/investigations/{inv_id}", status_code=204)
 def delete_investigation_endpoint(inv_id: str):
-    if not delete_investigation(inv_id):
+    """Delete one investigation and its full footprint (history row, evidence
+    claims, RAG vector entry). 404 if it doesn't exist."""
+    from aughor.db.purge import purge_investigation_artifacts
+    counts = purge_investigation_artifacts(inv_id)
+    if not counts.get("investigations"):
         raise HTTPException(status_code=404, detail="Investigation not found")
 
 

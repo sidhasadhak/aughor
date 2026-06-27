@@ -504,6 +504,62 @@ def list_investigation_ids(connection_id: str, canvas_id: Optional[str] = None,
     return [r["id"] for r in rows]
 
 
+def all_investigation_ids(connection_ids: Optional[list[str]] = None) -> list[str]:
+    """Every investigation row id, optionally restricted to a set of connections.
+    ``connection_ids=None`` means platform-wide; an empty list means none. Used by
+    the bulk-clear cascade to resolve evidence/vector cleanup before deleting rows."""
+    c = _conn()
+    _ensure_schema(c)
+    if connection_ids is None:
+        rows = c.execute("SELECT id FROM investigations").fetchall()
+    elif not connection_ids:
+        rows = []
+    else:
+        ph = ",".join("?" for _ in connection_ids)
+        rows = c.execute(
+            f"SELECT id FROM investigations WHERE connection_id IN ({ph})",
+            connection_ids,
+        ).fetchall()
+    c.close()
+    return [r["id"] for r in rows]
+
+
+def investigation_connection_ids(connection_ids: Optional[list[str]] = None) -> list[str]:
+    """Distinct, non-empty connection ids that have investigations (optionally within
+    a given set) — lets the bulk-clear cascade purge vector points by connection."""
+    c = _conn()
+    _ensure_schema(c)
+    if connection_ids is None:
+        rows = c.execute(
+            "SELECT DISTINCT connection_id FROM investigations "
+            "WHERE connection_id IS NOT NULL AND connection_id != ''"
+        ).fetchall()
+    elif not connection_ids:
+        rows = []
+    else:
+        ph = ",".join("?" for _ in connection_ids)
+        rows = c.execute(
+            f"SELECT DISTINCT connection_id FROM investigations "
+            f"WHERE connection_id IN ({ph}) AND connection_id IS NOT NULL AND connection_id != ''",
+            connection_ids,
+        ).fetchall()
+    c.close()
+    return [r["connection_id"] for r in rows]
+
+
+def purge_ids(inv_ids: list[str]) -> int:
+    """Delete the given investigation rows by id. Returns rows removed."""
+    if not inv_ids:
+        return 0
+    c = _conn()
+    _ensure_schema(c)
+    ph = ",".join("?" for _ in inv_ids)
+    n = c.execute(f"DELETE FROM investigations WHERE id IN ({ph})", inv_ids).rowcount
+    c.commit()
+    c.close()
+    return n
+
+
 def list_investigations(limit: int = 50) -> list[dict]:
     """Return summary rows newest-first, collapsing chat turns into one item per session."""
     c = _conn()

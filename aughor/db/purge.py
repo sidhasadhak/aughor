@@ -203,6 +203,96 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
     return counts
 
 
+def _del_inv_vectors(query_filter, counts: dict[str, int]) -> None:
+    """Delete matching points from the investigations vector collection (RAG /
+    prior-analyses), so a deleted investigation stops influencing future analysis."""
+    try:
+        from aughor.semantic.vector_store import delete_by_filter
+        from aughor.tools.prior_analyses import INVESTIGATIONS_COLLECTION
+    except Exception as e:
+        tolerate(e, "purge-inv: qdrant imports", counter="inv.purge.qdrant_import")
+        return
+    try:
+        counts["qdrant_points"] = counts.get("qdrant_points", 0) + (
+            delete_by_filter(INVESTIGATIONS_COLLECTION, query_filter) or 0
+        )
+    except Exception as e:
+        tolerate(e, "purge-inv: qdrant delete", counter="inv.purge.qdrant")
+
+
+def purge_investigation_artifacts(inv_id: str) -> dict[str, int]:
+    """Delete ONE investigation and everything derived from it: the history row (or
+    whole chat session, since delete keys on id OR session_id), its evidence claims,
+    and its vector-index entry. Returns a ``{artifact: count}`` summary. Best-effort
+    + idempotent — the per-user 'delete this investigation' cascade.
+
+    Without this, deleting from the UI left the investigation searchable in the RAG
+    index (still steering future analysis) and orphaned its evidence claims.
+    """
+    counts: dict[str, int] = {}
+    try:
+        from aughor.db import history
+        counts["investigations"] = 1 if history.delete_investigation(inv_id) else 0
+    except Exception as e:
+        tolerate(e, "purge-inv: history row", counter="inv.purge.history")
+    try:
+        from aughor.evidence import store as evidence_store
+        counts["evidence_claims"] = evidence_store.purge_investigations([inv_id])
+    except Exception as e:
+        tolerate(e, "purge-inv: evidence", counter="inv.purge.evidence")
+    try:
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+        _del_inv_vectors(
+            Filter(must=[FieldCondition(key="inv_id", match=MatchValue(value=inv_id))]),
+            counts,
+        )
+    except Exception as e:
+        tolerate(e, "purge-inv: qdrant filter", counter="inv.purge.qdrant_filter")
+    removed = {k: v for k, v in counts.items() if v}
+    if removed:
+        logger.info("Purged artifacts for deleted investigation %s: %s", inv_id, removed)
+    return counts
+
+
+def purge_investigations_bulk(connection_ids: list[str] | None = None) -> dict[str, int]:
+    """Clear investigations in bulk — platform-wide (``connection_ids=None``) or only
+    those belonging to a set of connections (workspace-scoped clear) — cascading
+    evidence claims and vector-index points. Returns a ``{artifact: count}`` summary.
+
+    Vector points are dropped per connection (the efficient connection-keyed filter);
+    chat-only rows carry no vector/evidence, so they're cleared by the row delete.
+    """
+    from aughor.db import history
+
+    counts: dict[str, int] = {}
+    ids = history.all_investigation_ids(connection_ids)
+    if not ids:
+        return counts
+    try:
+        from aughor.evidence import store as evidence_store
+        counts["evidence_claims"] = evidence_store.purge_investigations(ids)
+    except Exception as e:
+        tolerate(e, "purge-inv-bulk: evidence", counter="inv.purge.bulk_evidence")
+    try:
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+        for cid in history.investigation_connection_ids(connection_ids):
+            _del_inv_vectors(
+                Filter(must=[FieldCondition(key="connection_id", match=MatchValue(value=cid))]),
+                counts,
+            )
+    except Exception as e:
+        tolerate(e, "purge-inv-bulk: qdrant", counter="inv.purge.bulk_qdrant")
+    try:
+        counts["investigations"] = history.purge_ids(ids)
+    except Exception as e:
+        tolerate(e, "purge-inv-bulk: history rows", counter="inv.purge.bulk_history")
+    removed = {k: v for k, v in counts.items() if v}
+    if removed:
+        logger.info("Bulk-purged investigations (%s): %s",
+                    "all" if connection_ids is None else f"{len(connection_ids)} conn(s)", removed)
+    return counts
+
+
 def purge_schema_artifacts(conn_id: str, schema: str) -> dict[str, int]:
     """Delete every derived artifact tied to a single (connection, schema) when a schema
     is removed — the schema-scoped analogue of :func:`purge_connection_artifacts`.
