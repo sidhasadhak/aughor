@@ -11,5 +11,13 @@ from aughor.verify.verdicts import (
     verdict_stats,
     list_verdicts,
 )
+from aughor.verify.gate import (
+    is_compoundable,
+    can_act_autonomously,
+    COMPOUND_MIN_CONFIDENCE,
+)
 
-__all__ = ["VERDICTS", "record_verdict", "verdict_stats", "list_verdicts"]
+__all__ = [
+    "VERDICTS", "record_verdict", "verdict_stats", "list_verdicts",
+    "is_compoundable", "can_act_autonomously", "COMPOUND_MIN_CONFIDENCE",
+]
