@@ -1329,6 +1329,26 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
     manifest = _build_verification_manifest(state, extra_checks=extra_checks)
     report = ExplorationReport(**{**report.model_dump(), "verification": manifest})
 
+    # Bet 1 flywheel (safe writeback): if a specialist steered this run AND it's verified, distil
+    # learnings and PROPOSE them to the delta store (a human accepts/dismisses — never auto-mutate
+    # the pack). Gated by is_compoundable, so an unverified run compounds nothing.
+    try:
+        _steered = [c.split(":", 1)[1] for c in (state.get("verification_checks", []) or [])
+                    if isinstance(c, str) and c.startswith("specialist:")]
+        if _steered:
+            from aughor.packs.flywheel import distill_deltas
+            from aughor.packs.deltastore import record_deltas
+            _res = distill_deltas(_steered[0], manifest,
+                                  data_quality_notes=report.data_quality_notes,
+                                  source_run=state.get("investigation_id", "") or "")
+            if _res.compounded and _res.deltas:
+                n = record_deltas(_steered[0], state.get("connection_id", ""), _res.deltas,
+                                  source_run=state.get("investigation_id", "") or "")
+                logger.info("[explore] flywheel proposed %d delta(s) for pack '%s'", n, _steered[0])
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "flywheel distil best-effort; run unaffected", counter="packs.flywheel")
+
     # ── Learning loop: persist schema discoveries back to the glossary ────────
     conn_id = state.get("connection_id", "")
     _learn_from_exploration(report, chain_summary, conn_id)

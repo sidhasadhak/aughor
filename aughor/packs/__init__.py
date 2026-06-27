@@ -28,6 +28,7 @@ from aughor.packs.resolver import (
 from aughor.packs.evalrunner import run_pack_evals, check_expectation
 from aughor.packs.engine_eval import extract_plan_meta, make_ask_fn
 from aughor.packs.dryrun import dry_run_binding
+from aughor.packs.deltastore import record_deltas, list_deltas, set_delta_status
 from aughor.packs.adapter import schema_facts_from_table_cols
 from aughor.packs.bindings import save_binding, load_binding, is_bound
 from aughor.packs.routing import select_pack, rank_packs, score_pack

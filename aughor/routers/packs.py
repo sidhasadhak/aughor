@@ -164,6 +164,28 @@ def get_binding(pack_id: str, connection_id: str):
     return load_binding(pack_id, connection_id)
 
 
+@router.get("/packs/{pack_id}/deltas")
+def get_pack_deltas(pack_id: str, status: str = "proposed"):
+    """The flywheel's proposed learnings for this pack (the 'expert changelog')."""
+    from aughor.packs.deltastore import list_deltas
+    return list_deltas(pack_id, status=status)
+
+
+class DeltaStatusIn(BaseModel):
+    status: str   # accepted | dismissed | proposed
+
+
+@router.post("/packs/deltas/{delta_id}/status")
+def post_delta_status(delta_id: int, body: DeltaStatusIn):
+    """Accept or dismiss a proposed pack delta."""
+    from aughor.packs.deltastore import set_delta_status
+    try:
+        changed = set_delta_status(delta_id, body.status)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"changed": changed}
+
+
 class EvalIn(BaseModel):
     connection_id: str
     schema: Optional[str] = None
