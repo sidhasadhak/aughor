@@ -10,7 +10,7 @@ from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aughor.agent.state import AgentState
 from aughor.db.connection import open_connection_for
@@ -442,6 +442,7 @@ async def salvage_orphaned_investigation(
 # ── Request models ────────────────────────────────────────────────────────────
 
 class InvestigateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     question: str
     connection_id: str = BUILTIN_ID
     canvas_id: Optional[str] = None
@@ -449,7 +450,7 @@ class InvestigateRequest(BaseModel):
     skip_cache: bool = False
     # Scope a non-canvas investigation to a specific schema (multi-schema
     # connections) — mirrors how a canvas scopes. None = whole connection.
-    schema: Optional[str] = None
+    schema_name: Optional[str] = Field(default=None, alias="schema")
     # Seed context for "pull the thread" from a briefing: the originating finding
     # text (seed_context) and the exact query that produced it (seed_sql). ada_intake
     # already reads scan_context, so seeding is additive — no graph change.
@@ -2375,7 +2376,7 @@ async def investigate(req: InvestigateRequest, request: Request):
         _investigation_job_streamed(
             req.question, conn_id, request,
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
-            schema_scope=req.schema, seed_sql=req.seed_sql, seed_context=req.seed_context,
+            schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
             insight_id=req.insight_id, deep=req.deep,
         ),
         media_type="text/event-stream",

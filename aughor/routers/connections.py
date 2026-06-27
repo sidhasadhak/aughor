@@ -708,7 +708,7 @@ async def upload_file_to_connection(
     conn_id: str,
     file: UploadFile = File(...),
     table_name: Optional[str] = Form(None),
-    schema: Optional[str] = Form(None),
+    schema_name: Optional[str] = Form(None, alias="schema"),
     column_types: Optional[str] = Form(None),
 ):
     """Ingest a file as a table. Optional table_name, schema, and column_types
@@ -731,13 +731,13 @@ async def upload_file_to_connection(
             lambda: db.ingest_file(
                 tmp_path,
                 table_name=(table_name or None),
-                schema=(schema or "main"),
+                schema=(schema_name or "main"),
                 column_types=types,
             ),
         )
         return {
             "table_name": tname,
-            "schema": schema or "main",
+            "schema": schema_name or "main",
             "filename": tmp_path.name,
             "message": "File ingested",
         }
@@ -758,14 +758,14 @@ async def upload_file_to_connection(
 async def bulk_upload_files_to_connection(
     conn_id: str,
     files: list[UploadFile] = File(...),
-    schema: Optional[str] = Form(None),
+    schema_name: Optional[str] = Form(None, alias="schema"),
 ):
     """Ingest many files into a single schema in one request, with DuckDB's
     inferred column types (no per-file review). One bad file doesn't sink the
     batch — every file gets an independent ok/error result."""
     import shutil
     db = _open_file_connector(conn_id, "ingest_file")
-    target = schema or "main"
+    target = schema_name or "main"
     loop = asyncio.get_running_loop()
 
     def _ingest_one(tmp_path: Path) -> str:

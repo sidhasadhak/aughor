@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.db.connection import open_connection_for
 from aughor.explorer.models import ExplorationPhase, elapsed_seconds
@@ -1097,9 +1097,10 @@ class GroundRequest(BaseModel):
     the nearest — so `insight_ids` lets the caller pass every citation and we ground the
     number against whichever insight actually produced it. `insight_id` is the primary
     (tried first); when empty the whole finding is grounded."""
+    model_config = ConfigDict(populate_by_name=True)
     insight_id: str = ""
     insight_ids: list[str] = []
-    schema: str | None = None
+    schema_name: str | None = Field(default=None, alias="schema")
     text: str = ""
 
 
@@ -1112,7 +1113,7 @@ def ground_briefing_number(conn_id: str, body: GroundRequest):
     are passed it tries each (primary first) and returns the one whose cells actually
     contain the number — so a synthesized figure is proven against its true source, not
     falsely flagged just because the *nearest* citation wasn't its origin."""
-    by_domain = _domain_insights_for(conn_id, body.schema)
+    by_domain = _domain_insights_for(conn_id, body.schema_name)
     index: dict[str, dict] = {}
     for items in by_domain.values():
         for i in (items or []):
@@ -1127,7 +1128,7 @@ def ground_briefing_number(conn_id: str, body: GroundRequest):
     if not ordered:
         raise HTTPException(status_code=404, detail="No cited insight with a query to ground against")
 
-    use_schema = body.schema if (body.schema and _store_key(conn_id, body.schema) != conn_id) else None
+    use_schema = body.schema_name if (body.schema_name and _store_key(conn_id, body.schema_name) != conn_id) else None
     try:
         if use_schema:
             from aughor.db.connection import open_connection_for_with_schema
