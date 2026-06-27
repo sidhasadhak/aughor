@@ -21,10 +21,16 @@ from aughor.packs.models import (
 )
 from aughor.packs.loader import load_pack, list_packs, PacksError
 from aughor.packs.validate import validate_pack, ValidationReport
+from aughor.packs.resolver import (
+    SchemaFacts, TableFact, ColumnFact, BindingCandidate,
+    propose_bindings, binding_report,
+)
 
 __all__ = [
     "Pack", "PackManifest", "PackMetric", "PackQuestions", "PackPlaybook",
     "PackSurface", "PackEval", "RoleSpec",
     "load_pack", "list_packs", "PacksError",
     "validate_pack", "ValidationReport",
+    "SchemaFacts", "TableFact", "ColumnFact", "BindingCandidate",
+    "propose_bindings", "binding_report",
 ]
