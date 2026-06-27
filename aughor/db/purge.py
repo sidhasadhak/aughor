@@ -141,6 +141,11 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
         counts["briefing_cache"] = briefing.invalidate(conn_id)
     except Exception as e:
         tolerate(e, "purge: briefing cache", counter="conn.purge.briefing_cache")
+    try:
+        from aughor.knowledge import patterns
+        counts["patterns_cache"] = patterns.invalidate(conn_id)
+    except Exception as e:
+        tolerate(e, "purge: patterns cache", counter="conn.purge.patterns_cache")
 
     # ── Monitors + alerts ───────────────────────────────────────────────────────
     try:

@@ -828,13 +828,26 @@ async def create_connection_schema(conn_id: str, body: _SchemaCreate):
 
 def _purge_schema_artifacts(conn_id: str, schema: str) -> None:
     """Delete the derived intelligence for a (connection, schema) so a removed schema
-    leaves no stale profile/exploration behind in the Briefing/KPI strip. Best-effort."""
+    leaves no stale profile/exploration/briefing behind in the Briefing/KPI strip.
+    Best-effort. (A whole-connection delete goes through purge_connection_artifacts.)"""
     from aughor.kernel.errors import tolerate
     try:
         from aughor.profile import store as _pstore
         _pstore.invalidate(conn_id, schema)
     except Exception as e:
         tolerate(e, "remove-schema: profile invalidate", counter="schema.remove.profile")
+    # The Briefing the user sees is regenerated from these; without this, a removed
+    # schema's cached briefing (key 'conn:schema') + patterns kept showing.
+    try:
+        from aughor.knowledge import briefing
+        briefing.invalidate(conn_id, schema)
+    except Exception as e:
+        tolerate(e, "remove-schema: briefing cache", counter="schema.remove.briefing")
+    try:
+        from aughor.knowledge import patterns
+        patterns.invalidate(conn_id)
+    except Exception as e:
+        tolerate(e, "remove-schema: patterns cache", counter="schema.remove.patterns")
     import re as _re
     from pathlib import Path as _Path
     safe = lambda s: _re.sub(r"[^A-Za-z0-9._-]", "_", s)  # noqa: E731

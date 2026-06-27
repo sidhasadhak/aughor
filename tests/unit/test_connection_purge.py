@@ -21,7 +21,7 @@ def isolated(tmp_path, monkeypatch):
     from aughor.evidence import store as evidence_store
     from aughor.monitors import store as monitor_store
     from aughor.packs import bindings, deltastore
-    from aughor.knowledge import briefing
+    from aughor.knowledge import briefing, patterns
     from aughor.platform import vending
     from aughor.profile import store as profile_store
     from aughor.semantic import connection_kb
@@ -32,6 +32,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(purge, "_DATA_DIR", data)
     monkeypatch.setattr(profile_store, "_DATA_DIR", data)
     monkeypatch.setattr(briefing, "_CACHE_PATH", data / "briefing_cache.json")
+    monkeypatch.setattr(patterns, "_CACHE_PATH", data / "patterns_cache.json")
     monkeypatch.setattr(connection_kb, "_DATA_DIR", data)
     monkeypatch.setattr(brief_store, "_PATH", data / "brief_subscriptions.json")
     monkeypatch.setattr(type_overrides, "_OVERRIDES_FILE", data / "type_overrides.json")
@@ -103,11 +104,15 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     bindings.save_binding("pack1", conn, {"role": {"table": "t"}})
 
     import json
-    from aughor.knowledge import briefing
+    from aughor.knowledge import briefing, patterns
     briefing._CACHE_PATH.write_text(json.dumps({
         conn: {"briefing": "x"},                 # connection-level entry
         f"{conn}:main": {"briefing": "y"},        # schema-scoped entry
         "other_conn": {"briefing": "z"},          # another connection — must survive
+    }))
+    patterns._CACHE_PATH.write_text(json.dumps({
+        conn: {"computed_at": "2026-01-01T00:00:00Z", "patterns": []},
+        "other_conn": {"computed_at": "2026-01-01T00:00:00Z", "patterns": []},
     }))
 
     # uploaded data dir
@@ -140,9 +145,33 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     assert counts["monitors"] == 1
     assert counts["pack_bindings"] == 1
     assert counts["briefing_cache"] == 2  # conn-level + schema-scoped, other_conn kept
+    assert counts["patterns_cache"] == 1
     import json
     surviving = json.loads(briefing._CACHE_PATH.read_text())
     assert set(surviving) == {"other_conn"}
+    assert set(json.loads(patterns._CACHE_PATH.read_text())) == {"other_conn"}
+
+
+def test_schema_scoped_briefing_invalidate(isolated):
+    """Removing ONE schema must drop only that schema's cached briefing — the
+    connection-level entry and sibling schemas survive (the reported leak: a
+    removed schema's briefing kept showing because schema-delete never cleared it)."""
+    import json
+    from aughor.knowledge import briefing, patterns
+    briefing._CACHE_PATH.write_text(json.dumps({
+        "workspace": {"b": 0},
+        "workspace:missimi": {"b": 1},
+        "workspace:swiss_air": {"b": 2},
+    }))
+    removed = briefing.invalidate("workspace", "missimi")
+    assert removed == 1
+    assert set(json.loads(briefing._CACHE_PATH.read_text())) == {"workspace", "workspace:swiss_air"}
+
+    # patterns are connection-level; invalidate drops the whole entry (recomputes cheap)
+    patterns._CACHE_PATH.write_text(json.dumps({"workspace": {"patterns": []}}))
+    assert patterns.invalidate("workspace") == 1
+    assert json.loads(patterns._CACHE_PATH.read_text()) == {}
+    assert patterns.invalidate("workspace") == 0  # idempotent
 
 
 def test_cascade_is_idempotent(isolated):
