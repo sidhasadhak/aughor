@@ -83,10 +83,39 @@ export function effectiveTimezone(): string {
 // id / date, so a count, an id or a rate is never prefixed with a currency symbol.
 // Boundaries are letter-only lookarounds (?<![a-z])…(?![a-z]) so snake_case separators
 // count as boundaries: "unit_price"/"total_cost" match; "coffee" doesn't match "fee".
-const MONEY_RE = /(?<![a-z])(?:revenues?|sales|gmv|prices?|pricing|costs?|amounts?|spend|spent|profits?|payments?|fees?|charges?|balances?|budget|income|expenses?|turnover|takings|payout|aov|arpu|mrr|arr|ltv|cac|gross)(?![a-z])|(?:usd|gbp|eur)$|net_(?:sales|revenue|profit)/i;
+// ISO 4217 codes that commonly appear as a column suffix (e.g. refund_chf, amount_usd).
+// A column ending in one of these IS monetary AND names its own currency — see currencyFromColumn.
+const CURRENCY_SUFFIX_RE = /(?:usd|eur|gbp|chf|jpy|cny|inr|aud|cad|sek|nok|dkk|sgd|hkd|nzd|brl|zar|mxn|pln|aed)$/i;
+const MONEY_RE = new RegExp(
+  "(?<![a-z])(?:revenues?|sales|gmv|prices?|pricing|costs?|amounts?|spend|spent|profits?|payments?|fees?|charges?|balances?|budget|income|expenses?|turnover|takings|payout|aov|arpu|mrr|arr|ltv|cac|gross)(?![a-z])"
+  + "|" + CURRENCY_SUFFIX_RE.source
+  + "|net_(?:sales|revenue|profit)",
+  "i",
+);
 const NOT_MONEY_RE = /(?<![a-z])(?:counts?|qty|quantity|numbers?|num|rate|ratio|pct|percent|share|proportion|rank|index|score|days?|months?|years?|weeks?|hours?|minutes?|age|id)(?![a-z])/i;
 
 /** Does this column name read as monetary (so its figures should carry the currency symbol)? */
 export function isMoneyColumn(colName: string): boolean {
   return MONEY_RE.test(colName) && !NOT_MONEY_RE.test(colName);
+}
+
+/**
+ * The explicit ISO currency a column NAMES via its suffix (refund_chf → "CHF", amount_usd →
+ * "USD"), or null when the name carries no currency. This is authoritative for THAT column:
+ * a `_chf` amount is Swiss francs regardless of the workspace's reporting-currency setting.
+ */
+export function currencyFromColumn(colName: string): string | null {
+  const m = (colName || "").toLowerCase().match(CURRENCY_SUFFIX_RE);
+  return m ? m[0].toUpperCase() : null;
+}
+
+/**
+ * Currency symbol to use for a column's figures: the column's OWN currency (from its suffix)
+ * wins over the workspace reporting-currency default — so refund_chf renders "CHF 2.38M", not
+ * "€2.38M", even in a EUR workspace. Falls back to the workspace symbol for currency-agnostic
+ * money columns (e.g. "revenue").
+ */
+export function columnCurrencySymbol(colName: string): string {
+  const explicit = currencyFromColumn(colName);
+  return explicit ? currencySymbol(explicit) : effectiveCurrencySymbol();
 }

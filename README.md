@@ -87,7 +87,7 @@ EMBEDDER_MODEL=nomic-embed-text
 
 ## What's inside
 
-> Fifteen capabilities, one corpus of intelligence. Expand any section for how it works and the trade-offs behind it.
+> Sixteen capabilities, one corpus of intelligence. Expand any section for how it works and the trade-offs behind it.
 
 <details>
 <summary>🔭 <strong>Autonomous background exploration</strong> — it learns your business with no prompts</summary>
@@ -101,7 +101,7 @@ The moment you connect, Aughor starts exploring through structured phases: **nul
 <details>
 <summary>🗂 <strong>Per-schema intelligence</strong> — true multi-schema isolation</summary>
 
-The unit of intelligence is **(connection, schema)**, not the connection. A workspace folding several schemas gets a **separate, fully-isolated run per schema** — its own ontology, profile, findings, and KPIs — instead of one run where the largest schema starves the rest. Each schema is scoped so it can only *see and execute against* its own tables (a cross-schema leak guard drops any finding whose SQL escapes the schema). The Briefing's **schema selector** shows one schema's intelligence; **"All schemas"** merges every per-schema run; runs fan out concurrently under a bounded semaphore.
+The unit of intelligence is **(connection, schema)**, not the connection. A workspace folding several schemas gets a **separate, fully-isolated run per schema** — its own ontology, profile, findings, and KPIs — instead of one run where the largest schema starves the rest. Each schema is scoped so it can only *see and execute against* its own tables (a cross-schema leak guard drops any finding whose SQL escapes the schema). The Briefing's **schema selector** scopes to one schema at a time (each selected individually); runs fan out concurrently under a bounded semaphore.
 
 </details>
 
@@ -116,6 +116,20 @@ An ontology built from your data, not docs you write: **entities** (table + grai
 <summary>🏭 <strong>Industry-aware intelligence</strong> — the right metrics for your business</summary>
 
 Aughor detects what **kind of business** the data represents and adapts what it measures. A `BusinessProfile` — industry, model, and 6–8 **north-star metrics** grounded to real columns — is inferred per connection, then resolved against a **per-industry metric knowledge base** (retail, airline, SaaS, logistics, food-delivery, manufacturing: ~50 formula + grain + anti-pattern recipes). Each metric carries **build-time audited SQL** (scalar, trend/breakdown chart, and each key-question answer), validated through the fan-out/grain/range guards and recipe-grounded-regenerated if a draft is wrong.
+
+</details>
+
+<details>
+<summary>🛡 <strong>Self-verifying investigations</strong> — confidence that's computed, not asserted</summary>
+
+Every deep analysis carries a **verification manifest**: which guards actually ran (a `stats_attached` canary catches a silently-disabled check), **segment-uniformity significance tests** (a flat rate across every segment is flagged *no-signal*, not narrated as a driver), a **raw-COUNT-over-join cardinality guard**, **independent-path triangulation** (a rate must agree with its `COUNT(DISTINCT)` twin), and an **adversarial refutation pass** that tries to break the headline. From these, an **earned-confidence** and **data-trust** score is *computed* (coverage × completeness × data-trust) and shown on the report — and the **trust gate** ensures nothing consumes a run above its earned trust (a refuted run is quarantined, never compounded). Analysts can **Accept / Partly / Reject** any finding, capturing ground truth.
+
+</details>
+
+<details>
+<summary>🎓 <strong>Specialist Agents (Domain Expertise Packs)</strong> — user-built domain experts that steer the engine</summary>
+
+A specialist is a declarative **folder** (`packs/<id>/`) that declares *intent* — persona, metric recipes, entity **roles** (never table names), the questions it owns, evals — and aughor's grounding **compiles it against your warehouse** at deploy: an **entity-binding resolver** proposes role→table/column mappings (`customer → customers.customer_unique_id`), you confirm + dry-run-verify, evals must pass, then it **steers** the planner (a generic "monthly returning rate" question becomes a proper **cohort-retention matrix** with the acquisition-mix confound). The core engine is unchanged — packs only inject steering metadata at intake, and only from a verified, pinned binding. A **flywheel** distils learnings from verified runs back into the pack (you accept/dismiss). Off by default behind the `specialist_packs` flag; ships with a Customer-Analytics reference pack.
 
 </details>
 

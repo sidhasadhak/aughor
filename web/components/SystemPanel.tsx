@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { getDevStats, resetDevStats, getSystemFlags, setSystemFlag, type DevStats, type SystemFlag } from "@/lib/api";
+import { PacksManager } from "@/components/PacksManager";
 import { subscribeKernelEvents } from "@/lib/events";
 import { formatCount, pct as fmtPct } from "@/lib/format";
 
@@ -137,6 +138,9 @@ export function SystemPanel() {
 
       {/* Feature flags */}
       <FeatureFlags />
+
+      {/* Specialist packs — deploy console + flywheel changelog */}
+      <PacksManager />
 
       {/* Ontology */}
       <Section title="Ontology (M12)">
@@ -274,3 +278,5 @@ function FeatureFlags() {
     </Section>
   );
 }
+
+

@@ -1,0 +1,15 @@
+roles:
+  customer:
+    description: The party whose behaviour we track over time.
+    expects: { kind: entity, identity: true }
+  event:
+    description: The dated activity that proves a customer is "active".
+    expects: { kind: event, has_timestamp: true, references: customer }
+  cohort_anchor:
+    description: The date that places a customer in a cohort.
+    expects: { kind: date, of: customer }
+    default: first_event
+  active_definition:
+    description: What makes a customer count as active in a period.
+    one_of: [purchased_in_window, session_in_window, subscription_open]
+    default: purchased_in_window

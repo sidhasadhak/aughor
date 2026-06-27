@@ -14,7 +14,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Table, ConfigProvider, theme } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
 import { cleanLabel, formatMetricValue, formatPercent, displayCellValue } from "@/lib/format";
-import { isMoneyColumn, effectiveCurrencySymbol } from "@/lib/orgSettings";
+import { isMoneyColumn, columnCurrencySymbol } from "@/lib/orgSettings";
 import { useOrgSettings } from "@/lib/useOrgSettings";
 
 // ── Theme-mode hook ──────────────────────────────────────────────────────────
@@ -144,6 +144,10 @@ const AUG_THEME_LIGHT: Parameters<typeof ConfigProvider>[0]["theme"] = {
 
 const ORDINAL_COL = /\bid\b|_id$|^id$|id$|Id$|ID$/i;
 const SHARE_COL   = /pct|percent|share|rate|ratio|proportion/i;
+// Temporal/grouping KEY columns (departure_month=6, departure_quarter=2, year=2024). These are
+// labels, not measures: summing them is meaningless and metric-formatting turns a year into
+// "2.02K". Treat as identifiers — render the raw value and exclude from the Σ totals.
+const DIMENSION_KEY_COL = /(?<![a-z])(?:year|quarter|qtr|month|week|weekday|dow|day_of_week|hour|fiscal_period|period_no)(?![a-z])/i;
 
 function isNumericValue(v: unknown): boolean {
   if (v == null || v === "") return false;
@@ -165,14 +169,16 @@ function fmt(col: string, v: unknown): React.ReactNode {
   // Monetary columns — prefix the configured reporting currency symbol (when one is set).
   if (isMoneyColumn(col)) {
     const money = Number(v);
-    const sym = effectiveCurrencySymbol();
+    // A column that names its own currency (refund_chf → CHF) overrides the workspace default.
+    const sym = columnCurrencySymbol(col);
     if (sym && !isNaN(money) && s.trim() !== "") {
       return <span style={{ fontVariantNumeric: "tabular-nums" }}>{sym}{formatMetricValue(money)}</span>;
     }
   }
-  // Large / numeric cells — canonical data-table value formatting.
+  // Large / numeric cells — canonical data-table value formatting. Skip key columns
+  // (ids + temporal grouping keys) so a month "6" or year "2024" renders raw, not "2.02K".
   const n = Number(v);
-  if (!isNaN(n) && !ORDINAL_COL.test(col) && s.trim() !== "") {
+  if (!isNaN(n) && !ORDINAL_COL.test(col) && !DIMENSION_KEY_COL.test(col) && s.trim() !== "") {
     return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatMetricValue(n)}</span>;
   }
   // Collapse a DATE_TRUNC'd midnight timestamp ("2025-04-01 00:00:00") to its date.
@@ -229,7 +235,7 @@ export function SqlResultTable({
   const sums = useMemo(
     () =>
       columns.map((col, idx) => {
-        if (ORDINAL_COL.test(col) || SHARE_COL.test(col)) return null;
+        if (ORDINAL_COL.test(col) || SHARE_COL.test(col) || DIMENSION_KEY_COL.test(col)) return null;
         let saw = false;
         let sum = 0;
         for (const r of rows) {

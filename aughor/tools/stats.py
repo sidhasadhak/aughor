@@ -101,6 +101,197 @@ def detect_trend(values: list[float]) -> TrendResult:
     return TrendResult(slope=float(slope), r_squared=float(r_sq), direction=direction, interpretation=interp)
 
 
+# ── Proportions: rate confidence intervals + segment uniformity ───────────────
+
+@dataclass
+class SegmentRate:
+    label: str
+    successes: int
+    n: int
+    rate: float
+    ci_low: float
+    ci_high: float
+    significant: bool   # differs from the pooled baseline (Bonferroni-corrected)
+
+
+@dataclass
+class UniformityResult:
+    baseline_rate: float
+    n_segments: int
+    n_significant: int
+    all_uniform: bool         # no segment differs significantly from baseline
+    interpretation: str
+    segments: list = field(default_factory=list)  # list[SegmentRate]
+
+
+def proportion_ci(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score interval for a binomial proportion — well-behaved at the small
+    counts and near-zero rates (≈2.5%) where the normal approximation breaks down."""
+    import math
+    if n <= 0:
+        return (0.0, 0.0)
+    p = successes / n
+    denom = 1.0 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = (z / denom) * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return (max(0.0, center - half), min(1.0, center + half))
+
+
+def two_proportion_pvalue(s1: int, n1: int, s2: int, n2: int) -> float:
+    """Two-sided z-test p-value for the difference between two proportions
+    (pooled-variance). Returns 1.0 (no evidence of difference) on degenerate input."""
+    import math
+    if n1 <= 0 or n2 <= 0:
+        return 1.0
+    p_pool = (s1 + s2) / (n1 + n2)
+    se = math.sqrt(p_pool * (1 - p_pool) * (1.0 / n1 + 1.0 / n2))
+    if se == 0:
+        return 1.0
+    z = (s1 / n1 - s2 / n2) / se
+    return float(2 * scipy_stats.norm.sf(abs(z)))
+
+
+def assess_rate_uniformity(
+    segments: list[tuple[str, int, int]],
+    alpha: float = 0.05,
+) -> Optional[UniformityResult]:
+    """Given per-segment (label, successes, n), decide whether any segment's rate
+    differs from the pooled baseline beyond sampling noise.
+
+    Each segment is tested against the POOL OF ALL OTHER segments (so the segment is
+    not compared against a baseline it dominates), with a Bonferroni correction across
+    the k segments. The headline question this answers: "is the apparent variation real,
+    or is the rate uniform across this dimension?" — the Swiss-Air refund case where
+    every segment reads ~2.5% and the right move is to NOT over-interpret the spread.
+
+    Returns None when the input can't support a test (fewer than 2 segments with data).
+    """
+    clean = [(str(lbl), int(round(s)), int(round(n))) for lbl, s, n in segments
+             if n and int(round(n)) > 0 and 0 <= int(round(s)) <= int(round(n))]
+    if len(clean) < 2:
+        return None
+
+    total_s = sum(s for _, s, _ in clean)
+    total_n = sum(n for _, _, n in clean)
+    baseline = total_s / total_n if total_n else 0.0
+    k = len(clean)
+    corrected = alpha / k  # Bonferroni
+
+    seg_results: list[SegmentRate] = []
+    n_sig = 0
+    for lbl, s, n in clean:
+        lo, hi = proportion_ci(s, n)
+        p = two_proportion_pvalue(s, n, total_s - s, total_n - n)
+        sig = p < corrected
+        if sig:
+            n_sig += 1
+        seg_results.append(SegmentRate(lbl, s, n, s / n, lo, hi, sig))
+
+    all_uniform = n_sig == 0
+    if all_uniform:
+        interp = (
+            f"UNIFORM / NO SIGNAL: all {k} segments fall within sampling noise of the "
+            f"pooled rate {baseline:.2%} (no segment differs significantly at the 95% level, "
+            f"Bonferroni-corrected for {k} comparisons). Apparent segment-to-segment "
+            f"differences are statistical noise, not signal — do NOT attribute the spread to "
+            f"any dimension or recommend segment-specific action on this basis. A rate this "
+            f"flat across every segment is often structural or a data-generation artifact; "
+            f"treat with low confidence until the data-generating process is validated."
+        )
+    else:
+        movers = ", ".join(
+            f"{sr.label} ({sr.rate:.2%}, n={sr.n})" for sr in seg_results if sr.significant
+        )
+        interp = (
+            f"{n_sig} of {k} segments differ significantly from the pooled rate "
+            f"{baseline:.2%} (95%, Bonferroni-corrected): {movers}. Remaining segments are "
+            f"within sampling noise."
+        )
+    return UniformityResult(baseline, k, n_sig, all_uniform, interp, seg_results)
+
+
+_RATE_KEYWORDS = ("rate", "ratio", "pct", "percent", "proportion", "share", "conversion", "frac")
+_DENOM_KEYWORDS = ("total", "count", "tickets", "orders", "n_", "volume", "rows", "customers", "users", "_n")
+
+
+def _analyze_rate_segments(columns: list[str], rows: list[list]) -> Optional[StatResult]:
+    """Detect a rate-by-segment result (a proportion column + a denominator count
+    column across ≥3 group rows) and test whether the rate is uniform across segments.
+
+    Reconstructs successes = round(rate × denominator) so the numerator column need not
+    be identified explicitly. Returns a StatResult only when a confident detection +
+    assessment is possible; otherwise None (stays silent rather than guess)."""
+    if not rows or len(rows) < 3 or not columns:
+        return None
+    lower = [c.lower() for c in columns]
+
+    # rate column: name hints OR all values within [0, 1]
+    rate_idx = None
+    for i, c in enumerate(lower):
+        vals = _extract_floats(rows, i)
+        if not vals:
+            continue
+        named = any(kw in c for kw in _RATE_KEYWORDS)
+        in_unit = all(0.0 <= v <= 1.0001 for v in vals)
+        in_pct = all(0.0 <= v <= 100.0 for v in vals) and max(vals) > 1.5
+        if named and (in_unit or in_pct):
+            rate_idx = i
+            break
+        if rate_idx is None and in_unit and len(vals) >= 3 and max(vals) <= 1.0001 and min(vals) < 1.0:
+            rate_idx = i  # fallback: a [0,1] column with no obvious count name
+    if rate_idx is None:
+        return None
+
+    rate_vals = _extract_floats(rows, rate_idx)
+    scale = 100.0 if (rate_vals and max(rate_vals) > 1.5) else 1.0
+
+    # denominator: an integer-ish numeric column (not the rate) with the largest sum
+    denom_idx = None
+    best_sum = -1.0
+    for i, c in enumerate(lower):
+        if i == rate_idx:
+            continue
+        vals = _extract_floats(rows, i)
+        if len(vals) < 3:
+            continue
+        int_like = all(abs(v - round(v)) < 1e-6 for v in vals) and all(v >= 0 for v in vals)
+        if not int_like:
+            continue
+        named = any(kw in c for kw in _DENOM_KEYWORDS)
+        total = sum(vals)
+        score = total * (10 if named else 1)
+        if score > best_sum:
+            best_sum = score
+            denom_idx = i
+    if denom_idx is None:
+        return None
+
+    # label column: first non-rate, non-denominator column (else synthesize indices)
+    label_idx = next((i for i in range(len(columns)) if i not in (rate_idx, denom_idx)), None)
+
+    segments: list[tuple[str, int, int]] = []
+    for r_i, row in enumerate(rows):
+        try:
+            rate = float(row[rate_idx]) / scale
+            n = float(row[denom_idx])
+        except (ValueError, TypeError, IndexError):
+            continue
+        if n <= 0 or not (0.0 <= rate <= 1.0001):
+            continue
+        label = str(row[label_idx]) if label_idx is not None else f"row{r_i}"
+        segments.append((label, round(rate * n), int(round(n))))
+
+    result = assess_rate_uniformity(segments)
+    if result is None:
+        return None
+    return StatResult(
+        type="uniformity",
+        interpretation=f"[{columns[rate_idx]}] {result.interpretation}",
+        is_significant=result.n_significant > 0,
+        p_value=None,
+    )
+
+
 # ── Auto-analysis: called on every successful QueryResult ────────────────────
 
 def analyze_query_result(columns: list[str], rows: list[list], sql: Optional[str] = None) -> list[StatResult]:
@@ -117,10 +308,21 @@ def analyze_query_result(columns: list[str], rows: list[list], sql: Optional[str
 
     results: list[StatResult] = []
 
+    # Rate-by-segment uniformity: is the apparent spread across groups real signal,
+    # or noise around a flat baseline? (independent of the numeric-column scan below)
+    try:
+        rate_stat = _analyze_rate_segments(columns, rows)
+        if rate_stat:
+            results.append(rate_stat)
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "rate-segment uniformity analysis best-effort; other stats proceed",
+                 counter="stats.rate_segments")
+
     # Find numeric column indices
     numeric_idxs = _numeric_column_indices(columns, rows)
     if not numeric_idxs:
-        return []
+        return results
 
     date_idx = _date_column_index(columns)
 

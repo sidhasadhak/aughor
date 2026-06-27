@@ -136,6 +136,31 @@ export async function updateOrgSettings(settings: OrgSettings): Promise<OrgSetti
   return res.json();
 }
 
+/** Record a human verdict on an investigation finding (Bet 0 — ground-truth capture). */
+export async function recordVerdict(input: {
+  verdict: "accept" | "correct" | "reject";
+  connectionId?: string;
+  investigationId?: string;
+  headline?: string;
+  note?: string;
+}): Promise<void> {
+  const res = await fetch(`${BASE}/verify/verdict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      verdict: input.verdict,
+      connection_id: input.connectionId ?? "",
+      investigation_id: input.investigationId ?? "",
+      headline: input.headline ?? "",
+      note: input.note ?? "",
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to record verdict");
+  }
+}
+
 export async function getEffectiveSettings(workspaceId?: string): Promise<OrgSettings> {
   const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
   const res = await fetch(`${BASE}/org-settings/effective${q}`);
@@ -3117,4 +3142,84 @@ export async function setSystemFlag(name: string, value: boolean): Promise<Syste
   });
   if (!res.ok) return null;
   return res.json();
+}
+
+// ── Specialist packs (Domain Expertise Packs) ───────────────────────────────────
+
+export interface PackSummary {
+  id: string;
+  name?: string;
+  status?: string;
+  version?: number;
+  domains?: string[];
+  metrics?: number;
+  roles?: number;
+  evals?: number;
+  ok: boolean;
+  errors?: string[];
+  warnings?: string[];
+  error?: string;
+}
+
+export async function getPacks(): Promise<{ enabled: boolean; packs: PackSummary[] }> {
+  const res = await fetch(`${BASE}/packs`);
+  if (!res.ok) return { enabled: false, packs: [] };
+  return res.json();
+}
+
+export interface BindingCandidateDTO {
+  role: string; table?: string | null; column?: string | null;
+  value?: string | null; confidence: number; evidence: string; bound: boolean;
+}
+
+export async function proposePackBindings(
+  packId: string, connectionId: string, schema?: string, businessModel = "",
+): Promise<{ fully_groundable: boolean; groundable_roles: number; total: number; proposals: Record<string, BindingCandidateDTO> }> {
+  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/propose-bindings`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema, business_model: businessModel }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "propose failed");
+  return res.json();
+}
+
+export async function bindPack(
+  packId: string, connectionId: string, bindings: Record<string, unknown>, schema?: string, version = 1,
+): Promise<{ verified: boolean; missing?: string[]; dry_run_errors?: string[] }> {
+  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/bind`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, bindings, schema, version }),
+  });
+  if (!res.ok) throw new Error("bind failed");
+  return res.json();
+}
+
+export async function evaluatePack(
+  packId: string, connectionId: string, schema?: string,
+): Promise<{ can_activate: boolean; pass_rate: number | null; reasons: string[];
+            results: { question: string; passed: boolean; detail: string }[];
+            deployed: boolean; verified: boolean }> {
+  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/evaluate`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "evaluate failed");
+  return res.json();
+}
+
+export interface PackDeltaDTO {
+  id: number; kind: string; target: string; content: string; confidence: number; status: string;
+}
+
+export async function getPackDeltas(packId: string, status = "proposed"): Promise<PackDeltaDTO[]> {
+  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/deltas?status=${status}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function setPackDeltaStatus(deltaId: number, status: "accepted" | "dismissed"): Promise<boolean> {
+  const res = await fetch(`${BASE}/packs/deltas/${deltaId}/status`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+  });
+  return res.ok;
 }

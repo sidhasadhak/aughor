@@ -221,12 +221,38 @@ class ReasoningOutput(BaseModel):
         return v
 
 
+class VerificationCheck(BaseModel):
+    """One guard/check the engine should have run on this investigation — and whether it
+    actually did. Defeats class-E silent failures (a guard that's off but assumed on):
+    a check that did NOT run is surfaced, never silently treated as passed."""
+    name: str
+    label: str
+    status: Literal["ran", "not_run", "n/a"]   # n/a = the check had nothing applicable to do
+    detail: Optional[str] = None
+
+
+class VerificationManifest(BaseModel):
+    """The liveness + trust record for an investigation. `coverage` = fraction of applicable
+    guards that ran. `earned_confidence`/`data_trust` are COMPUTED (never asserted by the
+    LLM) so the report's confidence reflects evidence, not a vibe; `signals` is the
+    provenance ('why this score')."""
+    checks: list[VerificationCheck] = Field(default_factory=list)
+    coverage: float = 0.0
+    earned_confidence: float = 1.0          # 0-1: coverage × completeness × data_trust
+    confidence_band: str = "high"           # high | medium | low
+    data_trust: float = 1.0                 # 0-1: how trustworthy the underlying data looks
+    signals: list[str] = Field(default_factory=list)   # why the score is what it is
+
+
 class ExplorationReport(BaseModel):
     headline: str = Field(description="One sentence direct answer to the original question. Board-ready.")
     conclusion: str = Field(description="2-3 sentence explanation of the answer with supporting numbers.")
     narrative: str = Field(description="Flowing paragraph connecting all sub-questions into a coherent story.")
     recommended_actions: list[str] = Field(description="Concrete next steps based on the findings.")
     data_quality_notes: list["DataQualityNote"] = Field(default_factory=list)
+    # Liveness record — which guards actually ran on this investigation (Bet 0). Set by
+    # synthesize_exploration; the LLM never fills this. Optional so older reports stay valid.
+    verification: Optional["VerificationManifest"] = None
 
     @field_validator("data_quality_notes", mode="before")
     @classmethod
@@ -444,6 +470,10 @@ class AgentState(TypedDict):
     current_subq_idx: int
     subq_answers: Annotated[list[SubQuestionAnswer], operator.add]
     explore_report: Optional[ExplorationReport]
+
+    # Liveness recorder (Bet 0): each guard appends its name when it actually runs, so
+    # synthesize can prove which checks fired (defeats class-E silent failures).
+    verification_checks: Annotated[list[str], operator.add]
 
     # Per-sub-question data portrait produced by exploratory_scan_subq.
     # Key = subq.id, value = formatted markdown paragraph of discovery results.

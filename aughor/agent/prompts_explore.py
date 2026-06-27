@@ -166,6 +166,52 @@ value was returned as a column by the query. If a derived metric matters, it mus
 from your own arithmetic (which is often wrong). Cite only what the query actually returned.
 """
 
+DISTILL_PACK_DELTAS_PROMPT = """\
+You are improving a domain-expert PACK from a completed, VERIFIED investigation it steered.
+Propose ONLY concrete, durable improvements to the expert that THIS run revealed — either:
+  • a schema caveat (a column-level gotcha an analyst must know to avoid a wrong result), or
+  • a diagnostic question the expert should always ask on this kind of question.
+
+Be conservative and specific. Return an EMPTY list if nothing durable was learned. Do NOT
+restate the findings, recommendations, or generic advice — only pack-level learnings grounded
+in what the data actually showed here.
+
+PACK: {pack_id}
+
+INVESTIGATION SUMMARY (the chain that just ran):
+{chain_summary}
+
+Return deltas: a list where each item has
+  kind: "caveat" (a column gotcha) or "diagnostic" (a question to always ask),
+  target: "table.column" for a caveat, "" for a diagnostic,
+  content: one precise sentence.
+"""
+
+
+REFUTE_FINDING_PROMPT = """\
+You are a SKEPTICAL senior analyst. Your ONLY job is to REFUTE the headline finding below —
+find the single strongest reason it could be WRONG, given the evidence actually gathered.
+
+Default to refuted=true when: the sample is small, an obvious confound is unaddressed, the
+number could be a data artifact (e.g. a fan-out/cardinality issue, a single time period, a
+single category value), the conclusion overclaims beyond what the queries measured, or the
+"driver" is one cherry-picked cell among many comparisons. Be adversarial, not agreeable.
+
+ORIGINAL QUESTION: {question}
+
+HEADLINE FINDING (the claim to attack):
+{conclusion}
+
+EVIDENCE — the investigative chain that produced it:
+{chain_summary}
+
+Return:
+- refuted: true if the finding does NOT hold up to scrutiny, false only if it is genuinely robust.
+- reason: one sentence — the strongest specific objection (cite the weak point in the evidence).
+- alternative: a plausible alternative explanation for the same data, or null.
+"""
+
+
 SYNTHESIZE_EXPLORATION_PROMPT = """\
 You are a senior data analyst writing the final answer to an investigative question.
 You have completed a chain of sub-questions and now have all the evidence needed.
@@ -224,4 +270,18 @@ sub-segments (country × category × tenure) and reporting the single largest ce
 it were "the driver": those extremes are noise from many comparisons, not a signal. Only call something
 a driver when it moves the OVERALL metric materially, and prefer the direction that holds across most
 segments over a cherry-picked outlier.
+
+RECOMMENDATION COHERENCE: recommended_actions must FOLLOW FROM the headline and never contradict it.
+If the headline says a rate/metric is uniform (flat across segments), do NOT then recommend a
+segment-specific intervention justified by that rate (e.g. "prioritise segment X to lower its rate") —
+there is no rate lever when the rate is flat. Before writing each action, check it against the
+headline; drop or rewrite any that assume a driver the analysis did not find.
+
+VALUE LEVER (when the rate is flat but cost concentrates): a uniform rate means total cost is just
+value × volume, so the only real levers are (a) reduce the per-unit amount (e.g. partial-refund tiers,
+a non-refundable fare component) or (b) reduce the volume of exposed high-value units (fare rules). When
+recommending these, SIZE the lever from chain figures (e.g. "a 20% non-refundable component on the
+long-haul-business segment's **725,114 CHF** ≈ **145,000 CHF** saved") rather than re-stating the flat
+rate. If the data needed to size it (e.g. refund amount vs ticket fare) was not measured, say what
+single query would size it instead of asserting a vague benefit.
 """

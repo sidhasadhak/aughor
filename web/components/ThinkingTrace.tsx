@@ -294,7 +294,7 @@ export function ThinkingTrace({ state }: Props) {
         {steps.map((step, i) => {
           const isLast = i === steps.length - 1;
           return (
-            <div key={step.id} className="flex items-stretch gap-3 aug-step-in"
+            <div key={`${step.id}-${i}`} className="flex items-stretch gap-3 aug-step-in"
               style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>
               {/* Rail: dot + connector segment to the next step */}
               <div className="flex flex-col items-center w-3.5 shrink-0 pt-0.5">
