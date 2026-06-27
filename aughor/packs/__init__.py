@@ -27,6 +27,8 @@ from aughor.packs.resolver import (
 )
 from aughor.packs.adapter import schema_facts_from_table_cols
 from aughor.packs.bindings import save_binding, load_binding, is_bound
+from aughor.packs.routing import select_pack, rank_packs, score_pack
+from aughor.packs.inject import build_injection, PackInjection
 
 __all__ = [
     "Pack", "PackManifest", "PackMetric", "PackQuestions", "PackPlaybook",
