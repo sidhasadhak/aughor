@@ -157,6 +157,24 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
         if scan_context else ""
     )
 
+    # Specialist-pack steering (Bet 3/Bet 1 intake hook) — flag-gated, off by default so a
+    # normal run is byte-identical. If an active pack owns this question AND grounds on the
+    # connection, prepend its persona + grounded recipes + diagnostics to the planner context.
+    steered_by = None
+    try:
+        from aughor.packs.intake import injection_for_question, render_injection
+        from aughor.tools.schema import parse_schema_tables
+        _tcs = parse_schema_tables(state.get("schema_context") or "")
+        _inj = injection_for_question(state.get("question", ""), state.get("connection_id", ""), _tcs)
+        if _inj is not None:
+            scan_section = render_injection(_inj) + scan_section
+            steered_by = _inj.pack_id
+            logger.info("[explore] specialist pack '%s' is steering this run", _inj.pack_id)
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "specialist-pack intake best-effort; run proceeds ungrounded",
+                 counter="packs.intake")
+
     # Pin canonical definitions for the whole run before planning any sub-questions.
     analysis_ledger = build_analysis_ledger(state)
 
@@ -193,8 +211,10 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
         "pitfalls": [],
         "iteration": 0,
         "analysis_ledger": analysis_ledger,
-        # Liveness: the pre-flight temporal prune ran (record outcome too).
-        "verification_checks": [f"temporal_prune:{len(dropped)}"],
+        # Liveness: the pre-flight temporal prune ran (record outcome too); plus a marker when
+        # a specialist pack steered this run.
+        "verification_checks": [f"temporal_prune:{len(dropped)}"]
+                               + ([f"specialist:{steered_by}"] if steered_by else []),
     }
 
 
