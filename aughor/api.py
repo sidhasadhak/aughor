@@ -14,7 +14,7 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, HTTPException, Security
+from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 
@@ -91,7 +91,29 @@ async def _lifespan(app: "FastAPI"):
         _CTX_EXECUTOR = None
 
 
-app = FastAPI(title="Aughor API", lifespan=_lifespan)
+# ── Auth ──────────────────────────────────────────────────────────────────────
+# Optional shared-secret gate. OFF by default (AUGHOR_API_KEY unset) so the local
+# single-user tool needs no token. When the env var is set, every request must
+# carry it as `X-Api-Key` (the MCP client already sends it that way) — the in-app
+# authorization model is capability-gating (aughor.licensing.gate); this is the
+# coarse front-door lock for when the server is exposed beyond localhost.
+_API_KEY = os.environ.get("AUGHOR_API_KEY", "")
+_api_key_header = APIKeyHeader(name="X-Api-Key", auto_error=False)
+# Liveness + API docs stay open so health probes and the schema browser work
+# even when the key is set.
+_AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json")
+
+
+def _require_auth(request: Request, key: str | None = Security(_api_key_header)) -> None:
+    if not _API_KEY:
+        return
+    if any(request.url.path.startswith(p) for p in _AUTH_EXEMPT):
+        return
+    if key != _API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+app = FastAPI(title="Aughor API", lifespan=_lifespan, dependencies=[Depends(_require_auth)])
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 _cors_raw = os.environ.get("AUGHOR_CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
@@ -104,14 +126,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
-_API_KEY = os.environ.get("AUGHOR_API_KEY", "")
-_api_key_header = APIKeyHeader(name="X-Api-Key", auto_error=False)
-
-
-def _require_auth(key: str | None = Security(_api_key_header)) -> None:
-    if _API_KEY and key != _API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 # ── Startup steps (run by _lifespan above, in this order) ──────────────────────
