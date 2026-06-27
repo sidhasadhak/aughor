@@ -164,6 +164,13 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
     except Exception as e:
         tolerate(e, "purge: investigations/evidence", counter="conn.purge.investigations")
 
+    # ── Canvases (+ their saved artifacts) scoped to this connection ─────────────
+    try:
+        from aughor.canvas import store as canvas_store
+        counts["canvases"] = canvas_store.purge_connection(conn_id)
+    except Exception as e:
+        tolerate(e, "purge: canvases", counter="conn.purge.canvases")
+
     # ── Connection knowledge base (JSON source of truth + its vector points) ─────
     try:
         from aughor.semantic import connection_kb
@@ -194,3 +201,89 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
     if removed:
         logger.info("Purged artifacts for deleted connection %s: %s", conn_id, removed)
     return counts
+
+
+def purge_schema_artifacts(conn_id: str, schema: str) -> dict[str, int]:
+    """Delete every derived artifact tied to a single (connection, schema) when a schema
+    is removed — the schema-scoped analogue of :func:`purge_connection_artifacts`.
+
+    Sibling schemas keep their intelligence. Two kinds of cleanup:
+      • **schema-scoped** stores (profile/ontology/briefing/explorer/watermark/pack
+        bindings/canvases) drop only this schema's entries; and
+      • the **connection-level 'All schemas' aggregates** (the bare ``*_{conn}`` profile /
+        exploration / briefing / patterns) are dropped because they are stale the moment
+        any schema is removed — they regenerate from the remaining schemas on next view.
+
+    Investigations and monitors carry no schema column, so they are scoped by the
+    schema-qualified ``schema.table`` references in their stored SQL (best-effort) plus,
+    for investigations, the canvases bound to this schema. Best-effort + observable.
+    """
+    from aughor.canvas import store as canvas_store
+    from aughor.db import history
+    from aughor.evidence import store as evidence_store
+    from aughor.explorer import watermark
+    from aughor.knowledge import briefing, patterns
+    from aughor.monitors import store as monitor_store
+    from aughor.ontology import store as ontology_store
+    from aughor.packs import bindings
+    from aughor.profile import store as profile_store
+    from aughor.tools import profile_cache
+
+    counts: dict[str, int] = {}
+    safe, ssafe = _safe(conn_id), _safe(schema)
+
+    def _run(label: str, fn):
+        try:
+            counts[label] = fn() or 0
+        except Exception as e:
+            tolerate(e, f"purge-schema: {label}", counter=f"schema.purge.{label}")
+
+    # ── schema-scoped intelligence (siblings untouched) ─────────────────────────
+    _run("profile", lambda: (profile_store.invalidate(conn_id, schema), 1)[1])
+    _run("ontology", lambda: (ontology_store.invalidate(conn_id, schema), 1)[1])
+    _run("briefing_cache", lambda: briefing.invalidate(conn_id, schema))
+    _run("watermark", lambda: watermark.clear_schema(conn_id, schema))
+    _run("pack_bindings", lambda: bindings.purge_schema(conn_id, schema))
+
+    # ── connection-level aggregates — stale once any schema is removed ───────────
+    _run("patterns_cache", lambda: patterns.invalidate(conn_id))
+    _run("profile_cache", lambda: (profile_cache.invalidate(conn_id), 1)[1])
+    counts["explorer_files"] = _unlink_exact(
+        f"exploration_{safe}__{ssafe}.json", f"exploration_{safe}.json",
+        f"episodes_{safe}__{ssafe}.jsonl", f"episodes_{safe}.jsonl",
+        f"business_profile_{safe}.json",   # the bare 'All schemas' profile
+    )
+
+    # ── canvases bound to this schema → their investigations + evidence ─────────
+    canvas_ids: list[str] = []
+    def _canvases() -> int:
+        nonlocal canvas_ids
+        canvas_ids = canvas_store.purge_schema(conn_id, schema)
+        return len(canvas_ids)
+    _run("canvases", _canvases)
+
+    def _investigations() -> int:
+        ids = history.purge_schema(conn_id, schema, canvas_ids)
+        counts["evidence_claims"] = evidence_store.purge_investigations(ids)
+        return len(ids)
+    _run("investigations", _investigations)
+    _run("monitors", lambda: monitor_store.purge_schema(conn_id, schema))
+
+    removed = {k: v for k, v in counts.items() if v}
+    if removed:
+        logger.info("Purged artifacts for removed schema %s.%s: %s", conn_id, schema, removed)
+    return counts
+
+
+def _unlink_exact(*names: str) -> int:
+    """Unlink exact data/ files by name (precise paths, no globbing). Returns count."""
+    removed = 0
+    for name in names:
+        p = _DATA_DIR / name
+        if p.exists():
+            try:
+                p.unlink()
+                removed += 1
+            except Exception as e:
+                tolerate(e, f"purge-schema: unlink {p}", counter="schema.purge.unlink")
+    return removed

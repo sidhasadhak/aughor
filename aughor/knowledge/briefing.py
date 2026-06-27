@@ -528,10 +528,11 @@ def get_briefing(
 
 
 def invalidate(connection_id: str, schema: str | None = None) -> int:
-    """Drop cached briefings for a connection. With ``schema``, remove only that
-    schema's scope (key ``'conn_id:schema'``) — used when a single schema is removed.
-    Without it, remove the connection-level entry AND every schema scope — used by
-    the catalog-delete cascade. Returns the number of entries removed."""
+    """Drop cached briefings for a connection. With ``schema``, remove that schema's
+    scope (``'conn_id:schema'``) AND the now-stale 'All schemas' aggregate (``'conn_id'``),
+    leaving sibling schemas — used when a single schema is removed. Without it, remove the
+    connection-level entry AND every schema scope — used by the catalog-delete cascade.
+    Returns the number of entries removed."""
     if not _CACHE_PATH.exists():
         return 0
     try:
@@ -539,7 +540,8 @@ def invalidate(connection_id: str, schema: str | None = None) -> int:
     except Exception:
         return 0
     if schema:
-        drop = {f"{connection_id}:{schema}"}
+        # the schema's own briefing AND the now-stale 'All schemas' aggregate; siblings stay
+        drop = {f"{connection_id}:{schema}", connection_id}
         kept = {k: v for k, v in cache.items() if k not in drop}
     else:
         prefix = f"{connection_id}:"

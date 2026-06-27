@@ -244,6 +244,38 @@ def delete_artifact(artifact_id: str) -> bool:
     c.commit()
     return bool(affected and affected > 0)
 
+
+def _delete_canvas_artifacts(canvas_id: str) -> None:
+    c = _artifact_conn()
+    _ensure_artifact_schema(c)
+    c.execute("DELETE FROM artifacts WHERE canvas_id = ?", (canvas_id,))
+    c.commit()
+
+
+def purge_connection(connection_id: str) -> int:
+    """Delete every canvas scoped to a connection (+ its saved artifacts). Used by
+    the catalog-delete cascade. Returns the number of canvases removed."""
+    removed = 0
+    for cv in list_canvases():
+        if any(s.connection_id == connection_id for s in cv.scopes):
+            _delete_canvas_artifacts(cv.id)
+            if delete_canvas(cv.id):
+                removed += 1
+    return removed
+
+
+def purge_schema(connection_id: str, schema: str) -> list[str]:
+    """Delete canvases scoped to (connection, schema) (+ artifacts) when a schema is
+    removed. Returns the deleted canvas ids so the caller can purge their investigations."""
+    ids: list[str] = []
+    for cv in list_canvases():
+        if any(s.connection_id == connection_id and (s.schema_name or "") == schema
+               for s in cv.scopes):
+            _delete_canvas_artifacts(cv.id)
+            if delete_canvas(cv.id):
+                ids.append(cv.id)
+    return ids
+
 # ── Module-level singleton (lazy init) ───────────────────────────────────────
 
 class _CanvasStore:

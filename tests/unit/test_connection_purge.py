@@ -21,10 +21,15 @@ def isolated(tmp_path, monkeypatch):
     from aughor.evidence import store as evidence_store
     from aughor.monitors import store as monitor_store
     from aughor.packs import bindings, deltastore
+    from aughor.canvas import store as canvas_store
+    from aughor.explorer import watermark
     from aughor.knowledge import briefing, patterns
+    from aughor.ontology import store as ontology_store
     from aughor.platform import vending
     from aughor.profile import store as profile_store
     from aughor.semantic import connection_kb
+    from aughor.tools import profile_cache
+    from aughor.util.json_store import KeyedJsonStore
 
     data = tmp_path / "data"
     data.mkdir()
@@ -42,6 +47,11 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(bindings, "_DB_PATH", data / "pack_bindings.db")
     monkeypatch.setattr(deltastore, "_DB_PATH", data / "pack_deltas.db")
     monkeypatch.setattr(vending, "STORAGE_ROOT", data / "uploads")
+    monkeypatch.setattr(canvas_store, "_DB_PATH", data / "canvases.db")
+    monkeypatch.setattr(canvas_store, "_ARTIFACT_DB_PATH", data / "artifacts.db")
+    monkeypatch.setattr(watermark, "_PATH", data / "explore_watermark.json")
+    monkeypatch.setattr(ontology_store, "_store", KeyedJsonStore(data / "ontology_cache.json"))
+    monkeypatch.setattr(profile_cache, "_store", KeyedJsonStore(data / "schema_profiles.json"))
     monitor_store._init_schema()  # monitors inits its schema once at import; redo for the tmp DB
     return data
 
@@ -163,15 +173,87 @@ def test_schema_scoped_briefing_invalidate(isolated):
         "workspace:missimi": {"b": 1},
         "workspace:swiss_air": {"b": 2},
     }))
+    # removing a schema drops its own briefing AND the stale 'All schemas' aggregate,
+    # but keeps sibling schemas
     removed = briefing.invalidate("workspace", "missimi")
-    assert removed == 1
-    assert set(json.loads(briefing._CACHE_PATH.read_text())) == {"workspace", "workspace:swiss_air"}
+    assert removed == 2
+    assert set(json.loads(briefing._CACHE_PATH.read_text())) == {"workspace:swiss_air"}
 
     # patterns are connection-level; invalidate drops the whole entry (recomputes cheap)
     patterns._CACHE_PATH.write_text(json.dumps({"workspace": {"patterns": []}}))
     assert patterns.invalidate("workspace") == 1
     assert json.loads(patterns._CACHE_PATH.read_text()) == {}
     assert patterns.invalidate("workspace") == 0  # idempotent
+
+
+def test_schema_purge_removes_schema_and_aggregates_keeps_siblings(isolated):
+    """Removing ONE schema purges its scoped intelligence + the stale connection-level
+    aggregates, but leaves sibling schemas (the user's ask: deleting a catalog/schema
+    takes its investigations, canvas, briefings, everything with it)."""
+    import json
+    from aughor.canvas import store as canvas_store
+    from aughor.canvas.models import CanvasScope
+    from aughor.db import history, purge
+    from aughor.evidence import store as evidence_store
+    from aughor.evidence.models import EvidenceClaim
+    from aughor.knowledge import briefing, patterns
+    from aughor.monitors import store as monitor_store
+    from aughor.monitors.models import Monitor
+    from aughor.profile import store as profile_store
+
+    CONN = "workspace"
+    gone, keep = "missimi", "zomato_data"
+
+    # profiles: scoped (gone) + sibling (keep) + bare aggregate
+    (isolated / f"business_profile_{CONN}__{gone}.json").write_text("{}")
+    (isolated / f"business_profile_{CONN}__{keep}.json").write_text("{}")
+    (isolated / f"business_profile_{CONN}.json").write_text("{}")  # 'All schemas'
+    # explorer files: scoped (gone) + sibling (keep) + bare aggregate
+    (isolated / f"exploration_{CONN}__{gone}.json").write_text("{}")
+    (isolated / f"exploration_{CONN}__{keep}.json").write_text("{}")
+    (isolated / f"exploration_{CONN}.json").write_text("{}")
+    (isolated / f"episodes_{CONN}.jsonl").write_text("")
+    # briefing cache: gone scope + aggregate + sibling
+    briefing._CACHE_PATH.write_text(json.dumps({
+        f"{CONN}:{gone}": 1, CONN: 0, f"{CONN}:{keep}": 2}))
+    patterns._CACHE_PATH.write_text(json.dumps({CONN: {"patterns": []}}))
+    # watermark: gone schema tables + sibling
+    from aughor.explorer import watermark
+    watermark._PATH.write_text(json.dumps({CONN: {f"{gone}.orders": "d", f"{keep}.sales": "d"}}))
+    # canvas bound to the removed schema (+ an artifact) and a sibling canvas
+    cv = canvas_store.create_canvas("missimi cv", [CanvasScope(connection_id=CONN, schema_name=gone)])
+    canvas_store.create_artifact(cv.id, "query", "q")
+    keep_cv = canvas_store.create_canvas("zomato cv", [CanvasScope(connection_id=CONN, schema_name=keep)])
+    # investigations: one referencing missimi.* (gone), one on zomato.* (keep)
+    inv_gone = history.create_investigation("q", CONN)
+    history.complete_investigation(inv_gone, {"headline": "h"}, [],
+                                   [{"sql": "SELECT * FROM missimi.orders"}])
+    inv_keep = history.create_investigation("q2", CONN)
+    history.complete_investigation(inv_keep, {"headline": "h2"}, [],
+                                   [{"sql": "SELECT * FROM zomato_data.sales"}])
+    evidence_store.append_claim(EvidenceClaim(investigation_id=inv_gone, claim_text="x", confidence=0.5))
+    # monitors: one on missimi.*, one on zomato.*
+    monitor_store.upsert_monitor(Monitor(conn_id=CONN, name="m1", custom_sql="SELECT count(*) FROM missimi.orders"))
+    monitor_store.upsert_monitor(Monitor(conn_id=CONN, name="m2", custom_sql="SELECT count(*) FROM zomato_data.sales"))
+
+    counts = purge.purge_schema_artifacts(CONN, gone)
+
+    # removed-schema + aggregates gone
+    assert not (isolated / f"business_profile_{CONN}__{gone}.json").exists()
+    assert not (isolated / f"business_profile_{CONN}.json").exists()
+    assert not (isolated / f"exploration_{CONN}__{gone}.json").exists()
+    assert not (isolated / f"exploration_{CONN}.json").exists()
+    bc = json.loads(briefing._CACHE_PATH.read_text())
+    assert set(bc) == {f"{CONN}:{keep}"}                      # sibling kept, gone+aggregate dropped
+    assert json.loads(watermark._PATH.read_text())[CONN] == {f"{keep}.sales": "d"}
+    assert history.list_investigation_ids(CONN, limit=1000) == [inv_keep]
+    assert counts["canvases"] == 1 and counts["investigations"] == 1
+    assert counts["evidence_claims"] == 1 and counts["monitors"] == 1
+
+    # siblings survive
+    assert (isolated / f"business_profile_{CONN}__{keep}.json").exists()
+    assert (isolated / f"exploration_{CONN}__{keep}.json").exists()
+    assert canvas_store.get_canvas(keep_cv.id) is not None
 
 
 def test_cascade_is_idempotent(isolated):

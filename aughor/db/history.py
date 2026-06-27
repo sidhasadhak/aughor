@@ -451,6 +451,35 @@ def purge_connection(connection_id: str) -> int:
     return n
 
 
+def purge_schema(connection_id: str, schema: str,
+                 canvas_ids: Optional[list[str]] = None) -> list[str]:
+    """Delete investigations/chat tied to a removed schema and return their ids (so the
+    caller can purge the evidence claims). A row matches if it ran in one of ``canvas_ids``
+    OR its stored SQL/report references the schema-qualified ``schema.`` (the form aughor
+    emits, since it pins search_path and qualifies tables)."""
+    c = _conn()
+    _ensure_schema(c)
+    like = f"%{schema}.%"
+    ids = {
+        r["id"] for r in c.execute(
+            "SELECT id FROM investigations WHERE connection_id=? AND "
+            "(query_history_json LIKE ? OR report_json LIKE ?)",
+            (connection_id, like, like),
+        ).fetchall()
+    }
+    if canvas_ids:
+        ph = ",".join("?" for _ in canvas_ids)
+        ids.update(r["id"] for r in c.execute(
+            f"SELECT id FROM investigations WHERE canvas_id IN ({ph})", canvas_ids
+        ).fetchall())
+    if ids:
+        ph = ",".join("?" for _ in ids)
+        c.execute(f"DELETE FROM investigations WHERE id IN ({ph})", list(ids))
+        c.commit()
+    c.close()
+    return list(ids)
+
+
 def list_investigation_ids(connection_id: str, canvas_id: Optional[str] = None,
                            limit: int = 500) -> list[str]:
     """Return investigation IDs in a scope, newest-first. Used to scope the evidence
