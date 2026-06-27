@@ -1,0 +1,10 @@
+canonical:
+  - "How is retention trending by cohort?"
+  - "Which segment is churning fastest?"
+  - "What is our net revenue retention?"
+diagnostic:
+  - "Is the decline genuine cohort decay or an acquisition-mix shift?"
+  - "Does retention flatten (loyal core) or trend to zero?"
+explorer_angles:
+  - "A recent cohort whose M3 retention dropped > 10pp vs the trailing median."
+intent_tags: [retention, cohort, churn, nrr, ltv, rfm, repeat purchase]

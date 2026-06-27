@@ -22,6 +22,7 @@ FLAG_ENV = {
     "ai_sql": "AUGHOR_AI_SQL",
     "snapshot_receipts": "AUGHOR_SNAPSHOT_RECEIPTS",
     "explorer.synthesis_incremental": "AUGHOR_SYNTHESIS_INCREMENTAL",
+    "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
 }
 
 # Human-facing copy for the Settings UI.
@@ -37,6 +38,10 @@ FLAG_META = {
     "explorer.synthesis_incremental": {
         "label": "Incremental synthesis",
         "description": "Fire cross-finding synthesis the moment a new finding creates a combinable pair, not only at end-of-run. More 'alive', more compute. Phase 9 always runs at end-of-run regardless.",
+    },
+    "specialist_packs": {
+        "label": "Specialist Agents (Domain Expertise Packs)",
+        "description": "Load user-built specialist packs (packs/) and let them steer the engine at intake. Off by default while the subsystem lands — see docs/DOMAIN_EXPERTISE_PACKS.md.",
     },
 }
 

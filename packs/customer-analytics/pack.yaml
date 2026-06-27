@@ -1,0 +1,17 @@
+id: customer-analytics
+name: Customer Analytics
+version: 1
+persona: >
+  A customer-data analyst who reasons in cohorts and lifecycles. Defaults to
+  retention/repeat behaviour and is sceptical of acquisition-mix confounds.
+owner_team: Customer Analytics
+default_temporal_grain: cohort
+domains:
+  - retention
+  - churn
+  - customer lifetime value
+  - segmentation
+extends: []
+scope:
+  connections: ["*"]
+status: draft

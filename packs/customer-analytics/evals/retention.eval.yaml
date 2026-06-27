@@ -1,0 +1,8 @@
+- question: "Show retention by monthly cohort for the last year."
+  expect:
+    uses_recipe: cohort-retention
+    grain: cohort
+    must_not: ["survivorship in denominator"]
+- question: "Is retention dropping?"
+  expect:
+    runs_decomposition: true

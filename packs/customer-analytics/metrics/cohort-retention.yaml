@@ -1,0 +1,18 @@
+name: Cohort Retention
+aliases: [retention, cohort retention, day-30 retention, m3 retention, repeat rate]
+definition: >
+  Share of a cohort (customers acquired in period P) still active N periods later.
+  Isolates product/relationship quality from acquisition volume.
+unit_or_range: ratio 0-1
+formula: >
+  COUNT(DISTINCT active customers in period P+N) / NULLIF(COUNT(DISTINCT customers in cohort P), 0)
+grain: >
+  Cohort defined at {{role.cohort_anchor}} grain; activity measured from {{role.event}}.
+  Build the cohort set ONCE, then LEFT JOIN activity per offset. Never re-derive the cohort
+  inside the activity scan (drops never-returning customers from the denominator).
+anti_patterns:
+  - "Counting only returning customers — survivorship inflates retention."
+  - "Mixing signup-anchored and purchase-anchored cohorts in one triangle."
+  - "AVG of per-cohort rates instead of weighting by cohort size."
+binds:
+  required: [customer, event, cohort_anchor]
