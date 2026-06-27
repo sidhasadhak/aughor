@@ -163,9 +163,7 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
     steered_by = None
     try:
         from aughor.packs.intake import injection_for_question, render_injection
-        from aughor.tools.schema import parse_schema_tables
-        _tcs = parse_schema_tables(state.get("schema_context") or "")
-        _inj = injection_for_question(state.get("question", ""), state.get("connection_id", ""), _tcs)
+        _inj = injection_for_question(state.get("question", ""), state.get("connection_id", ""))
         if _inj is not None:
             scan_section = render_injection(_inj) + scan_section
             steered_by = _inj.pack_id

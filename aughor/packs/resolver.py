@@ -69,9 +69,22 @@ def _referencer_count(facts: SchemaFacts, target_table: str) -> int:
     return sum(1 for t in facts.tables for tgt in t.references.values() if tgt == target_table)
 
 
-def _resolve_entity(facts: SchemaFacts) -> BindingCandidate:
-    """The entity is the identity table other tables reference most — that's the hub the
-    rest of the model hangs off (e.g. dim_customers, referenced by orders/sessions/…)."""
+def _name_affinity(role_name: str, table_name: str) -> float:
+    """How well a table NAME matches the role it should fill (customer → …customers).
+    Without this, the most-referenced identity table wins regardless of meaning."""
+    rn = (role_name or "").lower().rstrip("s")
+    tn = table_name.split(".")[-1].lower()
+    if not rn or len(rn) < 3:
+        return 0.0
+    if rn in tn or tn.rstrip("s") in rn:
+        return 50.0
+    return 0.0
+
+
+def _resolve_entity(facts: SchemaFacts, role_name: str = "") -> BindingCandidate:
+    """The entity is the identity table that best matches the role NAME and is referenced most
+    (e.g. role 'customer' → customers, referenced by orders/sessions/…). Name affinity dominates
+    so a heavily-referenced but wrong table (brands) doesn't capture 'customer'."""
     best: Optional[TableFact] = None
     best_score = -1.0
     best_refs = 0
@@ -80,12 +93,16 @@ def _resolve_entity(facts: SchemaFacts) -> BindingCandidate:
         if not ids:
             continue
         refs = _referencer_count(facts, t.name)
-        score = refs * 10 + 1            # +1 so a lone identity table still beats nothing
+        score = refs * 10 + 1 + _name_affinity(role_name, t.name)
         if score > best_score:
             best, best_score, best_refs = t, score, refs
     if best is None:
         return BindingCandidate(role="", evidence="no table has a stable identity column")
-    idcol = best.identity_columns()[0].name
+    # Prefer the identity column whose name carries this table's base (customer_unique_id over
+    # a generic 'id'), else the first.
+    base = best.name.split(".")[-1].lower().rstrip("s")
+    ids = best.identity_columns()
+    idcol = next((c.name for c in ids if base[:5] in c.name.lower()), ids[0].name)
     conf = 0.55 + min(best_refs, 4) * 0.1     # more referencers → more certain
     return BindingCandidate(
         role="", table=best.name, column=idcol, confidence=round(min(conf, 0.95), 3),
@@ -169,7 +186,7 @@ def propose_bindings(entities: dict[str, RoleSpec], facts: SchemaFacts) -> dict[
     entity_table = None
     for name, spec in entities.items():
         if kind(spec) == "entity":
-            cand = _resolve_entity(facts)
+            cand = _resolve_entity(facts, role_name=name)
             cand.role = name
             out[name] = cand
             if cand.bound and entity_table is None:

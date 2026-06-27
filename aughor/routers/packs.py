@@ -75,14 +75,31 @@ def get_pack(pack_id: str):
 
 class ProposeIn(BaseModel):
     connection_id: str = ""
-    table_cols: dict[str, list[str]]
+    schema: Optional[str] = None
+    table_cols: Optional[dict[str, list[str]]] = None    # omit to introspect the connection
     business_model: str = ""
+
+
+def _facts_for_connection(connection_id: str, schema: Optional[str], business_model: str):
+    """Build dtype-aware SchemaFacts from a live connection's schema context (the introspection
+    glue). Best-effort: returns None on any failure so the caller can ask for a posted map."""
+    try:
+        from aughor.routers.connections import open_connection_for
+        from aughor.tools.schema import build_schema_context
+        from aughor.packs.adapter import schema_facts_from_schema_context
+        conn = open_connection_for(connection_id)
+        raw = getattr(conn, "raw", None) or getattr(conn, "_conn", None) or conn
+        ctx = build_schema_context(raw, schema_name=schema, connection_id=connection_id)
+        return schema_facts_from_schema_context(ctx, business_model=business_model)
+    except Exception:
+        return None
 
 
 @router.post("/packs/{pack_id}/propose-bindings")
 def post_propose_bindings(pack_id: str, body: ProposeIn):
-    """Propose role→table/column bindings for this pack against a warehouse's table/column map.
-    Returns each role's candidate (table/column/value, confidence, evidence) + a bound summary."""
+    """Propose role→table/column bindings for this pack. Pass `table_cols` explicitly, or omit
+    it and we introspect `connection_id` (+ optional `schema`) live. Returns each role's
+    candidate (table/column/value, confidence, evidence) + a bound summary for deploy review."""
     pack_dir = PACKS_DIR / pack_id
     if not (pack_dir / "pack.yaml").is_file():
         raise HTTPException(status_code=404, detail=f"no pack {pack_id!r}")
@@ -90,7 +107,14 @@ def post_propose_bindings(pack_id: str, body: ProposeIn):
         pack = load_pack(pack_dir)
     except PacksError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    facts = schema_facts_from_table_cols(body.table_cols, business_model=body.business_model)
+
+    if body.table_cols:
+        facts = schema_facts_from_table_cols(body.table_cols, business_model=body.business_model)
+    else:
+        facts = _facts_for_connection(body.connection_id, body.schema, body.business_model)
+        if facts is None:
+            raise HTTPException(status_code=422,
+                                detail="provide table_cols or a reachable connection_id")
     rep = binding_report(pack.entities, facts)
     return {
         "fully_bound": rep["fully_bound"], "bound": rep["bound"], "total": rep["total"],

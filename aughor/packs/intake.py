@@ -15,8 +15,6 @@ from aughor.kernel.flags import flag_enabled
 from aughor.packs.loader import load_pack, list_packs
 from aughor.packs.models import Pack
 from aughor.packs.routing import select_pack
-from aughor.packs.adapter import schema_facts_from_table_cols
-from aughor.packs.resolver import binding_report, BindingCandidate
 from aughor.packs.bindings import load_binding
 from aughor.packs.inject import build_injection, PackInjection
 
@@ -39,22 +37,20 @@ def active_packs(packs_dir=None) -> list[Pack]:
     return out
 
 
-def _cand_to_binding(c: BindingCandidate) -> dict:
-    return {"table": c.table, "column": c.column, "value": c.value, "confidence": c.confidence}
-
-
 def injection_for_question(
     question: str,
     connection_id: str,
-    table_cols: dict,
     business_model: str = "",
     currency_code: str = "",
     packs: Optional[list[Pack]] = None,
 ) -> Optional[PackInjection]:
     """Resolve the steering payload for this question, or None when nothing should steer
-    (flag off · no matching active pack · the pack can't ground on this warehouse). A pinned
-    binding wins; otherwise the resolver proposes one on the fly and we steer only if it's
-    fully bound — never inject a half-ground recipe."""
+    (flag off · no matching active pack · the pack is not DEPLOYED on this connection).
+
+    Safety: steering requires a human-confirmed PINNED binding (load_binding). Auto-proposals
+    from the resolver are for the deploy/review UI only — they can be wrong on real schemas, so
+    a live run never steers off an unconfirmed guess. Deploy a pack (propose → confirm → pin)
+    before it can sharpen a run."""
     if not flag_enabled("specialist_packs"):
         return None
     pool = packs if packs is not None else active_packs()
@@ -65,17 +61,11 @@ def injection_for_question(
         return None
     pack, _score = hit
 
-    binding: Optional[dict] = None
     pinned = load_binding(pack.id, connection_id) if connection_id else None
-    if pinned and pinned.get("bindings"):
-        binding = pinned["bindings"]
-    else:
-        rep = binding_report(pack.entities, schema_facts_from_table_cols(table_cols, business_model))
-        if not rep["fully_bound"]:
-            return None
-        binding = {role: _cand_to_binding(c) for role, c in rep["proposals"].items()}
+    if not pinned or not pinned.get("bindings"):
+        return None                        # not deployed here — don't steer off a guess
 
-    return build_injection(pack, binding=binding, business_model=business_model,
+    return build_injection(pack, binding=pinned["bindings"], business_model=business_model,
                            currency_code=currency_code)
 
 
