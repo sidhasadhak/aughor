@@ -17,6 +17,7 @@ from typing import Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from aughor.monitors.models import Monitor, MonitorAlert
 
@@ -64,6 +65,20 @@ def _make_job_fn(monitor_id: str):
 
     _job.__name__ = f"monitor_job_{monitor_id}"
     return _job
+
+
+# ── Housekeeping ───────────────────────────────────────────────────────────────
+
+def _evict_matcache() -> None:
+    """Hourly: drop expired materialized-cache rows so mat_cache.duckdb can't grow
+    unbounded (the cache is TTL-on-read; unread entries never expire on their own)."""
+    try:
+        from aughor.db.matcache import evict_expired
+        n = evict_expired()
+        if n:
+            logger.info("matcache housekeeping evicted %d expired row(s)", n)
+    except Exception as exc:
+        logger.warning("matcache housekeeping failed (non-fatal): %s", exc)
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -140,6 +155,14 @@ def start() -> None:
         enabled = [m for m in monitors if m.enabled]
         for monitor in enabled:
             reload_monitor(monitor)
+        # Background housekeeping that needs a heartbeat but isn't a monitor.
+        _scheduler.add_job(
+            _evict_matcache,
+            trigger=IntervalTrigger(hours=1),
+            id="matcache_evict",
+            name="matcache eviction",
+            replace_existing=True,
+        )
         _scheduler.start()
         _started = True
         logger.info(

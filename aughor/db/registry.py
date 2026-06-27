@@ -290,6 +290,15 @@ def delete_connection(conn_id: str) -> bool:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "profile-cache invalidation on delete is best-effort; stale entries expire",
                  counter="registry.profile_cache.invalidate")
+    # Drop materialized-cache rows for this connection — they can never be served
+    # again once the connection is gone, and would otherwise linger until TTL.
+    try:
+        from aughor.db.matcache import invalidate as _matcache_invalidate
+        _matcache_invalidate(conn_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "matcache invalidation on delete is best-effort; rows expire on schedule",
+                 counter="registry.matcache.invalidate")
     # Evict pooled physical connections — the connection no longer exists.
     try:
         from aughor.db.pool import evict_conn
