@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getDevStats, resetDevStats, getSystemFlags, setSystemFlag, getPacks, type DevStats, type SystemFlag, type PackSummary } from "@/lib/api";
+import { getDevStats, resetDevStats, getSystemFlags, setSystemFlag, type DevStats, type SystemFlag } from "@/lib/api";
+import { PacksManager } from "@/components/PacksManager";
 import { subscribeKernelEvents } from "@/lib/events";
 import { formatCount, pct as fmtPct } from "@/lib/format";
 
@@ -138,8 +139,8 @@ export function SystemPanel() {
       {/* Feature flags */}
       <FeatureFlags />
 
-      {/* Specialist packs */}
-      <PacksSection />
+      {/* Specialist packs — deploy console + flywheel changelog */}
+      <PacksManager />
 
       {/* Ontology */}
       <Section title="Ontology (M12)">
@@ -278,49 +279,4 @@ function FeatureFlags() {
   );
 }
 
-function PacksSection() {
-  const [enabled, setEnabled] = useState(false);
-  const [packs, setPacks] = useState<PackSummary[]>([]);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    getPacks().then(r => { setEnabled(r.enabled); setPacks(r.packs); }).catch(() => {}).finally(() => setLoaded(true));
-  }, []);
-
-  if (!loaded || packs.length === 0) return null;
-
-  const statusColor = (s?: string) =>
-    s === "active" ? "var(--grn2)" : s === "deprecated" ? "var(--t4)" : "#d4a72c";
-
-  return (
-    <Section title={`Specialist packs${enabled ? "" : " (flag off)"}`}>
-      {packs.map(p => (
-        <div key={p.id} className="flex items-start justify-between gap-4 py-2 border-b border-white/5 last:border-0">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-zinc-200">{p.name || p.id}</span>
-              <span className="text-[9.5px] font-mono px-1 py-0.5 rounded"
-                style={{ background: "var(--bg-1)", color: statusColor(p.status) }}>
-                {p.status || "draft"}
-              </span>
-              <span className="text-[9.5px] font-mono px-1 py-0.5 rounded"
-                style={{ background: "var(--bg-1)", color: p.ok ? "var(--grn2)" : "#e5534b" }}>
-                {p.ok ? "valid" : `${p.error ? "load error" : (p.errors?.length || 0) + " error(s)"}`}
-              </span>
-            </div>
-            <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
-              {(p.metrics ?? 0)} metric(s) · {(p.roles ?? 0)} role(s) · {(p.evals ?? 0)} eval(s)
-              {p.domains && p.domains.length > 0 && <> · {p.domains.join(", ")}</>}
-            </p>
-            {!p.ok && (p.errors?.length || p.error) && (
-              <p className="text-[10.5px] text-red-400/80 mt-0.5 leading-snug">
-                {p.error || p.errors?.[0]}
-              </p>
-            )}
-          </div>
-        </div>
-      ))}
-    </Section>
-  );
-}
 

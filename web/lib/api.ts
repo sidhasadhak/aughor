@@ -3166,3 +3166,59 @@ export async function getPacks(): Promise<{ enabled: boolean; packs: PackSummary
   if (!res.ok) return { enabled: false, packs: [] };
   return res.json();
 }
+
+export interface BindingCandidateDTO {
+  role: string; table?: string | null; column?: string | null;
+  value?: string | null; confidence: number; evidence: string; bound: boolean;
+}
+
+export async function proposePackBindings(
+  packId: string, connectionId: string, schema?: string, businessModel = "",
+): Promise<{ fully_bound: boolean; bound: number; total: number; proposals: Record<string, BindingCandidateDTO> }> {
+  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/propose-bindings`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema, business_model: businessModel }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "propose failed");
+  return res.json();
+}
+
+export async function bindPack(
+  packId: string, connectionId: string, bindings: Record<string, unknown>, version = 1,
+): Promise<{ verified: boolean; missing?: string[]; dry_run_errors?: string[] }> {
+  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/bind`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, bindings, version }),
+  });
+  if (!res.ok) throw new Error("bind failed");
+  return res.json();
+}
+
+export async function evaluatePack(
+  packId: string, connectionId: string, schema?: string,
+): Promise<{ can_activate: boolean; pass_rate: number | null; reasons: string[];
+            results: { question: string; passed: boolean; detail: string }[]; fully_bound: boolean }> {
+  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/evaluate`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "evaluate failed");
+  return res.json();
+}
+
+export interface PackDeltaDTO {
+  id: number; kind: string; target: string; content: string; confidence: number; status: string;
+}
+
+export async function getPackDeltas(packId: string, status = "proposed"): Promise<PackDeltaDTO[]> {
+  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/deltas?status=${status}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function setPackDeltaStatus(deltaId: number, status: "accepted" | "dismissed"): Promise<boolean> {
+  const res = await fetch(`${BASE}/packs/deltas/${deltaId}/status`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+  });
+  return res.ok;
+}

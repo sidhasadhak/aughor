@@ -1077,9 +1077,12 @@ def _build_verification_manifest(state: AgentState, extra_checks: Optional[list[
     temporal_detail = None
     triangulation_outcome = None   # "agree" | "diverge" | None
     refute_outcome = None          # "survived" | "refuted" | None
+    steered_by = None
     for c in (list(state.get("verification_checks", []) or []) + list(extra_checks or [])):
         head, _, tail = c.partition(":")
         recorded.add(head)
+        if head == "specialist" and tail:
+            steered_by = tail
         if head == "temporal_prune" and tail:
             temporal_detail = (f"pruned {tail} temporal sub-question(s)"
                                if tail != "0" else "ran — nothing to prune")
@@ -1098,7 +1101,11 @@ def _build_verification_manifest(state: AgentState, extra_checks: Optional[list[
         for r in history for s in (getattr(r, "stats", None) or [])
     )
 
-    checks: list[VerificationCheck] = [
+    checks: list[VerificationCheck] = []
+    if steered_by:
+        checks.append(VerificationCheck(name="specialist", label="Steered by specialist",
+                                        status="ran", detail=f"the '{steered_by}' expert shaped this run"))
+    checks += [
         VerificationCheck(name="temporal_prune", label="Pre-flight temporal prune",
                           status="ran" if "temporal_prune" in recorded else "not_run",
                           detail=temporal_detail),
@@ -1139,7 +1146,8 @@ def _build_verification_manifest(state: AgentState, extra_checks: Optional[list[
         checks.append(VerificationCheck(name="adversarial_refute", label="Adversarial refutation pass",
                                         status="n/a", detail="not run for this conclusion"))
 
-    applicable = [c for c in checks if c.status != "n/a"]
+    # coverage is a pure GUARD metric — exclude the informational "specialist" marker.
+    applicable = [c for c in checks if c.status != "n/a" and c.name != "specialist"]
     ran = sum(1 for c in applicable if c.status == "ran")
     coverage = round(ran / len(applicable), 3) if applicable else 1.0
 
