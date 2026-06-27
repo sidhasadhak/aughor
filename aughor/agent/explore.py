@@ -171,7 +171,8 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
             logger.info("[explore] specialist pack '%s' steering (forced) this run", steered_by)
         else:
             from aughor.packs.intake import injection_for_question, render_injection
-            _inj = injection_for_question(state.get("question", ""), state.get("connection_id", ""))
+            _inj = injection_for_question(state.get("question", ""), state.get("connection_id", ""),
+                                          state.get("scope_schema", "") or "")
             if _inj is not None:
                 scan_section = render_injection(_inj) + scan_section
                 steered_by = _inj.pack_id

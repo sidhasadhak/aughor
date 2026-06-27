@@ -72,3 +72,18 @@ def test_binding_org_scoped(store):
         store.save_binding("p", "c", {"x": {}}, verified=True)
     with using_org("org-b"):
         assert store.load_binding("p", "c") is None
+
+
+def test_binding_per_schema_isolation(store):
+    # A multi-schema connection: pinning one schema must NOT overwrite another.
+    with using_org("default"):
+        store.save_binding("ca", "workspace", {"customer": {"table": "missimi.customers"}},
+                           verified=True, schema="missimi")
+        store.save_binding("ca", "workspace", {"customer": {"table": "swiss_air.customers"}},
+                           verified=True, schema="swiss_air")
+        m = store.load_binding("ca", "workspace", "missimi")
+        s = store.load_binding("ca", "workspace", "swiss_air")
+        assert m["bindings"]["customer"]["table"] == "missimi.customers"
+        assert s["bindings"]["customer"]["table"] == "swiss_air.customers"
+        # and the no-schema lookup is its own slot, independent of both.
+        assert store.load_binding("ca", "workspace") is None

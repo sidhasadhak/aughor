@@ -127,6 +127,7 @@ class BindIn(BaseModel):
     bindings: dict
     verified: bool = False
     version: int = 1
+    schema: Optional[str] = None                         # dataset on a multi-schema connection
     table_cols: Optional[dict[str, list[str]]] = None   # if given, verify columns exist
 
 
@@ -152,16 +153,16 @@ def post_bind(pack_id: str, body: BindIn):
         from aughor.kernel.errors import tolerate
         tolerate(e, "bind dry-run skipped; connection unreachable", counter="packs.bind_dryrun")
     rec = save_binding(pack_id, body.connection_id, body.bindings,
-                       version=body.version, verified=verified)
+                       version=body.version, verified=verified, schema=body.schema or "")
     rec["missing"] = missing
     rec["dry_run_errors"] = dry_errors
     return rec
 
 
 @router.get("/packs/{pack_id}/binding")
-def get_binding(pack_id: str, connection_id: str):
-    """The pinned binding for (org, pack, connection), or null."""
-    return load_binding(pack_id, connection_id)
+def get_binding(pack_id: str, connection_id: str, schema: Optional[str] = None):
+    """The pinned binding for (org, pack, connection, schema), or null."""
+    return load_binding(pack_id, connection_id, schema or "")
 
 
 @router.get("/packs/{pack_id}/deltas")
@@ -213,7 +214,7 @@ def post_evaluate(pack_id: str, body: EvalIn):
         raise HTTPException(status_code=422, detail=f"could not open connection: {e}")
 
     results = run_pack_evals(pack, ask)
-    binding = load_binding(pack_id, body.connection_id)
+    binding = load_binding(pack_id, body.connection_id, body.schema or "")
     fully_bound = bool(binding) and all(r in (binding.get("bindings") or {}) for r in pack.entities)
     decision = evaluate_activation(pack, results, fully_bound)
     return {

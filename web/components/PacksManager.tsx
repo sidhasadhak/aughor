@@ -105,7 +105,7 @@ function PackDeploy({ packId }: { packId: string }) {
     for (const [role, c] of Object.entries(proposals || {})) {
       bindings[role] = { table: c.table, column: c.column, value: c.value, confidence: c.confidence };
     }
-    const r = await bindPack(packId, conn, bindings);
+    const r = await bindPack(packId, conn, bindings, schema || undefined);
     setVerified(r.verified);
   });
 

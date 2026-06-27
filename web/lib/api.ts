@@ -3184,11 +3184,11 @@ export async function proposePackBindings(
 }
 
 export async function bindPack(
-  packId: string, connectionId: string, bindings: Record<string, unknown>, version = 1,
+  packId: string, connectionId: string, bindings: Record<string, unknown>, schema?: string, version = 1,
 ): Promise<{ verified: boolean; missing?: string[]; dry_run_errors?: string[] }> {
   const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/bind`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ connection_id: connectionId, bindings, version }),
+    body: JSON.stringify({ connection_id: connectionId, bindings, schema, version }),
   });
   if (!res.ok) throw new Error("bind failed");
   return res.json();

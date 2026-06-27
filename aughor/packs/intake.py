@@ -40,6 +40,7 @@ def active_packs(packs_dir=None) -> list[Pack]:
 def injection_for_question(
     question: str,
     connection_id: str,
+    schema: str = "",
     business_model: str = "",
     currency_code: str = "",
     packs: Optional[list[Pack]] = None,
@@ -61,7 +62,7 @@ def injection_for_question(
         return None
     pack, _score = hit
 
-    pinned = load_binding(pack.id, connection_id) if connection_id else None
+    pinned = load_binding(pack.id, connection_id, schema) if connection_id else None
     if not pinned or not pinned.get("bindings"):
         return None                        # not deployed here — don't steer off a guess
 

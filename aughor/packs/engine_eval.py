@@ -56,7 +56,7 @@ def make_ask_fn(connection_id: str, schema: Optional[str], pack: Pack) -> Callab
         from aughor.packs.bindings import load_binding
         from aughor.packs.inject import build_injection
         from aughor.packs.intake import render_injection
-        b = load_binding(pack.id, connection_id)
+        b = load_binding(pack.id, connection_id, schema or "")
         binding = b.get("bindings") if b else None
         if binding:
             pre_block = render_injection(build_injection(pack, binding=binding))
