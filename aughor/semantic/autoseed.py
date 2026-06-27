@@ -212,8 +212,10 @@ def _seed(raw_schema: str) -> bool:
             }
             wrote_any = True
 
-        except Exception:
+        except Exception as exc:
             # Best-effort — a failed seed for one table never blocks the rest
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a failed LLM seed for one table never blocks the rest", counter="autoseed.seed_table")
             continue
 
     if wrote_any:

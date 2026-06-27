@@ -358,8 +358,9 @@ def _lift_metrics(
                 unit=m.unit or "",
                 tables=m.tables or [],
             )
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "metric lifting is best-effort; missing/malformed metrics.json entries are skipped", counter="ontology.builder.lift_metrics")
     return metrics
 
 

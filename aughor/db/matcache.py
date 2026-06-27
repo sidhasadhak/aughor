@@ -111,8 +111,10 @@ def put_cache(conn_id: str, sql: str, result: QueryResult) -> None:
                 time.time(),
             ],
         )
-    except Exception:
-        pass   # cache failures are non-fatal
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "materialized-cache write is non-fatal; the query just recomputes next time",
+                 counter="matcache.write")
 
 
 def invalidate(conn_id: str) -> int:

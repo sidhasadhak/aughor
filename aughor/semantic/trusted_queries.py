@@ -58,7 +58,9 @@ def list_trusted(connection_id: str = "") -> list[TrustedQuery]:
     for d in _load_raw():
         try:
             tq = TrustedQuery(**d)
-        except Exception:
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "skip a malformed trusted-query record; the rest still load", counter="trusted_queries.parse")
             continue
         if not connection_id or tq.connection_id == connection_id:
             out.append(tq)

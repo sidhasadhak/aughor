@@ -88,8 +88,10 @@ def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dic
         sub.last_error = result["error"]
         try:
             save_subscription(sub)
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "persisting last_sent/last_status is best-effort; the delivery already happened and is retried next cycle",
+                     counter="briefs.delivery.persist", conn_id=sub.conn_id)
 
     # T3 kernel-leverage: a delivered brief lands on the event spine so the
     # scheduled-subsystem activity is observable (status incl. failures) instead

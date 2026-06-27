@@ -31,8 +31,10 @@ def resolve_tier(conn_id: Optional[str] = None, workspace_id: Optional[str] = No
             t = (get_connection_settings(conn_id) or {}).get("tier")
             if t:
                 return Tier(str(t).strip().lower())
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "per-connection tier lookup is best-effort; falls back to env default",
+                     counter="licensing.tier_lookup")
     # workspace_id precedence slot (SaaS tenancy) goes here when workspaces carry a tier.
     return _default_tier()
 

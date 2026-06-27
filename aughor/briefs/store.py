@@ -22,8 +22,10 @@ def _load() -> list[dict]:
     try:
         if _PATH.exists():
             return json.loads(_PATH.read_text())
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "subscription store read is best-effort; a missing/corrupt file degrades to an empty list",
+                 counter="briefs.store.load")
     return []
 
 

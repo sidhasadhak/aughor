@@ -96,8 +96,11 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
     ]:
         try:
             c.execute(f"ALTER TABLE investigations ADD COLUMN {col}")
-        except Exception:
-            pass  # already exists
+        except Exception as exc:
+            # Expected on every init once the column exists — an idempotent migration,
+            # NOT a tolerated failure, so it debug-logs rather than journaling an event
+            # (which would pollute the investigation event spine).
+            logger.debug("ALTER TABLE investigations ADD COLUMN %s: %s", col, exc)
     # Backfill status for pre-status rows
     c.execute("""
         UPDATE investigations SET status = 'complete'

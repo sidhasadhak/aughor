@@ -162,8 +162,10 @@ def delete_legacy_canvases() -> int:
     cur = c.execute("DELETE FROM canvases WHERE is_legacy = 1")
     try:
         c.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "purging legacy canvases is best-effort cleanup; a failed commit leaves them to be retried",
+                 counter="canvas.store.delete_legacy_commit")
     return cur.rowcount if (cur.rowcount and cur.rowcount > 0) else 0
 
 

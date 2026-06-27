@@ -48,8 +48,10 @@ def _make_job_fn(monitor_id: str):
             finally:
                 try:
                     db.close()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "closing the per-tick db handle is best-effort; the monitor result is already computed",
+                             counter="monitors.scheduler.tick.db_close")
 
             if alert is not None:
                 append_alert(alert)
@@ -114,8 +116,10 @@ def trigger_now(monitor_id: str) -> Optional[MonitorAlert]:
         finally:
             try:
                 db.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "closing the test-trigger db handle is best-effort; the monitor result is already computed",
+                         counter="monitors.scheduler.trigger_now.db_close")
         if alert is not None:
             append_alert(alert)
         return alert
@@ -151,8 +155,10 @@ def stop() -> None:
     if _started:
         try:
             _scheduler.shutdown(wait=False)
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "scheduler shutdown is best-effort; the process is stopping anyway",
+                     counter="monitors.scheduler.stop")
         _started = False
 
 

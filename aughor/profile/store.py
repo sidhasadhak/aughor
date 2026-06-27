@@ -141,8 +141,10 @@ def invalidate(connection_id: str, schema_name: Optional[str] = None) -> None:
     for p in targets:
         try:
             p.unlink()
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "profile invalidation is best-effort; a file that won't unlink is re-inferred on next access anyway",
+                     counter="profile.store.invalidate", conn_id=connection_id or None)
 
 
 def invalidate_all() -> int:
@@ -155,6 +157,8 @@ def invalidate_all() -> int:
         try:
             p.unlink()
             n += 1
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "bulk profile reset is best-effort per file; a file that won't unlink is re-inferred on next access",
+                     counter="profile.store.invalidate_all")
     return n

@@ -199,8 +199,10 @@ def _load_settings() -> dict:
     try:
         if _SETTINGS_PATH.exists():
             return json.loads(_SETTINGS_PATH.read_text())
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "connection-settings read is best-effort; empty defaults used",
+                 counter="registry.settings.read")
     return {}
 
 
@@ -208,8 +210,10 @@ def _save_settings(s: dict) -> None:
     try:
         _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
         _SETTINGS_PATH.write_text(json.dumps(s, indent=2))
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "connection-settings write is non-fatal; retried on next update",
+                 counter="registry.settings.write")
 
 
 def get_connection_settings(conn_id: str) -> dict:
@@ -228,8 +232,10 @@ def update_connection_settings(conn_id: str, updates: dict) -> dict:
     try:
         from aughor.db.pool import evict_conn
         evict_conn(conn_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "pool eviction after settings change is best-effort; stale conn self-heals",
+                 counter="registry.pool.evict")
     return existing
 
 
@@ -280,14 +286,18 @@ def delete_connection(conn_id: str) -> bool:
     try:
         from aughor.tools.profile_cache import invalidate
         invalidate(conn_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "profile-cache invalidation on delete is best-effort; stale entries expire",
+                 counter="registry.profile_cache.invalidate")
     # Evict pooled physical connections — the connection no longer exists.
     try:
         from aughor.db.pool import evict_conn
         evict_conn(conn_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "pool eviction on delete is best-effort; the connection no longer exists",
+                 counter="registry.pool.evict")
     return deleted
 
 

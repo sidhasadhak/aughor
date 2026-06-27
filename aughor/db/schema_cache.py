@@ -50,8 +50,10 @@ def _load() -> dict[str, bool]:
     try:
         if _CACHE_PATH.exists():
             return json.loads(_CACHE_PATH.read_text())
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "schema-fingerprint cache read is best-effort; treated as empty (re-seeds)",
+                 counter="schema_cache.read")
     return {}
 
 
@@ -59,5 +61,7 @@ def _save(cache: dict[str, bool]) -> None:
     try:
         _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         _CACHE_PATH.write_text(json.dumps(cache, indent=2))
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "schema-fingerprint cache write is non-fatal; schema re-seeds next time",
+                 counter="schema_cache.write")
