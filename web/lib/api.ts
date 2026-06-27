@@ -1074,7 +1074,7 @@ export async function saveLearnedSkill(
   return res.json();
 }
 
-export async function useLearnedSkill(
+export async function activateLearnedSkill(
   actionId: string, connectionId: string, schemaName?: string,
 ): Promise<{ ok: boolean; usage_count: number; autonomy: AutonomyLevel }> {
   const q = new URLSearchParams({ connection_id: connectionId });
