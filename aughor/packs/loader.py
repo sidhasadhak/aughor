@@ -118,6 +118,8 @@ def list_packs(packs_dir: Union[str, Path]) -> list[str]:
             continue
         try:
             ids.append(load_pack(child).id)
-        except PacksError:
+        except PacksError as e:
+            from aughor.kernel.errors import tolerate
+            tolerate(e, f"skip unloadable pack dir {child.name}", counter="packs.list_skip")
             continue
     return ids

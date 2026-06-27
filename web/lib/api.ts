@@ -3143,3 +3143,26 @@ export async function setSystemFlag(name: string, value: boolean): Promise<Syste
   if (!res.ok) return null;
   return res.json();
 }
+
+// ── Specialist packs (Domain Expertise Packs) ───────────────────────────────────
+
+export interface PackSummary {
+  id: string;
+  name?: string;
+  status?: string;
+  version?: number;
+  domains?: string[];
+  metrics?: number;
+  roles?: number;
+  evals?: number;
+  ok: boolean;
+  errors?: string[];
+  warnings?: string[];
+  error?: string;
+}
+
+export async function getPacks(): Promise<{ enabled: boolean; packs: PackSummary[] }> {
+  const res = await fetch(`${BASE}/packs`);
+  if (!res.ok) return { enabled: false, packs: [] };
+  return res.json();
+}
