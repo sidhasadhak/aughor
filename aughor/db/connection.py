@@ -81,6 +81,26 @@ def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResu
     return None
 
 
+def gate_user_sql(connection_id: str, label: str, sql: str) -> QueryResult | None:
+    """Safety gate for **user-issued** SQL (Query Builder / bulk read).
+
+    Runs SafetyChecker + audit on the RAW user SQL and returns a BLOCKED
+    QueryResult to surface to the client, or None when the query is allowed.
+
+    This must be called at the endpoint, before the SQL is wrapped or
+    dispatched, for two reasons:
+      1. ``bulk_read()`` reaches ConnectorX directly and never passes through
+         ``execute()`` / ``_security_pre`` at all.
+      2. The runner wraps user SQL as ``SELECT * FROM (<raw>) __q LIMIT n``,
+         which demotes a first-token ``DELETE``/``DROP`` to a body token and
+         slips it under the block threshold — so the inner gate can't be
+         trusted for the user surface.
+
+    ``label`` must NOT be a dunder internal id, or the check is bypassed.
+    """
+    return _security_pre(connection_id, label, sql)
+
+
 def _security_post(
     connection_id: str,
     hypothesis_id: str,

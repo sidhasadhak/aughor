@@ -25,10 +25,27 @@ class _QueryRunRequest(BaseModel):
 async def query_run(body: _QueryRunRequest):
     """Execute a SQL query against a registered connection."""
     import time as _t
-    from aughor.db.connection import open_connection_for
+    from aughor.db.connection import open_connection_for, gate_user_sql
 
     if not body.sql.strip():
         raise HTTPException(status_code=400, detail="sql is required")
+
+    # Safety gate on the RAW user SQL — before cache, wrapping, or dispatch.
+    # The Query Builder is user-exposed, so user SQL goes through the same
+    # SafetyChecker + audit as the chat path. This lives here (not only in the
+    # connection layer) because bulk_read() reaches ConnectorX directly and the
+    # runner wraps the SQL in a subquery before execute() ever sees it.
+    blocked = gate_user_sql(body.conn_id, "query_builder", body.sql)
+    if blocked is not None:
+        return {
+            "columns": [],
+            "rows": [],
+            "row_count": 0,
+            "duration_ms": 0.0,
+            "sql": body.sql,
+            "cached": False,
+            "error": blocked.error,
+        }
 
     if body.use_cache:
         from aughor.db.matcache import get_cached
@@ -62,7 +79,7 @@ async def query_run(body: _QueryRunRequest):
                 sql = _sql_to_run.strip().rstrip(";")
                 if _limit > 0:
                     sql = f"SELECT * FROM ({sql}) __q LIMIT {_limit}"
-                result = db.execute("__querybuilder__", sql)
+                result = db.execute("query_builder", sql)
         finally:
             try:
                 db.close()
