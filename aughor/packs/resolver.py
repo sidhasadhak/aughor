@@ -201,6 +201,27 @@ def propose_bindings(entities: dict[str, RoleSpec], facts: SchemaFacts) -> dict[
     return out
 
 
+def verify_binding_columns(binding: dict, table_cols: dict) -> tuple[bool, list[str]]:
+    """Cheap deploy-time check (P1b): does every bound table.column actually EXIST in the
+    warehouse? This is the column-existence half of binding verification; the recipe
+    dry-run/EXPLAIN is the heavier live half. Returns (ok, missing_descriptions). Pure."""
+    tc = {t.split(".")[-1].lower(): {c.lower() for c in cols} for t, cols in (table_cols or {}).items()}
+    missing: list[str] = []
+    for role, b in (binding or {}).items():
+        if not isinstance(b, dict):
+            continue
+        table = (b.get("table") or "")
+        col = (b.get("column") or "")
+        if not table:
+            continue                      # a value-role (no table) — nothing to verify
+        tkey = table.split(".")[-1].lower()
+        if tkey not in tc:
+            missing.append(f"{role}: table {table} not found")
+        elif col and col.lower() not in tc[tkey]:
+            missing.append(f"{role}: column {table}.{col} not found")
+    return (not missing, missing)
+
+
 def binding_report(entities: dict[str, RoleSpec], facts: SchemaFacts) -> dict:
     """Convenience summary: the proposals plus how many roles bound (the deployer's at-a-glance
     'is this pack groundable here?'). The dry-run verification of recipes is a separate P1b step."""

@@ -103,13 +103,23 @@ class BindIn(BaseModel):
     bindings: dict
     verified: bool = False
     version: int = 1
+    table_cols: Optional[dict[str, list[str]]] = None   # if given, verify columns exist
 
 
 @router.post("/packs/{pack_id}/bind")
 def post_bind(pack_id: str, body: BindIn):
-    """Pin a confirmed binding for (org, pack, connection)."""
-    return save_binding(pack_id, body.connection_id, body.bindings,
-                        version=body.version, verified=body.verified)
+    """Pin a confirmed binding for (org, pack, connection). When `table_cols` is supplied the
+    bound columns are checked to actually exist and `verified` reflects that (column-existence
+    half of verification; recipe dry-run is the live step)."""
+    from aughor.packs import verify_binding_columns
+    verified = body.verified
+    missing: list[str] = []
+    if body.table_cols is not None:
+        verified, missing = verify_binding_columns(body.bindings, body.table_cols)
+    rec = save_binding(pack_id, body.connection_id, body.bindings,
+                       version=body.version, verified=verified)
+    rec["missing"] = missing
+    return rec
 
 
 @router.get("/packs/{pack_id}/binding")

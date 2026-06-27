@@ -23,8 +23,9 @@ from aughor.packs.loader import load_pack, list_packs, PacksError
 from aughor.packs.validate import validate_pack, ValidationReport
 from aughor.packs.resolver import (
     SchemaFacts, TableFact, ColumnFact, BindingCandidate,
-    propose_bindings, binding_report,
+    propose_bindings, binding_report, verify_binding_columns,
 )
+from aughor.packs.evalrunner import run_pack_evals, check_expectation
 from aughor.packs.adapter import schema_facts_from_table_cols
 from aughor.packs.bindings import save_binding, load_binding, is_bound
 from aughor.packs.routing import select_pack, rank_packs, score_pack
