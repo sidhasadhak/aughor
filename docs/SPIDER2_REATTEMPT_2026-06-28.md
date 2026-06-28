@@ -239,6 +239,35 @@ blocked from scoring without it. The needle-mover for Lite-local is the consensu
 
 ---
 
+## 6b. What helped vs what didn't — the striking pattern (measured)
+
+Four increments were tried this session on the runnable slice with `glm-5.2`:
+
+| Increment | Result | Kind |
+|---|---|---|
+| **ANSWER_SHAPE projection rule** | **+8.15 pts** ✅ | cheap prompt rule fixing a *systematic default-behavior bug* (column over-projection) |
+| formula-intent grounding (prompt) | net **0** | LLM prompt guidance |
+| consensus k=3 + reflection | **+0.74** for ~6× cost | LLM machinery |
+| faithful-EK application (extract→implement→verify) | **−2** ❌ (0 gained, regressed local061/local344) | LLM machinery |
+
+**The lesson:** with a strong model, the *only* thing that helped was a cheap rule that corrects a
+systematic behavioral default. Every piece of *added LLM machinery* (consensus, spec-extract-verify-
+regenerate) was net-neutral-to-negative — it overwrites already-correct queries about as often as it
+fixes wrong ones. This is the SOMA/ReFoRCE finding ("machinery/gold helps WEAK models, not strong
+ones") confirmed three times on our own data. faithful-EK *did* provably improve fidelity (it added
+the missing `NTILE(5)` on local003 and the full haversine on local010), but on a strong model that
+fidelity gain was outweighed by overwrite-regressions, so it was **removed** (the `ek_apply.py` /
+`formula_intent.py` modules + their tests were deleted to keep the tree clean — this section is the
+record). It remains a sound idea for a *weak*-model setup; re-introduce only if the base model changes.
+
+**Implication:** the offline-SQLite slice is at its ceiling for this model class via prompt/machinery
+tweaks — banked clean number **56.30%** (single-shot + ANSWER_SHAPE). Remaining offline misses are
+genuinely hard (RFM segment tables, complex multi-step logic) or at the benchmark's hard edge. The
+real remaining levers are a **stronger base model** and the **Snow track** (needs credentials), not
+more machinery on this slice.
+
+---
+
 ## 7. The path to the dominant failure bucket — ambiguity, not SQL skill (SOMA-SQL)
 
 The 60–66% `wrong_values` bucket is the formula/metric core (moving average, percentile, RFM,
