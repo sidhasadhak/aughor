@@ -267,3 +267,58 @@ weaker models or on the harder cloud distribution.
 *Commits of record: `e614acf` (ANSWER_SHAPE + reusable substrate — the kept wins), `9e15d78`
 (removal of non-helping increments + this negative-results record). Branch:
 `2026-06-28-spider2-lite-substrate` (not merged).*
+
+---
+
+## 12. Session 2026-06-28 — what shipped, verdicts, and RESUME BRIEF
+
+**Branch `2026-06-28-spider2-lite-substrate` — 13 commits, NOT pushed, no PR. Full unit suite green
+(1925), zero net ratchet debt throughout.**
+
+### Measured (Spider2-Lite local/SQLite, 135, glm-5.2:cloud)
+- single-shot 48.15% → **+ANSWER_SHAPE 56.30%** (the one cheap win; KEPT).
+- consensus k=3 + reflect = 57.04% but only +0.74 over single-shot+shape at ~6× cost → blanket
+  consensus NOT worth it; tier onto hard cases only.
+- Removed (measured net-zero/negative on a strong model): prompt-only formula grounding (net 0),
+  faithful-EK (net −2, overwrote correct queries).
+
+### Shipped product capabilities (width — wired, tested, live; the benchmark exposed real platform gaps)
+| Commit | Capability |
+|---|---|
+| a343849 | provider resilience — per-endpoint concurrency cap + retry/backoff/deadline (fixes throttle/hang; every LLM call) |
+| abe508b + 63d882f | grain/fan-out guard (deterministic over-count detection) + wired into /query/validate battery |
+| 89a4e52 | active filter-literal binding ('cancelled'→'canceled') wired into safety.preflight_repair (all SQL paths) |
+| 1f9c792 | schema compression (collapse sharded/dated table families) wired into link_schema |
+| a366729 | export-CSV ↔ evaluator byte-for-byte parity test (pre-cloud safeguard) |
+| 964810c + 182a2a5 | reliability-banding measurement (evals/reliability.py) + harness --holdout reporting |
+
+### B6 (execution-grounded probe-and-repair) — built, validated, **NOT WIRED** (correct call)
+`aughor/sql/probe_repair.py` (c68fbc2) + validation harness (4a42b90). Reliability-banded on 79
+instances (all 59 failing + 20 passing controls, 2 stable reps): **+3 reliable fixes, 0 regressions
+(FP-gate perfect), McNemar p=0.25 — not significant.** Per the pre-registered gate (net>0 AND p<0.05)
+→ unwired. Effect is genuinely ~3/59 failures (more running can't reach significance on this data).
+**Its catchable wins overlap the deterministic grain guard already shipped** (B6's headline fix =
+COUNT(*)→COUNT(DISTINCT) fan-out, exactly a grain_guard case) → deterministic guards are the right
+lever; the LLM loop adds little at more cost/risk. Module kept (unwired) as a documented result.
+
+### The meta-pattern, resolved
+On a strong model (glm-5.2): unconstrained LLM repair = harmful (−2); FP-gated execution-grounded LLM
+repair = safe but marginal (+3, not sig); **deterministic execution-grounded guards = safe and
+capture the same wins (shipped).** Only a cheap rule fixing a systematic default (ANSWER_SHAPE, +8)
+moved the score materially via prompting.
+
+### RESUME BRIEF — start here next session
+The offline, ungated frontier is fully built. The next real levers are GATED:
+1. **Snowflake credentials (the #1 unlock).** Bundled creds are DEAD. With working creds, point the
+   same harness at Spider2-Snow (96.70 ceiling). FIRST action when creds land: verify the export-CSV
+   contract against a LIVE Snowflake/BigQuery cursor on 5–10 gold instances (BQ NUMERIC-as-string,
+   TIMESTAMP tz, NaN; Snowflake NUMBER/FLOAT rounding, VARIANT-as-JSON) — the highest-ROI hour. Then
+   a 10-instance closed-loop smoke (generate→execute→repair→export_csv→evaluate.py --mode sql) before
+   scaling. THEN the dialect rules (QUALIFY/FLATTEN/VARIANT) + schema compression get exercised live.
+2. **BigQuery creds** for the ~205 bq/ga Lite instances (gate every query through dryRun +
+   maximumBytesBilled — 1 TB/month sandbox cap).
+3. **Frontier-model swap** — OPEN DECISION (staying on glm-5.2 for now). One-line --coder-model A/B on
+   the hard slice via the reliability protocol would settle whether base-model is the real lever.
+4. **DO NOT** rebuild removed items (formula-grounding, faithful-EK) or wire B6 without a significant
+   (p<0.05) run. **DO NOT** chase "100%" (unreachable; live board top 96.70). Iterate on the
+   HARD/failing subset, not the full 135 (see [[spider2-test-hard-only]]).
