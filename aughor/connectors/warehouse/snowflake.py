@@ -84,6 +84,25 @@ class SnowflakeConnection(Connector):
         except Exception as e:
             return False, str(e)
 
+    def export_csv(self, sql: str, path: str, *, statement_timeout: int = 60) -> tuple[bool, str]:
+        """Materialize a query's FULL result to a CSV matching the Spider2 evaluator contract.
+
+        Unlike ``execute`` (the UI path, which stringifies NULL → "NULL" and caps at MAX_ROWS for
+        display), this writes the raw cursor: real NULL → empty cell, column order from
+        ``cursor.description``, and EVERY row (no cap) — byte-compatible with the evaluator's
+        ``pd.DataFrame(results, columns=cols).to_csv(index=False)``. Returns (ok, error)."""
+        from aughor.sql.closed_loop import rows_to_csv
+        try:
+            cur = self._conn.cursor()
+            cur.execute(f"ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = {int(statement_timeout)}")
+            cur.execute(sql.strip().rstrip(";"))
+            columns = [d[0] for d in cur.description] if cur.description else []
+            rows = cur.fetchall()  # raw values, no stringify, no row cap
+            rows_to_csv(columns, rows, path)
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
     def get_schema(self) -> str:
         lines: list[str] = []
         try:

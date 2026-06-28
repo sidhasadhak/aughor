@@ -49,6 +49,23 @@ CONFIDENCE GUIDANCE:
 Return: mode, confidence (0.0–1.0), and a one-sentence reasoning explaining the classification.
 """
 
+# Answer-shape discipline (SOMA-SQL "projection minimality", adapted to be product-good):
+# answer the question's IMPLIED output shape precisely instead of padding the SELECT with
+# intermediate/helper columns. A single-value question wants one number; a "which X" question
+# wants the entity. This is precise-answering, and it is the dominant fixable error on result-match
+# benchmarks (extra columns fail an exact column-set check). Reused by the Spider2 harness.
+ANSWER_SHAPE_RULES = (
+    " ANSWER SHAPE — return EXACTLY the columns the question asks for, in the order implied, and NOTHING more: "
+    "(a) a single-value question ('how many', 'what is the total/median/max/average', 'the distance of the longest …') "
+    "returns ONE scalar column — not the whole row it came from. "
+    "(b) 'which/what [entity] …' returns only that entity's identifying column(s) — e.g. just the name, not name + every metric used to rank it. "
+    "(c) when the question names the columns ('names and ages', 'state and difference'), return exactly those, in that order. "
+    "(d) when the question asks for a DERIVED value (a difference, ratio, rate, growth), return the derived value — "
+    "do NOT also emit the intermediate components (the two raw totals behind a difference, the numerator/denominator behind a ratio) unless the question asks for them. "
+    "(e) NEVER add helper/scratch columns (row ids, surrogate keys, subtotals, the raw base metric behind a computed one) that the question did not request. "
+    "When in doubt, fewer columns that exactly match the ask beat more columns that add unrequested context."
+)
+
 CHAT_SQL_SYSTEM = (
     "You are a concise data analyst. "
     "Write exactly one correct SELECT statement to answer the question. "
@@ -184,6 +201,7 @@ CHAT_SQL_SYSTEM = (
     "            SELECT category, state, ratio FROM base "
     "            WHERE month = (SELECT MAX(month) FROM base) ORDER BY ratio DESC "
     "    chart_type for single-period category×dimension grid → 'heatmap' (not multi_line — there is no time axis). "
+    + ANSWER_SHAPE_RULES
 )
 
 CHAT_PROMPT = """\
