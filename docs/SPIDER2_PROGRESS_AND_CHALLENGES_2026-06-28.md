@@ -373,9 +373,11 @@ model (§6), applied to real customer warehouses. 15 new tests; suite 1941 green
 
 ### 13.4 Next-build queue (gated, unchanged priority order)
 
-1. **CIDR E1–E4 result-trust checks** — package the four error patterns as deterministic critique
-   checks (E1 function semantics: lon/lat order, date boundaries; E2 → grain guard; E3 domain-join
-   correctness; E4 column ambiguity). Width: flags analyst *and* gold errors in production.
+1. **CIDR E1–E4 result-trust checks** — ✅ **E1 SHIPPED** (`aughor/sql/trust_checks.py`, commit
+   `2135ce0`): deterministic AST critiques for the function-semantics footguns (timestamp/date-literal
+   boundary, lexicographic order of numeric text, text-vs-numeric compare), wired into
+   `/query/validate` as `trust_findings`. E2/E3/E4 already covered by grain_guard / join_guard /
+   tools.ambiguity. Width: flags analyst *and* gold errors in production; the safe lever class.
 2. **SQL→text few-shot library** — back-translate mined query-log SQL into per-connection few-shot
    examples (AT&T + OmniSQL). Builds directly on the miner.
 3. **Strategy-diverse candidates + selection** (CHASE-SQL) — *measure-first*; needs a validation run
