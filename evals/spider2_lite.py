@@ -1096,6 +1096,31 @@ def score(spider_root: Path, out_dir: Path, workers: int) -> None:
         print(f"Execution result CSVs: {n_csv} files in {csv_dir}")
 
 
+def report_holdout(out_dir: Path, frac: float, salt: str = "spider2") -> None:
+    """Report EX on a deterministic dev/held-out split of a scored run, so a change can be tuned on
+    dev and checked on never-tuned held-out (guards small-slice overfit). Uses the reproducible
+    by-hash split from evals/reliability.py."""
+    from reliability import holdout_split
+    sql_ids = sorted(p.stem for p in out_dir.glob("*.sql"))
+    if not sql_ids:
+        return
+    ids_csv = Path(str(out_dir.resolve()) + "-ids.csv")
+    passing: set[str] = set()
+    if ids_csv.exists():
+        passing = {l.strip().removeprefix("sf_") for l in ids_csv.read_text().splitlines()[1:] if l.strip()}
+    dev, hold = holdout_split(sql_ids, frac=frac, salt=salt)
+
+    def _ex(ids):
+        c = sum(1 for i in ids if i in passing)
+        return c, len(ids), (c / len(ids) * 100 if ids else 0.0)
+
+    dc, dn, dx = _ex(dev)
+    hc, hn, hx = _ex(hold)
+    print(f"\n=== Held-out split (frac={frac}, salt='{salt}') ===")
+    print(f"  dev:      {dc:3d}/{dn:3d} = {dx:5.2f}%")
+    print(f"  held-out: {hc:3d}/{hn:3d} = {hx:5.2f}%  (report changes on THIS, tune on dev)")
+
+
 # ── submission packaging ──────────────────────────────────────────────────────
 
 def package(out_dir: Path) -> None:
@@ -1175,6 +1200,8 @@ def main() -> None:
                     help="Skip generation; only score existing predictions")
     ap.add_argument("--package", action="store_true",
                     help="Package output into a submission zip")
+    ap.add_argument("--holdout", type=float, default=None, metavar="FRAC",
+                    help="After scoring, report EX on a deterministic dev/held-out split (e.g. 0.2)")
     args = ap.parse_args()
 
     ids = set(s.strip() for s in args.ids.split(",")) if args.ids else None
@@ -1199,6 +1226,9 @@ def main() -> None:
 
     if args.score or args.score_only:
         score(args.spider_root, args.out, args.workers)
+
+    if args.holdout:
+        report_holdout(args.out, args.holdout)
 
     if args.package:
         package(args.out)
