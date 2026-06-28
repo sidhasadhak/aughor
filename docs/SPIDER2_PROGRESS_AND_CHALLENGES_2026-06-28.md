@@ -322,3 +322,65 @@ The offline, ungated frontier is fully built. The next real levers are GATED:
 4. **DO NOT** rebuild removed items (formula-grounding, faithful-EK) or wire B6 without a significant
    (p<0.05) run. **DO NOT** chase "100%" (unreachable; live board top 96.70). Iterate on the
    HARD/failing subset, not the full 135 (see [[spider2-test-hard-only]]).
+
+---
+
+## 13. Session 2026-06-28 (cont.) — six-paper study + two new width capabilities
+
+This session studied six papers for **product** improvement (not benchmark hacks) and shipped two
+gated capabilities. The throughline of all six: *the hard part of NL2SQL is understanding the
+database*, solved by **automatic, grounded metadata** — which is Aughor's own thesis. Three of the
+papers' pillars were found **already built in Aughor** (independent convergence = external
+validation), one **reframes our negative results**, and the rest point at the next builds.
+
+### 13.1 The papers, mapped
+
+| Paper | Headline number | Transferable mechanism | Aughor verdict |
+|---|---|---|---|
+| **AT&T — Automatic Metadata Extraction** (#1 BIRD) | auto-profiling **61.2 > SME 59.6**; ~25% of joins undocumented | profiling→LLM descriptions, **query-log mining**, SQL→text | profiling/descriptions/literal-binding **already built**; query-log mining = the gap |
+| **CHESS** (ICML 2025) | 71.10 BIRD, **83% fewer LLM calls** | **LSH over cell values** (5min→5s); schema selector; NL unit-test selection | value-LSH = the **filter-binding ceiling lift** (shipped this session) |
+| **Spider 2.0** (ICLR 2025) | o1 code-agent **21.3%** (vs 91.2 Spider1 / 73.0 BIRD) | 1,000+ cols, >100-line SQL, multi-dialect, doc grounding | validates the doc's framing; cloud tracks = the hard core |
+| **CHASE-SQL** (Google, ICLR 2025) | 73.0 BIRD; single gen ~68% vs **oracle 82.79** | **strategy-diverse** candidates + **learned pairwise selector** (+~6% vs majority vote) | reframes "consensus not worth it" (ours lacked diversity); **measure-first** |
+| **OmniSQL / SynSQL-2.5M** (2025) | 7B ≈ GPT-4o; 2.5M samples, Apache-2.0 | schema synth → complexity-controlled SQL → **SQL→question** + CoT | distillation path (GPU-gated) + SQL→text few-shot (buildable now) |
+| **CIDR 2026 — Benchmarks are Broken** | **BIRD 52.8% / Spider2-Snow 66.1% gold-error rate** | E1–E4 error taxonomy; corrected re-eval shifts rank ≤3 | **reframes our negative results**; E2 == our grain guard |
+
+### 13.2 The CIDR reframe (most consequential — for the second opinion)
+
+Jin et al. (CIDR 2026) hand-audited gold and found **52.8% of BIRD Mini-Dev and 66.1% of
+Spider2.0-Snow problems contain ≥1 annotation error**. Re-scoring five leaderboard agents on
+corrected gold shifted execution accuracy **−3% to +31%** and rankings by up to **3 places**
+(CHESS 62%→81%, 4th→1st; 11 of its 12 "wrong" answers were actually right). Two direct hits:
+
+- **The #1 error pattern (E2, ~56%) is *missing `DISTINCT` over a fan-out join* — row inflation —
+  which is exactly what Aughor's `grain_guard` deterministically detects.** The single most common
+  bug in these benchmarks is the one we built a guard for; in production that guard would flag the
+  *human analyst's* error. Strong validation of the deterministic-guard lever.
+- **It weakens our own "machinery doesn't help strong models" conclusion.** Faithful-EK scored
+  "net −2 / close-but-0"; with ~50–66% of gold wrong, some of those "regressions" overwrote a query
+  matching *wrong* gold or fixed it to true intent and still scored 0. The negative result stands
+  directionally but is **noisier than reported** — a caveat worth surfacing. Cheap measurement fix:
+  pull the **2025-07-13 corrected Spider2 gold** and re-score the offline slice.
+
+### 13.3 Shipped this session (committed, gated, full suite green)
+
+| Commit | Capability | Source | Gate |
+|---|---|---|---|
+| `bcba17a` | **query-log miner** (`aughor/sql/query_log_miner.py`) — join paths / value domains / business formulas from real query history; wired into `build_schema_context` (opt-in `AUGHOR_QUERY_LOG_MINING=1`); runs on Aughor's own logs now | AT&T | built·wired·tested·leveraged |
+| `ac40821` | **CHESS-style value index** (`aughor/sql/value_index.py`) → high-cardinality filter-literal binding in `join_guard` (>50-distinct columns the old path skipped); 3 safety gates (absent-probe + 0.82 cutoff + dry-run); positive predicates only | CHESS | built·wired·tested·leveraged |
+
+Both are **deterministic, execution-grounded width wins** — the lever class that held up on a strong
+model (§6), applied to real customer warehouses. 15 new tests; suite 1941 green; zero ratchet debt.
+
+### 13.4 Next-build queue (gated, unchanged priority order)
+
+1. **CIDR E1–E4 result-trust checks** — package the four error patterns as deterministic critique
+   checks (E1 function semantics: lon/lat order, date boundaries; E2 → grain guard; E3 domain-join
+   correctness; E4 column ambiguity). Width: flags analyst *and* gold errors in production.
+2. **SQL→text few-shot library** — back-translate mined query-log SQL into per-connection few-shot
+   examples (AT&T + OmniSQL). Builds directly on the miner.
+3. **Strategy-diverse candidates + selection** (CHASE-SQL) — *measure-first*; needs a validation run
+   before trusting on a strong model (our prior consensus lacked strategy diversity).
+4. **Distillation on SynSQL-2.5M + mined logs** (OmniSQL) — strategic, GPU-gated.
+5. **Cheap measurement fix:** re-score offline slice on the 2025-07-13 corrected Spider2 gold.
+
+Still credential-gated (unchanged): Snowflake (#1), BigQuery, frontier-model swap (open decision).
