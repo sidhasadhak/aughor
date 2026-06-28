@@ -128,13 +128,16 @@ that clarifies when it matters, recovers when it errs, and remembers what it jus
 
 Each stage is BUILT → WIRED → TESTED → **LEVERAGED** (proven on the real path), measured before trusted.
 
-1. **Budget-aware ambiguity clarification** *(highest value, buildable now)* — when detected candidate-
-   disagreement would *materially change the answer*, ask **one** targeted question within a budget
-   instead of silently guessing. Reuses SOMA detection + the FP-gate discipline, applied to dialogue.
-2. **Interactive eval harness** — a function-driven user simulator over Aughor's *own* connections
-   (with the AMB/LOC/**UNA** anti-leak design) to *measure* clarification/recovery skill — the
-   measurement substrate for the whole interactive axis, mirroring reliability-banding for single-turn.
-   (The "verify it actually works" discipline demands this before trusting any interaction feature.)
+1. **Interactive eval harness** ✅ **BUILT** (`evals/interactive.py`, commit `2df7833`) — a function-
+   driven user simulator (AMB/LOC/**UNA** anti-leak) + an episode runner that scores *submitted* SQL
+   against executable gold under a clarification budget, so it **rewards good clarification and
+   penalizes blind guessing** (the property static-transcript benchmarks lack). Built **first** per the
+   "let evidence pick the lever" discipline. *Next (leverage):* a live run against Aughor's real
+   pipeline + a small ambiguity-annotated task set, to produce the baseline (how much does ambiguity
+   cost a never-asking system today?) that picks the next feature.
+2. **Budget-aware ambiguity clarification** *(next feature)* — when detected candidate-disagreement
+   would *materially change the answer*, ask **one** targeted question within a budget instead of
+   silently guessing. Reuses SOMA detection + the FP-gate discipline; validated by harness (1).
 3. **State-dependent multi-turn** — carry created objects / CTEs across follow-ups; reason over modified
    DB state. Plus **HKB-as-traversable-knowledge-graph**: extend the editable ontology with multi-hop
    chains and "broken chain → ask".
