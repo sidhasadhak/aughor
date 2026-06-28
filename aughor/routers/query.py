@@ -365,6 +365,7 @@ def query_validate(body: _QueryValidateRequest):
     join_warnings: list = []
     filter_warnings: list = []
     grain_warnings: list = []
+    trust_findings: list = []
     try:
         # Fan-out / chasm — static analysis over the connection's schema-derived columns.
         try:
@@ -410,13 +411,35 @@ def query_validate(body: _QueryValidateRequest):
             ]
         except Exception as exc:
             tolerate(exc, "validate: grain fan-out", counter="validate.grain")
+        # CIDR-E1 trust checks — function-semantics footguns (timestamp/date-literal boundary,
+        # lexicographic order of numeric text, text-vs-numeric compare). Pure AST; col_types best-
+        # effort from information_schema, with a name heuristic fallback for the date-boundary case.
+        try:
+            from aughor.sql.trust_checks import run_trust_checks
+            col_types: dict | None = None
+            try:
+                r = db.execute("__trust_coltypes__",
+                               "SELECT table_name, column_name, data_type FROM information_schema.columns")
+                if r and not r.error and r.rows:
+                    col_types = {}
+                    for tbl, col, dt in r.rows:
+                        if col and dt:
+                            col_types[f"{str(tbl).lower()}.{str(col).lower()}"] = str(dt)
+                            col_types.setdefault(str(col).lower(), str(dt))
+            except Exception as exc:
+                tolerate(exc, "validate: trust col-types (heuristic fallback used)",
+                         counter="validate.trust_coltypes")
+            trust_findings = [f.to_dict() for f in run_trust_checks(sql, col_types=col_types, dialect=dialect)]
+        except Exception as exc:
+            tolerate(exc, "validate: trust checks", counter="validate.trust")
     finally:
         try:
             db.close()
         except Exception as exc:
             tolerate(exc, "validate: db close", counter="validate.close")
 
-    issues = len(fanout_hits) + len(join_warnings) + len(filter_warnings) + len(grain_warnings)
+    issues = (len(fanout_hits) + len(join_warnings) + len(filter_warnings)
+              + len(grain_warnings) + len(trust_findings))
     return {
         "passed": issues == 0,
         "issue_count": issues,
@@ -424,6 +447,7 @@ def query_validate(body: _QueryValidateRequest):
         "join_warnings": join_warnings,
         "filter_warnings": filter_warnings,
         "grain_warnings": grain_warnings,
+        "trust_findings": trust_findings,
     }
 
 
