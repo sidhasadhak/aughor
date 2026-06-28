@@ -386,3 +386,20 @@ model (§6), applied to real customer warehouses. 15 new tests; suite 1941 green
 5. **Cheap measurement fix:** re-score offline slice on the 2025-07-13 corrected Spider2 gold.
 
 Still credential-gated (unchanged): Snowflake (#1), BigQuery, frontier-model swap (open decision).
+
+### 13.5 Guard-coverage leverage (offline, on the real 56.30% predictions)
+
+`evals/guard_coverage.py` (commit `cad2d49`) fires the deterministic guards over the 135 single-shot
++ANSWER_SHAPE predictions (the 56.30% baseline) against the real SQLite DBs — turning the shipped
+guards from *tested* into *leveraged on the real path*:
+
+| Guard | Fired | Detail |
+|---|---|---|
+| **grain / fan-out** | **28/135 (20.7%)** | **12 material** (ratio ≥ 1.5; **max 92.2× over-count**) |
+| **CIDR-E1 trust** | 3/135 | all lexicographic-order over numeric-looking text (`year`, `FacRank`, `rating`) |
+| **filter value-domain** | 3/135 | real literal misses: `'United States'→'United States of America'`, `'retired out'→'retired hurt'` |
+
+This **corroborates CIDR-2026 on Aughor's own output**: fan-out (E2) is by far the dominant detectable
+defect (20.7% fire, a 92× over-count in the worst case). The filter examples are exactly the silent-
+zero bug the high-cardinality value-binding now fixes. Confirms the deterministic-guard lever is the
+right one — measured, not asserted.
