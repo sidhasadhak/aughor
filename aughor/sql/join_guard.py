@@ -387,6 +387,8 @@ def render_verified_joins(verified: list, rejected: list) -> str:
 # left alone.
 _FILTER_MAX_PROBES = 6
 _ENUMERABLE_MAX_DISTINCT = 50
+_HIGHCARD_SAMPLE = 10000   # CHESS used N=10000 sampled distinct values for its value index
+_HIGHCARD_CUTOFF = 0.82    # stricter than the ≤50-distinct 0.6 — high-cardinality binding is riskier
 
 
 @dataclass
@@ -490,6 +492,41 @@ def _extract_filter_literals(sql: str) -> list[tuple[str, str, str, str]]:
     return out
 
 
+def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,
+                            litops: "set[tuple[str, str]]") -> list[FilterDomainWarning]:
+    """Bind a guessed literal on a HIGH-cardinality text column (names/SKUs/cities) to its nearest
+    real value — but ONLY when the literal is execution-confirmed absent and a close neighbour exists
+    in a bounded sample of the live domain. Positive predicates only (=, IN): never weaken a negation
+    by rewriting it. CHESS-style: trigram-blocked value index over a distinct sample."""
+    from aughor.sql.value_index import ValueIndex
+    out: list[FilterDomainWarning] = []
+    positives = [(lit, op) for lit, op in litops if op in ("=", "IN")]
+    if not positives:
+        return out
+    qt, qc = _quote_table(t), f'"{c}"'
+    index: "ValueIndex | None" = None
+    for lit, op in positives:
+        safe = lit.replace("'", "''")
+        exists = conn.execute(
+            "__filter_highcard_exists__",
+            f"SELECT 1 FROM {qt} WHERE LOWER(CAST({qc} AS VARCHAR)) = LOWER('{safe}') LIMIT 1",
+        )
+        if exists and exists.rows:
+            continue  # the literal is a real value — do not second-guess it
+        if index is None:  # build the index once per column, lazily (only when a literal is absent)
+            res = conn.execute(
+                "__filter_highcard_sample__",
+                f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {qt} "
+                f"WHERE {qc} IS NOT NULL LIMIT {_HIGHCARD_SAMPLE}",
+            )
+            sample = [r[0] for r in res.rows if r and r[0] is not None] if res and res.rows else []
+            index = ValueIndex(sample)
+        best = index.best_match(lit, cutoff=_HIGHCARD_CUTOFF)
+        if best and best.lower() != lit.lower():
+            out.append(FilterDomainWarning(t, c, lit, [best], best, op))
+    return out
+
+
 def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[FilterDomainWarning]:
     """Flag WHERE/HAVING equality/IN literals that don't exist in an enumerable column's
     actual value domain (a guessed enum value). Fail-open; never raises."""
@@ -511,8 +548,14 @@ def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[Fil
                 if not res or not res.rows:
                     continue
                 vals = [r[0] for r in res.rows if r and r[0] is not None]
-                if not vals or len(vals) > _ENUMERABLE_MAX_DISTINCT:
-                    continue  # high-cardinality column — do not second-guess the literal
+                if not vals:
+                    continue
+                if len(vals) > _ENUMERABLE_MAX_DISTINCT:
+                    # High-cardinality column: the ≤50 enumeration can't see the domain. Use a
+                    # CHESS-style value index over a bounded sample, but only bind a literal that is
+                    # execution-confirmed absent (so we never second-guess a real value).
+                    warnings.extend(_highcard_bind_warnings(conn, t, c, litops))
+                    continue
                 present = {v.lower() for v in vals}
                 for lit, op in litops:
                     if lit.lower() in present:
