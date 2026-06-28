@@ -82,3 +82,32 @@ def test_real_sqlite_fanout_detected():
     findings = detect_fanout(sql, probe, dialect="sqlite")
     conn.close()
     assert len(findings) == 1 and findings[0].fanned_table == "tags"
+
+
+def test_wiring_plumbing_through_product_connector(tmp_path):
+    """Proves the /query/validate wiring path: the product SQLiteConnection returns STRINGIFIED
+    cells, and detect_fanout must coerce them — using the exact probe wrapper the endpoint uses."""
+    from aughor.connectors.file.sqlite import SQLiteConnection
+
+    db_file = tmp_path / "fan.sqlite"
+    seed = sqlite3.connect(str(db_file))
+    seed.executescript("""
+        CREATE TABLE fact (id INTEGER, amount REAL);
+        CREATE TABLE tags (fact_id INTEGER, label TEXT);
+        INSERT INTO fact VALUES (1,100.0),(2,50.0);
+        INSERT INTO tags VALUES (1,'a'),(1,'b'),(2,'c');
+    """)
+    seed.commit(); seed.close()
+
+    conn = SQLiteConnection(dsn=str(db_file), connection_id="grain_test")
+
+    def _grain_probe(s):                       # identical shape to the endpoint's wrapper
+        r = conn.execute("__grain_probe__", s)
+        return (not r.error, r.rows, r.error or "")
+
+    findings = detect_fanout(
+        "SELECT SUM(f.amount) FROM fact f JOIN tags t ON f.id = t.fact_id",
+        _grain_probe, dialect="sqlite")
+    conn.close()
+    assert len(findings) == 1 and findings[0].fanned_table == "tags"
+    assert findings[0].ratio == 1.5 and "over-count" in findings[0].caveat().lower()

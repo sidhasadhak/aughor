@@ -364,6 +364,7 @@ def query_validate(body: _QueryValidateRequest):
     fanout_hits: list = []
     join_warnings: list = []
     filter_warnings: list = []
+    grain_warnings: list = []
     try:
         # Fan-out / chasm — static analysis over the connection's schema-derived columns.
         try:
@@ -393,19 +394,36 @@ def query_validate(body: _QueryValidateRequest):
             ]
         except Exception as exc:
             tolerate(exc, "validate: filter value-domain", counter="validate.filter")
+        # Grain / fan-out — LIVE uniqueness probe of each join key (catches over-counting that
+        # depends on the actual data, not just the schema, so it complements the static scan above).
+        try:
+            from aughor.sql.grain_guard import detect_fanout
+
+            def _grain_probe(s: str):
+                r = db.execute("__grain_probe__", s)
+                return (not r.error, r.rows, r.error or "")
+
+            grain_warnings = [
+                {"table": f.fanned_table, "join_key": f.join_key,
+                 "ratio": round(f.ratio, 2), "caveat": f.caveat()}
+                for f in detect_fanout(sql, _grain_probe, dialect)
+            ]
+        except Exception as exc:
+            tolerate(exc, "validate: grain fan-out", counter="validate.grain")
     finally:
         try:
             db.close()
         except Exception as exc:
             tolerate(exc, "validate: db close", counter="validate.close")
 
-    issues = len(fanout_hits) + len(join_warnings) + len(filter_warnings)
+    issues = len(fanout_hits) + len(join_warnings) + len(filter_warnings) + len(grain_warnings)
     return {
         "passed": issues == 0,
         "issue_count": issues,
         "fanout_hits": fanout_hits,
         "join_warnings": join_warnings,
         "filter_warnings": filter_warnings,
+        "grain_warnings": grain_warnings,
     }
 
 

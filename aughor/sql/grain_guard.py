@@ -29,6 +29,14 @@ ProbeFn = Callable[[str], tuple]  # probe_fn(sql) -> (ok: bool, rows: list, erro
 _ADDITIVE = (exp.Sum, exp.Avg, exp.Count)  # COUNT handled with a DISTINCT check below
 
 
+def _to_int(v) -> Optional[int]:
+    """Coerce a probe cell to int (connectors may stringify counts as "10"); None if not numeric."""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
 @dataclass
 class FanoutFinding:
     fanned_table: str           # the joined table that has many rows per join key (the multiplier)
@@ -116,11 +124,11 @@ def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[
             ok, rows, _ = probe_fn(probe)
         except Exception:
             ok, rows = False, None
-        if not ok or not rows:
+        if not ok or not rows or not rows[0] or len(rows[0]) < 2:
             continue
-        total, distinct = rows[0][0], rows[0][1]
-        if not distinct or total <= distinct:
-            continue  # unique on key ⇒ this join does not fan out
+        total, distinct = _to_int(rows[0][0]), _to_int(rows[0][1])
+        if total is None or not distinct or total <= distinct:
+            continue  # non-numeric or unique on key ⇒ this join does not fan out
 
         findings.append(FanoutFinding(
             fanned_table=rt, join_key=", ".join(keys),
