@@ -1,6 +1,7 @@
 """Schema introspection — builds the context string fed to the LLM."""
 from __future__ import annotations
 
+import os
 import re
 
 import duckdb
@@ -635,12 +636,18 @@ def build_schema_context(
     profile_annotation: str = "",
     schema_name: str | None = None,
     connection_id: str | None = None,
+    query_log_annotation: str = "",
 ) -> str:
     """Return a rich schema description for the LLM, including row counts and glossary annotations.
 
     profile_annotation: pre-rendered DATA PROFILES block from the profiler.
     When supplied (non-empty), it is appended after join hints so every prompt
     receives grain, null-rate, and value-interpretation information.
+
+    query_log_annotation: pre-rendered block of facts mined from real query history
+    (learned join paths / value domains / business formulas). Decoupled like
+    profile_annotation; when left empty it is auto-collected from this connection's
+    logged queries iff AUGHOR_QUERY_LOG_MINING=1 (opt-in, best-effort).
 
     schema_name: when set, filters to only tables in that DuckDB schema so that
     multi-schema files don't bleed tables from other schemas into this context.
@@ -769,6 +776,19 @@ def build_schema_context(
         enriched += "\n\n" + metrics_block
     if profile_annotation:
         enriched += "\n\n" + profile_annotation
+    # Query-log facts: learned join paths / value domains / formulas from real query history.
+    # Injected pre-rendered (decoupled, like profile_annotation); opt-in auto-collect when enabled
+    # so the schema hot-path never depends on the vector store unless explicitly turned on.
+    if not query_log_annotation and connection_id and os.environ.get("AUGHOR_QUERY_LOG_MINING") == "1":
+        try:
+            from aughor.sql.query_log_miner import build_query_log_annotation
+            query_log_annotation = build_query_log_annotation(connection_id)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "query-log mining is best-effort schema enrichment",
+                     counter="query_log.annotate", conn_id=connection_id)
+    if query_log_annotation:
+        enriched += "\n\n" + query_log_annotation
     return enriched
 
 
