@@ -529,3 +529,79 @@ def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[Fil
         tolerate(exc, "filter_guard: check failed — no warnings emitted",
                  counter="filter_guard.check_error")
     return warnings
+
+
+def repair_filter_literals(sql: str, warnings: list["FilterDomainWarning"],
+                           dialect: str = "duckdb") -> "str | None":
+    """Deterministically rewrite each guessed filter literal to its confirmed stored value.
+
+    Given probe-confirmed warnings (a literal that matches no row but has a close neighbour in the
+    column's actual domain), replace ONLY the literal in the comparison on that exact (table, column)
+    — never other identical strings elsewhere. Returns the rewritten SQL, or None if nothing changed.
+    Pure AST surgery; the caller dry-runs the result before adopting, so a bad rewrite is never used."""
+    import sqlglot
+    import sqlglot.expressions as exp
+
+    fixes = {(w.table.lower(), w.col.lower(), w.bad_value): w.suggestion
+             for w in warnings if w.suggestion}
+    if not fixes:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+
+    a2t: dict[str, str] = {}
+    for t in tree.find_all(exp.Table):
+        a2t[t.name.lower()] = t.name
+        if t.alias:
+            a2t[t.alias.lower()] = t.name
+    all_tables = {t.name for t in tree.find_all(exp.Table)}
+
+    def _resolve(colnode) -> "str | None":
+        if colnode.table:
+            return a2t.get(colnode.table.lower())
+        return next(iter(all_tables)) if len(all_tables) == 1 else None
+
+    changed = False
+    for lit in tree.find_all(exp.Literal):
+        if not lit.is_string:
+            continue
+        parent = lit.parent
+        col = None
+        if isinstance(parent, (exp.EQ, exp.NEQ)):
+            other = parent.left if parent.right is lit else parent.right
+            if isinstance(other, exp.Column):
+                col = other
+        elif isinstance(parent, exp.In) and isinstance(parent.this, exp.Column):
+            col = parent.this
+        if col is None or not col.name:
+            continue
+        t = _resolve(col)
+        if not t:
+            continue
+        sugg = fixes.get((t.lower(), col.name.lower(), lit.this))
+        if sugg is not None:
+            lit.set("this", sugg)
+            changed = True
+    return tree.sql(dialect=dialect) if changed else None
+
+
+def bind_filter_literals(conn: "DatabaseConnection", sql: str,
+                         dialect: str = "duckdb") -> "tuple[str, list]":
+    """Detect guessed filter literals against the live column domain and actively bind them to the
+    stored values. Returns (possibly-rewritten sql, applied warnings). Fail-open: on any issue or no
+    confident fix, returns the original sql and an empty list."""
+    try:
+        warnings = check_filter_value_domains(conn, sql)
+        if not warnings:
+            return sql, []
+        fixed = repair_filter_literals(sql, warnings, dialect)
+        if fixed and fixed.strip() != sql.strip():
+            return fixed, warnings
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "filter_guard: active binding skipped", counter="filter_guard.bind_error")
+    return sql, []
