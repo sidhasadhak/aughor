@@ -58,7 +58,11 @@ async def _lifespan(app: "FastAPI"):
     defined below — they are resolved at call time (startup), not import time.
     """
     # ── Startup ────────────────────────────────────────────────────────────────
-    # First: make contextvars (current job id + per-run metering) cross the
+    # First of all: plug the Agent into the Platform's registries (purge hooks,
+    # schema annotators, …) so the platform's seams carry the agent's intelligence
+    # on the live path. Must precede any request handling. Idempotent + fault-isolated.
+    await _register_agent_plugins()
+    # Then: make contextvars (current job id + per-run metering) cross the
     # run_in_executor boundary, before any startup step dispatches into a thread.
     _install_context_executor()
     await _kernel_journal_boot()
@@ -129,6 +133,18 @@ app.add_middleware(
 
 
 # ── Startup steps (run by _lifespan above, in this order) ──────────────────────
+
+async def _register_agent_plugins() -> None:
+    """Register the Agent's contributions into the Platform's extension registries
+    (purge hooks, schema annotators, …). The platform never imports the agent; this
+    is the one explicit wiring call that plugs the agent in. Non-fatal: if it fails,
+    the platform degrades to its raw, agent-free behaviour rather than failing boot."""
+    try:
+        from aughor.agent.bootstrap import register_agent_plugins
+        register_agent_plugins()
+    except Exception as exc:
+        logger.warning("Agent plugin registration failed (non-fatal): %s", exc)
+
 
 def _install_context_executor() -> None:
     """Make ``loop.run_in_executor(None, …)`` propagate contextvars into worker

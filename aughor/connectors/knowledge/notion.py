@@ -185,7 +185,7 @@ class NotionSync:
 
     def sync(self) -> dict:
         """Sync all accessible pages. Returns sync stats."""
-        from aughor.knowledge.indexer import index_text
+        from aughor.kernel.registries.ingestion import ingest
         state   = self._load_state()
         count   = 0
         sources = {"search": 0, **{db: 0 for db in self._db_ids}}
@@ -200,7 +200,8 @@ class NotionSync:
                 return
             source_url = page.get("url", "")
             doc_id = f"notion_{self._conn_id}_{page_id}"
-            index_text(
+            ingest(
+                "knowledge",
                 text=text,
                 title=title,
                 source=f"notion:{source_label}",

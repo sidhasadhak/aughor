@@ -6,8 +6,20 @@ import re
 import duckdb
 
 from aughor.semantic.glossary import apply_glossary
-from aughor.db.type_overrides import get_table_overrides
 from aughor.tools.table_names import bare
+
+# Raw schema rendering + the pure parsing / FK-root helpers now live on the PLATFORM
+# side (aughor.db.schema_render) so the platform can render/parse schemas without
+# importing the agent. Re-exported here so the agent's many `tools.schema` imports
+# stay stable, and so the helpers below (compute_join_map, infer_joins, _col_root, …)
+# keep resolving them.
+from aughor.db.schema_render import (  # noqa: F401
+    ROOT_SUFFIXES,
+    SECTION_STOP,
+    fk_root,
+    parse_schema_tables,
+    render_raw_schema,
+)
 
 # Normalise verbose type names (PostgreSQL information_schema, DuckDB DESCRIBE).
 _TYPE_MAP: dict[str, str] = {
@@ -29,21 +41,8 @@ def _norm_type(t: str) -> str:
     t_clean = t.strip().lower()
     return _TYPE_MAP.get(t_clean, t.strip())
 
-# Columns whose names indicate they are IDs/keys — skip value sampling for these.
-_KEY_COL = re.compile(
-    r"(_id|_key|_code|_num|_number|_identifier|_pk|_uuid|_guid)$",
-    re.IGNORECASE,
-)
-
 # ── Fuzzy join inference ──────────────────────────────────────────────────────
-# Strips these suffixes (longest first) to get the semantic "root" of a column.
-# customer_id → customer,  order_key → order,  cust_num → cust
-_ROOT_SUFFIXES = sorted(
-    # _sk = surrogate key (standard star/snowflake warehouse convention, e.g.
-    # TPC-DS ss_item_sk ↔ i_item_sk; also _key/_id for natural keys).
-    ["_identifier", "_number", "_pseudonym", "_code", "_num", "_key", "_id", "_sk"],
-    key=len, reverse=True,
-)
+# (_KEY_COL and ROOT_SUFFIXES are imported from aughor.db.schema_render above.)
 
 # Roots that are generic attribute names, NOT foreign-key roots.
 # Columns whose root matches one of these will be skipped during join inference
@@ -63,77 +62,10 @@ _NON_KEY_ROOTS = frozenset({
 
 def _col_root(col: str) -> str:
     col = col.lower()
-    for suffix in _ROOT_SUFFIXES:
+    for suffix in ROOT_SUFFIXES:
         if col.endswith(suffix):
             return col[: -len(suffix)]
     return col
-
-
-# Short table-name alias prefix used by some schemas on every column
-# (TPC-H: c_custkey, o_orderkey, l_partkey). 1–3 letters + underscore so it
-# strips c_/o_/ps_ but never a word-prefix like ship_/bill_.
-_TABLE_PREFIX = re.compile(r"^[a-z]{1,3}_")
-
-
-def _fk_root(col: str) -> str | None:
-    """Normalised foreign-key root for a *key-like* column, else None.
-
-    Handles the convention where every column carries a short table prefix and
-    the key suffix is fused: ``c_custkey`` and ``o_custkey`` both → ``cust`` so
-    the customer↔orders FK is detected. Standard ``customer_id`` style still
-    maps to ``customer`` (prefix regex doesn't fire, ``_id`` suffix strips).
-    Returns None for non-key columns so the caller can fall back to legacy
-    behaviour — this is purely additive and introduces no new join candidates
-    for non-key columns (e.g. c_acctbal / s_acctbal stay un-joined)."""
-    c = col.lower()
-    stripped = _TABLE_PREFIX.sub("", c, count=1)
-    root = None
-    for suffix in _ROOT_SUFFIXES:  # _id, _key, _number, _code, _sk, …
-        if stripped.endswith(suffix):
-            root = stripped[: -len(suffix)]
-            break
-    if root is None and stripped.endswith("key") and len(stripped) > 3:  # fused: custkey
-        root = stripped[:-3]
-    if root is None or len(root) < 3:
-        return None
-    # Skip date/time surrogate keys. In a star schema every fact carries a
-    # *_date_sk / *_time_sk pointing at the shared date_dim/time_dim, so plain
-    # root-matching would wrongly join the facts to EACH OTHER (ss_sold_date_sk =
-    # cs_sold_date_sk). Modelling FK→dimension-PK needs ownership detection we
-    # don't have here; staying silent beats emitting false joins. (The model still
-    # joins date_dim from column naming; a temporal-grounding lever is future work.)
-    if root == "date" or root == "time" or root.endswith("date") or root.endswith("time"):
-        return None
-    return root
-
-
-_SECTION_STOP = re.compile(
-    r"^(DETECTED JOIN|NO DIRECT JOIN|METRICS CATALOG|Date range|GLOSSARY|JOIN HINTS|RELEVANT|--)"
-)
-
-def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
-    """Parse TABLE: blocks from a schema string → {table: [col_name, ...]}."""
-    table_cols: dict[str, list[str]] = {}
-    current: str | None = None
-    for line in schema_str.splitlines():
-        if _SECTION_STOP.match(line):
-            current = None
-            continue
-        m = re.match(r"^TABLE:\s+([\w.]+)", line)
-        if m:
-            current = m.group(1)
-            table_cols[current] = []
-        elif current:
-            col_m = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
-            if col_m and not line.strip().startswith("--"):
-                table_cols[current].append(col_m.group(1))
-    return table_cols
-
-
-def parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
-    """Public alias for the schema → {table: [columns]} parser (a stable interface
-    callers can import without reaching into the module's internals)."""
-    return _parse_schema_tables(schema_str)
 
 
 def compute_join_map(table_cols: dict[str, list[str]]) -> dict:
@@ -145,15 +77,6 @@ def compute_join_map(table_cols: dict[str, list[str]]) -> dict:
 def norm_type(t: str) -> str:
     """Public alias for the column-type normaliser (stable cross-module interface)."""
     return _norm_type(t)
-
-
-def fk_root(col: str) -> str | None:
-    """Public alias for the FK-root extractor (stable cross-module interface)."""
-    return _fk_root(col)
-
-
-# Public alias for the schema-block section-stop matcher (stable cross-module interface).
-SECTION_STOP = _SECTION_STOP
 
 
 def _table_base(t: str) -> str:
@@ -213,7 +136,7 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
     key_roots: set[str] = set()
     for table, cols in table_cols.items():
         for col in cols:
-            kroot = _fk_root(col)
+            kroot = fk_root(col)
             if kroot and len(kroot) >= 3:
                 root_map.setdefault(kroot, []).append((table, col))
                 key_roots.add(kroot)
@@ -274,7 +197,7 @@ def fk_neighbor_expand(full_schema: str, tables: list[str], cap: int = 10) -> li
     completes the join paths without dumping the whole schema. Order-preserving:
     the originally linked tables stay first."""
     try:
-        jmap = _compute_join_map(_parse_schema_tables(full_schema))
+        jmap = _compute_join_map(parse_schema_tables(full_schema))
     except Exception:
         return tables
     adj: dict[str, set[str]] = {}
@@ -314,7 +237,7 @@ def temporal_dimension_tables(full_schema: str, linked_tables: list[str], questi
     if not question or not _TEMPORAL_HINT.search(question):
         return []
     try:
-        tcols = _parse_schema_tables(full_schema)
+        tcols = parse_schema_tables(full_schema)
     except Exception:
         return []
     linked = set(linked_tables)
@@ -338,7 +261,7 @@ def infer_joins(schema_str: str) -> str:
       Phase 1 (exact): same normalised root + both share an _id suffix → high confidence
       Phase 2 (fuzzy): same root, one side lacks _id → marked [inferred — verify]
     """
-    table_cols = _parse_schema_tables(schema_str)
+    table_cols = parse_schema_tables(schema_str)
     if len(table_cols) < 2:
         return ""
 
@@ -377,7 +300,7 @@ def build_mermaid_er(schema_str: str) -> str:
     Dashed lines (||..|{) = similar name (fuzzy root match).
     Tables with no detected join remain as isolated entities.
     """
-    table_cols = _parse_schema_tables(schema_str)
+    table_cols = parse_schema_tables(schema_str)
     if not table_cols:
         return ""
 
@@ -385,7 +308,7 @@ def build_mermaid_er(schema_str: str) -> str:
     table_col_types: dict[str, list[tuple[str, str]]] = {}
     current: str | None = None
     for line in schema_str.splitlines():
-        if _SECTION_STOP.match(line):
+        if SECTION_STOP.match(line):
             current = None
             continue
         m = re.match(r"^TABLE:\s+([\w.]+)", line)
@@ -446,7 +369,7 @@ def build_rich_schema(schema_str: str) -> dict:
     current: str | None = None
 
     for line in schema_str.splitlines():
-        if _SECTION_STOP.match(line):
+        if SECTION_STOP.match(line):
             current = None
             continue
         m = re.match(r"^TABLE:\s+([\w.]+)\s*\(([\d,?]+|\?)?\s*rows?\)?", line)
@@ -544,7 +467,7 @@ def validate_join_path(from_table: str, to_table: str, schema_str: str) -> tuple
     Returns (False, reason) when both tables exist but share no detected key.
     Returns (False, reason) when either table is not in the schema at all.
     """
-    table_cols = _parse_schema_tables(schema_str)
+    table_cols = parse_schema_tables(schema_str)
     known = {t.lower(): t for t in table_cols}
 
     ft, tt = from_table.lower(), to_table.lower()
@@ -593,7 +516,7 @@ def inject_value_annotations(schema_str: str, column_profiles: dict) -> str:
             result.append(line)
             continue
 
-        if _SECTION_STOP.match(line):
+        if SECTION_STOP.match(line):
             current_table = None
             result.append(line)
             continue
@@ -630,131 +553,23 @@ def inject_value_annotations(schema_str: str, column_profiles: dict) -> str:
     return "\n".join(result)
 
 
-def build_schema_context(
-    conn: duckdb.DuckDBPyConnection,
-    profile_annotation: str = "",
-    schema_name: str | None = None,
+def apply_schema_enrichment(
+    raw: str,
+    *,
     connection_id: str | None = None,
+    profile_annotation: str = "",
 ) -> str:
-    """Return a rich schema description for the LLM, including row counts and glossary annotations.
+    """The AGENT enrichment tail of :func:`build_schema_context`, applied on top of a
+    raw schema (``aughor.db.schema_render.render_raw_schema``): seed missing tables,
+    apply the glossary, refresh the vector index, append inferred join hints + the
+    schema-scoped metrics catalog (+ an optional pre-rendered profile block).
 
-    profile_annotation: pre-rendered DATA PROFILES block from the profiler.
-    When supplied (non-empty), it is appended after join hints so every prompt
-    receives grain, null-rate, and value-interpretation information.
-
-    schema_name: when set, filters to only tables in that DuckDB schema so that
-    multi-schema files don't bleed tables from other schemas into this context.
-    """
-    if schema_name:
-        # For MotherDuck (multi-database DuckDB), restrict to the current database
-        # so we don't bleed tables from other attached databases that share the schema.
-        current_db = ""
-        try:
-            current_db = conn.execute("SELECT current_database()").fetchone()[0]
-        except Exception:
-            pass
-        if current_db:
-            tables = [
-                row[0] for row in conn.execute(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = ? AND table_type = 'BASE TABLE' "
-                    "AND table_catalog = ? ORDER BY table_name",
-                    [schema_name, current_db],
-                ).fetchall()
-            ]
-        else:
-            tables = [
-                row[0] for row in conn.execute(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name",
-                    [schema_name],
-                ).fetchall()
-            ]
-        # Fallback: the user may have set schema_name to a database name
-        # (common with MotherDuck) rather than a DuckDB schema. In that case,
-        # information_schema.tables returns nothing — fall back to SHOW TABLES.
-        if not tables:
-            tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
-    else:
-        tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
-    parts: list[str] = []
-
-    # Use fully-qualified names when schema is known so queries work even if
-    # SET search_path silently failed (DuckDB version differences).
-    def _fqn(t: str) -> str:
-        return f"{schema_name}.{t}" if schema_name else t
-
-    # Load user-authored annotations (table + column descriptions) if available
-    from aughor.db.annotations import load_annotations, inject_into_schema_parts
-    _annotations = load_annotations(connection_id) if connection_id else None
-
-    for table in sorted(tables):
-        fqn = _fqn(table)
-        try:
-            count = conn.execute(f"SELECT COUNT(*) FROM {fqn}").fetchone()[0]
-        except Exception:
-            count = "?"
-
-        parts.append(f"TABLE: {fqn}  ({count:,} rows)")
-        if _annotations:
-            inject_into_schema_parts(parts, table, None, _annotations)
-
-        cols = conn.execute(f"DESCRIBE {fqn}").fetchall()
-        _overrides = get_table_overrides(connection_id or "", table) if connection_id else {}
-        for col in cols:
-            col_name, col_type = col[0], col[1]
-            if col_name in _overrides:
-                col_type = _overrides[col_name]
-            parts.append(f"  {col_name}  {col_type}")
-            if _annotations:
-                inject_into_schema_parts(parts, table, col_name, _annotations)
-
-        # Explicitly flag tables with no date/timestamp columns so the LLM never
-        # invents a date column name when building time-series queries on this table.
-        _date_types = ("DATE", "TIMESTAMP", "TIME", "INTERVAL")
-        has_date_col = any(
-            any(dt in col[1].upper() for dt in _date_types) for col in cols
-        )
-        if not has_date_col:
-            parts.append(
-                f"  -- ⚠ No date/timestamp columns in {table}. "
-                "Do NOT fabricate a date column. Join a table that has one if a time range is needed."
-            )
-
-        # Enumerate values for ALL low-cardinality categorical columns (frequency-ordered).
-        # Using LIMIT 51: if ≤ 50 rows come back we know cardinality is low enough to list.
-        for col_name, col_type in [(c[0], c[1]) for c in cols]:
-            if not any(t in col_type.upper() for t in ("VARCHAR", "TEXT", "CHAR", "BOOLEAN")):
-                continue
-            if _KEY_COL.search(col_name.lower()):
-                continue
-            try:
-                rows = conn.execute(
-                    f'SELECT "{col_name}", COUNT(*) AS n FROM {fqn} '
-                    f'WHERE "{col_name}" IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 51'
-                ).fetchall()
-                if rows and 1 <= len(rows) <= 50:
-                    vals = ", ".join(str(r[0]) for r in rows)
-                    parts.append(f"  -- {col_name}  [{vals}]")
-            except Exception:
-                pass
-
-        parts.append("")
-
-    # Add date range context
-    try:
-        date_range = conn.execute(
-            "SELECT MIN(date)::VARCHAR, MAX(date)::VARCHAR FROM kpi_daily"
-        ).fetchone()
-        if date_range:
-            parts.append(f"Date range in kpi_daily: {date_range[0]} to {date_range[1]}")
-    except Exception:
-        pass
-
-    raw = "\n".join(parts)
+    Extracted so the platform's ``get_schema`` can reproduce build_schema_context's
+    output **byte-for-byte** via the schema-annotator registry, without the platform
+    importing the agent."""
     from aughor.semantic.autoseed import seed_missing_tables
-    from aughor.semantic.retriever import build_schema_index
     from aughor.semantic.metrics import build_metrics_block
+    from aughor.semantic.retriever import build_schema_index
     seed_missing_tables(raw)
     enriched = apply_glossary(raw)
     build_schema_index()  # best-effort; keeps vector index fresh after glossary changes
@@ -770,6 +585,29 @@ def build_schema_context(
     if profile_annotation:
         enriched += "\n\n" + profile_annotation
     return enriched
+
+
+def build_schema_context(
+    conn: duckdb.DuckDBPyConnection,
+    profile_annotation: str = "",
+    schema_name: str | None = None,
+    connection_id: str | None = None,
+) -> str:
+    """Return a rich schema description for the LLM, including row counts and glossary annotations.
+
+    profile_annotation: pre-rendered DATA PROFILES block from the profiler.
+    When supplied (non-empty), it is appended after join hints so every prompt
+    receives grain, null-rate, and value-interpretation information.
+
+    schema_name: when set, filters to only tables in that DuckDB schema so that
+    multi-schema files don't bleed tables from other schemas into this context.
+
+    The raw rendering is the platform's ``render_raw_schema``; the glossary / join /
+    metrics enrichment is :func:`apply_schema_enrichment`.
+    """
+    raw = render_raw_schema(conn, schema_name, connection_id)
+    return apply_schema_enrichment(
+        raw, connection_id=connection_id, profile_annotation=profile_annotation)
 
 
 # ── Canvas-scoped schema helpers ──────────────────────────────────────────────

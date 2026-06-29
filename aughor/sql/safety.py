@@ -50,7 +50,7 @@ def preflight_repair(conn, sql: str, schema: Optional[str] = None, *, max_retrie
         if schema:
             try:
                 from aughor.sql.identifiers import repair_identifiers
-                from aughor.tools.schema import parse_schema_tables
+                from aughor.db.schema_render import parse_schema_tables
                 _tc = {t: (list(c.keys()) if isinstance(c, dict) else c)
                        for t, c in parse_schema_tables(schema).items()}
                 _ri = repair_identifiers(out, _tc, dialect=getattr(conn, "dialect", "duckdb"))

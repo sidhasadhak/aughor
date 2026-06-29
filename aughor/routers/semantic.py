@@ -198,13 +198,13 @@ def rebuild_knowledge_index(conn_id: str):
 
 @router.get("/{conn_id}/benchmarks")
 def list_benchmarks(conn_id: str):
-    from aughor.db.benchmarks import load_cases
+    from aughor.agent.benchmarks import load_cases
     return [c.to_dict() for c in load_cases(conn_id)]
 
 
 @router.post("/{conn_id}/benchmarks", status_code=201, dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def create_benchmark(conn_id: str, body: BenchmarkCaseIn):
-    from aughor.db.benchmarks import BenchmarkCase, upsert_case
+    from aughor.agent.benchmarks import BenchmarkCase, upsert_case
     case = BenchmarkCase(
         id=body.id or "",
         question=body.question,
@@ -219,7 +219,7 @@ def create_benchmark(conn_id: str, body: BenchmarkCaseIn):
 
 @router.put("/{conn_id}/benchmarks/{case_id}", status_code=200, dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def update_benchmark(conn_id: str, case_id: str, body: BenchmarkCaseIn):
-    from aughor.db.benchmarks import BenchmarkCase, upsert_case, load_cases
+    from aughor.agent.benchmarks import BenchmarkCase, upsert_case, load_cases
     existing = {c.id: c for c in load_cases(conn_id)}
     if case_id not in existing:
         raise HTTPException(status_code=404, detail="Benchmark case not found")
@@ -237,7 +237,7 @@ def update_benchmark(conn_id: str, case_id: str, body: BenchmarkCaseIn):
 
 @router.delete("/{conn_id}/benchmarks/{case_id}", status_code=200)
 def delete_benchmark(conn_id: str, case_id: str):
-    from aughor.db.benchmarks import delete_case
+    from aughor.agent.benchmarks import delete_case
     ok = delete_case(conn_id, case_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Benchmark case not found")
@@ -247,7 +247,7 @@ def delete_benchmark(conn_id: str, case_id: str):
 @router.post("/{conn_id}/benchmarks/run", dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def run_benchmarks_endpoint(conn_id: str):
     """Generate + execute SQL for every benchmark case and score them."""
-    from aughor.db.benchmarks import run_benchmarks
+    from aughor.agent.benchmarks import run_benchmarks
     try:
         run = run_benchmarks(conn_id)
         return run.to_dict()

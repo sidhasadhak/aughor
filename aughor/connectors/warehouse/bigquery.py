@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from aughor.connectors.base import Connector
-from aughor.agent.state import QueryResult
+from aughor.platform.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
 

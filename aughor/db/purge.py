@@ -9,17 +9,24 @@ re-created connection that happens to reuse the id inherits a previous tenant's
 stale intelligence — a correctness *and* privacy hazard.
 
 Design:
-  • **Best-effort, independent** — each store is purged in its own guarded step so
-    one failure never blocks the rest. Failures are surfaced via ``tolerate`` (a
-    counter), never silently swallowed.
+  • **Platform owns the orchestration, the Agent owns its stores.** The platform
+    purges what it owns inline (uploads, matcache, type-overrides, the data/ file
+    artifacts, the metastore row, canvases) and delegates every AGENT-owned store to
+    **registered purge hooks** (``aughor.kernel.registries.purge_hooks``), so this
+    module never imports the agent. The hooks are registered at startup by
+    ``aughor.agent.bootstrap.register_agent_plugins``.
+  • **Best-effort, independent** — each step / hook is guarded so one failure never
+    blocks the rest. Failures surface via ``tolerate`` (a counter), never silently.
   • **Returns a count summary** — the caller LOGS what was actually removed, so the
-    cascade is observable (a silent purge that secretly no-ops is the bug we are
-    guarding against, per the connection-delete history).
+    cascade is observable (a silent purge that secretly no-ops is the bug we guard
+    against).
   • **Idempotent** — safe to run twice; a missing artifact is a no-op, not an error.
 
-Adding a new connection-keyed store: give it its own ``purge_connection(conn_id)``
-(the store owns its DB/lock/path), add a guarded call below, and a case to
-``tests/unit/test_connection_purge.py`` — otherwise a deleted catalog orphans it.
+Adding a new connection-keyed store: register a hook in
+``aughor.agent.bootstrap`` (``register_purge_hook`` / ``register_schema_purge_hook``
+/ ``register_investigations_purge_hook``) returning ``{label: count}`` — and add a
+case to ``tests/unit/test_connection_purge.py`` — otherwise a deleted catalog
+orphans it.
 """
 from __future__ import annotations
 
@@ -38,32 +45,6 @@ _DATA_DIR = Path("data")
 def _safe(s: str) -> str:
     """The same filename sanitiser the per-connection JSON stores use."""
     return re.sub(r"[^A-Za-z0-9._-]", "_", s)
-
-
-def _purge_qdrant(conn_id: str, counts: dict[str, int]) -> None:
-    """Drop the connection's cached investigations + SQL examples from the vector
-    collections keyed by ``connection_id`` payload. (The connection-KB collection is
-    purged by ``connection_kb.purge_connection``, which owns its own collection.)"""
-    try:
-        from qdrant_client.models import FieldCondition, Filter, MatchValue
-
-        from aughor.semantic.vector_store import delete_by_filter
-        from aughor.tools.prior_analyses import (
-            INVESTIGATIONS_COLLECTION,
-            SQL_EXAMPLES_COLLECTION,
-        )
-    except Exception as e:  # qdrant client / modules unavailable
-        tolerate(e, "purge: qdrant imports", counter="conn.purge.qdrant_import")
-        return
-
-    filt = Filter(must=[FieldCondition(key="connection_id", match=MatchValue(value=conn_id))])
-    for coll in (INVESTIGATIONS_COLLECTION, SQL_EXAMPLES_COLLECTION):
-        try:
-            counts["qdrant_points"] = counts.get("qdrant_points", 0) + (
-                delete_by_filter(coll, filt) or 0
-            )
-        except Exception as e:
-            tolerate(e, f"purge: qdrant {coll}", counter="conn.purge.qdrant")
 
 
 def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[str, int]:
@@ -92,7 +73,7 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
 
     raw, safe = conn_id, _safe(conn_id)
 
-    # ── Uploaded data (the bytes themselves) ─────────────────────────────────────
+    # ── Uploaded data (the bytes themselves) — platform storage ─────────────────
     try:
         from aughor.platform.vending import vend_storage
         root = vend_storage(conn_id, org_id).root
@@ -102,20 +83,15 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
     except Exception as e:
         tolerate(e, "purge: upload dir", counter="conn.purge.uploads")
 
-    # ── Business profile + ontology + materialisation/profile caches ────────────
-    from aughor.db import matcache
-    from aughor.ontology import store as ontology_store
-    from aughor.profile import store as profile_store
-    from aughor.tools import profile_cache
-    for label, mod in (("profile", profile_store), ("ontology", ontology_store),
-                       ("matcache", matcache), ("profile_cache", profile_cache)):
-        try:
-            mod.invalidate(conn_id)
-            counts[label] = 1
-        except Exception as e:
-            tolerate(e, f"purge: {label}", counter=f"conn.purge.{label}")
+    # ── Materialisation cache (platform) ────────────────────────────────────────
+    try:
+        from aughor.db import matcache
+        matcache.invalidate(conn_id)
+        counts["matcache"] = 1
+    except Exception as e:
+        tolerate(e, "purge: matcache", counter="conn.purge.matcache")
 
-    # ── File-pattern intelligence (explorer state, KB, annotations, benchmarks…) ─
+    # ── File-pattern intelligence (platform-owned data/ files) ──────────────────
     counts["exploration"] = _files(f"exploration_{safe}*.json", f"exploration_{raw}*.json")
     counts["episodes"]    = _files(f"episodes_{safe}*.jsonl", f"episodes_{raw}*.jsonl")
     counts["annotations"] = _files(f"annotations_{safe}.json", f"annotations_{raw}.json")
@@ -123,101 +99,46 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
     counts["sync_state"]  = _files(f"sync_state_{safe}.json", f"sync_state_{raw}.json",
                                    f"api_sync/{safe}.duckdb", f"api_sync/{raw}.duckdb")
 
-    # ── Type overrides (nested dict keyed by conn_id) ───────────────────────────
+    # ── Type overrides (platform) ───────────────────────────────────────────────
     try:
         from aughor.db import type_overrides
         counts["type_overrides"] = 1 if type_overrides.purge_connection(conn_id) else 0
     except Exception as e:
         tolerate(e, "purge: type_overrides", counter="conn.purge.type_overrides")
 
-    # ── Briefings: subscriptions + cached narratives ────────────────────────────
-    try:
-        from aughor.briefs import store as brief_store
-        counts["brief_subscriptions"] = brief_store.delete_for_connection(conn_id)
-    except Exception as e:
-        tolerate(e, "purge: brief subscriptions", counter="conn.purge.briefs")
-    try:
-        from aughor.knowledge import briefing
-        counts["briefing_cache"] = briefing.invalidate(conn_id)
-    except Exception as e:
-        tolerate(e, "purge: briefing cache", counter="conn.purge.briefing_cache")
-    try:
-        from aughor.knowledge import patterns
-        counts["patterns_cache"] = patterns.invalidate(conn_id)
-    except Exception as e:
-        tolerate(e, "purge: patterns cache", counter="conn.purge.patterns_cache")
-
-    # ── Monitors + alerts ───────────────────────────────────────────────────────
-    try:
-        from aughor.monitors import store as monitor_store
-        counts["monitors"] = monitor_store.purge_connection(conn_id)
-    except Exception as e:
-        tolerate(e, "purge: monitors", counter="conn.purge.monitors")
-
-    # ── Investigations + evidence claims (evidence keys only by investigation) ──
-    try:
-        from aughor.db import history
-        from aughor.evidence import store as evidence_store
-        inv_ids = history.list_investigation_ids(conn_id, limit=100000)
-        counts["evidence_claims"] = evidence_store.purge_investigations(inv_ids)
-        counts["investigations"] = history.purge_connection(conn_id)
-    except Exception as e:
-        tolerate(e, "purge: investigations/evidence", counter="conn.purge.investigations")
-
-    # ── Canvases (+ their saved artifacts) scoped to this connection ─────────────
+    # ── Canvases (+ their saved artifacts) scoped to this connection (platform) ──
     try:
         from aughor.canvas import store as canvas_store
         counts["canvases"] = canvas_store.purge_connection(conn_id)
     except Exception as e:
         tolerate(e, "purge: canvases", counter="conn.purge.canvases")
 
-    # ── Connection knowledge base (JSON source of truth + its vector points) ─────
-    try:
-        from aughor.semantic import connection_kb
-        counts["knowledge"] = connection_kb.purge_connection(conn_id)
-    except Exception as e:
-        tolerate(e, "purge: connection_kb", counter="conn.purge.knowledge")
+    # ── AGENT-owned derived stores via registered hooks ─────────────────────────
+    # profile, ontology, profile-cache, briefings, monitors, evidence, connection KB,
+    # packs, vector indexes. Runs BEFORE the history rows are deleted below, so the
+    # evidence hook can read the investigation ids it must cascade.
+    from aughor.kernel.registries.purge_hooks import run_purge_hooks
+    for k, v in run_purge_hooks(conn_id, org_id).items():
+        counts[k] = counts.get(k, 0) + v
 
-    # ── Packs: bindings + proposed deltas ───────────────────────────────────────
+    # ── Investigations (platform) — after the evidence hook read the ids ────────
     try:
-        from aughor.packs import bindings, deltastore
-        counts["pack_bindings"] = bindings.purge_connection(conn_id)
-        counts["pack_deltas"] = deltastore.purge_connection(conn_id)
+        from aughor.db import history
+        counts["investigations"] = history.purge_connection(conn_id)
     except Exception as e:
-        tolerate(e, "purge: packs", counter="conn.purge.packs")
+        tolerate(e, "purge: investigations", counter="conn.purge.investigations")
 
-    # ── Derived metastore catalog row (reconciled from connections; drop now so it
-    #    doesn't linger until the next startup sync) ──────────────────────────────
+    # ── Derived metastore catalog row (platform) ────────────────────────────────
     try:
         from aughor.metastore import delete_catalog
         counts["catalog_row"] = 1 if delete_catalog(conn_id, org_id) else 0
     except Exception as e:
         tolerate(e, "purge: metastore catalog", counter="conn.purge.catalog")
 
-    # ── Vector indexes ──────────────────────────────────────────────────────────
-    _purge_qdrant(conn_id, counts)
-
     removed = {k: v for k, v in counts.items() if v}
     if removed:
         logger.info("Purged artifacts for deleted connection %s: %s", conn_id, removed)
     return counts
-
-
-def _del_inv_vectors(query_filter, counts: dict[str, int]) -> None:
-    """Delete matching points from the investigations vector collection (RAG /
-    prior-analyses), so a deleted investigation stops influencing future analysis."""
-    try:
-        from aughor.semantic.vector_store import delete_by_filter
-        from aughor.tools.prior_analyses import INVESTIGATIONS_COLLECTION
-    except Exception as e:
-        tolerate(e, "purge-inv: qdrant imports", counter="inv.purge.qdrant_import")
-        return
-    try:
-        counts["qdrant_points"] = counts.get("qdrant_points", 0) + (
-            delete_by_filter(INVESTIGATIONS_COLLECTION, query_filter) or 0
-        )
-    except Exception as e:
-        tolerate(e, "purge-inv: qdrant delete", counter="inv.purge.qdrant")
 
 
 def purge_investigation_artifacts(inv_id: str) -> dict[str, int]:
@@ -235,19 +156,10 @@ def purge_investigation_artifacts(inv_id: str) -> dict[str, int]:
         counts["investigations"] = 1 if history.delete_investigation(inv_id) else 0
     except Exception as e:
         tolerate(e, "purge-inv: history row", counter="inv.purge.history")
-    try:
-        from aughor.evidence import store as evidence_store
-        counts["evidence_claims"] = evidence_store.purge_investigations([inv_id])
-    except Exception as e:
-        tolerate(e, "purge-inv: evidence", counter="inv.purge.evidence")
-    try:
-        from qdrant_client.models import FieldCondition, Filter, MatchValue
-        _del_inv_vectors(
-            Filter(must=[FieldCondition(key="inv_id", match=MatchValue(value=inv_id))]),
-            counts,
-        )
-    except Exception as e:
-        tolerate(e, "purge-inv: qdrant filter", counter="inv.purge.qdrant_filter")
+    # Evidence + vector points (agent-owned) via the investigation-keyed hooks.
+    from aughor.kernel.registries.purge_hooks import run_investigations_purge_hooks
+    for k, v in run_investigations_purge_hooks([inv_id]).items():
+        counts[k] = counts.get(k, 0) + v
     removed = {k: v for k, v in counts.items() if v}
     if removed:
         logger.info("Purged artifacts for deleted investigation %s: %s", inv_id, removed)
@@ -258,30 +170,17 @@ def purge_investigations_bulk(connection_ids: list[str] | None = None) -> dict[s
     """Clear investigations in bulk — platform-wide (``connection_ids=None``) or only
     those belonging to a set of connections (workspace-scoped clear) — cascading
     evidence claims and vector-index points. Returns a ``{artifact: count}`` summary.
-
-    Vector points are dropped per connection (the efficient connection-keyed filter);
-    chat-only rows carry no vector/evidence, so they're cleared by the row delete.
     """
     from aughor.db import history
+    from aughor.kernel.registries.purge_hooks import run_investigations_purge_hooks
 
     counts: dict[str, int] = {}
     ids = history.all_investigation_ids(connection_ids)
     if not ids:
         return counts
-    try:
-        from aughor.evidence import store as evidence_store
-        counts["evidence_claims"] = evidence_store.purge_investigations(ids)
-    except Exception as e:
-        tolerate(e, "purge-inv-bulk: evidence", counter="inv.purge.bulk_evidence")
-    try:
-        from qdrant_client.models import FieldCondition, Filter, MatchValue
-        for cid in history.investigation_connection_ids(connection_ids):
-            _del_inv_vectors(
-                Filter(must=[FieldCondition(key="connection_id", match=MatchValue(value=cid))]),
-                counts,
-            )
-    except Exception as e:
-        tolerate(e, "purge-inv-bulk: qdrant", counter="inv.purge.bulk_qdrant")
+    # Evidence + vector points (agent-owned) for every investigation being cleared.
+    for k, v in run_investigations_purge_hooks(ids).items():
+        counts[k] = counts.get(k, 0) + v
     try:
         counts["investigations"] = history.purge_ids(ids)
     except Exception as e:
@@ -297,27 +196,18 @@ def purge_schema_artifacts(conn_id: str, schema: str) -> dict[str, int]:
     """Delete every derived artifact tied to a single (connection, schema) when a schema
     is removed — the schema-scoped analogue of :func:`purge_connection_artifacts`.
 
-    Sibling schemas keep their intelligence. Two kinds of cleanup:
-      • **schema-scoped** stores (profile/ontology/briefing/explorer/watermark/pack
-        bindings/canvases) drop only this schema's entries; and
-      • the **connection-level 'All schemas' aggregates** (the bare ``*_{conn}`` profile /
-        exploration / briefing / patterns) are dropped because they are stale the moment
-        any schema is removed — they regenerate from the remaining schemas on next view.
-
-    Investigations and monitors carry no schema column, so they are scoped by the
-    schema-qualified ``schema.table`` references in their stored SQL (best-effort) plus,
-    for investigations, the canvases bound to this schema. Best-effort + observable.
+    Sibling schemas keep their intelligence. Schema-scoped agent stores
+    (profile/ontology/briefing/watermark/pack bindings/monitors) drop only this
+    schema's entries via registered schema hooks; the connection-level aggregates
+    (the bare ``*_{conn}`` profile / exploration / briefing) are dropped because they
+    are stale the moment any schema is removed. Canvases bound to the schema, and the
+    investigations they (or schema-qualified SQL references) imply, cascade their
+    evidence. Best-effort + observable.
     """
-    from aughor.canvas import store as canvas_store
-    from aughor.db import history
-    from aughor.evidence import store as evidence_store
-    from aughor.explorer import watermark
-    from aughor.knowledge import briefing, patterns
-    from aughor.monitors import store as monitor_store
-    from aughor.ontology import store as ontology_store
-    from aughor.packs import bindings
-    from aughor.profile import store as profile_store
-    from aughor.tools import profile_cache
+    from aughor.kernel.registries.purge_hooks import (
+        run_investigations_purge_hooks,
+        run_schema_purge_hooks,
+    )
 
     counts: dict[str, int] = {}
     safe, ssafe = _safe(conn_id), _safe(schema)
@@ -328,36 +218,34 @@ def purge_schema_artifacts(conn_id: str, schema: str) -> dict[str, int]:
         except Exception as e:
             tolerate(e, f"purge-schema: {label}", counter=f"schema.purge.{label}")
 
-    # ── schema-scoped intelligence (siblings untouched) ─────────────────────────
-    _run("profile", lambda: (profile_store.invalidate(conn_id, schema), 1)[1])
-    _run("ontology", lambda: (ontology_store.invalidate(conn_id, schema), 1)[1])
-    _run("briefing_cache", lambda: briefing.invalidate(conn_id, schema))
-    _run("watermark", lambda: watermark.clear_schema(conn_id, schema))
-    _run("pack_bindings", lambda: bindings.purge_schema(conn_id, schema))
+    # ── schema-scoped + connection-aggregate agent stores via hooks ─────────────
+    for k, v in run_schema_purge_hooks(conn_id, schema).items():
+        counts[k] = counts.get(k, 0) + v
 
-    # ── connection-level aggregates — stale once any schema is removed ───────────
-    _run("patterns_cache", lambda: patterns.invalidate(conn_id))
-    _run("profile_cache", lambda: (profile_cache.invalidate(conn_id), 1)[1])
+    # ── connection-level aggregate files (platform) — stale once any schema goes ─
     counts["explorer_files"] = _unlink_exact(
         f"exploration_{safe}__{ssafe}.json", f"exploration_{safe}.json",
         f"episodes_{safe}__{ssafe}.jsonl", f"episodes_{safe}.jsonl",
         f"business_profile_{safe}.json",   # the bare 'All schemas' profile
     )
 
-    # ── canvases bound to this schema → their investigations + evidence ─────────
+    # ── canvases bound to this schema (platform) → their investigations + evidence ─
     canvas_ids: list[str] = []
+
     def _canvases() -> int:
         nonlocal canvas_ids
+        from aughor.canvas import store as canvas_store
         canvas_ids = canvas_store.purge_schema(conn_id, schema)
         return len(canvas_ids)
     _run("canvases", _canvases)
 
     def _investigations() -> int:
+        from aughor.db import history
         ids = history.purge_schema(conn_id, schema, canvas_ids)
-        counts["evidence_claims"] = evidence_store.purge_investigations(ids)
+        for k, v in run_investigations_purge_hooks(ids).items():
+            counts[k] = counts.get(k, 0) + v
         return len(ids)
     _run("investigations", _investigations)
-    _run("monitors", lambda: monitor_store.purge_schema(conn_id, schema))
 
     removed = {k: v for k, v in counts.items() if v}
     if removed:

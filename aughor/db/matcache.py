@@ -24,7 +24,7 @@ from typing import Optional
 
 import duckdb
 
-from aughor.agent.state import QueryResult
+from aughor.platform.contracts.execution import QueryResult
 
 _CACHE_PATH = Path("data") / "mat_cache.duckdb"
 DEFAULT_TTL: float = 3_600.0   # 1 hour
