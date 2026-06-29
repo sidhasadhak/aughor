@@ -497,3 +497,8 @@ Each phase ships value and is independently stoppable.
 6. **Two governance layers, cleanly separated** — UC owns data access; Aughor owns intelligence.
 7. **Inference is vended, never ambient** — a model binding (endpoint + credential) is a scoped
    capability resolved Org → Workspace → Agent (§5b), not global process env.
+8. **Platform ≠ Agent** — the Agent may import the Platform; the **Platform never imports the
+   Agent**. Enforced by `tests/unit/test_platform_agent_boundary.py` (empty allowlist). The agent
+   plugs into the platform's registries (`aughor/kernel/registries`, via `agent/bootstrap`); with
+   nothing registered the platform runs raw. See
+   [`PLATFORM_AGENT_SEPARATION.md`](PLATFORM_AGENT_SEPARATION.md).
