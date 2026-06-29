@@ -9,9 +9,8 @@ top-of-leaderboard text-to-SQL system (Spider 2.0, BIRD) does the opposite: it *
 candidate against the real engine, reads the error or the result, and repairs** — for several
 rounds — then materializes the output in the evaluator's exact CSV contract.
 
-The Spider2 eval harness (``evals/spider2_lite.py``) proved this loop works for SQLite. This module
-lifts that loop into the product as a **backend-agnostic primitive**: it takes plain callables, so
-the same code drives a SQLite reader, a Snowflake cursor, BigQuery, or the eval harness. It is
+This module lifts that loop into the product as a **backend-agnostic primitive**: it takes plain
+callables, so the same code drives a SQLite reader, a Snowflake cursor, or BigQuery. It is
 deliberately dependency-light and side-effect free (no LLM imports, no global state) so it is
 trivially unit-testable and safe to call from any mode.
 
