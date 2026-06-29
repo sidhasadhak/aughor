@@ -40,7 +40,6 @@ import re
 import threading
 import shutil
 import time
-from collections import defaultdict
 from pathlib import Path
 
 import duckdb

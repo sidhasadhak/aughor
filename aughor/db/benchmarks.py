@@ -22,7 +22,6 @@ import re
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 _DATA_DIR = Path(__file__).parent.parent.parent / "data"
 

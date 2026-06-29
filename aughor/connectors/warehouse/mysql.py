@@ -8,7 +8,6 @@ Optional dep:
 """
 from __future__ import annotations
 
-import re
 import time
 from urllib.parse import urlparse
 

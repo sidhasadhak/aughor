@@ -2,12 +2,10 @@
 logs in data/action_logs.json (append-only)."""
 from __future__ import annotations
 
-import json
 import uuid
 from pathlib import Path
 from typing import Optional
 
-import re
 
 from aughor.actions.models import ActionTrigger, ActionLog, is_secret_header
 from aughor.secretvault import encrypt_secret, decrypt_secret

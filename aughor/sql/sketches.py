@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import hashlib
 from functools import lru_cache
-from typing import Iterable, Optional
+from typing import Iterable
 
 _MERSENNE = (1 << 61) - 1     # a Mersenne prime modulus for universal hashing
 _DEFAULT_PERM = 64

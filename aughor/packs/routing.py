@@ -21,17 +21,6 @@ def _tokens(text: str) -> set[str]:
     return {w for w in _WORD.findall((text or "").lower()) if w not in _STOP and len(w) > 1}
 
 
-def _pack_terms(pack: Pack) -> set[str]:
-    terms: set[str] = set()
-    for t in pack.questions.intent_tags:
-        terms |= _tokens(t)
-    for d in pack.manifest.domains:
-        terms |= _tokens(d)
-    for q in pack.questions.canonical:
-        terms |= _tokens(q)
-    return terms
-
-
 def score_pack(question: str, pack: Pack) -> float:
     """Overlap score between a question and a pack. intent_tags/domains count full; canonical
     question tokens count half (broader, noisier)."""

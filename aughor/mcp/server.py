@@ -16,7 +16,7 @@ the API process exactly as they do for the web app.
 """
 from __future__ import annotations
 
-from typing import Annotated, Any, Optional
+from typing import Annotated, Optional
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field

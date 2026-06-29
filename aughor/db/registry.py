@@ -12,7 +12,6 @@ import os
 import sqlite3
 import uuid
 from pathlib import Path
-from typing import Optional
 
 from cryptography.fernet import Fernet
 

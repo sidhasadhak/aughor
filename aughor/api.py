@@ -22,14 +22,6 @@ from aughor.db.connection import open_connection_for
 from aughor.db.registry import list_connections, get_connection_settings
 
 # Shared mutable state — imported here so startup events can populate the dicts
-from aughor.routers._shared import (
-    explorers as _explorers,
-    explorer_tasks as _explorer_tasks,
-    canvas_explorers as _canvas_explorers,
-    canvas_explorer_tasks as _canvas_explorer_tasks,
-    get_schema_cached as _get_schema_cached,
-    invalidate_schema_cache as _invalidate_schema_cache,
-)
 
 # Without an explicit config, app loggers fall back to logging's lastResort
 # handler which drops everything below WARNING — every INFO-level

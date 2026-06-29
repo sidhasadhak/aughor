@@ -1,7 +1,0 @@
-connection: 8090c60f  schema: analytics
-[1] get_schema + autoseed: 231.0s, 15718 chars
-    autoseed wrote 13 analytics.* glossary entries
-[2] infer_business_profile: 180.7s
-    industry='DTC Beauty E-commerce' model='direct-to-consumer (DTC) subscription & one-time purchase retail' metrics=8 questions=8 conf=0.95
-
-Wrote artifacts to evals/beautycommerce_trace/evidence

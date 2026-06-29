@@ -19,7 +19,6 @@ from aughor.metastore.models import (
     Catalog,
     Grant,
     Schema,
-    catalog_securable,
     workspace_principal,
 )
 from aughor.util.time import now_iso as _now

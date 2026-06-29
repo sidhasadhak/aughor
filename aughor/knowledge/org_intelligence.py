@@ -11,7 +11,6 @@ from __future__ import annotations
 import datetime
 import hashlib
 import os
-from typing import Optional
 
 ORG_INTEL_COLLECTION = "org_intelligence"
 _QDRANT_URL = os.getenv("AUGHOR_QDRANT_URL", "http://localhost:6333")

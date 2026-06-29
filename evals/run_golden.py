@@ -337,6 +337,19 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     except Exception:
         pass
 
+    # ── Filter-literal binding (this session's value-index guard): bind a guessed
+    #    enum/literal that matches no row to its confirmed stored value, before execution.
+    #    Mirrors the product's safety.preflight_repair (probe-confirmed + dry-run-gated).
+    try:
+        from aughor.sql.join_guard import bind_filter_literals
+        _bound, _applied = bind_filter_literals(db, final_sql, dialect=db.dialect)
+        if _applied and _bound.strip() != final_sql.strip() and db.dry_run(_bound)[0]:
+            print(f"  [value-bind] {connection_id}: "
+                  + ", ".join(f"{w.bad_value!r}->{w.suggestion!r}" for w in _applied))
+            final_sql = _bound
+    except Exception:
+        pass
+
     # ── Execute (dialect-normalized) → diagnose → retry/fix ──────────────────
     result = db.execute("__eval_full__", final_sql)
     _zero_diag = None

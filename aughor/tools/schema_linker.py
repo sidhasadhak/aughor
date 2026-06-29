@@ -362,6 +362,71 @@ def _score_column(
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+# Sharded/dated table suffixes that explode wide-warehouse schemas: GA_SESSIONS_20160801,
+# events_2021_01, TCGA_HG19_DATA_V0. Stripped to a common stem so a whole family collapses to one
+# representative block + a count note — ReFoRCE's #1 context-reduction lever for enterprise schemas.
+_SHARD_SUFFIX = re.compile(r"_(?:\d{4}_\d{2}_\d{2}|\d{4}_\d{2}|\d{4,8}|v\d+|\d+)$", re.IGNORECASE)
+
+
+def _shard_stem(table_name: str) -> str:
+    bare = table_name.rsplit(".", 1)[-1]
+    prev = None
+    while prev != bare:               # peel repeated suffixes: events_2021_01 → events
+        prev = bare
+        bare = _SHARD_SUFFIX.sub("", bare)
+    return bare.lower()
+
+
+def compress_schema(schema_str: str, *, min_group: int = 3) -> str:
+    """Collapse families of sharded/dated tables (same stem, e.g. ``events_2021_01 … events_2023_12``)
+    to ONE representative block + a count note, leaving every non-sharded table untouched.
+
+    On enterprise warehouses a single logical table is often thousands of dated partitions; including
+    them all blows the context window (ReFoRCE measured 50MB→<2MB from this alone). Recall-safe: a
+    table is only collapsed when it is one of ``>= min_group`` siblings sharing a stem — uniquely
+    named tables always survive in full — and a no-op on ordinary schemas (returns the input string)."""
+    if not schema_str:
+        return schema_str
+    pre: list[str] = []
+    blocks: list[dict] = []
+    cur: Optional[dict] = None
+    for ln in schema_str.splitlines():
+        if ln.startswith("TABLE:"):
+            m = re.match(r"TABLE:\s+(\S+)", ln)
+            cur = {"name": m.group(1) if m else "", "lines": [ln]}
+            blocks.append(cur)
+        elif cur is None:
+            pre.append(ln)
+        else:
+            cur["lines"].append(ln)
+    if len(blocks) < min_group:
+        return schema_str
+
+    groups: dict[str, list[dict]] = {}
+    for b in blocks:
+        groups.setdefault(_shard_stem(b["name"]), []).append(b)
+    if not any(len(g) >= min_group for g in groups.values()):
+        return schema_str   # nothing shards ⇒ unchanged
+
+    out = list(pre)
+    emitted: set[str] = set()
+    for b in blocks:
+        stem = _shard_stem(b["name"])
+        g = groups[stem]
+        if len(g) >= min_group:
+            if stem in emitted:
+                continue                # sibling already represented
+            emitted.add(stem)
+            out.extend(g[0]["lines"])   # keep the first sibling in full as the representative
+            others = [x["name"] for x in g[1:]]
+            sample = ", ".join(others[:3]) + (", …" if len(others) > 3 else "")
+            out.append(f"-- + {len(others)} more sharded tables with the same schema "
+                       f"(e.g. {sample}) — one logical table; query the family by its shared structure")
+        else:
+            out.extend(b["lines"])      # non-sharded table — always preserved in full
+    return "\n".join(out)
+
+
 def link_schema(
     question: str,
     schema_str: str,
@@ -380,6 +445,10 @@ def link_schema(
     """
     if not schema_str or not question:
         return schema_str
+
+    # Collapse sharded/dated table families first (no-op on ordinary schemas), so keyword linking
+    # operates on the compact, de-duplicated schema rather than thousands of date partitions.
+    schema_str = compress_schema(schema_str)
 
     question_lower = question.lower()
     raw_tokens = set(_tokenise(question)) - _STOP_WORDS

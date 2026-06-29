@@ -15,12 +15,9 @@ from typing import TYPE_CHECKING, Optional
 
 from aughor.agent.state import (
     AgentState,
-    ADAReport,
-    ADARecommendation,
     InvestigationFinding,
     InvestigationPhaseResult,
     PhaseKeyNumber,
-    WaterfallEntry,
 )
 from aughor.tools.executor import format_result_for_llm
 from aughor.tools.stats import analyze_query_result
@@ -395,25 +392,6 @@ def _provider(role="coder"):
 _ID_COLUMN_SUFFIXES = ("_id", "_key", "_code", "_num", "_no", "_ref", "_sk", "_nk", "_pk")
 
 
-def _validate_intake_date_column(date_column: str) -> str | None:
-    """
-    Return an error message if date_column looks like an identifier column, not a date.
-    Returns None if date_column looks valid.
-    """
-    if not date_column or date_column.upper() == "NONE":
-        return None  # explicitly set to NONE is valid (no date column found)
-    col_part = _bare(date_column)
-    if any(col_part.endswith(s) for s in _ID_COLUMN_SUFFIXES):
-        return (
-            f"date_column '{date_column}' ends with an identifier suffix ({col_part}) — "
-            "this is not a date column. You MUST use a column whose schema type contains "
-            "DATE, TIMESTAMP, or TIME. Check the schema for the correct date column and update date_column."
-        )
-    return None
-
-
-
-
 def _extract_qualified_tables(schema: str) -> dict[str, str]:
     """Map bare table names → fully-qualified names from schema context.
 
@@ -560,7 +538,6 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
     connection) and could "fix" a query by switching to an out-of-scope table.
     """
     from aughor.agent.prompts import FIX_SQL_PROMPT
-    from aughor.agent.prompts_investigate import PhasePlan
     from pydantic import BaseModel
 
     # Deterministic de-fan (#1 correctness): a SUM of a parent measure across a
@@ -2309,8 +2286,6 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     from aughor.agent.prompts_investigate import (
         BASELINE_PLAN_PROMPT,
         BASELINE_INTERPRET_PROMPT,
-        PhasePlan,
-        PhaseInterpretation,
     )
 
     question = state["question"]
@@ -2572,7 +2547,6 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     """
     from aughor.agent.prompts_investigate import (
         DECOMPOSE_PLAN_PROMPT, DECOMPOSE_INTERPRET_PROMPT,
-        PhasePlan, PhaseInterpretation,
     )
 
     question = state["question"]
@@ -2665,7 +2639,6 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     """
     from aughor.agent.prompts_investigate import (
         DIMENSIONAL_PLAN_PROMPT, DIMENSIONAL_INTERPRET_PROMPT,
-        PhasePlan, PhaseInterpretation,
     )
 
     question = state["question"]
@@ -2767,7 +2740,6 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     """
     from aughor.agent.prompts_investigate import (
         BEHAVIORAL_PLAN_PROMPT, BEHAVIORAL_INTERPRET_PROMPT,
-        PhasePlan, PhaseInterpretation,
     )
 
     question = state["question"]
@@ -2873,7 +2845,6 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         CROSS_SECTION_PLAN_PROMPT, CROSS_SECTION_INTERPRET_PROMPT,
         CROSS_SECTION_ADDITIVE_BLOCK, CROSS_SECTION_RATIO_BLOCK, CROSS_SECTION_AVG_BLOCK,
         CROSS_SECTION_RATIO_INTERPRET_PROMPT,
-        PhasePlan, PhaseInterpretation,
     )
     question = state["question"]
     phases = state.get("investigation_phases", [])

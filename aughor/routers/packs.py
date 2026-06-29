@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from aughor.kernel.flags import flag_enabled
 from aughor.packs import (
     load_pack, list_packs, validate_pack, PacksError,
-    schema_facts_from_table_cols, propose_bindings, save_binding, load_binding,
+    schema_facts_from_table_cols, save_binding, load_binding,
 )
 from aughor.packs.resolver import binding_report
 
