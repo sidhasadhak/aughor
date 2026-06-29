@@ -430,6 +430,12 @@ class AgentState(TypedDict):
     query_mode: Optional[Literal["direct", "investigate", "explore", "final_text"]]
     route_reasoning: Optional[str]
     route_confidence: Optional[float]
+    # Deterministic complexity assessment → cost-tiered routing (Part 2). The tier the
+    # run was routed at, its score, and whether the question looked under-specified
+    # (the seam a later clarification step gates on).
+    route_complexity_tier: Optional[str]
+    route_complexity_score: Optional[float]
+    route_ambiguous: Optional[bool]
 
     # Consistency check: contradictions found before synthesis (investigate mode only)
     unresolved_tensions: list[str]

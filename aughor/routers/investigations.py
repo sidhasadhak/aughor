@@ -1189,6 +1189,16 @@ async def _stream_chat(
             except Exception:
                 _compiled_sql = None
 
+        # Deterministic complexity assessment (cost-tiered routing, Part 2). We assess
+        # every question and surface the tier on the Trust Receipt, but the user-facing
+        # SQL answer deliberately stays on the frontier "coder" model: a deceptively
+        # "simple" question can be grain-tricky (e.g. "items per order"), and Aughor's
+        # proven combination is the frontier model + deterministic guards — routing the
+        # answer to a cheaper model would just shift work onto the guards. The cost lever
+        # is applied to the robust routing *decision* instead (classify_question). See
+        # docs/NL2SQL_WINNING_FORMULA_2026.md.
+        from aughor.agent.complexity import assess_complexity
+        _cx = assess_complexity(question)
         # Run the (blocking) LLM call in a worker thread so the event loop stays
         # free to serve other pages (catalog/inbox/home) while the query runs.
         answer: _ChatAnswer = await asyncio.to_thread(
@@ -1528,6 +1538,11 @@ async def _stream_chat(
                 _guards.append(("flagged", "guard:measure_grain", "a measure may be summed at the wrong grain (per-unit vs per-line); caveated inline"))
             if _rcpt.get("id_arithmetic"):
                 _guards.append(("flagged", "guard:id_arithmetic", "a measure was multiplied by an id/key column; magnitude caveated inline"))
+            if _cx.ambiguous:
+                # The #1 NL2SQL challenge (ambiguity): the question was under-specified.
+                # Surface it honestly on the receipt rather than silently guessing.
+                _guards.append(("flagged", "guard:ambiguous_question",
+                                "the question was under-specified (no explicit metric/time window); answered with a default reading — refine for a different cut"))
             for _tq in (_trusted_used or []):
                 _guards.append(("trusted", f"query:{(_tq.get('question') or '')[:60]}", _tq.get('note')))
             _write_answer_receipt(
@@ -1535,7 +1550,8 @@ async def _stream_chat(
                 question=question, sqls=[final_sql], headline=_grounded_headline or question,
                 schema=schema, connection_id=connection_id, canvas_id=canvas_id,
                 guard_edges=_guards,
-                payload_extra={"chart_type": answer.chart_type, "row_count": len(result.rows)},
+                payload_extra={"chart_type": answer.chart_type, "row_count": len(result.rows),
+                               "complexity_tier": _cx.tier},
             )
 
             # Self-improving loop: notice ontology gaps from this real query (e.g. a

@@ -88,22 +88,34 @@ rather than chasing accuracy past the model ceiling. The grounding substrate Aug
 already has is the antidote BIRD-INTERACT calls for; routing + clarification are the
 missing orchestration around it.
 
-## 5. Implementation (this round): the deterministic complexity router
+## 5. Implementation (shipped): the deterministic complexity router
 
-Build the **ASSESS → ROUTE** half first (the clarification half is the larger 2030
-interactive arc; this lays its foundation — the same assessment signal gates it later):
+Built the **ASSESS → ROUTE** half (the clarification half is the larger 2030 interactive
+arc; this lays its foundation — the same assessment gates it later). Files:
+`aughor/agent/complexity.py`, `tests/unit/test_complexity.py`, wired in
+`aughor/agent/nodes.py` (`classify_question`/`route_question`) and
+`aughor/routers/investigations.py` (the Insight chat receipt).
 
-- A deterministic `assess_complexity(question, schema_context) -> ComplexityVerdict`
-  scoring difficulty from cheap, explainable signals: candidate-table/column count
-  (schema-link breadth), implied joins, aggregation/ranking/temporal/window/nested
-  markers in the question, and ambiguity markers (vague references, missing time window,
-  under-specified metric). Tiers: `simple | moderate | complex`.
-- A routing policy `route_for(verdict)` → the model role/binding + pipeline depth,
-  consumed through the existing inference plane (per-agent model override) so a cheap
-  model serves simple questions and the frontier model serves complex ones.
-- Wired at the question-routing seam; metered (the receipt records the tier + the model
-  chosen) so the leverage is observable and the policy is tunable.
+- **`assess_complexity(question, schema_context="") -> ComplexityVerdict`** — deterministic,
+  explainable signals (causal / comparison / aggregation / temporal / multi-step / vague
+  markers + schema-link breadth). Tiers `simple | moderate | complex`, a 0–1 score, and an
+  `ambiguous` flag. Pure + unit-tested.
+- **`model_role_for(verdict) -> Role`** — `simple → "fast"`, else `"coder"`. Routes by the
+  inference plane's *role* (not a hardcoded model), so the operator decides how cheap
+  "fast" is. It **never downgrades a hard question**.
 
-Acceptance: deterministic + unit-tested; the receipt shows the chosen tier/model; on the
-real path a simple question demonstrably binds the cheaper tier and a complex one the
-frontier tier, with no regression to the trust guards.
+**The key refinement (and why it is *more* aligned with Aughor's conclusions):** apply the
+cost tier to the **robust routing decision** (`classify_question` picks the classifier model
+by tier), but keep the **user-facing SQL answer on the frontier model**. A deceptively
+"simple" question can be grain-tricky ("items per order"), and Aughor's *proven* combination
+is **frontier model + deterministic guards** — routing the answer to a cheaper model would
+just shift work onto the guards (exactly the "machinery doesn't beat guards" lesson). So the
+chat answer path stays on `"coder"` and instead **surfaces the assessed tier + ambiguity on
+the Trust Receipt** (`complexity_tier`, `guard:ambiguous_question`) and in run state
+(`route_complexity_*`) + a `route.tier.*` stats counter.
+
+**Shipped acceptance:** deterministic + unit-tested (9 cases); routing decision tiered by
+complexity; the tier + ambiguity are observable on every Insight receipt; zero regression to
+the trust guards (the live caveat test still fires). The answer-path cost tier is a
+config-gated future step (bind "fast" to a quality-validated cheap model first), and the
+`ambiguous` flag is the seam for the interactive clarification arc.
