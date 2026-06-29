@@ -26,7 +26,6 @@ from aughor.db.history import (
 )
 from aughor.db.registry import BUILTIN_ID
 from aughor.routers._shared import (
-    explorers as _explorers,
     explorers_for_connection as _explorers_for_connection,
     get_schema_cached as _get_schema_cached,
 )
@@ -1749,7 +1748,7 @@ async def _stream_investigation(
     canvas_scope_tables: list[str] = []
     if canvas_id:
         try:
-            from aughor.canvas.store import get_canvas, resolve_connection_id
+            from aughor.canvas.store import get_canvas
             from aughor.tools.schema import build_canvas_schema_context
             canvas = get_canvas(canvas_id)
             if canvas and canvas.primary_connection_id:

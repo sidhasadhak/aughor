@@ -84,7 +84,7 @@ def _result_signature(rows: Optional[list]) -> str:
             return f"{round(v, 2):.2f}"
         if isinstance(v, int):
             # 5 and 5.0 should hash identically
-            return f"{float(v):.2f}" if False else str(v)
+            return str(v)
         if v is None:
             return "∅"
         return str(v).strip()

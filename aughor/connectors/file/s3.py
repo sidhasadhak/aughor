@@ -14,9 +14,7 @@ Note: httpfs is bundled with duckdb>=0.8 — no pip install needed.
 """
 from __future__ import annotations
 
-import re
 import time
-from pathlib import PurePosixPath
 from urllib.parse import urlparse, parse_qs
 
 import duckdb

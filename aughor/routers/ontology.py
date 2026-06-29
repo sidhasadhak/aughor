@@ -122,7 +122,7 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
 
 
 def _latest_fingerprint(connection_id: str, schema_name: Optional[str] = None) -> Optional[str]:
-    from aughor.ontology.store import _load, _schema_prefix, _conn_prefix
+    from aughor.ontology.store import _load, _schema_prefix
     cache = _load()
     effective = _resolve_schema(connection_id, schema_name)
     prefix = _schema_prefix(connection_id, effective)

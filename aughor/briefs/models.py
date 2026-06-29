@@ -1,7 +1,6 @@
 """Brief subscription model — binds a connection's digest to a schedule + channel."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, Field

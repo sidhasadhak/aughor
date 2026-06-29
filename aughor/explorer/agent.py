@@ -21,9 +21,7 @@ import logging
 import os
 import re
 import time
-from functools import lru_cache
 
-from aughor.kernel.errors import tolerate
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -32,16 +30,12 @@ if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection
 
 from aughor.explorer.models import (
-    DistributionProfile,
     DistributionShape,
     ExplorationPhase,
     ExplorationStatus,
-    JoinVerificationResult,
-    LifecycleMap,
     LifecycleTransition,
     NullMeaning,
     NullMeaningResult,
-    OntologyInsight,
 )
 from aughor.explorer import store as _store
 from aughor.explorer.frontier import signature_fields
@@ -1852,7 +1846,6 @@ class SchemaExplorer:
         self._episodes.phase = "domain_intel"
         _loop = asyncio.get_running_loop()
         from pydantic import BaseModel as _BM
-        from typing import Literal as _Lit
         from aughor.llm.provider import get_provider
         from aughor.ontology.store import load_latest_ontology
         from aughor.sql.writer import SqlWriter

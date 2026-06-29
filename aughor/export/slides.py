@@ -9,11 +9,9 @@ from __future__ import annotations
 
 import io
 import re
-from typing import Optional
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
-from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
 
 from .document import Block, ExportDoc

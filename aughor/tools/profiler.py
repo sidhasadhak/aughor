@@ -843,19 +843,6 @@ def _safe_int(v) -> Optional[int]:
         return None
 
 
-def _resolve_n_distinct(n_distinct, row_count: Optional[int]) -> Optional[int]:
-    """Convert pg n_distinct fraction sentinel to absolute count."""
-    if n_distinct is None:
-        return None
-    if isinstance(n_distinct, int) and n_distinct >= 0:
-        return n_distinct  # already absolute (includes -1 unique sentinel below)
-    if n_distinct == -1:
-        return row_count   # unique column
-    if isinstance(n_distinct, float) and n_distinct < 0 and row_count:
-        return max(1, int(abs(n_distinct) * row_count))
-    return None
-
-
 def build_table_profile(
     conn: "DatabaseConnection",
     table: str,

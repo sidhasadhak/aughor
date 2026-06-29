@@ -7,7 +7,6 @@ and `namespace` through monkey-patching at the registry layer.
 """
 from __future__ import annotations
 
-from abc import abstractmethod
 from typing import Literal
 
 from aughor.db.connection import DatabaseConnection

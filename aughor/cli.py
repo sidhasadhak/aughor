@@ -16,9 +16,7 @@ from typing import Any, Optional
 import click
 import duckdb
 from rich import box
-from rich.columns import Columns
 from rich.console import Console
-from rich.live import Live
 from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.panel import Panel
@@ -26,7 +24,6 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.table import Table
-from rich.text import Text
 
 console = Console()
 

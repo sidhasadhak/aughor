@@ -9,7 +9,6 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from aughor.db.registry import BUILTIN_ID
 
 router = APIRouter(tags=["canvas"])
 

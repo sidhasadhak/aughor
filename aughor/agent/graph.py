@@ -10,9 +10,7 @@ from langgraph.graph import END, StateGraph
 
 from aughor.agent.nodes import (
     answer_text_only,
-    decompose_question,
     exploratory_scan,
-    plan_and_execute,
     plan_queries,
     execute_planned_queries,
     replan,
@@ -20,7 +18,6 @@ from aughor.agent.nodes import (
     route_after_replan,
     route_question,
     score_evidence,
-    should_continue,
     synthesize_report,
 )
 from aughor.agent.investigate import (

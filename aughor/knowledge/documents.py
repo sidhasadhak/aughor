@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 CHUNK_CHARS = 1_600    # ~400 tokens

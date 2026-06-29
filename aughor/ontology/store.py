@@ -15,7 +15,6 @@ tell which fields were user-provided vs auto-extracted.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Optional
 

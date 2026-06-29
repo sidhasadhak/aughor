@@ -10,7 +10,7 @@ restart resets any overrides (they can be re-applied via the API or config).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

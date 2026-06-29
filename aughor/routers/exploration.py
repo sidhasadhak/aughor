@@ -218,7 +218,6 @@ class FixAllRequest(BaseModel):
 
 @router.get("/exploration/{conn_id}/status")
 def get_exploration_status(conn_id: str, schema: str | None = None):
-    from aughor.explorer import store as _expl_store
     explorer = _explorer_for(conn_id, schema)
     if explorer:
         return explorer._status.to_dict()
@@ -290,7 +289,6 @@ def time_to_first_insight_kpi(limit: int = 200):
 
 @router.get("/exploration/{conn_id}/findings")
 def get_exploration_findings(conn_id: str, schema: str | None = None):
-    from aughor.explorer import store as _expl_store
     state = _load_state(conn_id, schema)
     distributions = state.get("distributions", {})
 
@@ -351,7 +349,6 @@ def _annotate_insights_triage(by_domain: dict, profile) -> None:
 
 @router.get("/exploration/{conn_id}/domains")
 def get_domain_insights(conn_id: str, schema: str | None = None):
-    from aughor.explorer import store as _expl_store
     state = _load_state(conn_id, schema)
     budgets  = state.get("domain_budgets", {})
     coverage = state.get("domain_coverage", {})
@@ -374,7 +371,6 @@ def get_domain_insights(conn_id: str, schema: str | None = None):
 @router.get("/exploration/{conn_id}/patterns")
 def get_connection_patterns(conn_id: str, refresh: bool = False, schema: str | None = None):
     """Return extracted patterns from domain intelligence for this connection."""
-    from aughor.explorer import store as _expl_store
     from aughor.knowledge.patterns import get_patterns
     by_domain = _domain_insights_for(conn_id, schema)
     if _needs_filter(conn_id, schema):
@@ -465,7 +461,6 @@ def _metric_moves_provider(conn_id: str, profile):
 def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = None,
                       workspace_id: str | None = None):
     """Generate (or return cached) an LLM synthesis narrative for the connection."""
-    from aughor.explorer import store as _expl_store
     from aughor.knowledge.patterns import get_patterns
     from aughor.knowledge.briefing import get_briefing
 
@@ -910,7 +905,6 @@ def get_canvas_exploration_episodes(canvas_id: str, phase: str = "", limit: int 
 @router.post("/exploration/canvas/{canvas_id}/resume", dependencies=[gate(Capability.AUTO_EXPLORATION)])
 async def resume_canvas_exploration(canvas_id: str):
     from aughor.canvas.store import get_canvas
-    from aughor.explorer.agent import SchemaExplorer
     canvas = get_canvas(canvas_id)
     if not canvas or not canvas.scopes:
         raise HTTPException(status_code=404, detail="Canvas not found")
@@ -939,7 +933,6 @@ def stop_canvas_exploration(canvas_id: str):
 @router.post("/exploration/canvas/{canvas_id}/restart", dependencies=[gate(Capability.AUTO_EXPLORATION)])
 async def restart_canvas_exploration(canvas_id: str):
     from aughor.canvas.store import get_canvas
-    from aughor.explorer.agent import SchemaExplorer
     from aughor.explorer.store import save_canvas, _empty
     canvas = get_canvas(canvas_id)
     if not canvas or not canvas.scopes:
