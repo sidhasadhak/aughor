@@ -4,6 +4,12 @@
 notes in `docs/SPIDER2_REATTEMPT_2026-06-28.md`. All numbers below are **measured**, not estimated,
 unless explicitly flagged.*
 
+> **STATUS (2026-06-29, post-consolidation):** the offline benchmark arc is **concluded**, and the
+> eval *harness* has been removed — see **§14**. References below to `evals/spider2_lite.py`, the
+> interactive harness, B6 probe-repair, etc. are **historical**; what survives in the product is the
+> set of deterministic trust-guards (still wired + tested in `aughor/`). §14 is the authoritative
+> current state.
+
 ---
 
 ## TL;DR
@@ -403,3 +409,32 @@ This **corroborates CIDR-2026 on Aughor's own output**: fan-out (E2) is by far t
 defect (20.7% fire, a 92× over-count in the worst case). The filter examples are exactly the silent-
 zero bug the high-cardinality value-binding now fixes. Confirms the deterministic-guard lever is the
 right one — measured, not asserted.
+
+---
+
+## 14. Post-arc consolidation (2026-06-29) — what survives
+
+The offline benchmark arc is **concluded**: glm-5.2 caps at ~56% on Lite-local (oracle ~67% on the
+toughest 15 = a proven base-model ceiling, not an engineering gap), the LSB session is archived, and
+both tracks beyond the local SQLite slice remain credential-gated. So the **eval scaffolding was
+removed** and only the durable product value kept.
+
+**Removed (disposable measurement scaffolding):** `evals/spider2_lite.py`, `evals/run_golden`'s
+siblings `guard_coverage` / `validate_probe_repair` / `interactive` / `reliability`, `spider2_dev_set`,
+the two harness-only tests, the **B6** module `aughor/sql/probe_repair.py` (unwired; validation harness
+gone), and the whole archived **LiveSQLBench** harness + 50 MB of output.
+
+**Survives — the real output, all wired into `aughor/` and test-covered:**
+- `sql/grain_guard.py` (fan-out) and `sql/trust_checks.py` (CIDR-E1) → `/query/validate`
+- `sql/join_guard.py` filter-literal binding + `sql/value_index.py` (CHESS high-cardinality) → `safety.preflight_repair`
+- `sql/query_log_miner.py` → `build_schema_context`
+- `sql/closed_loop.py` (execute→repair primitive), `llm/provider.py` resilience, `tools/schema_linker.py`
+  compression, `connectors/warehouse/snowflake.py` `export_csv` + `db/dialects.py` Snowflake rules
+- 13 product tests covering the above (`test_grain_guard`, `test_value_index`, `test_trust_checks`,
+  `test_query_log_miner`, `test_closed_loop_substrate`, `test_provider_resilience`, `test_filter_binding`,
+  `test_schema_compression`, `test_export_contract`, …)
+
+**Net:** the benchmark was the stress-test; the **deterministic trust-guards are the permanent win**.
+The conclusions (the ~56% ceiling, the deterministic-guards-beat-machinery meta-pattern proven 4×, the
+CIDR ~53–66%-wrong-gold reframe, and the BIRD-INTERACT 2030 interactive-agent direction) live on in
+this doc, `docs/INTERACTIVE_DATA_AGENT_VISION_2030.md`, and memory.

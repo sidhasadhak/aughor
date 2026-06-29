@@ -128,13 +128,13 @@ that clarifies when it matters, recovers when it errs, and remembers what it jus
 
 Each stage is BUILT → WIRED → TESTED → **LEVERAGED** (proven on the real path), measured before trusted.
 
-1. **Interactive eval harness** ✅ **BUILT** (`evals/interactive.py`, commit `2df7833`) — a function-
-   driven user simulator (AMB/LOC/**UNA** anti-leak) + an episode runner that scores *submitted* SQL
-   against executable gold under a clarification budget, so it **rewards good clarification and
-   penalizes blind guessing** (the property static-transcript benchmarks lack). Built **first** per the
-   "let evidence pick the lever" discipline. *Next (leverage):* a live run against Aughor's real
-   pipeline + a small ambiguity-annotated task set, to produce the baseline (how much does ambiguity
-   cost a never-asking system today?) that picks the next feature.
+1. **Interactive eval harness** — ⊘ *prototyped then removed.* A function-driven user simulator
+   (AMB/LOC/**UNA** anti-leak) + an episode runner that scored *submitted* SQL against executable gold
+   under a clarification budget — rewarding good clarification, penalizing blind guessing (the property
+   static-transcript benchmarks lack). It was built first per the "let evidence pick the lever"
+   discipline, then **removed in the 2026-06-29 consolidation** with the rest of the offline eval
+   harness (the offline benchmark arc concluded — see SPIDER2_PROGRESS §14). The *design* above is the
+   durable artifact; rebuild it against Aughor's real pipeline when the interactive axis is taken up.
 2. **Budget-aware ambiguity clarification** *(next feature)* — when detected candidate-disagreement
    would *materially change the answer*, ask **one** targeted question within a budget instead of
    silently guessing. Reuses SOMA detection + the FP-gate discipline; validated by harness (1).
