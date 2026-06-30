@@ -893,6 +893,7 @@ async def _stream_chat(
     request: Request,
     session_id: str = "",
     canvas_id: Optional[str] = None,
+    skip_clarify: bool = False,
 ) -> AsyncGenerator[str, None]:
     # Resolve canvas scope so table names resolve correctly AND the model only
     # sees in-scope tables. Multi-dataset connections (local_upload) expose every
@@ -1263,6 +1264,32 @@ async def _stream_chat(
         # answer to a cheaper model would just shift work onto the guards. The cost lever
         # is applied to the robust routing *decision* instead (classify_question). See
         # docs/NL2SQL_WINNING_FORMULA_2026.md.
+        # SOMA structural-ambiguity probe (3b) — execution-grounded. On a structural-suspect
+        # question the cheap deterministic clarify left quiet (e.g. "top products" — by units or
+        # revenue?), generate candidate readings, execute them on THIS connection, and ask only if
+        # their results materially diverge (the labels become grounded chips). LLM machinery + N
+        # executions, so it is opt-in (AUGHOR_SOMA_CLARIFY) and fail-open. Greenlit by the measurement
+        # chain (evals/ambiguity_eval + evals/its_structural).
+        if (not skip_clarify
+                and os.getenv("AUGHOR_SOMA_CLARIFY", "0").lower() in ("1", "true", "yes", "on")):
+            try:
+                from aughor.agent.soma import (is_structural_suspect, generate_candidate_readings,
+                                               assess_structural_ambiguity)
+                if is_structural_suspect(question):
+                    _cands = await asyncio.to_thread(generate_candidate_readings, question, schema)
+                    if len(_cands) >= 2:
+                        def _soma_ex(_sql):
+                            _r = db.execute("soma_probe", _sql)
+                            return (not _r.error, _r.rows or [], _r.error or "")
+                        _sv = await asyncio.to_thread(
+                            assess_structural_ambiguity, question, _cands, _soma_ex)
+                        if _sv.ambiguous:
+                            yield _sse("clarify", _sv.to_event())
+                            yield _sse("done", {})
+                            return
+            except Exception:
+                logger.debug("SOMA probe failed; proceeding to answer", exc_info=True)
+
         from aughor.agent.complexity import assess_complexity
         _cx = assess_complexity(question)
         # Run the (blocking) LLM call in a worker thread so the event loop stays
@@ -2525,7 +2552,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     else:
         async for sse in _metered_stream(
             _stream_chat(req.question, conn_id, req.history, request,
-                         session_id=req.session_id, canvas_id=req.canvas_id),
+                         session_id=req.session_id, canvas_id=req.canvas_id,
+                         skip_clarify=req.skip_clarify),
             budget=_insight_budget(conn_id),
         ):
             yield sse

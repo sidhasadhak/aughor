@@ -304,8 +304,16 @@ router. The merged front door works *before* any of the hard parts (memory, clar
     diverges from the model's default reading, asking recovers correctness completely.
   - **⇒ 3b SOMA candidate-disagreement is GREENLIT.** The full measure-before-trust chain is satisfied:
     the deterministic detector can't see structural ambiguity (0/6), and on divergent cases the model's
-    default is wrong (0/3) while asking fixes it (3/3). Building it (generate N readings on
-    structural-suspect turns, ask only on material divergence — cost-tiered) is now de-risked.
+    default is wrong (0/3) while asking fixes it (3/3).
+  - **✅ SHIPPED (2026-06-30):** `aughor/agent/soma.py` — `is_structural_suspect` (cheap gate),
+    `generate_candidate_readings` (the model lists distinct labelled interpretations), and
+    `assess_structural_ambiguity` (execute each, group by result signature, ask **only when ≥2 groups
+    materially diverge**; the labels become grounded option chips). Wired as a pre-flight in
+    `_stream_chat` (reuses the open connection, fail-open), behind `AUGHOR_SOMA_CLARIFY` (default off —
+    LLM machinery + N executions). The core is pure (injected generate/execute) — 7 tests. **Live-verified
+    with the real model:** "what is our top product?" → 3 distinct readings (*by total revenue / by units
+    sold / by order count*), execution confirmed all three diverge → `clarify` with those exact grounded
+    chips. This is the structural class the deterministic detector was blind to, now solved.
     *Honest caveat: small n; tasks chosen to measure the upside on divergent cases (the "wasted ask" when
     the default was already right costs one extra turn, not a wrong answer). Value-term option chips stay
     text-box — term→column mapping is semantic (LLM/gated), wrong chips worse than none.*
