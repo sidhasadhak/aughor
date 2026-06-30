@@ -14,6 +14,8 @@ def test_underspecified_question_asks():
     d = assess_clarification("How is performance lately?")
     assert d.should_ask and d.source == "underspecified"
     assert "metric" in d.question.lower()
+    # deterministic time-window chips are offered (the one axis we can ground without schema/model)
+    assert any("30 days" in o for o in d.options) and len(d.options) >= 3
 
 
 def test_vague_quality_question_asks():

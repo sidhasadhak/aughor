@@ -76,7 +76,9 @@ def assess_clarification(question: str) -> ClarifyDecision:
         return ClarifyDecision(
             True, source="underspecified",
             question="Could you be a bit more specific — which metric, and over what time period?",
-            options=[],
+            # Time is the one axis we can ground deterministically (no schema / no model):
+            # offer standard windows as quick chips; the user types the metric in the box.
+            options=["last 7 days", "last 30 days", "this quarter", "year to date"],
             reason="the question is under-specified (no concrete metric or time window)",
         )
 
