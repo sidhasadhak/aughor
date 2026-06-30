@@ -806,6 +806,10 @@ function InsightBrief({
   const proseText = turn.insight?.narrative?.trim() || computeSummary(turn.columns, turn.rows, turn.sql) || "";
   const anomalies = (turn.insight?.anomalies ?? []).filter(Boolean);
   const inspect = turn.inspectWarning;
+  // The narrative + anomalies ride along the follow-ups narrator call (no extra cost),
+  // but for a direct lookup they're noise — reveal them on demand via "Explain the data".
+  const [explained, setExplained] = useState(false);
+  const hasExplanation = !!(proseText || anomalies.length);
 
   return (
     <Brief>
@@ -824,7 +828,6 @@ function InsightBrief({
       )}
 
       {turn.headline && <BriefHeadline>{turn.headline}</BriefHeadline>}
-      {proseText && <BriefProse text={proseText} />}
 
       {inspect && inspect.issues.length > 0 && (
         <p className="aug-text-sm text-amber-400/90 leading-relaxed flex items-start gap-1.5">
@@ -838,7 +841,23 @@ function InsightBrief({
 
       <ResultFigure turn={turn} onShowSource={onShowSource} />
 
-      {anomalies.length > 0 && <BriefBullets items={anomalies} />}
+      {/* Explain the data — on-demand interpretation, so a direct lookup leads with
+          the chart + numbers instead of unrequested narration. */}
+      {hasExplanation && !explained && (
+        <button
+          onClick={() => setExplained(true)}
+          className="self-start flex items-center gap-1.5 aug-text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+        >
+          <InformationIcon label="" size="small" />
+          Explain the data
+        </button>
+      )}
+      {explained && (
+        <>
+          {proseText && <BriefProse text={proseText} />}
+          {anomalies.length > 0 && <BriefBullets items={anomalies} />}
+        </>
+      )}
 
       {turn.followups.length > 0 && (
         <BriefSection label="Follow-ups">
