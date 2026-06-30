@@ -1,8 +1,9 @@
 # One door: merging Insight and Deep into a single conversational analyst
 
-*Design document — 2026-06-30. Status: **Phases 0–1 shipped** (the unified `/ask` door + router,
-behind `AUGHOR_UNIFIED_ASK`; the frontend now defaults to `/ask` with the auto + transparency depth
-banner + one-click re-run); Phases 2–5 proposed. Companion to
+*Design document — 2026-06-30. Status: **Phases 0–2 shipped** (the unified `/ask` door + router,
+behind `AUGHOR_UNIFIED_ASK`; the frontend defaults to `/ask` with the auto + transparency depth banner
++ one-click re-run; and the interactive eval harness is rebuilt with a baseline measured); Phases 3–5
+proposed. Companion to
 [`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md)
 (what the modes share today), [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md)
 (the ASSESS→ROUTE formula this productizes), and
@@ -153,9 +154,12 @@ SQL-column-level only). The `ambiguous` flag on `ComplexityVerdict` is the docum
 
 **Design:**
 
-- When the deterministic `ambiguous` flag fires **and** the disagreement would *materially change the
-  answer* (reuse SOMA candidate-disagreement + the FP-aware critique gate so we don't ask noise),
-  emit a **`clarify` SSE event** with one targeted question + 2–4 grounded options, instead of guessing.
+- Detection is **two-source** (the Phase-2 harness proved one source is not enough — see §8 Phase 2):
+  the deterministic `ambiguous` flag catches *under-specification* (vague pronoun, missing metric/time),
+  but *value/term* ambiguity ("urgent" → which status?) needs **SOMA candidate-disagreement**. Ask when
+  *either* fires **and** the disagreement would *materially change the answer* (the FP-aware critique gate
+  keeps us from asking noise) — emit a **`clarify` SSE event** with one targeted question + 2–4 grounded
+  options, instead of guessing.
 - **Budgeted** — at most one clarification per turn by default (BIRD-INTERACT's `τ = m_amb + λ_patience`;
   over-asking is a failure mode the paper stress-tests). If the user ignores it, fall back to the
   best-guess answer *with the assumption stated* (the honesty invariant).
@@ -256,7 +260,17 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   override each stream the correct `route` receipt first; tsc + eslint clean. *Remaining within this
   arc: the render-selector keyed on the actual result shape (§5) — today output structure still follows
   the route→mode mapping, i.e. the two existing renderers.*
-- **Phase 2 — eval harness (rebuild).** The measurement substrate, **before** the clarification feature.
+- **Phase 2 — eval harness (rebuild). ✅ SHIPPED (2026-06-30).** `evals/interactive.py` rebuilt: a
+  function-driven user simulator (`AMB`/`LOC`/**`UNA`** anti-leak + gold-SQL scrub) + an episode runner
+  that scores *submitted* SQL against executable gold under a clarification budget — rewarding good
+  clarification, penalizing blind guessing. Adds the Phase-3 seam: `clarifying_system(generate_fn,
+  should_ask_fn)` + `complexity_should_ask` (backed by Aughor's real `assess_complexity(...).ambiguous`)
+  alongside the `single_shot_system` baseline. 14 tests; ruff clean. **Baseline measured (offline,
+  sqlite): never-asks 0% vs always-asks 100% on a value-ambiguity task — and the key finding: the
+  deterministic `ambiguous` flag catches *under-specification* (vague pronoun, missing metric/time) but
+  NOT *value/term* ambiguity ("urgent" → which status?), so it does NOT fire there (`complexity_should_ask`
+  → 0% ask).** → Phase 3 must gate on SOMA candidate-disagreement materiality, not the `ambiguous` flag
+  alone. (This is exactly why the harness is built first: it names the biggest gap before we build.)
 - **Phase 3 — ask-vs-guess clarification (§4).** The chosen priority capability, validated by Phase 2.
 - **Phase 4 — conversational session state (§6).** The BIRD-INTERACT lift; multi-turn episodes in the
   harness.
