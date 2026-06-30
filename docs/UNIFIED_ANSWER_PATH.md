@@ -1,11 +1,12 @@
 # One door: merging Insight and Deep into a single conversational analyst
 
-*Design document — 2026-06-30. Status: **Phases 0–5 shipped — the phased arc is complete.** The unified
-`/ask` door + router; the auto + transparency frontend (answer declutter + on-demand "Explain the data");
-the interactive eval harness; ask-vs-guess clarification; conversational session state (follow-up
-detection + result-digest context + deep-turn context); and progressive escalation (offer depth when a
-quick answer is inconclusive) — all live-verified. Open deepenings: 3b (deferred by measure-before-trust),
-4b-remainder (largely covered), explore-mode declutter, the Scout filter-literal fix (ROADMAP). Companion to
+*Design document — 2026-06-30. Status: **Phases 0–5 + the 3b deepening shipped — the arc is complete
+(PR #89, merged).** The unified `/ask` door + router; the auto + transparency frontend (answer declutter
+across quick/deep/explore + on-demand "Explain the data"); the interactive eval harness; ask-vs-guess
+clarification (deterministic two-source **+ SOMA candidate-disagreement**); conversational session state
+(follow-up detection + result-digest + deep-turn context); progressive escalation; and the Scout
+filter-literal correctness fix — all live-verified, all measure-before-trust. Remaining (deferred, low
+value): the 4b tail (deep-turn reload, explicit bindings, CTE). Companion to
 [`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md)
 (what the modes share today), [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md)
 (the ASSESS→ROUTE formula this productizes), and

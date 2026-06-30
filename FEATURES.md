@@ -12,16 +12,38 @@ per-feature detail, history, and the technology behind each increment.
 
 ---
 
-## 1. Three answer modes (one shared safety pipeline)
+## 1. One conversational agent — depth chosen for you (`POST /ask`)
 
-- **Insight** — quick chat NL→SQL→answer with auto-charting and a plain-English headline.
+A single conversational entry decides **how deep to go** instead of making the user pick a mode up
+front (BIRD-INTERACT-driven, arXiv 2510.05318). A **deterministic-first router** (`aughor/agent/ask_router.py`)
+picks the depth — clear lookup → quick, causal/complex → deep, with no model call on the obvious cases;
+the user sees a `route` receipt explaining *why* and can re-run at another depth (**auto + transparency**).
+The underlying depths:
+
+- **Quick (Insight)** — fast NL→SQL→answer with auto-charting and a plain-English headline.
 - **Deep / ADA** — an autonomous investigative loop: decompose a question into hypotheses, run
   evidence-gathering SQL, synthesize, and report with a confidence verdict; resumable and crash-recoverable.
 - **Explorer** — background autonomous learning: continuously probes connected warehouses to build and
   refresh the ontology, surface findings, and seed suggestions.
 
-All three share **one SQL-safety pipeline** (`aughor/sql/safety.py` `preflight_repair`) and **one
-data-understanding context**, so Insight and Deep stay at parity (mode cross-pollination).
+On top of the depths, the conversational agent (the unified-answer-path arc, PR #89):
+
+- **Ask-vs-guess clarification** — when a question is materially ambiguous it asks **one** targeted
+  question instead of guessing: deterministic under-spec + value-term detection (`aughor/agent/clarify.py`)
+  **plus SOMA candidate-disagreement** (`aughor/agent/soma.py`) — generate N candidate readings, execute
+  them, and ask **only when their results diverge**, with the readings' labels as grounded option chips.
+- **Conversational follow-ups** — "now break that down by region" composes on the prior query
+  (`aughor/agent/followup.py` + a result digest carried across turns), for quick and deep turns alike.
+- **Progressive escalation (ITS)** — a quick answer that's inconclusive (errored, empty on an analytical
+  question, or a "why" answered by a single figure) **offers** a deeper investigation rather than leaving
+  a thin answer (`aughor/agent/escalate.py`).
+- **Measured discipline** — every interaction feature is gated by the interactive eval harness
+  (`evals/interactive.py`, `evals/ambiguity_eval.py`, `evals/its_structural.py`): built and measured
+  before it ships (the SOMA build was justified by a measured 0/6 detection gap + a 0/3→3/3 asking gain).
+
+All depths share **one SQL-safety pipeline** (`aughor/sql/safety.py` `preflight_repair`) and **one
+data-understanding context**, so quick and deep stay at parity (mode cross-pollination). `/chat` and
+`/investigate` remain as back-compat shims.
 
 ## 2. Grounded NL2SQL & trust guards (the core differentiator)
 
