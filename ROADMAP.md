@@ -31,6 +31,13 @@ An **autonomous data-analysis platform** that replaces the dashboard-and-analyst
 
 Grouped by area; each ✅ is verified shipped (git + code). Representative commits/PRs in parentheses.
 
+### Platform ↔ Agent separation + NL2SQL winning formula (2026-06-30, branch `2026-06-29-platform-agent-separation`)
+*The Data Intelligence Platform (the home) is now structurally separated from the Aughor Agent (the intelligence) with a machine-enforced one-way boundary; then the 2025/26 NL2SQL SOTA was mined into a shipped lever. **1969 tests green.** See FEATURES #172.*
+- ✅ **Enforced boundary** — `tests/unit/test_platform_agent_boundary.py` (stdlib-`ast` ratchet, **empty allowlist**): the Agent may import the Platform, never the reverse. ~50 platform→agent edges inverted into four plug-in registries the Agent fills at startup (`agent/bootstrap.register_agent_plugins()`): the `QueryResult` **contract** (`platform/contracts/execution.py`), **purge hooks** (delete cascade), **ingestion/event sinks** (connector/history/registry reach-ins), and the **schema-annotator registry** — the “god file” (`db/connection.py` get_schema/build_intelligence + Postgres + sqlite) now renders raw schema (`db/schema_render.py`) + Agent annotators, three divergent recipes unified. `ai_sql` → execution hooks.
+- ✅ **Plug-and-play contract** — `HostCapabilities` Protocol (`platform/contracts/host.py`) + `kernel.registries.manifest()`; with no agent registered the platform renders schemas + runs the cascade agent-free (`test_plug_and_play.py`). Net −800 lines (god-file duplication collapsed). Docs: [`docs/PLATFORM_AGENT_SEPARATION.md`](docs/PLATFORM_AGENT_SEPARATION.md) (+ Invariant #8 in [`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md)).
+- ✅ **NL2SQL complexity-aware cost-tiered routing** — mined the 2025/26 SOTA (Handbook, SQLBot, Oracle MCP, BIRD-INTERACT = arXiv 2510.05318 / OpenReview `nHrYBGujps`) → shipped a deterministic difficulty assessor (`agent/complexity.py`) that cost-tiers the robust routing DECISION (simple→`fast` model) while keeping the user-facing SQL answer on the frontier model + guards; tier + `ambiguous` flag surface on the Trust Receipt. Docs: [`docs/NL2SQL_WINNING_FORMULA_2026.md`](docs/NL2SQL_WINNING_FORMULA_2026.md).
+
+
 ### Audit hardening + investigation delete (2026-06-27, branch `2026-06-27-audit-fixes`)
 *Verified an external coding-agent audit ([`AUDIT_2026-06-27.md`](AUDIT_2026-06-27.md)) against code and fixed findings #1–#11. 1859 tests green.*
 - ✅ **Closed the Query Builder / `bulk_read` SQL-safety bypass (Critical)** — user SQL was dispatched under the `__querybuilder__`/`__bulk__` dunder ids that match the internal-query bypass, so `DROP`/`DELETE` ran ungated+unaudited; the runner's subquery-wrap also defeated the inner gate and `bulk_read` reaches ConnectorX directly. New `gate_user_sql()` gates RAW user SQL at `/query/run` before wrap/dispatch (+regression tests).
@@ -232,6 +239,15 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 ## 3 · What's left
 
 Verified pending against code/git. `⬜` not started · `◑` partial.
+
+### ▶ Platform ↔ Agent separation — follow-ons (branch `2026-06-29-platform-agent-separation`)
+*The logical boundary is shipped + enforced ([`docs/PLATFORM_AGENT_SEPARATION.md`](docs/PLATFORM_AGENT_SEPARATION.md)). The remaining moves are now cheap given the boundary.*
+- ⬜ **Physical two-package split** — `dip/` (Data Intelligence Platform) + `aughor_agent/`, agent depends on platform. A near-mechanical move now that the import boundary is green; do it when a packaging/distribution driver appears.
+- ⬜ **Interactive clarification arc** (BIRD-INTERACT direction — the #1 NL2SQL challenge) — the deterministic `ambiguous` flag (`agent/complexity.py`) is the seam; gate a budget-aware clarification (ask vs. guess) on it, then build the interactive eval harness.
+- ⬜ **Answer-path cost-tiering** — route the user-facing SQL generation (not just the routing decision) to a cheaper model, *after* binding the `fast` role to a quality-validated cheap model and confirming the trust guards absorb the grain risk. The framework (`model_role_for`) is in place.
+- ⬜ **Route the agent’s platform access through `HostCapabilities`** at call sites (currently direct module functions — already the allowed direction).
+- ◑ **Large-workspace exploration budget** — the Scout exploration time budget (`time_budget_s=600`, `kernel/agents.py`) cancels before a big multi-schema workspace (e.g. the 33-table `luxexperience`) finishes its briefing → no KPIs surface. Raise the budget for large catalogs and/or fan exploration out per-schema with independent budgets.
+
 
 ### ▶ Trust Receipt — make verification externally inspectable (10x, from [`AUDIT_2026-06-27.md`](AUDIT_2026-06-27.md) #5b)
 *The single highest-leverage open bet. The guard substrate (Trust Receipt / Evidence Ledger — `_write_answer_receipt`, `kernel/ledger.py`) is far ahead of its surface area: it's enforced internally but not exposed. The move is to turn "trustworthy by construction" into "trustworthy by inspection" — the one thing a competitor can't copy with a prompt.*
