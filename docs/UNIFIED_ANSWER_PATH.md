@@ -1,9 +1,9 @@
 # One door: merging Insight and Deep into a single conversational analyst
 
-*Design document — 2026-06-30. Status: **Phases 0–3 shipped** (the unified `/ask` door + router; the
-auto + transparency frontend; the interactive eval harness; and ask-vs-guess clarification — two-source
-detection wired into `/ask` with a `clarify` SSE event + frontend clarify card, behind
-`AUGHOR_ASK_CLARIFY`); Phases 4–5 proposed. Companion to
+*Design document — 2026-06-30. Status: **Phases 0–4 (core) shipped** — the unified `/ask` door + router;
+the auto + transparency frontend (incl. answer declutter + on-demand "Explain the data"); the interactive
+eval harness; ask-vs-guess clarification; and conversational session state (follow-up detection +
+result-digest context, live-verified). Phase 5 + the 4b/3b deepenings proposed. Companion to
 [`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md)
 (what the modes share today), [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md)
 (the ASSESS→ROUTE formula this productizes), and
@@ -285,8 +285,18 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   → one-source(complexity) **0%** → **two-source(clarify) 100%**. *Remaining (3b): the execution-grounded
   SOMA candidate-disagreement + value-index/glossary binding to replace the deterministic term proxy and
   to populate grounded options.*
-- **Phase 4 — conversational session state (§6).** The BIRD-INTERACT lift; multi-turn episodes in the
-  harness.
+- **Phase 4 — conversational session state (§6). ✅ CORE SHIPPED (2026-06-30).** The chat path already
+  injected the last 3 quick turns' SQL; Phase 4 makes follow-ups *reliable*: `aughor/agent/followup.py`
+  `is_followup(question)` deterministically detects a continuation ("now break that down", "filter that
+  to Q4", "the top one") and stays quiet on fresh questions; `build_history_section(history, followup=)`
+  (extracted + testable) now also carries a **result digest** (`ChatHistoryTurn.key_rows`, the prior
+  turn's top rows — frontend sends them) so "that"/"the top one"/"those" resolve against real values,
+  and switches to a **"compose on the most recent query as the base"** directive when a follow-up is
+  detected. **Live-verified:** "now break that down by status" after a revenue lookup →
+  `SELECT status, SUM(amount) … GROUP BY status` (kept the metric + table, added the grain, dropped the
+  now-wrong `WHERE status='success'`). 10 tests. *Remaining (4b): carry deep/investigate turns into the
+  context (today quick-only); explicit resolved-binding state (metric/window/filters); server-persisted
+  per-`session_id` context; CTE carry-over.*
 - **Phase 5 — progressive escalation / ITS.** Start cheap, escalate depth mid-stream when findings are
   inconclusive (the ADA gates already do this internally; expose across the unified path).
 

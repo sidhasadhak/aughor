@@ -471,6 +471,9 @@ class ChatHistoryTurn(BaseModel):
     sql: str
     columns: list[str] = []
     headline: str = ""
+    # A small sample of the prior result (top rows) so a follow-up can resolve
+    # references — "that", "the top one", "those regions" — against real values (Phase 4).
+    key_rows: list = []
 
 
 class ChatRequest(BaseModel):
@@ -837,6 +840,52 @@ def _narrator_sample(columns, rows, n: int = 20):
     return rows[:n], False
 
 
+def build_history_section(history, *, followup: bool = False) -> str:
+    """Render the conversation context injected into the chat SQL prompt.
+
+    Carries each recent turn's question + SQL + columns + headline AND a small **result
+    digest** (sample rows) so a follow-up can resolve references ("that", "the top one",
+    "those regions") against real values — not just column names (Phase 4). When the new
+    question is a detected follow-up, the header instructs the generator to **compose on
+    the most recent query as the base** (keep its metric/filters/grain/window unless the
+    ask changes them), which is what makes "now break that down by region" reliable.
+
+    Duck-typed over ``ChatHistoryTurn`` so it is unit-testable with plain stand-ins."""
+    if not history:
+        return ""
+    recent = list(history)[-3:]
+    if followup:
+        header = (
+            "CONVERSATION HISTORY — THIS LOOKS LIKE A FOLLOW-UP. Treat the MOST RECENT query "
+            "below as the base: keep its metric, filters, grain, and time window unless the new "
+            "question changes them, and resolve 'that' / 'those' / 'the top one' against its "
+            "sample result. Do NOT start from scratch."
+        )
+    else:
+        header = ("CONVERSATION HISTORY (use to resolve 'also', 'add', 'filter by', 'that', "
+                  "'those', 'the top one', 'break down', 'compare to'):")
+    lines = [header]
+    for i, t in enumerate(recent, 1):
+        q = getattr(t, "question", "") or ""
+        sql = getattr(t, "sql", "") or ""
+        cols = getattr(t, "columns", None) or []
+        head = getattr(t, "headline", "") or ""
+        key_rows = getattr(t, "key_rows", None) or []
+        lines.append(f"[Turn {i}] Q: {q!r}")
+        if sql:
+            lines.append(f"         SQL: {sql}")
+        if cols:
+            lines.append(f"         Columns: {', '.join(cols[:6])}")
+        if head:
+            lines.append(f"         Headline: {head}")
+        if key_rows:
+            preview = " ; ".join(
+                " | ".join(str(c) for c in (row or [])[:6]) for row in key_rows[:3]
+            )
+            lines.append(f"         Result (sample): {preview}")
+    return "\n".join(lines) + "\n"
+
+
 async def _stream_chat(
     question: str,
     connection_id: str,
@@ -899,18 +948,8 @@ async def _stream_chat(
 
         rules_block = get_chat_rules_block()
 
-        history_section = ""
-        if history:
-            recent = history[-3:]
-            lines = ["CONVERSATION HISTORY (use to resolve 'also', 'add', 'filter by', 'compare to'):"]
-            for i, t in enumerate(recent, 1):
-                cols_str = ", ".join(t.columns[:6]) if t.columns else "—"
-                lines.append(f"[Turn {i}] Q: {t.question!r}")
-                lines.append(f"         SQL: {t.sql}")
-                lines.append(f"         Columns: {cols_str}")
-                if t.headline:
-                    lines.append(f"         Headline: {t.headline}")
-            history_section = "\n".join(lines) + "\n"
+        from aughor.agent.followup import is_followup
+        history_section = build_history_section(history, followup=is_followup(question))
 
         _schema_name = getattr(db, "_schema_name", None)
         schema_qualifier = (_schema_name or "main") if db.dialect == "duckdb" else (_schema_name or "public")

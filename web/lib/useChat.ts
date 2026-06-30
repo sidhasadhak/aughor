@@ -21,6 +21,7 @@ interface ChatHistoryTurn {
   sql: string;
   columns: string[];
   headline: string;
+  key_rows: unknown[][];
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
@@ -56,7 +57,7 @@ export function useChat() {
     const chatHistory = (): ChatHistoryTurn[] => stateRef.current.turns
       .filter(t => t.status === "done" && t.sql && t.mode === "ask")
       .slice(-3)
-      .map(t => ({ question: t.question, sql: t.sql!, columns: t.columns, headline: t.headline ?? "" }));
+      .map(t => ({ question: t.question, sql: t.sql!, columns: t.columns, headline: t.headline ?? "", key_rows: (t.rows ?? []).slice(0, 3) }));
 
     let res: Response;
     try {
