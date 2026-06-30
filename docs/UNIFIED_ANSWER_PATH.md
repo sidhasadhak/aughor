@@ -287,11 +287,21 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   the reply re-asks with `skip_clarify` so it never loops. **Live-verified** (running API): under-spec
   and value/term (“urgent”) questions both emit `clarify`; `skip_clarify` and concrete questions don’t.
   **Harness-measured** (the loop Phase 2 opened, closed): on the value-ambiguity task, never-asks **0%**
-  → one-source(complexity) **0%** → **two-source(clarify) 100%**. *3b (execution-grounded SOMA
-  candidate-disagreement + value-index-bound option chips) is **deliberately deferred** per the
-  measure-before-trust invariant (§9): the deterministic detector is harness-proven, so building the
-  LLM-heavy candidate-disagreement is speculative until the harness shows the lexicon misses real cases;
-  and auto-populated option chips risk offering the **wrong** values. Rebuild when the harness flags the gap.*
+  → one-source(complexity) **0%** → **two-source(clarify) 100%**.
+  **3b status (measured 2026-06-30 — the harness now answers the gate question):**
+  - *Time-window chips ✅ shipped* — the under-specified clarify offers deterministic `last 7d / 30d /
+    this quarter / YTD` chips (pure, no schema/model), rendered by the existing `ClarifyCard`.
+  - *Ambiguity-detection eval (`evals/ambiguity_eval.py`, locked by `tests/unit/test_ambiguity_eval.py`):*
+    the deterministic two-source detector scores **0% false-positive (none)**, **100% recall on
+    under-specification**, **100% on value-term**, and **0% on STRUCTURAL ambiguity** ("average order
+    value" per-order vs sum/count, "revenue last quarter" calendar vs trailing, "top products" units vs
+    revenue). **That 0/6 is the measured gap** — a class no deterministic source can see (no pronoun, no
+    qualifier), and exactly what SOMA candidate-disagreement is built for. So 3b's SOMA half is **no
+    longer speculative — it's evidence-justified** for the structural class. The remaining gate before
+    building is the executable-gold ITS run (confirm that *asking* about a materially-divergent
+    structural case beats the agent's sensible default — SOMA should ask only on real divergence, not
+    every structural question). *Value-term option chips stay text-box: the term→column mapping is
+    semantic (LLM/gated), and wrong chips are worse than none.*
 - **Phase 4 — conversational session state (§6). ✅ CORE SHIPPED (2026-06-30).** The chat path already
   injected the last 3 quick turns' SQL; Phase 4 makes follow-ups *reliable*: `aughor/agent/followup.py`
   `is_followup(question)` deterministically detects a continuation ("now break that down", "filter that
