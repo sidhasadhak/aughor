@@ -1,0 +1,295 @@
+# One door: merging Insight and Deep into a single conversational analyst
+
+*Design document — 2026-06-30. Status: **Phase 0 shipped** (the unified `/ask` door + router;
+behind `AUGHOR_UNIFIED_ASK`, default on, frontend not yet switched over); Phases 1–5 proposed.
+Companion to
+[`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md)
+(what the modes share today), [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md)
+(the ASSESS→ROUTE formula this productizes), and
+[`INTERACTIVE_DATA_AGENT_VISION_2030.md`](INTERACTIVE_DATA_AGENT_VISION_2030.md) (the
+BIRD-INTERACT direction this is the first concrete step toward).*
+
+---
+
+## TL;DR
+
+Today the user must pick **Insight** (quick) or **Deep Analysis** (investigation) *before*
+the agent reads the question — two endpoints, a frontend toggle, two code paths. This document
+proposes collapsing them into **one conversational entry (`POST /ask`)** where the agent decides
+depth, decomposition, and output structure itself, asks a clarifying question when ambiguity is
+material, and carries context across turns.
+
+The key realization: **the depth-deciding intelligence already exists** — `assess_complexity`
+(deterministic) + `classify_question` (`direct|investigate|explore|final_text`) + the ADA phase
+gates. It just runs one layer too late, *inside* the deep path. The merge is mostly **promoting
+that router to the front door**, plus two genuinely new capabilities: **budget-aware clarification**
+(ask vs guess) and **conversational session state** (state-dependent follow-ups).
+
+Grounded in BIRD-INTERACT (arXiv 2510.05318): its **a-Interact** agentic setting — where the
+model autonomously decides when to *retrieve / probe / ask / submit* — **is** this merged mode.
+The paper's headline finding is that interaction *shape* is worth ~2× the answer quality
+(GPT-5: 14.5% protocol-forced → 29.2% agentic). Forcing the user to choose a mode is exactly the
+friction the paper measures.
+
+**Chosen direction (this doc commits to these):**
+- **Control model = auto + transparency.** The agent decides depth every turn, but every answer
+  shows *why* (“answered directly” / “investigating — the change needs decomposition”) with a
+  one-click re-run at a different depth. No silent mode-guessing; no up-front toggle.
+- **First capability beyond plumbing = ask-vs-guess clarification** (BIRD-INTERACT’s #1 skill),
+  built **harness-first** (measure before trust).
+
+---
+
+## 1. The current architecture (code-grounded)
+
+Two user-facing doors, chosen by the frontend before the question is understood:
+
+| | Insight | Deep Analysis / ADA |
+|---|---|---|
+| Endpoint | `POST /chat` | `POST /investigate` |
+| Streamer | `_stream_chat()` ([investigations.py:812](../aughor/routers/investigations.py)) | `_stream_investigation()` ([investigations.py:1747](../aughor/routers/investigations.py)) |
+| Shape | single NL→SQL→answer, one chart | LangGraph multi-phase investigation (intake→baseline→decompose→dimensional→synthesis) |
+| Control | `mode: "ask"` in [`ChatPanel.tsx`](../web/components/ChatPanel.tsx) | `mode: "investigate"` + `deep: bool` escalation flag |
+
+The router that *should* live at the door instead lives inside the agent:
+
+- **`assess_complexity(question)`** ([complexity.py:84](../aughor/agent/complexity.py)) — deterministic
+  difficulty (`simple|moderate|complex`), a 0–1 score, and an **`ambiguous`** flag. Pure, unit-tested.
+- **`classify_question(question)`** ([nodes.py:80](../aughor/agent/nodes.py)) — returns
+  `RouteDecision{mode ∈ direct|investigate|explore|final_text, confidence, reasoning}`
+  ([state.py:25](../aughor/agent/state.py)). Prompt ([prompts.py:1](../aughor/agent/prompts.py)) is
+  explicit: *“complexity does not determine the mode, intent does.”*
+- **`assess_complexity` already cost-tiers the routing decision** (simple→`fast` model) while keeping
+  the answer on the frontier `coder` model — but it does **not** yet choose execution depth.
+- **The ADA phase gates** (`route_after_baseline/decompose/dimensional`, declared by
+  [`orchestrator.py`](../aughor/agent/orchestrator.py)) already escalate/skip phases at runtime —
+  the in-investigation analogue of what we want across the whole path.
+
+Both paths already share the safety + grounding spine (the 2026-06-25 cross-pollination work):
+`preflight_repair` ([sql/safety.py:31](../aughor/sql/safety.py)) and `build_data_understanding`
+([semantic/data_understanding.py:34](../aughor/semantic/data_understanding.py)). **This is what makes
+the merge safe** — the two bodies can be dispatched behind one router without diverging on metric
+definition, grain, or SQL safety.
+
+> The honest summary: we have a router and a shared spine; what we lack is (a) the router at the
+> *front*, (b) conversation, and (c) the ability to *ask*.
+
+---
+
+## 2. The target — your own formula, at the front door
+
+From [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md) §4:
+
+> **ASSESS → ROUTE → (CLARIFY | GENERATE) → VERIFY**, where ASSESS is deterministic.
+
+The merge *is* the act of lifting this loop out of the deep path and making it the contract of a
+single `POST /ask`:
+
+1. **ASSESS (deterministic, at the door).** `assess_complexity` + `classify_question` run first,
+   over the **full session context** (this turn + carried state), not after a mode is chosen.
+2. **ROUTE to depth, not just to a classifier model.** Promote the verdict to pick *execution depth*:
+   `direct/final_text` → the quick `_stream_chat` body; `investigate/explore` → the ADA graph.
+   The toggle's job, done by the router. Confidence-gated, exactly as `classify_question` already is
+   (`< 0.65 → investigate`, because false-shallow is worse than false-thorough).
+3. **CLARIFY when ambiguity is material** — gate one budget-bounded question on the `ambiguous` flag
+   (capability #1; §4).
+4. **Dynamic output structure** = f(question shape × *actual* result shape), not mode. Every renderer
+   already exists (`ResultChartCard`, the Brief, the KPI scorecard, the multi-finding ADA report);
+   the merge wires *which* one fires to the verdict + the result (§5).
+5. **Conversational session state** — carry prior SQL/CTEs, resolved entities, filters, and findings
+   across turns (capability #2; §6). `ChatRequest` already carries `session_id` + `history`; today
+   they are thin.
+6. **VERIFY — unchanged.** `preflight_repair` + the Verifier battery still gate every answer.
+
+### Why an LLM mega-orchestrator is explicitly *out*
+
+Aughor's durable conclusion — *deterministic guards beat added LLM machinery on a strong model* —
+and the R4 ablation ([`R4_ABLATION_EVAL_2026-06-21.md`](R4_ABLATION_EVAL_2026-06-21.md)) say
+**injecting an LLM into the decision path regresses**. So:
+
+- The **deterministic** `assess_complexity` is the routing spine. The LLM `RouteDecision` stays a
+  *secondary intent signal* (as today), never the sole arbiter.
+- The cost tier routes the *routing decision*, **never** the user-facing SQL — that stays on the
+  frontier `coder` model + guards. The merge must not become a pretext to cheapen answers.
+- This is the same legibility-without-drift stance `orchestrator.py` already takes for phases.
+
+---
+
+## 3. The control model — auto + transparency (the “route receipt”)
+
+The agent decides, but it is never a black box. Every turn emits a new **`route` SSE event** before
+the answer, carrying what the router already computes into run state today
+(`route_complexity_tier`, `route_confidence`, `route_ambiguous`, `RouteDecision.reasoning` —
+[nodes.py:141](../aughor/agent/nodes.py)):
+
+```
+event: route
+data: { "depth": "investigate", "tier": "complex", "confidence": 0.82,
+        "why": "‘why did margin fall’ asks for a cause — decomposing the change",
+        "ambiguous": false, "alternatives": ["direct", "explore"] }
+```
+
+The frontend renders this as a one-line **depth banner** above the answer, with a re-run control:
+
+- *“Answered directly — a single metric lookup.”* → **[Investigate instead →]**
+- *“Investigating — the change needs decomposition.”* → **[Just answer quickly →]**
+
+This is the chosen *auto + transparency* model: the user never picks a mode up front, but is always
+told the call that was made and can override it in one click. The override re-runs the **same `/ask`**
+with an explicit `depth=` hint — which is also how the existing **“Investigate deeper”** drill and the
+**Tier-0 dossier** short-circuit survive: they become *explicit overrides on top of the auto-router*,
+not the primary control. The banner doubles as the user-facing surface of the Trust Receipt the
+router already writes.
+
+---
+
+## 4. Capability #1 (priority) — budget-aware clarification, harness-first
+
+BIRD-INTERACT's central result: **ambiguity is the #1 unsolved skill**, and frontier models default
+to **trial-and-error** (`submit`-and-see) rather than asking. Aughor *detects* candidate-disagreement
+ambiguity (SOMA-SQL) but **does not ask the user today** — confirmed gap (`tools/ambiguity.py` is
+SQL-column-level only). The `ambiguous` flag on `ComplexityVerdict` is the documented seam
+([ROADMAP.md:246](../ROADMAP.md)).
+
+**Design:**
+
+- When the deterministic `ambiguous` flag fires **and** the disagreement would *materially change the
+  answer* (reuse SOMA candidate-disagreement + the FP-aware critique gate so we don't ask noise),
+  emit a **`clarify` SSE event** with one targeted question + 2–4 grounded options, instead of guessing.
+- **Budgeted** — at most one clarification per turn by default (BIRD-INTERACT's `τ = m_amb + λ_patience`;
+  over-asking is a failure mode the paper stress-tests). If the user ignores it, fall back to the
+  best-guess answer *with the assumption stated* (the honesty invariant).
+- The clarification answer feeds session state (§6), so the next turn is grounded, not re-litigated.
+
+**Harness-first discipline (non-negotiable).** Per the arc's deepest lesson — *let evidence pick the
+lever* — and the judgment call already recorded in
+[`INTERACTIVE_DATA_AGENT_VISION_2030.md`](INTERACTIVE_DATA_AGENT_VISION_2030.md) §6, the **interactive
+eval harness is rebuilt before this feature is trusted**. It was prototyped (`evals/interactive.py`:
+function-driven `AMB`/`LOC`/**`UNA`** user simulator + episode runner scoring *submitted* SQL under a
+clarification budget — rewarding good clarification, penalizing blind guessing) then removed in the
+2026-06-29 consolidation. The *design* is the durable artifact; we rebuild it against the real `/ask`
+pipeline so every clarification change is measurable from day one. No clarification feature ships on
+anecdote at small n.
+
+---
+
+## 5. Dynamic output structure
+
+The answer shape is chosen from `RouteDecision` × the **actual** result, not the entry mode:
+
+| Signal | Output |
+|---|---|
+| `final_text` / definitional + strong KB | headline-only prose, no SQL (path already exists, [nodes.py:194](../aughor/agent/nodes.py)) |
+| `direct`, scalar result | KPI scorecard / single-number card |
+| `direct`, ranked/grouped result | `ResultChartCard` (auto chart + table + pivot) |
+| `investigate` / `explore` | multi-finding investigation report (verdict, key findings, what-is-not-the-cause, risks) |
+
+Implementation is a **render-selector decoupled from the endpoint** — today the renderer is implied
+by *which endpoint answered*; after the merge it is keyed on the verdict and the result shape. The
+SOMA "answer-shape / projection-minimality" rules ([prompts.py:57](../aughor/agent/prompts.py)) already
+push the SQL toward the implied output columns; this extends that discipline from columns to layout.
+
+---
+
+## 6. Capability #2 — conversational session state (the BIRD-INTERACT lift)
+
+The hardest, deepest-moat axis: **state-dependent follow-ups** — *“now break that down by region”*,
+*“filter that to last quarter”*, *“why is that one different?”* — reasoning over what the **prior turn
+computed**, not just prior text. Today each `/chat` turn is largely stateless; `session_id` + `history`
+exist but carry little structured state.
+
+**Design (carry a typed session context across turns, keyed on `session_id`):**
+
+- **Resolved bindings** — entities, filters, the metric, and the time window the last turn settled on
+  (so “that” / “those” resolve without re-asking).
+- **Prior SQL / CTEs** — the last grounded query, so a follow-up can compose on it (BIRD-INTERACT's
+  *objects created by prior queries*). Read-first: we carry CTE *text*, not materialized tables.
+- **Prior findings** — so “why is that one different?” anchors on a specific result row, reusing the
+  existing `origin_finding` anchoring the dossier/ pull-thread flows already built
+  ([nodes/investigate](../aughor/agent/investigate.py)).
+- **Clarification answers** — folded in (§4), so the session gets *less* ambiguous over time — the
+  ITS-Law framing: interaction is a *scaling axis*, every grounded turn invests toward the ideal answer.
+
+This is the largest lift and the hardest to verify; it is sequenced last and also gated on the eval
+harness (multi-turn episodes).
+
+---
+
+## 7. Seam-by-seam change map
+
+| Move | Where | Lift |
+|---|---|---|
+| `POST /ask` entry; `/chat` + `/investigate` become thin back-compat shims | [investigations.py:2296,2381](../aughor/routers/investigations.py) | small |
+| Run `assess_complexity` + `classify_question` at `/ask` before dispatch | new dispatcher wrapping the two `_stream_*` bodies | small–med |
+| Verdict → depth dispatch (reuse existing bodies verbatim at first) | the dispatcher | medium |
+| `route` SSE event + depth banner + one-click re-run (`depth=` hint) | SSE layer + [`ChatPanel.tsx`](../web/components/ChatPanel.tsx) | small–med |
+| Render-selector decoupled from endpoint (output structure = f(verdict × result)) | SSE render layer + turn renderer | medium |
+| `clarify` SSE event gated on `ambiguous` + SOMA materiality + FP-gate; budget=1 | new node; reuses SOMA + critique gate | medium |
+| Typed session context (bindings · CTEs · findings · clarifications) per `session_id` | `ChatRequest.session_id`/`history` is the hook | **large** |
+| Frontend: drop the toggle, default auto, keep override chips | [ChatPanel.tsx:133](../web/components/ChatPanel.tsx), [useChat.ts:41](../web/lib/useChat.ts) | small–med |
+| Rebuild interactive eval harness (AMB/LOC/UNA sim + episode runner) | `evals/` (design preserved) | medium |
+
+**Why this is tractable:** Phases 0–1 reuse `_stream_chat` and the ADA graph **unchanged** behind a
+router. The merged front door works *before* any of the hard parts (memory, clarification) are touched.
+
+---
+
+## 8. Gated sequence (build → wire → test → **leverage**, measure-first)
+
+- **Phase 0 — unify the door. ✅ SHIPPED (2026-06-30).** `POST /ask` + a **deterministic-first**
+  router (`aughor/agent/ask_router.py::decide_ask_route`) that dispatches to the existing `_stream_chat`
+  (quick) or `_investigation_job_streamed` (deep) bodies **unchanged**, emitting a `route` SSE receipt
+  first. The obvious cases (clear lookup → quick; causal/complex → deep) never call a model; only
+  borderline questions consult `classify_question`. **License-safe** — a deep route degrades to quick
+  (with a transparent reason) when the connection lacks `DEEP_ANALYSIS`, never bypassing the gate. The
+  legacy `deep`/`insight_id` flags still drive the escalation + dossier drill through the one door.
+  Behind `AUGHOR_UNIFIED_ASK` (default on); `/chat` + `/investigate` untouched for back-compat. 23 unit
+  tests (decision matrix + endpoint dispatch + degrade); full unit suite green (1976). *The frontend
+  still uses the toggle — switching it to `/ask` is Phase 1.*
+- **Phase 1 — auto + transparency UI.** Depth banner + one-click re-run; render-selector decoupled
+  from endpoint (dynamic output structure, §5).
+- **Phase 2 — eval harness (rebuild).** The measurement substrate, **before** the clarification feature.
+- **Phase 3 — ask-vs-guess clarification (§4).** The chosen priority capability, validated by Phase 2.
+- **Phase 4 — conversational session state (§6).** The BIRD-INTERACT lift; multi-turn episodes in the
+  harness.
+- **Phase 5 — progressive escalation / ITS.** Start cheap, escalate depth mid-stream when findings are
+  inconclusive (the ADA gates already do this internally; expose across the unified path).
+
+---
+
+## 9. Non-goals / invariants
+
+- **No LLM in the routing decision path** (R4). Deterministic spine; LLM intent signal only.
+- **Frontier model + guards for every answer.** Cost tier never downgrades the user-facing SQL.
+- **Read-first.** No CRUD/DDL agency rides in on this merge.
+- **Measure before trust.** No clarification/multi-turn feature ships without the harness; at small n,
+  anecdote isn't evidence.
+- **Don't break what works.** The `deep=true` drill and the Tier-0 dossier short-circuit survive as
+  explicit overrides, not the primary control.
+- **Back-compat.** `/chat` and `/investigate` keep working as shims through the transition.
+
+---
+
+## 10. Open questions
+
+1. **Override granularity** — is a binary “quick ⇄ investigate” re-run enough, or do users want to land
+   directly in `explore`? (Lean: binary first; `explore` is rare and the router handles it.)
+2. **Session-state scope** — does the conversation thread bind to a connection/canvas, and how does it
+   reset? (Lean: per `session_id`, soft-reset on connection switch.)
+3. **Clarification surface** — inline chips in the chat stream vs a distinct prompt card. (Lean: inline
+   chips; it keeps the conversation linear.)
+4. **Materiality threshold** — when is ambiguity “material enough” to spend the one-question budget?
+   This is a tuning dial the eval harness (Phase 2) exists to set, not a guess.
+
+---
+
+## References
+
+- BIRD-INTERACT — arXiv [2510.05318](https://arxiv.org/abs/2510.05318) (Huo et al., ICLR 2026 Oral).
+- [`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md) — the shared spine.
+- [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md) — the ASSESS→ROUTE formula.
+- [`INTERACTIVE_DATA_AGENT_VISION_2030.md`](INTERACTIVE_DATA_AGENT_VISION_2030.md) — the long-horizon direction + harness design.
+- [`R4_ABLATION_EVAL_2026-06-21.md`](R4_ABLATION_EVAL_2026-06-21.md) — why the router stays deterministic.
+- Code spine: `agent/complexity.py`, `agent/nodes.py` (`classify_question`), `agent/orchestrator.py`,
+  `sql/safety.py` (`preflight_repair`), `semantic/data_understanding.py`,
+  `routers/investigations.py` (`_stream_chat` / `_stream_investigation`).

@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import re
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -479,6 +479,31 @@ class ChatRequest(BaseModel):
     canvas_id: Optional[str] = None
     history: list[ChatHistoryTurn] = []
     session_id: str = ""
+
+
+class AskRequest(BaseModel):
+    """The unified entry (Phase 0 of the Insight+Deep merge, docs/UNIFIED_ANSWER_PATH.md).
+
+    A superset of ChatRequest + the investigate pass-throughs. `depth` defaults to
+    `auto` (the router decides); `quick`/`deep` are the auto+transparency re-run
+    overrides. The legacy `deep`/`insight_id` flags keep the dossier-drill and
+    "Investigate deeper" escalations working through the one door.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    question: str
+    connection_id: str = BUILTIN_ID
+    canvas_id: Optional[str] = None
+    history: list[ChatHistoryTurn] = []
+    session_id: str = ""
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+    depth: Literal["auto", "quick", "deep"] = "auto"
+    # Pass-throughs preserved from the investigate path.
+    deep: bool = False
+    insight_id: Optional[str] = None
+    seed_sql: Optional[str] = None
+    seed_context: str = ""
+    hitl: bool = False
+    skip_cache: bool = False
 
 
 class OutcomeRequest(BaseModel):
@@ -2293,28 +2318,36 @@ async def _metered_stream(gen: AsyncGenerator[str, None],
         metering.reset(token)
 
 
-@router.post("/chat")
-async def chat_endpoint(req: ChatRequest, request: Request):
+def _insight_budget(conn_id: str):
+    """Resolve the Insight agent's Org/workspace-governed token + time budget."""
+    try:
+        from aughor.kernel.agents import effective_governance
+        from aughor.workspace.store import workspace_for_connection
+        gov = effective_governance("insight", workspace_for_connection(conn_id))
+        return (gov.token_budget, gov.time_budget_s)
+    except Exception:
+        return None
+
+
+def _resolve_conn(req) -> str:
+    """A canvas-scoped request resolves to the canvas's underlying connection."""
     conn_id = req.connection_id
     if req.canvas_id:
         from aughor.canvas.store import resolve_connection_id
         resolved = resolve_connection_id(req.canvas_id)
         if resolved:
             conn_id = resolved
-    # Resolve the Insight agent's budget (Org/workspace governance) for this run.
-    budget = None
-    try:
-        from aughor.kernel.agents import effective_governance
-        from aughor.workspace.store import workspace_for_connection
-        gov = effective_governance("insight", workspace_for_connection(conn_id))
-        budget = (gov.token_budget, gov.time_budget_s)
-    except Exception:
-        budget = None
+    return conn_id
+
+
+@router.post("/chat")
+async def chat_endpoint(req: ChatRequest, request: Request):
+    conn_id = _resolve_conn(req)
     return StreamingResponse(
         _metered_stream(
             _stream_chat(req.question, conn_id, req.history, request,
                          session_id=req.session_id, canvas_id=req.canvas_id),
-            budget=budget,
+            budget=_insight_budget(conn_id),
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -2380,12 +2413,7 @@ async def _investigation_job_streamed(
 
 @router.post("/investigate", dependencies=[gate(Capability.DEEP_ANALYSIS)])
 async def investigate(req: InvestigateRequest, request: Request):
-    conn_id = req.connection_id
-    if req.canvas_id:
-        from aughor.canvas.store import resolve_connection_id
-        resolved = resolve_connection_id(req.canvas_id)
-        if resolved:
-            conn_id = resolved
+    conn_id = _resolve_conn(req)
     return StreamingResponse(
         _investigation_job_streamed(
             req.question, conn_id, request,
@@ -2393,6 +2421,62 @@ async def investigate(req: InvestigateRequest, request: Request):
             schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
             insight_id=req.insight_id, deep=req.deep,
         ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> AsyncGenerator[str, None]:
+    """The unified door: decide depth, emit the `route` receipt, then delegate to the
+    existing quick (Insight) or deep (ADA/explore) body unchanged.
+
+    The depth call is license-safe — a deep route degrades to quick when the
+    connection lacks DEEP_ANALYSIS — and the legacy `deep`/`insight_id` flags still
+    drive the "Investigate deeper" escalation and the dossier drill through one door.
+    """
+    from aughor.agent.ask_router import decide_ask_route
+    from aughor.licensing import has_capability
+
+    has_deep = has_capability(Capability.DEEP_ANALYSIS, conn_id=conn_id)
+    # decide_ask_route may consult the LLM intent classifier on borderline questions,
+    # so run it off the event loop.
+    route = await asyncio.to_thread(
+        decide_ask_route, req.question,
+        depth_override=req.depth, deep_flag=req.deep,
+        insight_id=req.insight_id, has_deep=has_deep,
+    )
+    yield _sse("route", route.to_event())
+
+    if route.depth == "deep":
+        async for sse in _investigation_job_streamed(
+            req.question, conn_id, request,
+            hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
+            schema_scope=req.schema_name, seed_sql=req.seed_sql,
+            seed_context=req.seed_context, insight_id=req.insight_id, deep=req.deep,
+        ):
+            yield sse
+    else:
+        async for sse in _metered_stream(
+            _stream_chat(req.question, conn_id, req.history, request,
+                         session_id=req.session_id, canvas_id=req.canvas_id),
+            budget=_insight_budget(conn_id),
+        ):
+            yield sse
+
+
+@router.post("/ask")
+async def ask_endpoint(req: AskRequest, request: Request):
+    """One conversational entry — the router picks quick vs deep (auto+transparency).
+
+    Not gated on DEEP_ANALYSIS as a dependency: a quick answer only needs chat access,
+    and a deep route is capability-checked inside `_stream_ask` (degrade, never bypass).
+    `/chat` and `/investigate` remain as-is for back-compat through the transition.
+    """
+    if os.getenv("AUGHOR_UNIFIED_ASK", "1").lower() in ("0", "false", "no", "off"):
+        raise HTTPException(status_code=404, detail="unified /ask is disabled")
+    conn_id = _resolve_conn(req)
+    return StreamingResponse(
+        _stream_ask(req, request, conn_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
