@@ -336,6 +336,57 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
   );
 }
 
+/* ── Clarify card — the ask-vs-guess prompt (Phase 3) ──
+   Shown when the agent asked one targeted question instead of guessing. The user's
+   reply (an option chip, a typed detail, or "answer anyway") re-asks the original
+   question with skip_clarify so we don't loop. */
+function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
+  turn: ChatTurn;
+  onClarify: (detail: string) => void;
+  onAnswerAnyway: () => void;
+}) {
+  const c = turn.clarify;
+  const [val, setVal] = useState("");
+  if (!c) return null;
+  const submit = () => { const v = val.trim(); if (v) { onClarify(v); setVal(""); } };
+  return (
+    <div style={{ marginTop: 8, padding: "12px 14px", borderRadius: "var(--r2)", background: "var(--blue1)", border: "1px solid var(--blue2)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: c.reason ? 4 : 8 }}>
+        <span style={{ color: "var(--blue5)", display: "inline-flex" }}><CommentIcon label="" size="small" /></span>
+        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--blue5)" }}>{c.question}</span>
+      </div>
+      {c.reason && <p style={{ fontSize: 11.5, color: "var(--t3)", margin: "0 0 8px 23px" }}>{c.reason}</p>}
+      {c.options.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          {c.options.map(o => (
+            <button key={o} onClick={() => onClarify(o)}
+              style={{ fontSize: 12, fontWeight: 500, padding: "4px 10px", borderRadius: "var(--r1)", cursor: "pointer", background: "var(--bg-1)", border: "1px solid var(--blue2)", color: "var(--blue5)" }}>
+              {o}
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); submit(); } }}
+          placeholder="Add the detail…"
+          style={{ flex: 1, fontSize: 12, padding: "6px 10px", borderRadius: "var(--r1)", background: "var(--bg-1)", border: "1px solid var(--b2)", color: "var(--t1)", outline: "none" }}
+        />
+        <button onClick={submit} disabled={!val.trim()}
+          style={{ fontSize: 12, fontWeight: 500, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer", padding: "6px 4px", opacity: val.trim() ? 1 : 0.4 }}>
+          Send
+        </button>
+        <button onClick={onAnswerAnyway} title="Answer with a best guess"
+          style={{ fontSize: 11.5, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: "6px 4px" }}>
+          Answer anyway →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, initialInsightId, capabilities }: Props) {
   const { state, ask, stop, clear, restore, eventLogRef } = useChat();
   const [input, setInput]           = useState("");
@@ -392,6 +443,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           mode: "ask" as const,
           status: "done" as const,
           route: null,
+          clarify: null,
           // Restored turns: the turn id IS the receipt key; the component 404-noops
           // gracefully if this turn predates receipts.
           receiptId: t.sql ? t.id : null,
@@ -627,6 +679,13 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                       onShowSource={setSourcePanel}
                       onDeeper={(q, insightId) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, insightId: insightId ?? undefined, deep: true })}
                     />
+                    {turn.clarify && (
+                      <ClarifyCard
+                        turn={turn}
+                        onClarify={(detail) => ask(`${turn.question} — ${detail}`, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true })}
+                        onAnswerAnyway={() => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true })}
+                      />
+                    )}
                     {/* B-9 — Trust Receipt on every answered turn that has one:
                         a chat answer (receiptId) or an agentic ADA report
                         (investigationId). */}

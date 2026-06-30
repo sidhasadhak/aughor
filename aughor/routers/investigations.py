@@ -497,6 +497,9 @@ class AskRequest(BaseModel):
     session_id: str = ""
     schema_name: Optional[str] = Field(default=None, alias="schema")
     depth: Literal["auto", "quick", "deep"] = "auto"
+    # Set when the user answered (or dismissed) a clarifying question — bypass the
+    # clarify gate so we don't ask again about the now-clarified request.
+    skip_clarify: bool = False
     # Pass-throughs preserved from the investigate path.
     deep: bool = False
     insight_id: Optional[str] = None
@@ -2436,6 +2439,19 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     """
     from aughor.agent.ask_router import decide_ask_route
     from aughor.licensing import has_capability
+
+    # Ask-vs-guess (Phase 3): when the question is materially ambiguous and this is a
+    # fresh auto turn (not an explicit depth override, deep-drill, dossier, or a turn
+    # already answering a clarification), ask ONE targeted question instead of guessing.
+    # Budget is one ask/turn — the user's answer comes back with skip_clarify set.
+    if (req.depth == "auto" and not req.deep and not req.insight_id and not req.skip_clarify
+            and os.getenv("AUGHOR_ASK_CLARIFY", "1").lower() not in ("0", "false", "no", "off")):
+        from aughor.agent.clarify import assess_clarification
+        decision = assess_clarification(req.question)
+        if decision.should_ask:
+            yield _sse("clarify", decision.to_event())
+            yield _sse("done", {})
+            return
 
     has_deep = has_capability(Capability.DEEP_ANALYSIS, conn_id=conn_id)
     # decide_ask_route may consult the LLM intent classifier on borderline questions,

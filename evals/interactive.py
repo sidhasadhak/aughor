@@ -235,13 +235,23 @@ def clarifying_system(generate_fn: Callable[[str], str], should_ask_fn: ShouldAs
 
 
 def complexity_should_ask(question: str, history: list) -> bool:
-    """A ``should_ask_fn`` backed by Aughor's own deterministic ambiguity signal — ask once when the
-    question is under-specified and no clarification has landed yet. This is the real seam Phase 3
-    refines (e.g. gating on SOMA candidate-disagreement materiality on top of the ``ambiguous`` flag)."""
+    """A ``should_ask_fn`` backed by Aughor's deterministic *under-specification* signal alone — ask
+    once when the question is under-specified and no clarification has landed yet. Kept as the
+    one-source baseline; it MISSES value/term ambiguity (the Phase-2 finding)."""
     from aughor.agent.complexity import assess_complexity
     if any(role == "user" for role, _ in history):
         return False
     return assess_complexity(question).ambiguous
+
+
+def clarify_should_ask(question: str, history: list) -> bool:
+    """A ``should_ask_fn`` backed by the Phase-3 **two-source** detector (``assess_clarification``):
+    under-specification OR value/term ambiguity. This is what ``/ask`` actually runs at the door, and
+    it catches the value-ambiguity case the complexity flag alone misses. Asks once."""
+    from aughor.agent.clarify import assess_clarification
+    if any(role == "user" for role, _ in history):
+        return False
+    return assess_clarification(question).should_ask
 
 
 def aggregate(results: list) -> dict:

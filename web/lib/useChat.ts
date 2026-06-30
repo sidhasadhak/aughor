@@ -38,7 +38,7 @@ export function useChat() {
     eventLogRef.current = [...eventLogRef.current.slice(-(MAX_LOG - 1)), e];
   }, []);
 
-  async function ask(question: string, connectionId: string, mode: "auto" | "ask" | "investigate" = "auto", opts: { skipCache?: boolean; canvasId?: string; insightId?: string; deep?: boolean; depth?: "quick" | "deep" } = {}) {
+  async function ask(question: string, connectionId: string, mode: "auto" | "ask" | "investigate" = "auto", opts: { skipCache?: boolean; canvasId?: string; insightId?: string; deep?: boolean; depth?: "quick" | "deep"; skipClarify?: boolean } = {}) {
     const id = Math.random().toString(36).slice(2);
     // The turn's initial mode is corrected by the `route` event for auto turns
     // (deep → investigate, else ask); start auto as "ask" so the loading state is
@@ -79,6 +79,7 @@ export function useChat() {
             history: chatHistory(),
             session_id: sessionIdRef.current,
             depth: opts.depth ?? "auto",
+            skip_clarify: opts.skipClarify ?? false,
             insight_id: opts.insightId ?? null,
             deep: opts.deep ?? false,
           }),

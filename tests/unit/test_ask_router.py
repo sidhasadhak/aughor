@@ -204,6 +204,12 @@ def ask_client(monkeypatch):
     monkeypatch.setattr(inv, "_stream_chat", fake_chat)
     monkeypatch.setattr(inv, "_investigation_job_streamed", fake_deep)
     monkeypatch.setattr(inv, "_metered_stream", lambda gen, budget=None: gen)
+    # Keep the borderline routing tiebreak hermetic — no live LLM call for these
+    # endpoint tests (the decision matrix is covered by the pure-function tests above).
+    monkeypatch.setattr(
+        "aughor.agent.ask_router._default_classifier",
+        lambda q: ("direct", _Decision(confidence=1.0, reasoning="stub")),
+    )
     app = FastAPI()
     app.include_router(inv.router)
     return TestClient(app)
@@ -246,3 +252,50 @@ def test_ask_disabled_flag_returns_404(ask_client, monkeypatch):
     monkeypatch.setenv("AUGHOR_UNIFIED_ASK", "0")
     r = ask_client.post("/ask", json={"question": "anything", "connection_id": "c1"})
     assert r.status_code == 404
+
+
+# ── Phase 3: the clarify gate (ask vs guess) ──────────────────────────────────
+
+def test_ask_ambiguous_question_emits_clarify_not_an_answer(ask_client, monkeypatch):
+    _set_cap(monkeypatch, True)
+    r = ask_client.post("/ask", json={"question": "How is performance lately?", "connection_id": "c1"})
+    evs = _events(r.text)
+    assert any(e["type"] == "clarify" for e in evs)
+    # it asked instead of answering — neither body ran
+    assert not any(e["type"] in ("quick_marker", "deep_marker") for e in evs)
+
+
+def test_ask_value_ambiguity_emits_clarify(ask_client, monkeypatch):
+    _set_cap(monkeypatch, True)
+    r = ask_client.post("/ask", json={"question": "total amount of urgent orders", "connection_id": "c1"})
+    evs = _events(r.text)
+    clar = next((e for e in evs if e["type"] == "clarify"), None)
+    assert clar and clar["source"] == "ambiguous_term" and "urgent" in clar["terms"]
+
+
+def test_ask_skip_clarify_bypasses_to_a_body(ask_client, monkeypatch):
+    _set_cap(monkeypatch, True)
+    r = ask_client.post("/ask", json={"question": "How is performance lately?", "connection_id": "c1",
+                                       "skip_clarify": True})
+    evs = _events(r.text)
+    assert not any(e["type"] == "clarify" for e in evs)
+    assert any(e["type"] in ("quick_marker", "deep_marker") for e in evs)
+
+
+def test_ask_explicit_depth_bypasses_clarify(ask_client, monkeypatch):
+    _set_cap(monkeypatch, True)
+    # an explicit depth override is a deliberate answer request — don't interrupt with a question
+    r = ask_client.post("/ask", json={"question": "How is performance lately?", "connection_id": "c1",
+                                       "depth": "quick"})
+    evs = _events(r.text)
+    assert not any(e["type"] == "clarify" for e in evs)
+    assert any(e["type"] == "quick_marker" for e in evs)
+
+
+def test_ask_clarify_disabled_by_flag(ask_client, monkeypatch):
+    _set_cap(monkeypatch, True)
+    monkeypatch.setenv("AUGHOR_ASK_CLARIFY", "0")
+    r = ask_client.post("/ask", json={"question": "How is performance lately?", "connection_id": "c1"})
+    evs = _events(r.text)
+    assert not any(e["type"] == "clarify" for e in evs)
+    assert any(e["type"] in ("quick_marker", "deep_marker") for e in evs)

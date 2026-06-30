@@ -1,9 +1,9 @@
 # One door: merging Insight and Deep into a single conversational analyst
 
-*Design document — 2026-06-30. Status: **Phases 0–2 shipped** (the unified `/ask` door + router,
-behind `AUGHOR_UNIFIED_ASK`; the frontend defaults to `/ask` with the auto + transparency depth banner
-+ one-click re-run; and the interactive eval harness is rebuilt with a baseline measured); Phases 3–5
-proposed. Companion to
+*Design document — 2026-06-30. Status: **Phases 0–3 shipped** (the unified `/ask` door + router; the
+auto + transparency frontend; the interactive eval harness; and ask-vs-guess clarification — two-source
+detection wired into `/ask` with a `clarify` SSE event + frontend clarify card, behind
+`AUGHOR_ASK_CLARIFY`); Phases 4–5 proposed. Companion to
 [`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md)
 (what the modes share today), [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md)
 (the ASSESS→ROUTE formula this productizes), and
@@ -271,7 +271,20 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   NOT *value/term* ambiguity ("urgent" → which status?), so it does NOT fire there (`complexity_should_ask`
   → 0% ask).** → Phase 3 must gate on SOMA candidate-disagreement materiality, not the `ambiguous` flag
   alone. (This is exactly why the harness is built first: it names the biggest gap before we build.)
-- **Phase 3 — ask-vs-guess clarification (§4).** The chosen priority capability, validated by Phase 2.
+- **Phase 3 — ask-vs-guess clarification (§4). ✅ SHIPPED (2026-06-30).** `aughor/agent/clarify.py`:
+  `assess_clarification(question)` — deterministic **two-source** detection (under-specification via the
+  complexity `ambiguous` flag + value/term ambiguity via a subjective-qualifier detector with an FP gate
+  that stays quiet on grounded questions). Wired into `_stream_ask` (behind `AUGHOR_ASK_CLARIFY`): a
+  fresh auto turn that is materially ambiguous emits a **`clarify` SSE event** (one targeted question +
+  reason + best-effort options) instead of guessing; budget is one ask/turn; explicit overrides /
+  drills / `skip_clarify` bypass it. Frontend: a **clarify card** (`web/components/ChatPanel.tsx`:
+  `ClarifyCard`) — option chips, a typed-detail input, and **“Answer anyway”** (the honesty fallback);
+  the reply re-asks with `skip_clarify` so it never loops. **Live-verified** (running API): under-spec
+  and value/term (“urgent”) questions both emit `clarify`; `skip_clarify` and concrete questions don’t.
+  **Harness-measured** (the loop Phase 2 opened, closed): on the value-ambiguity task, never-asks **0%**
+  → one-source(complexity) **0%** → **two-source(clarify) 100%**. *Remaining (3b): the execution-grounded
+  SOMA candidate-disagreement + value-index/glossary binding to replace the deterministic term proxy and
+  to populate grounded options.*
 - **Phase 4 — conversational session state (§6).** The BIRD-INTERACT lift; multi-turn episodes in the
   harness.
 - **Phase 5 — progressive escalation / ITS.** Start cheap, escalate depth mid-stream when findings are

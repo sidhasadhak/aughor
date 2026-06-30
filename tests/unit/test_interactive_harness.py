@@ -14,7 +14,7 @@ import sqlite3
 
 from evals.interactive import (
     Ambiguity, InteractiveTask, FunctionDrivenSimulator, run_episode, single_shot_system,
-    clarifying_system, complexity_should_ask, aggregate,
+    clarifying_system, complexity_should_ask, clarify_should_ask, aggregate,
     AMB, LOC, UNA,
 )
 
@@ -164,6 +164,21 @@ def test_complexity_should_ask_only_asks_once():
     # once a clarification has landed, do not ask again (self-limiting to one targeted question)
     history = [("user", "by performance I mean revenue growth")]
     assert complexity_should_ask("How is performance lately?", history) is False
+
+
+def test_phase3_detector_catches_value_ambiguity_the_flag_misses():
+    # the Phase-2 finding, closed: complexity flag misses 'urgent', the two-source detector catches it
+    q = "total amount of urgent orders"
+    assert complexity_should_ask(q, []) is False      # one-source baseline: blind to value ambiguity
+    assert clarify_should_ask(q, []) is True          # Phase-3 two-source: asks
+
+
+def test_phase3_clarifying_system_resolves_the_value_ambiguity_task():
+    ex = _sqlite_exec()
+    # the full loop: real detector asks → simulator resolves 'urgent' → correct submit
+    sysfn = clarifying_system(_ambiguity_aware_generate, should_ask_fn=clarify_should_ask, max_asks=1)
+    res = run_episode(_task(), sysfn, ex)
+    assert res.asked and res.success and res.resolved_all
 
 
 # ── aggregate metrics ──────────────────────────────────────────────────────────

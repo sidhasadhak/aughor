@@ -51,6 +51,15 @@ export interface ChatTurn {
     downgradedFrom: string | null;   // "deep" when capability-gated down to quick
   } | null;
 
+  // Ask-vs-guess (Phase 3) — when set, the agent asked a clarifying question instead of
+  // answering; the turn renders a clarify card and the user's reply re-asks with skip_clarify.
+  clarify: {
+    question: string;
+    options: string[];
+    source: string;          // "underspecified" | "ambiguous_term"
+    reason: string;
+  } | null;
+
   // Investigate mode — ADA phases stream in progressively
   statusText: string | null;
   phases: InvestigationPhase[];
@@ -118,6 +127,7 @@ export interface ChatState {
 export type ChatAction =
   | { type: "ASK";          id: string; question: string; mode: "ask" | "investigate" }
   | { type: "ROUTE";        route: NonNullable<ChatTurn["route"]> }
+  | { type: "CLARIFY";      clarify: NonNullable<ChatTurn["clarify"]> }
   | { type: "SQL";          sql: string }
   | { type: "COLUMNS";      columns: string[] }
   | { type: "ROWS";         rows: unknown[][] }
@@ -158,6 +168,7 @@ function updateLast(state: ChatState, fn: (t: ChatTurn) => ChatTurn): ChatState 
 export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   status: "loading",
   route: null,
+  clarify: null,
   sql: null, columns: [], rows: [], headline: null, chartType: null,
   statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
@@ -194,6 +205,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...t, route: action.route,
         mode: action.route.depth === "deep" ? "investigate" : "ask",
       }));
+    case "CLARIFY":
+      return updateLast(state, t => ({ ...t, clarify: action.clarify }));
     case "SQL":        return updateLast(state, t => ({ ...t, sql: action.sql }));
     case "COLUMNS":    return updateLast(state, t => ({ ...t, columns: action.columns }));
     case "ROWS":       return updateLast(state, t => ({ ...t, rows: action.rows }));
@@ -266,6 +279,7 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "ada_report":     return `headline: ${String((p.ada_report as { headline?: string })?.headline ?? "").slice(0, 60)}`;
     case "explore_report": return `narrative: ${String((p.explore_report as { narrative?: string })?.narrative ?? "").slice(0, 60)}`;
     case "route":          return `${p.depth ?? "?"} · ${String(p.why ?? "").slice(0, 40)}`;
+    case "clarify":        return `${p.source ?? "?"} · ${String(p.question ?? "").slice(0, 40)}`;
     case "report":         return `mode: ${p.query_mode ?? "?"}`;
     case "error":          return `message: ${p.message}`;
     case "insight":        return String(p.narrative ?? "").slice(0, 40);
@@ -311,6 +325,14 @@ export async function consumeStream(
                 ambiguous: Boolean(p.ambiguous),
                 forced: (p.forced as string) ?? null,
                 downgradedFrom: (p.downgraded_from as string) ?? null,
+              } });
+              break;
+            case "clarify":
+              dispatch({ type: "CLARIFY", clarify: {
+                question: (p.question as string) ?? "",
+                options: (p.options as string[]) ?? [],
+                source: (p.source as string) ?? "",
+                reason: (p.reason as string) ?? "",
               } });
               break;
             case "sql":          dispatch({ type: "SQL",        sql:       p.sql as string }); break;
