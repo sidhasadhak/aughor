@@ -294,9 +294,13 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   and switches to a **"compose on the most recent query as the base"** directive when a follow-up is
   detected. **Live-verified:** "now break that down by status" after a revenue lookup →
   `SELECT status, SUM(amount) … GROUP BY status` (kept the metric + table, added the grain, dropped the
-  now-wrong `WHERE status='success'`). 10 tests. *Remaining (4b): carry deep/investigate turns into the
-  context (today quick-only); explicit resolved-binding state (metric/window/filters); server-persisted
-  per-`session_id` context; CTE carry-over.*
+  now-wrong `WHERE status='success'`). 10 tests.
+  **✅ 4b deep-turn context (2026-06-30):** `web/lib/useChat.ts: deepHistoryEntry` carries a deep/explore
+  answer into the conversation — its headline (continuity) + the first finding-with-SQL as a composable
+  base + a result digest — so follow-ups after an *investigation* keep context (was quick-turns-only).
+  Live-verified: "now just the failed ones" after a by-status investigation → `SELECT SUM(amount) … WHERE
+  status='failed'` (kept metric+table, resolved "the failed ones" via the digest). *Remaining: explicit
+  resolved-binding state (metric/window/filters); server-persisted per-`session_id` context; CTE carry-over.*
 - **Phase 5 — progressive escalation / ITS.** Start cheap, escalate depth mid-stream when findings are
   inconclusive (the ADA gates already do this internally; expose across the unified path).
 

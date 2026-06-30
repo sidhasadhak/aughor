@@ -82,3 +82,14 @@ def test_only_the_last_three_turns_are_kept():
     turns = [_turn(question=f"q{i}") for i in range(5)]
     out = build_history_section(turns)
     assert "q4" in out and "q1" not in out
+
+
+def test_deep_turn_carries_headline_even_without_sql():
+    # a deep/investigate turn may have no single representative SQL — its headline is the
+    # continuity (Phase 4b). The SQL line is skipped, the headline is kept.
+    t = _turn(question="why did revenue fall?", sql="", columns=[],
+              headline="Revenue fell 8% on enterprise churn", key_rows=[])
+    out = build_history_section([t])
+    assert "why did revenue fall?" in out
+    assert "Revenue fell 8% on enterprise churn" in out
+    assert "SQL:" not in out
