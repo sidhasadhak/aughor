@@ -1503,6 +1503,10 @@ async def _stream_chat(
                 pass
 
         if result.error:
+            from aughor.agent.escalate import assess_escalation
+            _esc = assess_escalation(question, columns=result.columns, rows=result.rows, error=result.error)
+            if _esc.should_offer:
+                yield _sse("escalate", _esc.to_event())
             yield _sse("error", {"message": result.error})
             return
 
@@ -1564,6 +1568,14 @@ async def _stream_chat(
             yield _sse("playbook_refs", {"items": _pb_serialize(pb_entries)})
         if _trusted_used:
             yield _sse("trusted", {"items": _trusted_used})
+
+        # Phase 5 — progressive escalation: if the cheap answer is inconclusive (empty on an
+        # analytical question, or a causal "why" answered by a single figure), OFFER a deep
+        # investigation (a suggestion the user clicks — not a forced re-run).
+        from aughor.agent.escalate import assess_escalation
+        _esc = assess_escalation(question, columns=result.columns, rows=result.rows)
+        if _esc.should_offer:
+            yield _sse("escalate", _esc.to_event())
 
         # Persist, then mark DONE the moment the answer is ready — so the
         # "Completed in …" time reflects when the user got their answer, not when

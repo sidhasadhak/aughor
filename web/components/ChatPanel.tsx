@@ -387,6 +387,27 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
   );
 }
 
+/* ── Escalation bar — progressive escalation (Phase 5) ──
+   Shown when a quick answer was inconclusive; one click re-runs the question as a
+   deep investigation (auto + transparency — the agent offers, the user decides). */
+function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => void }) {
+  const e = turn.escalate;
+  if (!e || turn.status === "loading") return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 8,
+                  padding: "8px 12px", borderRadius: "var(--r2)", background: "var(--vio1)", border: "1px solid var(--vio2)" }}>
+      <span style={{ color: "var(--vio5)", display: "inline-flex" }}><AiSparkleIcon label="" size="small" /></span>
+      <span style={{ fontSize: 12, color: "var(--t2)", flex: 1, minWidth: 180 }}>{e.reason}</span>
+      <button
+        onClick={onEscalate}
+        style={{ fontSize: 12, fontWeight: 500, color: "var(--vio5)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+      >
+        Investigate this →
+      </button>
+    </div>
+  );
+}
+
 export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, initialInsightId, capabilities }: Props) {
   const { state, ask, stop, clear, restore, eventLogRef } = useChat();
   const [input, setInput]           = useState("");
@@ -444,6 +465,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           status: "done" as const,
           route: null,
           clarify: null,
+          escalate: null,
           // Restored turns: the turn id IS the receipt key; the component 404-noops
           // gracefully if this turn predates receipts.
           receiptId: t.sql ? t.id : null,
@@ -684,6 +706,12 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         turn={turn}
                         onClarify={(detail) => ask(`${turn.question} — ${detail}`, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true })}
                         onAnswerAnyway={() => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true })}
+                      />
+                    )}
+                    {turn.escalate && (
+                      <EscalateBar
+                        turn={turn}
+                        onEscalate={() => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, depth: "deep", skipClarify: true })}
                       />
                     )}
                     {/* B-9 — Trust Receipt on every answered turn that has one:

@@ -60,6 +60,13 @@ export interface ChatTurn {
     reason: string;
   } | null;
 
+  // Progressive escalation (Phase 5) — set when a quick answer was inconclusive and the
+  // agent offers a deeper investigation (the user clicks to re-run at depth=deep).
+  escalate: {
+    signal: string;          // "error" | "no_rows" | "causal_thin"
+    reason: string;
+  } | null;
+
   // Investigate mode — ADA phases stream in progressively
   statusText: string | null;
   phases: InvestigationPhase[];
@@ -128,6 +135,7 @@ export type ChatAction =
   | { type: "ASK";          id: string; question: string; mode: "ask" | "investigate" }
   | { type: "ROUTE";        route: NonNullable<ChatTurn["route"]> }
   | { type: "CLARIFY";      clarify: NonNullable<ChatTurn["clarify"]> }
+  | { type: "ESCALATE";     escalate: NonNullable<ChatTurn["escalate"]> }
   | { type: "SQL";          sql: string }
   | { type: "COLUMNS";      columns: string[] }
   | { type: "ROWS";         rows: unknown[][] }
@@ -169,6 +177,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   status: "loading",
   route: null,
   clarify: null,
+  escalate: null,
   sql: null, columns: [], rows: [], headline: null, chartType: null,
   statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
@@ -207,6 +216,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }));
     case "CLARIFY":
       return updateLast(state, t => ({ ...t, clarify: action.clarify }));
+    case "ESCALATE":
+      return updateLast(state, t => ({ ...t, escalate: action.escalate }));
     case "SQL":        return updateLast(state, t => ({ ...t, sql: action.sql }));
     case "COLUMNS":    return updateLast(state, t => ({ ...t, columns: action.columns }));
     case "ROWS":       return updateLast(state, t => ({ ...t, rows: action.rows }));
@@ -280,6 +291,7 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "explore_report": return `narrative: ${String((p.explore_report as { narrative?: string })?.narrative ?? "").slice(0, 60)}`;
     case "route":          return `${p.depth ?? "?"} · ${String(p.why ?? "").slice(0, 40)}`;
     case "clarify":        return `${p.source ?? "?"} · ${String(p.question ?? "").slice(0, 40)}`;
+    case "escalate":       return `${p.signal ?? "?"} · ${String(p.reason ?? "").slice(0, 40)}`;
     case "report":         return `mode: ${p.query_mode ?? "?"}`;
     case "error":          return `message: ${p.message}`;
     case "insight":        return String(p.narrative ?? "").slice(0, 40);
@@ -332,6 +344,12 @@ export async function consumeStream(
                 question: (p.question as string) ?? "",
                 options: (p.options as string[]) ?? [],
                 source: (p.source as string) ?? "",
+                reason: (p.reason as string) ?? "",
+              } });
+              break;
+            case "escalate":
+              dispatch({ type: "ESCALATE", escalate: {
+                signal: (p.signal as string) ?? "",
                 reason: (p.reason as string) ?? "",
               } });
               break;

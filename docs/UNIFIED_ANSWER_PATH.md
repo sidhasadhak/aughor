@@ -1,9 +1,11 @@
 # One door: merging Insight and Deep into a single conversational analyst
 
-*Design document — 2026-06-30. Status: **Phases 0–4 (core) shipped** — the unified `/ask` door + router;
-the auto + transparency frontend (incl. answer declutter + on-demand "Explain the data"); the interactive
-eval harness; ask-vs-guess clarification; and conversational session state (follow-up detection +
-result-digest context, live-verified). Phase 5 + the 4b/3b deepenings proposed. Companion to
+*Design document — 2026-06-30. Status: **Phases 0–5 shipped — the phased arc is complete.** The unified
+`/ask` door + router; the auto + transparency frontend (answer declutter + on-demand "Explain the data");
+the interactive eval harness; ask-vs-guess clarification; conversational session state (follow-up
+detection + result-digest context + deep-turn context); and progressive escalation (offer depth when a
+quick answer is inconclusive) — all live-verified. Open deepenings: 3b (deferred by measure-before-trust),
+4b-remainder (largely covered), explore-mode declutter, the Scout filter-literal fix (ROADMAP). Companion to
 [`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md)
 (what the modes share today), [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md)
 (the ASSESS→ROUTE formula this productizes), and
@@ -257,9 +259,12 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   rendered as a **depth banner** with a **one-click re-run** at the other depth
   (`web/components/ChatPanel.tsx`: `DepthBanner` + a 3-segment Auto·Insight·Deep toggle, Auto default).
   Live-verified against the running API: a quick lookup, a causal→deep route, and a `depth=quick`
-  override each stream the correct `route` receipt first; tsc + eslint clean. *Remaining within this
-  arc: the render-selector keyed on the actual result shape (§5) — today output structure still follows
-  the route→mode mapping, i.e. the two existing renderers.*
+  override each stream the correct `route` receipt first; tsc + eslint clean.
+  **✅ §5 render-selector — already satisfied** (verified 2026-06-30): `ChatMessage.tsx: ResultFigure`
+  already selects the output structure from the **result shape** — single-row numeric → KPI metrics
+  (`BriefMetrics`), ≥3 rows + numeric + (date/category) → auto chart (`ResultChartCard`), else → table.
+  The route→mode mapping picks quick-card vs investigation-layout; within the quick card the shape adapts.
+  No further work needed.
 - **Phase 2 — eval harness (rebuild). ✅ SHIPPED (2026-06-30).** `evals/interactive.py` rebuilt: a
   function-driven user simulator (`AMB`/`LOC`/**`UNA`** anti-leak + gold-SQL scrub) + an episode runner
   that scores *submitted* SQL against executable gold under a clarification budget — rewarding good
@@ -282,9 +287,11 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   the reply re-asks with `skip_clarify` so it never loops. **Live-verified** (running API): under-spec
   and value/term (“urgent”) questions both emit `clarify`; `skip_clarify` and concrete questions don’t.
   **Harness-measured** (the loop Phase 2 opened, closed): on the value-ambiguity task, never-asks **0%**
-  → one-source(complexity) **0%** → **two-source(clarify) 100%**. *Remaining (3b): the execution-grounded
-  SOMA candidate-disagreement + value-index/glossary binding to replace the deterministic term proxy and
-  to populate grounded options.*
+  → one-source(complexity) **0%** → **two-source(clarify) 100%**. *3b (execution-grounded SOMA
+  candidate-disagreement + value-index-bound option chips) is **deliberately deferred** per the
+  measure-before-trust invariant (§9): the deterministic detector is harness-proven, so building the
+  LLM-heavy candidate-disagreement is speculative until the harness shows the lexicon misses real cases;
+  and auto-populated option chips risk offering the **wrong** values. Rebuild when the harness flags the gap.*
 - **Phase 4 — conversational session state (§6). ✅ CORE SHIPPED (2026-06-30).** The chat path already
   injected the last 3 quick turns' SQL; Phase 4 makes follow-ups *reliable*: `aughor/agent/followup.py`
   `is_followup(question)` deterministically detects a continuation ("now break that down", "filter that
@@ -299,10 +306,20 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   answer into the conversation — its headline (continuity) + the first finding-with-SQL as a composable
   base + a result digest — so follow-ups after an *investigation* keep context (was quick-turns-only).
   Live-verified: "now just the failed ones" after a by-status investigation → `SELECT SUM(amount) … WHERE
-  status='failed'` (kept metric+table, resolved "the failed ones" via the digest). *Remaining: explicit
-  resolved-binding state (metric/window/filters); server-persisted per-`session_id` context; CTE carry-over.*
-- **Phase 5 — progressive escalation / ITS.** Start cheap, escalate depth mid-stream when findings are
-  inconclusive (the ADA gates already do this internally; expose across the unified path).
+  status='failed'` (kept metric+table, resolved "the failed ones" via the digest).
+  *Remaining (all LOW-value, deferred): server-persisted per-`session_id` context is **largely covered**
+  — the restore flow (`/chat-sessions/{id}/turns` → `restore()`) already rehydrates quick turns with their
+  rows, so reload context survives; only deep-turn reload, explicit resolved-binding state, and CTE
+  carry-over are open, and none is worth the complexity now.*
+- **Phase 5 — progressive escalation / ITS. ✅ SHIPPED (2026-06-30).** `aughor/agent/escalate.py`
+  `assess_escalation(question, columns, rows, error)` — deterministic, low-FP: a quick answer that
+  **errored**, returned **no rows on an analytical question** (the 'Womenswear' wrong-filter shape), or
+  answered a causal **"why" with a single figure** emits an `escalate` SSE event. **Auto + transparency:**
+  it *offers* a deep investigation (a one-click "Investigate this →" bar that re-runs at `depth=deep` +
+  `skip_clarify`) rather than auto-escalating — cheap, unsurprising, read-first. Wired into `_stream_chat`
+  on both the success and error paths; frontend `EscalateBar` (`ChatPanel.tsx`). 8 tests; **live-verified**
+  (`WHERE status='nonexistent_status'` → `rows:[]` → `escalate signal=no_rows`). This is the ITS idea —
+  spend depth only when the cheap answer doesn't settle the question.
 
 ---
 
