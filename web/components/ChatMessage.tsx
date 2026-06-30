@@ -857,9 +857,7 @@ function InsightBrief({
         </BriefSection>
       )}
 
-      <InsightActions turn={turn} connectionId={connectionId} />
-
-      <InsightDetails turn={turn} onShowSource={onShowSource} />
+      <InsightDetails turn={turn} connectionId={connectionId} onShowSource={onShowSource} />
     </Brief>
   );
 }
@@ -925,9 +923,10 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
 
 // ── Insight machinery — folded into one quiet disclosure ──────────────────────
 function InsightDetails({
-  turn, onShowSource,
+  turn, connectionId, onShowSource,
 }: {
   turn: ChatTurn;
+  connectionId?: string;
   onShowSource?: (data: SourcePanelData) => void;
 }) {
   const hasAnalysis = !!turn.analysis && (!!turn.analysis.intent || turn.analysis.steps.length > 0);
@@ -935,10 +934,17 @@ function InsightDetails({
   const hasSource   = turn.columns.length > 0;
   const hasPlaybook = turn.playbookRefs.length > 0;
   const hasElapsed  = turn.elapsedMs != null;
-  if (!(hasAnalysis || hasTables || hasSource || hasPlaybook || hasElapsed)) return null;
+  const hasActions  = !!(turn.sql && turn.sql.trim() && connectionId);
+  if (!(hasAnalysis || hasTables || hasSource || hasPlaybook || hasElapsed || hasActions)) return null;
 
   return (
     <BriefDetails>
+      {hasActions && (
+        <BriefDetailBlock label="Validate &amp; feedback">
+          <InsightActions turn={turn} connectionId={connectionId} />
+        </BriefDetailBlock>
+      )}
+
       {hasAnalysis && (
         <BriefDetailBlock label="How this was computed">
           {turn.analysis!.intent && (
