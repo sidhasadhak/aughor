@@ -180,115 +180,22 @@ class SQLiteConnection(Connector):
         return "\n".join(parts)
 
     def get_schema(self) -> str:
-        """Fast hot-path schema: structure + glossary + joins + exploration. No
-        DB profiling or LLM — heavy intelligence lives in build_intelligence()."""
+        """Fast hot-path schema: raw structure + the registered FAST schema annotators
+        (glossary/joins/metrics enrichment + exploration). No DB profiling or LLM."""
         base = self._schema_string()
         if base.startswith("No tables") or base.startswith("Schema unavailable"):
             return base
-        try:
-            from aughor.semantic.autoseed import seed_missing_tables
-            from aughor.semantic.glossary import apply_glossary
-            from aughor.tools.schema import infer_joins
-            seed_missing_tables(base)
-            base = apply_glossary(base)
-            join_hints = infer_joins(base)
-            if join_hints:
-                base += "\n\n" + join_hints
-        except Exception as exc:
-            tolerate(exc, "sqlite get_schema: glossary/join enrichment is additive — schema loads without it",
-                     counter="sqlite.schema_enrich", conn_id=self._connection_id or None)
-
-        try:
-            from aughor.explorer.store import render_exploration_annotations
-            expl_block = render_exploration_annotations(self._connection_id or "sqlite")
-            if expl_block:
-                base += "\n\n" + expl_block
-        except Exception as exc:
-            tolerate(exc, "sqlite get_schema: exploration annotations are additive — schema loads without them",
-                     counter="sqlite.schema_exploration", conn_id=self._connection_id or None)
-        return base
+        from aughor.kernel.registries.schema_annotators import run_annotators
+        return run_annotators(self, base, phase="fast")
 
     def build_intelligence(self) -> str:
-        """Heavy path: value profiles + structural/semantic ontology. Engine-agnostic
-        pipeline (operates on self + the schema string), reused via public helpers."""
-        from aughor.tools.schema import (
-            compute_join_map, parse_schema_tables, infer_joins, inject_value_annotations,
-        )
-        from aughor.tools.profile_cache import get_or_build_profiles
-        from aughor.tools.profiler import render_profile_annotations
-        from aughor.semantic.glossary import apply_glossary
-
-        base = apply_glossary(self._schema_string())
-        tables = self._list_tables()
-        join_hints = infer_joins(base)
-        if join_hints:
-            base += "\n\n" + join_hints
-
-        table_cols = parse_schema_tables(base)
-        jmap = compute_join_map(table_cols)
-        fk_hints: dict[str, set[str]] = {t: set() for t in tables}
-        for j in jmap.get("joins", []):
-            fk_hints.setdefault(j["t1"], set()).add(j["c1"])
-
-        self.last_build = {"ok": True, "stage": None, "error": None}
-        _stage = "profiling"
-        try:
-            tp, cp = get_or_build_profiles(self, self._connection_id or "sqlite", tables, fk_hints)
-            base = inject_value_annotations(base, cp)
-            annotation = render_profile_annotations(tp, cp)
-            if annotation:
-                base += "\n\n" + annotation
-
-            from aughor.ontology.store import get_or_build_ontology, save_ontology
-            from aughor.ontology.builder import render_ontology_annotations
-            from aughor.semantic.glossary import load_merged_glossary
-            _glossary = load_merged_glossary()
-            _stage = "ontology"
-            graph = get_or_build_ontology(
-                connection_id=self._connection_id or "sqlite",
-                schema_name=self._schema_name or "main",
-                table_profiles=tp,
-                column_profiles=cp,
-                join_map=jmap,
-                glossary=_glossary,
-            )
-            if graph is None:
-                self.last_build = {
-                    "ok": False, "stage": "ontology",
-                    "error": "the object model could not be built from this schema — it may "
-                             "be too sparse to model (no entities/relationships inferred).",
-                }
-            else:
-                from aughor.ontology.enricher import ENRICHMENT_VERSION
-                if not graph.enriched or graph.enrichment_version < ENRICHMENT_VERSION:
-                    _stage = "enrichment"
-                    try:
-                        from aughor.ontology.enricher import enrich_ontology_semantics
-                        from aughor.llm.provider import get_provider
-                        graph = enrich_ontology_semantics(graph, get_provider("coder"), _glossary, base)
-                        save_ontology(graph.connection_id, graph.schema_name, graph.schema_fingerprint, graph)
-                    except Exception as _enr_exc:
-                        self.last_build = {
-                            "ok": True, "stage": "enrichment",
-                            "error": f"semantic enrichment failed (ontology still usable): {str(_enr_exc)[:200]}",
-                        }
-                    _stage = "ontology"
-                self._ontology = graph
-                onto_block = render_ontology_annotations(graph)
-                if onto_block:
-                    base += "\n\n" + onto_block
-        except Exception as _build_exc:
-            self.last_build = {"ok": False, "stage": _stage, "error": str(_build_exc)[:400]}
-
-        try:
-            from aughor.explorer.store import render_exploration_annotations
-            expl_block = render_exploration_annotations(self._connection_id or "sqlite")
-            if expl_block:
-                base += "\n\n" + expl_block
-        except Exception as exc:
-            tolerate(exc, "sqlite build_intelligence: exploration block is additive — intelligence builds without it",
-                     counter="sqlite.intel_exploration", conn_id=self._connection_id or None)
-        return base
+        """Heavy path: raw structure + the registered HEAVY schema annotators
+        (enrichment + value profiles + the structural/semantic ontology + exploration)."""
+        base = self._schema_string()
+        if base.startswith("No tables") or base.startswith("Schema unavailable"):
+            return base
+        from aughor.kernel.registries.schema_annotators import run_annotators
+        return run_annotators(self, base, phase="heavy")
 
     # ── misc ────────────────────────────────────────────────────────────────────
 

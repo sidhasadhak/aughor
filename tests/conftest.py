@@ -16,6 +16,17 @@ os.environ.setdefault(
 )
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _register_agent_plugins():
+    """Plug the Agent into the Platform's registries for the whole test session —
+    exactly as the live app does at startup (``api.py`` lifespan / the CLI). Without
+    this the purge cascade and schema annotators run platform-only, and tests that
+    assert the agent's contribution (e.g. ``test_connection_purge``) would fail."""
+    from aughor.agent.bootstrap import register_agent_plugins
+    register_agent_plugins()
+    yield
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--run-e2e", action="store_true", default=False,

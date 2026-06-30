@@ -129,7 +129,7 @@ class ConfluenceSync:
 
     def sync(self) -> dict[str, int]:
         """Sync all pages. Returns {space_key: pages_indexed}."""
-        from aughor.knowledge.indexer import index_text
+        from aughor.kernel.registries.ingestion import ingest
         state = self._load_state()
         results: dict[str, int] = {}
 
@@ -148,7 +148,8 @@ class ConfluenceSync:
                 source_url = f"{self._base_url}/wiki/spaces/{space_key}/pages/{page_id}"
                 doc_id = f"confluence_{self._conn_id}_{page_id}"
                 try:
-                    index_text(
+                    ingest(
+                        "knowledge",
                         text=text,
                         title=f"[{space_key}] {title}",
                         source=f"confluence:{space_key}",

@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from aughor.tools.schema import fk_root
+from aughor.db.schema_render import fk_root
 
 
 @dataclass

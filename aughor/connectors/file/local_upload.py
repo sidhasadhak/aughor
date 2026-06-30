@@ -45,7 +45,7 @@ from pathlib import Path
 import duckdb
 
 from aughor.connectors.base import Connector
-from aughor.agent.state import QueryResult
+from aughor.platform.contracts.execution import QueryResult
 from aughor.platform.vending import STORAGE_ROOT, vend_storage
 
 logger = logging.getLogger(__name__)

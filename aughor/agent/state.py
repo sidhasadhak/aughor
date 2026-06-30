@@ -6,6 +6,11 @@ from typing_extensions import TypedDict
 from pydantic import BaseModel, Field, field_validator
 import operator
 
+# The query-execution result contract lives on the PLATFORM side so the data plane
+# (db / connectors) returns it without importing the agent. Re-exported here so the
+# many `from aughor.agent.state import QueryResult` call sites stay unchanged.
+from aughor.platform.contracts.execution import QueryResult, StatResult  # noqa: F401
+
 
 # ── Pydantic output schemas (structured LLM responses) ──────────────────────
 
@@ -102,25 +107,8 @@ class SQLOutput(BaseModel):
     reasoning: str = Field(default="", description="One sentence: what this query measures.")
 
 
-class StatResult(BaseModel):
-    type: str
-    interpretation: str
-    is_significant: bool
-    sigma: Optional[float] = None
-    p_value: Optional[float] = None
-
-
-class QueryResult(BaseModel):
-    hypothesis_id: str
-    sql: str
-    columns: list[str]
-    rows: list[list]
-    row_count: int
-    error: Optional[str] = None
-    stats: list[StatResult] = Field(default_factory=list)
-    # Predictions set at plan time; carried through for comparison at score time
-    expected_if_true: Optional[str] = None
-    expected_if_false: Optional[str] = None
+# StatResult + QueryResult moved to aughor.platform.contracts.execution (imported at
+# the top of this module). They remain importable from here for back-compat.
 
 
 class EvidenceScore(BaseModel):
@@ -442,6 +430,12 @@ class AgentState(TypedDict):
     query_mode: Optional[Literal["direct", "investigate", "explore", "final_text"]]
     route_reasoning: Optional[str]
     route_confidence: Optional[float]
+    # Deterministic complexity assessment → cost-tiered routing (Part 2). The tier the
+    # run was routed at, its score, and whether the question looked under-specified
+    # (the seam a later clarification step gates on).
+    route_complexity_tier: Optional[str]
+    route_complexity_score: Optional[float]
+    route_ambiguous: Optional[bool]
 
     # Consistency check: contradictions found before synthesis (investigate mode only)
     unresolved_tensions: list[str]

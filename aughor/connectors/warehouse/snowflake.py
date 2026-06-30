@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 
 from aughor.connectors.base import Connector
-from aughor.agent.state import QueryResult
+from aughor.platform.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
 

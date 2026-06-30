@@ -186,14 +186,14 @@ def complete_investigation(
                     headline=(headline or "")[:200],
                     query_count=len(queries_list))
 
-    # Index in Qdrant — only for investigate-mode completions (not direct queries)
+    # Index in the agent's RAG — only for investigate-mode completions (not direct
+    # queries). Emitted via the platform ingestion seam so this module (platform db)
+    # never imports the agent; the agent registers the "investigation_index" sink.
     if report_dict and not skip_index:
         key_findings = [f.get("claim", "") for f in (report_dict.get("key_findings") or [])]
-        from aughor.tools.prior_analyses import index_investigation, index_sql_examples
-        index_investigation(inv_id, question=question, headline=headline, key_findings=key_findings, connection_id=connection_id)
-        # Index only successful SQL executions as few-shot examples for future queries
-        if question and query_history:
-            index_sql_examples(inv_id, question=question, query_history=query_history, connection_id=connection_id)
+        from aughor.kernel.registries.ingestion import ingest
+        ingest("investigation_index", inv_id=inv_id, question=question, headline=headline,
+               key_findings=key_findings, connection_id=connection_id, query_history=query_history)
 
 
 def pause_investigation(inv_id: str) -> None:

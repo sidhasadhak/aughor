@@ -281,10 +281,12 @@ def delete_connection(conn_id: str) -> bool:
         with _db() as conn:
             conn.execute("DELETE FROM connections WHERE id = ?", [conn_id])
             conn.commit()
-    # Evict any cached profiles for this connection
+    # Evict any cached profiles for this connection. Emitted via the platform
+    # ingestion/event seam so this module (platform db) never imports the agent;
+    # the agent registers the "connection_invalidated" sink (profile-cache evict).
     try:
-        from aughor.tools.profile_cache import invalidate
-        invalidate(conn_id)
+        from aughor.kernel.registries.ingestion import ingest
+        ingest("connection_invalidated", conn_id=conn_id)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "profile-cache invalidation on delete is best-effort; stale entries expire",

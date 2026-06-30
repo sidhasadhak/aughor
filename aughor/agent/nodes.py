@@ -88,7 +88,13 @@ def classify_question(question: str) -> tuple[str, RouteDecision]:
     MindsDB-style final_text path: if the question is definitional/ontological
     and the KB has a strong match, route to final_text without generating SQL.
     """
-    llm = get_provider("coder")
+    # Cost-tiered routing (test-time scaling): a deterministic complexity assessment
+    # picks the inference role — a simple question is classified by the cheap "fast"
+    # model, a harder one by the frontier "coder" model (it never downgrades a hard
+    # question). See docs/NL2SQL_WINNING_FORMULA_2026.md.
+    from aughor.agent.complexity import assess_complexity, model_role_for
+    _verdict = assess_complexity(question)
+    llm = get_provider(model_role_for(_verdict))
     decision: RouteDecision = llm.complete(
         system="You are a routing classifier for a business intelligence agent. Classify questions precisely.",
         user=ROUTE_QUESTION_PROMPT.format(question=question),
@@ -123,7 +129,18 @@ def classify_question(question: str) -> tuple[str, RouteDecision]:
 @_telemetry.node_span("route_question")
 def route_question(state: AgentState) -> dict[str, Any]:
     effective_mode, decision = classify_question(state["question"])
-    base = {"route_reasoning": decision.reasoning, "route_confidence": decision.confidence}
+    # Carry the deterministic complexity verdict into the run state (and a stats
+    # counter) so the cost tier we routed to is observable on the receipt / fleet view.
+    from aughor.agent.complexity import assess_complexity
+    _v = assess_complexity(state["question"])
+    try:
+        from aughor.stats import stats as _st
+        _st.inc(f"route.tier.{_v.tier}")
+    except Exception:
+        pass
+    base = {"route_reasoning": decision.reasoning, "route_confidence": decision.confidence,
+            "route_complexity_tier": _v.tier, "route_complexity_score": _v.score,
+            "route_ambiguous": _v.ambiguous}
     if effective_mode == "direct":
         return {
             **base,

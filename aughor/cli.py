@@ -60,6 +60,11 @@ def investigate(question: str, db: str, model: Optional[str], backend: str):
         os.environ["AUGHOR_MODEL"] = model
     os.environ["AUGHOR_BACKEND"] = backend
 
+    # Plug the Agent into the Platform registries (schema annotators, purge hooks) so
+    # the CLI host runs the same plugged-in agent the API does.
+    from aughor.agent.bootstrap import register_agent_plugins
+    register_agent_plugins()
+
     db_path = Path(db)
     if not db_path.exists():
         console.print(f"[red]Database not found:[/red] {db_path}")
