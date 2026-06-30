@@ -51,7 +51,7 @@ class _ConsistencyReport(_BaseModel):
 _CONSISTENCY_ENABLED = __import__("os").getenv("AUGHOR_CONSISTENCY_CHECK", "true").lower() != "false"
 from aughor.llm.provider import get_provider
 from aughor.tools.executor import format_result_for_llm
-from aughor.tools.stats import analyze_query_result, StatResult as _StatResult
+from aughor.tools.stats import analyze_query_result
 from aughor import telemetry as _telemetry
 
 MAX_ITER = int(__import__("os").getenv("AUGHOR_MAX_ITER", "6"))

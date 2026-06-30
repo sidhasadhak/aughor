@@ -10,7 +10,6 @@ Every fired action is logged to data/action_logs.json.
 """
 from __future__ import annotations
 
-import json
 import time
 import uuid
 import logging

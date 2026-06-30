@@ -15,12 +15,11 @@ Install:        pip install stripe>=7.0.0  for full SDK (not required)
 """
 from __future__ import annotations
 
-import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 import requests
 
-from aughor.connectors.api.base_sync import RestApiSync, FULL_SYNC_LOOKBACK_DAYS
+from aughor.connectors.api.base_sync import RestApiSync
 
 _STRIPE_BASE = "https://api.stripe.com/v1"
 _DEFAULT_OBJECTS = ["charges", "customers", "subscriptions", "invoices", "payment_intents"]

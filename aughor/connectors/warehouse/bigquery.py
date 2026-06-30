@@ -12,7 +12,6 @@ Optional dep:
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 
 from aughor.connectors.base import Connector
 from aughor.platform.contracts.execution import QueryResult
@@ -108,7 +107,6 @@ class BigQueryConnection(Connector):
             if self._dataset:
                 tables = list(self._client.list_tables(f"{self._project}.{self._dataset}"))
             else:
-                from google.cloud import bigquery
                 ds_list = list(self._client.list_datasets(self._project))
                 tables = []
                 for ds in ds_list[:10]:  # cap to avoid massive schemas

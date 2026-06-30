@@ -78,4 +78,5 @@ data/_*backup*/
 data/_stale_findings_backup_*/
 data/finding_dismissals.jsonl
 evals/spider2_out/
+evals/lsb_out/
 evals/llm_exp/

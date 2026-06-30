@@ -26,6 +26,9 @@ import contextvars
 import json
 import logging
 import os
+import random
+import threading
+import time
 from pathlib import Path
 from typing import Literal, Optional, Type, TypeVar
 
@@ -284,6 +287,94 @@ def _extract_usage(raw) -> tuple[int, int]:
         return 0, 0
 
 
+# ── Resilience: per-endpoint concurrency cap + transient-error retry/backoff ──
+# Cloud inference endpoints throttle and intermittently 429/5xx/timeout under sustained load
+# (observed: a benchmark run hung after ~2.5h of unbounded parallel calls). This is a platform
+# concern, not a benchmark one — every Aughor LLM call goes through here. We (a) cap concurrent
+# in-flight calls per base_url with a shared semaphore so bursts don't trip throttling, and
+# (b) retry transient failures with exponential backoff + jitter under an overall deadline.
+# All knobs are env-tunable; defaults are conservative and behaviour-preserving on the happy path.
+
+_SEMAPHORES: dict[str, threading.Semaphore] = {}
+_SEM_LOCK = threading.Lock()
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _semaphore_for(base_url: str) -> threading.Semaphore:
+    """Shared per-endpoint concurrency gate (cap = AUGHOR_LLM_MAX_CONCURRENCY, default 4)."""
+    key = base_url or "default"
+    with _SEM_LOCK:
+        sem = _SEMAPHORES.get(key)
+        if sem is None:
+            sem = threading.Semaphore(max(1, _int_env("AUGHOR_LLM_MAX_CONCURRENCY", 4)))
+            _SEMAPHORES[key] = sem
+        return sem
+
+
+_TRANSIENT_TYPES = (
+    "RateLimitError", "APITimeoutError", "APIConnectionError", "InternalServerError",
+    "ReadTimeout", "ConnectTimeout", "PoolTimeout", "WriteTimeout", "TimeoutException",
+    "ConnectError", "RemoteProtocolError",
+)
+_TRANSIENT_MSGS = (
+    "timeout", "timed out", "rate limit", "too many requests", "overloaded",
+    "temporarily unavailable", "service unavailable", "connection reset", "connection error",
+    "econnreset", "bad gateway", "gateway timeout",
+)
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """True for errors worth retrying (throttle / transient network), False for real failures
+    (validation, 4xx-other, auth) which must surface immediately."""
+    if type(exc).__name__ in _TRANSIENT_TYPES:
+        return True
+    status = getattr(exc, "status_code", None)
+    if not isinstance(status, int):
+        status = getattr(exc, "status", None)
+    if isinstance(status, int) and (status == 429 or 500 <= status < 600):
+        return True
+    msg = str(exc).lower()
+    return any(k in msg for k in _TRANSIENT_MSGS)
+
+
+def _run_resilient(do, base_url: str):
+    """Run ``do()`` under the per-endpoint semaphore, retrying transient errors with exponential
+    backoff + jitter, bounded by AUGHOR_LLM_MAX_RETRIES (default 3) and an overall deadline
+    AUGHOR_LLM_DEADLINE_S (default 600s). Non-transient errors raise immediately."""
+    sem = _semaphore_for(base_url)
+    max_retries = max(0, _int_env("AUGHOR_LLM_MAX_RETRIES", 3))
+    deadline = time.monotonic() + max(1.0, _float_env("AUGHOR_LLM_DEADLINE_S", 600.0))
+    attempt = 0
+    while True:
+        with sem:  # hold a slot only during the call, never during backoff sleep
+            try:
+                return do()
+            except Exception as e:
+                if not _is_transient(e) or attempt >= max_retries or time.monotonic() >= deadline:
+                    raise
+                attempt += 1
+                err_name = type(e).__name__   # `e` is unbound after the except block
+                wait = min(30.0, 2.0 ** attempt) + random.uniform(0.0, 0.5 * attempt)
+        if time.monotonic() + wait >= deadline:
+            wait = max(0.0, deadline - time.monotonic())
+        logger.warning("llm: transient error (%s); retry %d/%d in %.1fs",
+                       err_name, attempt, max_retries, wait)
+        time.sleep(wait)
+
+
 class LLMProvider:
     """Call .complete() with a Pydantic response_model, get a typed object back."""
 
@@ -328,7 +419,8 @@ class LLMProvider:
         self._warn_if_over_window(system, user)
         try:
             return self._complete_on(self._client, self.backend, self._model,
-                                     system, user, response_model, temperature)
+                                     system, user, response_model, temperature,
+                                     base_url=self._base_url)
         except Exception as primary_exc:
             # Resilience: if the primary backend (e.g. local/cloud Ollama) is
             # unreachable or erroring, transparently fall back to Anthropic when
@@ -342,7 +434,8 @@ class LLMProvider:
                            self.backend, str(primary_exc)[:120], _fallback_model())
             try:
                 return self._complete_on(fb, "anthropic", _fallback_model(),
-                                         system, user, response_model, temperature)
+                                         system, user, response_model, temperature,
+                                         base_url="anthropic-fallback")
             except Exception:
                 raise primary_exc  # surface the original failure if fallback also fails
 
@@ -365,8 +458,8 @@ class LLMProvider:
             logger.debug("llm: overflow check skipped", exc_info=True)
 
     @staticmethod
-    def _complete_on(client, backend, model, system, user, response_model, temperature):
-        import time as _time
+    def _complete_on(client, backend, model, system, user, response_model, temperature,
+                     base_url: str = ""):
         from aughor.kernel import metering
         if backend == "anthropic":
             endpoint = client.messages
@@ -380,14 +473,17 @@ class LLMProvider:
                                     {"role": "user", "content": user}])
         # Prefer create_with_completion (instructor ≥1.0) so we can read token usage
         # off the raw response. Falls back to create() with no usage on older clients.
-        _t0 = _time.monotonic()
         cwc = getattr(endpoint, "create_with_completion", None)
-        if cwc is not None:
-            out, raw = cwc(**kwargs)
-        else:
-            out, raw = endpoint.create(**kwargs), None
+
+        def _do():
+            if cwc is not None:
+                return cwc(**kwargs)
+            return endpoint.create(**kwargs), None
+
+        _t0 = time.monotonic()
+        out, raw = _run_resilient(_do, base_url)   # concurrency cap + transient-error retry/backoff
         pt, ct = _extract_usage(raw)
-        metering.record_llm(pt, ct, (_time.monotonic() - _t0) * 1000.0)
+        metering.record_llm(pt, ct, (time.monotonic() - _t0) * 1000.0)
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         return out
 

@@ -50,7 +50,7 @@ from aughor.tools.executor import format_result_for_llm
 from aughor.tools.stats import analyze_query_result
 
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Optional
 
 MAX_SUBQ = int(__import__("os").getenv("AUGHOR_MAX_SUBQ", "8"))
 

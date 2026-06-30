@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 
 import duckdb
 import sqlglot
@@ -109,7 +108,6 @@ def _security_post(
     duration_ms: float,
 ) -> QueryResult:
     """PII redaction + audit logging + budget enforcement. Returns (possibly modified) result."""
-    import time as _time
     if _is_internal_query(hypothesis_id):
         return result  # platform plumbing — skip PII/audit, but still return rows
     try:

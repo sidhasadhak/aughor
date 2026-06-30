@@ -8,7 +8,7 @@ from pydantic import BaseModel, ValidationError
 
 from aughor.licensing import Capability, gate
 
-from aughor.monitors.models import Monitor, MonitorAlert
+from aughor.monitors.models import Monitor
 from aughor.monitors.store import (
     list_monitors,
     get_monitor,

@@ -14,7 +14,6 @@ from pydantic import BaseModel
 from aughor.db.connection import open_connection, open_connection_for
 from aughor.db.registry import (
     get_dsn,
-    BUILTIN_ID,
     add_connection,
     delete_connection,
     get_connection_settings,

@@ -20,7 +20,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from aughor.semantic.glossary import _DEFAULT_PATH, load_glossary, save_glossary
+from aughor.semantic.glossary import load_glossary, save_glossary
 
 _ENABLED = os.getenv("AUGHOR_AUTOSEED", "true").lower() != "false"
 

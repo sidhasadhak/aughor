@@ -16,8 +16,7 @@ Optional dep:  none — uses requests
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Iterator
+from datetime import datetime
 
 import requests
 

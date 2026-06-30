@@ -12,7 +12,6 @@ from aughor.process.models import ProcessEdge, ProcessMap, ProcessNode
 
 
 def build_process_map(entity_id: str, connection_id: str) -> ProcessMap:
-    from aughor.db.registry import BUILTIN_ID
     from aughor.db.connection import open_connection_for
     from aughor.ontology.store import load_latest_ontology
 

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -155,9 +154,7 @@ def build_digest(conn_id: str, period: str = "week") -> DigestResult:
 
     # ── 5. Evidence claims summary ──────────────────────────────────────────
     try:
-        from aughor.evidence.store import get_claims_for_metric
         # Count claims needing review
-        from aughor.evidence import store as _ev
         import sqlite3 as _sq
         from pathlib import Path as _P
         _ev_path = _P("data") / "evidence_ledger.db"

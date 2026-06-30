@@ -34,8 +34,10 @@ PLATFORM_DIRS = {
     "export", "savedquery", "actions",
 }
 PLATFORM_TOP_MODULES = {"secretvault.py", "stats.py", "telemetry.py"}
-# sql/ is split: the inspectors are platform; sql/writer.py is agent (LLM SQL gen).
-SQL_AGENT_FILES = {"writer.py"}
+# sql/ is split: the safety inspectors are platform; the LLM SQL generator (`writer.py`)
+# and the query-log miner (`query_log_miner.py` — mines real query history into NL2SQL
+# grounding: learned joins / value domains / formulas) are agent intelligence.
+SQL_AGENT_FILES = {"writer.py", "query_log_miner.py"}
 
 # ── Agent packages — forbidden import targets for platform code ───────────────
 AGENT_PKGS = {

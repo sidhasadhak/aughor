@@ -11,7 +11,7 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from aughor.agent.state import AnalysisReport, DataQualityNote, QueryResult
+    from aughor.agent.state import AnalysisReport, QueryResult
 
 # Match numbers: integers, decimals, percentages (but not bare years like 2024)
 _NUM_RE = re.compile(r"\b(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+\.\d+)(%?)\b")
@@ -160,7 +160,6 @@ def verify_numeric_claims(
     be traced to any row value, aggregate, or stat in the executed query results.
     Empty list = all numbers verified (or no numbers found).
     """
-    from aughor.agent.state import DataQualityNote
 
     reference_vals = _values_from_history(query_history)
     if not reference_vals:

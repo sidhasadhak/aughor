@@ -50,7 +50,7 @@ def build_kb_index() -> int:
 def _build() -> int:
     from aughor.semantic.kb_loader import load_kb_entries
     from aughor.semantic.embedder import embed
-    from aughor.semantic.vector_store import ensure_collection, upsert, collection_count
+    from aughor.semantic.vector_store import ensure_collection, upsert
 
     entries = load_kb_entries(KB_PATH)
     if not entries:

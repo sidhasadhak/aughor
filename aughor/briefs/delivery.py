@@ -7,7 +7,6 @@ with recommendation execution and finding-sharing.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 from aughor.briefs.models import BriefSubscription
 

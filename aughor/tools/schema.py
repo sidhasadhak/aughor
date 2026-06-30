@@ -1,6 +1,7 @@
 """Schema introspection — builds the context string fed to the LLM."""
 from __future__ import annotations
 
+import os
 import re
 
 import duckdb
@@ -558,6 +559,7 @@ def apply_schema_enrichment(
     *,
     connection_id: str | None = None,
     profile_annotation: str = "",
+    query_log_annotation: str = "",
 ) -> str:
     """The AGENT enrichment tail of :func:`build_schema_context`, applied on top of a
     raw schema (``aughor.db.schema_render.render_raw_schema``): seed missing tables,
@@ -566,7 +568,9 @@ def apply_schema_enrichment(
 
     Extracted so the platform's ``get_schema`` can reproduce build_schema_context's
     output **byte-for-byte** via the schema-annotator registry, without the platform
-    importing the agent."""
+    importing the agent. ``query_log_annotation`` (facts mined from real query history —
+    learned joins / value domains / formulas) is appended last; when empty it is
+    auto-collected iff AUGHOR_QUERY_LOG_MINING=1 (opt-in, best-effort)."""
     from aughor.semantic.autoseed import seed_missing_tables
     from aughor.semantic.metrics import build_metrics_block
     from aughor.semantic.retriever import build_schema_index
@@ -584,6 +588,19 @@ def apply_schema_enrichment(
         enriched += "\n\n" + metrics_block
     if profile_annotation:
         enriched += "\n\n" + profile_annotation
+    # Query-log facts: learned join paths / value domains / formulas from real query history.
+    # Injected pre-rendered (decoupled, like profile_annotation); opt-in auto-collect when enabled
+    # so the schema hot-path never depends on the vector store unless explicitly turned on.
+    if not query_log_annotation and connection_id and os.environ.get("AUGHOR_QUERY_LOG_MINING") == "1":
+        try:
+            from aughor.sql.query_log_miner import build_query_log_annotation
+            query_log_annotation = build_query_log_annotation(connection_id)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "query-log mining is best-effort schema enrichment",
+                     counter="query_log.annotate", conn_id=connection_id)
+    if query_log_annotation:
+        enriched += "\n\n" + query_log_annotation
     return enriched
 
 
@@ -592,6 +609,7 @@ def build_schema_context(
     profile_annotation: str = "",
     schema_name: str | None = None,
     connection_id: str | None = None,
+    query_log_annotation: str = "",
 ) -> str:
     """Return a rich schema description for the LLM, including row counts and glossary annotations.
 
@@ -607,7 +625,8 @@ def build_schema_context(
     """
     raw = render_raw_schema(conn, schema_name, connection_id)
     return apply_schema_enrichment(
-        raw, connection_id=connection_id, profile_annotation=profile_annotation)
+        raw, connection_id=connection_id, profile_annotation=profile_annotation,
+        query_log_annotation=query_log_annotation)
 
 
 # ── Canvas-scoped schema helpers ──────────────────────────────────────────────

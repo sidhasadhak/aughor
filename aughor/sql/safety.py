@@ -40,7 +40,8 @@ def preflight_repair(conn, sql: str, schema: Optional[str] = None, *, max_retrie
     }
 
     Never raises. Idempotent on already-valid SQL (dry-run passes, nothing changes)."""
-    receipt = {"identifiers_repaired": False, "dry_run_ok": None, "fixed": False, "error_class": ""}
+    receipt = {"identifiers_repaired": False, "filter_bound": False, "dry_run_ok": None,
+               "fixed": False, "error_class": ""}
     if not sql or not sql.strip():
         return sql, receipt
     out = sql
@@ -60,6 +61,21 @@ def preflight_repair(conn, sql: str, schema: Optional[str] = None, *, max_retrie
                     _bump("sql_safety.identifiers_repaired")
             except Exception:
                 pass
+
+        # 1.5 — Active filter-literal binding. A guessed enum literal that matches no row but has a
+        #       confirmed near-neighbour in the column's live domain (e.g. 'cancelled' → 'canceled')
+        #       is rewritten to the stored value, so the query returns the intended rows instead of
+        #       silently zero. Probe-confirmed and dry-run-gated: a wrong rewrite is never adopted.
+        try:
+            from aughor.sql.join_guard import bind_filter_literals
+            _bound, _applied = bind_filter_literals(conn, out, getattr(conn, "dialect", "duckdb"))
+            if _applied and _bound.strip() != out.strip() and conn.dry_run(_bound)[0]:
+                out = _bound
+                receipt["filter_bound"] = True
+                _bump("sql_safety.filter_bound")
+        except Exception as _e:
+            from aughor.kernel.errors import tolerate
+            tolerate(_e, "preflight: filter binding skipped", counter="sql_safety.filter_bind_error")
 
         # 2 — Dry-run. If it binds, we are done (the common, happy path).
         try:

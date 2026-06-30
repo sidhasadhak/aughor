@@ -118,13 +118,22 @@ def _repair_from_candidates(error: str, sql: str, table_cols: dict[str, list[str
     return new_sql if new_sql != sql else None
 
 
-def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]]) -> str:
+def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]],
+                    dialect: str = "duckdb") -> str:
     """
     Turn a raw SQL error into an actionable DIAGNOSIS block for the fix prompt.
 
     Priority order for column list:
     1. DuckDB "Candidate bindings" — the engine tells us the real columns directly
     2. Schema lookup via alias resolution — table_cols from build_schema_context
+
+    ``dialect`` gates the engine-specific function advice. The binder / missing-column /
+    ambiguous / GROUP-BY branches are dialect-agnostic (they parse error TEXT and give
+    universal guidance), but the function-substitution branches below recommend *DuckDB*
+    forms (``datediff``, ``strftime``, ``epoch_days``) — emitting those on Snowflake/BigQuery
+    actively mis-corrects working SQL (e.g. Snowflake supports ``TIMESTAMPDIFF`` natively), so
+    they only fire when ``dialect == "duckdb"``. Non-DuckDB native dialects get a dialect-tagged
+    catch-all instead (the writer prompt already carries the correct per-dialect rule block).
     """
     # DuckDB Binder: Table "im" does not have a column named "id"
     m = re.search(
@@ -213,8 +222,9 @@ def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]]) -> s
             f"Do NOT drop the column — it exists; it is only ungrouped."
         )
 
-    # Outer join directly onto a subquery (DuckDB can't do non-inner joins on arbitrary subqueries)
-    if "non-inner join on subquery" in error.lower():
+    # Outer join directly onto a subquery (DuckDB can't do non-inner joins on arbitrary subqueries).
+    # DuckDB-specific binder message + DuckDB-specific CTE remedy, so gate it.
+    if dialect == "duckdb" and "non-inner join on subquery" in error.lower():
         return (
             "DIAGNOSIS: this engine cannot LEFT/RIGHT/FULL JOIN directly onto a subquery. Rewrite as one "
             "of: (a) an INNER JOIN if every row matches anyway; (b) move the subquery into a WITH (CTE) "
@@ -243,63 +253,83 @@ def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]]) -> s
             "Use ONLY the table names listed in the SCHEMA above."
         )
 
-    # DuckDB: TIMESTAMPDIFF not found (MySQL function)
     err_lower = error.lower()
-    if "timestampdiff" in err_lower:
-        return (
-            "DIAGNOSIS: TIMESTAMPDIFF is a MySQL function — DuckDB doesn't have it. "
-            "Use datediff('day', date1, date2) for day differences, or "
-            "CAST(date2 AS DATE) - CAST(date1 AS DATE) which returns an integer number of days."
-        )
 
-    # DuckDB: JULIANDAY not found (SQLite function)
-    if "julianday" in err_lower:
-        return (
-            "DIAGNOSIS: JULIANDAY is a SQLite function — DuckDB doesn't have it. "
-            "For day differences use datediff('day', date1, date2). "
-            "For date-to-number conversions use epoch_days(date::DATE) or CAST(date AS DATE) arithmetic."
-        )
-
-    # DuckDB: aggregate in GROUP BY
-    if "group by clause cannot contain aggregates" in err_lower:
+    # Aggregate inside GROUP BY — invalid in EVERY dialect, so the advice is universal.
+    if "group by clause cannot contain aggregates" in err_lower or (
+        "aggregate" in err_lower and "group by" in err_lower and "not allowed" in err_lower
+    ):
         return (
             "DIAGNOSIS: An aggregate function (COUNT, SUM, AVG, etc.) appears inside GROUP BY — "
             "that is never valid. GROUP BY must contain only raw column references. "
             "Move the aggregate to SELECT or HAVING."
         )
 
-    # DuckDB: HAVING references a SELECT alias
+    # HAVING references a SELECT alias — illegal in DuckDB/Postgres/Snowflake/BigQuery alike.
     if "having" in err_lower and ("does not exist" in err_lower or "not found" in err_lower):
         return (
             "DIAGNOSIS: HAVING cannot reference a SELECT alias — rewrite using the full expression. "
             "E.g. instead of HAVING converted = 1, use HAVING SUM(CASE WHEN ... THEN 1 ELSE 0 END) = 1."
         )
 
-    # DuckDB: to_char (Postgres/Oracle date-formatting fn) does not exist
-    if "to_char" in err_lower:
-        return (
-            "DIAGNOSIS: to_char() is a Postgres/Oracle function — DuckDB doesn't have it. "
-            "To format a date/timestamp as text use strftime(col, '%Y-%m') for month, "
-            "'%Y-%m-%d' for day, or '%Y' for year. To bucket rows by month use "
-            "date_trunc('month', col). Do NOT use to_char."
-        )
+    # ── DuckDB-only function-substitution advice ──────────────────────────────────
+    # These recommend DuckDB forms (datediff / strftime / epoch_days). Emitting them on a
+    # native-execution warehouse mis-corrects valid SQL (Snowflake/BigQuery support
+    # TIMESTAMPDIFF, TO_CHAR, etc.), so they are gated on the actual dialect.
+    if dialect == "duckdb":
+        if "timestampdiff" in err_lower:
+            return (
+                "DIAGNOSIS: TIMESTAMPDIFF is a MySQL function — DuckDB doesn't have it. "
+                "Use datediff('day', date1, date2) for day differences, or "
+                "CAST(date2 AS DATE) - CAST(date1 AS DATE) which returns an integer number of days."
+            )
+        if "julianday" in err_lower:
+            return (
+                "DIAGNOSIS: JULIANDAY is a SQLite function — DuckDB doesn't have it. "
+                "For day differences use datediff('day', date1, date2). "
+                "For date-to-number conversions use epoch_days(date::DATE) or CAST(date AS DATE) arithmetic."
+            )
+        if "to_char" in err_lower:
+            return (
+                "DIAGNOSIS: to_char() is a Postgres/Oracle function — DuckDB doesn't have it. "
+                "To format a date/timestamp as text use strftime(col, '%Y-%m') for month, "
+                "'%Y-%m-%d' for day, or '%Y' for year. To bucket rows by month use "
+                "date_trunc('month', col). Do NOT use to_char."
+            )
+        if "date_part" in err_lower and (
+            "bigint" in err_lower or "integer" in err_lower or "no function matches" in err_lower
+        ):
+            return (
+                "DIAGNOSIS: date_part/EXTRACT on a date subtraction fails because in DuckDB "
+                "(date - date) already returns an INTEGER number of days, not an interval — so "
+                "date_part('day', a - b) and EXTRACT(EPOCH FROM (a - b)) both error. "
+                "For elapsed SECONDS use date_diff('second', b, a); for DAYS use "
+                "date_diff('day', b, a) or just (a - b) when both are DATE. Remove the "
+                "date_part/EXTRACT wrapper. (Subtracting two TIMESTAMPs yields an INTERVAL, on "
+                "which EXTRACT(EPOCH FROM ...) is valid — cast both sides to TIMESTAMP if you need seconds.)"
+            )
 
-    # DuckDB: date_part/EXTRACT applied to a date subtraction. (date - date)
-    # returns an INTEGER number of days, so date_part('day', a - b) AND
-    # EXTRACT(EPOCH FROM (a - b)) — which DuckDB lowers to date_part('epoch', BIGINT) —
-    # both fail with 'No function matches date_part(VARCHAR, BIGINT)'.
-    if "date_part" in err_lower and (
-        "bigint" in err_lower or "integer" in err_lower or "no function matches" in err_lower
-    ):
-        return (
-            "DIAGNOSIS: date_part/EXTRACT on a date subtraction fails because in DuckDB "
-            "(date - date) already returns an INTEGER number of days, not an interval — so "
-            "date_part('day', a - b) and EXTRACT(EPOCH FROM (a - b)) both error. "
-            "For elapsed SECONDS use date_diff('second', b, a); for DAYS use "
-            "date_diff('day', b, a) or just (a - b) when both are DATE. Remove the "
-            "date_part/EXTRACT wrapper. (Subtracting two TIMESTAMPs yields an INTERVAL, on "
-            "which EXTRACT(EPOCH FROM ...) is valid — cast both sides to TIMESTAMP if you need seconds.)"
-        )
+    # ── Snowflake compilation errors ──────────────────────────────────────────────
+    # Snowflake reports binder failures as "SQL compilation error: ... invalid identifier 'X'".
+    # The generic column branches above won't always match its phrasing, so handle it here with
+    # Snowflake-correct guidance (and never the DuckDB date forms).
+    if dialect == "snowflake":
+        m = re.search(r"invalid identifier '?\"?([\w.]+)\"?'?", error, re.IGNORECASE)
+        if m:
+            return (
+                f"DIAGNOSIS: Snowflake reports invalid identifier '{m.group(1)}'. The column/table "
+                "does not exist or is mis-qualified. Use ONLY names from the SCHEMA; remember Snowflake "
+                "folds unquoted identifiers to UPPERCASE, and a column referenced before its CTE/subquery "
+                "SELECTs it out is also 'invalid'. For semi-structured data use VARIANT path access "
+                "(col:field or col['field']) and LATERAL FLATTEN(input => col) to expand arrays."
+            )
+        if "unsupported" in err_lower or "not supported" in err_lower:
+            return (
+                "DIAGNOSIS: Snowflake rejected an unsupported construct. Common fixes: filter window "
+                "results with QUALIFY (not a WHERE on the window alias); expand arrays with "
+                "LATERAL FLATTEN; aggregate to an array with ARRAY_AGG; use ILIKE for case-insensitive "
+                "match. Keep TIMESTAMPDIFF/DATEDIFF/TO_CHAR — Snowflake supports them natively."
+            )
 
     return ""
 
@@ -427,7 +457,8 @@ class SqlWriter:
             # error a guard. The typed class is the Verifier's signal (on FixResult).
             _ecls = classify_error_type(current_error, current_sql, self._db.dialect)
             last_class = _ecls.value
-            diagnosis = _make_diagnosis(current_error, current_sql, self._table_cols)
+            diagnosis = _make_diagnosis(current_error, current_sql, self._table_cols,
+                                        dialect=getattr(self._db, "dialect", "duckdb"))
             _guide = error_class_guidance(_ecls)
             if _guide:
                 diagnosis = f"ERROR CLASS [{_ecls.value}] — {_guide}" + (f"\n{diagnosis}" if diagnosis else "")
