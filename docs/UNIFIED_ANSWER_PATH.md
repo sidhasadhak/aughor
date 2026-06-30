@@ -1,8 +1,8 @@
 # One door: merging Insight and Deep into a single conversational analyst
 
-*Design document — 2026-06-30. Status: **Phase 0 shipped** (the unified `/ask` door + router;
-behind `AUGHOR_UNIFIED_ASK`, default on, frontend not yet switched over); Phases 1–5 proposed.
-Companion to
+*Design document — 2026-06-30. Status: **Phases 0–1 shipped** (the unified `/ask` door + router,
+behind `AUGHOR_UNIFIED_ASK`; the frontend now defaults to `/ask` with the auto + transparency depth
+banner + one-click re-run); Phases 2–5 proposed. Companion to
 [`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md)
 (what the modes share today), [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md)
 (the ASSESS→ROUTE formula this productizes), and
@@ -246,8 +246,16 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   Behind `AUGHOR_UNIFIED_ASK` (default on); `/chat` + `/investigate` untouched for back-compat. 23 unit
   tests (decision matrix + endpoint dispatch + degrade); full unit suite green (1976). *The frontend
   still uses the toggle — switching it to `/ask` is Phase 1.*
-- **Phase 1 — auto + transparency UI.** Depth banner + one-click re-run; render-selector decoupled
-  from endpoint (dynamic output structure, §5).
+- **Phase 1 — auto + transparency UI. ✅ SHIPPED (2026-06-30).** The composer defaults to a new **Auto**
+  mode that posts to `/ask` (`web/lib/useChat.ts`); the `route` SSE receipt is parsed
+  (`web/lib/investigationStream.ts`: a `route` field on the turn + a `ROUTE` action that also sets the
+  turn's effective mode — deep→investigate, else ask — so the existing renderers work unchanged) and
+  rendered as a **depth banner** with a **one-click re-run** at the other depth
+  (`web/components/ChatPanel.tsx`: `DepthBanner` + a 3-segment Auto·Insight·Deep toggle, Auto default).
+  Live-verified against the running API: a quick lookup, a causal→deep route, and a `depth=quick`
+  override each stream the correct `route` receipt first; tsc + eslint clean. *Remaining within this
+  arc: the render-selector keyed on the actual result shape (§5) — today output structure still follows
+  the route→mode mapping, i.e. the two existing renderers.*
 - **Phase 2 — eval harness (rebuild).** The measurement substrate, **before** the clarification feature.
 - **Phase 3 — ask-vs-guess clarification (§4).** The chosen priority capability, validated by Phase 2.
 - **Phase 4 — conversational session state (§6).** The BIRD-INTERACT lift; multi-turn episodes in the

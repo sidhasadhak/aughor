@@ -10,7 +10,7 @@ import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
 import CommentIcon        from "@atlaskit/icon/core/comment";
 import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
 import { uploadDocument } from "@/lib/api";
-import { useChat, type DebugEvent } from "@/lib/useChat";
+import { useChat, type DebugEvent, type ChatTurn } from "@/lib/useChat";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
 import { TrustReceipt } from "./TrustReceipt";
 
@@ -48,8 +48,8 @@ interface InputBoxProps {
   input: string;
   setInput: (v: string) => void;
   streaming: boolean;
-  mode: "ask" | "investigate";
-  setMode: (m: "ask" | "investigate") => void;
+  mode: "auto" | "ask" | "investigate";
+  setMode: (m: "auto" | "ask" | "investigate") => void;
   onSend: () => void;
   onStop: () => void;
   onClear: () => void;
@@ -117,14 +117,30 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
 
       {/* Toggle row — mode buttons left, actions right */}
       <div className="flex items-center justify-between px-3 pb-2">
-        {/* Mode toggle */}
+        {/* Mode toggle — Auto decides depth for you; Insight/Deep force it. */}
         <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "2px", background: "var(--bg-0)", borderRadius: "var(--r2)", border: "1px solid var(--b1)" }}>
+          <button
+            onClick={() => setMode("auto")}
+            title="Let the agent choose how deep to go"
+            style={{
+              display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
+              borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
+              cursor: "pointer", border: mode === "auto" ? "1px solid var(--blue2)" : "1px solid transparent",
+              transition: "all .12s",
+              background: mode === "auto" ? "var(--blue1)" : "transparent",
+              color: mode === "auto" ? "var(--blue5)" : "var(--t3)",
+              boxShadow: mode === "auto" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
+            }}
+          >
+            <AiSparkleIcon label="Auto" size="small" />
+            Auto
+          </button>
           <button
             onClick={() => setMode("ask")}
             style={{
               display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
               borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
-              cursor: "pointer", border: "none", transition: "all .12s",
+              cursor: "pointer", border: "1px solid transparent", transition: "all .12s",
               background: mode === "ask" ? "var(--bg-3)" : "transparent",
               color: mode === "ask" ? "var(--t1)" : "var(--t3)",
               boxShadow: mode === "ask" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
@@ -146,7 +162,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             }}
           >
             <AiSparkleIcon label="Deep Analysis" size="small" />
-            Deep Analysis
+            Deep
           </button>
         </div>
 
@@ -282,10 +298,48 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
   );
 }
 
+/* ── Depth banner — the auto+transparency receipt on each /ask turn ──
+   Shows the depth the router chose + why, with a one-click re-run at the
+   other depth. Renders nothing on legacy/explicit and restored turns. */
+function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quick" | "deep") => void }) {
+  const r = turn.route;
+  if (!r) return null;
+  const deep = r.depth === "deep";
+  const done = turn.status !== "loading";
+  return (
+    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+      <span style={{
+        display: "inline-flex", alignItems: "center", gap: 5,
+        padding: "2px 9px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
+        fontFamily: "var(--font-ui)",
+        background: deep ? "var(--vio1)" : "var(--blue1)",
+        border: `1px solid ${deep ? "var(--vio2)" : "var(--blue2)"}`,
+        color: deep ? "var(--vio5)" : "var(--blue5)",
+      }}>
+        {deep ? <AiSparkleIcon label="" size="small" /> : <CommentIcon label="" size="small" />}
+        {deep ? "Deep analysis" : "Quick answer"}
+      </span>
+      <span style={{ fontSize: 11.5, color: "var(--t3)" }}>{r.why}</span>
+      {r.downgradedFrom && (
+        <span style={{ fontSize: 11, fontStyle: "italic", color: "var(--t3)" }}>· deep analysis needs an upgrade</span>
+      )}
+      {done && (
+        <button
+          onClick={() => onRerun(deep ? "quick" : "deep")}
+          title={deep ? "Re-run as a quick answer" : "Re-run as a deep investigation"}
+          style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+        >
+          {deep ? "Answer quickly instead →" : "Investigate instead →"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, initialInsightId, capabilities }: Props) {
   const { state, ask, stop, clear, restore, eventLogRef } = useChat();
   const [input, setInput]           = useState("");
-  const [mode, setMode]             = useState<"ask" | "investigate">("ask");
+  const [mode, setMode]             = useState<"auto" | "ask" | "investigate">("auto");
   const [starters, setStarters]     = useState<Starter[]>(FALLBACK_STARTERS);
   const [loadingStarters, setLoadingStarters] = useState(false);
   const [showDebug, setShowDebug]   = useState(false);
@@ -337,6 +391,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           question: t.question,
           mode: "ask" as const,
           status: "done" as const,
+          route: null,
           // Restored turns: the turn id IS the receipt key; the component 404-noops
           // gracefully if this turn predates receipts.
           receiptId: t.sql ? t.id : null,
@@ -414,7 +469,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuestion]);
 
-  const handleSend = useCallback(async (q?: string, m?: "ask" | "investigate", opts?: { skipCache?: boolean }) => {
+  const handleSend = useCallback(async (q?: string, m?: "auto" | "ask" | "investigate", opts?: { skipCache?: boolean }) => {
     const question = (q ?? input).trim();
     if (!question || state.streaming) return;
     setInput("");
@@ -473,8 +528,9 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               <div className="text-center">
                 <p className="text-[12px] font-bold text-zinc-200">Ask your data anything</p>
                 <p className="text-[12px] text-zinc-500 mt-1.5">
-                  Use <span className="text-zinc-400 font-bold">Quick</span> for fast SQL answers ·{" "}
-                  <span className="text-violet-400/90 font-bold">Agentic</span> for deep root-cause analysis
+                  <span className="text-zinc-400 font-bold">Auto</span> picks the right depth for each question —
+                  or choose <span className="text-zinc-400 font-bold">Insight</span> /{" "}
+                  <span className="text-violet-400/90 font-bold">Deep</span> yourself.
                 </p>
               </div>
             )}
@@ -559,6 +615,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     }}
                   >
                     {i > 0 && <div className="border-t border-zinc-800 my-8" />}
+                    <DepthBanner
+                      turn={turn}
+                      onRerun={(depth) => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, depth })}
+                    />
                     <ChatMessage
                       turn={turn}
                       connectionId={connectionId}

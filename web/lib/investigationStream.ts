@@ -38,6 +38,19 @@ export interface ChatTurn {
   // MindsDB-style: chart config from backend (Vega-Lite spec subset)
   chartConfig?: Record<string, unknown> | null;
 
+  // Unified /ask routing receipt — the depth the router chose + why, rendered as a
+  // depth banner with a one-click re-run (auto + transparency). Null on legacy
+  // (explicit Insight/Deep) and restored turns, which never carry a route event.
+  route: {
+    depth: "quick" | "deep";
+    mode: string;            // door intent: direct | investigate | explore | final_text
+    tier: string;            // simple | moderate | complex
+    why: string;
+    ambiguous: boolean;
+    forced: string | null;           // override that decided it (not auto)
+    downgradedFrom: string | null;   // "deep" when capability-gated down to quick
+  } | null;
+
   // Investigate mode — ADA phases stream in progressively
   statusText: string | null;
   phases: InvestigationPhase[];
@@ -104,6 +117,7 @@ export interface ChatState {
 
 export type ChatAction =
   | { type: "ASK";          id: string; question: string; mode: "ask" | "investigate" }
+  | { type: "ROUTE";        route: NonNullable<ChatTurn["route"]> }
   | { type: "SQL";          sql: string }
   | { type: "COLUMNS";      columns: string[] }
   | { type: "ROWS";         rows: unknown[][] }
@@ -143,6 +157,7 @@ function updateLast(state: ChatState, fn: (t: ChatTurn) => ChatTurn): ChatState 
 
 export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   status: "loading",
+  route: null,
   sql: null, columns: [], rows: [], headline: null, chartType: null,
   statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
@@ -171,6 +186,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...state, streaming: true,
         turns: [...state.turns, { ...EMPTY_TURN, id: action.id, question: action.question, mode: action.mode, startedAt: Date.now() }],
       };
+    case "ROUTE":
+      // The router decided the depth before any body events — carry it for the
+      // depth banner, and set the turn's effective mode so the existing renderers
+      // (quick vs investigate) work unchanged: deep → "investigate", else "ask".
+      return updateLast(state, t => ({
+        ...t, route: action.route,
+        mode: action.route.depth === "deep" ? "investigate" : "ask",
+      }));
     case "SQL":        return updateLast(state, t => ({ ...t, sql: action.sql }));
     case "COLUMNS":    return updateLast(state, t => ({ ...t, columns: action.columns }));
     case "ROWS":       return updateLast(state, t => ({ ...t, rows: action.rows }));
@@ -242,6 +265,7 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "phase_complete": return `phase: ${(p.phase as { phase_id?: string })?.phase_id ?? "?"}`;
     case "ada_report":     return `headline: ${String((p.ada_report as { headline?: string })?.headline ?? "").slice(0, 60)}`;
     case "explore_report": return `narrative: ${String((p.explore_report as { narrative?: string })?.narrative ?? "").slice(0, 60)}`;
+    case "route":          return `${p.depth ?? "?"} · ${String(p.why ?? "").slice(0, 40)}`;
     case "report":         return `mode: ${p.query_mode ?? "?"}`;
     case "error":          return `message: ${p.message}`;
     case "insight":        return String(p.narrative ?? "").slice(0, 40);
@@ -278,6 +302,17 @@ export async function consumeStream(
           const p = JSON.parse(chunk.slice(6)) as { type: string } & Record<string, unknown>;
           logEvent({ ts: Date.now(), type: p.type, summary: summarisePayload(p.type, p), payload: p });
           switch (p.type) {
+            case "route":
+              dispatch({ type: "ROUTE", route: {
+                depth: (p.depth as "quick" | "deep") ?? "quick",
+                mode: (p.mode as string) ?? "",
+                tier: (p.tier as string) ?? "",
+                why: (p.why as string) ?? "",
+                ambiguous: Boolean(p.ambiguous),
+                forced: (p.forced as string) ?? null,
+                downgradedFrom: (p.downgraded_from as string) ?? null,
+              } });
+              break;
             case "sql":          dispatch({ type: "SQL",        sql:       p.sql as string }); break;
             case "columns":      dispatch({ type: "COLUMNS",    columns:   p.columns as string[] }); break;
             case "rows":         dispatch({ type: "ROWS",       rows:      p.rows as unknown[][] }); break;
