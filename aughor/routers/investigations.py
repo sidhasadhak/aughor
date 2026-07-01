@@ -1156,6 +1156,18 @@ async def _stream_chat(
         except Exception:
             _trusted_used = []
 
+        # P1 close-the-loop: alongside verified patterns, inject any past human
+        # corrections (reject/correct verdicts) for this database so the model does
+        # not repeat a mistake a reviewer already flagged. Flag-gated + empty when
+        # nothing relevant matches, so the default path is byte-for-byte unchanged.
+        try:
+            from aughor.verify.priors import build_corrections_section
+            _cblk = build_corrections_section(question, connection_id)
+            if _cblk:
+                prompt = _cblk + "\n" + prompt
+        except Exception:
+            pass
+
         # Semantic Compiler fast-path (backlog #11): for the safe analytical shapes
         # (scalar / timeseries / breakdown / ranking) assemble grounded SQL deterministically
         # from the verified ontology instead of free-form generation. The LLM still writes the

@@ -84,6 +84,7 @@ build-backend = "hatchling.build"
 testpaths = ["tests"]
 markers = [
     "e2e: end-to-end tests that require a live LLM (deselect with -m 'not e2e')",
+    "eval: delta-ratchet accuracy/compute evals that require a live LLM (run with -m eval)",
 ]
 
 [tool.hatch.build.targets.wheel]

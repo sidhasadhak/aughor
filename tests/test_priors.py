@@ -1,0 +1,71 @@
+"""P1 close-the-loop: past-correction priors read back into the prompt.
+
+Deterministic (no LLM) — isolates the verdict store to a temp DB and drives the
+flag, proving the corrections block fires only when the loop is enabled AND a
+relevant correction exists, and is byte-empty (zero-cost) otherwise.
+"""
+from __future__ import annotations
+
+import importlib
+
+import pytest
+
+
+@pytest.fixture
+def isolated_verdicts(tmp_path, monkeypatch):
+    from aughor.verify import verdicts
+    monkeypatch.setattr(verdicts, "_DB_PATH", tmp_path / "verdicts.db")
+    # priors.py imports list_corrections at module load; it resolves through the
+    # verdicts module object, so patching _DB_PATH is sufficient.
+    return verdicts
+
+
+def _seed_reject(verdicts, question_headline: str, corrected_sql: str = "", note: str = ""):
+    return verdicts.record_verdict(
+        connection_id="samples", investigation_id="inv1", verdict="reject",
+        note=note, headline=question_headline, sql_source="SELECT bad FROM t",
+        corrected_sql=corrected_sql,
+    )
+
+
+def test_flag_off_is_zero_cost(isolated_verdicts, monkeypatch):
+    monkeypatch.delenv("AUGHOR_CLOSED_LOOP", raising=False)
+    _seed_reject(isolated_verdicts, "revenue by product category")
+    from aughor.verify.priors import build_corrections_section
+    assert build_corrections_section("what is revenue by product category?", "samples") == ""
+
+
+def test_fires_on_relevant_match(isolated_verdicts, monkeypatch):
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    _seed_reject(isolated_verdicts, "revenue by product category",
+                 corrected_sql="SELECT category, SUM(line_total) FROM order_items GROUP BY 1",
+                 note="use order_items.line_total, not orders.total_amount (fan-out)")
+    from aughor.verify.priors import build_corrections_section
+    block = build_corrections_section("what is revenue by product category?", "samples")
+    assert "PAST CORRECTIONS" in block
+    assert "order_items.line_total" in block          # the corrected structure is present
+    assert "USE THIS CORRECTED STRUCTURE" in block
+
+
+def test_empty_on_irrelevant_question(isolated_verdicts, monkeypatch):
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    _seed_reject(isolated_verdicts, "revenue by product category")
+    from aughor.verify.priors import build_corrections_section
+    # A question with no token overlap must inject nothing (conservative threshold).
+    assert build_corrections_section("how many suppliers are in France?", "samples") == ""
+
+
+def test_empty_when_no_verdicts(isolated_verdicts, monkeypatch):
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    from aughor.verify.priors import build_corrections_section
+    assert build_corrections_section("anything at all", "samples") == ""
+
+
+def test_only_reject_and_correct_are_read_back(isolated_verdicts, monkeypatch):
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    # an ACCEPT teaches nothing new — it must not surface as a correction
+    isolated_verdicts.record_verdict(
+        connection_id="samples", investigation_id="i", verdict="accept",
+        headline="revenue by product category is healthy")
+    from aughor.verify.priors import build_corrections_section
+    assert build_corrections_section("revenue by product category?", "samples") == ""
