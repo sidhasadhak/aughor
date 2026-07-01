@@ -1952,6 +1952,18 @@ async def _stream_investigation(
         except Exception:
             pass
 
+        # P2 Agent Context surface: expose the assembled working context (which tables
+        # the agent is actually looking at, the token budget they cost, the join edges)
+        # so the user has visibility + a handle to trim it. Flag-gated; an extra SSE
+        # event is ignored by clients that don't render it, so it's safe to emit.
+        if os.getenv("AUGHOR_CONTEXT_SURFACE", "").strip().lower() in ("1", "true", "yes", "on"):
+            try:
+                from aughor.tools.context_manifest import build_context_manifest
+                _manifest = build_context_manifest(data_catalog or schema)
+                yield _sse("context_assembled", _manifest.to_dict())
+            except Exception:
+                logger.debug("context_assembled emit failed (best-effort)", exc_info=True)
+
         # Prefer structured Data Catalog as the primary schema context (MindsDB-style)
         schema_for_agent = data_catalog if data_catalog else schema
 
