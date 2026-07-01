@@ -158,6 +158,21 @@ export async function rescopeContext(connectionId: string, keep: string[]): Prom
   return res.json();
 }
 
+/** Editable plan gate (P3): resume a paused investigation, keeping only the chosen
+ * sub-questions. Returns the SSE Response so the caller can stream the resumed run. */
+export function resumeInvestigationPlan(invId: string, keepSubquestions: number[]): Promise<Response> {
+  return fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ feedback: "plan approved", keep_subquestions: keepSubquestions }),
+  });
+}
+
+/** Reject a pending plan — cancel the paused investigation outright. */
+export async function cancelInvestigation(invId: string): Promise<void> {
+  await fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/cancel`, { method: "POST" });
+}
+
 /** Record a human verdict on an investigation finding (Bet 0 — ground-truth capture). */
 export async function recordVerdict(input: {
   verdict: "accept" | "correct" | "reject";

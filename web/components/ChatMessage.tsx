@@ -34,6 +34,7 @@ import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
 import { ContextRibbon } from "@/components/ContextRibbon";
+import { PlanGateCard } from "@/components/PlanGateCard";
 import { deletePlaybookEntry, editPlaybookRecommendation, type PlaybookRef } from "@/lib/api";
 import {
   type Gran,
@@ -1002,6 +1003,8 @@ export function ChatMessage({
   onRunFresh,
   onShowSource,
   onDeeper,
+  onApprovePlan,
+  onRejectPlan,
 }: {
   turn: ChatTurn;
   connectionId?: string;
@@ -1009,6 +1012,8 @@ export function ChatMessage({
   onRunFresh?: (q: string) => void;
   onShowSource?: (data: SourcePanelData) => void;
   onDeeper?: (question: string, insightId: string | null) => void;
+  onApprovePlan?: (invId: string, keepIndices: number[]) => void;
+  onRejectPlan?: (invId: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const isInvestigate = turn.mode === "investigate";
@@ -1058,6 +1063,15 @@ export function ChatMessage({
       {/* ── Inline agent trace (agentic modes) — streams live, collapses when done ── */}
       {isInvestigate && (turn.status === "loading" || isDone || turn.status === "error") && (
         <InlineAgentTrace turn={turn} />
+      )}
+
+      {/* ── Editable plan gate (P3): review the sub-question plan before the fan-out ── */}
+      {turn.planPending && onApprovePlan && onRejectPlan && (
+        <PlanGateCard
+          plan={turn.planPending}
+          onApprove={(keep) => onApprovePlan(turn.planPending!.investigationId ?? turn.investigationId ?? "", keep)}
+          onReject={() => onRejectPlan(turn.planPending!.investigationId ?? turn.investigationId ?? "")}
+        />
       )}
 
       {/* ── Loading state ── */}
