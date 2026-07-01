@@ -33,6 +33,7 @@ import { ExplorationReportView } from "@/components/ExplorationReport";
 import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
+import { ContextRibbon } from "@/components/ContextRibbon";
 import { deletePlaybookEntry, editPlaybookRecommendation, type PlaybookRef } from "@/lib/api";
 import {
   type Gran,
@@ -859,7 +860,7 @@ function InsightBrief({
 
       <InsightActions turn={turn} connectionId={connectionId} />
 
-      <InsightDetails turn={turn} onShowSource={onShowSource} />
+      <InsightDetails turn={turn} onShowSource={onShowSource} connectionId={connectionId} />
     </Brief>
   );
 }
@@ -925,20 +926,27 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
 
 // ── Insight machinery — folded into one quiet disclosure ──────────────────────
 function InsightDetails({
-  turn, onShowSource,
+  turn, onShowSource, connectionId,
 }: {
   turn: ChatTurn;
   onShowSource?: (data: SourcePanelData) => void;
+  connectionId?: string;
 }) {
   const hasAnalysis = !!turn.analysis && (!!turn.analysis.intent || turn.analysis.steps.length > 0);
   const hasTables   = turn.tablesUsed.length > 0;
+  const hasContext  = !!turn.contextManifest && !!connectionId;
   const hasSource   = turn.columns.length > 0;
   const hasPlaybook = turn.playbookRefs.length > 0;
   const hasElapsed  = turn.elapsedMs != null;
-  if (!(hasAnalysis || hasTables || hasSource || hasPlaybook || hasElapsed)) return null;
+  if (!(hasAnalysis || hasTables || hasContext || hasSource || hasPlaybook || hasElapsed)) return null;
 
   return (
     <BriefDetails>
+      {hasContext && (
+        <BriefDetailBlock label="Agent context">
+          <ContextRibbon manifest={turn.contextManifest!} connectionId={connectionId!} />
+        </BriefDetailBlock>
+      )}
       {hasAnalysis && (
         <BriefDetailBlock label="How this was computed">
           {turn.analysis!.intent && (

@@ -57,3 +57,22 @@ def test_estimate_tokens_monotonic():
     assert estimate_tokens("") == 0
     assert estimate_tokens("a" * 40) == 10
     assert estimate_tokens("x" * 400) > estimate_tokens("x" * 40)
+
+
+def test_rescope_endpoint_trims_tokens_on_samples():
+    """The rescope endpoint is deterministic (no LLM); trimming tables must lower the
+    reported token budget. Skips if the built-in `samples` connection isn't present."""
+    import pytest
+    try:
+        from aughor.routers.investigations import RescopeRequest, rescope_context
+        full = rescope_context(RescopeRequest(
+            connection_id="samples",
+            keep=["ecommerce.customers", "ecommerce.orders", "ecommerce.order_items",
+                  "ecommerce.products", "ecommerce.reviews"], expand_fk=False))
+    except Exception as e:  # no samples connection in this environment
+        pytest.skip(f"samples connection unavailable: {e}")
+    trimmed = rescope_context(RescopeRequest(
+        connection_id="samples", keep=["ecommerce.orders", "ecommerce.customers"], expand_fk=False))
+    assert set(trimmed["manifest"]["tables"]) == {"ecommerce.orders", "ecommerce.customers"}
+    assert trimmed["scoped_tokens"] < full["scoped_tokens"]
+    assert trimmed["token_delta"] > 0

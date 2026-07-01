@@ -360,6 +360,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           hypotheses: [],
           investigationId: null,
           tablesUsed: t.tables_used || [],
+          contextManifest: null,
           analysis: (t.intent || t.approach?.length) ? { intent: t.intent || "", steps: t.approach || [] } : null,
           followups: [],
           error: null,

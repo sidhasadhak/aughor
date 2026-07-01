@@ -2608,6 +2608,42 @@ def get_investigation_outcomes(inv_id: str):
     return [o.model_dump() for o in load_outcomes_for_inv(inv_id)]
 
 
+# ── Agent Context surface (P2) ────────────────────────────────────────────────
+
+class RescopeRequest(BaseModel):
+    connection_id: str
+    keep: list[str] = Field(default_factory=list)   # explicit table allowlist the user wants
+    schema_name: Optional[str] = None
+    expand_fk: bool = True                           # pull in FK bridge tables so joins resolve
+
+
+@router.post("/investigations/context/rescope")
+def rescope_context(req: RescopeRequest):
+    """Re-derive the agent's working context after a user trims/adds tables, and report
+    the new token budget vs the full schema. Deterministic — no LLM, no agent run — so
+    the ribbon can preview the effect of a scope edit instantly (AI FDE resource-ribbon
+    idea). `keep` is the desired table set; the response also lists all_tables so the UI
+    knows what is addable."""
+    from aughor.tools.context_manifest import build_context_manifest, rescope_schema
+    db = open_connection_for(req.connection_id)
+    try:
+        raw = getattr(db, "_conn", None)
+        if raw is None:
+            raise HTTPException(status_code=400, detail="connection does not expose a schema for rescoping")
+        full_schema = _get_schema_cached(req.connection_id, db)
+    finally:
+        db.close()
+    full = build_context_manifest(full_schema)
+    _scoped, manifest = rescope_schema(full_schema, keep=req.keep, expand_fk=req.expand_fk)
+    return {
+        "manifest": manifest.to_dict(),
+        "all_tables": full.tables,
+        "full_tokens": full.estimated_tokens,
+        "scoped_tokens": manifest.estimated_tokens,
+        "token_delta": full.estimated_tokens - manifest.estimated_tokens,
+    }
+
+
 # ── Evidence Ledger endpoints ─────────────────────────────────────────────────
 
 class EvidenceFeedbackRequest(BaseModel):

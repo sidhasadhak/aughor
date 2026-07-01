@@ -136,6 +136,28 @@ export async function updateOrgSettings(settings: OrgSettings): Promise<OrgSetti
   return res.json();
 }
 
+/** Agent Context surface (P2): re-derive the working context after a scope edit. */
+export interface RescopeResult {
+  manifest: { tables: string[]; table_count: number; estimated_tokens: number; joins: { from: string; to: string; kind: string }[] };
+  all_tables: string[];
+  full_tokens: number;
+  scoped_tokens: number;
+  token_delta: number;
+}
+
+export async function rescopeContext(connectionId: string, keep: string[]): Promise<RescopeResult> {
+  const res = await fetch(`${BASE}/investigations/context/rescope`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, keep }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to rescope context");
+  }
+  return res.json();
+}
+
 /** Record a human verdict on an investigation finding (Bet 0 — ground-truth capture). */
 export async function recordVerdict(input: {
   verdict: "accept" | "correct" | "reject";
