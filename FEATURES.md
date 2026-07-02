@@ -41,6 +41,11 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   lexicographic order of numeric text, text↔numeric comparison) as labelled caveats, never overwriting the query.
 - **Finding-trust ladder** — guards → quarantine → dismiss-with-reason; pre-emission insight verification;
   numeral grounding; ratio-aware cross-sectional scans; angle-feasibility + repair intent-preservation gates.
+- **Grain-aware cross-section** — an **event-only** dimension (return reason/condition) is read as a
+  **composition** (share of the event), never a tautological "rate by it" (which is always 100%);
+  a **saturated** result (every group pinned at 0/100%) triggers a single grain-corrected reattempt; and
+  discriminating **population attributes** the plan missed (a joinable table's price band / season) are
+  surfaced deterministically, gated by a uniqueness probe so the added join can't fan out.
 
 ## 3. Evidence, trust receipts & statistical rigor
 
