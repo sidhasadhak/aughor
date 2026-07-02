@@ -2839,7 +2839,10 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
 def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                       dims_override: Optional[list] = None,
                       phase_meta: Optional[tuple] = None,
-                      period_directive: Optional[str] = None) -> dict:
+                      period_directive: Optional[str] = None,
+                      extra_dims: Optional[list] = None,
+                      extra_schema: Optional[str] = None,
+                      extra_directive: Optional[str] = None) -> dict:
     """Cross-sectional WEAKNESS SCAN — for diagnostic questions ("where are we
     losing money / which X is weakest") the metric has no usable time axis, so we
     rank the money metric across each available dimension to surface the lowest /
@@ -2859,13 +2862,23 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     phases = state.get("investigation_phases", [])
     intake_data = state.get("_ada_intake") or {}
     schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    if extra_schema:
+        schema = schema + extra_schema
     metric_label = intake_data.get("metric_label", "the metric")
     metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
     metric_table = intake_data.get("metric_table", "")
     dimensions = dims_override if dims_override is not None else intake_data.get("dimensions", [])
+    # #4 — augment with discriminating population attributes the intake missed (price band / season),
+    # + a small schema snippet so the join is reachable + a plan directive for the numeric band.
+    if extra_dims:
+        dimensions = list(dimensions) + [d for d in extra_dims if d not in dimensions]
 
+    # Augmented runs (discovered price-band / season) need more room so the discriminating price
+    # ranking isn't crowded out by the base dimensions under the phase's query cap.
+    _augmented = bool(extra_dims or extra_directive)
+    _dim_cap = 8 if _augmented else 6
     prioritized = _prioritize_dimensions(dimensions)
-    dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:6]) if prioritized else "  (none identified)"
+    dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:_dim_cap]) if prioritized else "  (none identified)"
 
     # RATIO vs ADDITIVE metric. A ratio/percentage/per-unit metric (SUM(num)/SUM(den), *100, AVG)
     # cannot be SUM'd across groups or divided by COUNT(*) — the additive template silently dropped
@@ -2948,15 +2961,19 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             "date-bearing table as needed to apply this filter. This is a drill INTO the flagged "
             "period, so the time filter is REQUIRED (it overrides the 'no time filters' rule)."
         )
-    _run = run_analysis_phase(
-        conn, phase_id=_phase_id, title=_phase_title, emoji=_phase_emoji, cap=5, schema=schema,
+    _plan_system = (f"Write one ranking query per dimension. Rank the metric ascending (weakest first). "
+                    f"{_time_rule}" + _ADA_SQL_GROUNDING)
+
+    def _do_run(_sat_note=""):
+        return run_analysis_phase(
+        conn, phase_id=_phase_id, title=_phase_title, emoji=_phase_emoji, cap=(8 if _augmented else 5), schema=schema,
         preplanned=_anchor,
-        plan_system=f"Write one ranking query per dimension. Rank the metric ascending (weakest first). {_time_rule}" + _ADA_SQL_GROUNDING,
+        plan_system=_plan_system + _sat_note,
         plan_user=CROSS_SECTION_PLAN_PROMPT.format(
             question=question, metric_label=metric_label, metric_sql=metric_sql,
             metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
             metric_computation_block=metric_computation_block,
-            comparison_segment_section=comparison_segment_section) + _direction_plan + _period_plan,
+            comparison_segment_section=comparison_segment_section) + _direction_plan + _period_plan + (extra_directive or ""),
         interpret_system=(
             "Interpret a cross-sectional ranking scan of a RATIO / percentage metric. Read "
             "metric_total AS that ratio in its own units — NEVER as a dollar total or per-record "
@@ -2980,7 +2997,25 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         plan_error_msg="Cross-sectional planning failed.",
         exec_error_msg="Cross-sectional queries failed.",
         question=question, connection_id=state.get("connection_id", ""),
-    )
+        )
+
+    _run = _do_run()
+    # #2 — reattempt ONCE on a SATURATED result: every group came back pinned at ~0% or ~100% — the
+    # signature of a tautology (grouped by an event-only column) or a fan-out, NOT a real finding.
+    # (A period drill / preplanned anchor is exempt.) Keep the re-plan only if it clears the
+    # saturation; otherwise fall through to the honest fan-out caveat below.
+    if _run.ok and _run.results and not period_directive and not _anchor and any(
+            _is_saturated(r.columns, r.rows) for _q, r in _run.results if not r.error and r.rows):
+        _run2 = _do_run(
+            "\n\nPREVIOUS RESULT WAS SATURATED — every group came back at ~0% or ~100%. That is a "
+            "tautology or a fan-out, NOT a real result: you likely grouped by a column that exists "
+            "ONLY for the event (so the rate is trivially 100%), or joined a table that multiplies the "
+            "metric table's rows. Recompute the RATE over the FULL population at the metric table's OWN "
+            "grain — group by a column present for EVERY row, and DROP any dimension that lives on an "
+            "event/child table (it cannot express a population rate).")
+        if _run2.ok and _run2.results and not all(
+                _is_saturated(r.columns, r.rows) for _q, r in _run2.results if not r.error and r.rows):
+            _run = _run2
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
     results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
@@ -3149,6 +3184,163 @@ def _partition_dimensions(dimensions: list) -> list[tuple]:
         _, gdims, _, _ = specs[0]
         return [("all", gdims, ("cross_section", "Cross-Sectional Scan", "🧭"), "rate")]
     return specs
+
+
+# ── #4: discriminating population-attribute discovery ─────────────────────────
+# The intake often picks obvious dimensions (brand/tier/platform) and misses discriminating
+# POPULATION attributes on a joinable dimension table — e.g. a product's price band or season,
+# which really do move the metric (womenswear return rate climbs 31%→40% with price). This
+# deterministically surfaces them so the rate lens looks where the answer actually is.
+_PRICE_COL_RE = re.compile(r"(price|amount|revenue|gmv|_eur$|_usd$|_gbp$|value)", re.I)
+_NUMERIC_TYPE_RE = re.compile(r"(int|float|double|decimal|numeric|real|money|bigint)", re.I)
+_SUBJECT_FILTER_COLS = {"category", "subcategory", "sub_category", "segment", "type"}
+
+
+def _discover_population_dims(state: AgentState, conn: "DatabaseConnection") -> dict:
+    """Surface discriminating POPULATION attributes the intake missed: a joinable dimension table's
+    low-cardinality categoricals (e.g. season) + a price/value numeric to band by. Returns
+    {extra_dims, price_col, join_table, join_key, metric_table} or {}. Deterministic, fail-open."""
+    try:
+        intake = state.get("_ada_intake") or {}
+        metric_table = intake.get("metric_table") or ""
+        if not metric_table or "." not in metric_table:
+            return {}
+        typed = _db_typed_columns(conn, metric_table.split(".")[0])
+        if not typed:
+            return {}
+        mcols = {c.lower() for c, _ in typed.get(metric_table, [])}
+        fk_ids = {c for c in mcols if c.endswith("_id")}
+        if not fk_ids:
+            return {}
+        existing = {_dim_column(d) for d in (intake.get("dimensions") or [])}
+
+        # Candidate dimension tables: PRODUCT/ITEM tables (an item's OWN attributes — price, season —
+        # are the most on-target) and the ORDER/population parent, ranked product-first. Tangential
+        # satellites (customer_service, inventory_snapshots, …) are excluded — their attributes are
+        # sparse and off-question even when the join is unique.
+        def _score(t):
+            return 0 if re.search(r"(product|item|sku|catalog)", _bare(t)) else 1
+        cands = sorted(
+            [t for t, cols in typed.items()
+             if t != metric_table and not _EVENT_TABLE_RE.search(_bare(t))
+             and (fk_ids & {c.lower() for c, _ in cols})
+             and (_score(t) == 0 or _POP_TABLE_RE.search(_bare(t)))],
+            key=_score,
+        )[:8]
+
+        extra_dims: list = []
+        price_col = join_table = join_key = None
+        for t in cands:
+            cols = typed[t]
+            shared = fk_ids & {c.lower() for c, _ in cols}
+            # prefer a product/item key for the join
+            _jk = sorted(shared, key=lambda k: 0 if re.search(r"(product|item|sku)", k) else 1)[0]
+            # UNIQUENESS gate — only a 1:1 / many-1 DIMENSION join is safe. If the key repeats in this
+            # table (e.g. many customer_service rows per order_id), the join fans out and would inflate
+            # the metric — skip it. This is the guard the first cut missed.
+            try:
+                _u = conn.execute("__uniq_probe__", f"SELECT COUNT(*), COUNT(DISTINCT {_jk}) FROM {t}")
+                _tot, _dist = int(_u.rows[0][0]), int(_u.rows[0][1])
+                if _dist < _tot:
+                    continue
+            except Exception:
+                continue
+            for c, ty in cols:
+                cl = c.lower()
+                if cl.endswith("_id") or cl in existing or cl in _SUBJECT_FILTER_COLS:
+                    continue
+                if price_col is None and _NUMERIC_TYPE_RE.search(ty) and _PRICE_COL_RE.search(cl) \
+                        and "cost" not in cl:
+                    price_col, join_table, join_key = f"{t}.{c}", t, _jk
+                    continue
+                if ("char" in ty.lower() or "text" in ty.lower()) and len(extra_dims) < 2 \
+                        and cl not in {_dim_column(d) for d in extra_dims}:
+                    try:
+                        _r = conn.execute("__card_probe__", f"SELECT COUNT(DISTINCT {c}) FROM {t}")
+                        _nd = int(_r.rows[0][0]) if (_r and _r.rows and _r.rows[0]) else 999
+                    except Exception:
+                        _nd = 999
+                    if 2 <= _nd <= 25:
+                        extra_dims.append(f"{t}.{c}")
+                        join_table, join_key = join_table or t, join_key or _jk
+            if price_col and len(extra_dims) >= 2:
+                break
+        if not extra_dims and not price_col:
+            return {}
+        return {"extra_dims": extra_dims, "price_col": price_col, "join_table": join_table,
+                "join_key": join_key, "metric_table": metric_table}
+    except Exception:
+        return {}
+
+
+def _render_join_schema(pop_aug: dict, conn: "DatabaseConnection") -> Optional[str]:
+    """A minimal schema snippet for the discovered dimension table + its join, so the rate lens can
+    actually reach the augmented attributes (the intake's filtered schema usually omits it)."""
+    t = pop_aug.get("join_table")
+    jk = pop_aug.get("join_key")
+    mt = pop_aug.get("metric_table")
+    if not (t and jk and mt):
+        return None
+    try:
+        cols = [c for c, _ in _db_typed_columns(conn, t.split(".")[0]).get(t, [])]
+        if not cols:
+            return None
+        return (f"\n\nJOINABLE DIMENSION TABLE (use for the augmented attributes):\n"
+                f"TABLE: {t}\n  columns: {', '.join(cols)}\n  join: {mt}.{jk} = {t}.{jk}\n")
+    except Exception:
+        return None
+
+
+def _price_band_directive(pop_aug: dict) -> Optional[str]:
+    """Plan appendix: add ONE ranking of the metric by PRICE BAND (a numeric can't be grouped raw)."""
+    pc = pop_aug.get("price_col")
+    if not pc:
+        return None
+    t, jk, mt = pop_aug.get("join_table"), pop_aug.get("join_key"), pop_aug.get("metric_table")
+    return (f"\n\nALSO add ONE ranking of the metric by PRICE BAND: join {mt} to {t} on {jk} and bucket "
+            f"{pc} into bands (e.g. <500 / 500–1500 / 1500–3000 / 3000+) with a CASE, then compute the "
+            "metric per band ordered by band. Higher-priced items often return more — this is a "
+            "discriminating attribute worth surfacing.")
+
+
+def _is_saturated(columns: list, rows: list) -> bool:
+    """#2 — a rate/metric result is SATURATED when EVERY non-null group value is pinned at a boundary
+    (~0, ~1.0, or ~100) across ≥2 groups — the signature of a tautology (grouped by an event-only
+    column) or a fan-out. This is DISTINCT from legitimate uniformity (values clustered but NOT at a
+    boundary, e.g. 32.4 / 32.8) — a real 'flat' finding, which must never be reattempted. Never raises."""
+    try:
+        if not rows or len(rows) < 2:
+            return False
+        cl = [str(c).lower() for c in columns]
+
+        def _num(v):
+            try:
+                return float(str(v).replace(",", "").replace("%", ""))
+            except Exception:
+                return None
+        # locate the metric column: prefer a rate/ratio-named one, else the first numeric non-count col
+        m_idx = next((i for i, c in enumerate(cl)
+                      if any(k in c for k in ("rate", "pct", "percent", "ratio", "metric_total", "metric_value"))),
+                     None)
+        if m_idx is None:
+            for i, c in enumerate(cl):
+                if any(k in c for k in ("count", "_n", "n_", "num", "denom", "event_count", "id")):
+                    continue
+                if any(_num(r[i]) is not None for r in rows if i < len(r)):
+                    m_idx = i
+                    break
+        if m_idx is None:
+            return False
+        vals = [_num(r[m_idx]) for r in rows if m_idx < len(r) and _num(r[m_idx]) is not None]
+        if len(vals) < 2:
+            return False
+
+        def _boundary(v):
+            return v <= 0.001 or abs(v - 1.0) <= 0.001 or abs(v - 100.0) <= 0.05
+        # saturated only if EVERY value sits at a boundary (all-0 / all-100 / a 0∪1 mix = tautology)
+        return all(_boundary(v) for v in vals)
+    except Exception:
+        return False
 
 
 # ── Temporal WHEN lens + forward-chain period drill ───────────────────────────
@@ -3498,15 +3690,24 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     dim_specs = _partition_dimensions(intake_data.get("dimensions", []))
     axis = _resolve_temporal_axis(state, conn)
 
+    # #4 — deterministic population-attribute discovery (price band / season the intake missed), fed
+    # into the RATE lens so it looks where the answer actually is. Computed once, single-threaded.
+    _pop_aug = _discover_population_dims(state, conn) or {}
+    _aug_dims = _pop_aug.get("extra_dims") or None
+    _aug_schema = _render_join_schema(_pop_aug, conn) if _pop_aug else None
+    _aug_dir = _price_band_directive(_pop_aug) if _pop_aug else None
+
     # Parallel spec list: population dims → a RATE scan (WHERE); event-only dims → a COMPOSITION scan
     # (WHY, share-of-returns, avoiding the tautological 100%); plus an optional temporal WHEN lens.
     specs = [(("xsec:" if kind == "rate" else "comp:") + name, kind, ldims, pmeta)
              for (name, ldims, pmeta, kind) in dim_specs]
     if axis:
         specs.append(("when", "when", axis, None))
-    # Degrade to the plain single scan only when there's a single RATE lens and no temporal axis.
+    # Degrade to the plain single scan only when there's a single RATE lens and no temporal axis
+    # (still augmented with the discovered population attributes).
     if len(specs) == 1 and specs[0][1] == "rate":
-        return ada_cross_section(state, conn)
+        return ada_cross_section(state, conn, extra_dims=_aug_dims,
+                                 extra_schema=_aug_schema, extra_directive=_aug_dir)
 
     base_phases = state.get("investigation_phases", [])
     base_n = len(base_phases)
@@ -3523,7 +3724,9 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
             if kind == "composition":
                 phase = _run_composition_lens(state, reader, payload)
                 return name, ([phase] if phase else []), None, None
-            out = ada_cross_section(state, reader, dims_override=payload, phase_meta=pmeta)  # kind == 'rate'
+            # kind == 'rate' — the WHERE scan, augmented with the discovered population attributes.
+            out = ada_cross_section(state, reader, dims_override=payload, phase_meta=pmeta,
+                                    extra_dims=_aug_dims, extra_schema=_aug_schema, extra_directive=_aug_dir)
             ph = out.get("investigation_phases", [])
             new = ph[base_n:] if len(ph) > base_n else (ph[-1:] if ph else [])
             return name, new, out.get("_cross_section_summary"), None

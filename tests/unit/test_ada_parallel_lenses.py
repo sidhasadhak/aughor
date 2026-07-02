@@ -83,7 +83,8 @@ def _state(dims, base_phases=None):
 def _install_stub(monkeypatch, *, sleep=0.0, raise_on=(), budget_on=()):
     """Stub the rate lens (ada_cross_section) AND the event composition lens so the parallel node runs
     without an LLM/DB. Each returns a phase tagged by its phase id."""
-    def stub(state, conn, *, dims_override=None, phase_meta=None, period_directive=None):
+    def stub(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
+             extra_dims=None, extra_schema=None, extra_directive=None):
         pid, title, emoji = phase_meta or ("cross_section", "X", "🧭")
         if sleep:
             time.sleep(sleep)
@@ -128,7 +129,8 @@ def test_multilens_routes_event_dims_to_composition(monkeypatch):
         comp_dims["dims"] = list(event_dims)
         return {"phase_id": "cross_section_mechanism"}
     monkeypatch.setattr(inv, "_run_composition_lens", comp)
-    def xsec(state, conn, *, dims_override=None, phase_meta=None, period_directive=None):
+    def xsec(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
+             extra_dims=None, extra_schema=None, extra_directive=None):
         pid = (phase_meta or ("cross_section", "X", "🧭"))[0]
         return {"investigation_phases": state.get("investigation_phases", []) + [{"phase_id": pid}],
                 "_cross_section_summary": "s"}
@@ -172,7 +174,8 @@ def test_multilens_budget_exceeded_aborts(monkeypatch):
 
 def test_multilens_single_group_degrades_to_single_scan(monkeypatch):
     calls = []
-    def stub(state, conn, *, dims_override=None, phase_meta=None):
+    def stub(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
+             extra_dims=None, extra_schema=None, extra_directive=None):
         calls.append(phase_meta)
         return {"investigation_phases": state.get("investigation_phases", []) + [{"phase_id": "cross_section"}],
                 "_cross_section_summary": "s"}
@@ -182,6 +185,98 @@ def test_multilens_single_group_degrades_to_single_scan(monkeypatch):
     assert len(calls) == 1
     assert calls[0] is None or calls[0][0] == "cross_section"
     assert [p["phase_id"] for p in out["investigation_phases"]] == ["cross_section"]
+
+
+# ── #4: discriminating population-attribute discovery ──────────────────────────
+
+class _DiscoverConn:
+    """Fake conn for _discover_population_dims: answers the uniqueness + cardinality probes by table."""
+    def __init__(self, rows_by_table, distinct_by_col):
+        self.rows_by_table = rows_by_table          # table -> (total_rows, distinct_join_key)
+        self.distinct_by_col = distinct_by_col       # "table.col" -> distinct count
+
+    def execute(self, _id, sql):
+        import re as _re
+        from types import SimpleNamespace
+        m = _re.search(r"FROM\s+([\w.]+)", sql)
+        t = m.group(1) if m else ""
+        if "COUNT(DISTINCT" in sql and "COUNT(*)" in sql:      # uniqueness probe
+            tot, dist = self.rows_by_table.get(t, (100, 100))
+            return SimpleNamespace(rows=[[tot, dist]], error=None)
+        if "COUNT(DISTINCT" in sql:                            # cardinality probe
+            cm = _re.search(r"COUNT\(DISTINCT\s+(\w+)\)", sql)
+            col = cm.group(1) if cm else ""
+            return SimpleNamespace(rows=[[self.distinct_by_col.get(f"{t}.{col}", 999)]], error=None)
+        return SimpleNamespace(rows=[[0]], error=None)
+
+
+def test_discover_prefers_product_price_and_excludes_satellites(monkeypatch):
+    typed = {
+        "db.order_items": [("order_item_id", "VARCHAR"), ("order_id", "VARCHAR"),
+                           ("product_id", "VARCHAR"), ("brand", "VARCHAR"), ("returned", "BOOLEAN")],
+        "db.products": [("product_id", "VARCHAR"), ("season", "VARCHAR"),
+                        ("category", "VARCHAR"), ("retail_price_eur", "DOUBLE"), ("cost_eur", "DOUBLE")],
+        "db.customer_service": [("order_id", "VARCHAR"), ("channel", "VARCHAR")],  # sparse satellite
+        "db.returns": [("return_id", "VARCHAR"), ("order_id", "VARCHAR"), ("reason", "VARCHAR")],  # event
+    }
+    monkeypatch.setattr(inv, "_db_typed_columns", lambda c, s: typed)
+    conn = _DiscoverConn(
+        rows_by_table={"db.products": (5000, 5000),          # product_id unique → safe join
+                       "db.customer_service": (8000, 3000)},  # order_id repeats → fan-out → skipped
+        distinct_by_col={"db.products.season": 12, "db.products.category": 10, "db.customer_service.channel": 4},
+    )
+    state = {"scope_schema": "db", "_ada_intake": {
+        "metric_table": "db.order_items", "metric_label": "return rate",
+        "dimensions": ["db.order_items.brand"]}}
+    aug = inv._discover_population_dims(state, conn)
+    # picks the ITEM price on products (not an order total), joined by the unique product_id
+    assert aug["price_col"] == "db.products.retail_price_eur"
+    assert aug["join_table"] == "db.products" and aug["join_key"] == "product_id"
+    # season is surfaced; category (subject filter) + the sparse customer_service satellite are excluded
+    assert "db.products.season" in aug["extra_dims"]
+    assert not any("customer_service" in d for d in aug["extra_dims"])
+    assert not any("category" in d for d in aug["extra_dims"])
+
+
+def test_discover_none_when_no_joinable_dim_table(monkeypatch):
+    monkeypatch.setattr(inv, "_db_typed_columns", lambda c, s: {
+        "db.order_items": [("order_item_id", "VARCHAR"), ("returned", "BOOLEAN")]})  # no FK ids
+    state = {"scope_schema": "db", "_ada_intake": {"metric_table": "db.order_items", "dimensions": []}}
+    assert inv._discover_population_dims(state, _DiscoverConn({}, {})) == {}
+
+
+def test_multilens_passes_population_augmentation_to_rate_lens(monkeypatch):
+    seen = {}
+    def xsec(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
+             extra_dims=None, extra_schema=None, extra_directive=None):
+        seen["extra_dims"] = extra_dims
+        seen["extra_directive"] = extra_directive
+        return {"investigation_phases": state.get("investigation_phases", []) + [{"phase_id": "cross_section"}],
+                "_cross_section_summary": "s"}
+    monkeypatch.setattr(inv, "ada_cross_section", xsec)
+    monkeypatch.setattr(inv, "_run_composition_lens", lambda s, c, d: {"phase_id": "cross_section_mechanism"})
+    monkeypatch.setattr(inv, "_resolve_temporal_axis", lambda s, c=None: None)
+    monkeypatch.setattr(inv, "_discover_population_dims", lambda s, c: {
+        "extra_dims": ["db.products.season"], "price_col": "db.products.retail_price_eur",
+        "join_table": "db.products", "join_key": "product_id", "metric_table": "db.order_items"})
+    inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
+    assert seen["extra_dims"] == ["db.products.season"]
+    assert "PRICE BAND" in (seen["extra_directive"] or "")
+
+
+# ── #2: saturation detector ─────────────────────────────────────────────────────
+
+def test_is_saturated_flags_tautology_not_uniformity():
+    cols = ["reason", "metric_total", "n"]
+    # tautology: every group pinned at 0/100% (an event-only rate) → saturated
+    assert inv._is_saturated(cols, [["NULL", 0.0, 100], ["late", 1.0, 50], ["quality", 1.0, 40]]) is True
+    assert inv._is_saturated(cols, [["a", 100, 5], ["b", 100, 5]]) is True
+    # legitimate uniformity (32.4 / 32.8) is a REAL flat finding — never saturated
+    assert inv._is_saturated(cols, [["ultra", 32.4, 100], ["luxury", 32.8, 100]]) is False
+    # a real spread is obviously not saturated
+    assert inv._is_saturated(cols, [["YOOX", 26.9, 100], ["NAP", 40.1, 100]]) is False
+    # too few groups → not called
+    assert inv._is_saturated(cols, [["only", 100, 5]]) is False
 
 
 # ── The flag gate (graph wiring) ────────────────────────────────────────────────
@@ -280,7 +375,8 @@ def test_detect_anomaly_needs_min_periods():
 def _stub_xsec_and_time(monkeypatch, *, axis, temporal_return):
     """Stub the rate lens (records period_directive), the composition lens, + the temporal seam."""
     calls = []
-    def xsec(state, conn, *, dims_override=None, phase_meta=None, period_directive=None):
+    def xsec(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
+             extra_dims=None, extra_schema=None, extra_directive=None):
         pid = (phase_meta or ("cross_section", "X", "🧭"))[0]
         calls.append((pid, period_directive))
         base = state.get("investigation_phases", [])
