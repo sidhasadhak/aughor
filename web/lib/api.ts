@@ -1,9 +1,12 @@
 import { API_BASE as BASE } from "./config";
 import { installUpsellInterceptor } from "./upsell";
+import { installApprovalInterceptor } from "./approval";
 
-// Screen every API response for HTTP 402 (capability_locked) → app-wide upsell modal.
-// Idempotent, client-only; installed when the API layer first loads.
+// Screen every API response for HTTP 402 (capability_locked) → app-wide upsell modal,
+// and HTTP 428 (approval_required) → app-wide approval modal. Idempotent, client-only;
+// installed when the API layer first loads, so every fetch call site is covered.
 installUpsellInterceptor();
+installApprovalInterceptor();
 
 export interface Connection {
   id: string;
@@ -171,6 +174,31 @@ export function resumeInvestigationPlan(invId: string, keepSubquestions: number[
 /** Reject a pending plan — cancel the paused investigation outright. */
 export async function cancelInvestigation(invId: string): Promise<void> {
   await fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/cancel`, { method: "POST" });
+}
+
+/** Action-approval audit + allowlist (P4, AI-FDE Pillar B). */
+export interface ApprovalAuditEvent {
+  seq?: number; at?: string; action: string; risk: string; decision: string;
+  scope: string; actor: string; detail?: string;
+}
+export interface AllowlistEntry { action: string; scope: string; by?: string; at?: string; allowed?: boolean }
+
+export async function getApprovalsAudit(limit = 100): Promise<ApprovalAuditEvent[]> {
+  const res = await fetch(`${BASE}/approvals/audit?limit=${limit}`);
+  if (!res.ok) throw new Error("Failed to fetch approvals audit");
+  return res.json();
+}
+export async function getAllowlist(): Promise<AllowlistEntry[]> {
+  const res = await fetch(`${BASE}/approvals/allowlist`);
+  if (!res.ok) throw new Error("Failed to fetch allowlist");
+  return res.json();
+}
+export async function revokeApproval(action: string, scope: string): Promise<void> {
+  const res = await fetch(`${BASE}/approvals/revoke`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, scope }),
+  });
+  if (!res.ok) throw new Error("Failed to revoke approval");
 }
 
 /** Record a human verdict on an investigation finding (Bet 0 — ground-truth capture). */
