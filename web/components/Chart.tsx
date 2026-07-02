@@ -25,7 +25,7 @@ import { effectiveChartPalette } from "@/lib/orgSettings";
 import { useOrgSettings } from "@/lib/useOrgSettings";
 import { EChart } from "@/components/charts/echarts/EChart";
 import {
-  lineOption, multiLineOption, barOption, groupedBarOption, stackedBarOption,
+  lineOption, multiLineOption, smallMultiplesOption, barOption, groupedBarOption, stackedBarOption,
   pieOption, scatterOption, comboOption, heatmapOption, treemapOption, paretoOption,
 } from "@/components/charts/echarts/builders";
 import {
@@ -275,13 +275,21 @@ export function Chart({
     if (!option && hint === "treemap" && catCol) { option = treemapOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol] }); defaultH = 340; }
     // 7. Change metric over time (auto) → multi-line of the delta
     if (!option && hint === "auto" && _isChangeMetric && catCol && dateCol) { option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
-    // 8. Stacked bar (explicit, or auto date/cat with ≤6 series)
+    // 8. Stacked bar (explicit, or auto date/cat with ≤6 series). A SHARE measure → 100%-stacked
+    //    (composition shift over time); an absolute measure stacks by volume.
     if (!option && (hint === "stacked_bar" || (hint === "auto" && catCol && (catCol2 || dateCol) && !_isChangeMetric && _stackUnique <= 6))) {
       const x = dateCol ?? catCol;
       const color = dateCol ? catCol : catCol2;
-      if (x && color) { option = stackedBarOption({ rows: data, units: columnUnits ?? undefined, x, ys: [numCol], color, xKind: dateCol ? "time" : "category" }); defaultH = 280; }
+      if (x && color) { option = stackedBarOption({ rows: data, units: columnUnits ?? undefined, x, ys: [numCol], color, xKind: dateCol ? "time" : "category" }, SHARE_COL.test(numCol)); defaultH = 280; }
     }
-    // 9. Temporal multi-line (auto, many series)
+    // 8b. Small multiples — a many-group trend (auto date/cat with >6 series, or explicit): a grid of
+    //     mini lines beats a spaghetti multi-line. Explicit hint always; auto only past the stack cap.
+    if (!option && (hint === "small_multiples" || (hint === "auto" && dateCol && catCol && !_isChangeMetric && _stackUnique > 6))
+        && dateCol && catCol) {
+      option = smallMultiplesOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" });
+      defaultH = Math.max(260, Math.min(Math.ceil(Math.min(_stackUnique, 9) / (_stackUnique <= 4 ? 2 : 3)) * 140 + 20, 560));
+    }
+    // 9. Temporal multi-line (auto, ≤6 series)
     if (!option && hint === "auto" && dateCol && catCol && !_isChangeMetric) { option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
     // 10. Date bar (date + measure, no category)
     if (!option && dateCol && !catCol && (hint === "bar" || hint === "bar_horizontal")) { option = barOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: true }, { order: "time" }); defaultH = 220; }

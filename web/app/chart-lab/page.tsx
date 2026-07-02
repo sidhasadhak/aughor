@@ -207,6 +207,18 @@ export default function ChartLab() {
                 { condition: "reject", pct_of_total: 6.3 },
               ], ["condition", "pct_of_total"]),
               chartType: "pie", columnUnits: { pct_of_total: "percent" } as Record<string, string>, showLabels: true } },
+          { t: "composition over time → 100%-stacked (share by segment)", p: {
+              ...toTable(MONTHS.flatMap((m) => [
+                { month: m, segment: "luxury", share_pct: 40 + (MONTHS.indexOf(m)) },
+                { month: m, segment: "mid", share_pct: 35 },
+                { month: m, segment: "off-price", share_pct: 25 - (MONTHS.indexOf(m)) },
+              ]), ["month", "segment", "share_pct"]),
+              chartType: "auto" } },
+          { t: "many-group trend → small multiples (8 brands)", p: {
+              ...toTable(MONTHS.flatMap((m, mi) => Array.from({ length: 8 }, (_, b) => (
+                { month: m, brand: `Brand ${b + 1}`, revenue: 100 + b * 12 + mi * (5 + b) + (mi % 2) * 8 }
+              ))), ["month", "brand", "revenue"]),
+              chartType: "auto" } },
         ].map((d, i) => (
           <div key={`pct-${i}`} style={{ background: "var(--bg-1)", border: "1px solid var(--chart-axis)", borderRadius: 10, padding: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: "var(--t3)", marginBottom: 4, fontFamily: "var(--font-ui)" }}>{d.t}</div>

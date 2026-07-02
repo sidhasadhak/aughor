@@ -43,13 +43,13 @@ type Agg = "sum" | "avg" | "count" | "min" | "max";
 
 // ChartType (hyphenated) → the underscore "hint" the <Chart> engine speaks.
 const TYPE_TO_HINT: Record<ChartType, string> = {
-  "line": "line", "area": "area", "multi-line": "multi_line", "bar": "bar",
+  "line": "line", "area": "area", "multi-line": "multi_line", "small-multiples": "small_multiples", "bar": "bar",
   "grouped-bar": "combo", "combo": "combo", "stacked-bar": "stacked_bar",
   "scatter": "scatter", "heatmap": "heatmap", "matrix": "heatmap",
   "pie": "pie", "treemap": "treemap", "table": "auto",
 };
 const TYPE_LABEL: Record<ChartType, string> = {
-  "line": "Line", "area": "Area", "multi-line": "Multi-line", "bar": "Bar",
+  "line": "Line", "area": "Area", "multi-line": "Multi-line", "small-multiples": "Small multiples", "bar": "Bar",
   "grouped-bar": "Grouped", "combo": "Combo", "stacked-bar": "Stacked",
   "scatter": "Scatter", "heatmap": "Heatmap", "matrix": "Matrix",
   "pie": "Pie", "treemap": "Treemap", "table": "Table",

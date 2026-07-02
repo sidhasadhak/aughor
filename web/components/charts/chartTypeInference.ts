@@ -35,6 +35,7 @@ export { classifyColumns, SHARE_COL };
 export type ChartType =
   | "line"
   | "multi-line"
+  | "small-multiples"
   | "area"
   | "bar"
   | "grouped-bar"
@@ -150,11 +151,19 @@ export function inferChartType(
       return { type: "multi-line", xCol: dateIdx, yCols: [changeNumIdx], colorCol: catIdx };
     }
 
-    if (uniqueSeriesCount > 5) {
-      // High-cardinality ABSOLUTE metric: heatmap is the most readable option
+    // COMPOSITION OVER TIME — a SHARE measure across a few groups → 100%-stacked bar (the shift in
+    // the mix reads directly). Chart.tsx / optionFor render it in percent mode for a share measure.
+    if (SHARE_COL.test(columns[numIdx]) && uniqueSeriesCount <= 8) {
+      return { type: "stacked-bar", xCol: dateIdx, yCols: [numIdx], colorCol: catIdx };
+    }
+    // Many groups → a many-line spaghetti chart is unreadable. Small multiples (a grid of mini lines,
+    // one per group, shared y-scale) up to 9 groups; beyond that a heatmap is the most compact.
+    if (uniqueSeriesCount > 9) {
       return { type: "heatmap", xCol: dateIdx, yCols: [numIdx], colorCol: catIdx };
     }
-
+    if (uniqueSeriesCount > 6) {
+      return { type: "small-multiples", xCol: dateIdx, yCols: [numIdx], colorCol: catIdx };
+    }
     // Low-cardinality absolute metric: multi-line for trend comparison
     return { type: "multi-line", xCol: dateIdx, yCols: [numIdx], colorCol: catIdx };
   }
@@ -224,7 +233,7 @@ export function availableChartTypes(columns: string[], rows: unknown[][]): Chart
 
   if (hasDate && hasCat) {
     // time × category — one series per category value
-    add("multi-line"); add("stacked-bar"); add("heatmap");
+    add("multi-line"); add("small-multiples"); add("stacked-bar"); add("heatmap");
   } else if (hasDate) {
     // pure time series
     add("line"); add("area"); add("bar");
@@ -247,8 +256,9 @@ export function availableChartTypes(columns: string[], rows: unknown[][]): Chart
 export function availableTypesFor(inferred: ChartType): ChartType[] {
   switch (inferred) {
     case "line":        return ["line", "bar"];
-    case "multi-line":  return ["multi-line", "heatmap", "stacked-bar"];
-    case "heatmap":     return ["heatmap", "multi-line", "stacked-bar"];
+    case "multi-line":  return ["multi-line", "small-multiples", "heatmap", "stacked-bar"];
+    case "small-multiples": return ["small-multiples", "multi-line", "heatmap", "stacked-bar"];
+    case "heatmap":     return ["heatmap", "multi-line", "small-multiples", "stacked-bar"];
     case "scatter":     return ["scatter", "bar"];
     case "pie":         return ["pie", "bar", "treemap"];
     case "treemap":     return ["treemap", "bar", "pie"];

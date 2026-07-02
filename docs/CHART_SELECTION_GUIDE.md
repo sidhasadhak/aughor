@@ -91,13 +91,18 @@ bar is chosen. Same idea as excluding `numerator_total` / `denominator_total` / 
   classifier now live once in `columnRoles.ts`; both `chartTypeInference.inferChartType` (type pick for
   the toggle/gallery) and `Chart.tsx` (the renderer) import them, so the two can't drift. A *share* that
   sums to a whole (`pct_of_total`) is now a pie on the quick/explorer path too — matching the ADA lens.
+- ✅ **Composition-over-time → 100%-stacked bar** (`stackedBarOption(percent)`): a share measure over
+  `date × group` normalises each period to 100% so the *shift* in the mix reads directly.
+- ✅ **Many-group trend → small multiples** (`smallMultiplesOption`): 7–9 groups render as a grid of mini
+  line charts sharing one y-scale (>9 → heatmap, ≤6 → multi-line), instead of an unreadable spaghetti
+  chart. Wired through `inferChartType`, `optionFor`, and the `Chart.tsx` renderer + the type toggle.
 
 ## 7. Follow-ups (a fuller adaptive engine)
 
-- A 100%-stacked bar for a composition-over-time (date + group + share), and small-multiples for
-  many-group trends (a 12-line spaghetti chart → a grid of mini lines).
 - Push intent onto the Insight (quick) NL path itself (it currently infers from data shape via the now-
   unified `inferChartType`; a question-intent classifier could pick trend/ranking/composition up front).
+- Retire the remaining third dispatch: `Chart.tsx`'s 15-case switch and `optionFor` both render from the
+  builders — a single `optionFor`-style table would finish the convergence started in `columnRoles`.
 
 **References.** ECharts handbook (`get-started`, API `series-bar.barMaxWidth`, `series.labelLayout`); classic
 data-viz chart-selection (magnitude→bar, trend→line, parts→bar/pie, relationship→scatter).

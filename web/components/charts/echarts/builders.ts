@@ -159,6 +159,62 @@ export function multiLineOption(i: BuildInput): EChartsOption {
   };
 }
 
+/** Small multiples — a grid of mini line charts, one per group, instead of a many-line spaghetti
+ *  chart. Each cell shares ONE y-scale so the groups are comparable at a glance; only the bottom row
+ *  shows x labels and the left column shows y labels (to keep the grid clean). Caps at the top 9
+ *  groups by total so the grid never explodes. */
+export function smallMultiplesOption(i: BuildInput): EChartsOption {
+  const y = i.ys[0];
+  const cats = categories(i.rows, i.x, i.xKind ?? "time");
+  const totalByGroup = new Map<string, number>();
+  const cell = new Map<string, number>();
+  for (const r of i.rows) {
+    const g = String(r[i.color!]);
+    const v = num(r[y]);
+    cell.set(`${g}__${String(r[i.x])}`, v);
+    if (isFinite(v)) totalByGroup.set(g, (totalByGroup.get(g) ?? 0) + Math.abs(v));
+  }
+  const groups = [...totalByGroup.keys()].sort((a, b) => (totalByGroup.get(b) ?? 0) - (totalByGroup.get(a) ?? 0)).slice(0, 9);
+  const fmt = valueFormatter(i.rows, y, i.units);
+  const gran: Gran | null = (i.xKind ?? "time") === "time" ? detectGranularity(i.x, i.rows.map((r) => r[i.x])) : null;
+  const xLabel = (v: string) => (gran ? fmtDate(String(v), gran) : String(v));
+  const n = groups.length;
+  const cols = n <= 4 ? 2 : 3;
+  const rows = Math.ceil(n / cols);
+  let ymax = 0;
+  for (const v of cell.values()) if (isFinite(v)) ymax = Math.max(ymax, v);
+
+  const gapX = 5, gapY = 10, titleH = 4;
+  const cellW = (100 - gapX * (cols + 1)) / cols;
+  const cellH = (100 - gapY - (gapY + titleH) * rows) / rows;
+  const grids: Record<string, unknown>[] = [];
+  const xAxes: Record<string, unknown>[] = [];
+  const yAxes: Record<string, unknown>[] = [];
+  const series: Record<string, unknown>[] = [];
+  const titles: Record<string, unknown>[] = [{ show: false }];
+  groups.forEach((g, k) => {
+    const rr = Math.floor(k / cols), cc = k % cols;
+    const left = gapX + cc * (cellW + gapX);
+    const top = gapY + rr * (cellH + gapY + titleH);
+    grids.push({ left: `${left}%`, top: `${top + titleH}%`, width: `${cellW}%`, height: `${cellH}%`, containLabel: true });
+    xAxes.push({ gridIndex: k, type: "category", data: cats, boundaryGap: false,
+      axisLabel: { show: rr === rows - 1, formatter: xLabel, hideOverlap: true, fontSize: 10 }, axisTick: { show: false } });
+    yAxes.push({ gridIndex: k, type: "value", max: ymax || undefined, splitLine: { show: false },
+      axisLabel: { show: cc === 0, formatter: (v: number) => fmt(v), fontSize: 10 } });
+    series.push({ name: g, type: "line", xAxisIndex: k, yAxisIndex: k, showSymbol: false, lineStyle: { width: 1.5 },
+      areaStyle: { opacity: 0.08 }, data: cats.map((c) => { const v = cell.get(`${g}__${c}`); return v == null ? null : v; }) });
+    titles.push({ text: g, left: `${left}%`, top: `${top}%`, textStyle: { fontSize: 11, fontWeight: 500 } });
+  });
+  return {
+    title: titles as EChartsOption["title"],
+    tooltip: { trigger: "axis", valueFormatter: (v) => fmt(v) },
+    grid: grids as EChartsOption["grid"],
+    xAxis: xAxes as EChartsOption["xAxis"],
+    yAxis: yAxes as EChartsOption["yAxis"],
+    series: series as EChartsOption["series"],
+  };
+}
+
 export interface BarStyle {
   /** Horizontal bars (category on Y) — the legacy default for ranked categoricals. */
   horizontal?: boolean;
@@ -228,8 +284,9 @@ export function groupedBarOption(i: BuildInput): EChartsOption {
   };
 }
 
-/** Volume composition over time/category — stacked bars by `color` group. */
-export function stackedBarOption(i: BuildInput): EChartsOption {
+/** Stacked bars by `color` group. `percent` = a 100%-stacked bar: each x bucket is normalised to
+ *  100% so the SHIFT in composition over time reads directly (the go-to for composition-over-time). */
+export function stackedBarOption(i: BuildInput, percent = false): EChartsOption {
   const y = i.ys[0];
   const cats = categories(i.rows, i.x, i.xKind);
   const groups: string[] = [];
@@ -239,7 +296,20 @@ export function stackedBarOption(i: BuildInput): EChartsOption {
     if (!groups.includes(g)) groups.push(g);
     cell.set(`${g}__${String(r[i.x])}`, num(r[y]));
   }
-  const fmt = valueFormatter(i.rows, y, i.units);
+  // For 100%-stacked, divide each cell by its x-bucket total so every bar sums to 100.
+  const totals = new Map<string, number>();
+  if (percent) {
+    for (const c of cats) {
+      let t = 0;
+      for (const g of groups) t += cell.get(`${g}__${c}`) ?? 0;
+      totals.set(c, t || 1);
+    }
+  }
+  const at = (g: string, c: string) => {
+    const v = cell.get(`${g}__${c}`) ?? 0;
+    return percent ? (v / (totals.get(c) ?? 1)) * 100 : v;
+  };
+  const fmt = percent ? (v: unknown) => `${Math.round(Number(v))}%` : valueFormatter(i.rows, y, i.units);
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
@@ -248,10 +318,12 @@ export function stackedBarOption(i: BuildInput): EChartsOption {
       type: "category", data: cats,
       axisLabel: i.xKind === "time" ? { formatter: dateAxisLabel(i.rows, i.x), hideOverlap: true } : { hideOverlap: true },
     },
-    yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
+    yAxis: percent
+      ? { type: "value", max: 100, axisLabel: { formatter: (v: number) => `${v}%` } }
+      : { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
     series: groups.map((g) => ({
       name: g, type: "bar", stack: "total", barMaxWidth: 40,
-      data: cats.map((c) => cell.get(`${g}__${c}`) ?? 0),
+      data: cats.map((c) => at(g, c)),
     })),
   };
 }
