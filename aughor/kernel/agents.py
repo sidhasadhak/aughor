@@ -178,6 +178,15 @@ def effective_governance(agent_id: str, workspace_id: Optional[str] = None) -> G
             tim = ov["time_budget_s"]
         if ov.get("model") is not None:
             model = (str(ov["model"]).strip() or None)
+    # P6: a deployment-wide hard ceiling. An operator can bound worst-case cost across
+    # ALL agents at once (without per-agent config) by setting AUGHOR_MAX_TOKEN_BUDGET;
+    # it only ever LOWERS the resolved budget, and both the kernel heartbeat and the
+    # synchronous _metered_stream read effective_governance, so it caps every governed run.
+    import os
+    _ceiling = os.getenv("AUGHOR_MAX_TOKEN_BUDGET", "").strip()
+    if _ceiling.isdigit():
+        cap = int(_ceiling)
+        tok = cap if tok is None else min(tok, cap)
     return Governance(enabled=enabled, token_budget=tok, time_budget_s=tim, model=model)
 
 
