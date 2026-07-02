@@ -123,6 +123,17 @@ def classify_question(question: str) -> tuple[str, RouteDecision]:
                     effective_mode = "final_text"
             except Exception:
                 pass
+
+    # P5 declarative modes: apply file-driven route overrides from mode manifests.
+    # No-op unless AUGHOR_DECLARATIVE_MODES is on (so the default path is unchanged);
+    # when on, a manifest's route_keywords can retune routing without a code change.
+    try:
+        from aughor.agent.modes import apply_route_overrides
+        effective_mode, decision = apply_route_overrides(question, effective_mode, decision)
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "declarative-mode route override is best-effort; keep the code route",
+                 counter="modes.route_override")
     return effective_mode, decision
 
 

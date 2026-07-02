@@ -1,0 +1,11 @@
+# Explore mode — decompose a broad question into a sub-question chain, then synthesize.
+name: explore
+description: >
+  Open-ended, multi-facet exploration decomposed into a chain of sub-questions.
+route_keywords: []
+route_from: []
+schema_scope:
+  top_k_tables: 8           # broad exploration sees more of the schema
+  max_tables: 10
+playbook_refs: []
+enabled: true

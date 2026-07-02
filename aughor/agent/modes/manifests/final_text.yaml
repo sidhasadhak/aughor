@@ -1,0 +1,13 @@
+# Final-text mode — a definitional/ontological question the KB answers without SQL.
+name: final_text
+description: >
+  Definitional or "what is X" questions answered from the knowledge base, no SQL.
+# The definitional route also requires a strong KB match (a semantic check regex can't
+# express), so that rule stays in code; no keyword override is declared here.
+route_keywords: []
+route_from: []
+schema_scope:
+  top_k_tables: 0           # no SQL — no table context needed
+  max_tables: 0
+playbook_refs: []
+enabled: true
