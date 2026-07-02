@@ -132,6 +132,11 @@ async def test_connection(conn_id: str):
 
 @router.delete("/connections/{conn_id}", status_code=204)
 def remove_connection(conn_id: str):
+    # P4: connection delete triggers a cascade purge (profiles, investigations,
+    # briefings, monitors, packs, vectors, uploads) — the most destructive action in
+    # the platform. Gate it behind approval + audit before anything is torn down.
+    from aughor import govern
+    govern.guard("connection.delete", conn_id)
     explorer = _explorers.pop(conn_id, None)
     task = _explorer_tasks.pop(conn_id, None)
     if explorer:
