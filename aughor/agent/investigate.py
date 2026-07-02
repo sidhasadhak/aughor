@@ -1192,29 +1192,38 @@ def _chart_ratio_primary(finding) -> None:
     finding["rows"] = [[row[i] for i in keep] for row in (finding.get("rows") or [])]
 
 
-def _chart_type_for_finding(finding: dict, intent: str) -> str:
-    """Pick a finding's chart from its NARRATIVE intent + data shape, so the chart matches the point
-    the finding makes instead of a data-shape guess (see docs/CHART_SELECTION_GUIDE.md). Intents:
-      trend        → line (a metric over time).
-      composition  → a donut for a few parts-of-a-whole (reads "share of 100%"), a ranked horizontal
-                     bar once there are too many slices for a pie to stay legible.
-      ranking      → horizontal bar, sorted (weakest/strongest first).
-      relationship → scatter (two measures).
-    Falls back to the finding's own chart_type (or 'auto') for anything else."""
-    n = len([r for r in (finding.get("rows") or []) if r])
-    if intent == "trend":
-        return "line"
-    if intent == "composition":
-        return "pie" if 2 <= n <= _PIE_MAX_SLICES else "bar_horizontal"
-    if intent == "ranking":
-        return "bar_horizontal"
-    if intent == "relationship":
-        return "scatter"
-    return finding.get("chart_type") or "auto"
-
-
 # A pie/donut stays legible for only a handful of parts; past this a ranked bar reads better.
 _PIE_MAX_SLICES = 6
+# Column-name signals used to keep the intent resolver honest about a finding's ACTUAL shape.
+_FINDING_DATE_RE = re.compile(
+    r"(?:^|_)(?:date|month|week|day|year|quarter|period|created|updated|timestamp)s?(?:_|$)|_at$|_ts$", re.I)
+_FINDING_CHANGE_RE = re.compile(
+    r"(change|delta|growth|\bmom\b|\byoy\b|\bwow\b|\bqoq\b|_chg$|_diff$|vs_prev|^prev_|_prev$|contribution)", re.I)
+
+
+def _chart_type_for_finding(finding: dict, intent: str) -> str:
+    """Pick a finding's chart from its NARRATIVE intent, VERIFIED against the data's actual shape so a
+    mislabelled intent degrades to 'auto' (frontend inference) instead of forcing a wrong chart. See
+    docs/CHART_SELECTION_GUIDE.md. Intents:
+      trend        → line — but only when a date/period column is actually present, else 'auto'.
+      composition  → a donut for a few parts-of-a-whole, a ranked bar once there are too many slices.
+      ranking      → sorted horizontal bar — but a CHANGE/contribution finding keeps 'auto' so the
+                     frontend's sign-aware diverging bar isn't flattened.
+      relationship → scatter.
+    Anything else keeps the finding's own chart_type (or 'auto')."""
+    cols = [str(c) for c in (finding.get("columns") or [])]
+    n = len([r for r in (finding.get("rows") or []) if r])
+    has_date = any(_FINDING_DATE_RE.search(c) for c in cols)
+    has_change = any(_FINDING_CHANGE_RE.search(c) for c in cols)
+    if intent == "composition":
+        return "pie" if 2 <= n <= _PIE_MAX_SLICES else "bar_horizontal"
+    if intent == "relationship":
+        return "scatter"
+    if intent == "trend":
+        return "line" if has_date else "auto"
+    if intent == "ranking":
+        return "auto" if has_change else "bar_horizontal"
+    return finding.get("chart_type") or "auto"
 
 
 def _tag_percent_columns(findings: list, match) -> None:
@@ -2551,6 +2560,11 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         if code_significant is None:
             code_significant = True  # unknown → assume significant, don't block
 
+    # A baseline is a metric over time → a line (intent-driven; shape-verified, so a non-temporal
+    # baseline finding safely degrades to the frontend's auto inference).
+    for _f in findings:
+        _f["chart_type"] = _chart_type_for_finding(_f, "trend")
+
     # Append sigma note to summary if available
     if code_sigma is not None:
         sig_label = "significant anomaly" if code_significant else "within normal variance"
@@ -2766,6 +2780,11 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         summary = "Metric decomposition complete."
         passes_to_next = summary
 
+    # A decomposition ranks sub-drivers → a sorted bar (a change/contribution finding keeps 'auto' so
+    # the frontend's sign-aware diverging bar isn't flattened).
+    for _f in findings:
+        _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+
     phase = _phase_result(
         "decomposition", "Metric Decomposition", "🧩",
         "complete" if any(not f["error"] for f in findings) else "partial",
@@ -2866,6 +2885,11 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         ]
         summary = "Dimensional analysis complete."
         passes_to_next = summary
+
+    # A dimensional drill-down ranks where the metric concentrates → a sorted bar; a contribution/
+    # change finding keeps 'auto' so the frontend's diverging (green/red by sign) bar is preserved.
+    for _f in findings:
+        _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
 
     phase = _phase_result(
         "dimensional", "Dimensional Analysis", "🔬",

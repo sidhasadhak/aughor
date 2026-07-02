@@ -110,19 +110,28 @@ def test_apply_percent_formatting_noop_for_non_percent():
 
 
 def test_chart_type_for_finding_by_intent():
-    def _f(nrows):
-        return {"rows": [[i, 0.1] for i in range(nrows)], "columns": ["k", "pct_of_total"]}
-    # trend → line; ranking → horizontal bar; relationship → scatter
-    assert I._chart_type_for_finding(_f(12), "trend") == "line"
-    assert I._chart_type_for_finding(_f(8), "ranking") == "bar_horizontal"
-    assert I._chart_type_for_finding(_f(2), "relationship") == "scatter"
+    def _f(nrows, cols=("k", "pct_of_total")):
+        return {"rows": [[i, 0.1] for i in range(nrows)], "columns": list(cols)}
     # composition: a donut for a few parts, a ranked bar once there are too many slices
     assert I._chart_type_for_finding(_f(3), "composition") == "pie"
     assert I._chart_type_for_finding(_f(6), "composition") == "pie"
     assert I._chart_type_for_finding(_f(9), "composition") == "bar_horizontal"
     assert I._chart_type_for_finding(_f(1), "composition") == "bar_horizontal"   # 1 slice isn't a pie
+    assert I._chart_type_for_finding(_f(2), "relationship") == "scatter"
     # unknown intent → the finding's own type (or auto)
     assert I._chart_type_for_finding({"rows": [], "chart_type": "heatmap"}, "other") == "heatmap"
+
+
+def test_chart_type_for_finding_is_shape_aware():
+    def _f(cols):
+        return {"rows": [[1, 2] for _ in range(8)], "columns": cols}
+    # trend → line ONLY with a real date/period column, else degrade to auto (no forced line)
+    assert I._chart_type_for_finding(_f(["order_month", "rate"]), "trend") == "line"
+    assert I._chart_type_for_finding(_f(["brand", "rate"]), "trend") == "auto"
+    # ranking → bar, but a CHANGE/contribution finding keeps auto (preserve the diverging bar)
+    assert I._chart_type_for_finding(_f(["brand", "metric_total"]), "ranking") == "bar_horizontal"
+    assert I._chart_type_for_finding(_f(["brand", "mom_change"]), "ranking") == "auto"
+    assert I._chart_type_for_finding(_f(["brand", "contribution_pct"]), "ranking") == "auto"
 
 
 def test_tag_percent_columns_marks_matching_columns():
