@@ -223,6 +223,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
     db._path = None
     db._connection_id = "cli"
     ada_nodes = {
+        "intake":     partial(ada_intake,     conn=db),
         "baseline":   partial(ada_baseline,   conn=db),
         "cross_section": partial(ada_cross_section, conn=db),
         "cross_section_multilens": partial(ada_cross_section_multilens, conn=db),
@@ -243,6 +244,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
 def build_graph_generic(db, hitl: bool = False, plan_gate: bool = False):
     """Build the graph bound to any DatabaseConnection instance."""
     ada_nodes = {
+        "intake":      partial(ada_intake,      conn=db),
         "baseline":    partial(ada_baseline,    conn=db),
         "cross_section": partial(ada_cross_section, conn=db),
         "cross_section_multilens": partial(ada_cross_section_multilens, conn=db),

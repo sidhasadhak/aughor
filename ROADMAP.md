@@ -27,6 +27,15 @@ thesis. Full analysis + plan + guardrails: [`docs/PARALLEL_MULTIAGENT_GROUNDWORK
 **Also queued** (from the same investigation-framework analysis): metric-aware dimension priority
 (scan the causal dimension, e.g. return *reason*, before descriptive ones) and auto-drill WHERE→WHY.
 
+**Shipped 2026-07-02** (branch `2026-07-02-ada-temporal-intake-grain`, deterministic, +13 tests, full
+suite green): **(B)** the event-rate-aware temporal-axis recovery is now wired into `ada_intake` itself
+(conn-bound), so *every* path — not just the flag-gated WHEN lens — recovers a join-reachable population
+date instead of declaring `date_column=NONE` (a temporal-change question with the date on a joinable parent
+no longer misroutes to cross-sectional); and **(A)** the parallel WHERE/WHY/WHEN lenses now share **one
+canonical grain** (the metric table's unit) with a denominator-pinning plan directive + a `[per <unit>]`
+summary tag, so a report can't show per-order 40% next to per-line-item 76% for the same rate. See
+`docs/PARALLEL_MULTIAGENT_GROUNDWORK.md` §0e.
+
 ---
 
 ## 1 · What we set out to build

@@ -149,7 +149,10 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   concurrently — **segment/where ∥ mechanism/why ∥ temporal/when** — for a deeper multi-angle answer at flat
   latency (flag `ada.parallel_lenses`). The WHEN lens deterministically resolves a population/order date
   (DB-probed, event-date-excluded) so a rate can be trended over time, flags a materially anomalous period, and
-  forward-chains a period-scoped drill. Both fan-outs run over `ContextThreadPoolExecutor` (so the metering
+  forward-chains a period-scoped drill; that same axis recovery now runs at **intake**, so even the default
+  single-scan path is temporal-aware (a "what drove the change" question with a join-reachable date no longer
+  misroutes to cross-sectional). All rate-bearing lenses share **one canonical grain** (the metric table's unit)
+  so a report can't show 40% (per order) and 76% (per line-item) for one rate. Both fan-outs run over `ContextThreadPoolExecutor` (so the metering
   accumulator + P6 budget propagate), with budget-abort, failure isolation, serial fallback and deterministic
   merge; in-phase dimension queries already run in parallel. See `docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`.
 - **Org / workspace tenancy isolation** (data-path scoped), **licensing tiers** (Free/Pro/Enterprise,

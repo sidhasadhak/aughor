@@ -84,7 +84,7 @@ def _install_stub(monkeypatch, *, sleep=0.0, raise_on=(), budget_on=()):
     """Stub the rate lens (ada_cross_section) AND the event composition lens so the parallel node runs
     without an LLM/DB. Each returns a phase tagged by its phase id."""
     def stub(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
-             extra_dims=None, extra_schema=None, extra_directive=None):
+             extra_dims=None, extra_schema=None, extra_directive=None, grain=None):
         pid, title, emoji = phase_meta or ("cross_section", "X", "🧭")
         if sleep:
             time.sleep(sleep)
@@ -130,7 +130,7 @@ def test_multilens_routes_event_dims_to_composition(monkeypatch):
         return {"phase_id": "cross_section_mechanism"}
     monkeypatch.setattr(inv, "_run_composition_lens", comp)
     def xsec(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
-             extra_dims=None, extra_schema=None, extra_directive=None):
+             extra_dims=None, extra_schema=None, extra_directive=None, grain=None):
         pid = (phase_meta or ("cross_section", "X", "🧭"))[0]
         return {"investigation_phases": state.get("investigation_phases", []) + [{"phase_id": pid}],
                 "_cross_section_summary": "s"}
@@ -175,7 +175,7 @@ def test_multilens_budget_exceeded_aborts(monkeypatch):
 def test_multilens_single_group_degrades_to_single_scan(monkeypatch):
     calls = []
     def stub(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
-             extra_dims=None, extra_schema=None, extra_directive=None):
+             extra_dims=None, extra_schema=None, extra_directive=None, grain=None):
         calls.append(phase_meta)
         return {"investigation_phases": state.get("investigation_phases", []) + [{"phase_id": "cross_section"}],
                 "_cross_section_summary": "s"}
@@ -248,7 +248,7 @@ def test_discover_none_when_no_joinable_dim_table(monkeypatch):
 def test_multilens_passes_population_augmentation_to_rate_lens(monkeypatch):
     seen = {}
     def xsec(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
-             extra_dims=None, extra_schema=None, extra_directive=None):
+             extra_dims=None, extra_schema=None, extra_directive=None, grain=None):
         seen["extra_dims"] = extra_dims
         seen["extra_directive"] = extra_directive
         return {"investigation_phases": state.get("investigation_phases", []) + [{"phase_id": "cross_section"}],
@@ -376,7 +376,7 @@ def _stub_xsec_and_time(monkeypatch, *, axis, temporal_return):
     """Stub the rate lens (records period_directive), the composition lens, + the temporal seam."""
     calls = []
     def xsec(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
-             extra_dims=None, extra_schema=None, extra_directive=None):
+             extra_dims=None, extra_schema=None, extra_directive=None, grain=None):
         pid = (phase_meta or ("cross_section", "X", "🧭"))[0]
         calls.append((pid, period_directive))
         base = state.get("investigation_phases", [])
@@ -385,7 +385,7 @@ def _stub_xsec_and_time(monkeypatch, *, axis, temporal_return):
     monkeypatch.setattr(inv, "_run_composition_lens",
                         lambda s, c, dims: {"phase_id": "cross_section_mechanism"})
     monkeypatch.setattr(inv, "_resolve_temporal_axis", lambda s, c=None: axis)
-    monkeypatch.setattr(inv, "_run_temporal_lens", lambda s, c, a: temporal_return)
+    monkeypatch.setattr(inv, "_run_temporal_lens", lambda s, c, a, grain=None: temporal_return)
     return calls
 
 

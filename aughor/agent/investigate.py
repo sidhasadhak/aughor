@@ -1719,12 +1719,16 @@ def _render_origin_finding_section(origin: Optional[dict]) -> str:
 
 
 @_telemetry.node_span("ada_intake")
-def ada_intake(state: AgentState) -> dict:
+def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     """
     Phase 1 — Question Intake.
     Parses the question into: metric SQL, observation period, comparison period,
     date column, metric table, available dimensions.
     Returns updated state with ada_intake stored in investigation_phases[0].
+
+    `conn` (bound in the graph) lets the deterministic temporal-axis recovery below probe the
+    live DB for a join-reachable population date; it is optional and the recovery fails open
+    (falling back to the schema-string parse) when a connection isn't supplied.
     """
     from aughor.agent.prompts_investigate import INTAKE_PROMPT, IntakeOutput
 
@@ -1804,6 +1808,30 @@ def ada_intake(state: AgentState) -> dict:
         if _feas:
             intake.intake_notes = (
                 (intake.intake_notes or "").rstrip() + f" FEASIBILITY: {_feas}"
+            ).strip()
+
+    # Temporal-feasibility recovery — when the intake declares NO usable time axis, a real
+    # PURCHASE/population date may still be JOIN-REACHABLE: the metric sits on an event/child
+    # table with no date of its own (an event RATE like returns, whose only date covers the
+    # numerator), while the parent order/purchase table IS dated. Recover it deterministically
+    # so EVERY downstream path sees the true axis — the temporal-change route below, the coverage
+    # clamp, and the displayed spec — instead of NONE. (Previously only the parallel multi-lens
+    # WHEN lens recovered this, so the default/single-scan path stayed temporally blind.) Event-rate
+    # aware: `_resolve_temporal_axis` excludes the event table's own date and prefers a real
+    # date-typed column; fails open (no change) when nothing is join-reachable.
+    if intake is not None and (intake.date_column or "").strip().upper() in ("", "NONE"):
+        try:
+            _axis = _resolve_temporal_axis(state, conn, intake_data=intake.model_dump())
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "intake temporal-axis recovery best-effort", counter="ada.intake_temporal")
+            _axis = None
+        if _axis and _axis.get("date_column"):
+            intake.date_column = _axis["date_column"]
+            intake.intake_notes = (
+                f"TEMPORAL AXIS RECOVERED: the metric table carries no date of its own, but "
+                f"{_axis['date_column']} is join-reachable — trending on it instead of treating the "
+                f"question as non-temporal. " + (intake.intake_notes or "")
             ).strip()
 
     # Deterministic cross-sectional trigger — the intake LLM is unreliable at
@@ -2868,7 +2896,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                       period_directive: Optional[str] = None,
                       extra_dims: Optional[list] = None,
                       extra_schema: Optional[str] = None,
-                      extra_directive: Optional[str] = None) -> dict:
+                      extra_directive: Optional[str] = None,
+                      grain: Optional[dict] = None) -> dict:
     """Cross-sectional WEAKNESS SCAN — for diagnostic questions ("where are we
     losing money / which X is weakest") the metric has no usable time axis, so we
     rank the money metric across each available dimension to surface the lowest /
@@ -3007,6 +3036,10 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             "date-bearing table as needed to apply this filter. This is a drill INTO the flagged "
             "period, so the time filter is REQUIRED (it overrides the 'no time filters' rule)."
         )
+    # GRAIN RECONCILIATION — when the multi-lens node hands down a canonical grain, every rate-bearing
+    # lens (this WHERE scan + the WHEN trend) computes the rate at the SAME unit of observation, so the
+    # report can't show 40% (per order) in one card and 76% (per line item) in another for one concept.
+    _grain_plan = _grain_plan_directive(grain) if grain else ""
     _plan_system = (f"Write one ranking query per dimension. Rank the metric ascending (weakest first). "
                     f"{_time_rule}" + _ADA_SQL_GROUNDING)
 
@@ -3020,7 +3053,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
             metric_computation_block=metric_computation_block,
             comparison_segment_section=comparison_segment_section,
-            premise_check_section=premise_check_section) + _direction_plan + _period_plan + (extra_directive or ""),
+            premise_check_section=premise_check_section) + _direction_plan + _period_plan + (extra_directive or "") + _grain_plan,
         interpret_system=(
             "Interpret a cross-sectional ranking scan of a RATIO / percentage metric. Read "
             "metric_total AS that ratio in its own units — NEVER as a dollar total or per-record "
@@ -3167,6 +3200,13 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             else:
                 summary = f"⚠ {_eff_caveat} " + (summary or "")
 
+    # Tag the rate with its grain so the reader sees WHICH unit each number is per — the WHERE and
+    # WHEN lenses carry the same tag, making their rates directly comparable instead of contradictory.
+    if grain:
+        _tag = _grain_summary_tag(grain)
+        if _tag and summary and not summary.startswith(_tag):
+            summary = f"{_tag} {summary}"
+
     phase = _phase_result(
         _phase_id, _phase_title, _phase_emoji,
         "complete" if any(not f["error"] for f in findings) else "partial",
@@ -3199,6 +3239,51 @@ def _dim_table(dim: str) -> str:
     """The bare table name of a `schema.table.column` (or `table.column`) dimension ref."""
     parts = (dim or "").split(".")
     return parts[-2].lower() if len(parts) >= 2 else ""
+
+
+# ── Canonical grain (follow-up A: reconcile WHERE/WHY/WHEN lens grain) ─────────
+# A cross-sectional "why is the rate high" analysis can compute the SAME rate at two different
+# grains — per order (~40%) vs per line-item (~76%) — across lenses, so the report contradicts
+# itself. The metric's OWN table (the intake `metric_table`) is the canonical unit of observation
+# (the same principle the measure-additivity guards enforce); every rate-bearing lens is handed
+# this grain so they all divide by the same denominator and label the number with the same unit.
+_GRAIN_ITEM_RE = re.compile(r"(item|line|_line$|lineitem)", re.I)
+
+
+def _canonical_grain(intake_data: dict) -> Optional[dict]:
+    """The analysis's canonical grain, derived once from the intake's metric table. Returns
+    {'table': <qualified>, 'label': <human unit>} or None when no metric table is known."""
+    mt = (intake_data or {}).get("metric_table") or ""
+    if not mt:
+        return None
+    bare = _bare(mt)
+    # Human unit: an *_items / *_lines table is a line-item grain; otherwise singularise the
+    # table name (orders → order, returns → return, customers → customer).
+    if _GRAIN_ITEM_RE.search(bare):
+        label = "line item"
+    else:
+        singular = bare[:-1] if bare.lower().endswith("s") else bare
+        label = singular.replace("_", " ").strip() or bare
+    return {"table": mt, "label": label}
+
+
+def _grain_plan_directive(grain: dict) -> str:
+    """Plan-prompt directive pinning every rate to the canonical grain (so lenses agree)."""
+    if not grain:
+        return ""
+    return (
+        f"\n\nGRAIN (measure consistently across lenses): compute the rate at the {grain['label']} "
+        f"grain — one row per {grain['table']} row (denominator = COUNT(*) over {grain['table']}, or "
+        f"COUNT(DISTINCT its primary key). When you JOIN another table for a segment or a date, KEEP "
+        f"{grain['table']} as the unit of observation; do NOT collapse to a coarser grain (e.g. distinct "
+        f"orders) — every lens in this analysis reports this rate per {grain['label']}, so a different "
+        f"grain here would contradict them."
+    )
+
+
+def _grain_summary_tag(grain: dict) -> str:
+    """Short, deterministic phase-summary prefix naming the grain (e.g. '[per line item]')."""
+    return f"[per {grain['label']}]" if grain and grain.get("label") else ""
 
 
 def _is_event_dim(dim: str) -> bool:
@@ -3427,13 +3512,17 @@ def _db_typed_columns(conn: "DatabaseConnection", schema_name: str) -> dict:
         return {}
 
 
-def _resolve_temporal_axis(state: AgentState, conn: "DatabaseConnection" = None) -> Optional[dict]:
+def _resolve_temporal_axis(state: AgentState, conn: "DatabaseConnection" = None,
+                           intake_data: Optional[dict] = None) -> Optional[dict]:
     """Deterministically find a PURCHASE/population date for the metric so it can be trended over
     time — the metric table's own date, else a population/order table's date reachable by join.
     For an event-RATE metric (returns/refunds) the event table's own date is EXCLUDED (it only
-    covers the numerator). Returns {date_column, date_table, metric_table} or None. Fail-open."""
+    covers the numerator). Returns {date_column, date_table, metric_table} or None. Fail-open.
+
+    `intake_data` lets a caller pass the intake spec directly (e.g. `ada_intake`, where the spec
+    isn't in `state['_ada_intake']` yet); defaults to the state-stored spec for the lens path."""
     try:
-        intake = state.get("_ada_intake") or {}
+        intake = intake_data if intake_data is not None else (state.get("_ada_intake") or {})
         metric_table = intake.get("metric_table") or ""
         if not metric_table:
             return None
@@ -3560,15 +3649,21 @@ def _detect_anomalous_period(columns: list, rows: list) -> Optional[dict]:
         return None
 
 
-def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict) -> tuple:
+def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict,
+                       grain: Optional[dict] = None) -> tuple:
     """The WHEN lens: trend the metric over time on the resolved date axis, then deterministically
-    detect an anomalous period. Returns (phase_or_None, anomalous_period_or_None). Fail-open."""
+    detect an anomalous period. Returns (phase_or_None, anomalous_period_or_None). Fail-open.
+
+    `grain` (from the multi-lens node) pins the trend's rate + denominator to the SAME unit the
+    WHERE scan uses, so the two lenses' rates are comparable rather than order-vs-item contradictory."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
     metric_label = intake.get("metric_label", "the metric")
     metric_sql = intake.get("metric_sql", "SUM(revenue)")
     metric_table = intake.get("metric_table", "")
     date_column = axis["date_column"]
+    _grain_plan = _grain_plan_directive(grain) if grain else ""
+    _grain_n = f"the {grain['label']} population" if grain else "the population"
     schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
     try:
         _run = run_analysis_phase(
@@ -3577,8 +3672,8 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
                          "column; JOIN the metric table to the date table if they differ. Bucket by "
                          "month or quarter (choose per the data's span). Restrict to the question's "
                          "subject. Order by the period ASC. Return EXACTLY three columns aliased "
-                         "`period`, `metric_value`, `n` (n = COUNT(*) of the population in that period).")
-                        + _ADA_SQL_GROUNDING,
+                         f"`period`, `metric_value`, `n` (n = COUNT(*) of {_grain_n} in that period).")
+                        + _ADA_SQL_GROUNDING + _grain_plan,
             plan_user=(
                 f"QUESTION: {question}\n"
                 f"METRIC: {metric_label} = {metric_sql}\n"
@@ -3631,6 +3726,11 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
     if anomalous:
         summary = (f"⚠ Period concentration: {anomalous['period']} at {anomalous['value']} vs the "
                    f"{anomalous['baseline']} baseline (n={anomalous['n']}). " + (summary or ""))
+    # Carry the canonical grain tag so the WHEN rate is directly comparable to the WHERE rate.
+    if grain:
+        _tag = _grain_summary_tag(grain)
+        if _tag and summary and not summary.startswith(_tag):
+            summary = f"{_tag} {summary}"
     phase = _phase_result(
         "temporal_when", "Temporal Trend — When", "📈",
         "complete" if any(not f["error"] for f in findings) else "partial",
@@ -3701,7 +3801,7 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
 
 
 def _run_period_drill(state: AgentState, conn: "DatabaseConnection", axis: dict,
-                      anomalous: dict, lens_specs: list) -> list:
+                      anomalous: dict, lens_specs: list, grain: Optional[dict] = None) -> list:
     """Forward-chain drill: when the WHEN lens flagged a period, re-run the segment/mechanism scan
     SCOPED to that period so we learn WHICH cut concentrated inside it. Sequential (depends on the
     detection). Returns the new phase(s); fail-open to []."""
@@ -3716,7 +3816,7 @@ def _run_period_drill(state: AgentState, conn: "DatabaseConnection", axis: dict,
         try:
             reader = conn.make_reader()
             out = ada_cross_section(state, reader, dims_override=ldims, phase_meta=drill_meta,
-                                    period_directive=directive)
+                                    period_directive=directive, grain=grain)
             ph = out.get("investigation_phases", [])
             phases.extend(ph[base_n:] if len(ph) > base_n else (ph[-1:] if ph else []))
         except BudgetExceeded:
@@ -3740,6 +3840,9 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     intake_data = state.get("_ada_intake") or {}
     dim_specs = _partition_dimensions(intake_data.get("dimensions", []))
     axis = _resolve_temporal_axis(state, conn)
+    # Follow-up A — one canonical grain for the whole fan-out, so the WHERE rate and the WHEN trend
+    # divide by the SAME denominator (no per-order 40% vs per-line-item 76% contradiction).
+    grain = _canonical_grain(intake_data)
 
     # #4 — deterministic population-attribute discovery (price band / season the intake missed), fed
     # into the RATE lens so it looks where the answer actually is. Computed once, single-threaded.
@@ -3758,7 +3861,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     # (still augmented with the discovered population attributes).
     if len(specs) == 1 and specs[0][1] == "rate":
         return ada_cross_section(state, conn, extra_dims=_aug_dims,
-                                 extra_schema=_aug_schema, extra_directive=_aug_dir)
+                                 extra_schema=_aug_schema, extra_directive=_aug_dir, grain=grain)
 
     base_phases = state.get("investigation_phases", [])
     base_n = len(base_phases)
@@ -3770,14 +3873,15 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
         try:
             reader = conn.make_reader()
             if kind == "when":
-                phase, anomalous = _run_temporal_lens(state, reader, payload)
+                phase, anomalous = _run_temporal_lens(state, reader, payload, grain=grain)
                 return name, ([phase] if phase else []), None, anomalous
             if kind == "composition":
                 phase = _run_composition_lens(state, reader, payload)
                 return name, ([phase] if phase else []), None, None
             # kind == 'rate' — the WHERE scan, augmented with the discovered population attributes.
             out = ada_cross_section(state, reader, dims_override=payload, phase_meta=pmeta,
-                                    extra_dims=_aug_dims, extra_schema=_aug_schema, extra_directive=_aug_dir)
+                                    extra_dims=_aug_dims, extra_schema=_aug_schema,
+                                    extra_directive=_aug_dir, grain=grain)
             ph = out.get("investigation_phases", [])
             new = ph[base_n:] if len(ph) > base_n else (ph[-1:] if ph else [])
             return name, new, out.get("_cross_section_summary"), None
@@ -3820,7 +3924,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     # (sequential — the drill depends on the detection). Honest no-op when the trend was flat.
     if anomalous and axis and rate_lenses:
         try:
-            merged.extend(_run_period_drill(state, conn, axis, anomalous, rate_lenses))
+            merged.extend(_run_period_drill(state, conn, axis, anomalous, rate_lenses, grain=grain))
         except BudgetExceeded:
             raise
         except Exception as _exc:
