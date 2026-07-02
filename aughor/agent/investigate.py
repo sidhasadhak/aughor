@@ -2836,16 +2836,25 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
 
 
 @_telemetry.node_span("ada_cross_section")
-def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
+def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
+                      dims_override: Optional[list] = None,
+                      phase_meta: Optional[tuple] = None,
+                      period_directive: Optional[str] = None) -> dict:
     """Cross-sectional WEAKNESS SCAN — for diagnostic questions ("where are we
     losing money / which X is weakest") the metric has no usable time axis, so we
     rank the money metric across each available dimension to surface the lowest /
-    most-concentrated values, instead of a temporal baseline."""
+    most-concentrated values, instead of a temporal baseline.
+
+    ``dims_override`` scopes the scan to a subset of the intake dimensions and
+    ``phase_meta`` = (phase_id, title, emoji) gives the emitted phase its own identity — both
+    default to the full-dimension "cross_section" phase (byte-identical to before), so the parallel
+    multi-lens node can reuse this exact scan (guards and all) as a themed lens over one group."""
     from aughor.agent.prompts_investigate import (
         CROSS_SECTION_PLAN_PROMPT, CROSS_SECTION_INTERPRET_PROMPT,
         CROSS_SECTION_ADDITIVE_BLOCK, CROSS_SECTION_RATIO_BLOCK, CROSS_SECTION_AVG_BLOCK,
         CROSS_SECTION_RATIO_INTERPRET_PROMPT,
     )
+    _phase_id, _phase_title, _phase_emoji = phase_meta or ("cross_section", "Cross-Sectional Scan", "🧭")
     question = state["question"]
     phases = state.get("investigation_phases", [])
     intake_data = state.get("_ada_intake") or {}
@@ -2853,7 +2862,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
     metric_label = intake_data.get("metric_label", "the metric")
     metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
     metric_table = intake_data.get("metric_table", "")
-    dimensions = intake_data.get("dimensions", [])
+    dimensions = dims_override if dims_override is not None else intake_data.get("dimensions", [])
 
     prioritized = _prioritize_dimensions(dimensions)
     dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:6]) if prioritized else "  (none identified)"
@@ -2927,15 +2936,27 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "cross-section origin-finding anchor best-effort", counter="ada.xsec_anchor")
 
+    # Period restriction (forward-chain drill): scope every ranking query to the anomalous period
+    # the temporal WHEN lens flagged, so the drill explains WHICH cut concentrated the returns IN
+    # THAT PERIOD. Overrides the default "no time filters".
+    _period_plan = ""
+    _time_rule = "No time filters."
+    if period_directive:
+        _time_rule = "Apply the PERIOD RESTRICTION below to every query."
+        _period_plan = (
+            f"\n\nPERIOD RESTRICTION — restrict EVERY query to {period_directive}. Join to the "
+            "date-bearing table as needed to apply this filter. This is a drill INTO the flagged "
+            "period, so the time filter is REQUIRED (it overrides the 'no time filters' rule)."
+        )
     _run = run_analysis_phase(
-        conn, phase_id="cross_section", title="Cross-Sectional Scan", emoji="🧭", cap=5, schema=schema,
+        conn, phase_id=_phase_id, title=_phase_title, emoji=_phase_emoji, cap=5, schema=schema,
         preplanned=_anchor,
-        plan_system="Write one ranking query per dimension. Rank the metric ascending (weakest first). No time filters." + _ADA_SQL_GROUNDING,
+        plan_system=f"Write one ranking query per dimension. Rank the metric ascending (weakest first). {_time_rule}" + _ADA_SQL_GROUNDING,
         plan_user=CROSS_SECTION_PLAN_PROMPT.format(
             question=question, metric_label=metric_label, metric_sql=metric_sql,
             metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
             metric_computation_block=metric_computation_block,
-            comparison_segment_section=comparison_segment_section) + _direction_plan,
+            comparison_segment_section=comparison_segment_section) + _direction_plan + _period_plan,
         interpret_system=(
             "Interpret a cross-sectional ranking scan of a RATIO / percentage metric. Read "
             "metric_total AS that ratio in its own units — NEVER as a dollar total or per-record "
@@ -2964,13 +2985,16 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         return {"investigation_phases": phases + [_run.error_phase]}
     results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
+    # Finding-id prefix — distinct per lens so two parallel scans can't collide their ids
+    # (default "cross_section" keeps the historical "xsec" prefix → byte-identical).
+    _fprefix = "xsec" if _phase_id == "cross_section" else _phase_id
     if interpretation and interpretation.findings:
-        findings = _assemble_phase_findings(results, interpretation.findings, "xsec", metric_label=metric_label)
+        findings = _assemble_phase_findings(results, interpretation.findings, _fprefix, metric_label=metric_label)
         summary = interpretation.phase_summary
     else:
         findings = [
             InvestigationFinding(
-                finding_id=f"xsec_{i}", title=q.title, sql=r.sql,
+                finding_id=f"{_fprefix}_{i}", title=q.title, sql=r.sql,
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
                 error=r.error, interpretation="Query executed.",
                 key_numbers=[], chart_type=q.chart_type, stat_note=None, is_significant=False,
@@ -2997,6 +3021,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
     #     rows — the $4.4B / $11.1T stockout totals had n≈29M vs inventory's 168k.
     #   • grand-total (additive, single-table metric): the parts must sum to the metric's true total.
     # Either overshoot ⇒ fan-out, whatever the SQL shape. Fail-open.
+    _fanned_sqls: set = set()   # #3: the SPECIFIC finding SQLs that over-scanned (scoped, not phase-wide)
     _numeric_fanout = None
     if metric_table and results:
         try:
@@ -3030,37 +3055,530 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
                         continue
                     _scanned = _scanned_rows(_sql)
                     if _scanned and _scanned > _base_rows * 1.5:
-                        _numeric_fanout = (
-                            f"The scan touched ~{_scanned:,.0f} rows but the metric's table "
+                        _fanned_sqls.add(_sql)   # record EVERY offender — don't break — so the caveat
+                        _numeric_fanout = (      # lands on exactly the fanned finding, not its siblings
+                            f"This finding's scan touched ~{_scanned:,.0f} rows but the metric's table "
                             f"({metric_table}) has only ~{_base_rows:,.0f} — a join multiplied the rows, "
-                            "so the metric is inflated by a fan-out and its magnitudes / ranking are "
-                            "unreliable (needs a grain-correct recompute).")
-                        break
+                            "so its magnitude is inflated by a fan-out (needs a grain-correct recompute).")
         except Exception:
+            _fanned_sqls = set()
             _numeric_fanout = None
 
-    # Fail-safe: the metric still fans out after the corrective re-plan (AST-detected) OR the numeric
-    # backstop caught an inflated total. Caveat EVERY finding and strip the significance flag so an
-    # inflated magnitude is never presented as a trustworthy weakness; surface it in the phase summary
-    # so synthesis cannot confidently rank on it.
-    _eff_caveat = _run.fanout_caveat or _numeric_fanout
+    # Fail-safe: a fan-out (AST-detected re-plan-unresolved OR numeric backstop) means the magnitude
+    # can't be trusted — caveat the offender + strip significance. #3: SCOPE it. The numeric backstop
+    # is per-SQL, so only the findings whose OWN query over-scanned are flagged — a clean sibling like
+    # 'by platform' is no longer tarred by another finding's fan-out. The AST phase caveat is
+    # phase-level; apply it broadly only when the numeric backstop found no specific offender.
+    _eff_caveat = _numeric_fanout or _run.fanout_caveat
     if _eff_caveat:
-        for f in findings:
+        def _finding_fanned(f):
+            return (f.get("sql") in _fanned_sqls) if _fanned_sqls else True
+        _fanned = [f for f in findings if _finding_fanned(f)]
+        for f in _fanned:
             f["trust_caveat"] = f.get("trust_caveat") or _eff_caveat
             f["is_significant"] = False
-        if is_ratio:
-            # Fix B — a fanned RATIO is corrupted, not merely inflated; suppress its values + ranking
-            # rather than present and let the narrator rationalise an artifact (the ROAS 0.0–0.01 mess).
-            summary = _suppress_fanned_ratio(findings, metric_label, _eff_caveat)
-        else:
-            summary = f"⚠ {_eff_caveat} " + (summary or "")
+        if _fanned:
+            if is_ratio:
+                # Fix B — a fanned RATIO is corrupted, not merely inflated; suppress its values + ranking
+                # rather than present and let the narrator rationalise an artifact (the ROAS 0.0–0.01 mess).
+                summary = _suppress_fanned_ratio(_fanned, metric_label, _eff_caveat)
+            else:
+                summary = f"⚠ {_eff_caveat} " + (summary or "")
 
     phase = _phase_result(
-        "cross_section", "Cross-Sectional Scan", "🧭",
+        _phase_id, _phase_title, _phase_emoji,
         "complete" if any(not f["error"] for f in findings) else "partial",
         summary, findings,
     )
     return {"investigation_phases": phases + [phase], "_cross_section_summary": summary}
+
+
+# ── Parallel multi-lens cross-section (flag: ada.parallel_lenses) ──────────────
+# A cross-sectional "why is X high/low" question has independent investigative angles: WHERE it
+# concentrates (segment/product dimensions) and the MECHANISM behind it (reason/condition/logistics
+# dimensions). The single bundled scan interprets all dimensions at once — shallow per-angle. This
+# runs one focused cross_section lens PER angle CONCURRENTLY (each reuses the full ada_cross_section
+# scan + its guards on its own make_reader clone), so a "why" question gets a deeper, multi-angle
+# answer at ~flat wall-clock. In-process ContextThreadPoolExecutor (metering/budget propagate);
+# ada_synthesize already reasons over every phase in investigation_phases, so the extra lens is
+# picked up automatically. Off by default → the single scan above. See docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.
+
+import logging as _logging
+_lens_logger = _logging.getLogger("aughor.agent.investigate")
+
+_ADA_LENS_WIDTH = int(__import__("os").getenv("AUGHOR_ADA_LENS_WIDTH", "4"))
+
+def _dim_column(dim: str) -> str:
+    """The bare column name of a `schema.table.column` (or `table.column`) dimension ref."""
+    return (dim or "").rsplit(".", 1)[-1].lower()
+
+
+def _dim_table(dim: str) -> str:
+    """The bare table name of a `schema.table.column` (or `table.column`) dimension ref."""
+    parts = (dim or "").split(".")
+    return parts[-2].lower() if len(parts) >= 2 else ""
+
+
+def _is_event_dim(dim: str) -> bool:
+    """True when the dimension lives on an EVENT-only table (returns/refunds/…). Such a row exists
+    ONLY for the event, so a 'rate by this dimension' over the population is tautologically 100%
+    (`reason='size_fit' → 100% returned`, by construction) — it must be analysed as COMPOSITION
+    (share of the event) instead. Classifying by TABLE (not the column name) is what routes
+    `return_logistics.restocked` correctly — a name regex missed it and let it fan out a rate scan."""
+    return bool(_EVENT_TABLE_RE.search(_dim_table(dim)))
+
+
+def _partition_dimensions(dimensions: list) -> list[tuple]:
+    """Split the intake dimensions into lens groups by whether they describe the POPULATION (a rate
+    scan — the WHERE) or the EVENT itself (a composition/share scan — the WHY). Returns a list of
+    (group_name, dims, phase_meta, kind) for each NON-EMPTY group; kind ∈ {'rate','composition'}. A
+    single population group keeps the canonical 'cross_section' identity (byte-identical single scan);
+    a single event group runs as composition."""
+    dims = [d for d in (dimensions or []) if d]
+    event = [d for d in dims if _is_event_dim(d)]
+    pop = [d for d in dims if not _is_event_dim(d)]
+    specs: list = []
+    if pop:
+        specs.append(("segment", pop, ("cross_section", "Cross-Sectional Scan — Where", "🧭"), "rate"))
+    if event:
+        specs.append(("mechanism", event, ("cross_section_mechanism", "Mechanism / Reason Scan — Why", "🔍"), "composition"))
+    if not specs:
+        return [("all", dims, ("cross_section", "Cross-Sectional Scan", "🧭"), "rate")]
+    if len(specs) == 1 and specs[0][3] == "rate":
+        # Pure-population question → the canonical single scan (byte-identical to the un-split path).
+        _, gdims, _, _ = specs[0]
+        return [("all", gdims, ("cross_section", "Cross-Sectional Scan", "🧭"), "rate")]
+    return specs
+
+
+# ── Temporal WHEN lens + forward-chain period drill ───────────────────────────
+# A flat cross-sectional average can hide a period concentration (a brand/category whose returns
+# spiked in a specific season dragging the yearly number). The WHEN lens trends the metric over
+# time and deterministically flags any period that materially deviates; if one is found, a
+# forward-chain drill re-runs the segment/mechanism scan SCOPED to that period. Fixes the intake's
+# frequent blindness (it declares date_column=NONE when the event table has no date, even though the
+# population/order date is join-reachable). See docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.
+
+# Tables that hold an EVENT (returns/refunds/cancellations) — their date column only exists for the
+# event, so it cannot express an event-RATE over time (the denominator population isn't dated there).
+_EVENT_TABLE_RE = re.compile(r"(return|refund|cancel|dispute|complaint|chargeback)", re.I)
+_POP_TABLE_RE = re.compile(r"(order|sale|transaction|purchase|booking|invoice|shipment|line_item)", re.I)
+
+
+def _db_typed_columns(conn: "DatabaseConnection", schema_name: str) -> dict:
+    """Authoritative {schema.table: [(col, type)]} from the live DB (information_schema) — robust to
+    whatever schema-string format the agent is carrying (the data-catalog form isn't type-parseable).
+    Fail-open to {} so the caller falls back to the schema-string parse."""
+    try:
+        if not schema_name:
+            return {}
+        res = conn.execute("__temporal_types__",
+                           "SELECT table_name, column_name, data_type FROM information_schema.columns "
+                           f"WHERE table_schema = '{schema_name}'")
+        if getattr(res, "error", None) or not getattr(res, "rows", None):
+            return {}
+        out: dict = {}
+        for r in res.rows:
+            out.setdefault(f"{schema_name}.{r[0]}", []).append((str(r[1]), str(r[2])))
+        return out
+    except Exception:
+        return {}
+
+
+def _resolve_temporal_axis(state: AgentState, conn: "DatabaseConnection" = None) -> Optional[dict]:
+    """Deterministically find a PURCHASE/population date for the metric so it can be trended over
+    time — the metric table's own date, else a population/order table's date reachable by join.
+    For an event-RATE metric (returns/refunds) the event table's own date is EXCLUDED (it only
+    covers the numerator). Returns {date_column, date_table, metric_table} or None. Fail-open."""
+    try:
+        intake = state.get("_ada_intake") or {}
+        metric_table = intake.get("metric_table") or ""
+        if not metric_table:
+            return None
+        blob = f"{intake.get('metric_sql','')} {intake.get('metric_label','')} {_bare(metric_table)}".lower()
+        metric_is_event = bool(_EVENT_TABLE_RE.search(blob))
+        # Prefer authoritative types from the live DB (the schema_context in the live path is the
+        # structured data-catalog, which _typed_columns can't parse); fall back to the string parse.
+        schema_name = metric_table.split(".")[0] if "." in metric_table else (state.get("scope_schema") or "")
+        typed = _db_typed_columns(conn, schema_name) if conn is not None else {}
+        if not typed:
+            typed = _typed_columns(state.get("schema_context") or intake.get("filtered_schema") or "")
+        if not typed:
+            return None
+        full_schema = state.get("schema_context") or intake.get("filtered_schema") or ""
+        dims = intake.get("dimensions") or []
+        seeds = list(dict.fromkeys([metric_table] + [d.rsplit(".", 1)[0] for d in dims if "." in d]))
+        try:
+            from aughor.tools.schema import fk_neighbor_expand
+            seeds = fk_neighbor_expand(full_schema, seeds, cap=12)
+        except Exception:
+            pass
+        seed_bare = {_bare(s) for s in seeds}
+
+        def _score(t: str) -> int:
+            b = _bare(t)
+            if b == _bare(metric_table):
+                return 0
+            if _POP_TABLE_RE.search(b):
+                return 1
+            if b in seed_bare:
+                return 2
+            return 3
+
+        cands = sorted(typed.keys(), key=_score)
+        if metric_is_event:
+            # Drop event tables (their date can't date the denominator) unless it IS the metric table.
+            cands = [t for t in cands
+                     if not _EVENT_TABLE_RE.search(_bare(t)) or _bare(t) == _bare(metric_table)]
+        for type_first in (True, False):
+            for t in cands:
+                for c, ty in typed.get(t, []):
+                    hit = _DATE_TYPE_RE.search(ty) if type_first else (
+                        _DATE_NAME_RE.search(c) and not _KEYISH_RE.search(c))
+                    if hit:
+                        return {"date_column": f"{t}.{c}", "date_table": t, "metric_table": metric_table}
+        return None
+    except Exception:
+        return None
+
+
+def _detect_anomalous_period(columns: list, rows: list) -> Optional[dict]:
+    """Deterministically flag a period whose metric MATERIALLY deviates above the run's baseline,
+    on a sufficient sample — the honest gate that fires the forward-chain drill. Returns
+    {period, value, baseline, n} for the single worst qualifying period, or None when the trend is
+    flat / too few periods / small-sample blips. Expects a (period, metric_value, n) shape but
+    falls back to positional numeric detection. Never raises."""
+    try:
+        if not rows or len(rows) < 3:  # need a few periods to call one anomalous
+            return None
+        cl = [str(c).lower() for c in columns]
+
+        def _find(patterns, default_idx):
+            for i, c in enumerate(cl):
+                if any(p in c for p in patterns):
+                    return i
+            return default_idx
+
+        p_idx = _find(["period", "month", "quarter", "year", "date", "bucket"], 0)
+        n_idx = _find(["n", "count", "items", "orders", "rows", "volume"], len(columns) - 1)
+
+        def _num(v):
+            try:
+                return float(str(v).replace(",", "").replace("%", ""))
+            except Exception:
+                return None
+        # metric = the numeric column that is neither period nor n; prefer a rate/pct-named one.
+        m_idx = None
+        for i, c in enumerate(cl):
+            if i in (p_idx, n_idx):
+                continue
+            if any(k in c for k in ("rate", "pct", "percent", "ratio", "metric", "value", "avg")):
+                m_idx = i
+                break
+        if m_idx is None:
+            for i in range(len(columns)):
+                if i in (p_idx, n_idx):
+                    continue
+                if any(_num(r[i]) is not None for r in rows):
+                    m_idx = i
+                    break
+        if m_idx is None:
+            return None
+
+        pts = []
+        for r in rows:
+            v = _num(r[m_idx])
+            n = _num(r[n_idx]) if n_idx < len(r) else None
+            if v is None:
+                continue
+            pts.append((r[p_idx], v, (n if n is not None else 1.0)))
+        if len(pts) < 3:
+            return None
+        vals = [v for _, v, _ in pts]
+        total_n = sum(n for _, _, n in pts)
+        # weighted baseline (by sample) + population std
+        baseline = sum(v * n for _, v, n in pts) / total_n if total_n else sum(vals) / len(vals)
+        var = sum((v - baseline) ** 2 for v in vals) / len(vals)
+        std = var ** 0.5
+        min_n = max(30.0, 0.03 * total_n)   # a period must carry a material share to count
+        # worst qualifying period: materially above baseline (relative AND absolute-vs-spread) on real volume
+        best = None
+        for period, v, n in pts:
+            if n < min_n:
+                continue
+            if v > baseline * 1.20 and v > baseline + 1.5 * std:
+                if best is None or v > best[1]:
+                    best = (period, v, n)
+        if best is None:
+            return None
+        return {"period": str(best[0]), "value": round(best[1], 2),
+                "baseline": round(baseline, 2), "n": int(best[2])}
+    except Exception:
+        return None
+
+
+def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict) -> tuple:
+    """The WHEN lens: trend the metric over time on the resolved date axis, then deterministically
+    detect an anomalous period. Returns (phase_or_None, anomalous_period_or_None). Fail-open."""
+    intake = state.get("_ada_intake") or {}
+    question = state["question"]
+    metric_label = intake.get("metric_label", "the metric")
+    metric_sql = intake.get("metric_sql", "SUM(revenue)")
+    metric_table = intake.get("metric_table", "")
+    date_column = axis["date_column"]
+    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    try:
+        _run = run_analysis_phase(
+            conn, phase_id="temporal_when", title="Temporal Trend — When", emoji="📈", cap=1, schema=schema,
+            plan_system=("Write ONE time-series query trending the metric. Use the SPECIFIED date "
+                         "column; JOIN the metric table to the date table if they differ. Bucket by "
+                         "month or quarter (choose per the data's span). Restrict to the question's "
+                         "subject. Order by the period ASC. Return EXACTLY three columns aliased "
+                         "`period`, `metric_value`, `n` (n = COUNT(*) of the population in that period).")
+                        + _ADA_SQL_GROUNDING,
+            plan_user=(
+                f"QUESTION: {question}\n"
+                f"METRIC: {metric_label} = {metric_sql}\n"
+                f"METRIC TABLE: {metric_table}\n"
+                f"DATE COLUMN (use THIS as the time axis): {date_column}\n\n"
+                f"SCHEMA:\n{schema}\n\n"
+                "Trend the metric over time so a period that spikes/dips vs the overall level is visible."
+            ),
+            interpret_system=(
+                "Interpret a time trend of the metric. State plainly whether it is STABLE over time "
+                "or whether a specific period MATERIALLY deviates (spike/dip) from the overall level; "
+                "name the period and magnitude. If the values are flat within noise, say so — do not "
+                "manufacture a trend. This answers WHEN, complementing the where/why scans."),
+            interpret_user_fn=(lambda results_text:
+                f"QUESTION: {question}\nMETRIC: {metric_label}\n\nTIME SERIES:\n{results_text}\n\n"
+                "Is the metric stable over time, or does a period stand out? Be specific and honest."),
+            plan_error_msg="Temporal trend planning failed.",
+            exec_error_msg="Temporal trend query failed.",
+            question=question, connection_id=state.get("connection_id", ""),
+        )
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "temporal lens best-effort; skipped", counter="ada.temporal_lens")
+        return None, None
+
+    if not _run.ok:
+        return _run.error_phase, None
+    results, interp = _run.results, _run.interpretation
+    if interp and interp.findings:
+        findings = _assemble_phase_findings(results, interp.findings, "when", metric_label=metric_label)
+        summary = interp.phase_summary
+    else:
+        findings = [
+            InvestigationFinding(
+                finding_id=f"when_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
+                row_count=r.row_count, error=r.error, interpretation="Trend computed.",
+                key_numbers=[], chart_type=(q.chart_type or "line"), stat_note=None, is_significant=False,
+            )
+            for i, (q, r) in enumerate(results)
+        ]
+        summary = "Temporal trend complete."
+
+    # Deterministic anomaly detection on the (first clean) trend result.
+    anomalous = None
+    for _q, r in results:
+        if not r.error and r.rows:
+            anomalous = _detect_anomalous_period(r.columns, r.rows)
+            if anomalous:
+                break
+    if anomalous:
+        summary = (f"⚠ Period concentration: {anomalous['period']} at {anomalous['value']} vs the "
+                   f"{anomalous['baseline']} baseline (n={anomalous['n']}). " + (summary or ""))
+    phase = _phase_result(
+        "temporal_when", "Temporal Trend — When", "📈",
+        "complete" if any(not f["error"] for f in findings) else "partial",
+        summary, findings,
+    )
+    return phase, anomalous
+
+
+def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_dims: list) -> Optional[dict]:
+    """The WHY lens for EVENT-only dimensions (return reason / condition / carrier / refund method).
+    A 'rate by' these is tautologically 100% (a row exists only if the event happened), so instead we
+    compute the COMPOSITION — the share of the events (returns) falling in each value. THAT is the
+    actual 'why' (e.g. size_fit = 42% of returns). Returns a phase dict or None. Fail-open."""
+    intake = state.get("_ada_intake") or {}
+    question = state["question"]
+    metric_label = intake.get("metric_label", "the metric")
+    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    dims_list = "\n".join(f"  - {d}" for d in event_dims[:6])
+    try:
+        _run = run_analysis_phase(
+            conn, phase_id="cross_section_mechanism", title="Mechanism / Reason Scan — Why", emoji="🔍",
+            cap=5, schema=schema,
+            plan_system=("Write one COMPOSITION query per dimension. These dimensions live on the EVENT "
+                         "table (returns/refunds), so a rate over them is meaningless (a row exists only "
+                         "if the event happened → always 100%). Instead compute the SHARE of the events: "
+                         "COUNT(*) per dimension value AND its percentage of the total events "
+                         "(100.0*COUNT(*)/SUM(COUNT(*)) OVER ()). Aggregate the EVENT table itself; "
+                         "restrict to the question's subject; ORDER BY count DESC. Return exactly three "
+                         "columns aliased `<dimension>`, `event_count`, `pct_of_total`.") + _ADA_SQL_GROUNDING,
+            plan_user=(f"QUESTION: {question}\nMETRIC CONTEXT: {metric_label}\n"
+                       f"EVENT DIMENSIONS (compose the events/returns by each):\n{dims_list}\n\n"
+                       f"SCHEMA:\n{schema}\n\n"
+                       "For each dimension, what share of the returns falls in each value? This is the WHY."),
+            interpret_system=("Interpret a COMPOSITION of returns by reason / condition / etc. Name the "
+                              "LARGEST contributor(s) and their share — that is the leading 'why'. These "
+                              "are SHARES of returns that sum to ~100%, NOT rates; never read a share as a "
+                              "return rate."),
+            interpret_user_fn=(lambda results_text:
+                f"QUESTION: {question}\n\nRETURN COMPOSITION:\n{results_text}\n\n"
+                "Which reason / mechanism accounts for the largest share of the returns? Lead with it."),
+            plan_error_msg="Composition planning failed.", exec_error_msg="Composition query failed.",
+            question=question, connection_id=state.get("connection_id", ""),
+        )
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "composition lens best-effort; skipped", counter="ada.composition_lens")
+        return None
+    if not _run.ok:
+        return _run.error_phase
+    results, interp = _run.results, _run.interpretation
+    if interp and interp.findings:
+        findings = _assemble_phase_findings(results, interp.findings, "why", metric_label=metric_label)
+        summary = interp.phase_summary
+    else:
+        findings = [
+            InvestigationFinding(
+                finding_id=f"why_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
+                row_count=r.row_count, error=r.error, interpretation="Composition computed.",
+                key_numbers=[], chart_type=(q.chart_type or "bar_horizontal"), stat_note=None, is_significant=False,
+            )
+            for i, (q, r) in enumerate(results)
+        ]
+        summary = "Return composition computed."
+    return _phase_result(
+        "cross_section_mechanism", "Mechanism / Reason Scan — Why", "🔍",
+        "complete" if any(not f["error"] for f in findings) else "partial", summary, findings,
+    )
+
+
+def _run_period_drill(state: AgentState, conn: "DatabaseConnection", axis: dict,
+                      anomalous: dict, lens_specs: list) -> list:
+    """Forward-chain drill: when the WHEN lens flagged a period, re-run the segment/mechanism scan
+    SCOPED to that period so we learn WHICH cut concentrated inside it. Sequential (depends on the
+    detection). Returns the new phase(s); fail-open to []."""
+    from aughor.kernel.metering import BudgetExceeded
+    directive = (f"the flagged period {anomalous['period']} (apply a date filter on "
+                 f"{axis['date_column']} restricting to that period)")
+    phases: list = []
+    base_n = len(state.get("investigation_phases", []))
+    for name, ldims, pmeta in lens_specs:
+        pid, title, emoji = pmeta
+        drill_meta = (f"period_drill_{name}", f"{title} · {anomalous['period']}", "🎯")
+        try:
+            reader = conn.make_reader()
+            out = ada_cross_section(state, reader, dims_override=ldims, phase_meta=drill_meta,
+                                    period_directive=directive)
+            ph = out.get("investigation_phases", [])
+            phases.extend(ph[base_n:] if len(ph) > base_n else (ph[-1:] if ph else []))
+        except BudgetExceeded:
+            raise
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, f"period drill '{name}' best-effort; skipped", counter="ada.period_drill")
+    return phases
+
+
+def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -> dict:
+    """Flag-gated parallel multi-lens cross-section. Runs independent lenses CONCURRENTLY — one
+    focused segment/mechanism scan per themed dimension group PLUS a temporal WHEN lens when a date
+    axis resolves — then, if the WHEN lens flagged an anomalous period, forward-chains a
+    period-scoped drill. Degrades to the single scan when there's nothing to fan out. Only writes
+    investigation_phases (+ the primary's _cross_section_summary), assembled single-threaded here."""
+    from concurrent.futures import as_completed
+    from aughor.kernel.concurrency import ContextThreadPoolExecutor
+    from aughor.kernel.metering import BudgetExceeded
+
+    intake_data = state.get("_ada_intake") or {}
+    dim_specs = _partition_dimensions(intake_data.get("dimensions", []))
+    axis = _resolve_temporal_axis(state, conn)
+
+    # Parallel spec list: population dims → a RATE scan (WHERE); event-only dims → a COMPOSITION scan
+    # (WHY, share-of-returns, avoiding the tautological 100%); plus an optional temporal WHEN lens.
+    specs = [(("xsec:" if kind == "rate" else "comp:") + name, kind, ldims, pmeta)
+             for (name, ldims, pmeta, kind) in dim_specs]
+    if axis:
+        specs.append(("when", "when", axis, None))
+    # Degrade to the plain single scan only when there's a single RATE lens and no temporal axis.
+    if len(specs) == 1 and specs[0][1] == "rate":
+        return ada_cross_section(state, conn)
+
+    base_phases = state.get("investigation_phases", [])
+    base_n = len(base_phases)
+    # Population (rate) lens groups only — used for the period-scoped forward-chain drill.
+    rate_lenses = [(n, d, m) for (n, d, m, k) in dim_specs if k == "rate"]
+
+    def _run_spec(spec):
+        name, kind, payload, pmeta = spec
+        try:
+            reader = conn.make_reader()
+            if kind == "when":
+                phase, anomalous = _run_temporal_lens(state, reader, payload)
+                return name, ([phase] if phase else []), None, anomalous
+            if kind == "composition":
+                phase = _run_composition_lens(state, reader, payload)
+                return name, ([phase] if phase else []), None, None
+            out = ada_cross_section(state, reader, dims_override=payload, phase_meta=pmeta)  # kind == 'rate'
+            ph = out.get("investigation_phases", [])
+            new = ph[base_n:] if len(ph) > base_n else (ph[-1:] if ph else [])
+            return name, new, out.get("_cross_section_summary"), None
+        except BudgetExceeded:
+            raise
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, f"ada multilens '{name}' best-effort; lens skipped",
+                     counter="ada.multilens_lens")
+            return name, [], None, None
+
+    results: list = []
+    width = min(len(specs), max(1, _ADA_LENS_WIDTH))
+    try:
+        with ContextThreadPoolExecutor(max_workers=width) as pool:
+            futs = [pool.submit(_run_spec, s) for s in specs]
+            for fut in as_completed(futs):
+                results.append(fut.result())   # BudgetExceeded re-raises here → abort the run
+    except BudgetExceeded:
+        raise
+    except Exception as exc:
+        # Executor-level failure must never break the investigation — fall back to serial.
+        _lens_logger.warning("[ada] multilens pool failed (%s) — serial fallback", exc, exc_info=True)
+        results = [_run_spec(s) for s in specs]
+
+    # Deterministic: merge in spec order (segment primary first, WHEN last), never completion order.
+    order = {s[0]: i for i, s in enumerate(specs)}
+    results.sort(key=lambda r: order.get(r[0], 1 << 30))
+    merged = list(base_phases)
+    primary_summary = None
+    anomalous = None
+    for name, new_phases, summ, anom in results:
+        merged.extend(new_phases)
+        if summ and primary_summary is None and name.startswith("xsec:"):
+            primary_summary = summ
+        if anom:
+            anomalous = anom
+
+    # Forward-chain: the WHEN lens flagged a period → drill the segment/mechanism scan INTO it
+    # (sequential — the drill depends on the detection). Honest no-op when the trend was flat.
+    if anomalous and axis and rate_lenses:
+        try:
+            merged.extend(_run_period_drill(state, conn, axis, anomalous, rate_lenses))
+        except BudgetExceeded:
+            raise
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "period drill best-effort; skipped", counter="ada.period_drill")
+
+    _lens_logger.info("[ada] multilens ran %d lens(es)%s → %d phase(s)",
+                      len(specs), (" + period drill" if anomalous else ""), len(merged) - base_n)
+    out = {"investigation_phases": merged}
+    if primary_summary is not None:
+        out["_cross_section_summary"] = primary_summary
+    return out
 
 
 @_telemetry.node_span("ada_synthesize")

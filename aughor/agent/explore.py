@@ -420,6 +420,27 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
         return {}
 
     subq = sub_questions[idx]
+    results, new_pitfalls, ran_checks = _execute_one_subq(state, subq, prior_answers, conn)
+    # Stash results in state temporarily (reason_over_result picks them up)
+    return {
+        "query_history": results,   # operator.add appends — stays compatible with investigate mode
+        "pitfalls": new_pitfalls,
+        "verification_checks": ran_checks,   # liveness: guards that fired this sub-question
+    }
+
+
+def _execute_one_subq(
+    state: AgentState,
+    subq: "SubQuestion",
+    prior_answers: list["SubQuestionAnswer"],
+    conn: "DatabaseConnection",
+    portrait: Optional[str] = None,
+) -> tuple[list["QueryResult"], list["Pitfall"], list[str]]:
+    """Plan SQL for ONE sub-question, execute it (with the full guard battery), and return
+    (results, new_pitfalls, ran_checks). Pure w.r.t. graph state — reads read-only fields from
+    `state` + the explicit `subq`/`prior_answers`, mutates nothing, so a parallel wave branch can
+    call it on its own reader connection. `portrait` overrides the per-sub-question Data Portrait
+    (a wave branch computes its own via `_scan_one_subq`); None falls back to state."""
     known_pitfalls = state.get("pitfalls", [])
 
     raw_events = state.get("events_context") or ""
@@ -461,7 +482,8 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
                 schema=subq_schema,
                 pitfall_section=format_pitfall_section(known_pitfalls),
                 events_section=events_section,
-                data_portrait=state.get("subq_data_portrait", {}).get(subq.id, ""),
+                data_portrait=(portrait if portrait is not None
+                               else state.get("subq_data_portrait", {}).get(subq.id, "")),
             ),
             response_model=QueryPlan,
         )
@@ -675,12 +697,7 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
                              counter="count_ratio.explore_lint")
             results.append(_attach_stats(result))
 
-    # Stash results in state temporarily (reason_over_result picks them up)
-    return {
-        "query_history": results,   # operator.add appends — stays compatible with investigate mode
-        "pitfalls": new_pitfalls,
-        "verification_checks": ran_checks,   # liveness: guards that fired this sub-question
-    }
+    return results, new_pitfalls, ran_checks
 
 
 
@@ -695,21 +712,31 @@ def exploratory_scan_subq(state: AgentState, conn: "DatabaseConnection") -> dict
     Max 2 queries, max 3 seconds each. Produces a short markdown paragraph
     stored in state["subq_data_portrait"][subq.id].
     """
-    import time as _time
     sub_questions = state.get("sub_questions", [])
     idx = state.get("current_subq_idx", 0)
     if idx >= len(sub_questions):
         return {}
 
     subq = sub_questions[idx]
+    portrait = _scan_one_subq(subq, state.get("schema_context", "") or "", conn)
+    current_portraits = state.get("subq_data_portrait", {})
+    return {"subq_data_portrait": {**current_portraits, subq.id: portrait}}
+
+
+def _scan_one_subq(subq: "SubQuestion", schema_context: str, conn: "DatabaseConnection") -> str:
+    """Quick per-sub-question discovery (cardinality / range / distinct values), returning
+    a short markdown paragraph for the planner's Data Portrait. Reusable by the sequential
+    scan node AND a parallel wave branch (which runs its own reader). Max 2 queries, 3s each;
+    empty string on nothing found. Never raises."""
+    import time as _time
     purpose = subq.purpose
 
     # Extract first table from schema context
     import re as _re
-    m = _re.search(r'^(?:TABLE:|##)\s+([\w.]+)', state.get("schema_context", ""), _re.MULTILINE)
+    m = _re.search(r'^(?:TABLE:|##)\s+([\w.]+)', schema_context, _re.MULTILINE)
     table = m.group(1) if m else None
     if not table:
-        return {}
+        return ""
 
     discoveries: list[str] = []
     _MAX_Q = 2
@@ -770,33 +797,20 @@ def exploratory_scan_subq(state: AgentState, conn: "DatabaseConnection") -> dict
                     )
                     queries_run += 1
 
-    portrait = "\n".join(f"- {d}" for d in discoveries) if discoveries else ""
-    current_portraits = state.get("subq_data_portrait", {})
-    updated_portraits = {**current_portraits, subq.id: portrait}
-
-    return {"subq_data_portrait": updated_portraits}
+    return "\n".join(f"- {d}" for d in discoveries) if discoveries else ""
 
 # ── Node: reason_over_result ──────────────────────────────────────────────────
 
-def reason_over_result(state: AgentState) -> dict[str, Any]:
-    """
-    Interpret results for the current sub-question. Marks it done.
-    Injects refinements into the next sub-question if needed.
-    Advances current_subq_idx.
-    """
-    sub_questions = state.get("sub_questions", [])
-    idx = state.get("current_subq_idx", 0)
-    prior_answers = state.get("subq_answers", [])
-
-    if idx >= len(sub_questions):
-        return {"current_subq_idx": idx + 1, "iteration": state.get("iteration", 0) + 1}
-
-    subq = sub_questions[idx]
-
-    # Gather the query results produced by plan_and_execute_subq for this sub-question
-    all_history = state.get("query_history", [])
-    subq_results = [r for r in all_history if r.hypothesis_id == subq.id]
-
+def _reason_one_subq(
+    state: AgentState,
+    subq: "SubQuestion",
+    subq_results: list["QueryResult"],
+    prior_answers: list["SubQuestionAnswer"],
+) -> tuple["SubQuestionAnswer", "ReasoningOutput"]:
+    """Interpret ONE sub-question's query results into a (SubQuestionAnswer, ReasoningOutput).
+    Pure w.r.t. graph state (reads read-only fields + the explicit args, mutates nothing), so a
+    parallel wave branch can call it. The caller owns the chain mutation (mark done / promote /
+    inject refinement) since that depends on the wider chain, not this sub-question alone."""
     if not subq_results or all(r.error for r in subq_results):
         # Technical failure — record as inconclusive, don't block chain
         answer_obj = ReasoningOutput(
@@ -846,6 +860,28 @@ def reason_over_result(state: AgentState) -> dict[str, Any]:
         insight=answer_obj.insight,
         refinement=answer_obj.refinement,
     )
+    return answer, answer_obj
+
+
+def reason_over_result(state: AgentState) -> dict[str, Any]:
+    """
+    Interpret results for the current sub-question. Marks it done.
+    Injects refinements into the next sub-question if needed.
+    Advances current_subq_idx.
+    """
+    sub_questions = state.get("sub_questions", [])
+    idx = state.get("current_subq_idx", 0)
+    prior_answers = state.get("subq_answers", [])
+
+    if idx >= len(sub_questions):
+        return {"current_subq_idx": idx + 1, "iteration": state.get("iteration", 0) + 1}
+
+    subq = sub_questions[idx]
+
+    # Gather the query results produced by plan_and_execute_subq for this sub-question
+    all_history = state.get("query_history", [])
+    subq_results = [r for r in all_history if r.hypothesis_id == subq.id]
+    answer, answer_obj = _reason_one_subq(state, subq, subq_results, prior_answers)
 
     # Mark sub-question done and inject refinement into the next sub-question
     updated_subqs = list(sub_questions)
@@ -914,6 +950,194 @@ def route_after_reason(state: AgentState) -> str:
                     "skipping remaining segment drills", _UNIFORM_CONVERGENCE)
         return "synthesize_exploration"
     return "plan_and_execute_subq"
+
+
+# ── Parallel wave executor (flag: explore.parallel_subq) ──────────────────────
+# The doc's P-A: independent sub-questions are a textbook map-reduce. The state is already
+# reducer-safe (query_history/pitfalls/subq_answers/verification_checks are operator.add), so a
+# wave of READY sub-questions (their depends_on satisfied) runs concurrently and merges
+# order-independently. We fan out IN-PROCESS over ContextThreadPoolExecutor (not LangGraph Send)
+# because the metering accumulator, P6 token budget, and job-id all ride on contextvars that Send
+# drops but ContextThreadPoolExecutor copies — the same reason _parallel_execute_safe uses it.
+# Each branch runs on its own make_reader() clone (shared connection state is never touched
+# concurrently); failure isolation, determinism (sort post-merge) and budget-abort match the
+# proven guarantees _parallel_execute_safe already ships. See docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.
+
+from dataclasses import dataclass as _dataclass
+
+_PARALLEL_WIDTH = int(__import__("os").getenv("AUGHOR_EXPLORE_PARALLEL_WIDTH", "4"))
+
+
+@_dataclass
+class _BranchOut:
+    subq_id: str
+    answer: "SubQuestionAnswer"
+    answer_obj: "ReasoningOutput"
+    results: list          # list[QueryResult]
+    pitfalls: list         # list[Pitfall]
+    ran_checks: list       # list[str]
+
+
+def _ready_subqs(sub_questions: list, done_ids: set) -> list:
+    """Sub-questions ready to run now: not done, and every depends_on already done. A dangling
+    depends_on (references an id not in the chain) can never satisfy, so it's excluded from ready
+    — but the caller's strict-shrink termination (every dispatched sub-question becomes done, even
+    on failure) still bounds the loop, and route_after_wave stops when no ready remain."""
+    return [
+        sq for sq in sub_questions
+        if not getattr(sq, "done", False) and sq.id not in done_ids
+        and set(sq.depends_on or []) <= done_ids
+    ]
+
+
+def _run_subq_branch(
+    state: AgentState,
+    subq: "SubQuestion",
+    prior_answers: list["SubQuestionAnswer"],
+    conn: "DatabaseConnection",
+    use_reader: bool = True,
+) -> _BranchOut:
+    """One wave branch: own reader → per-sub-question scan → plan+execute → reason → one answer.
+    BudgetExceeded propagates (aborts the whole run, matching the synchronous path); any other
+    error is isolated into an inconclusive answer so one branch can't fail the wave."""
+    from aughor.kernel.metering import BudgetExceeded
+    db = conn.make_reader() if use_reader else conn
+    try:
+        portrait = _scan_one_subq(subq, state.get("schema_context", "") or "", db)
+        results, pitfalls, ran_checks = _execute_one_subq(state, subq, prior_answers, db, portrait=portrait)
+        subq_results = [r for r in results if r.hypothesis_id == subq.id]
+        answer, answer_obj = _reason_one_subq(state, subq, subq_results, prior_answers)
+        return _BranchOut(subq.id, answer, answer_obj, results, pitfalls, ran_checks)
+    except BudgetExceeded:
+        raise
+    except Exception as exc:
+        logger.warning("[explore] wave branch %s failed — isolating as inconclusive: %s",
+                       subq.id, exc, exc_info=True)
+        answer_obj = ReasoningOutput(
+            answer=f"Could not complete {subq.id}: {exc}",
+            insight="This sub-question failed technically and is missing from the final answer.",
+            refinement=None,
+        )
+        answer = SubQuestionAnswer(
+            subq_id=subq.id, question=subq.question, purpose=subq.purpose,
+            sql="", columns=[], rows=[], row_count=0, error=str(exc),
+            answer=answer_obj.answer, insight=answer_obj.insight, refinement=None,
+        )
+        return _BranchOut(subq.id, answer, answer_obj, [], [], [])
+
+
+def _apply_wave_results(sub_questions: list, branch_outs: list["_BranchOut"]) -> list:
+    """Chain mutation after a wave (single-threaded, so no race): mark answered sub-questions done,
+    inject each refinement into its still-pending DEPENDENTS (the dependency-correct generalization
+    of the sequential 'inject into the next sub-question'), and append any promoted sub-questions
+    (unique id) so a later wave can pick them up. Returns the updated sub_questions list."""
+    by_id = {b.subq_id: b for b in branch_outs}
+    updated: list = []
+    for sq in sub_questions:
+        b = by_id.get(sq.id)
+        if b is not None:
+            updated.append(SubQuestion(**{**sq.model_dump(), "done": True,
+                                          "answer": b.answer_obj.answer,
+                                          "refinement": b.answer_obj.refinement}))
+        else:
+            updated.append(sq)
+
+    for b in branch_outs:
+        ref = b.answer_obj.refinement
+        if not ref:
+            continue
+        for i, sq in enumerate(updated):
+            if getattr(sq, "done", False):
+                continue
+            if b.subq_id in (sq.depends_on or []):
+                updated[i] = SubQuestion(**{
+                    **sq.model_dump(),
+                    "expected_output": f"{sq.expected_output}\n[Refinement from {b.subq_id}: {ref}]",
+                })
+
+    existing_ids = {sq.id for sq in updated}
+    for b in branch_outs:
+        nsq = getattr(b.answer_obj, "new_sub_question", None)
+        if not nsq:
+            continue
+        if nsq.id in existing_ids or not (nsq.id or "").strip():
+            nsq = SubQuestion(**{**nsq.model_dump(), "id": _unique_subq_id(existing_ids)})
+        existing_ids.add(nsq.id)
+        updated.append(nsq)
+    return updated
+
+
+def plan_and_execute_wave(state: AgentState, conn: "DatabaseConnection") -> dict[str, Any]:
+    """Run every READY sub-question concurrently as one wave; route_after_wave loops us until the
+    chain is exhausted. Only the operator.add channels (from the parallel work) and the plain
+    sub_questions chain-mutation (built single-threaded here) are returned, so nothing races."""
+    from concurrent.futures import as_completed
+    from aughor.kernel.concurrency import ContextThreadPoolExecutor
+    from aughor.kernel.metering import BudgetExceeded
+
+    sub_questions = list(state.get("sub_questions", []))
+    prior_answers = list(state.get("subq_answers", []))
+    done_ids = {sq.id for sq in sub_questions if getattr(sq, "done", False)}
+    ready = _ready_subqs(sub_questions, done_ids)
+    if not ready:
+        return {}
+
+    width = min(len(ready), max(1, _PARALLEL_WIDTH))
+    branch_outs: list[_BranchOut] = []
+    if width <= 1:
+        # Single ready sub-question — run inline on the shared connection (no thread, no clone).
+        branch_outs = [_run_subq_branch(state, ready[0], prior_answers, conn, use_reader=False)]
+    else:
+        try:
+            with ContextThreadPoolExecutor(max_workers=width) as pool:
+                futs = {pool.submit(_run_subq_branch, state, sq, prior_answers, conn): sq.id
+                        for sq in ready}
+                for fut in as_completed(futs):
+                    branch_outs.append(fut.result())   # BudgetExceeded re-raises here → abort wave
+        except BudgetExceeded:
+            raise
+        except Exception as exc:
+            # Executor-level failure must never break the run — fall back to serial.
+            logger.warning("[explore] wave pool failed (%s) — serial fallback", exc, exc_info=True)
+            branch_outs = [_run_subq_branch(state, sq, prior_answers, conn, use_reader=False)
+                           for sq in ready]
+
+    # Determinism: order the wave's outputs by planned position, never completion order.
+    order = {sq.id: i for i, sq in enumerate(sub_questions)}
+    branch_outs.sort(key=lambda b: order.get(b.subq_id, 1 << 30))
+
+    updated_subqs = _apply_wave_results(sub_questions, branch_outs)
+    new_answers = [b.answer for b in branch_outs]
+    return {
+        "sub_questions": updated_subqs,
+        "subq_answers": new_answers,                                            # operator.add
+        "query_history": [r for b in branch_outs for r in b.results],           # operator.add
+        "pitfalls": [p for b in branch_outs for p in b.pitfalls],               # operator.add
+        "verification_checks": [c for b in branch_outs for c in b.ran_checks],  # operator.add
+        "iteration": state.get("iteration", 0) + len(new_answers),
+        "current_subq_idx": len(done_ids) + len(new_answers),                   # advisory in wave mode
+    }
+
+
+def route_after_wave(state: AgentState) -> str:
+    """Loop to the next wave while ready sub-questions remain and we're under the iteration cap;
+    otherwise synthesize. Same MAX_SUBQ budget and early-convergence stop as route_after_reason."""
+    sub_questions = state.get("sub_questions", [])
+    done_ids = {sq.id for sq in sub_questions if getattr(sq, "done", False)}
+    if state.get("iteration", 0) >= MAX_SUBQ:
+        return "synthesize_exploration"
+    ready = _ready_subqs(sub_questions, done_ids)
+    if not ready:
+        return "synthesize_exploration"
+    # Early convergence: metric proven uniform across ≥N dims AND every remaining ready step is
+    # just another segment drill → stop (it would re-confirm the flat baseline, not reveal a
+    # driver). Mirrors _should_early_stop for the wave loop.
+    if len(_uniform_dimensions(state.get("query_history", []))) >= _UNIFORM_CONVERGENCE \
+            and all(getattr(sq, "purpose", "") in _DRILL_PURPOSES for sq in ready):
+        logger.info("[explore] wave converged early — metric uniform across ≥%d dimensions; "
+                    "remaining ready steps are all segment drills", _UNIFORM_CONVERGENCE)
+        return "synthesize_exploration"
+    return "plan_and_execute_wave"
 
 
 # ── Node: synthesize_exploration ──────────────────────────────────────────────

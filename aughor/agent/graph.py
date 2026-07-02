@@ -24,6 +24,7 @@ from aughor.agent.investigate import (
     ada_intake,
     ada_baseline,
     ada_cross_section,
+    ada_cross_section_multilens,
     ada_decompose,
     ada_dimensional,
     ada_behavioral,
@@ -37,8 +38,10 @@ from aughor.agent.explore import (
     decompose_exploration,
     exploratory_scan_subq,
     plan_and_execute_subq,
+    plan_and_execute_wave,
     reason_over_result,
     route_after_reason,
+    route_after_wave,
     synthesize_exploration,
 )
 from aughor.agent.state import AgentState
@@ -54,7 +57,27 @@ def _checkpointer():
     return SqliteSaver(conn)
 
 
-def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_node=None, ada_nodes: dict = None, hitl: bool = False):
+def _explore_parallel_enabled() -> bool:
+    """The explore.parallel_subq flag, resolved fail-safe (env/ledger). A ledger read can fail in
+    a bare CLI context, so any error means 'off' (the safe, byte-identical sequential path)."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("explore.parallel_subq")
+    except Exception:
+        return False
+
+
+def _ada_parallel_lenses_enabled() -> bool:
+    """The ada.parallel_lenses flag, resolved fail-safe (env/ledger) → 'off' on any error."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("ada.parallel_lenses")
+    except Exception:
+        return False
+
+
+def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_node=None,
+             explore_wave_node=None, ada_nodes: dict = None, hitl: bool = False):
     graph = StateGraph(AgentState)
 
     # ── Shared entry ──────────────────────────────────────────────────────────
@@ -72,11 +95,22 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
     graph.add_node("ada_behavioral",  ada.get("behavioral",  lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
     graph.add_node("ada_synthesize",  ada_synthesize)
 
+    # Parallel multi-lens cross-section (flag: ada.parallel_lenses) — a cross-sectional "why"
+    # question runs independent lenses (segment/where ∥ mechanism/why) concurrently instead of one
+    # bundled scan. route_after_intake still returns "ada_cross_section"; we just repoint that target
+    # to the multilens node when the flag is on. Off by default → the single scan.
+    _xsec_node = ada.get("cross_section_multilens")
+    _xsec_target = "ada_cross_section"
+    if _xsec_node is not None and _ada_parallel_lenses_enabled():
+        graph.add_node("ada_cross_section_multilens", _xsec_node)
+        graph.add_edge("ada_cross_section_multilens", "ada_synthesize")
+        _xsec_target = "ada_cross_section_multilens"
+
     graph.add_edge("exploratory_scan",  "ada_intake")
     graph.add_conditional_edges(
         "ada_intake",
         route_after_intake,
-        {"ada_cross_section": "ada_cross_section", "ada_baseline": "ada_baseline"},
+        {"ada_cross_section": _xsec_target, "ada_baseline": "ada_baseline"},
     )
 
     graph.add_conditional_edges(
@@ -121,25 +155,40 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
     # ── Explore branch ────────────────────────────────────────────────────────
     graph.add_node("exploratory_scan_explore", scan_node)
     graph.add_node("decompose_exploration", decompose_exploration)
-    graph.add_node("plan_and_execute_subq", explore_execute_node)  # real SQL planner/executor
-    graph.add_node("reason_over_result", reason_over_result)
     graph.add_node("synthesize_exploration", synthesize_exploration)
-
     graph.add_edge("exploratory_scan_explore", "decompose_exploration")
-    # Optional mid-chain discovery scan before the planner. When provided, it
-    # produces the per-sub-question Data Portrait; otherwise we plan directly.
-    if explore_scan_subq_node is not None:
-        graph.add_node("exploratory_scan_subq", explore_scan_subq_node)
-        graph.add_edge("decompose_exploration", "exploratory_scan_subq")
-        graph.add_edge("exploratory_scan_subq", "plan_and_execute_subq")
+
+    # Parallel wave executor (flag: explore.parallel_subq) — independent sub-questions run
+    # concurrently in dependency-respecting waves. One node (which folds in the per-sub-question
+    # discovery scan + plan + execute + reason) fans out over ContextThreadPoolExecutor and the
+    # router loops it until the chain is exhausted. Off by default → the byte-identical sequential
+    # chain below. See docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.
+    if explore_wave_node is not None and _explore_parallel_enabled():
+        graph.add_node("plan_and_execute_wave", explore_wave_node)
+        graph.add_edge("decompose_exploration", "plan_and_execute_wave")
+        graph.add_conditional_edges(
+            "plan_and_execute_wave",
+            route_after_wave,
+            {"plan_and_execute_wave": "plan_and_execute_wave",
+             "synthesize_exploration": "synthesize_exploration"},
+        )
     else:
-        graph.add_edge("decompose_exploration", "plan_and_execute_subq")
-    graph.add_edge("plan_and_execute_subq", "reason_over_result")
-    graph.add_conditional_edges(
-        "reason_over_result",
-        route_after_reason,
-        {"plan_and_execute_subq": "plan_and_execute_subq", "synthesize_exploration": "synthesize_exploration"},
-    )
+        graph.add_node("plan_and_execute_subq", explore_execute_node)  # real SQL planner/executor
+        graph.add_node("reason_over_result", reason_over_result)
+        # Optional mid-chain discovery scan before the planner. When provided, it
+        # produces the per-sub-question Data Portrait; otherwise we plan directly.
+        if explore_scan_subq_node is not None:
+            graph.add_node("exploratory_scan_subq", explore_scan_subq_node)
+            graph.add_edge("decompose_exploration", "exploratory_scan_subq")
+            graph.add_edge("exploratory_scan_subq", "plan_and_execute_subq")
+        else:
+            graph.add_edge("decompose_exploration", "plan_and_execute_subq")
+        graph.add_edge("plan_and_execute_subq", "reason_over_result")
+        graph.add_conditional_edges(
+            "reason_over_result",
+            route_after_reason,
+            {"plan_and_execute_subq": "plan_and_execute_subq", "synthesize_exploration": "synthesize_exploration"},
+        )
     graph.add_edge("synthesize_exploration", END)
 
     # ── Routing from entry ────────────────────────────────────────────────────
@@ -168,6 +217,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
     ada_nodes = {
         "baseline":   partial(ada_baseline,   conn=db),
         "cross_section": partial(ada_cross_section, conn=db),
+        "cross_section_multilens": partial(ada_cross_section_multilens, conn=db),
         "decompose":  partial(ada_decompose,  conn=db),
         "dimensional": partial(ada_dimensional, conn=db),
         "behavioral": partial(ada_behavioral,  conn=db),
@@ -177,6 +227,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
         partial(exploratory_scan, conn=db),
         partial(plan_and_execute_subq, conn=db),   # real per-sub-question SQL planner
         partial(exploratory_scan_subq, conn=db),   # mid-chain discovery scan
+        explore_wave_node=partial(plan_and_execute_wave, conn=db),  # parallel wave (flag-gated)
         ada_nodes=ada_nodes,
     )
 
@@ -186,6 +237,7 @@ def build_graph_generic(db, hitl: bool = False):
     ada_nodes = {
         "baseline":    partial(ada_baseline,    conn=db),
         "cross_section": partial(ada_cross_section, conn=db),
+        "cross_section_multilens": partial(ada_cross_section_multilens, conn=db),
         "decompose":   partial(ada_decompose,   conn=db),
         "dimensional": partial(ada_dimensional, conn=db),
         "behavioral":  partial(ada_behavioral,  conn=db),
@@ -195,6 +247,7 @@ def build_graph_generic(db, hitl: bool = False):
         partial(exploratory_scan, conn=db),
         partial(plan_and_execute_subq, conn=db),   # real per-sub-question SQL planner
         partial(exploratory_scan_subq, conn=db),   # mid-chain discovery scan
+        explore_wave_node=partial(plan_and_execute_wave, conn=db),  # parallel wave (flag-gated)
         ada_nodes=ada_nodes,
         hitl=hitl,
     )
