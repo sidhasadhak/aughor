@@ -17,7 +17,11 @@ from cryptography.fernet import Fernet
 
 from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 
-REGISTRY_DB = Path(__file__).parent.parent.parent / "data" / "connections.db"
+# AUGHOR_REGISTRY_DB overrides the connections registry path (mirrors the ledger's
+# AUGHOR_SYSTEM_DB). Tests point it at a temp path so the suite can NEVER mutate the real
+# data/connections.db — the harness gap that let a full-suite run empty live connections.
+REGISTRY_DB = Path(os.environ.get("AUGHOR_REGISTRY_DB")
+                   or (Path(__file__).parent.parent.parent / "data" / "connections.db"))
 KEY_FILE    = Path(__file__).parent.parent.parent / "data" / ".aughor_key"
 
 BUILTIN_ID = "fixture"
@@ -191,7 +195,8 @@ def get_meta(conn_id: str) -> dict:
     return _decrypt_meta(json.loads(row["meta"] or "{}"))
 
 
-_SETTINGS_PATH = Path(__file__).parent.parent.parent / "data" / "connection_settings.json"
+_SETTINGS_PATH = Path(os.environ.get("AUGHOR_CONNECTION_SETTINGS")
+                      or (Path(__file__).parent.parent.parent / "data" / "connection_settings.json"))
 
 
 def _load_settings() -> dict:
