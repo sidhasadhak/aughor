@@ -110,7 +110,7 @@ export function buildAughorTheme(t: ChartTokens): Record<string, unknown> {
       label: dataLabel,
     },
     bar: { itemStyle: { borderRadius: [3, 3, 0, 0] }, label: dataLabel },
-    pie: { itemStyle: { borderWidth: 1, borderColor: t.surface } },
+    pie: { itemStyle: { borderWidth: 1, borderColor: t.surface }, label: { ...dataLabel, textBorderWidth: 2 } },
     scatter: { symbolSize: 9 },
     legend: {
       textStyle: { color: t.t1, fontSize: 11, fontFamily: FONT_STACK },
