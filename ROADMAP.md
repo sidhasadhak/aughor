@@ -12,6 +12,23 @@
 
 ---
 
+## 0 · Immediate next action ⏭️
+
+**Parallelize the investigation loop with LangGraph's map-reduce / multi-agent primitives.**
+The womenswear-returns investigation took **~8.4 min** — not from slow SQL (dimension queries
+already run in parallel via `_parallel_execute_safe`), but from **~7–12 sequential frontier-model
+LLM calls across serial phases**. We're on LangGraph 1.2 with the `Send` map-reduce API *available
+but unused*, and our state already uses `operator.add` reducers (fan-out is low-friction). First
+task: **map-reduce the explore sub-question chain via `Send`** (independent sub-questions run in
+parallel, bounded by the P6 budget governor), then hypothesis testing and cross-section. Prefer
+**deterministic fan-out over an LLM supervisor/swarm** — consistent with our deterministic-first
+thesis. Full analysis + plan + guardrails: [`docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`](docs/PARALLEL_MULTIAGENT_GROUNDWORK.md).
+
+**Also queued** (from the same investigation-framework analysis): metric-aware dimension priority
+(scan the causal dimension, e.g. return *reason*, before descriptive ones) and auto-drill WHERE→WHY.
+
+---
+
 ## 1 · What we set out to build
 
 An **autonomous data-analysis platform** that replaces the dashboard-and-analyst loop. The mandate (see [`README.md`](README.md)):

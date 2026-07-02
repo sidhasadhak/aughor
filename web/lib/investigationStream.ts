@@ -23,6 +23,29 @@ export const MAX_LOG = 300;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface ContextJoin { from: string; to: string; kind: string }
+export interface ContextManifest {
+  tables: string[];
+  table_count: number;
+  estimated_tokens: number;
+  joins: ContextJoin[];
+}
+
+// Editable plan gate (P3): the sub-question plan surfaced for review before the fan-out.
+export interface PlanSubQuestion {
+  id: string;
+  question: string;
+  purpose: string;
+  expected_output: string;
+  depends_on?: string[];
+}
+export interface PlanPending {
+  investigationId: string | null;
+  subQuestions: PlanSubQuestion[];
+  chainLength: number;
+  estimatedTokens: number;
+}
+
 export interface ChatTurn {
   id: string;
   question: string;
@@ -93,6 +116,12 @@ export interface ChatTurn {
 
   // Shared
   tablesUsed: string[];
+  // Agent Context surface (P2): the working context the agent was given — which
+  // tables it saw, the token budget they cost, the join edges between them.
+  contextManifest: ContextManifest | null;
+  // Editable plan gate (P3): set when the run paused for the user to review the
+  // sub-question plan before the fan-out; cleared on resume.
+  planPending: PlanPending | null;
   followups: string[];
   analysis: { intent: string; steps: string[] } | null;
   error: string | null;
@@ -150,6 +179,9 @@ export type ChatAction =
   | { type: "REPORT";       report: Record<string, unknown>; queryMode: string; investigationId: string | null }
   | { type: "QUERY_MODE";   queryMode: string }
   | { type: "TABLES_USED";  tables: string[] }
+  | { type: "CONTEXT_ASSEMBLED"; manifest: ContextManifest }
+  | { type: "PLAN_PENDING"; plan: PlanPending }
+  | { type: "PLAN_RESUME" }
   | { type: "FOLLOWUPS";    questions: string[] }
   | { type: "ANALYSIS";     intent: string; steps: string[] }
   | { type: "CACHE_META";   fromCache: boolean; cachedQuestion: string | null }
@@ -184,7 +216,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   dossierReport: null, dossierInsightId: null,
   queriesExecuted: [], latestScore: null,
   hypotheses: [], investigationId: null, receiptId: null,
-  tablesUsed: [], followups: [], analysis: null, error: null,
+  tablesUsed: [], contextManifest: null, planPending: null, followups: [], analysis: null, error: null,
   startedAt: 0, elapsedMs: null,
   fromCache: false, cachedQuestion: null,
   inspectWarning: null,
@@ -226,6 +258,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "CHART_CONFIG": return updateLast(state, t => ({ ...t, chartConfig: action.chartConfig }));
     case "STATUS_TEXT":return updateLast(state, t => ({ ...t, statusText: action.text }));
     case "TABLES_USED":return updateLast(state, t => ({ ...t, tablesUsed: action.tables }));
+    case "CONTEXT_ASSEMBLED": return updateLast(state, t => ({ ...t, contextManifest: action.manifest }));
+    case "PLAN_PENDING": return updateLast(state, t => ({ ...t, planPending: action.plan, status: "done" }));
+    case "PLAN_RESUME": return { ...updateLast(state, t => ({ ...t, planPending: null, status: "loading" })), streaming: true };
     case "FOLLOWUPS":  return updateLast(state, t => ({ ...t, followups: action.questions }));
     case "ANALYSIS":   return updateLast(state, t => ({ ...t, analysis: { intent: action.intent, steps: action.steps } }));
     case "QUERY_MODE": return updateLast(state, t => ({ ...t, queryMode: action.queryMode }));
@@ -361,6 +396,13 @@ export async function consumeStream(
             case "chart_type":   dispatch({ type: "CHART_TYPE", chartType: p.chart_type as string }); break;
             case "chart_config": dispatch({ type: "CHART_CONFIG", chartConfig: p.chart_config as Record<string, unknown> }); break;
             case "tables_used":  dispatch({ type: "TABLES_USED",tables:    p.tables as string[] }); break;
+            case "context_assembled": dispatch({ type: "CONTEXT_ASSEMBLED", manifest: p as unknown as ContextManifest }); break;
+            case "plan_pending": dispatch({ type: "PLAN_PENDING", plan: {
+              investigationId: (p.investigation_id as string) ?? null,
+              subQuestions: (p.sub_questions as PlanSubQuestion[]) ?? [],
+              chainLength: (p.chain_length as number) ?? 0,
+              estimatedTokens: (p.estimated_tokens as number) ?? 0,
+            } }); break;
             case "followups":    dispatch({ type: "FOLLOWUPS",  questions: p.questions as string[] }); break;
             case "analysis":     dispatch({ type: "ANALYSIS",   intent:    p.intent as string, steps: p.steps as string[] }); break;
             case "mode":         dispatch({ type: "QUERY_MODE", queryMode: p.query_mode as string }); break;

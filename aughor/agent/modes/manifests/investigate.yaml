@@ -1,0 +1,18 @@
+# Investigate mode — ADA: baseline → decompose → dimensional/behavioral → synthesize.
+name: investigate
+description: >
+  Anomaly / driver diagnosis. Driver & relationship questions route here (a fast
+  cross-sectional comparison) rather than the slower explore decomposition.
+# When the classifier says "explore" but the question is really a driver/relationship
+# question, override to investigate. Edit these patterns to tune routing without code.
+route_from: [explore]
+route_keywords:
+  - '\b(?:relationship|correlat\w+|association)\b.{0,30}\bbetween\b'
+  - '\bcorrelate[ds]?\b.{0,20}\bwith\b'
+  - '\b(?:do|does|did)\b.{0,60}\b(?:affect|affects|lower|lowers|raise|raises|drive|drives|driven|hurt|hurts|improve|improves|increase|increases|reduce|reduces|impact|impacts|influence|influences|lead\s+to|leads\s+to|result\s+in)\b'
+  - '\b(?:do|does|did)\b.{0,70}\b(?:chance|likelihood|probability|odds)\b'
+schema_scope:
+  top_k_tables: 6           # a diagnosis needs a wider slice than a direct lookup
+  max_tables: 10
+playbook_refs: []
+enabled: true

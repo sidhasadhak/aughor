@@ -324,6 +324,8 @@ def override_ontology_entity(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.ontology.overrides import OntologyOverride
     effective = _resolve_schema(connection_id, schema_name)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
@@ -414,6 +416,8 @@ def delete_ontology_override(
     schema_name: Optional[str] = Query(default=None),
 ):
     """Remove a human override so the auto-derived value is restored on next read."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.overrides import delete_override
     if kind not in ("entity", "object_set", "computed_property", "metric"):
         raise HTTPException(status_code=400, detail=f"unknown override kind '{kind}'")

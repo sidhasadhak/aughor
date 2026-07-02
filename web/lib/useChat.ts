@@ -142,6 +142,32 @@ export function useChat() {
     abortRef.current = null;
   }
 
+  // P3 editable plan gate: approve the paused sub-question plan (keeping the chosen
+  // indices) and stream the resumed run back into the SAME turn.
+  async function resumePlan(invId: string, keepSubquestions: number[]) {
+    const { resumeInvestigationPlan } = await import("./api");
+    dispatch({ type: "PLAN_RESUME" });
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let res: Response;
+    try {
+      res = await resumeInvestigationPlan(invId, keepSubquestions);
+    } catch {
+      dispatch({ type: "ERROR", message: "Failed to resume the investigation." });
+      return;
+    }
+    await consumeStream(res, dispatch, controller.signal, logEvent);
+    abortRef.current = null;
+  }
+
+  // Reject the pending plan — cancel the paused investigation.
+  async function rejectPlan(invId: string) {
+    const { cancelInvestigation } = await import("./api");
+    try { await cancelInvestigation(invId); } catch { /* best-effort */ }
+    dispatch({ type: "DONE" });
+  }
+
   function restore(turns: ChatTurn[]) {
     // Assign a stable session ID that matches the restored session
     dispatch({ type: "RESTORE", turns });
@@ -158,5 +184,5 @@ export function useChat() {
     dispatch({ type: "CLEAR" });
   }
 
-  return { state, ask, stop, clear, restore, sessionId: sessionIdRef.current, eventLogRef };
+  return { state, ask, stop, clear, restore, resumePlan, rejectPlan, sessionId: sessionIdRef.current, eventLogRef };
 }

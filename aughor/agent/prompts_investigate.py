@@ -343,7 +343,7 @@ DIAGNOSTIC QUESTION: "{question}"
 This is a CROSS-SECTIONAL question — "where / which is weakest", "where are we losing money".
 There is NO useful time axis; do NOT compare periods. Instead rank the metric across each
 dimension to find WHERE value is lowest or most concentrated.
-{comparison_segment_section}
+{comparison_segment_section}{premise_check_section}
 METRIC: {metric_label} → {metric_sql}
 PRIMARY TABLE: {metric_table}
 

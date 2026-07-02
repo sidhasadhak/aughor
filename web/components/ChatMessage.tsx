@@ -33,6 +33,8 @@ import { ExplorationReportView } from "@/components/ExplorationReport";
 import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
+import { ContextRibbon } from "@/components/ContextRibbon";
+import { PlanGateCard } from "@/components/PlanGateCard";
 import { deletePlaybookEntry, editPlaybookRecommendation, type PlaybookRef } from "@/lib/api";
 import {
   type Gran,
@@ -950,20 +952,25 @@ function InsightDetails({
 }) {
   const hasAnalysis = !!turn.analysis && (!!turn.analysis.intent || turn.analysis.steps.length > 0);
   const hasTables   = turn.tablesUsed.length > 0;
+  const hasContext  = !!turn.contextManifest && !!connectionId;
   const hasSource   = turn.columns.length > 0;
   const hasPlaybook = turn.playbookRefs.length > 0;
   const hasElapsed  = turn.elapsedMs != null;
   const hasActions  = !!(turn.sql && turn.sql.trim() && connectionId);
-  if (!(hasAnalysis || hasTables || hasSource || hasPlaybook || hasElapsed || hasActions)) return null;
+  if (!(hasAnalysis || hasTables || hasContext || hasSource || hasPlaybook || hasElapsed || hasActions)) return null;
 
   return (
     <BriefDetails>
+      {hasContext && (
+        <BriefDetailBlock label="Agent context">
+          <ContextRibbon manifest={turn.contextManifest!} connectionId={connectionId!} />
+        </BriefDetailBlock>
+      )}
       {hasActions && (
         <BriefDetailBlock label="Validate &amp; feedback">
           <InsightActions turn={turn} connectionId={connectionId} />
         </BriefDetailBlock>
       )}
-
       {hasAnalysis && (
         <BriefDetailBlock label="How this was computed">
           {turn.analysis!.intent && (
@@ -1019,6 +1026,8 @@ export function ChatMessage({
   onRunFresh,
   onShowSource,
   onDeeper,
+  onApprovePlan,
+  onRejectPlan,
 }: {
   turn: ChatTurn;
   connectionId?: string;
@@ -1026,6 +1035,8 @@ export function ChatMessage({
   onRunFresh?: (q: string) => void;
   onShowSource?: (data: SourcePanelData) => void;
   onDeeper?: (question: string, insightId: string | null) => void;
+  onApprovePlan?: (invId: string, keepIndices: number[]) => void;
+  onRejectPlan?: (invId: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const isInvestigate = turn.mode === "investigate";
@@ -1075,6 +1086,15 @@ export function ChatMessage({
       {/* ── Inline agent trace (agentic modes) — streams live, collapses when done ── */}
       {isInvestigate && (turn.status === "loading" || isDone || turn.status === "error") && (
         <InlineAgentTrace turn={turn} />
+      )}
+
+      {/* ── Editable plan gate (P3): review the sub-question plan before the fan-out ── */}
+      {turn.planPending && onApprovePlan && onRejectPlan && (
+        <PlanGateCard
+          plan={turn.planPending}
+          onApprove={(keep) => onApprovePlan(turn.planPending!.investigationId ?? turn.investigationId ?? "", keep)}
+          onReject={() => onRejectPlan(turn.planPending!.investigationId ?? turn.investigationId ?? "")}
+        />
       )}
 
       {/* ── Loading state ── */}

@@ -3,7 +3,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE } from "@/lib/config";
 import { ActivityLog } from "@/components/ActivityLog";
-import { getConnections } from "@/lib/api";
+import {
+  getConnections,
+  getApprovalsAudit, getAllowlist, revokeApproval,
+  type ApprovalAuditEvent, type AllowlistEntry,
+} from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -366,6 +370,92 @@ function LensToggle({ value, onChange }: { value: Lens; onChange: (v: Lens) => v
   );
 }
 
+// ── Action approvals (P4) — the graduated-approval audit trail + allowlist ──────
+const _DECISION_COLOR: Record<string, string> = {
+  blocked: "#f87171", approved: "#60a5fa", auto: "var(--t4)",
+  allowlisted: "#4ade80", revoked: "#fbbf24",
+};
+
+function ActionApprovalsSection() {
+  const [audit, setAudit] = useState<ApprovalAuditEvent[]>([]);
+  const [allow, setAllow] = useState<AllowlistEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    Promise.all([getApprovalsAudit(100).catch(() => []), getAllowlist().catch(() => [])])
+      .then(([a, l]) => { setAudit(a); setAllow(l); })
+      .finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function handleRevoke(e: AllowlistEntry) {
+    try { await revokeApproval(e.action, e.scope); load(); } catch { /* surfaced on next load */ }
+  }
+
+  return (
+    <div style={{ background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 6, padding: "14px 16px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)" }}>Action approvals</span>
+        <span style={{ fontSize: 10, color: "var(--t4)" }}>graduated approval + audit</span>
+        <div style={{ flex: 1 }} />
+        <button onClick={load} style={{ fontSize: 10, color: "var(--t3)", background: "none",
+          border: "1px solid var(--bg-3)", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}>
+          {loading ? "…" : "Refresh"}
+        </button>
+      </div>
+
+      {/* Allowlist — pre-approved high-risk actions (revocable) */}
+      <div style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+        Allowlist ({allow.length})
+      </div>
+      {allow.length === 0 ? (
+        <div style={{ fontSize: 12, color: "var(--t4)", marginBottom: 12 }}>No actions pre-approved.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+          {allow.map((e, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+              <code style={{ color: "var(--t2)" }}>{e.action}</code>
+              <span style={{ color: "var(--t4)" }}>@ {e.scope || "*"}</span>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => handleRevoke(e)}
+                style={{ fontSize: 10, color: "#fbbf24", background: "none", border: "1px solid var(--bg-3)",
+                         borderRadius: 4, padding: "2px 7px", cursor: "pointer" }}>
+                Revoke
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Audit trail — every high-risk decision, attributed */}
+      <div style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+        Audit trail ({audit.length})
+      </div>
+      {audit.length === 0 ? (
+        <div style={{ fontSize: 12, color: "var(--t4)" }}>
+          No high-risk action attempts recorded. (Enable with AUGHOR_ACTION_APPROVAL.)
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 260, overflow: "auto" }}>
+          {audit.map((e, i) => (
+            <div key={e.seq ?? i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, lineHeight: 1.6 }}>
+              <span style={{ color: _DECISION_COLOR[e.decision] ?? "var(--t3)", fontWeight: 600, minWidth: 78 }}>
+                {e.decision}
+              </span>
+              <code style={{ color: "var(--t2)" }}>{e.action}</code>
+              {e.scope && <span style={{ color: "var(--t4)" }}>@ {e.scope}</span>}
+              <div style={{ flex: 1 }} />
+              <span style={{ color: "var(--t4)", fontSize: 10 }}>{e.actor}</span>
+              {e.at && <span style={{ color: "var(--t4)", fontSize: 10 }}>{e.at.slice(0, 19).replace("T", " ")}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SecurityAuditPanel({
   connId,
   lens = "security",
@@ -513,6 +603,9 @@ export function SecurityAuditPanel({
             <BudgetEditor connId={connId} />
           </div>
         )}
+
+        {/* Action approvals (P4) — graduated-approval audit trail + allowlist */}
+        <ActionApprovalsSection />
 
         {/* Error state */}
         {error && (

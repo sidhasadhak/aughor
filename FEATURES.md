@@ -154,6 +154,30 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 
 ---
 
+## 14. Human-command surface (AI-FDE-derived, flag-gated)
+
+Studied Palantir Foundry's AI FDE and adopted its *human-in-command* posture as a 7-phase program
+(all flag-gated + additive — default behaviour unchanged; see `docs/`):
+
+- **Close the loop** (`AUGHOR_CLOSED_LOOP`) — captured human corrections/verdicts + trusted queries are
+  read back into the planner as priors, so a corrected mistake isn't repeated (+0.70 accuracy on a repeat set).
+- **Agent Context surface** (`AUGHOR_CONTEXT_SURFACE`) — the working context is an inspectable, editable
+  object (typed table set + live token budget + rescope endpoint); the ContextRibbon in the answer surface.
+- **Editable plan gate** (`AUGHOR_PLAN_GATE`) — deep/explore runs pause after decomposition so the user can
+  review/trim the sub-question plan before the expensive fan-out (reuses the LangGraph HITL interrupt/resume).
+- **Graduated approval + audit** (`AUGHOR_ACTION_APPROVAL`) — risk-graded per-action gate under the user's
+  identity: high-risk mutations require approval, every action is audited to the ledger; per-scope allowlist +
+  the "Action approvals" audit view in Security & Audit.
+- **Declarative modes** (`AUGHOR_DECLARATIVE_MODES`) — a mode's routing/context-scope is editable YAML with a
+  hardcoded fallback (`aughor/agent/modes/`).
+- **Deployment budget ceiling** (`AUGHOR_MAX_TOKEN_BUDGET`) — one hard cap floors every agent's token budget.
+- **Premise validation** (`AUGHOR_PREMISE_CHECK`) — a "why is X so high" investigation validates the premise
+  (subject vs overall/peers) *before* explaining it, instead of assuming it — questioning the question itself.
+
+A delta-measurement ratchet (`evals/ratchet.py`) records accuracy + tokens/run to gate each change.
+
+---
+
 ## Frontend
 
 Next.js / React / Tailwind. Streaming investigation UI, Databricks-brand + Genie-style chat, home page,
