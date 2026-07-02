@@ -23,6 +23,8 @@ FLAG_ENV = {
     "snapshot_receipts": "AUGHOR_SNAPSHOT_RECEIPTS",
     "explorer.synthesis_incremental": "AUGHOR_SYNTHESIS_INCREMENTAL",
     "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
+    "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
+    "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
 }
 
 # Human-facing copy for the Settings UI.
@@ -42,6 +44,14 @@ FLAG_META = {
     "specialist_packs": {
         "label": "Specialist Agents (Domain Expertise Packs)",
         "description": "Load user-built specialist packs (packs/) and let them steer the engine at intake. Off by default while the subsystem lands — see docs/DOMAIN_EXPERTISE_PACKS.md.",
+    },
+    "explore.parallel_subq": {
+        "label": "Parallel explore sub-questions",
+        "description": "Run independent explore sub-questions concurrently in dependency-respecting waves (map-reduce over the operator.add state) instead of one-at-a-time. Cuts wall-clock on multi-cut investigations; multiplies concurrent LLM calls (bounded by the fan-out width cap + the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
+    },
+    "ada.parallel_lenses": {
+        "label": "Parallel Deep-Analysis lenses",
+        "description": "For a cross-sectional Deep-Analysis ('why is X high/low'), run independent investigative lenses (segment/where ∥ mechanism/why) concurrently instead of one bundled scan — a deeper, multi-angle answer at ~flat wall-clock. Multiplies concurrent LLM calls (bounded by the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
     },
 }
 

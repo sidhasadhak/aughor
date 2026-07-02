@@ -63,6 +63,11 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   lexicographic order of numeric text, text↔numeric comparison) as labelled caveats, never overwriting the query.
 - **Finding-trust ladder** — guards → quarantine → dismiss-with-reason; pre-emission insight verification;
   numeral grounding; ratio-aware cross-sectional scans; angle-feasibility + repair intent-preservation gates.
+- **Grain-aware cross-section** — an **event-only** dimension (return reason/condition) is read as a
+  **composition** (share of the event), never a tautological "rate by it" (which is always 100%);
+  a **saturated** result (every group pinned at 0/100%) triggers a single grain-corrected reattempt; and
+  discriminating **population attributes** the plan missed (a joinable table's price band / season) are
+  surfaced deterministically, gated by a uniqueness probe so the added join can't fan out.
 
 ## 3. Evidence, trust receipts & statistical rigor
 
@@ -139,6 +144,14 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 - **Two-model architecture** (coder + reasoner) with **runtime provider switching** and **provider
   resilience** (per-endpoint concurrency cap + retry/backoff/deadline); per-phase rate limiting;
   plan-then-SQL separation; non-blocking FastAPI event loop; bounded job concurrency.
+- **Parallel investigation** — independent explore sub-questions run concurrently in dependency-respecting
+  waves (flag `explore.parallel_subq`), and a cross-sectional Deep-Analysis runs independent lenses
+  concurrently — **segment/where ∥ mechanism/why ∥ temporal/when** — for a deeper multi-angle answer at flat
+  latency (flag `ada.parallel_lenses`). The WHEN lens deterministically resolves a population/order date
+  (DB-probed, event-date-excluded) so a rate can be trended over time, flags a materially anomalous period, and
+  forward-chains a period-scoped drill. Both fan-outs run over `ContextThreadPoolExecutor` (so the metering
+  accumulator + P6 budget propagate), with budget-abort, failure isolation, serial fallback and deterministic
+  merge; in-phase dimension queries already run in parallel. See `docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`.
 - **Org / workspace tenancy isolation** (data-path scoped), **licensing tiers** (Free/Pro/Enterprise,
   402 → upsell), **governed-intelligence MCP server**, time-to-first-insight instrumentation.
 
