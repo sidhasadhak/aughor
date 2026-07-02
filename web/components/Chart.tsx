@@ -29,7 +29,7 @@ import {
   pieOption, scatterOption, comboOption, heatmapOption, treemapOption, paretoOption,
 } from "@/components/charts/echarts/builders";
 import {
-  DATE_COL, SHARE_COL, CHANGE_METRIC_COL, TIME_LABEL_COL, isNumeric, firstNonNull,
+  SHARE_COL, CHANGE_METRIC_COL, TIME_LABEL_COL, INSTRUMENTATION_COL, PREFER_COL, classifyColumns,
 } from "@/components/charts/columnRoles";
 import { scoreDualAxis } from "@/components/charts/chartTypeInference";
 
@@ -92,8 +92,6 @@ function applyCustom(option: EChartsOption, custom?: ChartCustom | null): EChart
   }
   return o;
 }
-
-const DATE_VALUE_RE = /^\d{4}-\d{2}(-\d{2})?/;
 
 export function Chart({
   columns,
@@ -176,27 +174,17 @@ export function Chart({
       Object.fromEntries(columns.map((c, i) => [c, (r as unknown[])[i]])),
     );
 
-    const looksLikeDate = (colIdx: number) => {
-      const v = firstNonNull(rows, colIdx);
-      return typeof v === "string" && DATE_VALUE_RE.test(v);
-    };
-    const isDead = (i: number) =>
-      rows.every((r) => { const v = (r as unknown[])[i]; return v === null || v === undefined || v === "" || v === "NULL"; });
-
-    const dateCol =
-      columns.find((c, i) => DATE_COL.test(c) && !isDead(i)) ||
-      columns.find((c, i) => !isDead(i) && !isNumeric(firstNonNull(rows, i)) && looksLikeDate(i));
-    const catCols = columns.filter(
-      (c, i) => c !== dateCol && !DATE_COL.test(c) && !isDead(i) && !isNumeric(firstNonNull(rows, i)),
-    );
-    const PREFER_COL = /(pct|percent|share|rate|ratio|proportion)/i;
-    const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && !isDead(i) && isNumeric(firstNonNull(rows, i)));
+    // Column roles from the ONE shared classifier (columnRoles.classifyColumns) — date / numeric /
+    // category — so this renderer and chartTypeInference can never disagree on what a column is.
+    const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows);
+    const dateCol = dateIdxs.length ? columns[dateIdxs[0]] : undefined;
+    const catCols = catIdxs.map((i) => columns[i]);
+    const numericCols = numericIdxs.map((i) => columns[i]);
     // Instrumentation columns exist only to make a metric auditable — the numerator/denominator a
-    // ratio is built from, or a bare row-count `n`. They are never the answer, so they must not be
-    // picked as a chart measure (charting `numerator_total` is what made an AOV finding render as a
-    // giant SUM bar with the actual ratio hidden). Exclude them from measure selection; fall back to
-    // the full set only if filtering would leave nothing to plot.
-    const INSTRUMENTATION_COL = /(^|_)(numerator|denominator)(_total)?$|^n$/i;
+    // ratio is built from, or a bare row-count `n`/`event_count`. They are never the answer, so they
+    // must not be picked as a chart measure (charting `numerator_total` is what made an AOV finding
+    // render as a giant SUM bar with the actual ratio hidden). `INSTRUMENTATION_COL` is the shared
+    // pattern from columnRoles. Exclude them; fall back to the full set only if that leaves nothing.
     const _filteredNum = numericCols.filter((c) => !INSTRUMENTATION_COL.test(c));
     const chartNumericCols = _filteredNum.length ? _filteredNum : numericCols;
     const _isChangeMetric = numericCols.some((c) => CHANGE_METRIC_COL.test(c));

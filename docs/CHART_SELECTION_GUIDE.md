@@ -84,13 +84,20 @@ bar is chosen. Same idea as excluding `numerator_total` / `denominator_total` / 
   `relationship → scatter`. Wired into the cross-section (ranking), composition (WHY), and temporal
   (WHEN) lenses. The pie is share-aware (no "42.2% (42%)" double-labelling).
 
+- ✅ **Intent resolver across ALL ADA lenses** — cross-section (ranking), composition (WHY), temporal
+  (WHEN), baseline (trend), decompose + dimensional (ranking). Shape-aware: a mislabelled intent degrades
+  to `auto` (a "trend" with no date, or a change/contribution "ranking" that keeps the diverging bar).
+- ✅ **One frontend inference source of truth** — the column-role regexes AND the `classifyColumns`
+  classifier now live once in `columnRoles.ts`; both `chartTypeInference.inferChartType` (type pick for
+  the toggle/gallery) and `Chart.tsx` (the renderer) import them, so the two can't drift. A *share* that
+  sums to a whole (`pct_of_total`) is now a pie on the quick/explorer path too — matching the ADA lens.
+
 ## 7. Follow-ups (a fuller adaptive engine)
 
-- Extend the intent resolver to the remaining ADA lenses (baseline / decompose / dimensional) and the
-  Insight (quick) path, so *every* surface picks type by intent.
-- Fold the two parallel frontend inference paths (`Chart.tsx` + `chartTypeInference.ts`) into one, per the
-  note in `columnRoles.ts`.
-- Consider a 100%-stacked bar for a composition-over-time, and small-multiples for many-group trends.
+- A 100%-stacked bar for a composition-over-time (date + group + share), and small-multiples for
+  many-group trends (a 12-line spaghetti chart → a grid of mini lines).
+- Push intent onto the Insight (quick) NL path itself (it currently infers from data shape via the now-
+  unified `inferChartType`; a question-intent classifier could pick trend/ranking/composition up front).
 
 **References.** ECharts handbook (`get-started`, API `series-bar.barMaxWidth`, `series.labelLayout`); classic
 data-viz chart-selection (magnitude→bar, trend→line, parts→bar/pie, relationship→scatter).
