@@ -46,7 +46,7 @@ def test_grain_summary_tag_format():
 
 # ── the real ada_cross_section injects the directive + tags the summary ───────────
 
-def test_rate_lens_injects_grain_directive_and_tags_summary(monkeypatch):
+def test_rate_lens_injects_grain_directive(monkeypatch):
     captured = {}
 
     def fake_run(conn, **kw):
@@ -61,11 +61,12 @@ def test_rate_lens_injects_grain_directive_and_tags_summary(monkeypatch):
     grain = inv._canonical_grain(state["_ada_intake"])
 
     out = inv.ada_cross_section(state, object(), grain=grain)
-    # The plan the coder receives pins the grain…
+    # The plan the coder receives pins the grain so both lenses compute the same denominator…
     assert "GRAIN (measure consistently" in captured["plan_user"]
     assert "shop.order_items" in captured["plan_user"]
-    # …and the emitted phase summary is tagged with the unit.
-    assert out["_cross_section_summary"].startswith("[per line item]")
+    # …but the visible summary is NOT prefixed with a "[per line item]" tag (it polluted the
+    # synthesised headline/executive-summary when the LLM echoed it). Grain stays numeric-only.
+    assert not out["_cross_section_summary"].startswith("[per")
 
 
 def test_rate_lens_byte_identical_without_grain(monkeypatch):

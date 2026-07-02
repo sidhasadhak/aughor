@@ -109,6 +109,26 @@ def test_apply_percent_formatting_noop_for_non_percent():
     assert f["key_numbers"][0]["value"] == "340"          # untouched
 
 
+def test_fix_temporal_extreme_key_numbers_matches_the_full_series():
+    # The interpret LLM only saw the first rows and called a peak of 34.5% (Dec 2020); the real max is
+    # 36.2% (Jul 2022) — recompute from ALL rows so the key numbers match the chart.
+    rows = [["2020-07-01", 0.321, 1700], ["2020-12-01", 0.345, 2000],
+            ["2021-03-01", 0.313, 2100], ["2022-07-01", 0.362, 2200], ["2023-01-01", 0.330, 2500]]
+    f = {"columns": ["period", "metric_value", "n"], "rows": rows, "key_numbers": [
+        {"label": "Peak month (Dec 2020)", "value": "34.5%", "delta": "+1.5 pts vs avg", "context": "Holiday"},
+        {"label": "Trough month (May 2021)", "value": "31.3%", "delta": "-1.7 pts vs avg"},
+        {"label": "Overall average return rate", "value": "~33.0%"},
+        {"label": "Range across visible months", "value": "31.3% – 34.5%", "delta": "3.2 pts spread"},
+    ]}
+    I._fix_temporal_extreme_key_numbers(f, is_pct=True)
+    by = {k["label"].split(" (")[0]: k for k in f["key_numbers"]}
+    assert by["Peak month"]["value"] == "36.2%"          # the true series max
+    assert "Jul 2022" in by["Peak month"]["label"]        # period corrected in the label
+    assert by["Trough month"]["value"] == "31.3%"
+    assert f["key_numbers"][2]["value"] == "~33.4%"       # avg over ALL rows
+    assert f["key_numbers"][3]["value"] == "31.3% – 36.2%"  # range spans the real extremes
+
+
 def test_chart_type_for_finding_by_intent():
     def _f(nrows, cols=("k", "pct_of_total")):
         return {"rows": [[i, 0.1] for i in range(nrows)], "columns": list(cols)}

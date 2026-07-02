@@ -801,12 +801,14 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
     return out
 
 
-def _results_to_text(results) -> str:
-    """Render a list of QueryResults as compact text for LLM interpretation."""
+def _results_to_text(results, max_rows: int = 12) -> str:
+    """Render a list of QueryResults as compact text for LLM interpretation. `max_rows` caps each
+    result; the default is small to save tokens, but a full-series phase (a temporal trend) raises it
+    so the interpreter doesn't reason over a truncated window while the chart plots every row."""
     parts = []
     for i, r in enumerate(results, 1):
         parts.append(f"--- Query {i} ---")
-        parts.append(format_result_for_llm(r, max_rows=12))
+        parts.append(format_result_for_llm(r, max_rows=max_rows))
     return "\n\n".join(parts)
 
 
@@ -2240,6 +2242,7 @@ def run_analysis_phase(
     preplanned=None,
     question: str = "",
     connection_id: str = "",
+    interpret_max_rows: int = 12,
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
@@ -2411,7 +2414,7 @@ def run_analysis_phase(
     results = _apply_semantic_steps(results)
 
     # Step 3 — interpret
-    results_text = _results_to_text([r for _, r in results])
+    results_text = _results_to_text([r for _, r in results], max_rows=interpret_max_rows)
     interpretation = None
     try:
         if not _has_usable_data(results):
@@ -3353,13 +3356,6 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             else:
                 summary = f"⚠ {_eff_caveat} " + (summary or "")
 
-    # Tag the rate with its grain so the reader sees WHICH unit each number is per — the WHERE and
-    # WHEN lenses carry the same tag, making their rates directly comparable instead of contradictory.
-    if grain:
-        _tag = _grain_summary_tag(grain)
-        if _tag and summary and not summary.startswith(_tag):
-            summary = f"{_tag} {summary}"
-
     phase = _phase_result(
         _phase_id, _phase_title, _phase_emoji,
         "complete" if any(not f["error"] for f in findings) else "partial",
@@ -3802,6 +3798,78 @@ def _detect_anomalous_period(columns: list, rows: list) -> Optional[dict]:
         return None
 
 
+_MONTHS_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _fmt_period(v) -> str:
+    """A period value → a compact human label ("2022-07-01" / "2022-07" → "Jul 2022")."""
+    m = re.match(r"^(\d{4})-(\d{2})", str(v))
+    if m and 1 <= int(m.group(2)) <= 12:
+        return f"{_MONTHS_ABBR[int(m.group(2)) - 1]} {m.group(1)}"
+    return str(v)
+
+
+def _fix_temporal_extreme_key_numbers(finding: dict, is_pct: bool = True) -> None:
+    """Recompute a temporal trend's peak / trough / average / range key numbers from the FULL series
+    rows, so they can't disagree with the chart (which plots every row). The interpret LLM only sees a
+    capped window, so left to itself it can call a "peak" from the first year while the chart's real
+    maximum sits in a later month. Deterministic, scale-aware, best-effort."""
+    cols = [str(c) for c in (finding.get("columns") or [])]
+    rows = finding.get("rows") or []
+    kns = finding.get("key_numbers") or []
+    if len(rows) < 2 or not kns or not cols:
+        return
+
+    def _num(v):
+        try:
+            return float(str(v).replace(",", "").replace("%", "").strip())
+        except (TypeError, ValueError):
+            return None
+
+    m_idx = next((i for i, c in enumerate(cols) if _RATIO_METRIC_COL_RE.search(c)), None)
+    if m_idx is None:
+        for i, c in enumerate(cols):
+            if c.lower() in ("n", "count"):
+                continue
+            if any(_num(r[i]) is not None for r in rows if i < len(r)):
+                m_idx = i
+                break
+    if m_idx is None:
+        return
+    p_idx = next((i for i, c in enumerate(cols) if i != m_idx and (_FINDING_DATE_RE.search(c) or "period" in c.lower())), 0)
+    pts = [(_num(r[m_idx]), r[p_idx]) for r in rows
+           if m_idx < len(r) and p_idx < len(r) and _num(r[m_idx]) is not None]
+    if len(pts) < 2:
+        return
+    vals = [v for v, _ in pts]
+    peak = max(pts, key=lambda x: x[0])
+    trough = min(pts, key=lambda x: x[0])
+    avg = sum(vals) / len(vals)
+    scale = 100 if max(abs(v) for v in vals) <= 1.5 else 1   # fraction (0.36) vs already-percent (36)
+    fmt = (lambda v: _fmt_pct(v)) if is_pct else (lambda v: f"{v:.2f}")
+
+    def _delta(d):
+        return f"{d * scale:+.1f} pts vs avg"
+
+    def _set_period(kn, period):
+        for k in ("label", "context"):
+            t = kn.get(k)
+            if t and "(" in t:
+                kn[k] = re.sub(r"\([^)]*\)", f"({_fmt_period(period)})", t, count=1)
+
+    for kn in kns:
+        low = f"{kn.get('label') or ''} {kn.get('context') or ''}".lower()
+        if any(w in low for w in ("peak", "highest", "maximum", "max ")):
+            kn["value"] = fmt(peak[0]); kn["delta"] = _delta(peak[0] - avg); _set_period(kn, peak[1])
+        elif any(w in low for w in ("trough", "lowest", "minimum", "min ", "dip")):
+            kn["value"] = fmt(trough[0]); kn["delta"] = _delta(trough[0] - avg); _set_period(kn, trough[1])
+        elif any(w in low for w in ("average", "mean", "overall")):
+            kn["value"] = "~" + fmt(avg)
+        elif "range" in low or "spread" in low:
+            kn["value"] = f"{fmt(trough[0])} – {fmt(peak[0])}"
+            kn["delta"] = f"{(peak[0] - trough[0]) * scale:.1f} pts spread"
+
+
 def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict,
                        grain: Optional[dict] = None) -> tuple:
     """The WHEN lens: trend the metric over time on the resolved date axis, then deterministically
@@ -3846,6 +3914,9 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
             plan_error_msg="Temporal trend planning failed.",
             exec_error_msg="Temporal trend query failed.",
             question=question, connection_id=state.get("connection_id", ""),
+            # A trend must be read over the WHOLE series — a 12-row cap made the interpreter call a peak
+            # from the first year while the chart plots every month (its real max sat in a later row).
+            interpret_max_rows=72,
         )
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
@@ -3869,12 +3940,15 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
         ]
         summary = "Temporal trend complete."
 
-    # A trend is a line (intent-driven, not a data-shape guess).
+    # A trend is a line (intent-driven); its peak/trough/avg key numbers are recomputed from the FULL
+    # series so they match the chart (the interpret LLM only saw a window).
+    _is_pct = _metric_is_percent(metric_sql, metric_label)
     for _f in findings:
         _f["chart_type"] = _chart_type_for_finding(_f, "trend")
+        _fix_temporal_extreme_key_numbers(_f, is_pct=_is_pct)
     # Tag the trended value as a percent (the SAME unit as the WHERE rate) so its axis + labels read
     # "41%", directly comparable to the segment scan instead of a bare "0.41"; canonicalise key numbers too.
-    if _metric_is_percent(metric_sql, metric_label):
+    if _is_pct:
         _tag_percent_columns(findings, _RATIO_METRIC_COL_RE)
         for _f in findings:
             _normalize_pct_key_numbers(_f)
@@ -3889,11 +3963,6 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
     if anomalous:
         summary = (f"⚠ Period concentration: {anomalous['period']} at {anomalous['value']} vs the "
                    f"{anomalous['baseline']} baseline (n={anomalous['n']}). " + (summary or ""))
-    # Carry the canonical grain tag so the WHEN rate is directly comparable to the WHERE rate.
-    if grain:
-        _tag = _grain_summary_tag(grain)
-        if _tag and summary and not summary.startswith(_tag):
-            summary = f"{_tag} {summary}"
     phase = _phase_result(
         "temporal_when", "Temporal Trend — When", "📈",
         "complete" if any(not f["error"] for f in findings) else "partial",
