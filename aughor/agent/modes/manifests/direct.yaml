@@ -1,0 +1,11 @@
+# Direct mode — a single grounded query answers the question (plan-then-SQL).
+name: direct
+description: >
+  A focused lookup or single-metric question answered with one grounded query.
+route_keywords: []          # routing decided by the LLM classifier
+route_from: []
+schema_scope:
+  top_k_tables: 4           # tight context — a direct answer needs few tables
+  max_tables: 10
+playbook_refs: []
+enabled: true

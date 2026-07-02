@@ -14,6 +14,11 @@ os.environ.setdefault(
     "AUGHOR_SYSTEM_DB",
     os.path.join(tempfile.mkdtemp(prefix="aughor-test-ledger-"), "system.db"),
 )
+# Hermetic connection registry — tests must NEVER mutate data/connections.db (a full
+# suite run once emptied the live registry because these paths were hardcoded).
+_test_registry_dir = tempfile.mkdtemp(prefix="aughor-test-registry-")
+os.environ.setdefault("AUGHOR_REGISTRY_DB", os.path.join(_test_registry_dir, "connections.db"))
+os.environ.setdefault("AUGHOR_CONNECTION_SETTINGS", os.path.join(_test_registry_dir, "connection_settings.json"))
 
 
 @pytest.fixture(scope="session", autouse=True)

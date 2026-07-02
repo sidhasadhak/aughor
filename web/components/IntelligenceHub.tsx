@@ -8,6 +8,7 @@ import {
   getPatterns,
   getCanvasPatterns,
   getActionTriggers,
+  insightKey,
   type DomainInsights,
   type ExplorationInsight,
   type OrgInsight,
@@ -482,7 +483,7 @@ function DomainProfile({
               <div style={{ padding: "40px", textAlign: "center", color: "var(--t3)", fontSize: 12 }}>
                 {search ? "No findings match your search." : "No findings yet for this domain."}
               </div>
-            ) : filtered.map(ins => <InsightRow key={ins.id} insight={ins} ctx={actionsCtx} />)}
+            ) : filtered.map(ins => <InsightRow key={insightKey(ins)} insight={ins} ctx={actionsCtx} />)}
           </div>
         )}
 
@@ -746,8 +747,12 @@ function SynthesisHome({
           <p style={{ fontSize: 12, color: "var(--t3)" }}>No findings yet.</p>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 10 }}>
-            {headline.map(ins => (
-              <HeadlineFinding key={ins.id} insight={ins} onOpen={() => onSelectDomain(ins.domain)} />
+            {headline.map((ins, i) => (
+              // Key by insightKey (schema-disambiguated) + position. Some aggregate
+              // "Key Questions" findings share a per-schema id (pinned__N) WITHOUT a
+              // source_schema to disambiguate, so they'd collide on insightKey alone;
+              // they're distinct findings (not dupes), so we keep both via the index.
+              <HeadlineFinding key={`${insightKey(ins)}#${i}`} insight={ins} onOpen={() => onSelectDomain(ins.domain)} />
             ))}
           </div>
         )}

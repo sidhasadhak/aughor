@@ -87,7 +87,7 @@ EMBEDDER_MODEL=nomic-embed-text
 
 ## What's inside
 
-> Sixteen capabilities, one corpus of intelligence. Expand any section for how it works and the trade-offs behind it.
+> Seventeen capabilities, one corpus of intelligence. Expand any section for how it works and the trade-offs behind it.
 
 <details>
 <summary>🔭 <strong>Autonomous background exploration</strong> — it learns your business with no prompts</summary>
@@ -95,6 +95,13 @@ EMBEDDER_MODEL=nomic-embed-text
 The moment you connect, Aughor starts exploring through structured phases: **null-meaning resolution** (event-not-yet vs data gap), **join verification**, **lifecycle mapping** (state machines per entity), **distribution profiling** (catalog stats, no full scans), **cross-table patterns**, a per-domain **domain-intelligence** curiosity loop, and a closing **synthesis** pass — all visible and cancellable in the Activity log.
 
 **Generation is grounded in your real schema by construction:** the explorer *chooses* measures and dimensions from the connection's *actual* columns and *compiles* grain-safe SQL, so a non-existent column can't be emitted (this took Phase-8 from ~190k tokens per kept finding to several findings per run on a 13-table warehouse). It **builds on what it knows**: a **cut-level frontier** never re-asks a covered measure×dimension cut; a **cross-finding synthesis** pass composes existing findings into emergent insights — *"the top 20 SKUs account for 8.13% of all out-of-stock days"* — each **proven by a confirming query**, not narrated; the org **playbook** steers what to look for next; a surprising finding **drills itself**. An opt-in **manifest-driven mode** (`explorer.manifest_driven`) makes the loop deterministic and KPI-led — **~17× fewer tokens per finding**, completing within budget.
+
+</details>
+
+<details>
+<summary>🎛 <strong>Human-command surface</strong> — you keep authority and visibility (AI-FDE-derived)</summary>
+
+Inspired by Palantir Foundry's AI FDE: the human stays in command. All flag-gated + additive, so the default is unchanged. **Close the loop** — captured corrections feed back into planning so a fixed mistake isn't repeated. **Agent context** — an inspectable, editable working set with a live token budget. **Editable plan gate** — deep runs pause after decomposition to review/trim the plan before the expensive fan-out. **Graduated approval + audit** — risk-graded per-action gate under your identity, with a per-scope allowlist and an audit trail. **Declarative modes** — routing/context-scope as editable YAML. **Deployment budget ceiling** — one hard token cap across all agents. **Premise validation** — a "why is X so high" investigation *proves* the premise (subject vs overall/peers) before explaining it. A delta-measurement ratchet gates each change on accuracy + tokens.
 
 </details>
 

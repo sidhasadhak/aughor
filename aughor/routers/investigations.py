@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import re
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -464,6 +464,10 @@ class InvestigateRequest(BaseModel):
 
 class FeedbackRequest(BaseModel):
     feedback: str
+    # P3 plan gate: when resuming from a plan_pending pause, the indices of the
+    # sub-questions the user chose to keep (drop the rest before the fan-out runs).
+    # None = no plan edit (ordinary HITL resume).
+    keep_subquestions: Optional[list[int]] = None
 
 
 class ChatHistoryTurn(BaseModel):
@@ -471,6 +475,9 @@ class ChatHistoryTurn(BaseModel):
     sql: str
     columns: list[str] = []
     headline: str = ""
+    # A small sample of the prior result (top rows) so a follow-up can resolve
+    # references — "that", "the top one", "those regions" — against real values (Phase 4).
+    key_rows: list = []
 
 
 class ChatRequest(BaseModel):
@@ -479,6 +486,34 @@ class ChatRequest(BaseModel):
     canvas_id: Optional[str] = None
     history: list[ChatHistoryTurn] = []
     session_id: str = ""
+
+
+class AskRequest(BaseModel):
+    """The unified entry (Phase 0 of the Insight+Deep merge, docs/UNIFIED_ANSWER_PATH.md).
+
+    A superset of ChatRequest + the investigate pass-throughs. `depth` defaults to
+    `auto` (the router decides); `quick`/`deep` are the auto+transparency re-run
+    overrides. The legacy `deep`/`insight_id` flags keep the dossier-drill and
+    "Investigate deeper" escalations working through the one door.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    question: str
+    connection_id: str = BUILTIN_ID
+    canvas_id: Optional[str] = None
+    history: list[ChatHistoryTurn] = []
+    session_id: str = ""
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+    depth: Literal["auto", "quick", "deep"] = "auto"
+    # Set when the user answered (or dismissed) a clarifying question — bypass the
+    # clarify gate so we don't ask again about the now-clarified request.
+    skip_clarify: bool = False
+    # Pass-throughs preserved from the investigate path.
+    deep: bool = False
+    insight_id: Optional[str] = None
+    seed_sql: Optional[str] = None
+    seed_context: str = ""
+    hitl: bool = False
+    skip_cache: bool = False
 
 
 class OutcomeRequest(BaseModel):
@@ -809,6 +844,52 @@ def _narrator_sample(columns, rows, n: int = 20):
     return rows[:n], False
 
 
+def build_history_section(history, *, followup: bool = False) -> str:
+    """Render the conversation context injected into the chat SQL prompt.
+
+    Carries each recent turn's question + SQL + columns + headline AND a small **result
+    digest** (sample rows) so a follow-up can resolve references ("that", "the top one",
+    "those regions") against real values — not just column names (Phase 4). When the new
+    question is a detected follow-up, the header instructs the generator to **compose on
+    the most recent query as the base** (keep its metric/filters/grain/window unless the
+    ask changes them), which is what makes "now break that down by region" reliable.
+
+    Duck-typed over ``ChatHistoryTurn`` so it is unit-testable with plain stand-ins."""
+    if not history:
+        return ""
+    recent = list(history)[-3:]
+    if followup:
+        header = (
+            "CONVERSATION HISTORY — THIS LOOKS LIKE A FOLLOW-UP. Treat the MOST RECENT query "
+            "below as the base: keep its metric, filters, grain, and time window unless the new "
+            "question changes them, and resolve 'that' / 'those' / 'the top one' against its "
+            "sample result. Do NOT start from scratch."
+        )
+    else:
+        header = ("CONVERSATION HISTORY (use to resolve 'also', 'add', 'filter by', 'that', "
+                  "'those', 'the top one', 'break down', 'compare to'):")
+    lines = [header]
+    for i, t in enumerate(recent, 1):
+        q = getattr(t, "question", "") or ""
+        sql = getattr(t, "sql", "") or ""
+        cols = getattr(t, "columns", None) or []
+        head = getattr(t, "headline", "") or ""
+        key_rows = getattr(t, "key_rows", None) or []
+        lines.append(f"[Turn {i}] Q: {q!r}")
+        if sql:
+            lines.append(f"         SQL: {sql}")
+        if cols:
+            lines.append(f"         Columns: {', '.join(cols[:6])}")
+        if head:
+            lines.append(f"         Headline: {head}")
+        if key_rows:
+            preview = " ; ".join(
+                " | ".join(str(c) for c in (row or [])[:6]) for row in key_rows[:3]
+            )
+            lines.append(f"         Result (sample): {preview}")
+    return "\n".join(lines) + "\n"
+
+
 async def _stream_chat(
     question: str,
     connection_id: str,
@@ -816,6 +897,7 @@ async def _stream_chat(
     request: Request,
     session_id: str = "",
     canvas_id: Optional[str] = None,
+    skip_clarify: bool = False,
 ) -> AsyncGenerator[str, None]:
     # Resolve canvas scope so table names resolve correctly AND the model only
     # sees in-scope tables. Multi-dataset connections (local_upload) expose every
@@ -871,18 +953,8 @@ async def _stream_chat(
 
         rules_block = get_chat_rules_block()
 
-        history_section = ""
-        if history:
-            recent = history[-3:]
-            lines = ["CONVERSATION HISTORY (use to resolve 'also', 'add', 'filter by', 'compare to'):"]
-            for i, t in enumerate(recent, 1):
-                cols_str = ", ".join(t.columns[:6]) if t.columns else "—"
-                lines.append(f"[Turn {i}] Q: {t.question!r}")
-                lines.append(f"         SQL: {t.sql}")
-                lines.append(f"         Columns: {cols_str}")
-                if t.headline:
-                    lines.append(f"         Headline: {t.headline}")
-            history_section = "\n".join(lines) + "\n"
+        from aughor.agent.followup import is_followup
+        history_section = build_history_section(history, followup=is_followup(question))
 
         _schema_name = getattr(db, "_schema_name", None)
         schema_qualifier = (_schema_name or "main") if db.dialect == "duckdb" else (_schema_name or "public")
@@ -1156,6 +1228,18 @@ async def _stream_chat(
         except Exception:
             _trusted_used = []
 
+        # P1 close-the-loop: alongside verified patterns, inject any past human
+        # corrections (reject/correct verdicts) for this database so the model does
+        # not repeat a mistake a reviewer already flagged. Flag-gated + empty when
+        # nothing relevant matches, so the default path is byte-for-byte unchanged.
+        try:
+            from aughor.verify.priors import build_corrections_section
+            _cblk = build_corrections_section(question, connection_id)
+            if _cblk:
+                prompt = _cblk + "\n" + prompt
+        except Exception:
+            pass
+
         # Semantic Compiler fast-path (backlog #11): for the safe analytical shapes
         # (scalar / timeseries / breakdown / ranking) assemble grounded SQL deterministically
         # from the verified ontology instead of free-form generation. The LLM still writes the
@@ -1196,6 +1280,32 @@ async def _stream_chat(
         # answer to a cheaper model would just shift work onto the guards. The cost lever
         # is applied to the robust routing *decision* instead (classify_question). See
         # docs/NL2SQL_WINNING_FORMULA_2026.md.
+        # SOMA structural-ambiguity probe (3b) — execution-grounded. On a structural-suspect
+        # question the cheap deterministic clarify left quiet (e.g. "top products" — by units or
+        # revenue?), generate candidate readings, execute them on THIS connection, and ask only if
+        # their results materially diverge (the labels become grounded chips). LLM machinery + N
+        # executions, so it is opt-in (AUGHOR_SOMA_CLARIFY) and fail-open. Greenlit by the measurement
+        # chain (evals/ambiguity_eval + evals/its_structural).
+        if (not skip_clarify
+                and os.getenv("AUGHOR_SOMA_CLARIFY", "0").lower() in ("1", "true", "yes", "on")):
+            try:
+                from aughor.agent.soma import (is_structural_suspect, generate_candidate_readings,
+                                               assess_structural_ambiguity)
+                if is_structural_suspect(question):
+                    _cands = await asyncio.to_thread(generate_candidate_readings, question, schema)
+                    if len(_cands) >= 2:
+                        def _soma_ex(_sql):
+                            _r = db.execute("soma_probe", _sql)
+                            return (not _r.error, _r.rows or [], _r.error or "")
+                        _sv = await asyncio.to_thread(
+                            assess_structural_ambiguity, question, _cands, _soma_ex)
+                        if _sv.ambiguous:
+                            yield _sse("clarify", _sv.to_event())
+                            yield _sse("done", {})
+                            return
+            except Exception:
+                logger.debug("SOMA probe failed; proceeding to answer", exc_info=True)
+
         from aughor.agent.complexity import assess_complexity
         _cx = assess_complexity(question)
         # Run the (blocking) LLM call in a worker thread so the event loop stays
@@ -1436,6 +1546,10 @@ async def _stream_chat(
                 pass
 
         if result.error:
+            from aughor.agent.escalate import assess_escalation
+            _esc = assess_escalation(question, columns=result.columns, rows=result.rows, error=result.error)
+            if _esc.should_offer:
+                yield _sse("escalate", _esc.to_event())
             yield _sse("error", {"message": result.error})
             return
 
@@ -1497,6 +1611,14 @@ async def _stream_chat(
             yield _sse("playbook_refs", {"items": _pb_serialize(pb_entries)})
         if _trusted_used:
             yield _sse("trusted", {"items": _trusted_used})
+
+        # Phase 5 — progressive escalation: if the cheap answer is inconclusive (empty on an
+        # analytical question, or a causal "why" answered by a single figure), OFFER a deep
+        # investigation (a suggestion the user clicks — not a forced re-run).
+        from aughor.agent.escalate import assess_escalation
+        _esc = assess_escalation(question, columns=result.columns, rows=result.rows)
+        if _esc.should_offer:
+            yield _sse("escalate", _esc.to_event())
 
         # Persist, then mark DONE the moment the answer is ready — so the
         # "Completed in …" time reflects when the user got their answer, not when
@@ -1940,6 +2062,18 @@ async def _stream_investigation(
         except Exception:
             pass
 
+        # P2 Agent Context surface: expose the assembled working context (which tables
+        # the agent is actually looking at, the token budget they cost, the join edges)
+        # so the user has visibility + a handle to trim it. Flag-gated; an extra SSE
+        # event is ignored by clients that don't render it, so it's safe to emit.
+        if os.getenv("AUGHOR_CONTEXT_SURFACE", "").strip().lower() in ("1", "true", "yes", "on"):
+            try:
+                from aughor.tools.context_manifest import build_context_manifest
+                _manifest = build_context_manifest(data_catalog or schema)
+                yield _sse("context_assembled", _manifest.to_dict())
+            except Exception:
+                logger.debug("context_assembled emit failed (best-effort)", exc_info=True)
+
         # Prefer structured Data Catalog as the primary schema context (MindsDB-style)
         schema_for_agent = data_catalog if data_catalog else schema
 
@@ -1963,7 +2097,11 @@ async def _stream_investigation(
             logger.warning("Canonical metrics injection failed (agentic path)", exc_info=True)
 
         from aughor.agent.graph import build_graph_generic
-        agent = build_graph_generic(db, hitl=hitl)
+        # P3 editable plan gate: when on, the explore graph pauses after decomposition
+        # (before the expensive fan-out) so the user can review/edit the sub-question
+        # plan. Opt-in via AUGHOR_PLAN_GATE; off by default so the path is unchanged.
+        _plan_gate = os.getenv("AUGHOR_PLAN_GATE", "").strip().lower() in ("1", "true", "yes", "on")
+        agent = build_graph_generic(db, hitl=hitl, plan_gate=_plan_gate)
 
         # ONE structured origin finding — the single source of truth for "what known
         # result is this investigation drilling" (insight_id dossier, or an inline
@@ -2006,13 +2144,31 @@ async def _stream_investigation(
                 timed_out = True
                 break
             if "__interrupt__" in event:
-                yield _sse("paused", {"investigation_id": inv_id, "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])], "scores": [s.model_dump() for s in merged.get("evidence_scores", [])]})
+                # Distinguish a plan-gate pause (P3 — before the explore fan-out) from the
+                # ada_synthesize HITL pause by checking which node the graph is about to run.
+                try:
+                    _next = agent.get_state({"configurable": {"thread_id": inv_id}}).next or ()
+                except Exception:
+                    _next = ()
+                if "plan_gate" in _next:
+                    _subqs = merged.get("sub_questions", [])
+                    _n = len(_subqs)
+                    yield _sse("plan_pending", {
+                        "investigation_id": inv_id,
+                        "sub_questions": [sq.model_dump() if hasattr(sq, "model_dump") else sq for sq in _subqs],
+                        "chain_length": _n,
+                        # Cheap pre-flight cost estimate (feeds P6): the observed ~8k tokens
+                        # per sub-question on the frontier model × chain length.
+                        "estimated_tokens": _n * 8000,
+                    })
+                else:
+                    yield _sse("paused", {"investigation_id": inv_id, "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])], "scores": [s.model_dump() for s in merged.get("evidence_scores", [])]})
                 pause_investigation(inv_id)
                 yield _sse("done", {})
                 return
 
             node_name = next(iter(event))
-            partial = event[node_name]
+            partial = event[node_name] or {}
             merged = {**merged, **partial}
 
             if node_name == "route_question":
@@ -2190,7 +2346,16 @@ async def _stream_investigation(
 
 # ── HITL resume streaming ─────────────────────────────────────────────────────
 
-async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncGenerator[str, None]:
+def _filter_kept_subquestions(subqs: list, keep_idx: list[int]) -> list:
+    """Keep only the sub-questions at the given indices, preserving order (P3 plan edit).
+    Out-of-range indices are ignored; the caller treats an empty result as 'no valid edit'
+    (and won't wipe the plan) rather than resuming an empty investigation."""
+    keep = set(keep_idx)
+    return [sq for i, sq in enumerate(subqs) if i in keep]
+
+
+async def _stream_resume(inv_id: str, feedback: str, request: Request,
+                         keep_subquestions: Optional[list[int]] = None) -> AsyncGenerator[str, None]:
     inv = get_investigation(inv_id)
     if not inv:
         yield _sse("error", {"message": "Investigation not found"})
@@ -2227,7 +2392,16 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
         config = {"configurable": {"thread_id": inv_id}}
         checkpoint = agent.get_state(config)
         merged: dict = dict(checkpoint.values) if checkpoint else {}
-        agent.update_state(config, {"human_feedback": feedback})
+        _patch: dict = {"human_feedback": feedback}
+        # P3: apply the user's plan edit — keep only the chosen sub-questions before the
+        # fan-out resumes. Guard against an empty plan (a "reject all" is a cancel, not a
+        # resume). sub_questions is a plain (replaceable) state field, so update_state sets it.
+        if keep_subquestions is not None:
+            _kept = _filter_kept_subquestions(merged.get("sub_questions", []), keep_subquestions)
+            if _kept:
+                _patch["sub_questions"] = _kept
+                _patch["current_subq_idx"] = 0
+        agent.update_state(config, _patch)
 
         import time
         _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
@@ -2244,11 +2418,30 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
             if "__interrupt__" in event:
                 continue
             node_name = next(iter(event))
-            merged = {**merged, **event[node_name]}
+            # A resumed interrupt node (e.g. the P3 plan_gate) streams a None value for
+            # the node it resumes into; guard the merge so it doesn't blow up the resume.
+            merged = {**merged, **(event[node_name] or {})}
             if node_name == "synthesize" and merged.get("report"):
                 qh = merged.get("query_history", [])
                 yield _sse("report", {"report": merged["report"].model_dump(), "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])], "query_count": len(qh), "query_history": [{"hypothesis_id": r.hypothesis_id, "sql": r.sql, "row_count": r.row_count, "error": r.error, "columns": r.columns, "rows": r.rows[:50], "stats": [s.model_dump() for s in (r.stats or [])]} for r in qh], "investigation_id": inv_id})
                 complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=inv["question"], connection_id=inv.get("connection_id", ""))
+                _record_memory(inv_id, inv.get("connection_id", ""), inv["question"], merged)
+            elif node_name == "reason_over_result":
+                # P3 plan-gate resume streams the EXPLORE path too — surface each
+                # sub-question answer as it lands (this loop only handled the ADA path before).
+                answers = merged.get("subq_answers", [])
+                if answers:
+                    latest = answers[-1]
+                    yield _sse("subq_answer", {"subq_id": latest.subq_id, "question": latest.question, "purpose": latest.purpose, "answer": latest.answer, "insight": latest.insight, "refinement": latest.refinement, "sql": latest.sql, "columns": latest.columns, "rows": latest.rows[:30], "row_count": latest.row_count, "error": latest.error})
+            elif node_name == "synthesize_exploration" and merged.get("explore_report"):
+                er = merged["explore_report"]
+                qh = merged.get("query_history", [])
+                sq_raw = [sq.model_dump() for sq in merged.get("sub_questions", [])]
+                sa_raw = [a.model_dump() for a in merged.get("subq_answers", [])]
+                yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
+                yield _sse("explore_report", {"explore_report": er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw, "query_count": len(qh), "investigation_id": inv_id, "query_mode": "explore"})
+                explore_save = {"_report_type": "explore", **er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw}
+                complete_investigation(inv_id, report=explore_save, hypotheses=[], query_history=qh, question=inv["question"], connection_id=inv.get("connection_id", ""))
                 _record_memory(inv_id, inv.get("connection_id", ""), inv["question"], merged)
     except Exception as e:
         fail_investigation(inv_id, status="failed")
@@ -2293,28 +2486,36 @@ async def _metered_stream(gen: AsyncGenerator[str, None],
         metering.reset(token)
 
 
-@router.post("/chat")
-async def chat_endpoint(req: ChatRequest, request: Request):
+def _insight_budget(conn_id: str):
+    """Resolve the Insight agent's Org/workspace-governed token + time budget."""
+    try:
+        from aughor.kernel.agents import effective_governance
+        from aughor.workspace.store import workspace_for_connection
+        gov = effective_governance("insight", workspace_for_connection(conn_id))
+        return (gov.token_budget, gov.time_budget_s)
+    except Exception:
+        return None
+
+
+def _resolve_conn(req) -> str:
+    """A canvas-scoped request resolves to the canvas's underlying connection."""
     conn_id = req.connection_id
     if req.canvas_id:
         from aughor.canvas.store import resolve_connection_id
         resolved = resolve_connection_id(req.canvas_id)
         if resolved:
             conn_id = resolved
-    # Resolve the Insight agent's budget (Org/workspace governance) for this run.
-    budget = None
-    try:
-        from aughor.kernel.agents import effective_governance
-        from aughor.workspace.store import workspace_for_connection
-        gov = effective_governance("insight", workspace_for_connection(conn_id))
-        budget = (gov.token_budget, gov.time_budget_s)
-    except Exception:
-        budget = None
+    return conn_id
+
+
+@router.post("/chat")
+async def chat_endpoint(req: ChatRequest, request: Request):
+    conn_id = _resolve_conn(req)
     return StreamingResponse(
         _metered_stream(
             _stream_chat(req.question, conn_id, req.history, request,
                          session_id=req.session_id, canvas_id=req.canvas_id),
-            budget=budget,
+            budget=_insight_budget(conn_id),
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -2380,12 +2581,7 @@ async def _investigation_job_streamed(
 
 @router.post("/investigate", dependencies=[gate(Capability.DEEP_ANALYSIS)])
 async def investigate(req: InvestigateRequest, request: Request):
-    conn_id = req.connection_id
-    if req.canvas_id:
-        from aughor.canvas.store import resolve_connection_id
-        resolved = resolve_connection_id(req.canvas_id)
-        if resolved:
-            conn_id = resolved
+    conn_id = _resolve_conn(req)
     return StreamingResponse(
         _investigation_job_streamed(
             req.question, conn_id, request,
@@ -2393,6 +2589,76 @@ async def investigate(req: InvestigateRequest, request: Request):
             schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
             insight_id=req.insight_id, deep=req.deep,
         ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> AsyncGenerator[str, None]:
+    """The unified door: decide depth, emit the `route` receipt, then delegate to the
+    existing quick (Insight) or deep (ADA/explore) body unchanged.
+
+    The depth call is license-safe — a deep route degrades to quick when the
+    connection lacks DEEP_ANALYSIS — and the legacy `deep`/`insight_id` flags still
+    drive the "Investigate deeper" escalation and the dossier drill through one door.
+    """
+    from aughor.agent.ask_router import decide_ask_route
+    from aughor.licensing import has_capability
+
+    # Ask-vs-guess (Phase 3): when the question is materially ambiguous and this is a
+    # fresh auto turn (not an explicit depth override, deep-drill, dossier, or a turn
+    # already answering a clarification), ask ONE targeted question instead of guessing.
+    # Budget is one ask/turn — the user's answer comes back with skip_clarify set.
+    if (req.depth == "auto" and not req.deep and not req.insight_id and not req.skip_clarify
+            and os.getenv("AUGHOR_ASK_CLARIFY", "1").lower() not in ("0", "false", "no", "off")):
+        from aughor.agent.clarify import assess_clarification
+        decision = assess_clarification(req.question)
+        if decision.should_ask:
+            yield _sse("clarify", decision.to_event())
+            yield _sse("done", {})
+            return
+
+    has_deep = has_capability(Capability.DEEP_ANALYSIS, conn_id=conn_id)
+    # decide_ask_route may consult the LLM intent classifier on borderline questions,
+    # so run it off the event loop.
+    route = await asyncio.to_thread(
+        decide_ask_route, req.question,
+        depth_override=req.depth, deep_flag=req.deep,
+        insight_id=req.insight_id, has_deep=has_deep,
+    )
+    yield _sse("route", route.to_event())
+
+    if route.depth == "deep":
+        async for sse in _investigation_job_streamed(
+            req.question, conn_id, request,
+            hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
+            schema_scope=req.schema_name, seed_sql=req.seed_sql,
+            seed_context=req.seed_context, insight_id=req.insight_id, deep=req.deep,
+        ):
+            yield sse
+    else:
+        async for sse in _metered_stream(
+            _stream_chat(req.question, conn_id, req.history, request,
+                         session_id=req.session_id, canvas_id=req.canvas_id,
+                         skip_clarify=req.skip_clarify),
+            budget=_insight_budget(conn_id),
+        ):
+            yield sse
+
+
+@router.post("/ask")
+async def ask_endpoint(req: AskRequest, request: Request):
+    """One conversational entry — the router picks quick vs deep (auto+transparency).
+
+    Not gated on DEEP_ANALYSIS as a dependency: a quick answer only needs chat access,
+    and a deep route is capability-checked inside `_stream_ask` (degrade, never bypass).
+    `/chat` and `/investigate` remain as-is for back-compat through the transition.
+    """
+    if os.getenv("AUGHOR_UNIFIED_ASK", "1").lower() in ("0", "false", "no", "off"):
+        raise HTTPException(status_code=404, detail="unified /ask is disabled")
+    conn_id = _resolve_conn(req)
+    return StreamingResponse(
+        _stream_ask(req, request, conn_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -2424,7 +2690,7 @@ def cancel_investigation_route(inv_id: str):
 @router.post("/investigations/{inv_id}/feedback")
 async def submit_feedback(inv_id: str, req: FeedbackRequest, request: Request):
     return StreamingResponse(
-        _stream_resume(inv_id, req.feedback, request),
+        _stream_resume(inv_id, req.feedback, request, keep_subquestions=req.keep_subquestions),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -2582,6 +2848,42 @@ def log_recommendation_outcome(inv_id: str, rec_index: int, req: OutcomeRequest)
 def get_investigation_outcomes(inv_id: str):
     from aughor.playbook.outcomes import load_outcomes_for_inv
     return [o.model_dump() for o in load_outcomes_for_inv(inv_id)]
+
+
+# ── Agent Context surface (P2) ────────────────────────────────────────────────
+
+class RescopeRequest(BaseModel):
+    connection_id: str
+    keep: list[str] = Field(default_factory=list)   # explicit table allowlist the user wants
+    schema_name: Optional[str] = None
+    expand_fk: bool = True                           # pull in FK bridge tables so joins resolve
+
+
+@router.post("/investigations/context/rescope")
+def rescope_context(req: RescopeRequest):
+    """Re-derive the agent's working context after a user trims/adds tables, and report
+    the new token budget vs the full schema. Deterministic — no LLM, no agent run — so
+    the ribbon can preview the effect of a scope edit instantly (AI FDE resource-ribbon
+    idea). `keep` is the desired table set; the response also lists all_tables so the UI
+    knows what is addable."""
+    from aughor.tools.context_manifest import build_context_manifest, rescope_schema
+    db = open_connection_for(req.connection_id)
+    try:
+        raw = getattr(db, "_conn", None)
+        if raw is None:
+            raise HTTPException(status_code=400, detail="connection does not expose a schema for rescoping")
+        full_schema = _get_schema_cached(req.connection_id, db)
+    finally:
+        db.close()
+    full = build_context_manifest(full_schema)
+    _scoped, manifest = rescope_schema(full_schema, keep=req.keep, expand_fk=req.expand_fk)
+    return {
+        "manifest": manifest.to_dict(),
+        "all_tables": full.tables,
+        "full_tokens": full.estimated_tokens,
+        "scoped_tokens": manifest.estimated_tokens,
+        "token_delta": full.estimated_tokens - manifest.estimated_tokens,
+    }
 
 
 # ── Evidence Ledger endpoints ─────────────────────────────────────────────────

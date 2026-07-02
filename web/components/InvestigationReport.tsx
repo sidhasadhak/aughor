@@ -142,8 +142,6 @@ function FindingTable({ columns, rows, label }: { columns: string[]; rows: (stri
 function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
-  const openInBuilder = useOpenInBuilder();
-  const [sqlOpen, setSqlOpen] = useState(false);
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -186,38 +184,8 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
       {hasData && !hasChart && (
         <FindingTable columns={finding.columns} rows={finding.rows} label="Data" />
       )}
-
-      {/* SQL toggle + open this query in the Query Builder.
-          The expanded SQL renders full-width below the controls (not crammed
-          beside the button) and at a legible size/contrast — this is the
-          "show me the logic" surface, so it shouldn't be the hardest thing to read. */}
-      {finding.sql && (
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setSqlOpen(v => !v)}
-              className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              {sqlOpen ? <ChevronDownIcon label="" size="small" /> : <ChevronRightIcon label="" size="small" />}
-              SQL
-            </button>
-            {openInBuilder && (
-              <button
-                onClick={() => openInBuilder(finding.sql)}
-                title="Open this query in the Query Builder"
-                className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
-              >
-                Open in Query Builder →
-              </button>
-            )}
-          </div>
-          {sqlOpen && (
-            <pre className="w-full text-[12px] text-zinc-200 rounded-md p-3 overflow-auto whitespace-pre-wrap leading-relaxed border border-zinc-800" style={{ background: "var(--code-bg)", maxHeight: 400 }}>
-              {finding.sql}
-            </pre>
-          )}
-        </div>
-      )}
+      {/* The per-finding SQL + "Open in Query Builder" used to live here; for a swifter
+          conversation it now sits in the one Details disclosure (the Queries block). */}
     </div>
   );
 }
@@ -410,9 +378,21 @@ function InvestigationDetails({ report, intakePhase }: { report: ADAReport; inta
   const hasGaps = (report.data_gaps?.length ?? 0) > 0;
   const intakeRows = intakePhase?.findings?.[0]?.rows ?? [];
   const hasIntake = intakeRows.length > 0;
+  const hasRecs = (report.recommendations?.length ?? 0) > 0;
+  const openInBuilder = useOpenInBuilder();
+  const queries = report.phases
+    .flatMap(p => p.findings)
+    .filter(f => f.sql && f.sql.trim())
+    .map(f => ({ id: f.finding_id, title: f.title, sql: f.sql }));
 
   return (
     <BriefDetails>
+      {hasRecs && (
+        <BriefDetailBlock label="Recommended actions">
+          <RecommendationsList recs={report.recommendations} />
+        </BriefDetailBlock>
+      )}
+
       <BriefDetailBlock label="Confidence">
         <ConfidenceDetail report={report} />
       </BriefDetailBlock>
@@ -455,6 +435,32 @@ function InvestigationDetails({ report, intakePhase }: { report: ADAReport; inta
                 ))}
               </tbody>
             </table>
+          </div>
+        </BriefDetailBlock>
+      )}
+
+      {queries.length > 0 && (
+        <BriefDetailBlock label="Queries">
+          <div className="flex flex-col gap-3">
+            {queries.map(q => (
+              <div key={q.id} className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-3">
+                  <span className="aug-text-xs text-zinc-400 min-w-0 truncate">{q.title}</span>
+                  {openInBuilder && (
+                    <button
+                      onClick={() => openInBuilder(q.sql)}
+                      title="Open this query in the Query Builder"
+                      className="shrink-0 text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                      Open in Query Builder →
+                    </button>
+                  )}
+                </div>
+                <pre className="w-full text-[11.5px] text-zinc-300 rounded-md p-2.5 overflow-auto whitespace-pre-wrap leading-relaxed border border-zinc-800" style={{ background: "var(--code-bg)", maxHeight: 320 }}>
+                  {q.sql}
+                </pre>
+              </div>
+            ))}
           </div>
         </BriefDetailBlock>
       )}
@@ -561,12 +567,6 @@ export function InvestigationReportView({
       />
 
       {analysisPhases.map(phase => <PhaseSection key={phase.phase_id} phase={phase} />)}
-
-      {report.recommendations?.length > 0 && (
-        <BriefSection label="Recommended actions">
-          <RecommendationsList recs={report.recommendations} />
-        </BriefSection>
-      )}
 
       <InvestigationDetails report={report} intakePhase={intakePhase} />
     </Brief>

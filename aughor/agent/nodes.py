@@ -123,6 +123,17 @@ def classify_question(question: str) -> tuple[str, RouteDecision]:
                     effective_mode = "final_text"
             except Exception:
                 pass
+
+    # P5 declarative modes: apply file-driven route overrides from mode manifests.
+    # No-op unless AUGHOR_DECLARATIVE_MODES is on (so the default path is unchanged);
+    # when on, a manifest's route_keywords can retune routing without a code change.
+    try:
+        from aughor.agent.modes import apply_route_overrides
+        effective_mode, decision = apply_route_overrides(question, effective_mode, decision)
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "declarative-mode route override is best-effort; keep the code route",
+                 counter="modes.route_override")
     return effective_mode, decision
 
 
@@ -496,11 +507,24 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
     except Exception:
         pass
 
+    # P1 close-the-loop: read past human corrections for this database BACK into planning,
+    # so a mistake a reviewer already flagged is not planned again. Empty (zero-cost) when
+    # nothing relevant is stored or the flag is off, so the default path is unchanged.
+    priors_section = ""
+    priors_fired = False
+    try:
+        from aughor.verify.priors import build_corrections_section
+        priors_section = build_corrections_section(state.get("question") or h.description,
+                                                   state.get("connection_id") or "")
+        priors_fired = bool(priors_section)
+    except Exception:
+        pass
+
     rules_block = get_rules_block()
     llm = get_provider("coder")
     plan: QueryPlanV2 = llm.complete(
         system="You are a senior data analyst planning how to test a hypothesis. Do NOT write SQL.",
-        user=rules_block + causal_section + PLAN_QUERIES_PROMPT.format(
+        user=rules_block + causal_section + priors_section + PLAN_QUERIES_PROMPT.format(
             hypothesis_id=h.id,
             hypothesis_description=h.description,
             schema=schema_for_hypothesis,
@@ -513,7 +537,12 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
         response_model=QueryPlanV2,
     )
 
-    return {"current_plan": plan.model_dump()}
+    out: dict[str, Any] = {"current_plan": plan.model_dump()}
+    if priors_fired:
+        # Liveness (Bet 0): prove the prior actually reached the planner, so a silent
+        # no-op can't masquerade as "closed loop enabled".
+        out["verification_checks"] = ["priors_injected"]
+    return out
 
 
 # ── Node: execute_planned_queries ─────────────────────────────────────────────

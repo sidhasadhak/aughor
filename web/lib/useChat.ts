@@ -21,6 +21,27 @@ interface ChatHistoryTurn {
   sql: string;
   columns: string[];
   headline: string;
+  key_rows: unknown[][];
+}
+
+// Carry a deep/investigate turn into the conversation context (Phase 4b): its headline
+// for continuity + the first finding-with-SQL as a representative base a follow-up can
+// compose on. Returns null when there's nothing worth carrying.
+function deepHistoryEntry(t: ChatTurn): ChatHistoryTurn | null {
+  const headline = t.adaReport?.headline || (t.report?.headline as string | undefined) || t.headline || "";
+  let rep: { sql: string; columns: string[]; rows: (string | number | null)[][] } | undefined;
+  for (const p of t.adaReport?.phases ?? []) {
+    rep = p.findings?.find(f => f.sql && f.sql.trim());
+    if (rep) break;
+  }
+  if (!rep && !headline) return null;
+  return {
+    question: t.question,
+    sql: rep?.sql ?? "",
+    columns: rep?.columns ?? [],
+    headline,
+    key_rows: (rep?.rows ?? []).slice(0, 3),
+  };
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
@@ -38,15 +59,34 @@ export function useChat() {
     eventLogRef.current = [...eventLogRef.current.slice(-(MAX_LOG - 1)), e];
   }, []);
 
-  async function ask(question: string, connectionId: string, mode: "ask" | "investigate" = "ask", opts: { skipCache?: boolean; canvasId?: string; insightId?: string; deep?: boolean } = {}) {
+  async function ask(question: string, connectionId: string, mode: "auto" | "ask" | "investigate" = "auto", opts: { skipCache?: boolean; canvasId?: string; insightId?: string; deep?: boolean; depth?: "quick" | "deep"; skipClarify?: boolean } = {}) {
     const id = Math.random().toString(36).slice(2);
-    dispatch({ type: "ASK", id, question, mode });
+    // The turn's initial mode is corrected by the `route` event for auto turns
+    // (deep → investigate, else ask); start auto as "ask" so the loading state is
+    // the lightweight one until the router's verdict lands (it arrives first).
+    const initialMode: "ask" | "investigate" = mode === "investigate" ? "investigate" : "ask";
+    dispatch({ type: "ASK", id, question, mode: initialMode });
 
     // Cancel any in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     const { signal } = controller;
+
+    // History of the last 3 completed quick (ask) turns — fed to /chat and /ask.
+    const chatHistory = (): ChatHistoryTurn[] => {
+      const out: ChatHistoryTurn[] = [];
+      for (const t of stateRef.current.turns) {
+        if (t.status !== "done") continue;
+        if (t.mode === "ask" && t.sql) {
+          out.push({ question: t.question, sql: t.sql, columns: t.columns, headline: t.headline ?? "", key_rows: (t.rows ?? []).slice(0, 3) });
+        } else if (t.mode === "investigate") {
+          const e = deepHistoryEntry(t);
+          if (e) out.push(e);
+        }
+      }
+      return out.slice(-3);
+    };
 
     let res: Response;
     try {
@@ -57,13 +97,25 @@ export function useChat() {
           body: JSON.stringify({ question, connection_id: connectionId, canvas_id: opts.canvasId ?? null, skip_cache: opts.skipCache ?? false, insight_id: opts.insightId ?? null, deep: opts.deep ?? false }),
           signal,
         });
+      } else if (mode === "auto") {
+        // Unified door: the router picks quick vs deep and emits a `route` receipt.
+        res = await fetch(`${BASE}/ask`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question,
+            connection_id: connectionId,
+            canvas_id: opts.canvasId ?? null,
+            history: chatHistory(),
+            session_id: sessionIdRef.current,
+            depth: opts.depth ?? "auto",
+            skip_clarify: opts.skipClarify ?? false,
+            insight_id: opts.insightId ?? null,
+            deep: opts.deep ?? false,
+          }),
+          signal,
+        });
       } else {
-        // Build history from last 3 completed ask-mode turns
-        const history: ChatHistoryTurn[] = stateRef.current.turns
-          .filter(t => t.status === "done" && t.sql && t.mode === "ask")
-          .slice(-3)
-          .map(t => ({ question: t.question, sql: t.sql!, columns: t.columns, headline: t.headline ?? "" }));
-
         res = await fetch(`${BASE}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -71,7 +123,7 @@ export function useChat() {
             question,
             connection_id: connectionId,
             canvas_id: opts.canvasId ?? null,
-            history,
+            history: chatHistory(),
             session_id: sessionIdRef.current,
           }),
           signal,
@@ -90,6 +142,32 @@ export function useChat() {
     abortRef.current = null;
   }
 
+  // P3 editable plan gate: approve the paused sub-question plan (keeping the chosen
+  // indices) and stream the resumed run back into the SAME turn.
+  async function resumePlan(invId: string, keepSubquestions: number[]) {
+    const { resumeInvestigationPlan } = await import("./api");
+    dispatch({ type: "PLAN_RESUME" });
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let res: Response;
+    try {
+      res = await resumeInvestigationPlan(invId, keepSubquestions);
+    } catch {
+      dispatch({ type: "ERROR", message: "Failed to resume the investigation." });
+      return;
+    }
+    await consumeStream(res, dispatch, controller.signal, logEvent);
+    abortRef.current = null;
+  }
+
+  // Reject the pending plan — cancel the paused investigation.
+  async function rejectPlan(invId: string) {
+    const { cancelInvestigation } = await import("./api");
+    try { await cancelInvestigation(invId); } catch { /* best-effort */ }
+    dispatch({ type: "DONE" });
+  }
+
   function restore(turns: ChatTurn[]) {
     // Assign a stable session ID that matches the restored session
     dispatch({ type: "RESTORE", turns });
@@ -106,5 +184,5 @@ export function useChat() {
     dispatch({ type: "CLEAR" });
   }
 
-  return { state, ask, stop, clear, restore, sessionId: sessionIdRef.current, eventLogRef };
+  return { state, ask, stop, clear, restore, resumePlan, rejectPlan, sessionId: sessionIdRef.current, eventLogRef };
 }

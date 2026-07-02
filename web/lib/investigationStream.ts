@@ -23,6 +23,29 @@ export const MAX_LOG = 300;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface ContextJoin { from: string; to: string; kind: string }
+export interface ContextManifest {
+  tables: string[];
+  table_count: number;
+  estimated_tokens: number;
+  joins: ContextJoin[];
+}
+
+// Editable plan gate (P3): the sub-question plan surfaced for review before the fan-out.
+export interface PlanSubQuestion {
+  id: string;
+  question: string;
+  purpose: string;
+  expected_output: string;
+  depends_on?: string[];
+}
+export interface PlanPending {
+  investigationId: string | null;
+  subQuestions: PlanSubQuestion[];
+  chainLength: number;
+  estimatedTokens: number;
+}
+
 export interface ChatTurn {
   id: string;
   question: string;
@@ -37,6 +60,35 @@ export interface ChatTurn {
   chartType: string | null;
   // MindsDB-style: chart config from backend (Vega-Lite spec subset)
   chartConfig?: Record<string, unknown> | null;
+
+  // Unified /ask routing receipt — the depth the router chose + why, rendered as a
+  // depth banner with a one-click re-run (auto + transparency). Null on legacy
+  // (explicit Insight/Deep) and restored turns, which never carry a route event.
+  route: {
+    depth: "quick" | "deep";
+    mode: string;            // door intent: direct | investigate | explore | final_text
+    tier: string;            // simple | moderate | complex
+    why: string;
+    ambiguous: boolean;
+    forced: string | null;           // override that decided it (not auto)
+    downgradedFrom: string | null;   // "deep" when capability-gated down to quick
+  } | null;
+
+  // Ask-vs-guess (Phase 3) — when set, the agent asked a clarifying question instead of
+  // answering; the turn renders a clarify card and the user's reply re-asks with skip_clarify.
+  clarify: {
+    question: string;
+    options: string[];
+    source: string;          // "underspecified" | "ambiguous_term"
+    reason: string;
+  } | null;
+
+  // Progressive escalation (Phase 5) — set when a quick answer was inconclusive and the
+  // agent offers a deeper investigation (the user clicks to re-run at depth=deep).
+  escalate: {
+    signal: string;          // "error" | "no_rows" | "causal_thin"
+    reason: string;
+  } | null;
 
   // Investigate mode — ADA phases stream in progressively
   statusText: string | null;
@@ -64,6 +116,12 @@ export interface ChatTurn {
 
   // Shared
   tablesUsed: string[];
+  // Agent Context surface (P2): the working context the agent was given — which
+  // tables it saw, the token budget they cost, the join edges between them.
+  contextManifest: ContextManifest | null;
+  // Editable plan gate (P3): set when the run paused for the user to review the
+  // sub-question plan before the fan-out; cleared on resume.
+  planPending: PlanPending | null;
   followups: string[];
   analysis: { intent: string; steps: string[] } | null;
   error: string | null;
@@ -104,6 +162,9 @@ export interface ChatState {
 
 export type ChatAction =
   | { type: "ASK";          id: string; question: string; mode: "ask" | "investigate" }
+  | { type: "ROUTE";        route: NonNullable<ChatTurn["route"]> }
+  | { type: "CLARIFY";      clarify: NonNullable<ChatTurn["clarify"]> }
+  | { type: "ESCALATE";     escalate: NonNullable<ChatTurn["escalate"]> }
   | { type: "SQL";          sql: string }
   | { type: "COLUMNS";      columns: string[] }
   | { type: "ROWS";         rows: unknown[][] }
@@ -118,6 +179,9 @@ export type ChatAction =
   | { type: "REPORT";       report: Record<string, unknown>; queryMode: string; investigationId: string | null }
   | { type: "QUERY_MODE";   queryMode: string }
   | { type: "TABLES_USED";  tables: string[] }
+  | { type: "CONTEXT_ASSEMBLED"; manifest: ContextManifest }
+  | { type: "PLAN_PENDING"; plan: PlanPending }
+  | { type: "PLAN_RESUME" }
   | { type: "FOLLOWUPS";    questions: string[] }
   | { type: "ANALYSIS";     intent: string; steps: string[] }
   | { type: "CACHE_META";   fromCache: boolean; cachedQuestion: string | null }
@@ -143,13 +207,16 @@ function updateLast(state: ChatState, fn: (t: ChatTurn) => ChatTurn): ChatState 
 
 export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   status: "loading",
+  route: null,
+  clarify: null,
+  escalate: null,
   sql: null, columns: [], rows: [], headline: null, chartType: null,
   statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
   dossierReport: null, dossierInsightId: null,
   queriesExecuted: [], latestScore: null,
   hypotheses: [], investigationId: null, receiptId: null,
-  tablesUsed: [], followups: [], analysis: null, error: null,
+  tablesUsed: [], contextManifest: null, planPending: null, followups: [], analysis: null, error: null,
   startedAt: 0, elapsedMs: null,
   fromCache: false, cachedQuestion: null,
   inspectWarning: null,
@@ -171,6 +238,18 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...state, streaming: true,
         turns: [...state.turns, { ...EMPTY_TURN, id: action.id, question: action.question, mode: action.mode, startedAt: Date.now() }],
       };
+    case "ROUTE":
+      // The router decided the depth before any body events — carry it for the
+      // depth banner, and set the turn's effective mode so the existing renderers
+      // (quick vs investigate) work unchanged: deep → "investigate", else "ask".
+      return updateLast(state, t => ({
+        ...t, route: action.route,
+        mode: action.route.depth === "deep" ? "investigate" : "ask",
+      }));
+    case "CLARIFY":
+      return updateLast(state, t => ({ ...t, clarify: action.clarify }));
+    case "ESCALATE":
+      return updateLast(state, t => ({ ...t, escalate: action.escalate }));
     case "SQL":        return updateLast(state, t => ({ ...t, sql: action.sql }));
     case "COLUMNS":    return updateLast(state, t => ({ ...t, columns: action.columns }));
     case "ROWS":       return updateLast(state, t => ({ ...t, rows: action.rows }));
@@ -179,6 +258,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "CHART_CONFIG": return updateLast(state, t => ({ ...t, chartConfig: action.chartConfig }));
     case "STATUS_TEXT":return updateLast(state, t => ({ ...t, statusText: action.text }));
     case "TABLES_USED":return updateLast(state, t => ({ ...t, tablesUsed: action.tables }));
+    case "CONTEXT_ASSEMBLED": return updateLast(state, t => ({ ...t, contextManifest: action.manifest }));
+    case "PLAN_PENDING": return updateLast(state, t => ({ ...t, planPending: action.plan, status: "done" }));
+    case "PLAN_RESUME": return { ...updateLast(state, t => ({ ...t, planPending: null, status: "loading" })), streaming: true };
     case "FOLLOWUPS":  return updateLast(state, t => ({ ...t, followups: action.questions }));
     case "ANALYSIS":   return updateLast(state, t => ({ ...t, analysis: { intent: action.intent, steps: action.steps } }));
     case "QUERY_MODE": return updateLast(state, t => ({ ...t, queryMode: action.queryMode }));
@@ -242,6 +324,9 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "phase_complete": return `phase: ${(p.phase as { phase_id?: string })?.phase_id ?? "?"}`;
     case "ada_report":     return `headline: ${String((p.ada_report as { headline?: string })?.headline ?? "").slice(0, 60)}`;
     case "explore_report": return `narrative: ${String((p.explore_report as { narrative?: string })?.narrative ?? "").slice(0, 60)}`;
+    case "route":          return `${p.depth ?? "?"} · ${String(p.why ?? "").slice(0, 40)}`;
+    case "clarify":        return `${p.source ?? "?"} · ${String(p.question ?? "").slice(0, 40)}`;
+    case "escalate":       return `${p.signal ?? "?"} · ${String(p.reason ?? "").slice(0, 40)}`;
     case "report":         return `mode: ${p.query_mode ?? "?"}`;
     case "error":          return `message: ${p.message}`;
     case "insight":        return String(p.narrative ?? "").slice(0, 40);
@@ -278,6 +363,31 @@ export async function consumeStream(
           const p = JSON.parse(chunk.slice(6)) as { type: string } & Record<string, unknown>;
           logEvent({ ts: Date.now(), type: p.type, summary: summarisePayload(p.type, p), payload: p });
           switch (p.type) {
+            case "route":
+              dispatch({ type: "ROUTE", route: {
+                depth: (p.depth as "quick" | "deep") ?? "quick",
+                mode: (p.mode as string) ?? "",
+                tier: (p.tier as string) ?? "",
+                why: (p.why as string) ?? "",
+                ambiguous: Boolean(p.ambiguous),
+                forced: (p.forced as string) ?? null,
+                downgradedFrom: (p.downgraded_from as string) ?? null,
+              } });
+              break;
+            case "clarify":
+              dispatch({ type: "CLARIFY", clarify: {
+                question: (p.question as string) ?? "",
+                options: (p.options as string[]) ?? [],
+                source: (p.source as string) ?? "",
+                reason: (p.reason as string) ?? "",
+              } });
+              break;
+            case "escalate":
+              dispatch({ type: "ESCALATE", escalate: {
+                signal: (p.signal as string) ?? "",
+                reason: (p.reason as string) ?? "",
+              } });
+              break;
             case "sql":          dispatch({ type: "SQL",        sql:       p.sql as string }); break;
             case "columns":      dispatch({ type: "COLUMNS",    columns:   p.columns as string[] }); break;
             case "rows":         dispatch({ type: "ROWS",       rows:      p.rows as unknown[][] }); break;
@@ -286,6 +396,13 @@ export async function consumeStream(
             case "chart_type":   dispatch({ type: "CHART_TYPE", chartType: p.chart_type as string }); break;
             case "chart_config": dispatch({ type: "CHART_CONFIG", chartConfig: p.chart_config as Record<string, unknown> }); break;
             case "tables_used":  dispatch({ type: "TABLES_USED",tables:    p.tables as string[] }); break;
+            case "context_assembled": dispatch({ type: "CONTEXT_ASSEMBLED", manifest: p as unknown as ContextManifest }); break;
+            case "plan_pending": dispatch({ type: "PLAN_PENDING", plan: {
+              investigationId: (p.investigation_id as string) ?? null,
+              subQuestions: (p.sub_questions as PlanSubQuestion[]) ?? [],
+              chainLength: (p.chain_length as number) ?? 0,
+              estimatedTokens: (p.estimated_tokens as number) ?? 0,
+            } }); break;
             case "followups":    dispatch({ type: "FOLLOWUPS",  questions: p.questions as string[] }); break;
             case "analysis":     dispatch({ type: "ANALYSIS",   intent:    p.intent as string, steps: p.steps as string[] }); break;
             case "mode":         dispatch({ type: "QUERY_MODE", queryMode: p.query_mode as string }); break;

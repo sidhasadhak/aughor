@@ -1,9 +1,12 @@
 import { API_BASE as BASE } from "./config";
 import { installUpsellInterceptor } from "./upsell";
+import { installApprovalInterceptor } from "./approval";
 
-// Screen every API response for HTTP 402 (capability_locked) → app-wide upsell modal.
-// Idempotent, client-only; installed when the API layer first loads.
+// Screen every API response for HTTP 402 (capability_locked) → app-wide upsell modal,
+// and HTTP 428 (approval_required) → app-wide approval modal. Idempotent, client-only;
+// installed when the API layer first loads, so every fetch call site is covered.
 installUpsellInterceptor();
+installApprovalInterceptor();
 
 export interface Connection {
   id: string;
@@ -134,6 +137,68 @@ export async function updateOrgSettings(settings: OrgSettings): Promise<OrgSetti
     throw new Error(err.detail ?? "Failed to update org settings");
   }
   return res.json();
+}
+
+/** Agent Context surface (P2): re-derive the working context after a scope edit. */
+export interface RescopeResult {
+  manifest: { tables: string[]; table_count: number; estimated_tokens: number; joins: { from: string; to: string; kind: string }[] };
+  all_tables: string[];
+  full_tokens: number;
+  scoped_tokens: number;
+  token_delta: number;
+}
+
+export async function rescopeContext(connectionId: string, keep: string[]): Promise<RescopeResult> {
+  const res = await fetch(`${BASE}/investigations/context/rescope`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, keep }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to rescope context");
+  }
+  return res.json();
+}
+
+/** Editable plan gate (P3): resume a paused investigation, keeping only the chosen
+ * sub-questions. Returns the SSE Response so the caller can stream the resumed run. */
+export function resumeInvestigationPlan(invId: string, keepSubquestions: number[]): Promise<Response> {
+  return fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ feedback: "plan approved", keep_subquestions: keepSubquestions }),
+  });
+}
+
+/** Reject a pending plan — cancel the paused investigation outright. */
+export async function cancelInvestigation(invId: string): Promise<void> {
+  await fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/cancel`, { method: "POST" });
+}
+
+/** Action-approval audit + allowlist (P4, AI-FDE Pillar B). */
+export interface ApprovalAuditEvent {
+  seq?: number; at?: string; action: string; risk: string; decision: string;
+  scope: string; actor: string; detail?: string;
+}
+export interface AllowlistEntry { action: string; scope: string; by?: string; at?: string; allowed?: boolean }
+
+export async function getApprovalsAudit(limit = 100): Promise<ApprovalAuditEvent[]> {
+  const res = await fetch(`${BASE}/approvals/audit?limit=${limit}`);
+  if (!res.ok) throw new Error("Failed to fetch approvals audit");
+  return res.json();
+}
+export async function getAllowlist(): Promise<AllowlistEntry[]> {
+  const res = await fetch(`${BASE}/approvals/allowlist`);
+  if (!res.ok) throw new Error("Failed to fetch allowlist");
+  return res.json();
+}
+export async function revokeApproval(action: string, scope: string): Promise<void> {
+  const res = await fetch(`${BASE}/approvals/revoke`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, scope }),
+  });
+  if (!res.ok) throw new Error("Failed to revoke approval");
 }
 
 /** Record a human verdict on an investigation finding (Bet 0 — ground-truth capture). */

@@ -15,6 +15,7 @@ import { getCanvases } from "@/lib/api";
 import { CommandPalette } from "@/components/CommandPalette";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 
 function LoadingPanel() {
@@ -2188,6 +2189,9 @@ export default function Home() {
 
       {/* ── Upgrade / upsell modal — fired by any HTTP-402 capability_locked response ── */}
       <UpgradeModal />
+
+      {/* ── Approval modal — fired by any HTTP-428 approval_required response (P4) ── */}
+      <ApprovalModal />
 
       {/* ── Add connection modal ── */}
       {showAddConn && (

@@ -264,6 +264,17 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     except Exception:
         pass
 
+    # Mirror the real /chat path: inject flag-gated past-correction priors (P1
+    # close-the-loop) alongside verified patterns, so the ratchet measures the same
+    # pipeline production runs. Empty + zero-cost when the flag is off.
+    try:
+        from aughor.verify.priors import build_corrections_section
+        _cblk = build_corrections_section(question, connection_id)
+        if _cblk:
+            prompt = _cblk + "\n" + prompt
+    except Exception:
+        pass
+
     from pydantic import field_validator
 
     class ChatAnswerModel(BaseModel):

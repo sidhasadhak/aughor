@@ -10,6 +10,7 @@ progressively as they complete.
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import TYPE_CHECKING, Optional
 
@@ -2835,6 +2836,31 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     }
 
 
+_PREMISE_HIGH_RE = re.compile(
+    r"\b(?:so|too|really|unusually|abnormally|very|surprisingly)\s+(?:high|elevated|excessive|many)\b"
+    r"|\b(?:high|elevated|excessive|rising|surging|spiking)\b|\b(?:so|too)\s+many\b", re.IGNORECASE)
+_PREMISE_LOW_RE = re.compile(
+    r"\b(?:so|too|really|unusually|abnormally|very|surprisingly)\s+(?:low|poor|weak|few)\b"
+    r"|\b(?:low|poor|weak|declining|dropping|falling|underperform\w*)\b|\b(?:so|too)\s+few\b", re.IGNORECASE)
+
+
+def _premise_direction(question: str) -> "Optional[str]":
+    """If the question ASSERTS the metric sits at an extreme ("why are returns SO HIGH"),
+    return the asserted direction ("high"/"low") so the scan can VALIDATE that premise
+    before explaining it — rather than assuming a gap that may not be real. None when the
+    question embeds no comparative premise."""
+    q = question or ""
+    if _PREMISE_HIGH_RE.search(q):
+        return "high"
+    if _PREMISE_LOW_RE.search(q):
+        return "low"
+    return None
+
+
+def _premise_enabled() -> bool:
+    return os.getenv("AUGHOR_PREMISE_CHECK", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 @_telemetry.node_span("ada_cross_section")
 def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                       dims_override: Optional[list] = None,
@@ -2911,6 +2937,26 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         "value(s); the maximum is the answer, never the minimum."
     ) if _max_seeking else ""
 
+    # PREMISE VALIDATION (flag-gated): a "why is X so high/low" question ASSERTS the metric
+    # sits at an extreme. Before scanning WHERE it concentrates, validate that premise —
+    # compute the subject's metric vs the overall/peer reference — so we don't spend the whole
+    # investigation explaining a gap that isn't actually there. This is the deepest form of
+    # questioning the data: challenge the question's own assumption before decomposing it.
+    premise_check_section = ""
+    _premise_dir = _premise_direction(question)
+    if _premise_dir and _premise_enabled():
+        premise_check_section = (
+            "\nPREMISE CHECK — write this query FIRST, before the per-dimension scan:\n"
+            f"  The question ASSERTS {metric_label} is \"{_premise_dir}\" for its subject. Validate that "
+            "premise before explaining it. Write ONE query that computes " + metric_label + " for the "
+            "SUBJECT of the question ALONGSIDE the OVERALL population (drop the subject's own filter) — and "
+            "if the subject is one value of a category, also include the top few peer values of that "
+            f"category. Title it exactly \"Premise check: is the subject {_premise_dir} vs the rest?\". "
+            "Label the subject row and an 'overall (all)' reference row clearly and carry COUNT(*) AS n on "
+            f"each. If the subject is NOT materially {_premise_dir} vs the reference, SAY SO — a false "
+            "premise reframes the entire answer.\n"
+        )
+
     # DRIVER questions ("do late deliveries lower reviews") carry a derived comparison
     # segment from intake — compare the metric ACROSS that condition (true vs false) as
     # the PRIMARY query, not a per-dimension weakness scan.
@@ -2973,7 +3019,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             question=question, metric_label=metric_label, metric_sql=metric_sql,
             metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
             metric_computation_block=metric_computation_block,
-            comparison_segment_section=comparison_segment_section) + _direction_plan + _period_plan + (extra_directive or ""),
+            comparison_segment_section=comparison_segment_section,
+            premise_check_section=premise_check_section) + _direction_plan + _period_plan + (extra_directive or ""),
         interpret_system=(
             "Interpret a cross-sectional ranking scan of a RATIO / percentage metric. Read "
             "metric_total AS that ratio in its own units — NEVER as a dollar total or per-record "
@@ -3243,7 +3290,10 @@ def _discover_population_dims(state: AgentState, conn: "DatabaseConnection") -> 
                 _tot, _dist = int(_u.rows[0][0]), int(_u.rows[0][1])
                 if _dist < _tot:
                     continue
-            except Exception:
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, f"uniqueness probe on {t} failed; skip this dim-source",
+                         counter="ada.pop_discover")
                 continue
             for c, ty in cols:
                 cl = c.lower()
@@ -3403,8 +3453,9 @@ def _resolve_temporal_axis(state: AgentState, conn: "DatabaseConnection" = None)
         try:
             from aughor.tools.schema import fk_neighbor_expand
             seeds = fk_neighbor_expand(full_schema, seeds, cap=12)
-        except Exception:
-            pass
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "fk-neighbour expand best-effort; using bare seeds", counter="ada.temporal_axis")
         seed_bare = {_bare(s) for s in seeds}
 
         def _score(t: str) -> int:

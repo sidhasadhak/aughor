@@ -38,9 +38,20 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             verdict         TEXT NOT NULL,
             note            TEXT NOT NULL DEFAULT '',
             headline        TEXT NOT NULL DEFAULT '',
+            sql_source      TEXT NOT NULL DEFAULT '',
+            corrected_sql   TEXT NOT NULL DEFAULT '',
             created_at      TEXT NOT NULL
         )
     """)
+    # Additive migration for DBs created before the P1 close-the-loop columns:
+    # the structural payload (the SQL that produced the judged finding, and any
+    # human correction) is what lets a verdict feed back into the planner instead
+    # of dying as a bare accept/correct/reject. Idempotent + PRAGMA-free.
+    for col in ("sql_source", "corrected_sql"):
+        try:
+            c.execute(f"ALTER TABLE finding_verdicts ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass  # column already present
     c.execute("CREATE INDEX IF NOT EXISTS ix_verdicts_org_conn "
               "ON finding_verdicts (org_id, connection_id)")
     c.commit()
@@ -52,9 +63,15 @@ def record_verdict(
     verdict: str,
     note: str = "",
     headline: str = "",
+    sql_source: str = "",
+    corrected_sql: str = "",
 ) -> dict:
     """Persist a human verdict on a finding. Raises ValueError on an invalid verdict label
-    (the only failure the caller must handle); everything else is a normal insert."""
+    (the only failure the caller must handle); everything else is a normal insert.
+
+    ``sql_source`` is the SQL that produced the judged finding and ``corrected_sql`` an
+    optional human fix — the structural payload the planner reads back (P1 close-the-loop).
+    Both are optional so every existing caller keeps working unchanged."""
     v = (verdict or "").strip().lower()
     if v not in VERDICTS:
         raise ValueError(f"verdict must be one of {VERDICTS}, got {verdict!r}")
@@ -64,15 +81,19 @@ def record_verdict(
     try:
         cur = c.execute(
             "INSERT INTO finding_verdicts "
-            "(org_id, connection_id, investigation_id, verdict, note, headline, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (org, connection_id or "", investigation_id or "", v, note or "", headline or "", now),
+            "(org_id, connection_id, investigation_id, verdict, note, headline, "
+            "sql_source, corrected_sql, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (org, connection_id or "", investigation_id or "", v, note or "", headline or "",
+             sql_source or "", corrected_sql or "", now),
         )
         c.commit()
         return {
             "id": cur.lastrowid, "org_id": org, "connection_id": connection_id or "",
             "investigation_id": investigation_id or "", "verdict": v,
-            "note": note or "", "headline": headline or "", "created_at": now,
+            "note": note or "", "headline": headline or "",
+            "sql_source": sql_source or "", "corrected_sql": corrected_sql or "",
+            "created_at": now,
         }
     finally:
         c.close()
@@ -121,6 +142,32 @@ def list_verdicts(connection_id: Optional[str] = None, limit: int = 50) -> list[
         else:
             rows = c.execute(
                 "SELECT * FROM finding_verdicts WHERE org_id=? ORDER BY id DESC LIMIT ?",
+                (org, limit),
+            ).fetchall()
+    finally:
+        c.close()
+    return [dict(r) for r in rows]
+
+
+def list_corrections(connection_id: Optional[str] = None, limit: int = 20) -> list[dict]:
+    """Recent verdicts that carry a *lesson* — ``reject`` (the finding was wrong) or
+    ``correct`` (right direction, a detail was off). These are what the planner reads
+    back as priors (P1 close-the-loop): an accepted finding teaches nothing new, but a
+    rejected/corrected one names a mistake not to repeat. Org-scoped, most-recent-first."""
+    org = current_org_id()
+    limit = max(1, min(int(limit), 200))
+    c = _conn()
+    try:
+        if connection_id:
+            rows = c.execute(
+                "SELECT * FROM finding_verdicts WHERE org_id=? AND connection_id=? "
+                "AND verdict IN ('reject','correct') ORDER BY id DESC LIMIT ?",
+                (org, connection_id, limit),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM finding_verdicts WHERE org_id=? "
+                "AND verdict IN ('reject','correct') ORDER BY id DESC LIMIT ?",
                 (org, limit),
             ).fetchall()
     finally:

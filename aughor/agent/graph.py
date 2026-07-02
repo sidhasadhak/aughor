@@ -77,7 +77,7 @@ def _ada_parallel_lenses_enabled() -> bool:
 
 
 def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_node=None,
-             explore_wave_node=None, ada_nodes: dict = None, hitl: bool = False):
+             explore_wave_node=None, ada_nodes: dict = None, hitl: bool = False, plan_gate: bool = False):
     graph = StateGraph(AgentState)
 
     # ── Shared entry ──────────────────────────────────────────────────────────
@@ -156,16 +156,24 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
     graph.add_node("exploratory_scan_explore", scan_node)
     graph.add_node("decompose_exploration", decompose_exploration)
     graph.add_node("synthesize_exploration", synthesize_exploration)
+    # Plan gate (P3): a single-fire pause point AFTER decomposition and BEFORE the
+    # expensive fan-out, so the user can review/edit the sub-question plan before it
+    # runs (and a mis-scoped plan is corrected for $0). A no-op passthrough; the
+    # interrupt is armed only when `plan_gate` is on. It sits here — not on
+    # plan_and_execute_subq — because that node runs once PER sub-question in a loop,
+    # so interrupting it would pause on every question instead of once up front.
+    graph.add_node("plan_gate", lambda s: {})
     graph.add_edge("exploratory_scan_explore", "decompose_exploration")
+    graph.add_edge("decompose_exploration", "plan_gate")
 
-    # Parallel wave executor (flag: explore.parallel_subq) — independent sub-questions run
-    # concurrently in dependency-respecting waves. One node (which folds in the per-sub-question
-    # discovery scan + plan + execute + reason) fans out over ContextThreadPoolExecutor and the
-    # router loops it until the chain is exhausted. Off by default → the byte-identical sequential
-    # chain below. See docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.
+    # Parallel wave executor (flag: explore.parallel_subq) — after the plan gate, independent
+    # sub-questions run concurrently in dependency-respecting waves (one node folds in the
+    # per-sub-question discovery scan + plan + execute + reason and fans out over
+    # ContextThreadPoolExecutor; the router loops it until the chain is exhausted). Off by default →
+    # the byte-identical sequential chain below. See docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.
     if explore_wave_node is not None and _explore_parallel_enabled():
         graph.add_node("plan_and_execute_wave", explore_wave_node)
-        graph.add_edge("decompose_exploration", "plan_and_execute_wave")
+        graph.add_edge("plan_gate", "plan_and_execute_wave")
         graph.add_conditional_edges(
             "plan_and_execute_wave",
             route_after_wave,
@@ -179,10 +187,10 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
         # produces the per-sub-question Data Portrait; otherwise we plan directly.
         if explore_scan_subq_node is not None:
             graph.add_node("exploratory_scan_subq", explore_scan_subq_node)
-            graph.add_edge("decompose_exploration", "exploratory_scan_subq")
+            graph.add_edge("plan_gate", "exploratory_scan_subq")
             graph.add_edge("exploratory_scan_subq", "plan_and_execute_subq")
         else:
-            graph.add_edge("decompose_exploration", "plan_and_execute_subq")
+            graph.add_edge("plan_gate", "plan_and_execute_subq")
         graph.add_edge("plan_and_execute_subq", "reason_over_result")
         graph.add_conditional_edges(
             "reason_over_result",
@@ -203,7 +211,7 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
         },
     )
 
-    interrupt_before = ["ada_synthesize"] if hitl else []
+    interrupt_before = (["ada_synthesize"] if hitl else []) + (["plan_gate"] if plan_gate else [])
     return graph.compile(checkpointer=_checkpointer(), interrupt_before=interrupt_before)
 
 
@@ -232,7 +240,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
     )
 
 
-def build_graph_generic(db, hitl: bool = False):
+def build_graph_generic(db, hitl: bool = False, plan_gate: bool = False):
     """Build the graph bound to any DatabaseConnection instance."""
     ada_nodes = {
         "baseline":    partial(ada_baseline,    conn=db),
@@ -250,6 +258,7 @@ def build_graph_generic(db, hitl: bool = False):
         explore_wave_node=partial(plan_and_execute_wave, conn=db),  # parallel wave (flag-gated)
         ada_nodes=ada_nodes,
         hitl=hitl,
+        plan_gate=plan_gate,
     )
 
 

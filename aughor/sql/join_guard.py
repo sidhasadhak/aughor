@@ -556,9 +556,15 @@ def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[Fil
                     # execution-confirmed absent (so we never second-guess a real value).
                     warnings.extend(_highcard_bind_warnings(conn, t, c, litops))
                     continue
-                present = {v.lower() for v in vals}
+                exact = set(vals)
+                by_lower = {v.lower(): v for v in vals}   # lower -> stored casing
                 for lit, op in litops:
-                    if lit.lower() in present:
+                    if lit in exact:
+                        continue                            # exact stored value — fine
+                    if lit.lower() in by_lower:
+                        # Case-only difference: SQL '=' is case-sensitive, so this matches no row
+                        # (the 'Womenswear' vs stored 'womenswear' bug). Bind to the stored casing.
+                        warnings.append(FilterDomainWarning(t, c, lit, vals, by_lower[lit.lower()], op))
                         continue
                     close = difflib.get_close_matches(lit, vals, n=1, cutoff=0.6)
                     if close:  # only flag an obvious typo/variant, never a novel value
