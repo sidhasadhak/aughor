@@ -201,6 +201,12 @@ export default function ChartLab() {
                 { reason: "late delivery", pct_of_total: 5.9 },
               ], ["reason", "pct_of_total"]),
               chartType: "bar_horizontal", columnUnits: { pct_of_total: "percent" } as Record<string, string>, showLabels: true } },
+          { t: "composition → donut (≤6 parts): returns by condition", p: {
+              ...toTable([
+                { condition: "resellable", pct_of_total: 79.7 }, { condition: "minor_refurbish", pct_of_total: 14.1 },
+                { condition: "reject", pct_of_total: 6.3 },
+              ], ["condition", "pct_of_total"]),
+              chartType: "pie", columnUnits: { pct_of_total: "percent" } as Record<string, string>, showLabels: true } },
         ].map((d, i) => (
           <div key={`pct-${i}`} style={{ background: "var(--bg-1)", border: "1px solid var(--chart-axis)", borderRadius: 10, padding: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: "var(--t3)", marginBottom: 4, fontFamily: "var(--font-ui)" }}>{d.t}</div>

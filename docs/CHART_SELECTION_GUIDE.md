@@ -77,15 +77,20 @@ bar is chosen. Same idea as excluding `numerator_total` / `denominator_total` / 
 - ✅ Key numbers canonicalised (scale + precision + LLM `~`/duplicate collapse) across WHERE/WHY/WHEN — §4.
 - ✅ `barMaxWidth` on all bar builders + count-adaptive horizontal-bar height — §5.
 - ✅ Data labels default-on, one formatter, `hideOverlap`, legible halo — §4.
-- ✅ Composition → single ranked share-bar, not a redundant dual-axis combo — §3.
+- ✅ Composition → the SHARE only, not a redundant dual-axis combo — §3.
+- ✅ **Intent-driven `chart_type` from the backend** — `_chart_type_for_finding(finding, intent)` picks
+  the type from the finding's narrative, not a frontend data-shape guess: `trend → line`,
+  `ranking → bar_horizontal`, `composition → pie (≤6 parts) / bar_horizontal (more)`,
+  `relationship → scatter`. Wired into the cross-section (ranking), composition (WHY), and temporal
+  (WHEN) lenses. The pie is share-aware (no "42.2% (42%)" double-labelling).
 
 ## 7. Follow-ups (a fuller adaptive engine)
 
-- Teach the backend to **emit `chart_type` from the finding's intent** (trend/ranking/composition/
-  relationship) rather than leaning on frontend data-shape inference, so the narrative drives the type.
-- A **pie/donut** for a small composition (≤5 parts) instead of a bar when parts-of-a-whole is the whole point.
-- Fold the two parallel inference paths (`Chart.tsx` + `chartTypeInference.ts`) into one, per the note in
-  `columnRoles.ts`.
+- Extend the intent resolver to the remaining ADA lenses (baseline / decompose / dimensional) and the
+  Insight (quick) path, so *every* surface picks type by intent.
+- Fold the two parallel frontend inference paths (`Chart.tsx` + `chartTypeInference.ts`) into one, per the
+  note in `columnRoles.ts`.
+- Consider a 100%-stacked bar for a composition-over-time, and small-multiples for many-group trends.
 
 **References.** ECharts handbook (`get-started`, API `series-bar.barMaxWidth`, `series.labelLayout`); classic
 data-viz chart-selection (magnitude→bar, trend→line, parts→bar/pie, relationship→scatter).

@@ -109,6 +109,22 @@ def test_apply_percent_formatting_noop_for_non_percent():
     assert f["key_numbers"][0]["value"] == "340"          # untouched
 
 
+def test_chart_type_for_finding_by_intent():
+    def _f(nrows):
+        return {"rows": [[i, 0.1] for i in range(nrows)], "columns": ["k", "pct_of_total"]}
+    # trend → line; ranking → horizontal bar; relationship → scatter
+    assert I._chart_type_for_finding(_f(12), "trend") == "line"
+    assert I._chart_type_for_finding(_f(8), "ranking") == "bar_horizontal"
+    assert I._chart_type_for_finding(_f(2), "relationship") == "scatter"
+    # composition: a donut for a few parts, a ranked bar once there are too many slices
+    assert I._chart_type_for_finding(_f(3), "composition") == "pie"
+    assert I._chart_type_for_finding(_f(6), "composition") == "pie"
+    assert I._chart_type_for_finding(_f(9), "composition") == "bar_horizontal"
+    assert I._chart_type_for_finding(_f(1), "composition") == "bar_horizontal"   # 1 slice isn't a pie
+    # unknown intent → the finding's own type (or auto)
+    assert I._chart_type_for_finding({"rows": [], "chart_type": "heatmap"}, "other") == "heatmap"
+
+
 def test_tag_percent_columns_marks_matching_columns():
     findings = [
         {"columns": ["reason", "event_count", "pct_of_total"], "column_units": {}},

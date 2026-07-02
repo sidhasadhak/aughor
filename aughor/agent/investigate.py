@@ -1192,6 +1192,31 @@ def _chart_ratio_primary(finding) -> None:
     finding["rows"] = [[row[i] for i in keep] for row in (finding.get("rows") or [])]
 
 
+def _chart_type_for_finding(finding: dict, intent: str) -> str:
+    """Pick a finding's chart from its NARRATIVE intent + data shape, so the chart matches the point
+    the finding makes instead of a data-shape guess (see docs/CHART_SELECTION_GUIDE.md). Intents:
+      trend        → line (a metric over time).
+      composition  → a donut for a few parts-of-a-whole (reads "share of 100%"), a ranked horizontal
+                     bar once there are too many slices for a pie to stay legible.
+      ranking      → horizontal bar, sorted (weakest/strongest first).
+      relationship → scatter (two measures).
+    Falls back to the finding's own chart_type (or 'auto') for anything else."""
+    n = len([r for r in (finding.get("rows") or []) if r])
+    if intent == "trend":
+        return "line"
+    if intent == "composition":
+        return "pie" if 2 <= n <= _PIE_MAX_SLICES else "bar_horizontal"
+    if intent == "ranking":
+        return "bar_horizontal"
+    if intent == "relationship":
+        return "scatter"
+    return finding.get("chart_type") or "auto"
+
+
+# A pie/donut stays legible for only a handful of parts; past this a ranked bar reads better.
+_PIE_MAX_SLICES = 6
+
+
 def _tag_percent_columns(findings: list, match) -> None:
     """Mark every finding column whose name matches `match` (a compiled regex) as a percent on the
     finding's `column_units`, so the UI formats it the one consistent way. Additive; idempotent."""
@@ -3223,6 +3248,9 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             _chart_ratio_primary(f)
         else:
             _chart_primary_is_metric(f)
+        # A cross-sectional scan RANKS the metric across a dimension → a sorted horizontal bar (intent-
+        # driven), not a data-shape guess that could turn a 2-numeric ratio finding into a combo.
+        f["chart_type"] = _chart_type_for_finding(f, "ranking")
         # F4 — key numbers must match the chart they sit beside (recompute extremes from the rows),
         # scale-aware for a percent metric so the section value can't read "0.41%" beside a "41.0%" bar.
         _fix_xsec_extreme_key_numbers(f, is_pct=_metric_is_pct)
@@ -3817,6 +3845,9 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
         ]
         summary = "Temporal trend complete."
 
+    # A trend is a line (intent-driven, not a data-shape guess).
+    for _f in findings:
+        _f["chart_type"] = _chart_type_for_finding(_f, "trend")
     # Tag the trended value as a percent (the SAME unit as the WHERE rate) so its axis + labels read
     # "41%", directly comparable to the segment scan instead of a bare "0.41"; canonicalise key numbers too.
     if _metric_is_percent(metric_sql, metric_label):
@@ -3903,12 +3934,12 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
         ]
         summary = "Return composition computed."
     for _f in findings:
-        # Chart the SHARE as a single ranked bar — a composition is parts-of-a-whole, so the count and
-        # the share are the SAME story; a count-bar + share-line dual-axis combo is redundant clutter
-        # (the line just mirrors the bars). Drop `event_count` from the rendered view (it stays in the
-        # key numbers as context) so the frontend picks a clean single-measure bar, not a combo.
+        # Chart the SHARE only — a composition is parts-of-a-whole, so the count and the share are the
+        # SAME story; a count-bar + share-line dual-axis combo is redundant clutter (the line just
+        # mirrors the bars). Drop `event_count` from the rendered view (it stays in the key numbers as
+        # context), then let the intent resolver pick a donut for a few parts / a ranked bar for many.
         _chart_ratio_primary(_f)
-        _f["chart_type"] = "bar_horizontal"
+        _f["chart_type"] = _chart_type_for_finding(_f, "composition")
     # `pct_of_total` is a share (already 0–100) — tag it percent so the UI renders "42.2%", not "42"
     # (its value-range guard would otherwise reject an already-scaled percent as a share column), and
     # canonicalise the key numbers to 1-dp so the WHY cards match the WHERE cards (no "42.23%" vs "41.0%").

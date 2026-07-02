@@ -259,6 +259,9 @@ export function stackedBarOption(i: BuildInput): EChartsOption {
 /** Parts of a whole — donut, aggregated by category, sorted descending. */
 export function pieOption(i: BuildInput): EChartsOption {
   const y = i.ys[0];
+  // When the measure IS already a share (pct_of_total), its value equals ECharts' own computed
+  // percent — so we show the value alone, never "42.2% (42%)" twice.
+  const share = isShareField(i.rows, y, i.units);
   const agg = new Map<string, number>();
   for (const r of i.rows) {
     const k = String(r[i.x]);
@@ -270,7 +273,7 @@ export function pieOption(i: BuildInput): EChartsOption {
     ...withTitle(i.title),
     tooltip: { trigger: "item", formatter: (p: unknown) => {
       const o = p as { name: string; value: number; percent: number };
-      return `${o.name}: ${fmt(o.value)} (${o.percent}%)`;
+      return share ? `${o.name}: ${fmt(o.value)}` : `${o.name}: ${fmt(o.value)} (${o.percent}%)`;
     } },
     legend: { orient: "vertical", right: 0, top: "middle", type: "scroll" },
     series: [{
@@ -278,7 +281,13 @@ export function pieOption(i: BuildInput): EChartsOption {
       radius: ["42%", "70%"],
       center: ["38%", "52%"],
       data,
-      label: { show: !!i.labels },
+      label: i.labels
+        ? { show: true, formatter: (p: unknown) => {
+            const o = p as { name: string; value: number; percent: number };
+            return `${o.name}  ${share ? fmt(o.value) : o.percent + "%"}`;
+          } }
+        : { show: false },
+      labelLine: { show: !!i.labels },
       emphasis: { scale: true, scaleSize: 6 },
     }],
   };
