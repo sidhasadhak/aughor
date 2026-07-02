@@ -597,6 +597,7 @@ function InvestigateBody({
       <InvestigationReportView
         report={turn.adaReport ?? undefined}
         streamingPhases={turn.adaReport ? undefined : turn.phases}
+        onShowSource={onShowSource}
       />
     );
   }
