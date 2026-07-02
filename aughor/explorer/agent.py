@@ -2922,6 +2922,30 @@ class SchemaExplorer:
                     tolerate(_exc, "schema-grounding pre-flight is best-effort; on failure "
                              "fall through to the execute+retry loop (no worse than before)",
                              counter="explorer.preflight_failed")
+                # ── Active filter-literal binding (deterministic) ────────────────
+                # Identifiers + columns are now correct, but a wrong-CASE or near-miss
+                # enum VALUE ('Womenswear' vs the stored 'womenswear') still passes
+                # dry_run as valid-but-EMPTY → a silent zero-row "finding" the gate drops
+                # (a real, user-reported Scout failure). Bind the literal to the column's
+                # live domain — the same CHESS value-index guard Insight/ADA get via
+                # preflight_repair — dry-run-gated so a wrong rewrite is never adopted.
+                try:
+                    from aughor.sql.join_guard import bind_filter_literals
+                    _bind_dialect = getattr(self._conn, "dialect", "duckdb")
+                    _bound, _applied = bind_filter_literals(self._conn, sql, _bind_dialect)
+                    if _applied and _bound.strip() != sql.strip() and self._conn.dry_run(_bound)[0]:
+                        sql = _bound
+                        from aughor.stats import stats as _s; _s.inc("explorer.filter_bound")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — filter literal bound to the live "
+                            "column domain (wrong-case/near-miss value corrected)",
+                            self.connection_id, domain, nq.angle,
+                        )
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "filter-literal binding is best-effort; on failure execute "
+                             "the original SQL (an empty result is no worse than before)",
+                             counter="explorer.filter_bind_failed")
                 # Tier 3: on a large connection, swap exact COUNT(DISTINCT) for the HLL
                 # approximation — orders of magnitude cheaper on big facts, ~1-3% off.
                 # EXCEPT for ratio/rate queries: the per-count HLL error compounds across

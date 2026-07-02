@@ -66,3 +66,26 @@ def test_bind_filter_literals_real_sqlite(tmp_path):
     # the bound query now finds the 2 'canceled' rows
     assert int(conn.execute("probe2", bound).rows[0][0]) == 2
     conn.close()
+
+
+def test_bind_filter_literals_corrects_wrong_case(tmp_path):
+    """The Scout 'Womenswear' bug: a wrong-CASE enum value passes dry_run as valid but returns
+    zero rows; binding corrects it to the stored casing against the live domain."""
+    from aughor.connectors.file.sqlite import SQLiteConnection
+
+    db_file = tmp_path / "products.sqlite"
+    seed = sqlite3.connect(str(db_file))
+    seed.executescript("""
+        CREATE TABLE products (id INTEGER, category TEXT);
+        INSERT INTO products VALUES (1,'womenswear'),(2,'menswear'),(3,'womenswear');
+    """)
+    seed.commit(); seed.close()
+
+    conn = SQLiteConnection(dsn=str(db_file), connection_id="case_test")
+    bad_sql = "SELECT COUNT(*) AS n FROM products WHERE category = 'Womenswear'"  # wrong case → 0 rows
+    assert int(conn.execute("probe", bad_sql).rows[0][0]) == 0
+
+    bound, applied = bind_filter_literals(conn, bad_sql, dialect="sqlite")
+    assert applied and "'womenswear'" in bound and "Womenswear" not in bound
+    assert int(conn.execute("probe2", bound).rows[0][0]) == 2                   # now finds both rows
+    conn.close()

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ExplorationReport as ExplorationReportType, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { BriefDetails, BriefDetailBlock } from "@/components/brief/Brief";
 import { recordVerdict } from "@/lib/api";
 
 interface Props {
@@ -144,8 +145,7 @@ const CHECK_MARK: Record<string, { sym: string; cls: string }> = {
 
 function VerificationPanel({ v }: { v: NonNullable<ExplorationReportType["verification"]> }) {
   return (
-    <div className="border-t border-zinc-800/60 pt-4 space-y-3">
-      <SectionLabel>Verification</SectionLabel>
+    <div className="space-y-3">
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-zinc-400 font-mono">
         <span>earned confidence <span className="text-zinc-200">{Math.round(v.earned_confidence * 100)}%</span></span>
         <span>data trust <span className="text-zinc-200">{Math.round(v.data_trust * 100)}%</span></span>
@@ -255,44 +255,50 @@ export function ExplorationReportView({ report, subqAnswers, queryCount, connect
         </div>
       )}
 
-      {/* Recommended actions */}
-      {report.recommended_actions.length > 0 && (
-        <div className="border-t border-zinc-800/60 pt-4 space-y-2.5">
-          <SectionLabel>Recommended actions</SectionLabel>
-          <ol className="space-y-2">
-            {report.recommended_actions.map((action, i) => (
-              <li key={i} className="flex items-start gap-2.5">
-                <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full border border-zinc-700 text-zinc-400 text-[11px] font-mono flex items-center justify-center">
-                  {i + 1}
-                </span>
-                <p className="leading-relaxed">{action}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
+      {/* Machinery — recommended actions, data quality, and verification fold into one
+          quiet Details toggle so the explore answer reads as a conversation, not a report
+          (Option A, consistent with the quick + deep answers). */}
+      {(report.recommended_actions.length > 0 || dqNotes.length > 0 || report.verification) && (
+        <BriefDetails summary="Details">
+          {report.recommended_actions.length > 0 && (
+            <BriefDetailBlock label="Recommended actions">
+              <ol className="space-y-2">
+                {report.recommended_actions.map((action, i) => (
+                  <li key={i} className="flex items-start gap-2.5">
+                    <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full border border-zinc-700 text-zinc-400 text-[11px] font-mono flex items-center justify-center">
+                      {i + 1}
+                    </span>
+                    <p className="leading-relaxed">{action}</p>
+                  </li>
+                ))}
+              </ol>
+            </BriefDetailBlock>
+          )}
 
-      {/* Data quality */}
-      {dqNotes.length > 0 && (
-        <div className="border-t border-zinc-800/60 pt-4 space-y-2">
-          <SectionLabel>Data quality</SectionLabel>
-          <ul className="space-y-1.5">
-            {dqNotes.map((note, i) => (
-              <li key={i} className="leading-relaxed flex items-start gap-2">
-                <span className="shrink-0 mt-0.5 text-zinc-500">—</span>
-                <span>
-                  <code className="text-[12px] text-zinc-400">{note.column ? `${note.table}.${note.column}` : note.table}</code>
-                  <span className="text-zinc-400"> {note.issue}</span>
-                  {note.recommended_fix && <span className="text-zinc-500"> · Fix: {note.recommended_fix}</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+          {dqNotes.length > 0 && (
+            <BriefDetailBlock label="Data quality">
+              <ul className="space-y-1.5">
+                {dqNotes.map((note, i) => (
+                  <li key={i} className="leading-relaxed flex items-start gap-2">
+                    <span className="shrink-0 mt-0.5 text-zinc-500">—</span>
+                    <span>
+                      <code className="text-[12px] text-zinc-400">{note.column ? `${note.table}.${note.column}` : note.table}</code>
+                      <span className="text-zinc-400"> {note.issue}</span>
+                      {note.recommended_fix && <span className="text-zinc-500"> · Fix: {note.recommended_fix}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </BriefDetailBlock>
+          )}
 
-      {/* Verification — which guards ran + why the confidence is what it is (Bet 0) */}
-      {report.verification && <VerificationPanel v={report.verification} />}
+          {report.verification && (
+            <BriefDetailBlock label="Verification">
+              <VerificationPanel v={report.verification} />
+            </BriefDetailBlock>
+          )}
+        </BriefDetails>
+      )}
 
       {/* Human ground-truth capture (Bet 0, 0-V) — the non-circular calibration anchor */}
       {investigationId && (
