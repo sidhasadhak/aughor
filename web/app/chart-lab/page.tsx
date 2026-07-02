@@ -173,6 +173,43 @@ export default function ChartLab() {
       </div>
 
       <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+        percent unit hint + adaptive bar sizing + labels (report fixes #1–#3)
+      </h2>
+      <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
+        A rate stored as a fraction in <code>metric_total</code> (name matches no share regex). With
+        <code> columnUnits=&#123;metric_total:&quot;percent&quot;&#125;</code> the axis + labels read &quot;40.5%&quot;, not &quot;0.4&quot;. The 2-bar
+        cut stays compact; bars keep a fixed max thickness.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 16 }}>
+        {[
+          { t: "return rate by platform (5 bars, % + labels)", p: {
+              ...toTable([
+                { platform: "Luxury Pavilion", metric_total: 0.405 }, { platform: "Boutique Prime", metric_total: 0.382 },
+                { platform: "StyleHub", metric_total: 0.341 }, { platform: "Marketplace", metric_total: 0.310 },
+                { platform: "Off-price Outlet", metric_total: 0.270 },
+              ], ["platform", "metric_total"]),
+              chartType: "bar_horizontal", columnUnits: { metric_total: "percent" } as Record<string, string>, showLabels: true } },
+          { t: "luxury vs off-price (2 bars → compact)", p: {
+              ...toTable([
+                { platform: "Luxury platforms", metric_total: 0.405 }, { platform: "Off-price", metric_total: 0.270 },
+              ], ["platform", "metric_total"]),
+              chartType: "bar_horizontal", columnUnits: { metric_total: "percent" } as Record<string, string>, showLabels: true } },
+          { t: "share of returns by reason (pct_of_total, already 0–100)", p: {
+              ...toTable([
+                { reason: "size / fit", pct_of_total: 42.2 }, { reason: "not as expected", pct_of_total: 21.9 },
+                { reason: "changed mind", pct_of_total: 19.9 }, { reason: "quality", pct_of_total: 10.2 },
+                { reason: "late delivery", pct_of_total: 5.9 },
+              ], ["reason", "pct_of_total"]),
+              chartType: "bar_horizontal", columnUnits: { pct_of_total: "percent" } as Record<string, string>, showLabels: true } },
+        ].map((d, i) => (
+          <div key={`pct-${i}`} style={{ background: "var(--bg-1)", border: "1px solid var(--chart-axis)", borderRadius: 10, padding: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--t3)", marginBottom: 4, fontFamily: "var(--font-ui)" }}>{d.t}</div>
+            <Chart title={d.t} {...d.p} />
+          </div>
+        ))}
+      </div>
+
+      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
         &lt;ResultChartCard&gt; — inline controls + chart⇄table toggle
       </h2>
       <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>

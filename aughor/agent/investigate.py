@@ -1038,6 +1038,38 @@ def _metric_is_composite_ratio(metric_sql: str) -> bool:
     return False
 
 
+_PCT_LABEL_RE = re.compile(r"(rate|percent|pct|share|proportion|ratio)", re.I)
+
+
+def _metric_is_percent(metric_sql: str, metric_label: str = "", values=None) -> bool:
+    """Is the metric a PERCENTAGE (a 0–100% concept), as opposed to a plain average (avg rating,
+    AOV) or an additive total? A percentage must be displayed as "41.0%" everywhere — the signal the
+    `column_units` hint carries to the UI. True when: it's a composite ratio (SUM/SUM or *100), its
+    label/SQL names a rate/percent/share/ratio, OR (a bare AVG that) reads as a proportion in [0,1].
+    A plain AVG(rating) (values > 1, no rate-ish label) is correctly NOT a percent."""
+    if _metric_is_composite_ratio(metric_sql):
+        return True
+    if _PCT_LABEL_RE.search(f"{metric_sql or ''} {metric_label or ''}"):
+        return True
+    if values:
+        nums = [v for v in values if isinstance(v, (int, float))]
+        if nums and all(0 <= float(v) <= 1.0001 for v in nums):
+            return True
+    return False
+
+
+def _fmt_pct(v, digits: int = 1) -> str:
+    """Scale-aware percent for display: a ratio in [-1,1] is ×100 (0.4096 → "41.0%"); a value already
+    scaled to a percent (40.96) is left as-is. One canonical formatter so a rate never renders three
+    ways (chart "0.4", key number "0.41%", prose "40.96%"). Mirrors the web `formatPercent`."""
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    p = n * 100 if abs(n) <= 1.0001 else n
+    return f"{p:.{digits}f}%"
+
+
 # The cross-sectional scan defaults to a WEAKNESS frame (rank ascending, surface the lowest).
 # Some diagnostics instead seek the MAXIMUM ("which category carries the HIGHEST out-of-stock
 # burden") — for those the answer is the largest value, not the smallest, so orient the ranking
@@ -1160,7 +1192,64 @@ def _chart_ratio_primary(finding) -> None:
     finding["rows"] = [[row[i] for i in keep] for row in (finding.get("rows") or [])]
 
 
-def _fix_xsec_extreme_key_numbers(finding: dict) -> None:
+def _tag_percent_columns(findings: list, match) -> None:
+    """Mark every finding column whose name matches `match` (a compiled regex) as a percent on the
+    finding's `column_units`, so the UI formats it the one consistent way. Additive; idempotent."""
+    for f in findings:
+        u = {c: "percent" for c in (f.get("columns") or []) if match.search(c)}
+        if u:
+            f["column_units"] = {**(f.get("column_units") or {}), **u}
+
+
+def _apply_percent_formatting(finding: dict, is_pct: bool) -> None:
+    """Make a percent-metric finding read consistently everywhere: tag its metric / share columns as
+    `percent` (so the chart axis + data labels format via the one scale-aware formatter) and rebuild
+    its key numbers to the canonical `41.0%` scale + precision. No-op when the metric isn't a percent
+    (so a plain-total or average finding is byte-identical). Idempotent."""
+    if not is_pct:
+        return
+    units = {c: "percent" for c in (finding.get("columns") or [])
+             if _RATIO_METRIC_COL_RE.search(c) or _SHARE_COL_RE.search(c)}
+    if units:
+        finding["column_units"] = {**(finding.get("column_units") or {}), **units}
+    _normalize_pct_key_numbers(finding)
+
+
+# Leading number of a key-number value, tolerating an approx "~" and a wrapping "(".
+_PCT_KN_LEAD_RE = re.compile(r"^\s*(~\s*)?\(?\s*(-?\d+(?:\.\d+)?)\s*(%?)")
+# A parenthetical that ONLY restates a number (± %) — the LLM's redundant "(32.8%)" duplicate. A
+# parenthetical with words ("(15,612 / 48,320 items)") or a dimension ("(Germany)") is NOT this.
+_PCT_KN_REDUNDANT_TAIL_RE = re.compile(r"^\s*\(\s*~?\s*-?\d+(?:\.\d+)?\s*%?\s*\)\s*$")
+
+
+def _normalize_pct_key_numbers(finding: dict) -> None:
+    """For a percent-unit finding, rewrite each key-number value to ONE canonical form so the section
+    values match the chart beside them. Re-derives through the single scale-aware formatter, unifying
+    scale AND precision, and collapses the LLM's redundant "value (value)" duplicates:
+      "0.41%" / "0.4096" → "41.0%";  "32.31%" → "32.3%";  "~0.328 (32.8%)" → "~32.8%";
+      "34.5%(34.5%)" → "34.5%";  "31.2%(31.3%)" → "31.2%".
+    A bare number > 1 with NO "%" is left alone (a count "5000" / an average "42.50"), and a
+    meaningful parenthetical ("(Germany)", "(15,612 / 48,320 items)") is preserved. Idempotent."""
+    for kn in finding.get("key_numbers") or []:
+        val = str(kn.get("value") or "").strip()
+        label = (kn.get("label") or "").lower()
+        if any(w in label for w in ("count", "record", "rows", "volume", "orders", "customers", "= n", " n ")):
+            continue
+        m = _PCT_KN_LEAD_RE.match(val)
+        if not m:
+            continue
+        num = float(m.group(2))
+        had_pct = m.group(3) == "%"
+        if not (had_pct or abs(num) <= 1.0001):
+            continue  # a bare count / average, not a percentage
+        approx = "~" if m.group(1) else ""
+        tail = val[m.end():]
+        if _PCT_KN_REDUNDANT_TAIL_RE.match(tail):
+            tail = ""   # drop the duplicate "(32.8%)" the LLM appended
+        kn["value"] = approx + _fmt_pct(num) + tail
+
+
+def _fix_xsec_extreme_key_numbers(finding: dict, is_pct: bool = False) -> None:
     """F4 — make the 'lowest'/'highest' key numbers agree with the finding's OWN charted rows.
     The interpret LLM occasionally reports an extreme that is not the actual min/max of the result
     set (e.g. 'highest 42.68%' when the top bar in the very same chart is 43.07%). Recompute both
@@ -1192,8 +1281,12 @@ def _fix_xsec_extreme_key_numbers(finding: dict) -> None:
 
     def _reformat(template: str, num: float, dim) -> str:
         """Replace the numeric part of the LLM's value string, preserving its unit (% / €), and
-        keep/refresh a trailing '(dimension)' so value and label stay self-consistent."""
+        keep/refresh a trailing '(dimension)' so value and label stay self-consistent. For a percent
+        metric the number is formatted scale-aware (0.4096 → "41.0%"), so it can't disagree with the
+        chart, whose axis now formats the same column the same way."""
         t = template or ""
+        if is_pct:
+            return f"{_fmt_pct(num)} ({dim})"
         unit = "%" if "%" in t else ""
         return f"{num:.2f}{unit} ({dim})"
 
@@ -3118,6 +3211,11 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         ]
         summary = "Cross-sectional scan complete."
 
+    # A ratio metric that reads as a percentage (return rate, cost-%, conversion) — the value is
+    # stored as a fraction/percent that must render "41.0%" on EVERY surface. Tag the column so the
+    # chart axis, data labels, table, and key numbers all format it the one same way (approach a).
+    _metric_is_pct = is_ratio and _metric_is_percent(metric_sql, metric_label)
+
     # Make the bar plot the metric itself: for a ratio, plot metric_total (the %/rate) and drop the
     # large numerator/denominator aggregates; for an additive metric, plot the magnitude not its share.
     for f in findings:
@@ -3125,8 +3223,11 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             _chart_ratio_primary(f)
         else:
             _chart_primary_is_metric(f)
-        # F4 — key numbers must match the chart they sit beside (recompute extremes from the rows).
-        _fix_xsec_extreme_key_numbers(f)
+        # F4 — key numbers must match the chart they sit beside (recompute extremes from the rows),
+        # scale-aware for a percent metric so the section value can't read "0.41%" beside a "41.0%" bar.
+        _fix_xsec_extreme_key_numbers(f, is_pct=_metric_is_pct)
+        # Tag % columns + canonicalise every key number's scale/precision (no-op for non-% metrics).
+        _apply_percent_formatting(f, _metric_is_pct)
 
     # Numeric fan-out backstop — the AST chasm detectors miss some join shapes and the coder can
     # reinterpret the metric, so verify the NUMBERS on the RAW results (all columns present). Two
@@ -3716,6 +3817,13 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
         ]
         summary = "Temporal trend complete."
 
+    # Tag the trended value as a percent (the SAME unit as the WHERE rate) so its axis + labels read
+    # "41%", directly comparable to the segment scan instead of a bare "0.41"; canonicalise key numbers too.
+    if _metric_is_percent(metric_sql, metric_label):
+        _tag_percent_columns(findings, _RATIO_METRIC_COL_RE)
+        for _f in findings:
+            _normalize_pct_key_numbers(_f)
+
     # Deterministic anomaly detection on the (first clean) trend result.
     anomalous = None
     for _q, r in results:
@@ -3794,6 +3902,19 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
             for i, (q, r) in enumerate(results)
         ]
         summary = "Return composition computed."
+    for _f in findings:
+        # Chart the SHARE as a single ranked bar — a composition is parts-of-a-whole, so the count and
+        # the share are the SAME story; a count-bar + share-line dual-axis combo is redundant clutter
+        # (the line just mirrors the bars). Drop `event_count` from the rendered view (it stays in the
+        # key numbers as context) so the frontend picks a clean single-measure bar, not a combo.
+        _chart_ratio_primary(_f)
+        _f["chart_type"] = "bar_horizontal"
+    # `pct_of_total` is a share (already 0–100) — tag it percent so the UI renders "42.2%", not "42"
+    # (its value-range guard would otherwise reject an already-scaled percent as a share column), and
+    # canonicalise the key numbers to 1-dp so the WHY cards match the WHERE cards (no "42.23%" vs "41.0%").
+    _tag_percent_columns(findings, re.compile(r"pct_of_total|percent|_of_total|\bshare\b", re.I))
+    for _f in findings:
+        _normalize_pct_key_numbers(_f)
     return _phase_result(
         "cross_section_mechanism", "Mechanism / Reason Scan — Why", "🔍",
         "complete" if any(not f["error"] for f in findings) else "partial", summary, findings,

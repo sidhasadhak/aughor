@@ -23,6 +23,7 @@ export interface BuildInput {
   xKind?: "time" | "category";
   title?: string;
   labels?: boolean;      // draw value labels on marks
+  units?: Record<string, string>;  // authoritative per-column unit hint from the backend finding
 }
 
 // ── formatting helpers ───────────────────────────────────────────────────────
@@ -31,22 +32,27 @@ const num = (v: unknown): number => Number(v);
 const maxAbs = (rows: Row[], f: string): number =>
   Math.max(0, ...rows.map((r) => Math.abs(num(r[f]))).filter((v) => isFinite(v)));
 
-/** A 0–1 share column → render as percent; otherwise SI-compact. Mirrors the
- *  per-field `fmtCol` rule in the legacy Chart.tsx (kills the percent-leak bug
- *  where a rate's format bled onto a count axis). */
-export function isShareField(rows: Row[], f: string): boolean {
+/** Is this field a percentage? An explicit backend `units` hint (`{col: "percent"}`) is
+ *  authoritative — it fixes the two cases the name heuristic can't: a metric aliased `metric_total`
+ *  (a rate the name doesn't reveal) and an already-scaled share whose values exceed 1. Absent a hint,
+ *  fall back to the legacy name + [0,1]-range rule (kills the percent-leak onto a count axis). */
+export function isShareField(rows: Row[], f: string, units?: Record<string, string>): boolean {
+  if (units?.[f] === "percent") return true;
   return SHARE_COL.test(f) && maxAbs(rows, f) <= 1.0001;
 }
 
-export function valueFormatter(rows: Row[], f: string): (v: unknown) => string {
-  const share = isShareField(rows, f);
+export function valueFormatter(rows: Row[], f: string, units?: Record<string, string>): (v: unknown) => string {
+  const share = isShareField(rows, f, units);
   // Money fields carry the effective reporting currency symbol (override-wins), so a
   // chart's values read in the org's currency — matching the KPI cards + tables.
   const sym = !share && isMoneyColumn(f) ? effectiveCurrencySymbol() : "";
   return (v) => {
     const n = num(v);
     if (v == null || isNaN(n)) return "—";
-    return share ? pct(n, 1) : sym + compactNumber(n);
+    // Scale-aware percent: a fraction (0.4096) is ×100; an already-scaled percent (40.96) is left —
+    // so the axis, the data labels, and the backend key numbers all read "41.0%".
+    if (share) return Math.abs(n) <= 1.0001 ? pct(n, 1) : `${n.toFixed(1)}%`;
+    return sym + compactNumber(n);
   };
 }
 
@@ -93,7 +99,7 @@ function withTitle(title: string | undefined): Pick<EChartsOption, "title"> {
 export function lineOption(i: BuildInput, area = false): EChartsOption {
   const cats = categories(i.rows, i.x, i.xKind);
   const byX = new Map(i.rows.map((r) => [String(r[i.x]), r]));
-  const fmt = valueFormatter(i.rows, i.ys[0]);
+  const fmt = valueFormatter(i.rows, i.ys[0], i.units);
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", valueFormatter: (v) => fmt(v) },
@@ -113,7 +119,8 @@ export function lineOption(i: BuildInput, area = false): EChartsOption {
       symbolSize: 5,
       areaStyle: area ? { opacity: 0.18 } : { opacity: 0.06 },
       emphasis: { focus: "series" },
-      label: i.labels ? { show: true, position: "top", fontSize: 10, formatter: (p: { value: unknown }) => fmt(p.value) } : undefined,
+      label: i.labels ? { show: true, position: "top", fontSize: 11, formatter: (p: { value: unknown }) => fmt(p.value) } : undefined,
+      labelLayout: i.labels ? { hideOverlap: true } : undefined,
     })),
   };
 }
@@ -129,7 +136,7 @@ export function multiLineOption(i: BuildInput): EChartsOption {
     if (!groups.includes(g)) groups.push(g);
     cell.set(`${g}__${String(r[i.x])}`, num(r[y]));
   }
-  const fmt = valueFormatter(i.rows, y);
+  const fmt = valueFormatter(i.rows, y, i.units);
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", valueFormatter: (v) => fmt(v) },
@@ -175,7 +182,7 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
   const gran: Gran | null = i.xKind === "time" ? detectGranularity(i.x, i.rows.map((r) => r[i.x])) : null;
   const labels = rows.map((r) => (gran ? fmtDate(String(r[i.x]), gran) : String(r[i.x])));
   const values = rows.map((r) => num(r[y]));
-  const fmt = valueFormatter(i.rows, y);
+  const fmt = valueFormatter(i.rows, y, i.units);
 
   const catAxis = {
     type: "category" as const, data: labels,
@@ -184,7 +191,7 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
   };
   const valAxis = { type: "value" as const, axisLabel: { formatter: (v: number) => fmt(v) } };
   const label = i.labels
-    ? { show: true, fontSize: 10, position: (style.horizontal ? "right" : "top") as "right" | "top", formatter: (p: { value: unknown }) => fmt(p.value) }
+    ? { show: true, fontSize: 11, distance: 5, position: (style.horizontal ? "right" : "top") as "right" | "top", formatter: (p: { value: unknown }) => fmt(p.value) }
     : undefined;
   const itemStyle = style.diverging
     ? { color: (p: { value: number }) => (p.value >= 0 ? "#2EC87B" : "#E64848") }
@@ -195,21 +202,29 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
     xAxis: style.horizontal ? valAxis : catAxis,
     yAxis: style.horizontal ? catAxis : valAxis,
-    series: [{ name: fieldLabel(y), type: "bar", data: values, label, itemStyle: itemStyle as unknown as undefined }],
+    series: [{
+      name: fieldLabel(y), type: "bar", data: values, label,
+      // Fixed bar thickness so few bars don't stretch into slabs — the chart HEIGHT adapts to the bar
+      // count (Chart.tsx), the bars don't. ECharts caps at barMaxWidth and centres within each band.
+      barMaxWidth: 34,
+      // Drop any data label that would collide instead of overprinting a neighbour.
+      labelLayout: i.labels ? { hideOverlap: true } : undefined,
+      itemStyle: itemStyle as unknown as undefined,
+    }],
   };
 }
 
 /** Several same-unit measures over one category — grouped bars side by side. */
 export function groupedBarOption(i: BuildInput): EChartsOption {
   const cats = i.rows.map((r) => String(r[i.x]));
-  const fmt = valueFormatter(i.rows, i.ys[0]);
+  const fmt = valueFormatter(i.rows, i.ys[0], i.units);
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
     legend: { data: i.ys.map(fieldLabel) },
     xAxis: { type: "category", data: cats, axisLabel: { hideOverlap: true, interval: 0 } },
     yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
-    series: i.ys.map((y) => ({ name: fieldLabel(y), type: "bar", data: i.rows.map((r) => num(r[y])) })),
+    series: i.ys.map((y) => ({ name: fieldLabel(y), type: "bar", barMaxWidth: 34, data: i.rows.map((r) => num(r[y])) })),
   };
 }
 
@@ -224,7 +239,7 @@ export function stackedBarOption(i: BuildInput): EChartsOption {
     if (!groups.includes(g)) groups.push(g);
     cell.set(`${g}__${String(r[i.x])}`, num(r[y]));
   }
-  const fmt = valueFormatter(i.rows, y);
+  const fmt = valueFormatter(i.rows, y, i.units);
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
@@ -235,7 +250,7 @@ export function stackedBarOption(i: BuildInput): EChartsOption {
     },
     yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
     series: groups.map((g) => ({
-      name: g, type: "bar", stack: "total",
+      name: g, type: "bar", stack: "total", barMaxWidth: 40,
       data: cats.map((c) => cell.get(`${g}__${c}`) ?? 0),
     })),
   };
@@ -250,7 +265,7 @@ export function pieOption(i: BuildInput): EChartsOption {
     agg.set(k, (agg.get(k) ?? 0) + num(r[y]));
   }
   const data = [...agg.entries()].sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
-  const fmt = valueFormatter(i.rows, y);
+  const fmt = valueFormatter(i.rows, y, i.units);
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "item", formatter: (p: unknown) => {
@@ -272,8 +287,8 @@ export function pieOption(i: BuildInput): EChartsOption {
 /** Two numerics, correlation / outlier detection. */
 export function scatterOption(i: BuildInput): EChartsOption {
   const [xf, yf] = [i.x, i.ys[0]];
-  const fx = valueFormatter(i.rows, xf);
-  const fy = valueFormatter(i.rows, yf);
+  const fx = valueFormatter(i.rows, xf, i.units);
+  const fy = valueFormatter(i.rows, yf, i.units);
   return {
     ...withTitle(i.title),
     tooltip: {
@@ -295,8 +310,8 @@ export function scatterOption(i: BuildInput): EChartsOption {
 export function comboOption(i: BuildInput): EChartsOption {
   const [barF, lineF] = [i.ys[0], i.ys[1]];
   const sorted = i.rows.slice().sort((a, b) => num(b[barF]) - num(a[barF]));
-  const fb = valueFormatter(i.rows, barF);
-  const fl = valueFormatter(i.rows, lineF);
+  const fb = valueFormatter(i.rows, barF, i.units);
+  const fl = valueFormatter(i.rows, lineF, i.units);
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
@@ -307,7 +322,7 @@ export function comboOption(i: BuildInput): EChartsOption {
       { type: "value", name: fieldLabel(lineF), splitLine: { show: false }, axisLabel: { formatter: (v: number) => fl(v) } },
     ],
     series: [
-      { name: fieldLabel(barF), type: "bar", yAxisIndex: 0, data: sorted.map((r) => num(r[barF])), tooltip: { valueFormatter: (v) => fb(v) } },
+      { name: fieldLabel(barF), type: "bar", yAxisIndex: 0, barMaxWidth: 34, data: sorted.map((r) => num(r[barF])), tooltip: { valueFormatter: (v) => fb(v) } },
       { name: fieldLabel(lineF), type: "line", yAxisIndex: 1, data: sorted.map((r) => num(r[lineF])), tooltip: { valueFormatter: (v) => fl(v) } },
     ],
   };
@@ -337,7 +352,7 @@ export function heatmapOption(i: BuildInput): EChartsOption {
     if (v != null && isFinite(v)) { max = Math.max(max, v); min = Math.min(min, v); }
   }));
   const diverging = min < 0;
-  const fmt = valueFormatter(i.rows, valF);
+  const fmt = valueFormatter(i.rows, valF, i.units);
   return {
     ...withTitle(i.title),
     tooltip: { position: "top", formatter: (p: unknown) => {
@@ -365,7 +380,7 @@ export function treemapOption(i: BuildInput): EChartsOption {
   const agg = new Map<string, number>();
   for (const r of i.rows) { const k = String(r[i.x]); agg.set(k, (agg.get(k) ?? 0) + num(r[valF])); }
   const data = [...agg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([name, value]) => ({ name, value }));
-  const fmt = valueFormatter(i.rows, valF);
+  const fmt = valueFormatter(i.rows, valF, i.units);
   return {
     ...withTitle(i.title),
     tooltip: { formatter: (p: unknown) => { const o = p as { name: string; value: number }; return `${o.name}: ${fmt(o.value)}`; } },
@@ -390,7 +405,7 @@ export function paretoOption(i: BuildInput): EChartsOption {
   const cats = sorted.map(([k]) => k);
   const bars = sorted.map(([, v]) => v);
   const cum = sorted.map(([, v]) => { running += v; return running / total; });
-  const fmt = valueFormatter(i.rows, valF);
+  const fmt = valueFormatter(i.rows, valF, i.units);
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },

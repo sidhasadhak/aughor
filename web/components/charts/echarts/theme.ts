@@ -82,6 +82,13 @@ export function buildAughorTheme(t: ChartTokens): Record<string, unknown> {
     splitLine: { show: true, lineStyle: { color: t.grid, width: 1 } },
     splitArea: { show: false },
   };
+  // Data-value labels (bar ends, line points): bright text with a thin background-coloured halo so
+  // they stay legible whether they sit over a coloured bar or the dark canvas — the default ECharts
+  // label had no contrast guard, which made "0.4" hard to read against the bar tip.
+  const dataLabel = {
+    color: t.t1, fontSize: 11, fontWeight: 500, fontFamily: FONT_STACK,
+    textBorderColor: t.surface, textBorderWidth: 2.5,
+  };
   return {
     color: t.palette,
     backgroundColor: "transparent",
@@ -100,8 +107,9 @@ export function buildAughorTheme(t: ChartTokens): Record<string, unknown> {
       symbol: "circle",
       symbolSize: 6,
       smooth: false,
+      label: dataLabel,
     },
-    bar: { itemStyle: { borderRadius: [3, 3, 0, 0] } },
+    bar: { itemStyle: { borderRadius: [3, 3, 0, 0] }, label: dataLabel },
     pie: { itemStyle: { borderWidth: 1, borderColor: t.surface } },
     scatter: { symbolSize: 9 },
     legend: {

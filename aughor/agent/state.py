@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Literal, Optional
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from pydantic import BaseModel, Field, field_validator
 import operator
@@ -323,6 +323,10 @@ class InvestigationFinding(TypedDict):
     stat_note: Optional[str]  # "z-score = -2.4, significant at α=0.05"
     is_significant: bool
     trust_caveat: Optional[str]  # advisory from the trust battery (e.g. "fan-out", "impossible magnitude") — never blocks the answer
+    # Per-column display unit so every surface (chart axis, data labels, table, key numbers) formats
+    # a value the SAME way — e.g. {"metric_total": "percent"} tells the UI a rate stored as 0.4096 is
+    # "41.0%", not "0.4". Absent → the UI falls back to its column-name heuristics. Units: "percent".
+    column_units: NotRequired[dict[str, str]]
 
 
 class InvestigationPhaseResult(TypedDict):

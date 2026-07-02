@@ -56,6 +56,7 @@ interface InvestigationFinding {
   stat_note?: string;
   is_significant: boolean;
   trust_caveat?: string | null;   // advisory from the trust battery — surfaced, never blocking
+  column_units?: Record<string, string> | null;  // per-column display unit ({metric_total:"percent"})
 }
 
 interface InvestigationPhase {
@@ -148,7 +149,7 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
       {/* Chart — the framed figure */}
       {hasChart && (
         <BriefFigure caption={finding.title}>
-          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} />
+          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} columnUnits={finding.column_units} showLabels />
         </BriefFigure>
       )}
 
@@ -506,7 +507,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
           <div key={f.finding_id} className="space-y-1.5 pl-2">
             {hasChart && (
               <div className="rounded-md border border-zinc-800/60 overflow-hidden p-2" style={{ background: "var(--bg-0)" }}>
-                <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} />
+                <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} columnUnits={f.column_units} showLabels />
               </div>
             )}
             {f.key_numbers?.length > 0 && <BriefMetrics metrics={f.key_numbers} />}
