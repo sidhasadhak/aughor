@@ -17,7 +17,9 @@ from pathlib import Path
 # Lower these as offences are converted — never raise them.
 # 2026-06-27: converted 38 best-effort store/cache/registry/scheduler swallows to
 # tolerate() (AUDIT_2026-06-27.md #3), ratcheting 302 → 265.
-SILENT_SWALLOW_BASELINE = 265
+# 2026-07-03: fail-closed SQL safety gate (REC-01) converted the 2 security-path
+# `except: pass` in db/connection.py to tolerate(), ratcheting 265 → 263.
+SILENT_SWALLOW_BASELINE = 263
 PRIVATE_IMPORT_BASELINE = 22
 
 REPO = Path(__file__).parent.parent.parent

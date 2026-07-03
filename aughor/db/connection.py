@@ -75,8 +75,19 @@ def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResu
                 sql=sql,
                 verdict="suspicious",
             )
-    except Exception:
-        pass  # security failures must never break query execution
+    except Exception as exc:
+        # Fail CLOSED: a safety control that errors must DENY, not allow (SEC-02).
+        # K4-honest — the failure is observable (counter + journal), not silent.
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "safety gate errored; failing closed", counter="security.gate_error")
+        return QueryResult(
+            hypothesis_id=hypothesis_id,
+            sql=sql,
+            columns=[],
+            rows=[],
+            row_count=0,
+            error="[BLOCKED] safety check unavailable",
+        )
     return None
 
 
@@ -153,8 +164,12 @@ def _security_post(
             pii_redacted=pii_count,
             error=result.error,
         )
-    except Exception:
-        pass  # security failures must never break query execution
+    except Exception as exc:
+        # Post-exec (PII redaction / budget / audit) stays best-effort: it must
+        # NOT drop already-safe rows on a hiccup. But make the swallow observable
+        # per K4 instead of a bare pass.
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "post-exec security best-effort (PII/budget/audit)", counter="security.post_error")
     # Per-run compute metering — best-effort, no-op outside a metered run.
     try:
         from aughor.kernel import metering
@@ -676,7 +691,13 @@ class PostgresConnection(DatabaseConnection):
 
     def _connect(self):
         import psycopg2
-        self._conn = psycopg2.connect(self._dsn)
+        # Enforce read-only at the SESSION level (SEC-02 / INV-2). Aughor is a
+        # read-only analyst over Postgres; the SQL safety gate is defence-in-depth,
+        # but the connection itself must reject writes. `options=` applies BEFORE
+        # any statement runs — even under autocommit each implicit txn inherits it,
+        # so a write raises "cannot execute ... in a read-only transaction". (SET
+        # search_path is a session command, not DML, so it is still permitted.)
+        self._conn = psycopg2.connect(self._dsn, options="-c default_transaction_read_only=on")
         self._conn.autocommit = True
         # Set search_path so unqualified table names resolve to the right schema
         if self._schema_name != "public":
