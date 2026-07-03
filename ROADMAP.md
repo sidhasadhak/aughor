@@ -59,6 +59,13 @@ An **autonomous data-analysis platform** that replaces the dashboard-and-analyst
 
 Grouped by area; each ✅ is verified shipped (git + code). Representative commits/PRs in parentheses.
 
+### Security perimeter, tenancy & operational hardening — the 2026-07-03 architecture review (2026-07-03/04, PRs #93–#98)
+*A senior two-part architecture review (`docs/architecture-review-2026-07-03/`) drove a full security/ops hardening arc. Part 1 (REC-01…10) plus the tenant-enforcement + migration + lint follow-ups, delivered as **6 stacked, CI-green PRs** (≈130 new tests). Everything multi-tenant is flag-gated on `AUGHOR_REQUIRE_IDENTITY` — default off, so single-user/localhost behaviour is byte-identical.*
+- **Security (Part 1, PR #93):** fail-**closed** SQL safety gate (a gate that errors now BLOCKS, not allows); Postgres opened session-read-only; **SSRF allowlist** on outbound webhook URLs (create + send-time); **prompt-injection fencing** of untrusted DB content in LLM prompts; global exception handler (no stack leaks); a **request-identity + object-level-authz seam** (`security/authz.py`, owner-checks on by-id routes); gated `/llm/config`; `Idempotency-Key` on create endpoints.
+- **Data layer:** every SQLite store tuned (WAL + `busy_timeout`) and made test-isolated; a real **versioned migration framework** (`db/migrations.py`, `PRAGMA user_version`, forward-only + additive) that all migrating stores + the kernel ledger now run through (**DATA-05**, PRs #95/#96).
+- **Tenancy (DATA-06, PRs #94/#98):** org-scoping enforced on the connections + investigations read paths; a pure-ASGI **`_OrgContextMiddleware`** that actually binds `current_org_id()` to the request (a latent bug — the prior dependency-based binding never reached handlers); and kernel jobs re-bind their own org at execution (survives restart/boot-recovery).
+- **Ops (PRs #93/#97):** first-ever **CI** (`.github/workflows/ci.yml` — pytest + `tsc`), now with **ruff at zero and blocking** (a sane ruleset that also surfaced + fixed 5 real latent `NameError`s); first `PRAGMA user_version` schema markers.
+
 ### Deep Analysis report quality — grain · consistent %s · adaptive charts (2026-07-03, branch `2026-07-02-ada-temporal-intake-grain`)
 *A live-grounded arc: reading the womenswear-returns report exposed a chain of correctness + rendering bugs, each fixed at the root and verified on a fresh run. Full suite green; docs: [`docs/CHART_SELECTION_GUIDE.md`](docs/CHART_SELECTION_GUIDE.md).*
 - ✅ **Temporal-feasibility into `ada_intake`** — the event-rate-aware axis finder (`_resolve_temporal_axis`) runs at intake (conn-bound), so EVERY path recovers a join-reachable purchase date instead of declaring the metric non-temporal (the metric sits on a dateless child table; the parent order date is join-reachable). A "what drove the change" question no longer misroutes to cross-sectional.
@@ -298,6 +305,14 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 ## 3 · What's left
 
 Verified pending against code/git. `⬜` not started · `◑` partial.
+
+### ▶ Architecture-review hardening — remaining (next up; source: [`docs/architecture-review-2026-07-03/`](docs/architecture-review-2026-07-03/))
+*Part 1 (REC-01…10) + DATA-05/06 + the tenancy/lint follow-ups shipped as PRs #93–#98 (merged). What the review scoped but we deliberately left for a focused effort:*
+- ◑ **Item 2b — react peer-dep + strict `npm ci`.** `@atlaskit/icon@35` peers react ^18 while the app is on react 19; CI currently installs with `--legacy-peer-deps`. Add an npm `overrides` block forcing one react, regenerate `web/package-lock.json`, drop the flag, and flip the frontend install strict. Bounded; needs a frontend build to verify (no runtime tests).
+- ⬜ **Item 4 — full RBAC** (the review's biggest remaining perimeter gap; REC-05 deliberately stopped at identity + owner-checks). A **multi-PR project**, phase it: **P1** role/permission model + org-scoped assignment store + `resolve_roles(principal)`; **P2** role→capability resolution replacing the flat `resolve_tier`; **P3** enforcement across the endpoint surface + admin endpoints; **P4** tests + migration. Builds on the `security/authz.py` seam + `_OrgContextMiddleware`.
+- ⬜ **DATA-06 depth** — broaden owner-checks to the remaining by-id endpoints and add `WHERE org_id` to more list/read paths (canvas/monitors/briefs), then org-bind the remaining background schedulers.
+- ⬜ **Part 2 of the review — UI/design layer, nomenclature, eight-plane architecture — entirely untouched.** Design-layer lint gate (REC-U1, radius/type tokens), primitive consolidation + delete the orphaned off-brand `ui/`, `Brief*`-canonical report migration, a **renderer registry** (the gen-UI gap), `<Workspace>` generalization; the noun model (kill the `ADA` leak across 47 files, `AnswerReport`/`Fact` bases, one `SemanticContract`); and re-drawing the runtime as **eight functional planes** with a governance spine. See [`PART-2-uiux-nomenclature-and-layering.md`](docs/architecture-review-2026-07-03/PART-2-uiux-nomenclature-and-layering.md).
+- ⬜ *Small follow-ups:* keep ruff at zero (now blocking + pinned); the explorer diversity-nudge `domain_table_cols` dormant bug (noqa'd, tracked); convert base-only stores to the migration framework as they gain their first migration.
 
 ### ▶ Platform ↔ Agent separation — follow-ons (branch `2026-06-29-platform-agent-separation`)
 *The logical boundary is shipped + enforced ([`docs/PLATFORM_AGENT_SEPARATION.md`](docs/PLATFORM_AGENT_SEPARATION.md)). The remaining moves are now cheap given the boundary.*

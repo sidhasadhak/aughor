@@ -172,8 +172,19 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   so a report can't show 40% (per order) and 76% (per line-item) for one rate. Both fan-outs run over `ContextThreadPoolExecutor` (so the metering
   accumulator + P6 budget propagate), with budget-abort, failure isolation, serial fallback and deterministic
   merge; in-phase dimension queries already run in parallel. See `docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`.
-- **Org / workspace tenancy isolation** (data-path scoped), **licensing tiers** (Free/Pro/Enterprise,
-  402 → upsell), **governed-intelligence MCP server**, time-to-first-insight instrumentation.
+- **Org / workspace tenancy** — `org_id` on every store, and (flag-gated on `AUGHOR_REQUIRE_IDENTITY`, default
+  off) **enforced on the read path**: a request-identity + object-level-authz seam (`security/authz.py` — a
+  `Principal`, owner-checks on by-id routes), org-scoped `list_connections` / investigation history, a pure-ASGI
+  `_OrgContextMiddleware` that binds `current_org_id()` to the request, and kernel jobs that re-bind their own
+  org at execution (survives restart/boot-recovery). **licensing tiers** (Free/Pro/Enterprise, 402 → upsell),
+  **governed-intelligence MCP server**, time-to-first-insight instrumentation.
+- **Security perimeter** — a **fail-closed** SQL safety gate (an errored gate BLOCKS, never allows),
+  Postgres opened session-read-only, an **SSRF allowlist** on outbound webhook URLs (create + send-time),
+  **prompt-injection fencing** of untrusted DB content fed to the LLM, a global exception handler (no stack
+  leaks), gated inference-config, and `Idempotency-Key` on create endpoints.
+- **Versioned schema migrations** — a forward-only, additive `run_migrations` framework keyed on
+  `PRAGMA user_version` (`db/migrations.py`); every migrating store + the kernel ledger run through it, and every
+  SQLite store is tuned (WAL + `busy_timeout`) and test-isolated.
 
 ## 13. Quality bar & engineering discipline
 
@@ -183,6 +194,9 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 - **Fail-graceful-by-contract** — never a 500 / hang / silent-wrong-success.
 - **No silent failures** — the only legal way to swallow an exception is `tolerate()` (logged + counted +
   journaled), enforced by a test ratchet that can only go down.
+- **CI gate** (`.github/workflows/ci.yml`) — pytest (`not e2e/eval`) + frontend `tsc --noEmit` on every PR,
+  plus **ruff at zero and blocking** (pinned; a sane ruleset that surfaced + fixed several real latent
+  `NameError`s). ~2,300 tests; the suite is fully store-isolated so it can never mutate live data.
 - **Verification substrate (Bet 0)** + **Specialist Agents** (Domain Expertise Packs) + ongoing audit hardening.
 
 ---
