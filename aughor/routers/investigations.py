@@ -8,7 +8,7 @@ import os
 import re
 from typing import AsyncGenerator, Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -25,6 +25,7 @@ from aughor.db.history import (
     save_chat_turn,
 )
 from aughor.db.registry import BUILTIN_ID
+from aughor.security.authz import get_principal
 from aughor.routers._shared import (
     explorers_for_connection as _explorers_for_connection,
     get_schema_cached as _get_schema_cached,
@@ -2720,7 +2721,9 @@ def get_indexed_ids():
 
 
 @router.get("/investigations/{inv_id}")
-def get_investigation_detail(inv_id: str):
+def get_investigation_detail(inv_id: str, principal=Depends(get_principal)):
+    from aughor.security.authz import check_owner
+    check_owner("investigation", inv_id, principal)  # SEC-05: no cross-org read
     inv = get_investigation(inv_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Investigation not found")
@@ -2728,14 +2731,17 @@ def get_investigation_detail(inv_id: str):
 
 
 @router.get("/investigations/{inv_id}/export")
-def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False):
+def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False,
+                         principal=Depends(get_principal)):
     """Download a stored analysis as a polished PDF or PowerPoint (`format=pdf|pptx`).
 
     `narrate=true` prepends an LLM-authored executive summary (best-effort; the
     export still succeeds if the model is slow or unavailable)."""
     from fastapi.responses import Response
     from aughor.export import export_report
+    from aughor.security.authz import check_owner
 
+    check_owner("investigation", inv_id, principal)  # SEC-05: no cross-org export
     inv = get_investigation(inv_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Investigation not found")
@@ -2768,10 +2774,12 @@ def clear_investigations(workspace_id: str | None = None):
 
 
 @router.delete("/investigations/{inv_id}", status_code=204)
-def delete_investigation_endpoint(inv_id: str):
+def delete_investigation_endpoint(inv_id: str, principal=Depends(get_principal)):
     """Delete one investigation and its full footprint (history row, evidence
     claims, RAG vector entry). 404 if it doesn't exist."""
     from aughor.db.purge import purge_investigation_artifacts
+    from aughor.security.authz import check_owner
+    check_owner("investigation", inv_id, principal)  # SEC-05: no cross-org delete
     counts = purge_investigation_artifacts(inv_id)
     if not counts.get("investigations"):
         raise HTTPException(status_code=404, detail="Investigation not found")

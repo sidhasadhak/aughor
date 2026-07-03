@@ -100,13 +100,37 @@ _api_key_header = APIKeyHeader(name="X-Api-Key", auto_error=False)
 _AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json")
 
 
-def _require_auth(request: Request, key: str | None = Security(_api_key_header)) -> None:
-    if not _API_KEY:
-        return
-    if any(request.url.path.startswith(p) for p in _AUTH_EXEMPT):
-        return
-    if key != _API_KEY:
+def _require_auth(request: Request, key: str | None = Security(_api_key_header)):
+    """App-wide request gate: the shared-key front door PLUS the (flag-gated)
+    identity → org binding. A generator dependency so the org contextvar it sets
+    is reset when the request completes.
+
+    With ``AUGHOR_REQUIRE_IDENTITY`` unset (default) this is behaviourally identical
+    to the old key-only check — no principal is resolved and the org stays DEFAULT.
+    """
+    exempt = any(request.url.path.startswith(p) for p in _AUTH_EXEMPT)
+    # 1. Shared-secret front door (unchanged): coarse lock when exposed beyond localhost.
+    if _API_KEY and not exempt and key != _API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    # 2. Identity → org binding (SEC-01). Off by default; exempt paths (health/docs)
+    #    never require identity.
+    from aughor.security.authz import require_identity_enabled, resolve_principal
+    if exempt or not require_identity_enabled():
+        yield
+        return
+
+    principal = resolve_principal(request)
+    if principal is None:
+        raise HTTPException(status_code=401, detail="identity required (missing X-Aughor-Org)")
+
+    from aughor.org.context import reset_org_id, set_org_id
+    request.state.principal = principal
+    token = set_org_id(principal.org_id)
+    try:
+        yield
+    finally:
+        reset_org_id(token)
 
 
 app = FastAPI(title="Aughor API", lifespan=_lifespan, dependencies=[Depends(_require_auth)])
@@ -121,6 +145,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Global exception handler (SEC-06) ───────────────────────────────────────────
+# ~50 endpoints did `raise HTTPException(500, detail=str(e))`, leaking internal
+# exception text (and there was no catch-all). This handler catches only genuinely
+# UNHANDLED exceptions — Starlette routes HTTPException/validation errors to their
+# own handlers first, so intended 4xx/5xx responses are untouched. Clients get a
+# stable `{error, request_id}`; the traceback stays server-side, correlatable by id.
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: "Request", exc: Exception):
+    import uuid as _uuid
+
+    from fastapi.responses import JSONResponse
+    request_id = str(_uuid.uuid4())
+    logger.exception("Unhandled error [%s] on %s %s", request_id, request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"error": "internal_error", "request_id": request_id})
 
 
 

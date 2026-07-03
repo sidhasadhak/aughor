@@ -6,11 +6,21 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 
-router = APIRouter(tags=["canvas"])
+def _canvas_owner_guard(request: Request) -> None:
+    """Object-level authz (SEC-05): a by-id canvas route is reachable only by the
+    org that owns the canvas's connection. No-op on routes without a ``canvas_id``
+    (list/create/suggest-name) and in localhost mode (identity off)."""
+    from aughor.security.authz import check_owner, get_principal
+    canvas_id = request.path_params.get("canvas_id")
+    if canvas_id:
+        check_owner("canvas", canvas_id, get_principal(request))
+
+
+router = APIRouter(tags=["canvas"], dependencies=[Depends(_canvas_owner_guard)])
 
 # Per-Canvas instruction store (keyed by canvas_id). Kept separate from the
 # connection-level instructions file so Canvases scoped to the same connection

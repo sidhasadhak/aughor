@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from aughor.licensing import Capability, gate
 from aughor.llm import provider as _provider
 
 router = APIRouter(tags=["llm"])
@@ -29,9 +30,15 @@ class _ConfigPatch(BaseModel):
     keys: Optional[dict] = None         # {groq?, together?, anthropic?}  ("" clears, masked = unchanged)
 
 
-@router.post("/llm/config")
+@router.post("/llm/config", dependencies=[gate(Capability.SECURITY_SUITE)])
 def set_llm_config(patch: _ConfigPatch):
-    """Merge a partial config and reload live providers. Returns the new config."""
+    """Merge a partial config and reload live providers. Returns the new config.
+
+    Gated (SEC-10): changing the inference backend / models / API keys is an
+    admin-grade action — an ungated caller could pivot all inference to an
+    attacker endpoint (exfil) or set keys. Default tier is enterprise, so this is
+    a no-op today; it becomes real the moment lower tiers exist.
+    """
     try:
         return _provider.set_config(patch.model_dump(exclude_none=True))
     except ValueError as e:
