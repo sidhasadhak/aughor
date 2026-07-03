@@ -18,7 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from aughor.db.sqlite_util import resolve_db_path, tune
+from aughor.db.sqlite_util import resolve_db_path, set_user_version, tune
+from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,7 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
         "session_id TEXT",
         "canvas_id TEXT",          # Sprint 21 — nullable; set when launched via Canvas
         "origin_insight_id TEXT",  # the briefing finding this investigation drilled (provenance)
+        f"org_id TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'",  # DATA-06 tenant key
     ]:
         try:
             c.execute(f"ALTER TABLE investigations ADD COLUMN {col}")
@@ -103,6 +105,8 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             # NOT a tolerated failure, so it debug-logs rather than journaling an event
             # (which would pollute the investigation event spine).
             logger.debug("ALTER TABLE investigations ADD COLUMN %s: %s", col, exc)
+    # Schema v2 = base + the additive migrations above, incl. the org_id tenant key.
+    set_user_version(c, 2)
     # Backfill status for pre-status rows
     c.execute("""
         UPDATE investigations SET status = 'complete'
@@ -126,9 +130,9 @@ def create_investigation(
     c = _conn()
     _ensure_schema(c)
     c.execute(
-        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status) "
-        "VALUES (?,?,?,?,?,?)",
-        (inv_id, question, connection_id, canvas_id, _now(), "running"),
+        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (inv_id, question, connection_id, canvas_id, _now(), "running", current_org_id()),
     )
     c.commit()
     c.close()
@@ -268,12 +272,12 @@ def save_chat_turn(
         """INSERT INTO investigations
            (id, question, connection_id, canvas_id, started_at, completed_at,
             status, hypothesis_count, query_count, headline,
-            report_json, kind, session_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            report_json, kind, session_id, org_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (inv_id, question, connection_id, canvas_id, now, now,
          "complete", 0, 1, headline,
          json.dumps(report),
-         "chat", sid),
+         "chat", sid, current_org_id()),
     )
     c.commit()
     c.close()
@@ -567,22 +571,28 @@ def list_investigations(limit: int = 50) -> list[dict]:
     c = _conn()
     _ensure_schema(c)
 
+    # DATA-06: when identity is enforced, a caller sees only their own org's history.
+    # current_org_id() is reliable here — _OrgContextMiddleware binds it for the
+    # request. No-op (empty clause) in localhost mode.
+    from aughor.security.authz import require_identity_enabled
+    _org, _op = (" AND org_id = ?", [current_org_id()]) if require_identity_enabled() else ("", [])
+
     # Non-chat rows (investigations)
     inv_rows = c.execute(
-        """SELECT id, question, connection_id, canvas_id, started_at, completed_at,
+        f"""SELECT id, question, connection_id, canvas_id, started_at, completed_at,
                   status, hypothesis_count, query_count, headline,
                   COALESCE(kind, 'investigation') as kind,
                   NULL as session_id
            FROM investigations
-           WHERE kind IS NULL OR kind = 'investigation'
+           WHERE (kind IS NULL OR kind = 'investigation'){_org}
            ORDER BY started_at DESC
            LIMIT ?""",
-        (limit,),
+        (*_op, limit),
     ).fetchall()
 
     # Chat turns grouped by session_id
     session_rows = c.execute(
-        """SELECT
+        f"""SELECT
                session_id as id,
                MIN(question) as question,
                connection_id,
@@ -596,19 +606,21 @@ def list_investigations(limit: int = 50) -> list[dict]:
                session_id,
                MAX(canvas_id) as canvas_id
            FROM investigations
-           WHERE kind = 'chat' AND session_id IS NOT NULL AND session_id != ''
+           WHERE kind = 'chat' AND session_id IS NOT NULL AND session_id != ''{_org}
            GROUP BY session_id, connection_id
            ORDER BY started_at DESC""",
+        (*_op,),
     ).fetchall()
 
     # Also pick up legacy chat rows without a session_id (treat each as own session)
     legacy_rows = c.execute(
-        """SELECT id, question, connection_id, started_at, completed_at,
+        f"""SELECT id, question, connection_id, started_at, completed_at,
                   'complete' as status, 0 as hypothesis_count, 1 as query_count,
                   headline, 'chat' as kind, id as session_id, canvas_id
            FROM investigations
-           WHERE kind = 'chat' AND (session_id IS NULL OR session_id = '')
+           WHERE kind = 'chat' AND (session_id IS NULL OR session_id = ''){_org}
            ORDER BY started_at DESC""",
+        (*_op,),
     ).fetchall()
 
     c.close()

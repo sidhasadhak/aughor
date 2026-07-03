@@ -72,3 +72,44 @@ def test_identity_required_returns_401_without_header(client, monkeypatch):
     monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
     r = client.get("/connections")  # no X-Aughor-Org
     assert r.status_code == 401
+
+
+def test_investigations_carry_org_id_and_version():
+    from aughor.db.history import _conn, _ensure_schema
+
+    c = _conn()
+    _ensure_schema(c)
+    try:
+        cols = {r[1] for r in c.execute("PRAGMA table_info(investigations)").fetchall()}
+        assert "org_id" in cols, "investigations table gained the tenant key"
+        assert c.execute("PRAGMA user_version").fetchone()[0] >= 2
+    finally:
+        c.close()
+
+
+def test_investigation_history_is_org_scoped(monkeypatch):
+    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    from aughor.db import history
+    from aughor.org.context import using_org
+
+    with using_org("orgA"):
+        ia = history.create_investigation("why did orgA revenue drop", "fixture")
+    with using_org("orgB"):
+        ib = history.create_investigation("why did orgB revenue drop", "fixture")
+
+    with using_org("orgA"):
+        ids_a = {r["id"] for r in history.list_investigations(limit=200)}
+    assert ia in ids_a, "an org sees its own investigations"
+    assert ib not in ids_a, "an org must NOT see another org's investigations"
+
+
+def test_investigation_history_unfiltered_in_localhost_mode(monkeypatch):
+    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
+    from aughor.db import history
+    from aughor.org.context import using_org
+
+    with using_org("orgA"):
+        ia = history.create_investigation("localhost-visible", "fixture")
+    with using_org("orgB"):
+        ids = {r["id"] for r in history.list_investigations(limit=200)}
+    assert ia in ids, "identity off → history is not org-filtered"
