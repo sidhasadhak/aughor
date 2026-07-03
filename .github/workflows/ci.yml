@@ -56,14 +56,14 @@ jobs:
   lint:
     name: Backend · ruff (advisory)
     runs-on: ubuntu-latest
-    # Advisory only: the codebase currently has ~280 lint findings, so this is NOT
-    # a blocking gate yet. It surfaces the count on each PR; flip `continue-on-error`
-    # to false once the baseline is driven to zero.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - name: Ruff check
+        # Advisory only: the codebase currently has ~280 lint findings, so this is
+        # NOT a blocking gate yet. continue-on-error keeps the job green while the
+        # findings stay visible in the log; drop it to enforce once the baseline is 0.
+        continue-on-error: true
         run: uvx ruff check .
