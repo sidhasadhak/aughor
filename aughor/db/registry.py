@@ -77,6 +77,9 @@ def _db() -> sqlite3.Connection:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(connections)").fetchall()}
     if "org_id" not in cols:
         conn.execute(f"ALTER TABLE connections ADD COLUMN org_id TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'")
+    # Schema v2 = base + the org_id migration (REC-10c: bump the marker per migration).
+    from aughor.db.sqlite_util import set_user_version
+    set_user_version(conn, 2)
     conn.commit()
     return conn
 

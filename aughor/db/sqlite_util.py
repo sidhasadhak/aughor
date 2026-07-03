@@ -23,6 +23,23 @@ from pathlib import Path
 
 BUSY_TIMEOUT_MS = 5000
 
+# Forward-only schema-version baseline (REC-10c / DATA-05 prep). Every tuned store
+# reports at least this; a store that ships a schema migration bumps its own marker
+# explicitly via set_user_version(). Nothing consumes these yet — the point is to
+# establish the convention before a migration framework needs it.
+_BASELINE_USER_VERSION = 1
+
+
+def set_user_version(conn: sqlite3.Connection, version: int) -> sqlite3.Connection:
+    """Stamp a store's ``PRAGMA user_version`` (the SQLite schema-version marker).
+
+    Call from a store's schema-ensure and BUMP the number whenever a migration
+    changes that store's schema — the forward-only convention a future migration
+    framework will read. ``version`` is coerced to int (PRAGMA takes no bind param).
+    """
+    conn.execute(f"PRAGMA user_version={int(version)}")
+    return conn
+
 
 def resolve_db_path(env_var: str, default: Path | str) -> Path:
     """Resolve a store's SQLite path, honouring an ``AUGHOR_*_DB`` env override.
@@ -45,4 +62,9 @@ def tune(conn: sqlite3.Connection) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     conn.execute("PRAGMA synchronous=NORMAL")
+    # Stamp a baseline schema version on first touch so every store reports a
+    # nonzero user_version (REC-10c). Only stamps when unset — never downgrades a
+    # store that set a higher version via a migration (set_user_version).
+    if conn.execute("PRAGMA user_version").fetchone()[0] == 0:
+        conn.execute(f"PRAGMA user_version={_BASELINE_USER_VERSION}")
     return conn

@@ -56,6 +56,28 @@ def test_tune_sets_the_expected_pragmas(tmp_path):
     conn = tune(sqlite3.connect(tmp_path / "t.db"))
     assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
     assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    # REC-10c: a baseline schema version is stamped (nonzero after tune).
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+
+
+def test_user_version_baseline_and_explicit_bump(tmp_path):
+    from aughor.db.sqlite_util import set_user_version
+
+    p = tmp_path / "v.db"
+    conn = tune(sqlite3.connect(p))
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 1  # baseline
+    set_user_version(conn, 3)  # a migration bumps it
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+    # tune must NOT downgrade an already-migrated store.
+    tune(conn)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+
+
+def test_registry_reports_migrated_schema_version():
+    """The registry ships an org_id migration → its marker is bumped past baseline."""
+    from aughor.db.registry import _db
+    with _db() as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] >= 2
 
 
 def test_every_store_is_isolated_from_live_data():
@@ -79,6 +101,7 @@ def test_every_store_is_isolated_from_live_data():
     from aughor.verify import verdicts
     from aughor.packs import deltastore, bindings
     from aughor.agent import graph
+    from aughor.util import idempotency
 
     live_data = (_P(__file__).parent.parent.parent / "data").resolve()
     stores = {
@@ -98,6 +121,7 @@ def test_every_store_is_isolated_from_live_data():
         "pack_deltas": deltastore._DB_PATH,
         "pack_bindings": bindings._DB_PATH,
         "checkpoints": graph._CHECKPOINT_DB,
+        "idempotency": idempotency._DB_PATH,
     }
     leaked = {n: str(p) for n, p in stores.items()
               if live_data in _P(p).resolve().parents}
