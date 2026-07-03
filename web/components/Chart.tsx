@@ -25,11 +25,11 @@ import { effectiveChartPalette } from "@/lib/orgSettings";
 import { useOrgSettings } from "@/lib/useOrgSettings";
 import { EChart } from "@/components/charts/echarts/EChart";
 import {
-  lineOption, multiLineOption, barOption, groupedBarOption, stackedBarOption,
+  lineOption, multiLineOption, smallMultiplesOption, barOption, groupedBarOption, stackedBarOption,
   pieOption, scatterOption, comboOption, heatmapOption, treemapOption, paretoOption,
 } from "@/components/charts/echarts/builders";
 import {
-  DATE_COL, SHARE_COL, CHANGE_METRIC_COL, TIME_LABEL_COL, isNumeric, firstNonNull,
+  SHARE_COL, CHANGE_METRIC_COL, TIME_LABEL_COL, INSTRUMENTATION_COL, PREFER_COL, classifyColumns,
 } from "@/components/charts/columnRoles";
 import { scoreDualAxis } from "@/components/charts/chartTypeInference";
 
@@ -93,8 +93,6 @@ function applyCustom(option: EChartsOption, custom?: ChartCustom | null): EChart
   return o;
 }
 
-const DATE_VALUE_RE = /^\d{4}-\d{2}(-\d{2})?/;
-
 export function Chart({
   columns,
   rows,
@@ -105,6 +103,7 @@ export function Chart({
   showLabels: showLabelsProp,
   custom = null,
   heightScale = 1,
+  columnUnits,
   onSelect,
 }: {
   columns: string[];
@@ -122,6 +121,9 @@ export function Chart({
   showLabels?: boolean;
   /** User styling overrides applied as a post-pass over the option. */
   custom?: ChartCustom | null;
+  /** Authoritative per-column display unit from the backend finding ({"metric_total":"percent"}),
+   *  so a rate renders "41.0%" on the axis + labels instead of the raw "0.4". */
+  columnUnits?: Record<string, string> | null;
 }) {
   const outerRef = useRef<HTMLDivElement>(null);
   const instRef = useRef<{ getDataURL: (o?: { type?: string; pixelRatio?: number; backgroundColor?: string }) => string } | null>(null);
@@ -172,27 +174,17 @@ export function Chart({
       Object.fromEntries(columns.map((c, i) => [c, (r as unknown[])[i]])),
     );
 
-    const looksLikeDate = (colIdx: number) => {
-      const v = firstNonNull(rows, colIdx);
-      return typeof v === "string" && DATE_VALUE_RE.test(v);
-    };
-    const isDead = (i: number) =>
-      rows.every((r) => { const v = (r as unknown[])[i]; return v === null || v === undefined || v === "" || v === "NULL"; });
-
-    const dateCol =
-      columns.find((c, i) => DATE_COL.test(c) && !isDead(i)) ||
-      columns.find((c, i) => !isDead(i) && !isNumeric(firstNonNull(rows, i)) && looksLikeDate(i));
-    const catCols = columns.filter(
-      (c, i) => c !== dateCol && !DATE_COL.test(c) && !isDead(i) && !isNumeric(firstNonNull(rows, i)),
-    );
-    const PREFER_COL = /(pct|percent|share|rate|ratio|proportion)/i;
-    const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && !isDead(i) && isNumeric(firstNonNull(rows, i)));
+    // Column roles from the ONE shared classifier (columnRoles.classifyColumns) — date / numeric /
+    // category — so this renderer and chartTypeInference can never disagree on what a column is.
+    const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows);
+    const dateCol = dateIdxs.length ? columns[dateIdxs[0]] : undefined;
+    const catCols = catIdxs.map((i) => columns[i]);
+    const numericCols = numericIdxs.map((i) => columns[i]);
     // Instrumentation columns exist only to make a metric auditable — the numerator/denominator a
-    // ratio is built from, or a bare row-count `n`. They are never the answer, so they must not be
-    // picked as a chart measure (charting `numerator_total` is what made an AOV finding render as a
-    // giant SUM bar with the actual ratio hidden). Exclude them from measure selection; fall back to
-    // the full set only if filtering would leave nothing to plot.
-    const INSTRUMENTATION_COL = /(^|_)(numerator|denominator)(_total)?$|^n$/i;
+    // ratio is built from, or a bare row-count `n`/`event_count`. They are never the answer, so they
+    // must not be picked as a chart measure (charting `numerator_total` is what made an AOV finding
+    // render as a giant SUM bar with the actual ratio hidden). `INSTRUMENTATION_COL` is the shared
+    // pattern from columnRoles. Exclude them; fall back to the full set only if that leaves nothing.
     const _filteredNum = numericCols.filter((c) => !INSTRUMENTATION_COL.test(c));
     const chartNumericCols = _filteredNum.length ? _filteredNum : numericCols;
     const _isChangeMetric = numericCols.some((c) => CHANGE_METRIC_COL.test(c));
@@ -256,68 +248,76 @@ export function Chart({
     // 1. Backend chart config
     if (hasBackendConfig && backendHint) {
       const xF = ccX!, yF = ccY!;
-      if (backendHint === "combo" && ccY2) { option = comboOption({ rows: data, x: xF, ys: [yF, ccY2] }); defaultH = 350; }
+      if (backendHint === "combo" && ccY2) { option = comboOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF, ccY2] }); defaultH = 350; }
       else if (backendHint === "line" || backendHint === "multi_line") {
         option = ccColor
-          ? multiLineOption({ rows: data, x: xF, ys: [yF], color: ccColor, xKind: "time" })
-          : lineOption({ rows: data, x: xF, ys: [yF], xKind: "time" });
+          ? multiLineOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF], color: ccColor, xKind: "time" })
+          : lineOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF], xKind: "time" });
         defaultH = 350;
       }
-      else if (backendHint === "bar" || backendHint === "bar_horizontal") { option = barOption({ rows: data, x: xF, ys: [yF], labels: lbls }); defaultH = 350; }
-      else if (backendHint === "scatter") { option = scatterOption({ rows: data, x: xF, ys: [yF] }); defaultH = 350; }
-      else if (backendHint === "pie") { option = pieOption({ rows: data, x: xF, ys: [yF] }); defaultH = 350; }
+      else if (backendHint === "bar" || backendHint === "bar_horizontal") { option = barOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF], labels: lbls }); defaultH = 350; }
+      else if (backendHint === "scatter") { option = scatterOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF] }); defaultH = 350; }
+      else if (backendHint === "pie") { option = pieOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF] }); defaultH = 350; }
     }
 
     // 2. Pie (explicit)
-    if (!option && hint === "pie" && catCol) { option = pieOption({ rows: data, x: catCol, ys: [numCol], labels: lbls }); defaultH = 240; }
+    if (!option && hint === "pie" && catCol) { option = pieOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }); defaultH = 240; }
     // 3. Pareto (explicit or concentration-upgrade)
-    if (!option && wantPareto && paretoCat && paretoMeasure) { option = paretoOption({ rows: data, x: paretoCat, ys: [paretoMeasure] }); defaultH = 320; }
+    if (!option && wantPareto && paretoCat && paretoMeasure) { option = paretoOption({ rows: data, units: columnUnits ?? undefined, x: paretoCat, ys: [paretoMeasure] }); defaultH = 320; }
     // 4. Heatmap (explicit hint only; never for change metrics)
     if (!option && hint === "heatmap" && !_isChangeMetric && catCol) {
       const xSrc = dateCol ?? catCol2;
-      if (xSrc) { option = heatmapOption({ rows: data, x: xSrc, color: catCol, ys: [numCol], xKind: dateCol ? "time" : "category" }); defaultH = Math.max(220, Math.min(_stackUnique * 18 + 80, 600)); }
+      if (xSrc) { option = heatmapOption({ rows: data, units: columnUnits ?? undefined, x: xSrc, color: catCol, ys: [numCol], xKind: dateCol ? "time" : "category" }); defaultH = Math.max(220, Math.min(_stackUnique * 18 + 80, 600)); }
     }
     // 5. Multi-line (explicit)
-    if (!option && hint === "multi_line" && catCol && dateCol) { option = multiLineOption({ rows: data, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
+    if (!option && hint === "multi_line" && catCol && dateCol) { option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
     // 6. Treemap (explicit)
-    if (!option && hint === "treemap" && catCol) { option = treemapOption({ rows: data, x: catCol, ys: [numCol] }); defaultH = 340; }
+    if (!option && hint === "treemap" && catCol) { option = treemapOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol] }); defaultH = 340; }
     // 7. Change metric over time (auto) → multi-line of the delta
-    if (!option && hint === "auto" && _isChangeMetric && catCol && dateCol) { option = multiLineOption({ rows: data, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
-    // 8. Stacked bar (explicit, or auto date/cat with ≤6 series)
+    if (!option && hint === "auto" && _isChangeMetric && catCol && dateCol) { option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
+    // 8. Stacked bar (explicit, or auto date/cat with ≤6 series). A SHARE measure → 100%-stacked
+    //    (composition shift over time); an absolute measure stacks by volume.
     if (!option && (hint === "stacked_bar" || (hint === "auto" && catCol && (catCol2 || dateCol) && !_isChangeMetric && _stackUnique <= 6))) {
       const x = dateCol ?? catCol;
       const color = dateCol ? catCol : catCol2;
-      if (x && color) { option = stackedBarOption({ rows: data, x, ys: [numCol], color, xKind: dateCol ? "time" : "category" }); defaultH = 280; }
+      if (x && color) { option = stackedBarOption({ rows: data, units: columnUnits ?? undefined, x, ys: [numCol], color, xKind: dateCol ? "time" : "category" }, SHARE_COL.test(numCol)); defaultH = 280; }
     }
-    // 9. Temporal multi-line (auto, many series)
-    if (!option && hint === "auto" && dateCol && catCol && !_isChangeMetric) { option = multiLineOption({ rows: data, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
+    // 8b. Small multiples — a many-group trend (auto date/cat with >6 series, or explicit): a grid of
+    //     mini lines beats a spaghetti multi-line. Explicit hint always; auto only past the stack cap.
+    if (!option && (hint === "small_multiples" || (hint === "auto" && dateCol && catCol && !_isChangeMetric && _stackUnique > 6))
+        && dateCol && catCol) {
+      option = smallMultiplesOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" });
+      defaultH = Math.max(260, Math.min(Math.ceil(Math.min(_stackUnique, 9) / (_stackUnique <= 4 ? 2 : 3)) * 140 + 20, 560));
+    }
+    // 9. Temporal multi-line (auto, ≤6 series)
+    if (!option && hint === "auto" && dateCol && catCol && !_isChangeMetric) { option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
     // 10. Date bar (date + measure, no category)
-    if (!option && dateCol && !catCol && (hint === "bar" || hint === "bar_horizontal")) { option = barOption({ rows: data, x: dateCol, ys: [numCol], xKind: "time", labels: true }, { order: "time" }); defaultH = 220; }
+    if (!option && dateCol && !catCol && (hint === "bar" || hint === "bar_horizontal")) { option = barOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: true }, { order: "time" }); defaultH = 220; }
     // 11. Line / area (timeseries)
-    if (!option && dateCol && !catCol && (hint === "line" || hint === "area" || hint === "auto")) { option = lineOption({ rows: data, x: dateCol, ys: [numCol], xKind: "time", labels: lbls }, hint === "area"); defaultH = 220; }
+    if (!option && dateCol && !catCol && (hint === "line" || hint === "area" || hint === "auto")) { option = lineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: lbls }, hint === "area"); defaultH = 220; }
     // 12. Vertical bar (explicit)
-    if (!option && catCol && hint === "bar_vertical") { option = barOption({ rows: data, x: catCol, ys: [numCol], labels: lbls }, { order: isTimeLabel ? "keep" : "value" }); defaultH = 260; }
+    if (!option && catCol && hint === "bar_vertical") { option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }, { order: isTimeLabel ? "keep" : "value" }); defaultH = 260; }
     // 13. Scatter (explicit)
-    if (!option && hint === "scatter" && numericCols.length >= 2) { option = scatterOption({ rows: data, x: numericCols[0], ys: [numericCols[1]] }); defaultH = 300; }
+    if (!option && hint === "scatter" && numericCols.length >= 2) { option = scatterOption({ rows: data, units: columnUnits ?? undefined, x: numericCols[0], ys: [numericCols[1]] }); defaultH = 300; }
     // 14. Categorical default → combo / grouped / change-bar / horizontal bar
     if (!option && catCol) {
       if (chartNumericCols.length >= 2 && catCols.length === 1) {
         const numericIdxs = chartNumericCols.map((n) => columns.indexOf(n)).filter((i) => i >= 0);
         const d = scoreDualAxis(columns, rows, numericIdxs);
         const primary = columns[d.barIdx] ?? chartNumericCols[0];
-        if (d.combo && d.lineIdx != null) { option = comboOption({ rows: data, x: catCol, ys: [primary, columns[d.lineIdx]] }); defaultH = 350; }
-        else if (d.groupIdxs.length >= 2) { option = groupedBarOption({ rows: data, x: catCol, ys: d.groupIdxs.map((i) => columns[i]) }); defaultH = 300; }
-        else { option = barOption({ rows: data, x: catCol, ys: [primary], labels: lbls }, { horizontal: true }); defaultH = Math.max(350, nCats * 28 + 60); }
+        if (d.combo && d.lineIdx != null) { option = comboOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [primary, columns[d.lineIdx]] }); defaultH = 350; }
+        else if (d.groupIdxs.length >= 2) { option = groupedBarOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: d.groupIdxs.map((i) => columns[i]) }); defaultH = 300; }
+        else { option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [primary], labels: lbls }, { horizontal: true }); defaultH = Math.max(110, nCats * 46 + 44); }
       } else if (_isChangeMetric) {
-        option = barOption({ rows: data, x: catCol, ys: [numCol], labels: lbls }, { horizontal: true, diverging: true });
-        defaultH = Math.max(350, nCats * 28 + 60);
+        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }, { horizontal: true, diverging: true });
+        defaultH = Math.max(110, nCats * 46 + 44);
       } else {
-        option = barOption({ rows: data, x: catCol, ys: [numCol], labels: lbls }, { horizontal: true });
-        defaultH = Math.max(350, nCats * 28 + 60);
+        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }, { horizontal: true });
+        defaultH = Math.max(110, nCats * 46 + 44);
       }
     }
     // 15. Final fallback — line on date + measure
-    if (!option && dateCol && numCol) { option = lineOption({ rows: data, x: dateCol, ys: [numCol], xKind: "time", labels: lbls }); defaultH = 350; }
+    if (!option && dateCol && numCol) { option = lineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: lbls }); defaultH = 350; }
 
     if (!option) return null;
     // Org-level chart palette (Settings ▸ Appearance) applies when the chart hasn't set
@@ -328,7 +328,7 @@ export function Chart({
       if (pal && SCHEME_PALETTES[pal]) built.color = SCHEME_PALETTES[pal];
     }
     return { option: built, defaultH };
-  }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV]);
+  }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits]);
 
   if (!built) return null;
   const chartH = Math.round((userH ?? built.defaultH) * heightScale);

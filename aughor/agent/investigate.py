@@ -801,12 +801,14 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
     return out
 
 
-def _results_to_text(results) -> str:
-    """Render a list of QueryResults as compact text for LLM interpretation."""
+def _results_to_text(results, max_rows: int = 12) -> str:
+    """Render a list of QueryResults as compact text for LLM interpretation. `max_rows` caps each
+    result; the default is small to save tokens, but a full-series phase (a temporal trend) raises it
+    so the interpreter doesn't reason over a truncated window while the chart plots every row."""
     parts = []
     for i, r in enumerate(results, 1):
         parts.append(f"--- Query {i} ---")
-        parts.append(format_result_for_llm(r, max_rows=12))
+        parts.append(format_result_for_llm(r, max_rows=max_rows))
     return "\n\n".join(parts)
 
 
@@ -1038,6 +1040,38 @@ def _metric_is_composite_ratio(metric_sql: str) -> bool:
     return False
 
 
+_PCT_LABEL_RE = re.compile(r"(rate|percent|pct|share|proportion|ratio)", re.I)
+
+
+def _metric_is_percent(metric_sql: str, metric_label: str = "", values=None) -> bool:
+    """Is the metric a PERCENTAGE (a 0–100% concept), as opposed to a plain average (avg rating,
+    AOV) or an additive total? A percentage must be displayed as "41.0%" everywhere — the signal the
+    `column_units` hint carries to the UI. True when: it's a composite ratio (SUM/SUM or *100), its
+    label/SQL names a rate/percent/share/ratio, OR (a bare AVG that) reads as a proportion in [0,1].
+    A plain AVG(rating) (values > 1, no rate-ish label) is correctly NOT a percent."""
+    if _metric_is_composite_ratio(metric_sql):
+        return True
+    if _PCT_LABEL_RE.search(f"{metric_sql or ''} {metric_label or ''}"):
+        return True
+    if values:
+        nums = [v for v in values if isinstance(v, (int, float))]
+        if nums and all(0 <= float(v) <= 1.0001 for v in nums):
+            return True
+    return False
+
+
+def _fmt_pct(v, digits: int = 1) -> str:
+    """Scale-aware percent for display: a ratio in [-1,1] is ×100 (0.4096 → "41.0%"); a value already
+    scaled to a percent (40.96) is left as-is. One canonical formatter so a rate never renders three
+    ways (chart "0.4", key number "0.41%", prose "40.96%"). Mirrors the web `formatPercent`."""
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    p = n * 100 if abs(n) <= 1.0001 else n
+    return f"{p:.{digits}f}%"
+
+
 # The cross-sectional scan defaults to a WEAKNESS frame (rank ascending, surface the lowest).
 # Some diagnostics instead seek the MAXIMUM ("which category carries the HIGHEST out-of-stock
 # burden") — for those the answer is the largest value, not the smallest, so orient the ranking
@@ -1160,7 +1194,98 @@ def _chart_ratio_primary(finding) -> None:
     finding["rows"] = [[row[i] for i in keep] for row in (finding.get("rows") or [])]
 
 
-def _fix_xsec_extreme_key_numbers(finding: dict) -> None:
+# A pie/donut stays legible for only a handful of parts; past this a ranked bar reads better.
+_PIE_MAX_SLICES = 6
+# Column-name signals used to keep the intent resolver honest about a finding's ACTUAL shape.
+_FINDING_DATE_RE = re.compile(
+    r"(?:^|_)(?:date|month|week|day|year|quarter|period|created|updated|timestamp)s?(?:_|$)|_at$|_ts$", re.I)
+_FINDING_CHANGE_RE = re.compile(
+    r"(change|delta|growth|\bmom\b|\byoy\b|\bwow\b|\bqoq\b|_chg$|_diff$|vs_prev|^prev_|_prev$|contribution)", re.I)
+
+
+def _chart_type_for_finding(finding: dict, intent: str) -> str:
+    """Pick a finding's chart from its NARRATIVE intent, VERIFIED against the data's actual shape so a
+    mislabelled intent degrades to 'auto' (frontend inference) instead of forcing a wrong chart. See
+    docs/CHART_SELECTION_GUIDE.md. Intents:
+      trend        → line — but only when a date/period column is actually present, else 'auto'.
+      composition  → a donut for a few parts-of-a-whole, a ranked bar once there are too many slices.
+      ranking      → sorted horizontal bar — but a CHANGE/contribution finding keeps 'auto' so the
+                     frontend's sign-aware diverging bar isn't flattened.
+      relationship → scatter.
+    Anything else keeps the finding's own chart_type (or 'auto')."""
+    cols = [str(c) for c in (finding.get("columns") or [])]
+    n = len([r for r in (finding.get("rows") or []) if r])
+    has_date = any(_FINDING_DATE_RE.search(c) for c in cols)
+    has_change = any(_FINDING_CHANGE_RE.search(c) for c in cols)
+    if intent == "composition":
+        return "pie" if 2 <= n <= _PIE_MAX_SLICES else "bar_horizontal"
+    if intent == "relationship":
+        return "scatter"
+    if intent == "trend":
+        return "line" if has_date else "auto"
+    if intent == "ranking":
+        return "auto" if has_change else "bar_horizontal"
+    return finding.get("chart_type") or "auto"
+
+
+def _tag_percent_columns(findings: list, match) -> None:
+    """Mark every finding column whose name matches `match` (a compiled regex) as a percent on the
+    finding's `column_units`, so the UI formats it the one consistent way. Additive; idempotent."""
+    for f in findings:
+        u = {c: "percent" for c in (f.get("columns") or []) if match.search(c)}
+        if u:
+            f["column_units"] = {**(f.get("column_units") or {}), **u}
+
+
+def _apply_percent_formatting(finding: dict, is_pct: bool) -> None:
+    """Make a percent-metric finding read consistently everywhere: tag its metric / share columns as
+    `percent` (so the chart axis + data labels format via the one scale-aware formatter) and rebuild
+    its key numbers to the canonical `41.0%` scale + precision. No-op when the metric isn't a percent
+    (so a plain-total or average finding is byte-identical). Idempotent."""
+    if not is_pct:
+        return
+    units = {c: "percent" for c in (finding.get("columns") or [])
+             if _RATIO_METRIC_COL_RE.search(c) or _SHARE_COL_RE.search(c)}
+    if units:
+        finding["column_units"] = {**(finding.get("column_units") or {}), **units}
+    _normalize_pct_key_numbers(finding)
+
+
+# Leading number of a key-number value, tolerating an approx "~" and a wrapping "(".
+_PCT_KN_LEAD_RE = re.compile(r"^\s*(~\s*)?\(?\s*(-?\d+(?:\.\d+)?)\s*(%?)")
+# A parenthetical that ONLY restates a number (± %) — the LLM's redundant "(32.8%)" duplicate. A
+# parenthetical with words ("(15,612 / 48,320 items)") or a dimension ("(Germany)") is NOT this.
+_PCT_KN_REDUNDANT_TAIL_RE = re.compile(r"^\s*\(\s*~?\s*-?\d+(?:\.\d+)?\s*%?\s*\)\s*$")
+
+
+def _normalize_pct_key_numbers(finding: dict) -> None:
+    """For a percent-unit finding, rewrite each key-number value to ONE canonical form so the section
+    values match the chart beside them. Re-derives through the single scale-aware formatter, unifying
+    scale AND precision, and collapses the LLM's redundant "value (value)" duplicates:
+      "0.41%" / "0.4096" → "41.0%";  "32.31%" → "32.3%";  "~0.328 (32.8%)" → "~32.8%";
+      "34.5%(34.5%)" → "34.5%";  "31.2%(31.3%)" → "31.2%".
+    A bare number > 1 with NO "%" is left alone (a count "5000" / an average "42.50"), and a
+    meaningful parenthetical ("(Germany)", "(15,612 / 48,320 items)") is preserved. Idempotent."""
+    for kn in finding.get("key_numbers") or []:
+        val = str(kn.get("value") or "").strip()
+        label = (kn.get("label") or "").lower()
+        if any(w in label for w in ("count", "record", "rows", "volume", "orders", "customers", "= n", " n ")):
+            continue
+        m = _PCT_KN_LEAD_RE.match(val)
+        if not m:
+            continue
+        num = float(m.group(2))
+        had_pct = m.group(3) == "%"
+        if not (had_pct or abs(num) <= 1.0001):
+            continue  # a bare count / average, not a percentage
+        approx = "~" if m.group(1) else ""
+        tail = val[m.end():]
+        if _PCT_KN_REDUNDANT_TAIL_RE.match(tail):
+            tail = ""   # drop the duplicate "(32.8%)" the LLM appended
+        kn["value"] = approx + _fmt_pct(num) + tail
+
+
+def _fix_xsec_extreme_key_numbers(finding: dict, is_pct: bool = False) -> None:
     """F4 — make the 'lowest'/'highest' key numbers agree with the finding's OWN charted rows.
     The interpret LLM occasionally reports an extreme that is not the actual min/max of the result
     set (e.g. 'highest 42.68%' when the top bar in the very same chart is 43.07%). Recompute both
@@ -1192,8 +1317,12 @@ def _fix_xsec_extreme_key_numbers(finding: dict) -> None:
 
     def _reformat(template: str, num: float, dim) -> str:
         """Replace the numeric part of the LLM's value string, preserving its unit (% / €), and
-        keep/refresh a trailing '(dimension)' so value and label stay self-consistent."""
+        keep/refresh a trailing '(dimension)' so value and label stay self-consistent. For a percent
+        metric the number is formatted scale-aware (0.4096 → "41.0%"), so it can't disagree with the
+        chart, whose axis now formats the same column the same way."""
         t = template or ""
+        if is_pct:
+            return f"{_fmt_pct(num)} ({dim})"
         unit = "%" if "%" in t else ""
         return f"{num:.2f}{unit} ({dim})"
 
@@ -1719,12 +1848,16 @@ def _render_origin_finding_section(origin: Optional[dict]) -> str:
 
 
 @_telemetry.node_span("ada_intake")
-def ada_intake(state: AgentState) -> dict:
+def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     """
     Phase 1 — Question Intake.
     Parses the question into: metric SQL, observation period, comparison period,
     date column, metric table, available dimensions.
     Returns updated state with ada_intake stored in investigation_phases[0].
+
+    `conn` (bound in the graph) lets the deterministic temporal-axis recovery below probe the
+    live DB for a join-reachable population date; it is optional and the recovery fails open
+    (falling back to the schema-string parse) when a connection isn't supplied.
     """
     from aughor.agent.prompts_investigate import INTAKE_PROMPT, IntakeOutput
 
@@ -1804,6 +1937,30 @@ def ada_intake(state: AgentState) -> dict:
         if _feas:
             intake.intake_notes = (
                 (intake.intake_notes or "").rstrip() + f" FEASIBILITY: {_feas}"
+            ).strip()
+
+    # Temporal-feasibility recovery — when the intake declares NO usable time axis, a real
+    # PURCHASE/population date may still be JOIN-REACHABLE: the metric sits on an event/child
+    # table with no date of its own (an event RATE like returns, whose only date covers the
+    # numerator), while the parent order/purchase table IS dated. Recover it deterministically
+    # so EVERY downstream path sees the true axis — the temporal-change route below, the coverage
+    # clamp, and the displayed spec — instead of NONE. (Previously only the parallel multi-lens
+    # WHEN lens recovered this, so the default/single-scan path stayed temporally blind.) Event-rate
+    # aware: `_resolve_temporal_axis` excludes the event table's own date and prefers a real
+    # date-typed column; fails open (no change) when nothing is join-reachable.
+    if intake is not None and (intake.date_column or "").strip().upper() in ("", "NONE"):
+        try:
+            _axis = _resolve_temporal_axis(state, conn, intake_data=intake.model_dump())
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "intake temporal-axis recovery best-effort", counter="ada.intake_temporal")
+            _axis = None
+        if _axis and _axis.get("date_column"):
+            intake.date_column = _axis["date_column"]
+            intake.intake_notes = (
+                f"TEMPORAL AXIS RECOVERED: the metric table carries no date of its own, but "
+                f"{_axis['date_column']} is join-reachable — trending on it instead of treating the "
+                f"question as non-temporal. " + (intake.intake_notes or "")
             ).strip()
 
     # Deterministic cross-sectional trigger — the intake LLM is unreliable at
@@ -2085,6 +2242,7 @@ def run_analysis_phase(
     preplanned=None,
     question: str = "",
     connection_id: str = "",
+    interpret_max_rows: int = 12,
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
@@ -2256,7 +2414,7 @@ def run_analysis_phase(
     results = _apply_semantic_steps(results)
 
     # Step 3 — interpret
-    results_text = _results_to_text([r for _, r in results])
+    results_text = _results_to_text([r for _, r in results], max_rows=interpret_max_rows)
     interpretation = None
     try:
         if not _has_usable_data(results):
@@ -2404,6 +2562,11 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         passes_to_next = summary
         if code_significant is None:
             code_significant = True  # unknown → assume significant, don't block
+
+    # A baseline is a metric over time → a line (intent-driven; shape-verified, so a non-temporal
+    # baseline finding safely degrades to the frontend's auto inference).
+    for _f in findings:
+        _f["chart_type"] = _chart_type_for_finding(_f, "trend")
 
     # Append sigma note to summary if available
     if code_sigma is not None:
@@ -2620,6 +2783,11 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         summary = "Metric decomposition complete."
         passes_to_next = summary
 
+    # A decomposition ranks sub-drivers → a sorted bar (a change/contribution finding keeps 'auto' so
+    # the frontend's sign-aware diverging bar isn't flattened).
+    for _f in findings:
+        _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+
     phase = _phase_result(
         "decomposition", "Metric Decomposition", "🧩",
         "complete" if any(not f["error"] for f in findings) else "partial",
@@ -2720,6 +2888,11 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         ]
         summary = "Dimensional analysis complete."
         passes_to_next = summary
+
+    # A dimensional drill-down ranks where the metric concentrates → a sorted bar; a contribution/
+    # change finding keeps 'auto' so the frontend's diverging (green/red by sign) bar is preserved.
+    for _f in findings:
+        _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
 
     phase = _phase_result(
         "dimensional", "Dimensional Analysis", "🔬",
@@ -2868,7 +3041,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                       period_directive: Optional[str] = None,
                       extra_dims: Optional[list] = None,
                       extra_schema: Optional[str] = None,
-                      extra_directive: Optional[str] = None) -> dict:
+                      extra_directive: Optional[str] = None,
+                      grain: Optional[dict] = None) -> dict:
     """Cross-sectional WEAKNESS SCAN — for diagnostic questions ("where are we
     losing money / which X is weakest") the metric has no usable time axis, so we
     rank the money metric across each available dimension to surface the lowest /
@@ -3007,6 +3181,10 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             "date-bearing table as needed to apply this filter. This is a drill INTO the flagged "
             "period, so the time filter is REQUIRED (it overrides the 'no time filters' rule)."
         )
+    # GRAIN RECONCILIATION — when the multi-lens node hands down a canonical grain, every rate-bearing
+    # lens (this WHERE scan + the WHEN trend) computes the rate at the SAME unit of observation, so the
+    # report can't show 40% (per order) in one card and 76% (per line item) in another for one concept.
+    _grain_plan = _grain_plan_directive(grain) if grain else ""
     _plan_system = (f"Write one ranking query per dimension. Rank the metric ascending (weakest first). "
                     f"{_time_rule}" + _ADA_SQL_GROUNDING)
 
@@ -3020,7 +3198,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
             metric_computation_block=metric_computation_block,
             comparison_segment_section=comparison_segment_section,
-            premise_check_section=premise_check_section) + _direction_plan + _period_plan + (extra_directive or ""),
+            premise_check_section=premise_check_section) + _direction_plan + _period_plan + (extra_directive or "") + _grain_plan,
         interpret_system=(
             "Interpret a cross-sectional ranking scan of a RATIO / percentage metric. Read "
             "metric_total AS that ratio in its own units — NEVER as a dollar total or per-record "
@@ -3085,6 +3263,11 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         ]
         summary = "Cross-sectional scan complete."
 
+    # A ratio metric that reads as a percentage (return rate, cost-%, conversion) — the value is
+    # stored as a fraction/percent that must render "41.0%" on EVERY surface. Tag the column so the
+    # chart axis, data labels, table, and key numbers all format it the one same way (approach a).
+    _metric_is_pct = is_ratio and _metric_is_percent(metric_sql, metric_label)
+
     # Make the bar plot the metric itself: for a ratio, plot metric_total (the %/rate) and drop the
     # large numerator/denominator aggregates; for an additive metric, plot the magnitude not its share.
     for f in findings:
@@ -3092,8 +3275,14 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             _chart_ratio_primary(f)
         else:
             _chart_primary_is_metric(f)
-        # F4 — key numbers must match the chart they sit beside (recompute extremes from the rows).
-        _fix_xsec_extreme_key_numbers(f)
+        # A cross-sectional scan RANKS the metric across a dimension → a sorted horizontal bar (intent-
+        # driven), not a data-shape guess that could turn a 2-numeric ratio finding into a combo.
+        f["chart_type"] = _chart_type_for_finding(f, "ranking")
+        # F4 — key numbers must match the chart they sit beside (recompute extremes from the rows),
+        # scale-aware for a percent metric so the section value can't read "0.41%" beside a "41.0%" bar.
+        _fix_xsec_extreme_key_numbers(f, is_pct=_metric_is_pct)
+        # Tag % columns + canonicalise every key number's scale/precision (no-op for non-% metrics).
+        _apply_percent_formatting(f, _metric_is_pct)
 
     # Numeric fan-out backstop — the AST chasm detectors miss some join shapes and the coder can
     # reinterpret the metric, so verify the NUMBERS on the RAW results (all columns present). Two
@@ -3199,6 +3388,51 @@ def _dim_table(dim: str) -> str:
     """The bare table name of a `schema.table.column` (or `table.column`) dimension ref."""
     parts = (dim or "").split(".")
     return parts[-2].lower() if len(parts) >= 2 else ""
+
+
+# ── Canonical grain (follow-up A: reconcile WHERE/WHY/WHEN lens grain) ─────────
+# A cross-sectional "why is the rate high" analysis can compute the SAME rate at two different
+# grains — per order (~40%) vs per line-item (~76%) — across lenses, so the report contradicts
+# itself. The metric's OWN table (the intake `metric_table`) is the canonical unit of observation
+# (the same principle the measure-additivity guards enforce); every rate-bearing lens is handed
+# this grain so they all divide by the same denominator and label the number with the same unit.
+_GRAIN_ITEM_RE = re.compile(r"(item|line|_line$|lineitem)", re.I)
+
+
+def _canonical_grain(intake_data: dict) -> Optional[dict]:
+    """The analysis's canonical grain, derived once from the intake's metric table. Returns
+    {'table': <qualified>, 'label': <human unit>} or None when no metric table is known."""
+    mt = (intake_data or {}).get("metric_table") or ""
+    if not mt:
+        return None
+    bare = _bare(mt)
+    # Human unit: an *_items / *_lines table is a line-item grain; otherwise singularise the
+    # table name (orders → order, returns → return, customers → customer).
+    if _GRAIN_ITEM_RE.search(bare):
+        label = "line item"
+    else:
+        singular = bare[:-1] if bare.lower().endswith("s") else bare
+        label = singular.replace("_", " ").strip() or bare
+    return {"table": mt, "label": label}
+
+
+def _grain_plan_directive(grain: dict) -> str:
+    """Plan-prompt directive pinning every rate to the canonical grain (so lenses agree)."""
+    if not grain:
+        return ""
+    return (
+        f"\n\nGRAIN (measure consistently across lenses): compute the rate at the {grain['label']} "
+        f"grain — one row per {grain['table']} row (denominator = COUNT(*) over {grain['table']}, or "
+        f"COUNT(DISTINCT its primary key). When you JOIN another table for a segment or a date, KEEP "
+        f"{grain['table']} as the unit of observation; do NOT collapse to a coarser grain (e.g. distinct "
+        f"orders) — every lens in this analysis reports this rate per {grain['label']}, so a different "
+        f"grain here would contradict them."
+    )
+
+
+def _grain_summary_tag(grain: dict) -> str:
+    """Short, deterministic phase-summary prefix naming the grain (e.g. '[per line item]')."""
+    return f"[per {grain['label']}]" if grain and grain.get("label") else ""
 
 
 def _is_event_dim(dim: str) -> bool:
@@ -3427,13 +3661,17 @@ def _db_typed_columns(conn: "DatabaseConnection", schema_name: str) -> dict:
         return {}
 
 
-def _resolve_temporal_axis(state: AgentState, conn: "DatabaseConnection" = None) -> Optional[dict]:
+def _resolve_temporal_axis(state: AgentState, conn: "DatabaseConnection" = None,
+                           intake_data: Optional[dict] = None) -> Optional[dict]:
     """Deterministically find a PURCHASE/population date for the metric so it can be trended over
     time — the metric table's own date, else a population/order table's date reachable by join.
     For an event-RATE metric (returns/refunds) the event table's own date is EXCLUDED (it only
-    covers the numerator). Returns {date_column, date_table, metric_table} or None. Fail-open."""
+    covers the numerator). Returns {date_column, date_table, metric_table} or None. Fail-open.
+
+    `intake_data` lets a caller pass the intake spec directly (e.g. `ada_intake`, where the spec
+    isn't in `state['_ada_intake']` yet); defaults to the state-stored spec for the lens path."""
     try:
-        intake = state.get("_ada_intake") or {}
+        intake = intake_data if intake_data is not None else (state.get("_ada_intake") or {})
         metric_table = intake.get("metric_table") or ""
         if not metric_table:
             return None
@@ -3560,15 +3798,93 @@ def _detect_anomalous_period(columns: list, rows: list) -> Optional[dict]:
         return None
 
 
-def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict) -> tuple:
+_MONTHS_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _fmt_period(v) -> str:
+    """A period value → a compact human label ("2022-07-01" / "2022-07" → "Jul 2022")."""
+    m = re.match(r"^(\d{4})-(\d{2})", str(v))
+    if m and 1 <= int(m.group(2)) <= 12:
+        return f"{_MONTHS_ABBR[int(m.group(2)) - 1]} {m.group(1)}"
+    return str(v)
+
+
+def _fix_temporal_extreme_key_numbers(finding: dict, is_pct: bool = True) -> None:
+    """Recompute a temporal trend's peak / trough / average / range key numbers from the FULL series
+    rows, so they can't disagree with the chart (which plots every row). The interpret LLM only sees a
+    capped window, so left to itself it can call a "peak" from the first year while the chart's real
+    maximum sits in a later month. Deterministic, scale-aware, best-effort."""
+    cols = [str(c) for c in (finding.get("columns") or [])]
+    rows = finding.get("rows") or []
+    kns = finding.get("key_numbers") or []
+    if len(rows) < 2 or not kns or not cols:
+        return
+
+    def _num(v):
+        try:
+            return float(str(v).replace(",", "").replace("%", "").strip())
+        except (TypeError, ValueError):
+            return None
+
+    m_idx = next((i for i, c in enumerate(cols) if _RATIO_METRIC_COL_RE.search(c)), None)
+    if m_idx is None:
+        for i, c in enumerate(cols):
+            if c.lower() in ("n", "count"):
+                continue
+            if any(_num(r[i]) is not None for r in rows if i < len(r)):
+                m_idx = i
+                break
+    if m_idx is None:
+        return
+    p_idx = next((i for i, c in enumerate(cols) if i != m_idx and (_FINDING_DATE_RE.search(c) or "period" in c.lower())), 0)
+    pts = [(_num(r[m_idx]), r[p_idx]) for r in rows
+           if m_idx < len(r) and p_idx < len(r) and _num(r[m_idx]) is not None]
+    if len(pts) < 2:
+        return
+    vals = [v for v, _ in pts]
+    peak = max(pts, key=lambda x: x[0])
+    trough = min(pts, key=lambda x: x[0])
+    avg = sum(vals) / len(vals)
+    scale = 100 if max(abs(v) for v in vals) <= 1.5 else 1   # fraction (0.36) vs already-percent (36)
+    fmt = (lambda v: _fmt_pct(v)) if is_pct else (lambda v: f"{v:.2f}")
+
+    def _delta(d):
+        return f"{d * scale:+.1f} pts vs avg"
+
+    def _set_period(kn, period):
+        for k in ("label", "context"):
+            t = kn.get(k)
+            if t and "(" in t:
+                kn[k] = re.sub(r"\([^)]*\)", f"({_fmt_period(period)})", t, count=1)
+
+    for kn in kns:
+        low = f"{kn.get('label') or ''} {kn.get('context') or ''}".lower()
+        if any(w in low for w in ("peak", "highest", "maximum", "max ")):
+            kn["value"] = fmt(peak[0]); kn["delta"] = _delta(peak[0] - avg); _set_period(kn, peak[1])
+        elif any(w in low for w in ("trough", "lowest", "minimum", "min ", "dip")):
+            kn["value"] = fmt(trough[0]); kn["delta"] = _delta(trough[0] - avg); _set_period(kn, trough[1])
+        elif any(w in low for w in ("average", "mean", "overall")):
+            kn["value"] = "~" + fmt(avg)
+        elif "range" in low or "spread" in low:
+            kn["value"] = f"{fmt(trough[0])} – {fmt(peak[0])}"
+            kn["delta"] = f"{(peak[0] - trough[0]) * scale:.1f} pts spread"
+
+
+def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict,
+                       grain: Optional[dict] = None) -> tuple:
     """The WHEN lens: trend the metric over time on the resolved date axis, then deterministically
-    detect an anomalous period. Returns (phase_or_None, anomalous_period_or_None). Fail-open."""
+    detect an anomalous period. Returns (phase_or_None, anomalous_period_or_None). Fail-open.
+
+    `grain` (from the multi-lens node) pins the trend's rate + denominator to the SAME unit the
+    WHERE scan uses, so the two lenses' rates are comparable rather than order-vs-item contradictory."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
     metric_label = intake.get("metric_label", "the metric")
     metric_sql = intake.get("metric_sql", "SUM(revenue)")
     metric_table = intake.get("metric_table", "")
     date_column = axis["date_column"]
+    _grain_plan = _grain_plan_directive(grain) if grain else ""
+    _grain_n = f"the {grain['label']} population" if grain else "the population"
     schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
     try:
         _run = run_analysis_phase(
@@ -3577,8 +3893,8 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
                          "column; JOIN the metric table to the date table if they differ. Bucket by "
                          "month or quarter (choose per the data's span). Restrict to the question's "
                          "subject. Order by the period ASC. Return EXACTLY three columns aliased "
-                         "`period`, `metric_value`, `n` (n = COUNT(*) of the population in that period).")
-                        + _ADA_SQL_GROUNDING,
+                         f"`period`, `metric_value`, `n` (n = COUNT(*) of {_grain_n} in that period).")
+                        + _ADA_SQL_GROUNDING + _grain_plan,
             plan_user=(
                 f"QUESTION: {question}\n"
                 f"METRIC: {metric_label} = {metric_sql}\n"
@@ -3598,6 +3914,9 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
             plan_error_msg="Temporal trend planning failed.",
             exec_error_msg="Temporal trend query failed.",
             question=question, connection_id=state.get("connection_id", ""),
+            # A trend must be read over the WHOLE series — a 12-row cap made the interpreter call a peak
+            # from the first year while the chart plots every month (its real max sat in a later row).
+            interpret_max_rows=72,
         )
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
@@ -3620,6 +3939,19 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
             for i, (q, r) in enumerate(results)
         ]
         summary = "Temporal trend complete."
+
+    # A trend is a line (intent-driven); its peak/trough/avg key numbers are recomputed from the FULL
+    # series so they match the chart (the interpret LLM only saw a window).
+    _is_pct = _metric_is_percent(metric_sql, metric_label)
+    for _f in findings:
+        _f["chart_type"] = _chart_type_for_finding(_f, "trend")
+        _fix_temporal_extreme_key_numbers(_f, is_pct=_is_pct)
+    # Tag the trended value as a percent (the SAME unit as the WHERE rate) so its axis + labels read
+    # "41%", directly comparable to the segment scan instead of a bare "0.41"; canonicalise key numbers too.
+    if _is_pct:
+        _tag_percent_columns(findings, _RATIO_METRIC_COL_RE)
+        for _f in findings:
+            _normalize_pct_key_numbers(_f)
 
     # Deterministic anomaly detection on the (first clean) trend result.
     anomalous = None
@@ -3694,6 +4026,19 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
             for i, (q, r) in enumerate(results)
         ]
         summary = "Return composition computed."
+    for _f in findings:
+        # Chart the SHARE only — a composition is parts-of-a-whole, so the count and the share are the
+        # SAME story; a count-bar + share-line dual-axis combo is redundant clutter (the line just
+        # mirrors the bars). Drop `event_count` from the rendered view (it stays in the key numbers as
+        # context), then let the intent resolver pick a donut for a few parts / a ranked bar for many.
+        _chart_ratio_primary(_f)
+        _f["chart_type"] = _chart_type_for_finding(_f, "composition")
+    # `pct_of_total` is a share (already 0–100) — tag it percent so the UI renders "42.2%", not "42"
+    # (its value-range guard would otherwise reject an already-scaled percent as a share column), and
+    # canonicalise the key numbers to 1-dp so the WHY cards match the WHERE cards (no "42.23%" vs "41.0%").
+    _tag_percent_columns(findings, re.compile(r"pct_of_total|percent|_of_total|\bshare\b", re.I))
+    for _f in findings:
+        _normalize_pct_key_numbers(_f)
     return _phase_result(
         "cross_section_mechanism", "Mechanism / Reason Scan — Why", "🔍",
         "complete" if any(not f["error"] for f in findings) else "partial", summary, findings,
@@ -3701,7 +4046,7 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
 
 
 def _run_period_drill(state: AgentState, conn: "DatabaseConnection", axis: dict,
-                      anomalous: dict, lens_specs: list) -> list:
+                      anomalous: dict, lens_specs: list, grain: Optional[dict] = None) -> list:
     """Forward-chain drill: when the WHEN lens flagged a period, re-run the segment/mechanism scan
     SCOPED to that period so we learn WHICH cut concentrated inside it. Sequential (depends on the
     detection). Returns the new phase(s); fail-open to []."""
@@ -3716,7 +4061,7 @@ def _run_period_drill(state: AgentState, conn: "DatabaseConnection", axis: dict,
         try:
             reader = conn.make_reader()
             out = ada_cross_section(state, reader, dims_override=ldims, phase_meta=drill_meta,
-                                    period_directive=directive)
+                                    period_directive=directive, grain=grain)
             ph = out.get("investigation_phases", [])
             phases.extend(ph[base_n:] if len(ph) > base_n else (ph[-1:] if ph else []))
         except BudgetExceeded:
@@ -3740,6 +4085,9 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     intake_data = state.get("_ada_intake") or {}
     dim_specs = _partition_dimensions(intake_data.get("dimensions", []))
     axis = _resolve_temporal_axis(state, conn)
+    # Follow-up A — one canonical grain for the whole fan-out, so the WHERE rate and the WHEN trend
+    # divide by the SAME denominator (no per-order 40% vs per-line-item 76% contradiction).
+    grain = _canonical_grain(intake_data)
 
     # #4 — deterministic population-attribute discovery (price band / season the intake missed), fed
     # into the RATE lens so it looks where the answer actually is. Computed once, single-threaded.
@@ -3758,7 +4106,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     # (still augmented with the discovered population attributes).
     if len(specs) == 1 and specs[0][1] == "rate":
         return ada_cross_section(state, conn, extra_dims=_aug_dims,
-                                 extra_schema=_aug_schema, extra_directive=_aug_dir)
+                                 extra_schema=_aug_schema, extra_directive=_aug_dir, grain=grain)
 
     base_phases = state.get("investigation_phases", [])
     base_n = len(base_phases)
@@ -3770,14 +4118,15 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
         try:
             reader = conn.make_reader()
             if kind == "when":
-                phase, anomalous = _run_temporal_lens(state, reader, payload)
+                phase, anomalous = _run_temporal_lens(state, reader, payload, grain=grain)
                 return name, ([phase] if phase else []), None, anomalous
             if kind == "composition":
                 phase = _run_composition_lens(state, reader, payload)
                 return name, ([phase] if phase else []), None, None
             # kind == 'rate' — the WHERE scan, augmented with the discovered population attributes.
             out = ada_cross_section(state, reader, dims_override=payload, phase_meta=pmeta,
-                                    extra_dims=_aug_dims, extra_schema=_aug_schema, extra_directive=_aug_dir)
+                                    extra_dims=_aug_dims, extra_schema=_aug_schema,
+                                    extra_directive=_aug_dir, grain=grain)
             ph = out.get("investigation_phases", [])
             new = ph[base_n:] if len(ph) > base_n else (ph[-1:] if ph else [])
             return name, new, out.get("_cross_section_summary"), None
@@ -3820,7 +4169,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     # (sequential — the drill depends on the detection). Honest no-op when the trend was flat.
     if anomalous and axis and rate_lenses:
         try:
-            merged.extend(_run_period_drill(state, conn, axis, anomalous, rate_lenses))
+            merged.extend(_run_period_drill(state, conn, axis, anomalous, rate_lenses, grain=grain))
         except BudgetExceeded:
             raise
         except Exception as _exc:

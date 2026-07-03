@@ -64,3 +64,34 @@ in **Settings → Models / System** so an operator can flip them without env var
 > **Status: COMPLETE.** All 🔴 real gaps (Volumes · Grants · Glossary) and all 🟡/P3 items
 > (U5–U8, P3) are shipped on branch `2026-06-22-org-tenant-spine` (PR #78), each browser-verified.
 > Every shipped-but-invisible feature from the audit now has a UI surface.
+
+---
+
+## Deep Analysis report — formatting fixes + layout redesign (2026-07-02)
+
+Four points raised against the live "Why are womenswear returns so high?" report.
+
+**Shipped (branch `2026-07-02-ada-temporal-intake-grain`):**
+- **#1 — percentage consistency.** A ratio metric aliased `metric_total` was stored as a fraction
+  (0.4096) and rendered three ways: chart "0.4", section key-number "0.41%", prose "40.96%". Root:
+  the frontend detected percentages by column *name* only (three copies of the same regex), which
+  `metric_total` never matches. Fix (approach a): the backend tags a per-column unit on the finding
+  (`InvestigationFinding.column_units = {"metric_total":"percent"}`) whenever the metric is a
+  percentage (`_metric_is_percent`), rebuilds percent key-numbers scale-aware (`_fmt_pct`,
+  `_normalize_pct_key_numbers`, scale-aware `_fix_xsec_extreme_key_numbers`), and the frontend chart
+  honours the explicit unit (`builders.isShareField`/`valueFormatter`, `Chart.columnUnits`) so axis +
+  labels + key numbers all read "41.0%". Composition (`pct_of_total`) + temporal (`metric_value`)
+  lenses tagged too. Live-verified via `/chart-lab`.
+- **#2 — bar sizing.** Horizontal-bar height was `max(350, nCats*28+60)` → a fixed 350px floor that
+  stretched 2 bars into slabs. Now `max(110, nCats*46+44)` (adapts down; the 350px viewport still
+  scrolls tall charts) + `barMaxWidth: 34` (fixed thickness). Live: 5 bars → 274px, 2 bars → 136px.
+- **#3 — data labels.** Off by default; now on for report finding charts, routed through the #1
+  formatter, with series `labelLayout: { hideOverlap: true }` so crowded labels drop instead of
+  overprinting.
+
+**Proposed, NOT built — #4 report layout ("more content, less noise").** Lead with the verdict + the
+2–3 numbers that matter; each phase = one-line takeaway + one figure with visible labels; demote prose
+to muted secondary; merge significance + trust + grain into one compact chip row; keep a SINGLE details
+drawer (no per-finding SQL repeated inline); gate sparklines to temporal findings. Mockup delivered in
+session. Current structure map: `InvestigationReport.tsx` (`EvidenceBlock` / `PhaseSection` /
+`InvestigationDetails`) + `Brief.tsx`.

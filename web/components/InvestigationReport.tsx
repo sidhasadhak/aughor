@@ -17,6 +17,11 @@ import { SqlResultTable } from "@/components/AugTable";
 import ChevronDownIcon  from "@atlaskit/icon/core/chevron-down";
 import ChevronRightIcon from "@atlaskit/icon/core/chevron-right";
 import RetryIcon        from "@atlaskit/icon/core/retry";
+import TableIcon        from "@atlaskit/icon/core/table";
+
+/** Open the right-side Source-data drawer (data + SQL + Query Builder) for a finding. Typed inline
+ *  (structurally = ChatMessage's SourcePanelData) to avoid a circular import with ChatMessage. */
+type ShowSource = (data: { columns: string[]; rows: unknown[][]; sql: string | null; title: string }) => void;
 import {
   Brief,
   BriefHeadline,
@@ -56,6 +61,7 @@ interface InvestigationFinding {
   stat_note?: string;
   is_significant: boolean;
   trust_caveat?: string | null;   // advisory from the trust battery — surfaced, never blocking
+  column_units?: Record<string, string> | null;  // per-column display unit ({metric_total:"percent"})
 }
 
 interface InvestigationPhase {
@@ -139,7 +145,7 @@ function FindingTable({ columns, rows, label }: { columns: string[]; rows: (stri
 
 // ── Single finding — evidence block (flows inside a phase section) ─────────────
 
-function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
+function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFinding; onShowSource?: ShowSource }) {
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
 
@@ -148,8 +154,19 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
       {/* Chart — the framed figure */}
       {hasChart && (
         <BriefFigure caption={finding.title}>
-          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} />
+          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} columnUnits={finding.column_units} showLabels />
         </BriefFigure>
+      )}
+
+      {/* Source data — opens the right-side data + SQL + Query Builder drawer (same as the quick answer) */}
+      {hasData && onShowSource && (
+        <button
+          onClick={() => onShowSource({ columns: finding.columns, rows: finding.rows as unknown[][], sql: finding.sql || null, title: finding.title })}
+          className="self-end flex items-center gap-1.5 aug-text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          <TableIcon label="Table" size="small" />
+          Source data
+        </button>
       )}
 
       {/* Trend strip — sparkline + period-over-period % (time-series findings only) */}
@@ -192,7 +209,7 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
 
 // ── Phase — a flat narrative section (no accordion, no chevron, no indent) ─────
 
-function PhaseSection({ phase }: { phase: InvestigationPhase }) {
+function PhaseSection({ phase, onShowSource }: { phase: InvestigationPhase; onShowSource?: ShowSource }) {
   if (phase.status === "skipped") return null;
   const findings = phase.findings.filter(f => f.interpretation || f.columns.length > 0 || f.error);
   if (!phase.summary && findings.length === 0) return null;
@@ -200,7 +217,7 @@ function PhaseSection({ phase }: { phase: InvestigationPhase }) {
   return (
     <BriefSection label={phase.phase_name}>
       {phase.summary && <BriefProse text={phase.summary} />}
-      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} />)}
+      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} />)}
     </BriefSection>
   );
 }
@@ -506,7 +523,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
           <div key={f.finding_id} className="space-y-1.5 pl-2">
             {hasChart && (
               <div className="rounded-md border border-zinc-800/60 overflow-hidden p-2" style={{ background: "var(--bg-0)" }}>
-                <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} />
+                <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} columnUnits={f.column_units} showLabels />
               </div>
             )}
             {f.key_numbers?.length > 0 && <BriefMetrics metrics={f.key_numbers} />}
@@ -526,9 +543,11 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
 export function InvestigationReportView({
   report,
   streamingPhases,
+  onShowSource,
 }: {
   report?: ADAReport;
   streamingPhases?: InvestigationPhase[];
+  onShowSource?: ShowSource;
 }) {
   // While streaming: progressive phase cards (the live state, unchanged)
   if (!report) {
@@ -566,7 +585,7 @@ export function InvestigationReportView({
         ]}
       />
 
-      {analysisPhases.map(phase => <PhaseSection key={phase.phase_id} phase={phase} />)}
+      {analysisPhases.map(phase => <PhaseSection key={phase.phase_id} phase={phase} onShowSource={onShowSource} />)}
 
       <InvestigationDetails report={report} intakePhase={intakePhase} />
     </Brief>

@@ -16,8 +16,9 @@ import {
   type ChartType,
   type InferredChart,
 } from "@/components/charts/chartTypeInference";
+import { SHARE_COL } from "@/components/charts/columnRoles";
 import {
-  lineOption, multiLineOption, barOption, groupedBarOption,
+  lineOption, multiLineOption, smallMultiplesOption, barOption, groupedBarOption,
   stackedBarOption, pieOption, scatterOption, comboOption, heatmapOption, treemapOption,
   type Row, type BuildInput,
 } from "./builders";
@@ -28,7 +29,7 @@ export { AUGHOR_THEME_NAME, registerAughorTheme } from "./theme";
 
 /** Chart types the ECharts engine can render today (the rest fall back to Vega). */
 export const ECHARTS_SUPPORTED: ReadonlySet<ChartType> = new Set<ChartType>([
-  "line", "area", "multi-line", "bar", "grouped-bar", "stacked-bar", "pie", "scatter",
+  "line", "area", "multi-line", "small-multiples", "bar", "grouped-bar", "stacked-bar", "pie", "scatter",
   "combo", "heatmap", "treemap",
 ]);
 
@@ -40,7 +41,7 @@ export function rowsToObjects(columns: string[], rows: unknown[][]): Row[] {
   });
 }
 
-const TIME_TYPES: ReadonlySet<ChartType> = new Set<ChartType>(["line", "area", "multi-line", "stacked-bar", "heatmap"]);
+const TIME_TYPES: ReadonlySet<ChartType> = new Set<ChartType>(["line", "area", "multi-line", "small-multiples", "stacked-bar", "heatmap"]);
 
 /** Build an ECharts option from an already-resolved inference + the raw table. */
 export function optionFor(
@@ -63,9 +64,11 @@ export function optionFor(
     case "line":        return lineOption(base);
     case "area":        return lineOption(base, true);
     case "multi-line":  return multiLineOption({ ...base, xKind: xKind ?? "time" });
+    case "small-multiples": return smallMultiplesOption({ ...base, xKind: xKind ?? "time" });
     case "bar":         return ys.length > 1 ? groupedBarOption(base) : barOption(base);
     case "grouped-bar": return groupedBarOption(base);
-    case "stacked-bar": return stackedBarOption(base);
+    // A share stacked over time is a 100%-stacked bar (composition shift); an absolute measure stacks by volume.
+    case "stacked-bar": return stackedBarOption(base, SHARE_COL.test(ys[0]));
     case "pie":         return pieOption(base);
     case "scatter":     return scatterOption(base);
     case "combo":       return ys.length >= 2 ? comboOption(base) : barOption(base);

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { useOpenInBuilder } from "@/lib/openInBuilder";
 import { SqlResultTable } from "@/components/AugTable";
 import { ExportButton } from "@/components/ExportButton";
 import TableIcon         from "@atlaskit/icon/core/table";
@@ -412,8 +413,8 @@ export function SourcePanel({
 }: {
   columns: string[]; rows: unknown[][]; sql: string | null; title: string; onClose: () => void;
 }) {
-  const [showCode, setShowCode] = useState(false);
   const [copied,   setCopied]   = useState(false);
+  const openInBuilder = useOpenInBuilder();
 
   // Detect each date column's true grain once (from the full column), so weekly
   // buckets render as "Jan 5" not four identical "Jan 2026" rows.
@@ -495,24 +496,28 @@ export function SourcePanel({
         </table>
       </div>
 
-      {/* SQL toggle — pinned to bottom */}
+      {/* SQL — bottom ~50% of the panel, always visible for easy reading, with a Query Builder
+          hand-off. (Was a collapsed "Show code" strip; the SQL is the point, so it stays open.) */}
       {sql && (
-        <div className="flex-shrink-0 border-t border-zinc-700/60">
-          <button
-            onClick={() => setShowCode(v => !v)}
-            className="flex items-center gap-1.5 w-full px-3 py-1.5 text-[12px] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/20 transition-colors"
-          >
-            <AngleBracketsIcon label="Code" size="small" />
-            {showCode ? "Hide code" : "Show code"}
-            <span className={`ml-auto transition-transform duration-150 inline-block ${showCode ? "rotate-180" : ""}`}>
-              <ChevronDownIcon label="" size="small" />
+        <div className="flex-1 min-h-0 flex flex-col border-t border-zinc-700/60">
+          <div className="flex items-center justify-between gap-2 px-3 py-1.5 flex-shrink-0 border-b border-zinc-700/40">
+            <span className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300">
+              <AngleBracketsIcon label="SQL" size="small" /> SQL
             </span>
-          </button>
-          {showCode && (
-            <div className="border-t border-zinc-700/40 overflow-auto" style={{ background: "#0a1018", maxHeight: 320 }}>
-              <FormattedSql sql={sql} />
-            </div>
-          )}
+            {openInBuilder && (
+              <button
+                onClick={() => openInBuilder(sql)}
+                title="Open this query in the Query Builder"
+                className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors whitespace-nowrap"
+              >
+                Explore with Query Builder
+                <ArrowRightIcon label="" size="small" />
+              </button>
+            )}
+          </div>
+          <div className="flex-1 overflow-auto min-h-0" style={{ background: "#0a1018" }}>
+            <FormattedSql sql={sql} />
+          </div>
         </div>
       )}
     </div>
@@ -592,6 +597,7 @@ function InvestigateBody({
       <InvestigationReportView
         report={turn.adaReport ?? undefined}
         streamingPhases={turn.adaReport ? undefined : turn.phases}
+        onShowSource={onShowSource}
       />
     );
   }

@@ -40,6 +40,7 @@ const TYPE_TO_HINT: Record<ChartType, string> = {
   "line":        "line",
   "area":        "area",
   "multi-line":  "multi_line",
+  "small-multiples": "small_multiples",
   "bar":         "bar",
   "grouped-bar": "combo",
   "combo":       "combo",

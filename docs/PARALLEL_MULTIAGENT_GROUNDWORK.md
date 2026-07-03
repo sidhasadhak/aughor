@@ -113,6 +113,33 @@ platform finding renders **un-caveated**. *Follow-ups: reattempt-on-degenerate (
 target, the event tautology, is now fixed at the root by #1) + surface discriminating population attributes the
 intake missed (`products.retail_price_eur`: return rate climbs 31%→40% with price).*
 
+### 0e. Two follow-ups shipped — temporal-feasibility into intake + lens grain reconciliation (2026-07-02)
+
+Both flagged from the womenswear grounding; both deterministic; full unit suite green (+13 tests).
+
+**B — temporal-feasibility recovery wired into `ada_intake` (every path, not just the WHEN lens).** The
+event-rate-aware axis finder (`_resolve_temporal_axis`) previously lived **only** in the flag-gated multi-lens
+node, so the *default* single-scan path stayed temporally blind: when the metric sits on an event/child table
+with no date of its own, the intake declared `date_column=NONE`, which (a) mislabelled the displayed spec and
+(b) **misrouted a temporal-CHANGE question** onto the cross-sectional fallback (the period-over-period override
+is gated on `not no_time`). Now `ada_intake` (conn-bound in the graph) calls the resolver whenever the intake
+declares no axis and adopts a **join-reachable population date** — event date excluded, real-date-typed
+preferred — so the temporal-change route, the coverage clamp, and the spec all see the true axis. Fails open
+(no change) when nothing is reachable. **Live-grounded** (beautycommerce_analytics, no LLM): a refund-rate
+metric on `order_items` (no date) recovered `invoices.invoice_date` via live `information_schema` — the
+data-catalog form the string parser can't read — correctly excluding `refunds.refund_completed_date`.
+
+**A — one canonical grain across the WHERE / WHY / WHEN lenses.** A cross-sectional "why is the rate high"
+run could compute the *same* rate at two grains — per order (~40%) vs per line-item (~76%) — across concurrent
+lenses, so the report contradicted itself. The metric's own table (intake `metric_table`) is the canonical
+unit (the same principle the measure-additivity guards enforce); `_canonical_grain` derives it once in the
+multi-lens node and threads it to the **rate (WHERE)** scan and the **temporal (WHEN)** trend (and the
+period-drill), which now (1) receive a plan directive pinning the denominator to that table — *"do NOT collapse
+to a coarser grain (e.g. distinct orders)"* — and (2) prefix their phase summary with a **`[per <unit>]`** tag
+so the two rates are directly comparable instead of contradictory. Flag-scoped: `grain=None` on the flag-off
+single scan is byte-identical. **Live-grounded**: `order_items` → *"per line item"*, denominator pinned to
+`analytics.order_items`.
+
 ---
 
 ## 1. The pain point, correctly diagnosed

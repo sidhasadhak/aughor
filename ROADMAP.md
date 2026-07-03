@@ -27,6 +27,17 @@ thesis. Full analysis + plan + guardrails: [`docs/PARALLEL_MULTIAGENT_GROUNDWORK
 **Also queued** (from the same investigation-framework analysis): metric-aware dimension priority
 (scan the causal dimension, e.g. return *reason*, before descriptive ones) and auto-drill WHERE→WHY.
 
+**Shipped 2026-07-03** (branch `2026-07-02-ada-temporal-intake-grain`, merged; deterministic, full suite
+green — the **Deep Analysis report-quality arc**, see the "What we've built" entry below):
+**(B)** event-rate-aware temporal-axis recovery wired into `ada_intake` itself so *every* path recovers
+a join-reachable population date instead of `date_column=NONE`; **(A)** the WHERE/WHY/WHEN lenses share
+**one canonical grain** (the metric table's unit, a denominator-pinning plan directive) so a report can't
+show per-order 40% next to per-line-item 76%; **consistent percentages end-to-end** (a backend per-column
+unit hint → chart axis, labels, key numbers all read "41.0%"); **intent-driven chart selection**
+(composition → donut, trend → line, ranking → bar); **one frontend inference source of truth**; **100%-
+stacked + small-multiples**; and the **Source-data panel** (data + SQL 50/50 + Query Builder) on report
+charts. See `docs/CHART_SELECTION_GUIDE.md` + `docs/PARALLEL_MULTIAGENT_GROUNDWORK.md` §0e.
+
 ---
 
 ## 1 · What we set out to build
@@ -47,6 +58,16 @@ An **autonomous data-analysis platform** that replaces the dashboard-and-analyst
 ## 2 · What we've built ✅
 
 Grouped by area; each ✅ is verified shipped (git + code). Representative commits/PRs in parentheses.
+
+### Deep Analysis report quality — grain · consistent %s · adaptive charts (2026-07-03, branch `2026-07-02-ada-temporal-intake-grain`)
+*A live-grounded arc: reading the womenswear-returns report exposed a chain of correctness + rendering bugs, each fixed at the root and verified on a fresh run. Full suite green; docs: [`docs/CHART_SELECTION_GUIDE.md`](docs/CHART_SELECTION_GUIDE.md).*
+- ✅ **Temporal-feasibility into `ada_intake`** — the event-rate-aware axis finder (`_resolve_temporal_axis`) runs at intake (conn-bound), so EVERY path recovers a join-reachable purchase date instead of declaring the metric non-temporal (the metric sits on a dateless child table; the parent order date is join-reachable). A "what drove the change" question no longer misroutes to cross-sectional.
+- ✅ **One canonical grain across WHERE/WHY/WHEN** — `_canonical_grain` pins the metric table's unit into every lens (a denominator-pinning plan directive), so a report can't show per-order 40% next to per-line-item 76% for the same rate. (The earlier visible `[per <unit>]` summary tag was removed — it polluted the synthesised headline; the grain stays enforced numerically.)
+- ✅ **Consistent percentages end-to-end (approach a)** — `InvestigationFinding.column_units` tags a rate column as `percent` when the metric is a percentage; the frontend's one scale-aware formatter renders "41.0%" on the axis, data labels, AND key numbers (a fraction ×100, an already-scaled % left). Key numbers rebuilt to one scale + precision, collapsing the LLM's `~0.328 (32.8%)` / `34.5%(34.5%)` duplicates; a temporal peak/trough/avg/range is **recomputed from the full series** so it matches the chart (the interpret LLM only saw a capped window).
+- ✅ **Intent-driven chart selection** — `_chart_type_for_finding(finding, intent)` picks the chart from the finding's narrative, not a data-shape guess: composition → **donut** (≤6 parts) / ranked bar, trend → **line**, ranking → **sorted bar**, relationship → scatter; shape-verified so a mislabelled intent degrades to `auto`. A composition renders the SHARE only — no redundant count-bar + share-line combo.
+- ✅ **One frontend inference source of truth** — the column-role regexes + `classifyColumns` live once in `columnRoles.ts`; both `inferChartType` (toggle/gallery) and `Chart.tsx` (renderer) import them, ending a three-way drift. **100%-stacked** (composition-over-time) + **small-multiples** (many-group trends) builders added.
+- ✅ **Chart legibility + the Source-data panel** — fixed bar thickness (`barMaxWidth`) + count-adaptive height + on-by-default labels with `hideOverlap` + a clean themed halo (bars AND pie/donut). The **"Source data"** trigger is on every report finding chart (and the quick answer), opening a right-side drawer with the data + SQL **50/50** + an **"Explore with Query Builder"** hand-off.
+
 
 ### Parallel explore waves — P-A of the multi-agent groundwork (2026-07-02, branch `2026-07-02-explore-parallel-subq`)
 *The explore mode's serial sub-question chain is the wall-clock bottleneck (7–12 serial frontier-LLM round-trips). P-A of [`docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`](docs/PARALLEL_MULTIAGENT_GROUNDWORK.md) makes independent sub-questions run concurrently in **dependency-respecting waves**. Flag `explore.parallel_subq` (default off → byte-identical). Full unit suite green (+15 tests); live-verified.*

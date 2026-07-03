@@ -22,9 +22,20 @@
  * Falls back to "table" when data is not chartable.
  */
 
+import {
+  SKIP_ID, INSTRUMENTATION_COL as INSTRUMENTATION,
+  SHARE_COL, CHANGE_METRIC_COL as CHANGE_METRIC, ADDITIVE_COL,
+  countUnique, classifyColumns,
+} from "./columnRoles";
+
+// Re-exported so existing importers of these from chartTypeInference keep working while the
+// single source of truth lives in columnRoles.ts.
+export { classifyColumns, SHARE_COL };
+
 export type ChartType =
   | "line"
   | "multi-line"
+  | "small-multiples"
   | "area"
   | "bar"
   | "grouped-bar"
@@ -44,83 +55,8 @@ export interface InferredChart {
   colorCol?: number; // index of the series/stack/segment column (multi-line, stacked, heatmap)
 }
 
-// ── Column classifier patterns ──────────────────────────────────────────────
-
-const DATE_NAME = /(_date|_at|_time|created_at|updated_at|timestamp|^date$|^month$|^week$|^period$|^quarter$|^day$|^year$)/i;
-const DATE_VAL  = /^\d{4}-\d{2}/;
-const SKIP_ID   = /(_id$|^id$)/i;
-// Audit-only instrumentation: the numerator/denominator a ratio is built from, or a bare row-count
-// `n`. These exist so a ratio is checkable, never as a measure to plot — charting them buries the
-// real metric (an AOV finding rendered as a giant SUM bar). Excluded from chart measure selection.
-const INSTRUMENTATION = /(^|_)(numerator|denominator)(_total)?$|^n$/i;
-const SHARE_COL = /(share|pct|percent|rate|ratio|proportion)/i;
-// Change/delta/period-over-period metric column names.
-// When ANY numeric column matches, the question is a COMPARISON question
-// (MoM, YoY, WoW, delta, growth rate) — heatmap is the wrong chart type.
-// Also catches lag/prev/prior — their presence signals a POP query even when
-// no explicit delta column was computed.
-const CHANGE_METRIC = /(change|delta|growth|mom|yoy|wow|qoq|pct_change|percent_change|_chg$|_diff$|vs_prev|^prev_|_prev$|^prior_|_prior$|^lag_|_lag$)/i;
-
-function isNumericValue(v: unknown): boolean {
-  return v !== null && v !== "" && !isNaN(Number(v));
-}
-
-/** Scan up to 20 rows to find the first non-null value for a column.
- *  Avoids misclassifying columns whose early rows happen to be NULL
- *  (e.g. the first month of a MoM lag query). */
-function firstNonNull(rows: unknown[][], colIdx: number): unknown {
-  for (let i = 0; i < Math.min(rows.length, 20); i++) {
-    const v = (rows[i] as unknown[])[colIdx];
-    if (v !== null && v !== undefined && v !== "") return v;
-  }
-  return (rows[0] as unknown[])?.[colIdx];
-}
-
-/** Count the number of distinct values a column takes across all rows. */
-function countUnique(rows: unknown[][], colIdx: number): number {
-  return new Set(rows.map(r => String((r as unknown[])[colIdx]))).size;
-}
-
-/**
- * Classify each column index as "date", "numeric", or "category".
- */
-export function classifyColumns(
-  columns: string[],
-  rows: unknown[][],
-): { dateIdxs: number[]; numericIdxs: number[]; catIdxs: number[] } {
-  if (!rows.length) return { dateIdxs: [], numericIdxs: [], catIdxs: [] };
-
-  const dateIdxs: number[]    = [];
-  const numericIdxs: number[] = [];
-  const catIdxs: number[]     = [];
-
-  columns.forEach((col, i) => {
-    // All-NULL column → carries no information; never plot it. Otherwise an empty
-    // numeric column (no non-null value) fails the numeric test, gets treated as a
-    // CATEGORY, and surfaces as a phantom "NULL" legend / stack dimension.
-    const allNull = rows.every((r) => {
-      const v = (r as unknown[])[i];
-      return v === null || v === undefined || v === "" || v === "NULL";
-    });
-    if (allNull) return;
-    const firstVal = firstNonNull(rows, i);
-
-    const isDate =
-      DATE_NAME.test(col) ||
-      (typeof firstVal === "string" && DATE_VAL.test(firstVal));
-
-    const isNumeric =
-      !isDate &&
-      !SKIP_ID.test(col) &&
-      isNumericValue(firstVal);
-
-    if (isDate)         dateIdxs.push(i);
-    else if (isNumeric) numericIdxs.push(i);
-    else                catIdxs.push(i);
-  });
-
-  return { dateIdxs, numericIdxs, catIdxs };
-}
+// Column classifier patterns + the classifier itself now live in ./columnRoles (imported above),
+// so the type-inference here and the renderer in Chart.tsx share ONE source of truth.
 
 /**
  * Score whether a multi-measure, single-category chart should be a dual-axis COMBO
@@ -215,11 +151,19 @@ export function inferChartType(
       return { type: "multi-line", xCol: dateIdx, yCols: [changeNumIdx], colorCol: catIdx };
     }
 
-    if (uniqueSeriesCount > 5) {
-      // High-cardinality ABSOLUTE metric: heatmap is the most readable option
+    // COMPOSITION OVER TIME — a SHARE measure across a few groups → 100%-stacked bar (the shift in
+    // the mix reads directly). Chart.tsx / optionFor render it in percent mode for a share measure.
+    if (SHARE_COL.test(columns[numIdx]) && uniqueSeriesCount <= 8) {
+      return { type: "stacked-bar", xCol: dateIdx, yCols: [numIdx], colorCol: catIdx };
+    }
+    // Many groups → a many-line spaghetti chart is unreadable. Small multiples (a grid of mini lines,
+    // one per group, shared y-scale) up to 9 groups; beyond that a heatmap is the most compact.
+    if (uniqueSeriesCount > 9) {
       return { type: "heatmap", xCol: dateIdx, yCols: [numIdx], colorCol: catIdx };
     }
-
+    if (uniqueSeriesCount > 6) {
+      return { type: "small-multiples", xCol: dateIdx, yCols: [numIdx], colorCol: catIdx };
+    }
     // Low-cardinality absolute metric: multi-line for trend comparison
     return { type: "multi-line", xCol: dateIdx, yCols: [numIdx], colorCol: catIdx };
   }
@@ -249,12 +193,17 @@ export function inferChartType(
         : { type: "bar",   xCol: catIdx, yCols: [d.barIdx] };
     }
 
-    // Single measure: composition (pie/treemap) only for ADDITIVE measures — you don't
-    // pie a conversion rate. Rates/averages always read as a bar comparison.
-    const ADDITIVE = /(revenue|sales|amount|count|spend|cost|total|value|gmv|qty|quantity|orders|units|profit|volume)/i;
-    const additive = ADDITIVE.test(columns[numIdx]) && !SHARE_COL.test(columns[numIdx]);
+    // Single measure — composition (pie/treemap) for an ADDITIVE magnitude OR a SHARE that sums to a
+    // whole. You don't pie a conversion RATE (each row's own rate, no whole to compose), but you DO
+    // pie a `pct_of_total` whose slices sum to ~100% — a genuine parts-of-a-whole (this is what makes
+    // a "share of returns" composition a donut on the quick path too, matching the ADA lens).
+    const additive = ADDITIVE_COL.test(columns[numIdx]) && !SHARE_COL.test(columns[numIdx]);
+    const shareVals = rows.map((r) => Number((r as unknown[])[numIdx])).filter((v) => !isNaN(v));
+    const shareSum = shareVals.reduce((s, v) => s + v, 0);
+    const isShareComposition = SHARE_COL.test(columns[numIdx]) && shareVals.length > 0
+      && (Math.abs(shareSum - 100) <= 2 || Math.abs(shareSum - 1) <= 0.02);
 
-    if (additive && uniqueCatCount <= 6) {
+    if ((additive || isShareComposition) && uniqueCatCount <= 6) {
       return { type: "pie", xCol: catIdx, yCols: numericIdxs };
     }
     if (additive && uniqueCatCount > 6 && uniqueCatCount <= 24) {
@@ -284,7 +233,7 @@ export function availableChartTypes(columns: string[], rows: unknown[][]): Chart
 
   if (hasDate && hasCat) {
     // time × category — one series per category value
-    add("multi-line"); add("stacked-bar"); add("heatmap");
+    add("multi-line"); add("small-multiples"); add("stacked-bar"); add("heatmap");
   } else if (hasDate) {
     // pure time series
     add("line"); add("area"); add("bar");
@@ -307,8 +256,9 @@ export function availableChartTypes(columns: string[], rows: unknown[][]): Chart
 export function availableTypesFor(inferred: ChartType): ChartType[] {
   switch (inferred) {
     case "line":        return ["line", "bar"];
-    case "multi-line":  return ["multi-line", "heatmap", "stacked-bar"];
-    case "heatmap":     return ["heatmap", "multi-line", "stacked-bar"];
+    case "multi-line":  return ["multi-line", "small-multiples", "heatmap", "stacked-bar"];
+    case "small-multiples": return ["small-multiples", "multi-line", "heatmap", "stacked-bar"];
+    case "heatmap":     return ["heatmap", "multi-line", "small-multiples", "stacked-bar"];
     case "scatter":     return ["scatter", "bar"];
     case "pie":         return ["pie", "bar", "treemap"];
     case "treemap":     return ["treemap", "bar", "pie"];
