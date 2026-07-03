@@ -68,6 +68,11 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   a **saturated** result (every group pinned at 0/100%) triggers a single grain-corrected reattempt; and
   discriminating **population attributes** the plan missed (a joinable table's price band / season) are
   surfaced deterministically, gated by a uniqueness probe so the added join can't fan out.
+- **One canonical grain + temporal feasibility** — every lens of a "why is X high" investigation computes
+  the metric at the **same unit of observation** (the metric table's grain, via a denominator-pinning plan
+  directive), so the WHERE/WHY/WHEN cards can't contradict each other (per-order 40% vs per-line-item 76%);
+  and the event-rate-aware **temporal-axis recovery** runs at **intake**, so a metric on a dateless child
+  table still trends on the join-reachable purchase date instead of being declared non-temporal.
 
 ## 3. Evidence, trust receipts & statistical rigor
 
@@ -120,8 +125,20 @@ Builder" from Insights/Deep. Schema-qualified correctness; user-typed SQL is **g
 
 ## 9. Charts & the answer surface
 
-- **Auto-charting** (Observable Plot), chat chart engine, nice-axis/headroom + apply-able customize knobs,
-  full chart-type set, sub-day grain axis handling.
+- **Auto-charting** on one **Apache ECharts** engine (chat + report + explorer + query builder share it),
+  with **intent-driven chart selection** — the chart follows the finding's *narrative*, not a data-shape
+  guess: composition → **donut** (parts-of-a-whole) / ranked bar, trend → **line**, ranking → **sorted
+  horizontal bar**, relationship → scatter; plus **100%-stacked** (composition-over-time) and
+  **small-multiples** (many-group trends). One shared column-role classifier (`columnRoles.ts`) feeds both
+  inference and rendering. Fixed bar thickness + count-adaptive height, on-by-default data labels with
+  overlap-drop, nice-axis/headroom + apply-able customize knobs, sub-day grain axis handling. See
+  `docs/CHART_SELECTION_GUIDE.md`.
+- **Consistent numbers everywhere** — a backend per-column **unit hint** (`column_units`) drives one
+  scale-aware formatter so a rate reads **"41.0%"** on the chart axis, the data labels, AND the key numbers
+  (never "0.4" / "0.41%" / "40.96%" for the same value); a temporal peak/trough is recomputed from the full
+  series so it matches the chart.
+- **Source-data panel** — a **"Source data"** trigger on every finding chart (report + quick answer) opens
+  a right-side drawer: the result table + the **SQL at 50%** + an **"Explore with Query Builder"** hand-off.
 - **The Brief** — the answer surface with agent-reasoning quality + data-shape intelligence.
 - **KPI highlight / ThoughtSpot-style scorecard**, smart report formatting + collapsible sections,
   thinking trace, **PDF / PowerPoint export**.
