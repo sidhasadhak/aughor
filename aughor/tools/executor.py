@@ -92,13 +92,17 @@ def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
         lines.extend(hints)
 
     if result.columns:
-        col_str = " | ".join(result.columns)
-        lines.append(col_str)
-        lines.append("-" * len(col_str))
+        # SEC-03: column names + row values are untrusted DB content. Fence the whole
+        # data table so it can't be read as instructions, cap each cell, and neutralize
+        # any <data> break-out attempt inside a value.
+        from aughor.util.prompt_safety import cap_cell, fence_untrusted
+        col_str = " | ".join(cap_cell(c) for c in result.columns)
+        table_lines = [col_str, "-" * len(col_str)]
         for row in result.rows[:max_rows]:
-            lines.append(" | ".join(_round_cell(v) for v in row))
+            table_lines.append(" | ".join(cap_cell(v) for v in row))
         if result.row_count > max_rows:
-            lines.append(f"... ({result.row_count - max_rows} more rows)")
+            table_lines.append(f"... ({result.row_count - max_rows} more rows)")
+        lines.append(fence_untrusted("\n".join(table_lines)))
 
     # Append statistical findings so the LLM can cite them in evidence scoring
     if result.stats:

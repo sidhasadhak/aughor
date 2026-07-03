@@ -405,11 +405,15 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         events_ctx = _get_events_context(state["question"], conn, fallback_data_range)
         return {"scan_context": "", "events_context": events_ctx}
 
+    from aughor.util.prompt_safety import UNTRUSTED_DATA_NOTE, fence_untrusted
     portrait = (
         "DATA PORTRAIT — run this before forming any hypothesis:\n"
         "These are actual counts and distributions from the database. "
-        "Hypotheses must be grounded in what the data can plausibly show.\n\n"
-        + "\n\n".join(portrait_parts)
+        "Hypotheses must be grounded in what the data can plausibly show.\n"
+        # SEC-03: the values below are untrusted DB content — fence them so they
+        # can't be read as instructions, and neutralize any delimiter break-out.
+        + UNTRUSTED_DATA_NOTE + "\n\n"
+        + fence_untrusted("\n\n".join(portrait_parts), max_chars=12000)
     )
     events_ctx = _get_events_context(state["question"], conn, fallback_data_range)
     return {"scan_context": portrait, "events_context": events_ctx}
