@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aughor — Layered Architecture & Report Design</title>
+<style>
+  :root{
+    /* Aughor tokens (from web/styles/tokens.css) — this page is built in the
+       exact design language the review proposes enforcing. */
+    --bg-0:#0D1117; --bg-1:#111418; --bg-2:#161A20; --bg-3:#1C2128; --bg-4:#222A33;
+    --b1:#1E2329; --b2:#252B33; --b3:#2E3540;
+    --t1:#E2E4E9; --t2:#939AA6; --t3:#6E7886; --t4:#525B69;
+    --blue3:#0C8CE9; --blue4:#4BA3F5; --blue1:#0A2540;
+    --grn3:#18985A; --grn4:#2EC87B; --grn1:#0C2B1A;
+    --amb3:#BD8800; --amb4:#E0AD00; --amb1:#2A1D00;
+    --red3:#C42A2A; --red4:#E64848; --red1:#2A0E0E;
+    --vio3:#6040B8; --vio4:#8B68D8; --vio1:#190E3A;
+    --cyn3:#1690BE; --cyn4:#30B8E0; --cyn1:#0D2030;
+    --font-ui:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
+    --font-mono:ui-monospace,'SF Mono','IBM Plex Mono','Cascadia Code',Consolas,monospace;
+    --r1:2px; --r2:4px; --r3:6px;
+    --maxw:1160px;
+  }
+  *{box-sizing:border-box}
+  .aug{
+    background:
+      radial-gradient(1200px 600px at 78% -8%, rgba(12,140,233,.10), transparent 60%),
+      var(--bg-0);
+    color:var(--t1); font-family:var(--font-ui);
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+    padding:40px 22px 80px; min-height:100%;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto}
+  .label{font-family:var(--font-mono); font-size:11px; font-weight:600;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--t3)}
+  h1,h2,h3{margin:0; text-wrap:balance}
+  .h1{font-size:clamp(24px,3.4vw,34px); font-weight:700; letter-spacing:-.02em; line-height:1.12}
+  .h2{font-size:15px; font-weight:600; color:var(--t1)}
+  .lede{color:var(--t2); font-size:15px; max-width:64ch; margin-top:14px}
+  .mono{font-family:var(--font-mono); font-variant-numeric:tabular-nums}
+  a{color:var(--blue4)}
+
+  /* ── header ── */
+  header.hd{display:flex; flex-direction:column; gap:6px; margin-bottom:10px}
+  .hd .kicker{display:flex; align-items:center; gap:10px; margin-bottom:14px}
+  .stack-glyph{width:22px;height:22px;flex:none}
+  .meta-row{display:flex; flex-wrap:wrap; gap:8px; margin-top:22px}
+  .pill{font-family:var(--font-mono); font-size:11px; letter-spacing:.03em;
+    color:var(--t2); border:1px solid var(--b2); background:var(--bg-1);
+    padding:5px 9px; border-radius:var(--r3)}
+  .pill b{color:var(--t1); font-weight:600}
+
+  /* ── section scaffold ── */
+  section.act{margin-top:56px}
+  .act-head{display:flex; align-items:baseline; gap:14px; margin-bottom:6px; flex-wrap:wrap}
+  .act-num{font-family:var(--font-mono); font-size:12px; color:var(--blue4);
+    border:1px solid var(--b3); border-radius:var(--r3); padding:2px 7px}
+  .act-sub{color:var(--t2); font-size:13.5px; max-width:70ch; margin:8px 0 26px}
+
+  .ba{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+  @media(max-width:820px){ .ba{grid-template-columns:1fr} }
+  .col-tag{display:flex; align-items:center; gap:8px; margin-bottom:12px}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .col-tag .t{font-family:var(--font-mono); font-size:11px; letter-spacing:.12em;
+    text-transform:uppercase; font-weight:600}
+  .before .t{color:var(--red4)} .before .dot{background:var(--red4)}
+  .after  .t{color:var(--grn4)} .after  .dot{background:var(--grn4)}
+
+  .panel{background:var(--bg-1); border:1px solid var(--b1); border-radius:var(--r3);
+    padding:18px; height:100%}
+  .panel.after{border-color:#243a2e}
+  .panel.before{border-color:#33232a}
+  .cap{color:var(--t3); font-size:12px; margin-top:14px; font-style:italic}
+
+  /* ── BEFORE: flat agent mesh ── */
+  .mesh-box{border:1px dashed var(--b3); border-radius:var(--r3); padding:14px 12px 12px;
+    background:repeating-linear-gradient(-45deg,rgba(255,255,255,.012) 0 10px,transparent 10px 20px)}
+  .mesh-box .label{color:var(--t4); margin-bottom:12px}
+  .mesh{display:grid; grid-template-columns:repeat(3,1fr); gap:8px}
+  .node{font-family:var(--font-mono); font-size:11px; color:var(--t2);
+    background:var(--bg-3); border:1px solid var(--b2); border-radius:var(--r2);
+    padding:9px 8px; text-align:center; line-height:1.25}
+  .node.ctrl{border-color:#3a2f18;color:#d8b56a}
+  .node.trust{border-color:#3a2320;color:#e08a86}
+  .node.mem{border-color:#1d3340;color:#63c1e0}
+  .mesh-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+  .mesh-legend span{font-family:var(--font-mono);font-size:10.5px;color:var(--t3);display:flex;align-items:center;gap:5px}
+  .sw{width:9px;height:9px;border-radius:2px;border:1px solid}
+
+  /* ── AFTER: planes ── */
+  .planes{display:flex; flex-direction:column; gap:7px; position:relative}
+  .plane{display:grid; grid-template-columns:38px 1fr auto; align-items:center; gap:12px;
+    border:1px solid var(--b2); border-radius:var(--r3); background:var(--bg-2);
+    padding:11px 13px; transition:transform .12s ease, border-color .12s ease}
+  .plane:hover{transform:translateX(2px); border-color:var(--b3)}
+  .plane .pn{font-family:var(--font-mono); font-size:15px; font-weight:600; color:var(--blue4);
+    text-align:center}
+  .plane .pbody{min-width:0}
+  .plane .pname{font-size:13px; font-weight:600; color:var(--t1); display:flex; gap:8px; align-items:baseline; flex-wrap:wrap}
+  .plane .analog{font-family:var(--font-mono); font-size:10px; color:var(--t4); letter-spacing:.02em}
+  .plane .prole{color:var(--t2); font-size:12px; margin-top:2px}
+  .chips{display:flex; flex-wrap:wrap; gap:4px; justify-content:flex-end; max-width:230px}
+  .chip{font-family:var(--font-mono); font-size:10px; color:var(--t3);
+    border:1px solid var(--b2); border-radius:var(--r1); padding:2px 5px; background:var(--bg-1); white-space:nowrap}
+  @media(max-width:520px){ .plane{grid-template-columns:32px 1fr} .chips{display:none} }
+
+  .plane.experience{border-left:3px solid var(--blue3)}
+  .plane.orchestration{border-left:3px solid var(--blue3)}
+  .plane.capability{border-left:3px solid var(--blue4)}
+  .plane.governance{border-left:3px solid var(--amb3); background:linear-gradient(90deg,rgba(189,136,0,.07),var(--bg-2) 40%)}
+  .plane.semantic{border-left:3px solid var(--vio4)}
+  .plane.memory{border-left:3px solid var(--cyn4)}
+  .plane.data{border-left:3px solid var(--grn4)}
+  .plane.runtime{border-left:3px solid var(--t4); background:linear-gradient(90deg,rgba(82,91,105,.10),var(--bg-2) 40%)}
+  .plane .pn.amber{color:var(--amb4)} .plane .pn.vio{color:var(--vio4)}
+  .plane .pn.cyn{color:var(--cyn4)} .plane .pn.grn{color:var(--grn4)} .plane .pn.gray{color:var(--t3)}
+  .spine-tag{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--amb4);border:1px solid #4a3410;border-radius:var(--r1);padding:1px 5px;background:var(--amb1)}
+  .spine-tag.rt{color:var(--t3);border-color:var(--b3);background:var(--bg-1)}
+
+  /* ── plane contract cards ── */
+  .contract-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:4px}
+  @media(max-width:820px){ .contract-grid{grid-template-columns:repeat(2,1fr)} }
+  @media(max-width:480px){ .contract-grid{grid-template-columns:1fr} }
+  .cc{border:1px solid var(--b2); border-radius:var(--r3); background:var(--bg-1); padding:14px}
+  .cc h3{font-size:12.5px; font-weight:600; color:var(--t1); margin-bottom:9px; display:flex; gap:7px; align-items:center}
+  .cc .k{font-family:var(--font-mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--t4)}
+  .cc p{font-size:11.5px; color:var(--t2); margin:2px 0 9px; line-height:1.45}
+  .cc .k2{color:var(--amb4)}
+
+  /* ── report mock ── */
+  .report-before{font-size:12px}
+  .rb-banner{background:var(--grn1); border:1px solid #1c5a3a; color:var(--grn4);
+    border-radius:var(--r2); padding:8px 10px; font-weight:600; font-size:12px; margin-bottom:10px;
+    display:flex; align-items:center; gap:8px}
+  .rb-card{border-radius:var(--r3); padding:10px; margin-bottom:8px; font-size:11.5px; color:var(--t2)}
+  .rb-card .rl{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px;display:block}
+  .rb-emer{border:1px solid #244b39;background:rgba(46,200,123,.06)} .rb-emer .rl{color:var(--grn4)}
+  .rb-amb{border:1px solid #4a3a12;background:rgba(224,173,0,.06)} .rb-amb .rl{color:var(--amb4)}
+  .rb-vio{border:1px solid #3a2d5c;background:rgba(139,104,216,.07)} .rb-vio .rl{color:var(--vio4)}
+  .rb-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+  .rb-badge{font-family:var(--font-mono);font-size:9px;padding:2px 6px;border-radius:9px;border:1px solid}
+  .bd-g{color:var(--grn4);border-color:#244b39;background:rgba(46,200,123,.08)}
+  .bd-a{color:var(--amb4);border-color:#4a3a12;background:rgba(224,173,0,.08)}
+  .bd-b{color:var(--blue4);border-color:#1c3a54;background:rgba(12,140,233,.08)}
+  .rb-chart-buried{border:1px dashed var(--b3);border-radius:var(--r2);padding:14px;text-align:center;color:var(--t4);font-family:var(--font-mono);font-size:10px;margin-top:8px}
+
+  /* AFTER report = document */
+  .doc{max-width:60ch}
+  .doc .dhead{font-size:16px; font-weight:600; color:var(--t1); line-height:1.35; letter-spacing:-.01em}
+  .doc .dhead b{color:var(--blue4); font-weight:600}
+  .doc .dprose{color:var(--t2); font-size:13px; margin-top:10px; line-height:1.6}
+  .figure{margin:16px 0 6px; border:1px solid var(--b2); border-radius:var(--r3); background:var(--bg-2); padding:14px 14px 10px}
+  .figure .ftitle{font-size:12px; font-weight:600; color:var(--t1); margin-bottom:2px}
+  .figure .fsub{font-family:var(--font-mono); font-size:10px; color:var(--t3); margin-bottom:10px}
+  .figure .fsource{font-family:var(--font-mono); font-size:10px; color:var(--t4); margin-top:9px;
+    border-top:1px solid var(--b1); padding-top:8px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px}
+  .keynums{display:flex; flex-wrap:wrap; gap:22px; margin:14px 0}
+  .keynums .kn{min-width:0}
+  .keynums .knv{font-family:var(--font-mono); font-size:19px; font-weight:600; color:var(--t1); font-variant-numeric:tabular-nums; line-height:1}
+  .keynums .knv.up{color:var(--red4)} .keynums .knv.dn{color:var(--grn4)}
+  .keynums .knl{font-size:10.5px; color:var(--t3); margin-top:5px; letter-spacing:.02em}
+  .rec{border-left:2px solid var(--blue3); padding:2px 0 2px 12px; margin:16px 0 6px}
+  .rec .rt{font-family:var(--font-mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--blue4); margin-bottom:5px}
+  .rec p{font-size:13px; color:var(--t1); line-height:1.55}
+  .rec .because{color:var(--t3); font-size:12px; margin-top:5px}
+  .disclose{margin-top:16px; font-family:var(--font-mono); font-size:11px; color:var(--t3);
+    border-top:1px solid var(--b1); padding-top:12px; display:flex; align-items:center; gap:8px; cursor:default}
+  .disclose .chev{color:var(--t4)}
+
+  .callouts{display:flex; flex-wrap:wrap; gap:8px; margin-top:14px}
+  .callo{font-family:var(--font-mono); font-size:10.5px; color:var(--t2); border:1px solid var(--b2);
+    border-radius:var(--r3); padding:6px 9px; background:var(--bg-1)}
+  .callo b{color:var(--grn4); font-weight:600}
+
+  footer.ft{margin-top:64px; border-top:1px solid var(--b1); padding-top:18px; color:var(--t4);
+    font-size:11.5px; font-family:var(--font-mono); line-height:1.6}
+  .fade{opacity:0; transform:translateY(8px); animation:rise .6s ease forwards}
+  .d1{animation-delay:.05s}.d2{animation-delay:.12s}.d3{animation-delay:.19s}
+  @keyframes rise{to{opacity:1; transform:none}}
+  @media(prefers-reduced-motion:reduce){ .fade{animation:none; opacity:1; transform:none} .plane{transition:none} }
+  :focus-visible{outline:2px solid var(--blue3); outline-offset:2px; border-radius:var(--r2)}
+</style>
+</head>
+<body>
+
+<div class="aug">
+<div class="wrap">
+
+  <header class="hd fade">
+    <div class="kicker">
+      <svg class="stack-glyph" viewBox="0 0 24 24" fill="none" stroke="#4BA3F5" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+        <path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M2 12l10 5 10-5"/><path d="M2 16l10 5 10-5"/>
+      </svg>
+      <span class="label">Aughor · Architecture &amp; Report Design</span>
+    </div>
+    <h1 class="h1">From a flat agent mesh to eight assessable planes</h1>
+    <p class="lede">A proposal to consolidate the agent runtime and the intelligence platform into functional planes — modelled on the Databricks Lakehouse's horizontal bands and one cross-cutting governance spine — so each block has a contract, an owner, and a swap-point. Rendered in Aughor's own design tokens: the report design it recommends, dogfooded.</p>
+    <div class="meta-row">
+      <span class="pill"><b>20</b> agents + stores &rarr; <b>8</b> planes</span>
+      <span class="pill">validation: <b>9 modules / 3 pkgs</b> &rarr; 1 spine</span>
+      <span class="pill">routing: <b>5 modules</b> &rarr; 1 intent&times;depth</span>
+      <span class="pill">semantic layer: <b>absent from path</b> &rarr; a plane</span>
+    </div>
+  </header>
+
+  <!-- ACT 1 — ARCHITECTURE BEFORE/AFTER -->
+  <section class="act fade d1">
+    <div class="act-head">
+      <span class="act-num">01</span>
+      <h2 class="h2" style="font-size:19px">The architecture</h2>
+    </div>
+    <p class="act-sub">Today the runtime is a mesh of peer agents in one box — control, capability, validation, memory and data at the same level, with no seam to cut. The proposal re-draws the same material as stacked planes: capabilities on top, a governance spine between every capability and the data, storage at the base.</p>
+
+    <div class="ba">
+      <!-- BEFORE -->
+      <div class="panel before">
+        <div class="col-tag before"><span class="dot"></span><span class="t">Before · flat mesh</span></div>
+        <div class="mesh-box">
+          <div class="label">core agents — all peers</div>
+          <div class="mesh">
+            <div class="node ctrl">Planner</div>
+            <div class="node ctrl">Route Decision</div>
+            <div class="node ctrl">Decision Maker</div>
+            <div class="node">SQL Generator</div>
+            <div class="node trust">SQL Validator</div>
+            <div class="node">Interpreter</div>
+            <div class="node">Code Generator</div>
+            <div class="node trust">Code Validator</div>
+            <div class="node">Code Executor</div>
+            <div class="node">Metadata Handler</div>
+            <div class="node">Graph Agent</div>
+            <div class="node mem">Chat History</div>
+          </div>
+          <div class="mesh-legend">
+            <span><i class="sw" style="border-color:#3a2f18;background:#241d0e"></i>control</span>
+            <span><i class="sw" style="border-color:#3a2320;background:#241512"></i>validation (per-path)</span>
+            <span><i class="sw" style="border-color:#1d3340;background:#0f2029"></i>memory (leaf write)</span>
+            <span><i class="sw" style="border-color:var(--b2);background:var(--bg-3)"></i>capability</span>
+          </div>
+        </div>
+        <p class="cap">Two validators, three isomorphic Generate&rarr;Validate&rarr;Interpret pipelines, state written as a side-effect of a rendering leaf, and no semantic layer anywhere in the flow.</p>
+      </div>
+
+      <!-- AFTER -->
+      <div class="panel after">
+        <div class="col-tag after"><span class="dot"></span><span class="t">After · eight planes</span></div>
+        <div class="planes">
+          <div class="plane experience">
+            <div class="pn">①</div>
+            <div class="pbody"><div class="pname">Experience <span class="analog">≈ Workloads / use-cases</span></div><div class="prole">Conversational surface, answer-as-document, workspaces</div></div>
+            <div class="chips"><span class="chip">web/</span><span class="chip">AnswerReport</span></div>
+          </div>
+          <div class="plane orchestration">
+            <div class="pn">②</div>
+            <div class="pbody"><div class="pname">Orchestration <span class="analog">≈ Orchestration</span></div><div class="prole">Entry · Planner · <b style="color:var(--t1)">intent × depth</b> routing · plan gate</div></div>
+            <div class="chips"><span class="chip">ask_router</span><span class="chip">graph</span></div>
+          </div>
+          <div class="plane capability">
+            <div class="pn">③</div>
+            <div class="pbody"><div class="pname">Agent Capability <span class="analog">≈ AI Agent Systems + SQL</span></div><div class="prole">One Generate→Validate→Execute→Interpret template, per domain</div></div>
+            <div class="chips"><span class="chip">Data</span><span class="chip">Compute</span><span class="chip">Viz</span><span class="chip">Metadata</span></div>
+          </div>
+          <div class="plane governance">
+            <div class="pn amber">④</div>
+            <div class="pbody"><div class="pname">Trust &amp; Governance <span class="spine-tag">cross-cutting spine</span></div><div class="prole">Validators · grain/fan-out/join guards · read-only + PII · audit · licensing · approval</div></div>
+            <div class="chips"><span class="chip">safety</span><span class="chip">*_guard</span><span class="chip">audit</span></div>
+          </div>
+          <div class="plane semantic">
+            <div class="pn vio">⑤</div>
+            <div class="pbody"><div class="pname">Semantic <span class="analog">≈ Unity Catalog semantic</span></div><div class="prole">Ontology (objects/links/actions) · metrics · glossary · KB · playbook</div></div>
+            <div class="chips"><span class="chip">ontology</span><span class="chip">SemanticContract</span></div>
+          </div>
+          <div class="plane memory">
+            <div class="pn cyn">⑥</div>
+            <div class="pbody"><div class="pname">Memory &amp; Provenance <span class="analog">≈ MLflow / lineage</span></div><div class="prole">Chat history · kernel ledger · evidence ledger · checkpoints</div></div>
+            <div class="chips"><span class="chip">ledger</span><span class="chip">evidence</span></div>
+          </div>
+          <div class="plane data">
+            <div class="pn grn">⑦</div>
+            <div class="pbody"><div class="pname">Data &amp; Connectivity <span class="analog">≈ Delta Lake + connectors</span></div><div class="prole">Connection registry · PG/DuckDB/Snow/BQ · stores · one tool registry</div></div>
+            <div class="chips"><span class="chip">db/</span><span class="chip">connectors</span></div>
+          </div>
+          <div class="plane runtime">
+            <div class="pn gray">⑧</div>
+            <div class="pbody"><div class="pname">Runtime Foundation <span class="spine-tag rt">Apollo-equivalent</span></div><div class="prole">Kernel jobs · metering · flags · LLM provider · secrets · tenancy</div></div>
+            <div class="chips"><span class="chip">kernel</span><span class="chip">llm/</span></div>
+          </div>
+        </div>
+        <p class="cap">Governance (④) sits <em>between</em> every capability and the data — not inside one agent — exactly as Unity Catalog does. Runtime (⑧) is the substrate all planes run on.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACT 2 — PLANE CONTRACTS -->
+  <section class="act fade d2">
+    <div class="act-head">
+      <span class="act-num">02</span>
+      <h2 class="h2" style="font-size:19px">Why planes, not agents — the modularity payoff</h2>
+    </div>
+    <p class="act-sub">A plane is only worth the consolidation if it can be assessed and swapped in isolation. Give each one a contract, an owner + SLO, a registry-injected swap-point, and its own conformance suite — the seam pattern <span class="mono" style="color:var(--t2)">kernel/registries/</span> already provides.</p>
+    <div class="contract-grid">
+      <div class="cc">
+        <h3><span class="dot" style="background:var(--amb4)"></span>Trust &amp; Governance</h3>
+        <span class="k">Contract</span><p><span class="mono">verify(sql|code|meta, scope) → Verdict</span></p>
+        <span class="k k2">Assess in isolation</span><p>Replay a corpus of queries; expect fail-<b style="color:var(--amb4)">closed</b> on guard error.</p>
+        <span class="k">Swaps to</span><p>Stricter guard set for a regulated tenant — no caller changes.</p>
+      </div>
+      <div class="cc">
+        <h3><span class="dot" style="background:var(--blue4)"></span>Agent Capability</h3>
+        <span class="k">Contract</span><p><span class="mono">answer(Question, Scope, Ctx) → Report</span></p>
+        <span class="k k2">Assess in isolation</span><p>Golden Q&amp;A set per domain; add "forecast" = 1 new impl.</p>
+        <span class="k">Swaps to</span><p>A new capability reusing Trust/Semantic/Memory unchanged.</p>
+      </div>
+      <div class="cc">
+        <h3><span class="dot" style="background:var(--vio4)"></span>Semantic</h3>
+        <span class="k">Contract</span><p><span class="mono">context(Scope) → SemanticContext</span></p>
+        <span class="k k2">Assess in isolation</span><p>One metric = one shape (kills the 2 metric-type drift).</p>
+        <span class="k">Swaps to</span><p>Customer ontology / domain pack, hot-loaded.</p>
+      </div>
+      <div class="cc">
+        <h3><span class="dot" style="background:var(--grn4)"></span>Data &amp; Connectivity</h3>
+        <span class="k">Contract</span><p><span class="mono">execute(sql, Scope) → Rows</span> (read-only)</p>
+        <span class="k k2">Assess in isolation</span><p>Driver conformance per dialect; Postgres opens read-only.</p>
+        <span class="k">Swaps to</span><p>Air-gapped / on-prem data plane behind the same face.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACT 3 — REPORT DESIGN BEFORE/AFTER -->
+  <section class="act fade d3">
+    <div class="act-head">
+      <span class="act-num">03</span>
+      <h2 class="h2" style="font-size:19px">The report surface — 10&times;</h2>
+    </div>
+    <p class="act-sub">The Experience Plane's job. Today a "direct" answer renders as a stack of coloured boxes (ReportView, div-soup); the proposal renders every answer as one document — headline first, one framed chart with a source footer, key numbers inline, a recommendation grounded in the finding, machinery behind a single quiet disclosure. Same data, same tokens.</p>
+
+    <div class="ba">
+      <!-- BEFORE report -->
+      <div class="panel before">
+        <div class="col-tag before"><span class="dot"></span><span class="t">Before · dashboard of boxes</span></div>
+        <div class="report-before">
+          <div class="rb-banner">✓ Verdict: Confirmed — womenswear returns elevated</div>
+          <div class="rb-card rb-emer"><span class="rl">Key finding · H1</span>Return rate rose in Q2; confidence High.<div class="rb-badges"><span class="rb-badge bd-g">confirmed</span><span class="rb-badge bd-b">2.1σ</span></div></div>
+          <div class="rb-card rb-amb"><span class="rl">Risk</span>Sample skew across 3 SKUs may inflate the aggregate.</div>
+          <div class="rb-card rb-vio"><span class="rl">Recommended action · 1</span>Review sizing on affected SKUs.<div class="rb-badges"><span class="rb-badge bd-a">pending</span></div></div>
+          <div class="rb-chart-buried">▤ chart + SQL folded below · source unknown until you click</div>
+        </div>
+        <p class="cap">Six framed colours competing for attention, the chart buried, the "so what" detached from its evidence, three radii and two type systems.</p>
+      </div>
+
+      <!-- AFTER report -->
+      <div class="panel after">
+        <div class="col-tag after"><span class="dot"></span><span class="t">After · the answer as a document</span></div>
+        <div class="doc">
+          <div class="dhead">Womenswear returns ran <b>14.1%</b> in Q2 — <b>4.3pts</b> above the catalogue average, and the gap is concentrated in three SKUs.</div>
+          <p class="dprose">Returns rose steadily from April, peaking in June. Womenswear is the only category materially above the <span class="mono" style="color:var(--t2)">9.8%</span> baseline; every other category held within a point of it.</p>
+
+          <figure class="figure">
+            <div class="ftitle">Return rate by category · Q2 2026</div>
+            <div class="fsub">percent of shipped units returned</div>
+            <svg viewBox="0 0 360 150" width="100%" height="150" role="img" aria-label="Bar chart of return rate by category; womenswear highest at 14.1 percent.">
+              <!-- gridlines -->
+              <g stroke="#212325" stroke-width="1">
+                <line x1="40" y1="20" x2="352" y2="20"/><line x1="40" y1="55" x2="352" y2="55"/>
+                <line x1="40" y1="90" x2="352" y2="90"/><line x1="40" y1="125" x2="352" y2="125"/>
+              </g>
+              <g fill="#525B69" font-family="ui-monospace,monospace" font-size="8" text-anchor="end">
+                <text x="35" y="23">16</text><text x="35" y="58">11</text><text x="35" y="93">5</text><text x="35" y="128">0</text>
+              </g>
+              <!-- baseline marker 9.8% -->
+              <line x1="40" y1="64" x2="352" y2="64" stroke="#BD8800" stroke-width="1" stroke-dasharray="3 3" opacity=".8"/>
+              <text x="352" y="61" fill="#E0AD00" font-family="ui-monospace,monospace" font-size="7.5" text-anchor="end">baseline 9.8%</text>
+              <!-- bars: values 14.1, 10.2, 9.9, 9.1, 8.4 mapped; y=125 - v/16*105 -->
+              <g>
+                <rect x="52"  y="32.4" width="46" height="92.6" rx="2" fill="#E64848"/>
+                <rect x="114" y="58.1" width="46" height="66.9" rx="2" fill="#4C8EEE"/>
+                <rect x="176" y="60.0" width="46" height="65.0" rx="2" fill="#4C8EEE"/>
+                <rect x="238" y="65.3" width="46" height="59.7" rx="2" fill="#4C8EEE"/>
+                <rect x="300" y="69.8" width="46" height="55.2" rx="2" fill="#4C8EEE"/>
+              </g>
+              <g fill="#E2E4E9" font-family="ui-monospace,monospace" font-size="8.5" font-weight="600" text-anchor="middle">
+                <text x="75"  y="28">14.1</text><text x="137" y="53.5">10.2</text><text x="199" y="55.5">9.9</text><text x="261" y="60.8">9.1</text><text x="323" y="65.3">8.4</text>
+              </g>
+              <g fill="#939AA6" font-family="ui-monospace,monospace" font-size="7.5" text-anchor="middle">
+                <text x="75" y="137">Women</text><text x="137" y="137">Men</text><text x="199" y="137">Kids</text><text x="261" y="137">Home</text><text x="323" y="137">Beauty</text>
+              </g>
+            </svg>
+            <div class="fsource"><span>Source: <b style="color:var(--t3)">orders</b> ⋈ <b style="color:var(--t3)">returns</b> · 48,213 rows</span><span>2026-04-01 → 06-30 · verified ✓</span></div>
+          </figure>
+
+          <div class="keynums">
+            <div class="kn"><div class="knv up">14.1%</div><div class="knl">Womenswear return rate</div></div>
+            <div class="kn"><div class="knv">+4.3pts</div><div class="knl">vs catalogue average</div></div>
+            <div class="kn"><div class="knv">61%</div><div class="knl">of the gap from 3 SKUs</div></div>
+          </div>
+
+          <div class="rec">
+            <div class="rt">Recommended action</div>
+            <p>Re-grade sizing on the three SKUs driving the spike before the autumn buy.</p>
+            <p class="because">Because those SKUs account for <span class="mono" style="color:var(--t2)">61%</span> of the excess returns — fixing them closes most of the gap without touching the rest of the range.</p>
+          </div>
+
+          <div class="disclose"><span class="chev">▸</span> Details — SQL, confidence factors, attribution, data gaps</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callouts">
+      <span class="callo"><b>Headline-first</b> — the answer in one line, before any chart</span>
+      <span class="callo"><b>One framed object</b> — chart + source footer, not six cards</span>
+      <span class="callo"><b>Grounded rec</b> — every "do" carries its "because"</span>
+      <span class="callo"><b>Quiet disclosure</b> — machinery behind one toggle</span>
+      <span class="callo"><b>One type scale + ≤6px radius</b> — enforced by lint</span>
+    </div>
+  </section>
+
+  <footer class="ft">
+    Aughor — proposed layered architecture &amp; report design · built in the platform's own tokens (<span style="color:var(--t3)">web/styles/tokens.css</span>).<br>
+    Companion to the combined engineering handoff. Illustrative report figures use representative values.
+  </footer>
+
+</div>
+</div>
+</body>
+</html>
