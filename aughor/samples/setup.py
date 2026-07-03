@@ -34,24 +34,68 @@ FIXTURE_PATH = Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
 
 def ensure_fixture_db() -> Path:
     """Guarantee the builtin ``fixture`` connection's DB (``data/aughor.duckdb``)
-    exists and is openable.
+    exists, is openable, and has its demo tables.
 
-    That file is gitignored and nothing seeds it, so a fresh install — or a clean
-    CI checkout — otherwise has a BROKEN builtin connection: opening a missing file
-    read-only raises ``IOException``. We only guarantee an openable (empty) DB; the
-    seeded ecommerce demo lives in the separate ``samples`` connection. Idempotent.
+    That file is gitignored and nothing seeded it, so a fresh install — or a clean
+    CI checkout — otherwise had a BROKEN builtin connection: opening a missing file
+    read-only raises ``IOException``. Only seeds when the file is ABSENT, so an
+    existing dev DB is never touched. Idempotent.
     """
     FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
     if FIXTURE_PATH.exists():
-        return FIXTURE_PATH
+        return FIXTURE_PATH  # present (local dev) — never mutate the user's DB
     try:
         import duckdb
-        conn = duckdb.connect(str(FIXTURE_PATH))  # read-write open materializes the file
-        conn.close()
-        logger.info("Created empty fixture DB at %s", FIXTURE_PATH)
+        conn = duckdb.connect(str(FIXTURE_PATH))
+        try:
+            logger.info("Seeding fixture DB (aughor.duckdb) — SaaS revenue demo…")
+            _seed_fixture(conn)
+        finally:
+            conn.close()
     except Exception as exc:
-        logger.warning("Failed to create fixture DB: %s", exc)
+        logger.warning("Failed to seed fixture DB: %s", exc)
     return FIXTURE_PATH
+
+
+def _seed_fixture(conn) -> None:  # noqa: ANN001
+    """Small SaaS-revenue analytics fixture (``main`` schema) backing the builtin
+    ``fixture`` connection: customers · daily_revenue · events · kpi_daily. Kept in
+    the ``main`` schema so unqualified table names resolve, matching the original
+    hand-built demo DB."""
+    conn.execute("""
+    CREATE TABLE main.customers AS
+    SELECT printf('U%04d', i) AS customer_id, 'Customer ' || i AS name,
+           (['SMB','Mid','Enterprise'])[i % 3 + 1] AS segment,
+           (['NA','EMEA','APAC'])[i % 3 + 1] AS region,
+           (['free','pro','enterprise'])[i % 3 + 1] AS plan,
+           round(50 + (i % 50) * 10.0, 2) AS mrr,
+           (DATE '2024-01-01' + ((i % 300) || ' days')::INTERVAL)::DATE AS acquired_at
+    FROM range(1, 201) t(i)""")
+    conn.execute("""
+    CREATE TABLE main.daily_revenue AS
+    SELECT (DATE '2024-01-01' + ((i % 90) || ' days')::INTERVAL)::DATE AS date,
+           printf('U%04d', (i % 200) + 1) AS customer_id,
+           round((i % 100) * 3.5 + 10, 2) AS amount,
+           (['paid','paid','paid','failed','refunded'])[i % 5 + 1] AS status
+    FROM range(1, 1001) t(i)""")
+    conn.execute("""
+    CREATE TABLE main.events AS
+    SELECT * FROM (VALUES
+      ('E1','outage','API outage','Regional API outage', DATE '2024-02-10', DATE '2024-02-11','EMEA','Enterprise'),
+      ('E2','promo','Spring promo','Discount campaign',  DATE '2024-03-01', DATE '2024-03-15','NA','SMB'),
+      ('E3','release','v2 launch','Major release',       DATE '2024-04-01', DATE '2024-04-01','APAC','Mid'))
+      t(event_id,event_type,title,description,start_date,end_date,affected_region,affected_segment)""")
+    conn.execute("""
+    CREATE TABLE main.kpi_daily AS
+    SELECT (DATE '2024-01-01' + ((i % 60) || ' days')::INTERVAL)::DATE AS date,
+           (['NA','EMEA','APAC'])[i % 3 + 1] AS region,
+           (['SMB','Mid','Enterprise'])[i % 3 + 1] AS segment,
+           (['revenue','signups','churn'])[i % 3 + 1] AS metric,
+           round((i % 100) * 12.5, 2) AS value,
+           ((i % 500) + 50)::BIGINT AS transaction_count,
+           (i % 20)::HUGEINT AS failure_count,
+           round((i % 20) * 0.5, 2) AS failure_rate_pct
+    FROM range(1, 301) t(i)""")
 
 
 # ── Public entry point ────────────────────────────────────────────────────────

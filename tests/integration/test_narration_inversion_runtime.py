@@ -27,6 +27,9 @@ VARYING = [[1, 3], [2, 5], [3, 2]]
 
 # ── Chat: an inverted headline gets the inline caveat on the real /chat path ───
 
+# Live-LLM: only the coder role is faked; the /chat headline path still calls a real
+# provider (the narrator), so this needs a live LLM and is excluded from CI (-m "not e2e").
+@pytest.mark.e2e
 def test_chat_caveat_fires_on_real_endpoint(client: TestClient, builtin_conn_id: str, monkeypatch) -> None:
     import aughor.llm.provider as prov
     from aughor.routers.investigations import _ChatAnswer
