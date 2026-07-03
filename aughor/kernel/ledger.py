@@ -33,6 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.org.context import current_org_id
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,21 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _add_kernel_org_ids(c: sqlite3.Connection) -> None:
+    """Tenant key on the kernel's job/artifact/lineage rows (back-fills to 'default')."""
+    add_column_if_missing(c, "jobs", "org_id", "TEXT NOT NULL DEFAULT 'default'")
+    add_column_if_missing(c, "artifacts", "org_id", "TEXT NOT NULL DEFAULT 'default'")
+    add_column_if_missing(c, "lineage", "org_id", "TEXT NOT NULL DEFAULT 'default'")
+
+
+# Schema evolution (DATA-05). The kernel tables in _SCHEMA are v1; changes are Migration(v>=2).
+_MIGRATIONS = [
+    Migration(2, "per-run compute metering (jobs.metrics)",
+              lambda c: add_column_if_missing(c, "jobs", "metrics", "TEXT")),
+    Migration(3, "tenant key on jobs/artifacts/lineage", _add_kernel_org_ids),
+]
+
+
 class Ledger:
     """Thread-safe transactional store. One instance per database path."""
 
@@ -124,24 +140,12 @@ class Ledger:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't SQLITE_BUSY instantly (DATA-02)
         self._conn.execute("PRAGMA synchronous=NORMAL")
-        with self._lock, self._conn:
-            self._conn.executescript(_SCHEMA)
-            # Additive migration: per-run compute metering (tokens/queries/rows/time)
-            # as a JSON blob on the job row. PRAGMA-guarded so it's exception-free
-            # and idempotent across restarts.
-            _job_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(jobs)").fetchall()}
-            if "metrics" not in _job_cols:
-                self._conn.execute("ALTER TABLE jobs ADD COLUMN metrics TEXT")
-            # Additive migration (2026-06-22): tenant key on jobs, artifacts, lineage.
-            # PRAGMA-guarded + idempotent; back-fills existing rows to the bootstrap org.
-            if "org_id" not in _job_cols:
-                self._conn.execute("ALTER TABLE jobs ADD COLUMN org_id TEXT NOT NULL DEFAULT 'default'")
-            _art_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(artifacts)").fetchall()}
-            if "org_id" not in _art_cols:
-                self._conn.execute("ALTER TABLE artifacts ADD COLUMN org_id TEXT NOT NULL DEFAULT 'default'")
-            _lin_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(lineage)").fetchall()}
-            if "org_id" not in _lin_cols:
-                self._conn.execute("ALTER TABLE lineage ADD COLUMN org_id TEXT NOT NULL DEFAULT 'default'")
+        with self._lock:
+            with self._conn:
+                self._conn.executescript(_SCHEMA)
+            # Schema evolution through the versioned framework (DATA-05). Idempotent +
+            # forward-only; back-fills existing rows to the bootstrap org.
+            run_migrations(self._conn, _MIGRATIONS, store="ledger")
 
     @classmethod
     def default(cls) -> "Ledger":
