@@ -13,7 +13,12 @@ Heuristic flags:
              review, rating) or forced a narrow MoM window with no basis.
   CONF     — confidence is HIGH/MEDIUM despite zero evidence (no rows / all errors).
 """
-import json, re, sys, time, uuid, urllib.request, urllib.error
+import json
+import re
+import time
+import uuid
+import urllib.request
+import urllib.error
 
 BASE = "http://localhost:8000"
 SESSION = "sweep-" + uuid.uuid4().hex[:8]

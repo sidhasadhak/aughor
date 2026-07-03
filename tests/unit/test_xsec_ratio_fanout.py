@@ -8,7 +8,6 @@ any LLM call happens."""
 from __future__ import annotations
 
 import duckdb
-import pytest
 
 import aughor.agent.investigate as I
 from aughor.db.connection import DuckDBConnection

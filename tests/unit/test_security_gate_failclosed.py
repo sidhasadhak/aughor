@@ -9,7 +9,6 @@ tests pin fail-closed behaviour both at the gate function and end-to-end through
 from __future__ import annotations
 
 import duckdb
-import pytest
 
 
 def _boom(sql):  # matches SafetyChecker.check(sql) call shape

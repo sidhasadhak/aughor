@@ -5,7 +5,6 @@ tests/unit/test_connection_purge.py.
 """
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
 

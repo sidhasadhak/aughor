@@ -118,7 +118,8 @@ def test_action_trigger(trigger_id: str):
 @router.post("/investigations/{inv_id}/recommendations/{rec_index}/execute")
 def execute_recommendation_action(inv_id: str, rec_index: int, body: dict):
     """Fire a configured trigger for a specific recommendation."""
-    import datetime, json as _json
+    import datetime
+    import json as _json
     from aughor.actions.store    import get_trigger
     from aughor.actions.models   import ActionPayload
     from aughor.actions.executor import fire_action

@@ -103,7 +103,7 @@ def test_apply_percent_formatting_tags_columns_and_normalizes_keys():
 def test_apply_percent_formatting_noop_for_non_percent():
     f = {"columns": ["region", "metric_total"], "rows": [["n", 340.0]],
          "key_numbers": [{"label": "Highest", "value": "340"}]}
-    before = {k: list(v) if isinstance(v, list) else v for k, v in f.items()}
+    {k: list(v) if isinstance(v, list) else v for k, v in f.items()}
     I._apply_percent_formatting(f, is_pct=False)
     assert "column_units" not in f                       # untouched
     assert f["key_numbers"][0]["value"] == "340"          # untouched

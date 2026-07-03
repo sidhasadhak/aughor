@@ -95,7 +95,7 @@ def test_detect_text_columns_skips_ids_and_empty():
 # ── filter ─────────────────────────────────────────────────────────────────────
 
 def test_semantic_filter_keeps_only_matching_rows(patch_provider):
-    p = patch_provider(FakeProvider(filter_fn=lambda t: "open" in t.lower()))
+    patch_provider(FakeProvider(filter_fn=lambda t: "open" in t.lower()))
     qr = _qr(["note"], [["open: server down"], ["closed: resolved"], ["open: timeout"]])
 
     out = semantic_filter(qr, "note", "the ticket is still open")
@@ -156,7 +156,7 @@ def test_semantic_filter_override_cap_processes(patch_provider):
 
 
 def test_semantic_filter_fail_open_on_llm_error(patch_provider):
-    p = patch_provider(FakeProvider(fail=True))
+    patch_provider(FakeProvider(fail=True))
     qr = _qr(["note"], [["a"], ["b"]])
 
     out = semantic_filter(qr, "note", "p")
@@ -174,7 +174,7 @@ def test_semantic_filter_fail_open_on_missing_verdict(patch_provider):
             items = [(int(i), t) for i, t in _LINE.findall(user)]
             return _FilterBatch(verdicts=[_RowVerdict(index=i, keep=False) for i, t in items if i % 2 == 0])
 
-    p = patch_provider(Partial())
+    patch_provider(Partial())
     qr = _qr(["note"], [["r0"], ["r1"], ["r2"], ["r3"]])
 
     out = semantic_filter(qr, "note", "p")
@@ -195,7 +195,7 @@ def test_semantic_filter_upstream_error_is_noop(patch_provider):
 # ── extract ────────────────────────────────────────────────────────────────────
 
 def test_semantic_extract_appends_columns(patch_provider):
-    p = patch_provider(FakeProvider(
+    patch_provider(FakeProvider(
         extract_fn=lambda t: {"severity": "high" if "down" in t else "low", "component": "db"}
     ))
     qr = _qr(["id", "note"], [["1", "server down"], ["2", "minor glitch"]])
@@ -210,7 +210,7 @@ def test_semantic_extract_appends_columns(patch_provider):
 
 
 def test_semantic_extract_uniquifies_colliding_field_name(patch_provider):
-    p = patch_provider(FakeProvider(extract_fn=lambda t: {"note": "summary"}))
+    patch_provider(FakeProvider(extract_fn=lambda t: {"note": "summary"}))
     qr = _qr(["note"], [["the full text"]])
 
     out = semantic_extract(qr, "note", [("note", "a summary")])
@@ -220,7 +220,7 @@ def test_semantic_extract_uniquifies_colliding_field_name(patch_provider):
 
 
 def test_semantic_extract_blank_on_llm_error(patch_provider):
-    p = patch_provider(FakeProvider(fail=True))
+    patch_provider(FakeProvider(fail=True))
     qr = _qr(["note"], [["x"], ["y"]])
 
     out = semantic_extract(qr, "note", [("a", ""), ("b", "")])
@@ -289,7 +289,7 @@ def test_apply_step_dispatches_aggregate(patch_provider):
 
 def test_semantic_top_k_ranks_and_truncates(patch_provider):
     # score = text length → longest first
-    p = patch_provider(FakeProvider(score_fn=lambda t: len(t)))
+    patch_provider(FakeProvider(score_fn=lambda t: len(t)))
     qr = _qr(["note"], [["short"], ["the longest one here"], ["mid length"]])
 
     out = semantic_top_k(qr, "note", "longest", 2)
@@ -302,7 +302,7 @@ def test_semantic_top_k_ranks_and_truncates(patch_provider):
 
 
 def test_semantic_top_k_k_ge_n_returns_all_sorted(patch_provider):
-    p = patch_provider(FakeProvider(score_fn=lambda t: float(t)))
+    patch_provider(FakeProvider(score_fn=lambda t: float(t)))
     qr = _qr(["note"], [["1"], ["3"], ["2"]])
 
     out = semantic_top_k(qr, "note", "biggest", 10)
@@ -324,7 +324,7 @@ def test_semantic_top_k_invalid_k_is_noop(patch_provider):
 
 def test_semantic_top_k_fail_open_scores_neutral(patch_provider):
     # batch fails → all rows neutral → original order preserved (stable), nothing dropped from contention
-    p = patch_provider(FakeProvider(fail=True))
+    patch_provider(FakeProvider(fail=True))
     qr = _qr(["note"], [["a"], ["b"], ["c"]])
 
     out = semantic_top_k(qr, "note", "x", 2)
@@ -347,7 +347,7 @@ def test_semantic_top_k_refuses_over_cap(patch_provider):
 # ── aggregate ─────────────────────────────────────────────────────────────────
 
 def test_semantic_aggregate_synthesizes_one_row(patch_provider):
-    p = patch_provider(FakeProvider(aggregate_fn=lambda texts: f"summary of {len(texts)}: " + "; ".join(texts)))
+    patch_provider(FakeProvider(aggregate_fn=lambda texts: f"summary of {len(texts)}: " + "; ".join(texts)))
     qr = _qr(["note"], [["billing issue"], ["login bug"], ["billing again"]])
 
     out = semantic_aggregate(qr, "note", "summarize the themes")
@@ -361,7 +361,7 @@ def test_semantic_aggregate_synthesizes_one_row(patch_provider):
 
 
 def test_semantic_aggregate_custom_out_column(patch_provider):
-    p = patch_provider(FakeProvider(aggregate_fn=lambda texts: "ok"))
+    patch_provider(FakeProvider(aggregate_fn=lambda texts: "ok"))
     qr = _qr(["note"], [["a"]])
 
     out = semantic_aggregate(qr, "note", "x", out_column="themes")
@@ -370,7 +370,7 @@ def test_semantic_aggregate_custom_out_column(patch_provider):
 
 
 def test_semantic_aggregate_fail_open_keeps_raw(patch_provider):
-    p = patch_provider(FakeProvider(fail=True))
+    patch_provider(FakeProvider(fail=True))
     qr = _qr(["note"], [["a"], ["b"]])
 
     out = semantic_aggregate(qr, "note", "x")

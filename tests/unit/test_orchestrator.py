@@ -4,11 +4,10 @@ the routers, (b) the typed report's prompt section is byte-identical to the lega
 string the synthesizer received, and (c) everything is fail-open. Pure + hermetic."""
 from __future__ import annotations
 
-import re
 
 from aughor.agent.orchestrator import (
     plan_phases, reconcile, detect_contradictions,
-    OrchestrationPlan, ContradictionReport,
+    ContradictionReport,
 )
 
 

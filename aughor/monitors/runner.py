@@ -342,10 +342,9 @@ def run_drift_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
         return None
 
     try:
-        from scipy.stats import chi2_contingency  # type: ignore
         import numpy as np
     except ImportError:
-        logger.warning("scipy/numpy not available — drift monitor skipped")
+        logger.warning("numpy not available — drift monitor skipped")
         return None
 
     try:

@@ -5,7 +5,7 @@ the illegal-transition guards, and the audit record each transition produces.
 """
 import pytest
 
-from aughor.semantic.governance import apply_transition, can_transition, TRANSITIONS
+from aughor.semantic.governance import apply_transition, can_transition
 from aughor.semantic.metrics import MetricDefinition
 
 NOW = "2026-06-13T12:00:00+00:00"

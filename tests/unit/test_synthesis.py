@@ -6,7 +6,7 @@ eligible for. The LLM articulation + confirming-query verification live in the a
 and are not exercised here.
 """
 from aughor.explorer.synthesis import (
-    Claim, to_claim, candidate_pairs, render_pair_prompt, OPERATORS,
+    to_claim, candidate_pairs, render_pair_prompt, OPERATORS,
 )
 
 

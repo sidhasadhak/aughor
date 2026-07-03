@@ -6,7 +6,6 @@ relevant correction exists, and is byte-empty (zero-cost) otherwise.
 """
 from __future__ import annotations
 
-import importlib
 
 import pytest
 

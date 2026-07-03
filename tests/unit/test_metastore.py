@@ -15,7 +15,6 @@ import pytest
 
 from aughor.org import using_org
 from aughor.metastore import (
-    USAGE,
     accessible_catalog_ids,
     add_grant,
     catalog_securable,

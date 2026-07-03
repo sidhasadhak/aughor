@@ -87,7 +87,7 @@ def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[
     if not aggregates:
         return []  # no additive aggregate ⇒ fan-out cannot inflate a number
 
-    a2t = _alias_to_table(tree)
+    _alias_to_table(tree)
     findings: list[FanoutFinding] = []
     seen: set[tuple[str, str]] = set()
 

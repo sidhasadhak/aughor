@@ -1,10 +1,8 @@
 """P5 declarative modes (aughor.agent.modes) — file-driven routing + fallback."""
 from __future__ import annotations
 
-import pytest
 
 from aughor.agent.modes import registry
-from aughor.agent.modes.models import ModeManifest
 
 
 class _Dec:

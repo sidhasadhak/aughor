@@ -1,6 +1,6 @@
 """Unit tests for metric moves — north-star trends as brief candidates."""
 from aughor.knowledge.metric_moves import (
-    series_move, build_move_finding, compute_metric_moves, Move,
+    series_move, build_move_finding, compute_metric_moves,
 )
 from aughor.knowledge.triage import extract_change, impact_score, north_star_tokens
 

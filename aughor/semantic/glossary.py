@@ -177,7 +177,7 @@ def apply_glossary(schema_str: str, path: Path | None = None) -> str:
         col_match = re.match(r"^  (\w+)\s+(\S+)(.*)", line)
         if col_match and current_table:
             col_name = col_match.group(1)
-            rest = col_match.group(3)
+            col_match.group(3)
             meta = tables_meta.get(current_table, {})
             col_meta = (meta.get("columns") or {}).get(col_name, {})
 

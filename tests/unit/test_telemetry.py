@@ -6,8 +6,6 @@ completely no-op (no crash, correct return values) when env vars are absent.
 """
 from __future__ import annotations
 
-import os
-import importlib
 import sys
 import pytest
 

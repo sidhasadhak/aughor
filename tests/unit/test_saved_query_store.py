@@ -53,7 +53,7 @@ class TestList:
 
     def test_newest_first(self):
         q1 = S.create_saved_query("c", "first", spec={})
-        q2 = S.create_saved_query("c", "second", spec={})
+        S.create_saved_query("c", "second", spec={})
         # updating q1 bumps updated_at so it sorts ahead of q2
         S.update_saved_query(q1.id, name="first-edited")
         names = [q.name for q in S.list_saved_queries("c")]

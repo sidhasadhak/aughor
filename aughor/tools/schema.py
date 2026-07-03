@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import os
 import re
+from typing import TYPE_CHECKING
 
 import duckdb
+
+if TYPE_CHECKING:  # forward ref only — avoids importing the canvas layer at runtime
+    from aughor.canvas.models import Canvas
 
 from aughor.semantic.glossary import apply_glossary
 from aughor.tools.table_names import bare

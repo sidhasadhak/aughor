@@ -7,7 +7,6 @@ an arbitrary finding to a configured Action Hub trigger.
 See aughor/explorer/store.py::promote_insight_conn and
 aughor/routers/{exploration,actions}.py.
 """
-import json
 from types import SimpleNamespace
 
 import pytest

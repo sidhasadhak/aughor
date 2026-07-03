@@ -152,7 +152,7 @@ def check_entity_column_alignment(
     """
     try:
         question_lower = question.lower()
-        sql_lower = sql.lower()
+        sql.lower()
 
         groupby_tokens = _extract_groupby_tokens(sql)
         select_aliases = _extract_select_aliases(sql)

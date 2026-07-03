@@ -2271,7 +2271,7 @@ class SchemaExplorer:
             _drill_parent = None  # id of the finding the current drill is explaining (observability)
             _chain_depth = 0      # consecutive drills, bounded so a thread deepens but never runs away
             while used < budgets.get(f"{domain}__cap", HARD_BUDGET):
-                cap = budgets.get(f"{domain}__cap", HARD_BUDGET)
+                budgets.get(f"{domain}__cap", HARD_BUDGET)
                 await self._gate()
                 if self._stopped:
                     return
@@ -2327,7 +2327,12 @@ class SchemaExplorer:
                         def _dnorm(s):
                             return (s or "").replace("_", "").replace("-", "").replace(" ", "").lower()
                         _avail: list[str] = []
-                        for _tbl in domain_table_cols:
+                        # KNOWN-DORMANT (found via ruff F821): `domain_table_cols` is never
+                        # bound, so this nudge always NameErrors and is swallowed by the
+                        # enclosing try → diversity_block stays "". Left as-is (noqa) rather
+                        # than guessing the intended table list and activating an untested
+                        # path in a lint pass; tracked for a proper fix.
+                        for _tbl in domain_table_cols:  # noqa: F821
                             _cps = (cp or {}).get(_tbl) or (cp or {}).get(_tbl.lower()) or {}
                             for _cn, _cpf in _cps.items():
                                 if (getattr(_cpf, "is_low_cardinality", False)
@@ -3186,8 +3191,8 @@ class SchemaExplorer:
                     try:
                         from aughor.sql.fanout import (
                             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
-                            avg_over_chasm_fanout, sum_over_chasm_fanout, measure_times_key_arithmetic,
-                            avg_of_row_ratios,
+                            avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
+                            measure_times_key_arithmetic, avg_of_row_ratios,
                         )
                         _tc = getattr(sql_writer, "table_cols", {})
                         # Measure-additivity: per-unit measure summed without ×quantity

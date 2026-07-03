@@ -225,46 +225,17 @@ tables:
         caveats: May be NULL if no response has been provided; stored as character
           varying (string)
   orders:
-    description: This table records individual customer orders, including timestamps
-      for purchase, approval, delivery to carrier, delivery to customer, and estimated
-      delivery.
-    grain: One row represents one unique order identified by order_id
+    description: Contains records of customer orders, including the order identifier,
+      the customer who placed the order, and the monetary amount of the order.
+    grain: one row per order
     auto_generated: true
     columns:
-      order_id:
-        description: Unique identifier for each order
+      id:
+        description: Unique identifier for the order.
       customer_id:
-        description: Per-order UUID hash — same value as customer.customer_id for
-          this order. NOT a stable customer identifier.
-        caveats: 'Do NOT use orders.customer_id to count unique customers or detect
-          repeat purchasers. JOIN to customer.customer_unique_id instead: JOIN customer
-          c ON o.customer_id = c.customer_id, then GROUP BY c.customer_unique_id.
-          | customer_id in orders is a raw identifier that may not uniquely map to
-          customer_unique_id in the customer table without explicit join validation—using
-          customer_id directly could lead to duplicate or mismatched customer counts.'
-      order_status:
-        description: Current status of the order (e.g., delivered, shipped, canceled)
-        values: delivered, shipped, canceled, approved, invoiced, processing, created,
-          null
-        caveats: Some rows may have NULL status; may reflect legacy or incomplete
-          data
-      order_purchase_timestamp:
-        description: Timestamp when the customer placed the order
-        caveats: Stored as string; format appears to be 'YYYY-MM-DD HH:MM:SS'
-      order_approved_at:
-        description: Timestamp when the order was approved (e.g., payment confirmed)
-        caveats: May be NULL for orders that were never approved (e.g., canceled or
-          unpaid)
-      order_delivered_carrier_date:
-        description: Timestamp when the order was handed over to the carrier
-        caveats: May be NULL for orders not yet shipped or not using a carrier
-      order_delivered_customer_date:
-        description: Timestamp when the order was delivered to the customer
-        caveats: May be NULL for orders not yet delivered
-      order_estimated_delivery_date:
-        description: Estimated delivery date provided by the seller or system
-        caveats: May be NULL if no estimate was set; may differ from actual delivery
-          date
+        description: Identifier of the customer who placed the order.
+      amount:
+        description: Monetary value of the order.
   product_category_name_translation:
     description: Maps product category names from Portuguese to English, used to standardize
       or translate category labels across datasets.

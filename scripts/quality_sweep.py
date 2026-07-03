@@ -23,7 +23,13 @@ Usage:
   uv run python scripts/quality_sweep.py --mode investigate --limit 8
   uv run python scripts/quality_sweep.py --fresh         # ignore prior JSONL
 """
-import argparse, json, re, sys, time, uuid, urllib.request, urllib.error
+import argparse
+import json
+import re
+import time
+import uuid
+import urllib.request
+import urllib.error
 
 # Reuse the explorer's generation-time guards as live-sweep detectors so the
 # harness self-grades for the same classes (#4 — eval fixtures from real repros).

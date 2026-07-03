@@ -13,7 +13,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
-import pytest
 
 from aughor.db.connection import DuckDBConnection
 

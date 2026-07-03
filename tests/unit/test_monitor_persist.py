@@ -2,7 +2,6 @@
 via the `extra` JSON blob. Regression: reanchor_window was dropped on persist, so a
 re-anchoring monitor reloaded as reanchor_window=False and never re-anchored at run time.
 """
-import importlib
 
 import aughor.monitors.store as store
 from aughor.monitors.models import Monitor

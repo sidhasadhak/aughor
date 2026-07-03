@@ -365,7 +365,7 @@ async def connection_freshness(conn_id: str):
 async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str = ""):
     loop = asyncio.get_running_loop()
     try:
-        db = open_connection_for(conn_id)
+        open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     safe_table  = table.replace('"', '').replace(';', '')
@@ -694,7 +694,8 @@ def _stage_upload(file: UploadFile):
     aborted (and its partial temp removed) before it can fill the disk — rather
     than copying the whole stream first.
     """
-    import shutil, tempfile
+    import shutil
+    import tempfile
     original = Path(file.filename or "upload.csv").name
     tmp_dir = Path(tempfile.mkdtemp())
     tmp_path = tmp_dir / original

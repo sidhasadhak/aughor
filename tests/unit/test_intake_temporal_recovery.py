@@ -9,7 +9,6 @@ consequences on the default path, plus the guard that nothing changes when no ax
 """
 from __future__ import annotations
 
-import pytest
 
 import aughor.agent.investigate as I
 from aughor.agent.prompts_investigate import IntakeOutput

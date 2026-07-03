@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from typing import Optional
 
 from aughor.agent.state import VerificationManifest
 from aughor.verify.gate import is_compoundable

@@ -135,7 +135,7 @@ def sample_aggregates(sql: str, dialect: str = "duckdb", pct: float = 10.0) -> O
     for proj in list(select.expressions):
         target = proj.this if isinstance(proj, exp.Alias) else proj
         for agg in list(target.find_all(exp.Count, exp.Sum)):
-            before = agg.sql()
+            agg.sql()
             _scale(agg)
             scaled_any = scaled_any or True
 

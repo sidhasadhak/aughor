@@ -14,9 +14,6 @@ import pytest
 from aughor.org import (
     DEFAULT_ORG_ID,
     current_org_id,
-    ensure_default_org,
-    get_org,
-    list_orgs,
     using_org,
 )
 

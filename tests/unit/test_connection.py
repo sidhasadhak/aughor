@@ -6,7 +6,6 @@ No external databases required — all tests use in-memory DuckDB.
 """
 from __future__ import annotations
 
-import pytest
 
 
 # ── DuckDB execute ────────────────────────────────────────────────────────────

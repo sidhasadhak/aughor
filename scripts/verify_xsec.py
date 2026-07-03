@@ -3,7 +3,9 @@
 Writes every SSE event to OUT_JSONL immediately so a slow/timed-out run still leaves
 partial evidence. Usage: verify_xsec.py <conn_id> "<question>"
 """
-import json, sys, urllib.request
+import json
+import sys
+import urllib.request
 
 BASE = "http://localhost:8000"
 conn = sys.argv[1] if len(sys.argv) > 1 else "c1c664b0"

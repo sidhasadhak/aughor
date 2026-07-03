@@ -14,6 +14,7 @@ Disable via env var: AUGHOR_AUTOSEED=false
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 from typing import Optional
@@ -21,6 +22,8 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from aughor.semantic.glossary import load_glossary, save_glossary
+
+logger = logging.getLogger(__name__)  # was referenced but never defined (latent NameError)
 
 _ENABLED = os.getenv("AUGHOR_AUTOSEED", "true").lower() != "false"
 

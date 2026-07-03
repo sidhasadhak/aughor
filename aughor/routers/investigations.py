@@ -328,7 +328,7 @@ def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str, s
     persist it, and return the SSE string to emit. Returns ``None`` only when there
     is genuinely no evidence to salvage. Never raises."""
     try:
-        qmode = merged.get("query_mode")
+        merged.get("query_mode")
         qh = merged.get("query_history") or []
 
         # Explore: synthesise from whatever sub-questions completed.
@@ -2178,6 +2178,7 @@ async def _stream_investigation(
                 # so the user sees what the agent is about to probe before it runs expensive queries.
                 if merged.get("query_mode") in ("investigate", "explore"):
                     try:
+                        from aughor.llm.provider import get_provider  # was unresolved here (latent NameError)
                         _cq_system = (
                             "You are a senior data analyst about to run a deep investigation. "
                             "Given the user's question, ask 1-2 short clarifying questions that would "

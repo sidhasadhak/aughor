@@ -324,6 +324,21 @@ def _validate(sql: str, dialect: str = "duckdb") -> tuple[bool, str]:
 
 # ── Explorer → Ontology in-memory merge ──────────────────────────────────────
 
+# Postgres OID → type-name. Platform/db knowledge (it was previously *defined* in the
+# agent's schema_annotators but only *used* here — an unresolved reference that crashed
+# PostgresConnection.raw_execute, and importing it back would breach the platform→agent
+# boundary). Kept where it's used.
+_PG_OID_MAP: dict[int, str] = {
+    16: "BOOLEAN", 21: "SMALLINT", 23: "INTEGER", 20: "BIGINT",
+    700: "REAL", 701: "DOUBLE PRECISION", 1700: "NUMERIC",
+    1082: "DATE", 1083: "TIME", 1266: "TIMETZ",
+    1114: "TIMESTAMP", 1184: "TIMESTAMPTZ", 1186: "INTERVAL",
+    25: "TEXT", 1042: "CHAR", 1043: "VARCHAR",
+    18: "CHAR", 19: "NAME", 114: "JSON", 3802: "JSONB",
+    17: "BYTEA", 2950: "UUID",
+}
+
+
 def _pg_type_name(oid: int) -> str:
     return _PG_OID_MAP.get(oid, f"TYPE({oid})")
 

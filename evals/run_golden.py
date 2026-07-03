@@ -14,7 +14,6 @@ If --live is omitted the runner replays the *reference* SQL as a sanity-check
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
 import sys
@@ -36,7 +35,7 @@ try:
 except ImportError:
     pass
 
-from evals.sql_accuracy import compare_result_sets, score_single
+from evals.sql_accuracy import score_single
 from aughor.db.connection import open_connection_for
 
 

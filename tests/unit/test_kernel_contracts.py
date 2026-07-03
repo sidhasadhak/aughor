@@ -91,7 +91,7 @@ class TestTolerate:
         from aughor.kernel.errors import tolerate
         from aughor.stats import stats
 
-        before = (stats.snapshot() if hasattr(stats, "snapshot") else {})
+        (stats.snapshot() if hasattr(stats, "snapshot") else {})
         with caplog.at_level(logging.WARNING):
             tolerate(ValueError("boom"), "test reason", counter="unit.test", conn_id="c1")
         assert any("test reason" in r.message for r in caplog.records)

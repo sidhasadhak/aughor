@@ -188,7 +188,6 @@ def unresolved_identifiers(
     ctes = {(c.alias_or_name or "").lower() for c in tree.find_all(exp.CTE)}
     unknown_tables: set[str] = set()
     in_scope_cols: set[str] = set()   # real columns of the query's known base tables (normed)
-    all_tables_known = True
     for t in tree.find_all(exp.Table):
         bare = (t.name or "").lower()
         if not bare or bare in ctes:
@@ -204,7 +203,6 @@ def unresolved_identifiers(
             cols = [c for group in by_bare[bare] for c in group]   # union across same-named tables
         else:
             unknown_tables.add(qual if is_qualified else t.name)
-            all_tables_known = False
             continue
         in_scope_cols.update(_norm(c) for c in cols)
 

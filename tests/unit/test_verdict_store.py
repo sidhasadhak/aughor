@@ -3,7 +3,6 @@
 The non-circular ground truth the trust economy calibrates against. Org-scoped, validated,
 acceptance rate credits accept fully and 'correct' at half. See aughor/verify/verdicts.py.
 """
-import importlib
 
 import pytest
 

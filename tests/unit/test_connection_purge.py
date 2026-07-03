@@ -199,7 +199,6 @@ def test_schema_purge_removes_schema_and_aggregates_keeps_siblings(isolated):
     from aughor.knowledge import briefing, patterns
     from aughor.monitors import store as monitor_store
     from aughor.monitors.models import Monitor
-    from aughor.profile import store as profile_store
 
     CONN = "workspace"
     gone, keep = "missimi", "zomato_data"

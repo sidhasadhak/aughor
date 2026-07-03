@@ -319,15 +319,8 @@ def _apply_explorer_to_ontology(graph, connection_id: str) -> None:
 
 # ── Base class ────────────────────────────────────────────────────────────────
 
-_PG_OID_MAP: dict[int, str] = {
-    16: "BOOLEAN", 21: "SMALLINT", 23: "INTEGER", 20: "BIGINT",
-    700: "REAL", 701: "DOUBLE PRECISION", 1700: "NUMERIC",
-    1082: "DATE", 1083: "TIME", 1266: "TIMETZ",
-    1114: "TIMESTAMP", 1184: "TIMESTAMPTZ", 1186: "INTERVAL",
-    25: "TEXT", 1042: "CHAR", 1043: "VARCHAR",
-    18: "CHAR", 19: "NAME", 114: "JSON", 3802: "JSONB",
-    17: "BYTEA", 2950: "UUID",
-}
+# (The Postgres OID→type-name map moved to aughor/db/connection.py — the only place
+# it was ever used — so the platform layer doesn't reach into the agent for it.)
 
 
 def register() -> None:

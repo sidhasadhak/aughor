@@ -7,7 +7,6 @@ import asyncio
 
 import pytest
 
-import aughor.db.lanes as lanes
 from aughor.db.lanes import LaneConfig, WorkspaceLane, lane_for_workspace, lane_for_connection, reset_lanes
 
 

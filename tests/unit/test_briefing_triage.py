@@ -77,7 +77,7 @@ def _run(monkeypatch):
 
 def test_impossible_turnover_is_suppressed(monkeypatch):
     out = _run(monkeypatch)
-    held = {h["finding"][:20]: h for h in out["held_back"]}
+    {h["finding"][:20]: h for h in out["held_back"]}
     turnover = next(h for h in out["held_back"] if "turnover" in h["finding"].lower())
     assert turnover["severity"] == "implausible"
 
@@ -97,10 +97,10 @@ def test_two_signals_held_back_rest_synthesised(monkeypatch):
 
 
 def test_lead_flips_off_the_noise_level_roas_split(monkeypatch):
-    out = _run(monkeypatch)
+    _run(monkeypatch)
     prompt = _StubProvider.last_user
     # The "[1]" lead line must NOT be the ROAS split (its contrasts are noise: 4.42 vs 4.46).
-    lead_line = next(ln for ln in prompt.splitlines() if ln.strip().startswith("[1]"))
+    next(ln for ln in prompt.splitlines() if ln.strip().startswith("[1]"))
     after_lead = prompt.split("[1]", 1)[1].split("[2]", 1)[0]
     assert "ROAS by channel" not in after_lead
     # It should be the watched-metric finding (repeat-purchase rate).

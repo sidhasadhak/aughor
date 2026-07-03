@@ -87,5 +87,25 @@ markers = [
     "eval: delta-ratchet accuracy/compute evals that require a live LLM (run with -m eval)",
 ]
 
+[tool.ruff]
+target-version = "py311"
+extend-exclude = ["web", "evals/spider2*"]
+
+[tool.ruff.lint]
+# Enforce pyflakes (real problems: unused imports/vars, undefined names, redefinitions)
+# plus the default bug-ish pycodestyle checks. The style rules below clash with
+# deliberate, pervasive codebase conventions and would be WRONG to mass-rewrite, so
+# they are disabled rather than "fixed":
+#   E402 — intentional lazy / mid-module imports (cycle avoidance)
+#   E701 / E702 — one-line guards (`if x: return`, `a; b`)
+#   E731 — assigned lambdas
+#   E741 — short loop/lambda names (l, I, O)
+ignore = ["E402", "E701", "E702", "E731", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py files re-export their package's public API; the imports are
+# intentional even though unused *within* the file.
+"__init__.py" = ["F401"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["aughor"]

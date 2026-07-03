@@ -12,6 +12,7 @@ guards. The structural guards are its private helpers; the cross-module surface 
 from __future__ import annotations
 
 import re
+from typing import Optional
 
 from aughor.kernel.errors import tolerate
 from aughor.explorer.metric_coherence import (

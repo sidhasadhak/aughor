@@ -74,7 +74,7 @@ class S3Connection(Connector):
             pass  # already installed
 
         secret_sql_parts = [
-            f"TYPE S3",
+            "TYPE S3",
             f"REGION '{p['region']}'",
         ]
         if p["key_id"] and p["secret"]:

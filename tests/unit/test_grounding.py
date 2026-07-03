@@ -5,7 +5,6 @@ real result cell was 2.49 (off 1e6, with a fabricated "M"). The verifier must fl
 magnitude/unit hallucinations while never false-flagging legitimately derived
 numbers (percentages, ranks, small counts, years)."""
 from aughor.explorer.grounding import (
-    Numeral,
     cell_values,
     extract_numerals,
     ground_numerals,

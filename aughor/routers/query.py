@@ -308,7 +308,7 @@ def query_build_sql(body: _QueryBuildRequest):
     )
     order_by = f"ORDER BY {body.order_by}" if body.order_by else ""
 
-    lines = [f"SELECT", f"  {select_clause}", f"FROM {body.table}"]
+    lines = ["SELECT", f"  {select_clause}", f"FROM {body.table}"]
     if where_clause:
         lines.append(where_clause)
     if group_by:

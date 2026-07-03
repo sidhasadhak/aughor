@@ -8,7 +8,10 @@ writes a human-readable judging digest to /tmp/assess_{slug}.md.
 
 Usage: deep_assess.py <conn_id> "<question>" [ask|investigate]
 """
-import json, re, sys, urllib.request
+import json
+import re
+import sys
+import urllib.request
 
 BASE = "http://localhost:8000"
 conn = sys.argv[1] if len(sys.argv) > 1 else "c1c664b0"

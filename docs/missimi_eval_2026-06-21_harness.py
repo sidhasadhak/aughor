@@ -4,7 +4,8 @@ Drives the REAL pipeline via the running API (/chat for Insight, /investigate fo
 parses the SSE stream, and records SQL / columns / sample rows / chart_type / narrative /
 route / errors / elapsed for each question to a JSONL file. Sequential, fail-open per Q.
 """
-import json, time, sys
+import json
+import time
 import urllib.request
 
 BASE = "http://localhost:8000"

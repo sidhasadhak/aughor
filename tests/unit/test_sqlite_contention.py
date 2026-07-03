@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import sqlite3
 import subprocess
-import sys
 
 from aughor.db.sqlite_util import tune
 

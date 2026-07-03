@@ -6,7 +6,7 @@ from aughor.packs import (
     distill_deltas, resolve_metric_definition, MetricClaim, route_escalation,
     Mandate, evaluate_mandate, import_readiness, Instrument, can_invoke,
 )
-from aughor.agent.state import VerificationManifest, VerificationCheck, DataQualityNote
+from aughor.agent.state import VerificationManifest, DataQualityNote
 
 
 def _verified_manifest():

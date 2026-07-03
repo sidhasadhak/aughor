@@ -12,7 +12,6 @@ response shapes is the K4 follow-up; this kills the path-drift class first.)
 import re
 from pathlib import Path
 
-import pytest
 
 WEB = Path(__file__).parent.parent.parent / "web"
 

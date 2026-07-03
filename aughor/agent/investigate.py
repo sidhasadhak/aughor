@@ -2511,7 +2511,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
-    results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
+    results, _results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     # ── Stats.py: code-level significance check (runs before LLM interpretation) ──
     # Compute z-score on the baseline time series. The LLM is asked to compute
@@ -2757,7 +2757,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
-    results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
+    results, _results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     if interpretation and interpretation.findings:
         findings = [
@@ -2866,7 +2866,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
-    results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
+    results, _results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     if interpretation and interpretation.findings:
         findings = _assemble_phase_findings(results, interpretation.findings, "dim")
@@ -2980,7 +2980,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
-    results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
+    results, _results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     if interpretation and interpretation.findings:
         findings = _assemble_phase_findings(results, interpretation.findings, "beh")
@@ -3243,7 +3243,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             _run = _run2
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
-    results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
+    results, _results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     # Finding-id prefix — distinct per lens so two parallel scans can't collide their ids
     # (default "cross_section" keeps the historical "xsec" prefix → byte-identical).

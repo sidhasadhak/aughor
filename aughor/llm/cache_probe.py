@@ -90,7 +90,7 @@ def probe_prefix_cache(role: str = "coder", *, rounds: int = 3, prefix_tokens: i
     rounds = max(2, int(rounds))
     b = (backend or _provider._active_backend()).strip()
     m = (model or _provider._active_model(b, role)).strip()
-    base_url = _provider._active_base_url(b)
+    _provider._active_base_url(b)
 
     prefix = _filler(prefix_tokens)
     report: dict = {"backend": b, "model": m, "rounds": rounds, "prefix_tokens": prefix_tokens}

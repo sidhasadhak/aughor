@@ -7,7 +7,7 @@ missed any nested-paren argument.
 """
 import re
 
-from aughor.sql.analyze import analyze, Aggregate
+from aughor.sql.analyze import analyze
 
 
 # ── product_of_aggregates — the $3T anti-pattern, on the AST ───────────────────

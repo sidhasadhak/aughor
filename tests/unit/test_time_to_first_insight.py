@@ -9,7 +9,6 @@ time-to-first-insight milestone (`exploration.first_insight`).
 """
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from aughor.explorer.agent import SchemaExplorer
 from aughor.explorer.models import ExplorationPhase, ExplorationStatus, elapsed_seconds
