@@ -40,27 +40,42 @@ def _read(rel: str) -> str:
     return p.read_text()
 
 
-def test_wch1a_canvas_onInvestigate_seeds_question_not_discards_it():
-    """CanvasWorkspace.onInvestigate must SEED the question into chat state.
-    The original bug was `onInvestigate={() => setWsTab('chat')}` — it threw away
-    (q, mode) and the canvas opened blank."""
-    src = _read("components/CanvasWorkspace.tsx")
+def test_wch1a_investigate_seeds_question_not_discards_it():
+    """An 'Investigate' action must SEED the question into chat state, not discard it.
+    The original bug (WCH-1) was `onInvestigate={() => setWsTab('chat')}` — it threw
+    away (q, mode) and the canvas opened blank.
 
-    # The handler must capture the question into the seed state that ChatPanel reads.
+    NOTE (2026-06-21, commit d9495ef): the canvas Intelligence tab was intentionally
+    dropped, so the seed moved OUT of CanvasWorkspace.tsx UP to the page shell
+    (app/page.tsx): BriefingPanel/HealthPanel `onInvestigate={goToChat}` →
+    `goToChat(q)` → `setChatInitialQuestion(q)`, wired into ChatPanel via
+    `initialQuestion`. This tripwire follows the fix to its current home rather than
+    guarding a removed surface. The auto-submit mechanism is still pinned by wch1b."""
+    src = _read("app/page.tsx")
+
+    # The seed function must capture the question into the state ChatPanel reads.
     assert "setChatInitialQuestion(q)" in src, (
-        "CanvasWorkspace.onInvestigate no longer seeds the question — the blank-canvas "
-        "bug (q discarded before reaching ChatPanel) has regressed."
+        "the Investigate flow no longer seeds the question (setChatInitialQuestion(q) "
+        "in page.tsx) — the blank-canvas bug (q discarded before reaching ChatPanel) "
+        "has regressed."
     )
     # …and that seed must actually be wired into ChatPanel as a prop.
     assert "initialQuestion={chatInitialQuestion}" in src, (
         "ChatPanel is no longer receiving the seeded initialQuestion prop."
     )
+    # The Investigate action must route through the seeding function, not an
+    # arg-discarding stub. `goToChat` forwards q; wiring onInvestigate to it (rather
+    # than `() => setTab(...)`) is what carries the question through.
+    assert "onInvestigate={goToChat}" in src or "onGoToChat={goToChat}" in src, (
+        "Investigate is no longer wired to the seeding function goToChat — the "
+        "question path has been broken."
+    )
 
     # Guard against the exact regression shape: an onInvestigate that ignores its
     # args and only switches tabs.
-    m = re.search(r"onInvestigate=\{\(\s*\)\s*=>\s*setWsTab", src)
+    m = re.search(r"onInvestigate=\{\(\s*\)\s*=>\s*setTab", src)
     assert m is None, (
-        "onInvestigate reverted to the arg-discarding `() => setWsTab(...)` form — "
+        "onInvestigate reverted to the arg-discarding `() => setTab(...)` form — "
         "the question is being dropped again."
     )
 

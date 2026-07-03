@@ -1,0 +1,66 @@
+name: CI
+
+# Minimal gate (REC-07 / OPS-01): nothing ran the 2200+ tests on a change before
+# this. Runs on every PR and on pushes to main. The test env is hermetic — all
+# stores honour AUGHOR_*_DB overrides (REC-04) so CI never depends on real data.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same branch/PR cancels the in-flight run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend · pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync dependencies (all extras, from the committed lock; pinned to 3.11)
+        # --python 3.11 pins the interpreter deterministically without a committed
+        # .python-version (that file is gitignored so devs can pick their own).
+        run: uv sync --all-extras --frozen --python 3.11
+      - name: Run tests
+        # Exclude the live-LLM suites (e2e ~100s/test, eval = accuracy ratchet).
+        # Both need a real model + network and would hang/flake in CI.
+        run: uv run pytest -q -m "not e2e and not eval"
+
+  frontend:
+    name: Frontend · typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+  lint:
+    name: Backend · ruff (advisory)
+    runs-on: ubuntu-latest
+    # Advisory only: the codebase currently has ~280 lint findings, so this is NOT
+    # a blocking gate yet. It surfaces the count on each PR; flip `continue-on-error`
+    # to false once the baseline is driven to zero.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Ruff check
+        run: uvx ruff check .
