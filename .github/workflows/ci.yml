@@ -54,7 +54,7 @@ jobs:
         run: npx tsc --noEmit
 
   lint:
-    name: Backend · ruff (advisory)
+    name: Backend · ruff
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,8 +62,7 @@ jobs:
         with:
           enable-cache: true
       - name: Ruff check
-        # Advisory only: the codebase currently has ~280 lint findings, so this is
-        # NOT a blocking gate yet. continue-on-error keeps the job green while the
-        # findings stay visible in the log; drop it to enforce once the baseline is 0.
-        continue-on-error: true
-        run: uvx ruff check .
+        # Blocking gate: the baseline is zero (see [tool.ruff] in pyproject.toml).
+        # Pinned so a newer ruff's stricter defaults can't fail CI without a
+        # deliberate bump.
+        run: uvx ruff@0.15.20 check .
