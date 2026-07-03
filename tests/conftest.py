@@ -48,6 +48,18 @@ for _env, _file in (
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _seed_builtin_dbs():
+    """Guarantee the builtin demo connections have openable DuckDB files before any
+    test. Both are gitignored dev artifacts absent on a clean checkout / CI, and the
+    'fixture' connection (used by builtin_conn_id) breaks if its file is missing.
+    Runs independently of the app lifespan (whose seeding is fault-isolated)."""
+    from aughor.samples.setup import ensure_fixture_db, ensure_samples_db
+    ensure_fixture_db()
+    ensure_samples_db()
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _register_agent_plugins():
     """Plug the Agent into the Platform's registries for the whole test session —
     exactly as the live app does at startup (``api.py`` lifespan / the CLI). Without

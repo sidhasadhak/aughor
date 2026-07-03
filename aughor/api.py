@@ -209,9 +209,13 @@ async def _setup_samples() -> None:
     # Run synchronous DB seeding off the event loop so startup returns instantly.
     loop = asyncio.get_running_loop()
     try:
-        from aughor.samples.setup import ensure_samples_db
+        from aughor.samples.setup import ensure_fixture_db, ensure_samples_db
 
         def _seed_and_validate() -> None:
+            # Guarantee the 'fixture' builtin connection has an openable DB — it's
+            # gitignored and otherwise never created (a fresh install had a broken
+            # "Fixture DB (demo)" connection).
+            ensure_fixture_db()
             path = ensure_samples_db()
             # Validate the seed actually holds tables — a half-written/corrupt seed
             # is the root of the "sample data missing" class and must be loud.

@@ -28,6 +28,30 @@ logger = logging.getLogger(__name__)
 
 SAMPLES_PATH = Path("data") / "samples.duckdb"
 SAMPLES_ID   = "samples"
+# The builtin "Fixture DB (demo)" connection (registry.BUILTIN_ID) points here.
+FIXTURE_PATH = Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
+
+
+def ensure_fixture_db() -> Path:
+    """Guarantee the builtin ``fixture`` connection's DB (``data/aughor.duckdb``)
+    exists and is openable.
+
+    That file is gitignored and nothing seeds it, so a fresh install — or a clean
+    CI checkout — otherwise has a BROKEN builtin connection: opening a missing file
+    read-only raises ``IOException``. We only guarantee an openable (empty) DB; the
+    seeded ecommerce demo lives in the separate ``samples`` connection. Idempotent.
+    """
+    FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if FIXTURE_PATH.exists():
+        return FIXTURE_PATH
+    try:
+        import duckdb
+        conn = duckdb.connect(str(FIXTURE_PATH))  # read-write open materializes the file
+        conn.close()
+        logger.info("Created empty fixture DB at %s", FIXTURE_PATH)
+    except Exception as exc:
+        logger.warning("Failed to create fixture DB: %s", exc)
+    return FIXTURE_PATH
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
