@@ -14,9 +14,18 @@ from typing import Optional
 
 from aughor.org.context import current_org_id
 from aughor.util.time import now_iso as _now
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path, tune
 
 _DB_PATH = resolve_db_path("AUGHOR_PACK_BINDINGS_DB", Path(__file__).parent.parent.parent / "data" / "pack_bindings.db")
+
+# Schema evolution (DATA-05). The `pack_bindings` base table is v1; changes are Migration(v>=2).
+# NOTE: schema_name is part of the PK on fresh tables; on a pre-existing 3-key table it can
+# only be added as a plain column (SQLite can't alter a PK) — the historical best-effort behaviour.
+_MIGRATIONS = [
+    Migration(2, "schema_name on pack_bindings (3-key → 4-key)",
+              lambda c: add_column_if_missing(c, "pack_bindings", "schema_name", "TEXT NOT NULL DEFAULT ''")),
+]
 
 
 def _conn() -> sqlite3.Connection:
@@ -43,10 +52,7 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             PRIMARY KEY (org_id, pack_id, connection_id, schema_name)
         )
     """)
-    # Additive migration for a pre-existing 3-key table (best-effort).
-    cols = {r[1] for r in c.execute("PRAGMA table_info(pack_bindings)").fetchall()}
-    if "schema_name" not in cols:
-        c.execute("ALTER TABLE pack_bindings ADD COLUMN schema_name TEXT NOT NULL DEFAULT ''")
+    run_migrations(c, _MIGRATIONS, store="pack_bindings")
     c.commit()
 
 

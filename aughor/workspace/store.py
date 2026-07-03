@@ -16,10 +16,19 @@ from typing import Any, Dict, List, Optional
 
 from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 from aughor.workspace.models import Workspace
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path, tune
 
 _DB_PATH = resolve_db_path("AUGHOR_WORKSPACES_DB", Path(__file__).parent.parent.parent / "data" / "workspaces.db")
 DEFAULT_WORKSPACE_ID = "default"
+
+# Schema evolution (DATA-05). The `workspaces` base table is v1; changes are Migration(v>=2).
+_MIGRATIONS = [
+    Migration(2, "per-workspace org-settings overrides",
+              lambda c: add_column_if_missing(c, "workspaces", "settings_override_json", "TEXT DEFAULT '{}'")),
+    Migration(3, "tenant key: org_id on workspaces",
+              lambda c: add_column_if_missing(c, "workspaces", "org_id", f"TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'")),
+]
 
 
 from aughor.util.time import now_iso as _now
@@ -44,15 +53,7 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             updated_at          TEXT NOT NULL
         )
     """)
-    # Migration (2026-06-20): per-workspace org-settings overrides. Idempotent —
-    # add the column only if an older DB predates it.
-    cols = {r[1] for r in c.execute("PRAGMA table_info(workspaces)").fetchall()}
-    if "settings_override_json" not in cols:
-        c.execute("ALTER TABLE workspaces ADD COLUMN settings_override_json TEXT DEFAULT '{}'")
-    # Migration (2026-06-22): tenant key. Every workspace belongs to an org;
-    # back-fills to the bootstrap org on existing single-org rows.
-    if "org_id" not in cols:
-        c.execute(f"ALTER TABLE workspaces ADD COLUMN org_id TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'")
+    run_migrations(c, _MIGRATIONS, store="workspace")
     c.commit()
 
 

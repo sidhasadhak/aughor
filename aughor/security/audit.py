@@ -18,9 +18,16 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path, tune
 
 _DB_PATH = resolve_db_path("AUGHOR_AUDIT_DB", Path("data/audit.db"))
+
+# Schema evolution (DATA-05). The `audit_log` base table is v1; changes are Migration(v>=2).
+_MIGRATIONS = [
+    Migration(2, "tenant key: org_id on audit_log",
+              lambda c: add_column_if_missing(c, "audit_log", "org_id", "TEXT NOT NULL DEFAULT 'default'")),
+]
 
 
 def _connect() -> sqlite3.Connection:
@@ -50,11 +57,7 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_audit_ts   ON audit_log (ts);
         PRAGMA journal_mode=WAL;
     """)
-    # Migration (2026-06-22): tenant key on existing single-org audit logs.
-    # Idempotent — add only if an older DB predates the column.
-    cols = {r[1] for r in c.execute("PRAGMA table_info(audit_log)").fetchall()}
-    if "org_id" not in cols:
-        c.execute("ALTER TABLE audit_log ADD COLUMN org_id TEXT NOT NULL DEFAULT 'default'")
+    run_migrations(c, _MIGRATIONS, store="audit")
     c.commit()
 
 

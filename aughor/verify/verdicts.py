@@ -12,9 +12,21 @@ from typing import Optional
 
 from aughor.org.context import current_org_id
 from aughor.util.time import now_iso as _now
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path, tune
 
 _DB_PATH = resolve_db_path("AUGHOR_VERDICTS_DB", Path(__file__).parent.parent.parent / "data" / "verdicts.db")
+
+
+def _add_closeloop_cols(c: "sqlite3.Connection") -> None:
+    # The SQL that produced a judged finding + any human correction — what lets a
+    # verdict feed back into the planner instead of dying as a bare label.
+    add_column_if_missing(c, "finding_verdicts", "sql_source", "TEXT NOT NULL DEFAULT ''")
+    add_column_if_missing(c, "finding_verdicts", "corrected_sql", "TEXT NOT NULL DEFAULT ''")
+
+
+# Schema evolution (DATA-05). The `finding_verdicts` base table is v1; changes are Migration(v>=2).
+_MIGRATIONS = [Migration(2, "close-the-loop columns (sql_source, corrected_sql)", _add_closeloop_cols)]
 
 # accept = the finding is correct/useful · correct = right direction but a detail is wrong
 # · reject = wrong or misleading. These are the labels the trust economy calibrates against.
@@ -44,17 +56,9 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             created_at      TEXT NOT NULL
         )
     """)
-    # Additive migration for DBs created before the P1 close-the-loop columns:
-    # the structural payload (the SQL that produced the judged finding, and any
-    # human correction) is what lets a verdict feed back into the planner instead
-    # of dying as a bare accept/correct/reject. Idempotent + PRAGMA-free.
-    for col in ("sql_source", "corrected_sql"):
-        try:
-            c.execute(f"ALTER TABLE finding_verdicts ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass  # column already present
     c.execute("CREATE INDEX IF NOT EXISTS ix_verdicts_org_conn "
               "ON finding_verdicts (org_id, connection_id)")
+    run_migrations(c, _MIGRATIONS, store="verdicts")
     c.commit()
 
 

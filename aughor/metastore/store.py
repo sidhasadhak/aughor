@@ -22,9 +22,18 @@ from aughor.metastore.models import (
     workspace_principal,
 )
 from aughor.util.time import now_iso as _now
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path, tune
 
 _DB_PATH = resolve_db_path("AUGHOR_METASTORE_DB", Path(__file__).parent.parent.parent / "data" / "metastore.db")
+
+# Schema evolution (DATA-05). Base tables below are v1; changes are Migration(v>=2).
+_MIGRATIONS = [
+    # Pre-existing grants were membership-derived; mark them 'membership' so the gate
+    # ignores them (fresh installs get 'explicit' from the base CREATE default).
+    Migration(2, "grants.source (legacy rows = membership)",
+              lambda c: add_column_if_missing(c, "grants", "source", "TEXT NOT NULL DEFAULT 'membership'")),
+]
 
 
 def _conn() -> sqlite3.Connection:
@@ -60,12 +69,6 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
         )
     """)
     c.execute("CREATE INDEX IF NOT EXISTS grants_principal ON grants(org_id, principal)")
-    # Migration (2026-06-23): grants are an independent access-control layer, not a
-    # projection of membership. Pre-existing rows were membership-derived; mark them so
-    # the gate (membership ∪ explicit) ignores them. New grants default to 'explicit'.
-    gcols = {r[1] for r in c.execute("PRAGMA table_info(grants)").fetchall()}
-    if "source" not in gcols:
-        c.execute("ALTER TABLE grants ADD COLUMN source TEXT NOT NULL DEFAULT 'membership'")
     c.execute("""
         CREATE TABLE IF NOT EXISTS schemas (
             catalog_id  TEXT NOT NULL,
@@ -76,6 +79,7 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             PRIMARY KEY (org_id, catalog_id, name)
         )
     """)
+    run_migrations(c, _MIGRATIONS, store="metastore")
     c.commit()
 
 

@@ -73,3 +73,42 @@ def test_failure_is_loud_and_leaves_version_at_last_good(tmp_path):
         run_migrations(c, migs, store="t")
     # v2 committed, v3 failed → resumable from 2 (not silently swallowed)
     assert c.execute("PRAGMA user_version").fetchone()[0] == 2
+
+
+def test_converted_stores_migrate_cleanly():
+    """Every store converted to the framework brings a fresh (isolated) DB to its
+    latest version with the migrated columns present — idempotent, no error."""
+    from aughor.metastore import store as ms
+    from aughor.packs import bindings
+    from aughor.security import audit
+    from aughor.verify import verdicts
+    from aughor.workspace import store as ws
+
+    def _prep(connect, ensure):
+        c = connect()
+        ensure(c)  # some stores ensure in _conn, others on first op — force it here
+        return c
+
+    cases = [
+        (_prep(ms._conn, ms._ensure_schema),           "grants",           {"source"},                           2, "metastore"),
+        (_prep(ws._conn, ws._ensure_schema),           "workspaces",       {"settings_override_json", "org_id"}, 3, "workspace"),
+        (_prep(audit._connect, audit._ensure_schema),  "audit_log",        {"org_id"},                           2, "audit"),
+        (_prep(verdicts._conn, verdicts._ensure_schema), "finding_verdicts", {"sql_source", "corrected_sql"},    2, "verdicts"),
+        (_prep(bindings._conn, bindings._ensure_schema), "pack_bindings",    {"schema_name"},                    2, "pack_bindings"),
+    ]
+    for conn, table, need, version, name in cases:
+        try:
+            cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            assert need <= cols, f"{name}: missing {need - cols}"
+            assert conn.execute("PRAGMA user_version").fetchone()[0] >= version, f"{name} user_version"
+        finally:
+            conn.close()
+
+
+def test_ledger_schema_is_versioned():
+    from aughor.kernel.ledger import Ledger
+
+    led = Ledger.default()  # AUGHOR_SYSTEM_DB → temp in tests
+    jcols = {r[1] for r in led._conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    assert {"metrics", "org_id"} <= jcols
+    assert led._conn.execute("PRAGMA user_version").fetchone()[0] >= 3
