@@ -18,7 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from aughor.db.sqlite_util import resolve_db_path, set_user_version, tune
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
+from aughor.db.sqlite_util import resolve_db_path, tune
 from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,25 @@ def _conn() -> sqlite3.Connection:
     return c
 
 
+def _migrate_v2(c: sqlite3.Connection) -> None:
+    """Additive columns + one-time backfills accumulated through 2026-07 (formerly a
+    swallowed ALTER loop run on every init). Idempotent — safe on any DB state."""
+    add_column_if_missing(c, "investigations", "status", "TEXT DEFAULT 'running'")
+    add_column_if_missing(c, "investigations", "kind", "TEXT DEFAULT 'investigation'")
+    add_column_if_missing(c, "investigations", "session_id", "TEXT")
+    add_column_if_missing(c, "investigations", "canvas_id", "TEXT")             # launched-via-Canvas
+    add_column_if_missing(c, "investigations", "origin_insight_id", "TEXT")     # drilled-finding provenance
+    add_column_if_missing(c, "investigations", "org_id", f"TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'")  # DATA-06
+    # Backfills for rows written before those columns existed (no-ops on fresh DBs).
+    c.execute("UPDATE investigations SET status = 'complete' "
+              "WHERE status = 'running' AND completed_at IS NOT NULL")
+    c.execute("UPDATE investigations SET session_id = id "
+              "WHERE kind = 'chat' AND (session_id IS NULL OR session_id = '')")
+
+
+_MIGRATIONS = [Migration(2, "additive columns + backfills (through 2026-07)", _migrate_v2)]
+
+
 def _ensure_schema(c: sqlite3.Connection) -> None:
     c.execute("""
         CREATE TABLE IF NOT EXISTS investigations (
@@ -89,35 +109,7 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             session_id TEXT
         )
     """)
-    # Safe migrations — order matters: add columns before backfilling
-    for col in [
-        "status TEXT DEFAULT 'running'",
-        "kind TEXT DEFAULT 'investigation'",
-        "session_id TEXT",
-        "canvas_id TEXT",          # Sprint 21 — nullable; set when launched via Canvas
-        "origin_insight_id TEXT",  # the briefing finding this investigation drilled (provenance)
-        f"org_id TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'",  # DATA-06 tenant key
-    ]:
-        try:
-            c.execute(f"ALTER TABLE investigations ADD COLUMN {col}")
-        except Exception as exc:
-            # Expected on every init once the column exists — an idempotent migration,
-            # NOT a tolerated failure, so it debug-logs rather than journaling an event
-            # (which would pollute the investigation event spine).
-            logger.debug("ALTER TABLE investigations ADD COLUMN %s: %s", col, exc)
-    # Schema v2 = base + the additive migrations above, incl. the org_id tenant key.
-    set_user_version(c, 2)
-    # Backfill status for pre-status rows
-    c.execute("""
-        UPDATE investigations SET status = 'complete'
-        WHERE status = 'running' AND completed_at IS NOT NULL
-    """)
-    # Backfill session_id for existing chat rows (use their own id as session)
-    c.execute("""
-        UPDATE investigations SET session_id = id
-        WHERE kind = 'chat' AND (session_id IS NULL OR session_id = '')
-    """)
-    c.commit()
+    run_migrations(c, _MIGRATIONS, store="history")
 
 
 def create_investigation(

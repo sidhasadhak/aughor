@@ -15,6 +15,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import tune
 from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 
@@ -58,6 +59,16 @@ def _decrypt(value: str) -> str:
     return _get_fernet().decrypt(value.encode()).decode()
 
 
+# Schema evolution runs through the versioned migration framework (DATA-05). The
+# base table below is v1; each later change is a Migration(version>=2). Migrations
+# must stay ADDITIVE (see aughor/db/migrations.py) so a code rollback is always safe.
+_MIGRATIONS = [
+    Migration(2, "tenant key: org_id on connections",
+              lambda c: add_column_if_missing(
+                  c, "connections", "org_id", f"TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'")),
+]
+
+
 def _db() -> sqlite3.Connection:
     REGISTRY_DB.parent.mkdir(parents=True, exist_ok=True)
     conn = tune(sqlite3.connect(str(REGISTRY_DB)))
@@ -72,15 +83,7 @@ def _db() -> sqlite3.Connection:
             org_id     TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'
         )
     """)
-    # Migration (2026-06-22): tenant key on existing single-org registries.
-    # Idempotent — add only if an older DB predates the column.
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(connections)").fetchall()}
-    if "org_id" not in cols:
-        conn.execute(f"ALTER TABLE connections ADD COLUMN org_id TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'")
-    # Schema v2 = base + the org_id migration (REC-10c: bump the marker per migration).
-    from aughor.db.sqlite_util import set_user_version
-    set_user_version(conn, 2)
-    conn.commit()
+    run_migrations(conn, _MIGRATIONS, store="registry")
     return conn
 
 
