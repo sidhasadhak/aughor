@@ -90,8 +90,14 @@ def _hidden_builtins() -> set:
     return set(_load_settings().get("hidden_builtins", []))
 
 
-def list_connections() -> list[dict]:
-    """Return all saved connections (DSN redacted)."""
+def list_connections(org_id: str | None = None) -> list[dict]:
+    """Return all saved connections (DSN redacted).
+
+    When identity is enforced (DATA-06), the DB-stored connections are scoped to a
+    single org: pass ``org_id`` explicitly (the caller-facing endpoint reads it from
+    the authenticated principal, which is reliable across the sync-endpoint boundary
+    where the ``current_org_id()`` contextvar is not); direct/internal callers fall
+    back to the contextvar. Shared builtins are always included."""
     hidden = _hidden_builtins()
     rows = []
 
@@ -133,8 +139,20 @@ def list_connections() -> list[dict]:
             "builtin": False,
         })
 
+    # Tenant scoping (DATA-06): when identity is enforced, a caller sees only their
+    # own org's saved connections. The shared builtins above stay visible to all.
+    # OFF by default → current_org_id() is 'default' and every row is 'default', so
+    # the filter is a no-op and behaviour is unchanged.
+    from aughor.security.authz import require_identity_enabled
+    if require_identity_enabled():
+        _scope_org = org_id if org_id is not None else current_org_id()
+        _where, _params = "WHERE org_id = ?", [_scope_org]
+    else:
+        _where, _params = "", []
     with _db() as conn:
-        for row in conn.execute("SELECT id, name, conn_type, meta FROM connections ORDER BY rowid"):
+        for row in conn.execute(
+            f"SELECT id, name, conn_type, meta FROM connections {_where} ORDER BY rowid", _params
+        ):
             meta = json.loads(row["meta"] or "{}")
             rows.append({
                 "id": row["id"],

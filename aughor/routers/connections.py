@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from aughor.db.connection import open_connection, open_connection_for
@@ -30,7 +30,20 @@ from aughor.routers._shared import (
 from aughor.tools.schema import norm_type
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["connections"])
+
+
+def _connection_owner_guard(request: Request) -> None:
+    """Object-level authz (SEC-05 / DATA-06): a by-id connection route is reachable
+    only by the org that owns the connection. No-op on routes without a ``conn_id``
+    (list/create) and in localhost mode (identity off). Shared builtins have no org
+    and are allowed for everyone."""
+    from aughor.security.authz import check_owner, get_principal
+    conn_id = request.path_params.get("conn_id")
+    if conn_id:
+        check_owner("connection", conn_id, get_principal(request))
+
+
+router = APIRouter(tags=["connections"], dependencies=[Depends(_connection_owner_guard)])
 
 _INSTRUCTIONS_FILE = Path(__file__).parent.parent.parent / "data" / "instructions.json"
 
@@ -61,11 +74,15 @@ class _ConnectionSettings(BaseModel):
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
 @router.get("/connections")
-def get_connections():
+def get_connections(request: Request):
     # Surface each connection's briefings opt-in so the Briefing workspace can list
     # only enabled connections without an N+1 settings fetch. Briefings are opt-OUT:
     # enabled unless explicitly turned off in Catalog.
-    conns = list_connections()
+    # DATA-06: scope to the caller's org (from the authenticated principal — reliable
+    # here, unlike the contextvar). No-op in localhost mode (principal is None).
+    from aughor.security.authz import get_principal
+    _p = get_principal(request)
+    conns = list_connections(org_id=_p.org_id if _p else None)
     for c in conns:
         s = get_connection_settings(c.get("id", ""))
         c["briefings_enabled"] = s.get("briefings_enabled", True) is not False
