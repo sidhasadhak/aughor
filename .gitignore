@@ -58,6 +58,11 @@ web/.env.local
 data/*.db
 data/*.json
 data/*.duckdb
+# SQLite WAL sidecars — every store now opens in WAL mode (REC-03), so any
+# data/*.db can spawn -wal/-shm/-journal companions. Transient; never version.
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
 # DuckDB write-ahead logs / sidecars (transient — never version these)
 data/*.duckdb.wal
 data/*.duckdb-wal

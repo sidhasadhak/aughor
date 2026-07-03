@@ -14,13 +14,14 @@ from typing import List, Optional
 from aughor.org.context import DEFAULT_ORG_ID
 from aughor.org.models import Org
 from aughor.util.time import now_iso as _now
+from aughor.db.sqlite_util import resolve_db_path, tune
 
-_DB_PATH = Path(__file__).parent.parent.parent / "data" / "orgs.db"
+_DB_PATH = resolve_db_path("AUGHOR_ORGS_DB", Path(__file__).parent.parent.parent / "data" / "orgs.db")
 
 
 def _conn() -> sqlite3.Connection:
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(str(_DB_PATH))
+    c = tune(sqlite3.connect(str(_DB_PATH)))
     c.row_factory = sqlite3.Row
     return c
 

@@ -13,12 +13,13 @@ from typing import List, Optional
 
 from aughor.savedquery.models import SavedQuery
 from aughor.util.time import now_iso as _now
+from aughor.db.sqlite_util import resolve_db_path, tune
 
-_DB_PATH = Path(__file__).parent.parent.parent / "data" / "saved_queries.db"
+_DB_PATH = resolve_db_path("AUGHOR_SAVEDQUERY_DB", Path(__file__).parent.parent.parent / "data" / "saved_queries.db")
 
 
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(_DB_PATH)
+    c = tune(sqlite3.connect(_DB_PATH))
     c.row_factory = sqlite3.Row
     return c
 

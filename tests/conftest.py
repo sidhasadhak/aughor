@@ -20,6 +20,31 @@ _test_registry_dir = tempfile.mkdtemp(prefix="aughor-test-registry-")
 os.environ.setdefault("AUGHOR_REGISTRY_DB", os.path.join(_test_registry_dir, "connections.db"))
 os.environ.setdefault("AUGHOR_CONNECTION_SETTINGS", os.path.join(_test_registry_dir, "connection_settings.json"))
 
+# Hermetic remaining stores — history/metastore/workspaces/audit/canvas/... all defaulted to
+# the live data/ dir and were mutated in-place by the suite (OPS-02 / DATA-01, the same class
+# of bug that once emptied the live registry). Each store now honours an AUGHOR_*_DB override
+# (aughor/db/sqlite_util.resolve_db_path); point every one at a throwaway temp dir. MUST run
+# before any app module is imported so the module-level _DB_PATH captures the override.
+_test_stores_dir = tempfile.mkdtemp(prefix="aughor-test-stores-")
+for _env, _file in (
+    ("AUGHOR_HISTORY_DB", "history.db"),
+    ("AUGHOR_METASTORE_DB", "metastore.db"),
+    ("AUGHOR_WORKSPACES_DB", "workspaces.db"),
+    ("AUGHOR_AUDIT_DB", "audit.db"),
+    ("AUGHOR_CANVAS_DB", "canvases.db"),
+    ("AUGHOR_ARTIFACTS_DB", "artifacts.db"),
+    ("AUGHOR_EVIDENCE_DB", "evidence_ledger.db"),
+    ("AUGHOR_MONITORS_DB", "monitors.db"),
+    ("AUGHOR_ORGS_DB", "orgs.db"),
+    ("AUGHOR_SAVEDQUERY_DB", "saved_queries.db"),
+    ("AUGHOR_VOLUMES_DB", "volumes.db"),
+    ("AUGHOR_VERDICTS_DB", "verdicts.db"),
+    ("AUGHOR_PACK_DELTAS_DB", "pack_deltas.db"),
+    ("AUGHOR_PACK_BINDINGS_DB", "pack_bindings.db"),
+    ("AUGHOR_CHECKPOINTS_DB", "checkpoints.db"),
+):
+    os.environ.setdefault(_env, os.path.join(_test_stores_dir, _file))
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _register_agent_plugins():

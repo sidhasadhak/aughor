@@ -15,6 +15,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
+from aughor.db.sqlite_util import tune
 from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 
 # AUGHOR_REGISTRY_DB overrides the connections registry path (mirrors the ledger's
@@ -59,7 +60,7 @@ def _decrypt(value: str) -> str:
 
 def _db() -> sqlite3.Connection:
     REGISTRY_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(REGISTRY_DB))
+    conn = tune(sqlite3.connect(str(REGISTRY_DB)))
     conn.row_factory = sqlite3.Row
     conn.execute(f"""
         CREATE TABLE IF NOT EXISTS connections (
@@ -193,6 +194,23 @@ def get_meta(conn_id: str) -> dict:
     if not row:
         return {}
     return _decrypt_meta(json.loads(row["meta"] or "{}"))
+
+
+def get_connection_org(conn_id: str) -> str | None:
+    """The org that owns a connection, or None when unknown (builtins / missing id).
+
+    Ownership of derived resources (investigations, canvases) resolves THROUGH the
+    connection's org — the investigations table itself carries no org_id (DATA-06).
+    Returns None for the shared builtins (fixture/samples/workspace), which are not
+    org-scoped, so an owner-check over them is a no-op.
+    """
+    if not conn_id:
+        return None
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT org_id FROM connections WHERE id = ?", [conn_id]
+        ).fetchone()
+    return row["org_id"] if row else None
 
 
 _SETTINGS_PATH = Path(os.environ.get("AUGHOR_CONNECTION_SETTINGS")

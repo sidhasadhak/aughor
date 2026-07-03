@@ -12,8 +12,9 @@ from typing import Optional
 
 from aughor.org.context import current_org_id
 from aughor.util.time import now_iso as _now
+from aughor.db.sqlite_util import resolve_db_path, tune
 
-_DB_PATH = Path(__file__).parent.parent.parent / "data" / "verdicts.db"
+_DB_PATH = resolve_db_path("AUGHOR_VERDICTS_DB", Path(__file__).parent.parent.parent / "data" / "verdicts.db")
 
 # accept = the finding is correct/useful · correct = right direction but a detail is wrong
 # · reject = wrong or misleading. These are the labels the trust economy calibrates against.
@@ -22,7 +23,7 @@ VERDICTS = ("accept", "correct", "reject")
 
 def _conn() -> sqlite3.Connection:
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(str(_DB_PATH))
+    c = tune(sqlite3.connect(str(_DB_PATH)))
     c.row_factory = sqlite3.Row
     _ensure_schema(c)
     return c

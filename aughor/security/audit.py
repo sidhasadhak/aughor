@@ -18,12 +18,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-_DB_PATH = Path("data/audit.db")
+from aughor.db.sqlite_util import resolve_db_path, tune
+
+_DB_PATH = resolve_db_path("AUGHOR_AUDIT_DB", Path("data/audit.db"))
 
 
 def _connect() -> sqlite3.Connection:
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(str(_DB_PATH), check_same_thread=False)
+    c = tune(sqlite3.connect(str(_DB_PATH), check_same_thread=False))
     c.row_factory = sqlite3.Row
     return c
 

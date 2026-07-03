@@ -18,9 +18,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
 
+from aughor.db.sqlite_util import resolve_db_path, tune
+
 logger = logging.getLogger(__name__)
 
-_DB_PATH = Path(__file__).parent.parent.parent / "data" / "history.db"
+_DB_PATH = resolve_db_path("AUGHOR_HISTORY_DB", Path(__file__).parent.parent.parent / "data" / "history.db")
 
 InvStatus = Literal["running", "complete", "timed_out", "failed", "paused"]
 
@@ -62,7 +64,7 @@ def _emit_lifecycle(inv_id: str, kind: str, *, conn_id: Optional[str] = None,
 
 
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(_DB_PATH)
+    c = tune(sqlite3.connect(_DB_PATH))
     c.row_factory = sqlite3.Row
     return c
 

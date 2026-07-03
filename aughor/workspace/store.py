@@ -16,8 +16,9 @@ from typing import Any, Dict, List, Optional
 
 from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 from aughor.workspace.models import Workspace
+from aughor.db.sqlite_util import resolve_db_path, tune
 
-_DB_PATH = Path(__file__).parent.parent.parent / "data" / "workspaces.db"
+_DB_PATH = resolve_db_path("AUGHOR_WORKSPACES_DB", Path(__file__).parent.parent.parent / "data" / "workspaces.db")
 DEFAULT_WORKSPACE_ID = "default"
 
 
@@ -26,7 +27,7 @@ from aughor.util.time import now_iso as _now
 
 def _conn() -> sqlite3.Connection:
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(str(_DB_PATH))
+    c = tune(sqlite3.connect(str(_DB_PATH)))
     c.row_factory = sqlite3.Row
     return c
 

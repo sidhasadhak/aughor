@@ -47,13 +47,15 @@ from aughor.agent.explore import (
 from aughor.agent.state import AgentState
 from aughor.tools.schema import build_schema_context
 
-_CHECKPOINT_DB = Path(__file__).parent.parent.parent / "data" / "checkpoints.db"
+from aughor.db.sqlite_util import resolve_db_path, tune
+
+_CHECKPOINT_DB = resolve_db_path("AUGHOR_CHECKPOINTS_DB", Path(__file__).parent.parent.parent / "data" / "checkpoints.db")
 
 
 def _checkpointer():
     import sqlite3
     from langgraph.checkpoint.sqlite import SqliteSaver
-    conn = sqlite3.connect(str(_CHECKPOINT_DB), check_same_thread=False)
+    conn = tune(sqlite3.connect(str(_CHECKPOINT_DB), check_same_thread=False))
     return SqliteSaver(conn)
 
 
