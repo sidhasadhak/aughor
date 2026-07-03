@@ -100,40 +100,67 @@ _api_key_header = APIKeyHeader(name="X-Api-Key", auto_error=False)
 _AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json")
 
 
-def _require_auth(request: Request, key: str | None = Security(_api_key_header)):
-    """App-wide request gate: the shared-key front door PLUS the (flag-gated)
-    identity → org binding. A generator dependency so the org contextvar it sets
-    is reset when the request completes.
+def _require_auth(request: Request, key: str | None = Security(_api_key_header)) -> None:
+    """App-wide request gate: the shared-key front door PLUS (flag-gated) identity.
 
-    With ``AUGHOR_REQUIRE_IDENTITY`` unset (default) this is behaviourally identical
-    to the old key-only check — no principal is resolved and the org stays DEFAULT.
+    Resolves the principal onto ``request.state`` (which reliably reaches handlers)
+    and 401s when identity is required but absent. The org *contextvar* binding is
+    done by ``_OrgContextMiddleware`` below — a dependency's ``set_org_id`` runs in a
+    throwaway worker context and does NOT reach the handler, so ``current_org_id()``
+    would stay DEFAULT (verified). With ``AUGHOR_REQUIRE_IDENTITY`` unset (default)
+    this is behaviourally identical to the old key-only check.
     """
     exempt = any(request.url.path.startswith(p) for p in _AUTH_EXEMPT)
     # 1. Shared-secret front door (unchanged): coarse lock when exposed beyond localhost.
     if _API_KEY and not exempt and key != _API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
-    # 2. Identity → org binding (SEC-01). Off by default; exempt paths (health/docs)
-    #    never require identity.
+    # 2. Identity (SEC-01). Off by default; exempt paths (health/docs) never require it.
     from aughor.security.authz import require_identity_enabled, resolve_principal
     if exempt or not require_identity_enabled():
-        yield
         return
-
     principal = resolve_principal(request)
     if principal is None:
         raise HTTPException(status_code=401, detail="identity required (missing X-Aughor-Org)")
-
-    from aughor.org.context import reset_org_id, set_org_id
     request.state.principal = principal
-    token = set_org_id(principal.org_id)
-    try:
-        yield
-    finally:
-        reset_org_id(token)
+
+
+class _OrgContextMiddleware:
+    """Bind ``current_org_id()`` for the whole request (SEC-01 / DATA-06).
+
+    A pure-ASGI middleware sets the contextvar in the REQUEST's context, which
+    ``run_in_threadpool`` copies into sync-handler workers — so ``current_org_id()``
+    is correct in every handler (sync or async). A generator *dependency* can't do
+    this (its context is discarded before the handler runs). No-op when identity is
+    off or no principal is presented (``_require_auth`` still 401s a missing one)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        from aughor.security.authz import require_identity_enabled, resolve_principal
+        if not require_identity_enabled():
+            return await self.app(scope, receive, send)
+        from starlette.requests import Request as _Req
+        principal = resolve_principal(_Req(scope))
+        if principal is None:
+            return await self.app(scope, receive, send)
+        from aughor.org.context import reset_org_id, set_org_id
+        token = set_org_id(principal.org_id)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            try:
+                reset_org_id(token)
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "org contextvar reset (best-effort)", counter="org.reset")
 
 
 app = FastAPI(title="Aughor API", lifespan=_lifespan, dependencies=[Depends(_require_auth)])
+app.add_middleware(_OrgContextMiddleware)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 _cors_raw = os.environ.get("AUGHOR_CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")

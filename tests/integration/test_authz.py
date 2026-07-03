@@ -86,22 +86,24 @@ def test_cross_org_delete_is_blocked_and_resource_survives(client, acme_resource
     assert client.delete(f"/investigations/{inv_id}", headers={"X-Aughor-Org": "acme"}).status_code == 204
 
 
-def test_require_auth_binds_and_resets_org_contextvar(monkeypatch):
-    """When identity is on, `_require_auth` binds the principal's org for the request
-    scope and resets it on teardown (the tenant key rides the request path — SEC-01)."""
+def test_org_contextvar_is_bound_in_the_handler(client, monkeypatch):
+    """When identity is on, the principal's org is bound to current_org_id() for the
+    request scope (via _OrgContextMiddleware) so it reaches the handler — sync or
+    async — and is reset afterward. This is what makes the tenant key ride the
+    request path (SEC-01); a generator dependency alone could not (its contextvar
+    set never reaches the handler)."""
     monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from starlette.requests import Request
-
-    from aughor.api import _require_auth
+    from aughor.api import app
     from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 
-    scope = {
-        "type": "http", "method": "GET", "path": "/investigations/x",
-        "headers": [(b"x-aughor-org", b"acme")], "query_string": b"",
-    }
-    gen = _require_auth(Request(scope), key=None)
-    next(gen)  # setup → binds org
-    assert current_org_id() == "acme"
-    with pytest.raises(StopIteration):
-        next(gen)  # teardown → resets org
-    assert current_org_id() == DEFAULT_ORG_ID
+    seen = {}
+
+    @app.get("/_authz_probe_org")
+    def _probe():
+        seen["org"] = current_org_id()
+        return {"org": seen["org"]}
+
+    r = client.get("/_authz_probe_org", headers={"X-Aughor-Org": "acme"})
+    assert r.status_code == 200 and r.json()["org"] == "acme"
+    assert seen["org"] == "acme"                # bound inside the handler (the point)
+    assert current_org_id() == DEFAULT_ORG_ID   # never leaks into the ambient context
