@@ -94,6 +94,23 @@ def fire_action(trigger: ActionTrigger, payload: ActionPayload) -> ActionLog:
         log_action(log)
         return log
 
+    # SSRF guard at SEND time (SEC-04): triggers persist and DNS can rebind, so
+    # a create-time check alone is insufficient. Never POST to a private/internal
+    # target. Failure is recorded like any other action failure (audit trail).
+    from aughor.util.url_guard import is_safe_webhook_url
+    if not is_safe_webhook_url(trigger.url):
+        logger.warning("Action blocked (SSRF guard): %s → %s", trigger.name, trigger.url[:60])
+        log = ActionLog(
+            id=log_id, trigger_id=trigger.id, trigger_name=trigger.name,
+            investigation_id=payload.investigation_id, rec_index=payload.rec_index,
+            recommendation=payload.recommendation,
+            status="failed", http_status=None,
+            error="Blocked: URL is not an allowed public http(s) endpoint (SSRF guard)",
+            fired_at=fired_at,
+        )
+        log_action(log)
+        return log
+
     headers = {**trigger.headers, "Content-Type": "application/json"}
 
     if trigger.type == "slack":

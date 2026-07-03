@@ -41,6 +41,10 @@ class _TriggerBody(BaseModel):
 def create_action_trigger(body: _TriggerBody):
     from aughor.actions.models import ActionTrigger
     from aughor.actions.store  import save_trigger
+    from aughor.util.url_guard import is_safe_webhook_url
+    if not is_safe_webhook_url(body.url):
+        raise HTTPException(status_code=400, detail="Refusing to save trigger: URL is not an "
+                            "allowed public http(s) endpoint (SSRF guard).")
     trigger = ActionTrigger(
         id="", name=body.name, type=body.type, url=body.url,
         headers=body.headers, enabled=body.enabled,
@@ -54,12 +58,17 @@ def update_action_trigger(trigger_id: str, body: _TriggerBody):
     from aughor.actions.models import ActionTrigger
     from aughor.actions.store  import save_trigger, get_trigger
     from aughor.secretvault    import is_masked
+    from aughor.util.url_guard  import is_safe_webhook_url
     existing = get_trigger(trigger_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Trigger not found")
     # The API returns masked secrets; if the UI sends a mask back unchanged, keep the
     # real value rather than overwriting it with bullets.
     url = existing.url if is_masked(body.url) else body.url
+    # Only re-validate a genuinely new URL (a masked value is the unchanged stored one).
+    if not is_masked(body.url) and not is_safe_webhook_url(url):
+        raise HTTPException(status_code=400, detail="Refusing to save trigger: URL is not an "
+                            "allowed public http(s) endpoint (SSRF guard).")
     headers = {k: (existing.headers.get(k) if is_masked(v) else v)
                for k, v in (body.headers or {}).items()}
     trigger = ActionTrigger(
