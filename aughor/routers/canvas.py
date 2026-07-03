@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 
 
@@ -84,11 +84,17 @@ def get_canvases(include_legacy: bool = True, workspace_id: str | None = None):
 
 
 @router.post("/canvases", status_code=201)
-def create_canvas_endpoint(req: CreateCanvasRequest):
+def create_canvas_endpoint(req: CreateCanvasRequest,
+                           idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key")):
     from aughor.canvas.models import CanvasScope
-    from aughor.canvas.store import create_canvas
+    from aughor.canvas.store import create_canvas, get_canvas
+    from aughor.util.idempotency import lookup, remember
+    prior = lookup("canvas", idempotency_key)  # API-03: retry returns the same canvas
+    if prior and (existing := get_canvas(prior)):
+        return existing.model_dump()
     scope = CanvasScope(connection_id=req.connection_id, schema_name=req.schema_name, tables=req.tables)
     canvas = create_canvas(name=req.name, scopes=[scope], description=req.description)
+    remember("canvas", idempotency_key, canvas.id)
     return canvas.model_dump()
 
 

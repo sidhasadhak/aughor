@@ -42,6 +42,7 @@ for _env, _file in (
     ("AUGHOR_PACK_DELTAS_DB", "pack_deltas.db"),
     ("AUGHOR_PACK_BINDINGS_DB", "pack_bindings.db"),
     ("AUGHOR_CHECKPOINTS_DB", "checkpoints.db"),
+    ("AUGHOR_IDEMPOTENCY_DB", "idempotency.db"),
 ):
     os.environ.setdefault(_env, os.path.join(_test_stores_dir, _file))
 

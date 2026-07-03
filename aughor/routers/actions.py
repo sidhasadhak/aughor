@@ -5,7 +5,7 @@ import asyncio
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from aughor.licensing import Capability, gate
@@ -38,10 +38,15 @@ class _TriggerBody(BaseModel):
 
 
 @router.post("/actions/triggers", status_code=201, dependencies=[gate(Capability.ACTION_HUB)])
-def create_action_trigger(body: _TriggerBody):
+def create_action_trigger(body: _TriggerBody,
+                          idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key")):
     from aughor.actions.models import ActionTrigger
-    from aughor.actions.store  import save_trigger
+    from aughor.actions.store  import save_trigger, get_trigger
     from aughor.util.url_guard import is_safe_webhook_url
+    from aughor.util.idempotency import lookup, remember
+    prior = lookup("action_trigger", idempotency_key)  # API-03: retry returns the same trigger
+    if prior and (existing := get_trigger(prior)):
+        return existing.to_safe_dict()
     if not is_safe_webhook_url(body.url):
         raise HTTPException(status_code=400, detail="Refusing to save trigger: URL is not an "
                             "allowed public http(s) endpoint (SSRF guard).")
@@ -50,7 +55,9 @@ def create_action_trigger(body: _TriggerBody):
         headers=body.headers, enabled=body.enabled,
         channel=body.channel, project=body.project, issue_type=body.issue_type,
     )
-    return save_trigger(trigger).to_safe_dict()
+    saved = save_trigger(trigger)
+    remember("action_trigger", idempotency_key, saved.id)
+    return saved.to_safe_dict()
 
 
 @router.put("/actions/triggers/{trigger_id}", dependencies=[gate(Capability.ACTION_HUB)])

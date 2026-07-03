@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from aughor.db.connection import open_connection, open_connection_for
@@ -73,7 +73,17 @@ def get_connections():
 
 
 @router.post("/connections", status_code=201)
-async def create_connection(req: AddConnectionRequest):
+async def create_connection(req: AddConnectionRequest,
+                            idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key")):
+    # Idempotent retry (API-03): a repeated POST with the same key returns the
+    # already-created connection instead of adding a duplicate (and skips the
+    # expensive connect test + a second explorer kickoff).
+    from aughor.util.idempotency import lookup, remember
+    prior = lookup("connection", idempotency_key)
+    if prior:
+        return {"id": prior, "message": "Connection added (idempotent replay)",
+                "test_result": "", "exploring": False}
+
     combined_meta = {**req.meta}
     if req.schema_name:
         combined_meta["schema_name"] = req.schema_name
@@ -94,6 +104,7 @@ async def create_connection(req: AddConnectionRequest):
         raise HTTPException(status_code=400, detail=f"Connection test failed: {msg}")
 
     conn_id = add_connection(name=req.name, conn_type=req.conn_type, dsn=req.dsn, meta=combined_meta)
+    remember("connection", idempotency_key, conn_id)
 
     # Auto-onboarding: kick off schema exploration in the background so a brand-new
     # connection becomes intelligent without a manual step. It's non-blocking (the
