@@ -38,6 +38,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 from aughor.kernel import metering
 from aughor.kernel.ledger import Ledger
+from aughor.org.context import DEFAULT_ORG_ID, reset_org_id, set_org_id
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +263,11 @@ class JobKernel:
         hb = asyncio.create_task(self._heartbeat_loop(job_id), name=f"hb-{job_id}")
         final = JobState.FAILED
         _token = _current_job.set(job_id)
+        # Re-bind the job's tenant for the whole run (DATA-06 under identity). The org
+        # was captured on the job row at submit; binding it HERE — not relying on the
+        # implicit contextvar copy — means a job re-run by boot-recovery (no request
+        # context) still operates in its own org, not 'default'.
+        _org_token = set_org_id((self.ledger.job_get(job_id) or {}).get("org_id") or DEFAULT_ORG_ID)
         _m_token = metering.start()
         metering.register_job(job_id)   # so the heartbeat can enforce this run's budget
         _model_token = self._set_run_model(job_id)   # per-agent LLM model override (best-effort)
@@ -295,6 +301,7 @@ class JobKernel:
                 from aughor.llm.provider import reset_run_model
                 reset_run_model(_model_token)
             _current_job.reset(_token)
+            reset_org_id(_org_token)
             hb.cancel()
             self._tasks.pop(job_id, None)
             if on_finish is not None:
