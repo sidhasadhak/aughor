@@ -570,6 +570,85 @@ function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onD
 }
 
 // ── Investigate body — delegates to the appropriate rich report view ──────────
+// ── Turn renderer registry (the gen-UI seam · REC-U6 / LAYER-05) ──────────────
+// Each answer *shape* (dossier / ADA / explore / direct) is a registry entry, not a
+// branch in a god-component. First match wins — array order IS priority (dossier
+// before ADA before explore before direct, exactly the old if-chain). Adding a new
+// answer surface = one entry; InvestigateBody never changes. `registerTurnRenderer`
+// lets a pack/plugin contribute a surface (prepended → matches before the built-ins)
+// without touching this file — the seam the "agent composes its own UI" thesis needs.
+export interface TurnRenderProps {
+  onShowSource?: (data: SourcePanelData) => void;
+  onDeeper?: (question: string, insightId: string | null) => void;
+  connectionId?: string;
+}
+
+export interface TurnRenderer {
+  id: string;
+  match: (turn: ChatTurn) => boolean;
+  render: (turn: ChatTurn, props: TurnRenderProps) => React.ReactNode;
+}
+
+export const TURN_RENDERERS: TurnRenderer[] = [
+  {
+    id: "dossier", // Tier 0: the explorer's pre-computed dossier — no ADA was run.
+    match: (t) => !!t.dossierReport,
+    render: (t, p) => (
+      <DossierReportView
+        dossier={t.dossierReport!}
+        onDeeper={p.onDeeper ? () => p.onDeeper!(t.question, t.dossierInsightId) : undefined}
+      />
+    ),
+  },
+  {
+    id: "ada",
+    match: (t) => t.queryMode === "investigate" || !!t.adaReport,
+    render: (t, p) => (
+      <InvestigationReportView
+        report={t.adaReport ?? undefined}
+        streamingPhases={t.adaReport ? undefined : t.phases}
+        onShowSource={p.onShowSource}
+      />
+    ),
+  },
+  {
+    id: "explore",
+    match: (t) => t.queryMode === "explore" && !!t.exploreReport,
+    render: (t, p) => (
+      <ExplorationReportView
+        report={t.exploreReport!}
+        subQuestions={t.subQuestions}
+        subqAnswers={t.subqAnswers}
+        queryCount={t.subqAnswers.length}
+        connectionId={p.connectionId}
+        investigationId={t.investigationId ?? undefined}
+      />
+    ),
+  },
+  {
+    id: "direct", // Direct route — renders like Quick mode, source chip available.
+    match: (t) => t.queryMode === "direct",
+    render: (t, p) => {
+      const rep = t.report as Record<string, unknown> | null;
+      const headline = rep ? ((rep.headline ?? rep.summary ?? "") as string) : null;
+      return (
+        <>
+          {headline && <p className="aug-fs-sm text-zinc-300 leading-relaxed mb-2">{headline}</p>}
+          <ResultFigure turn={t} onShowSource={p.onShowSource} />
+        </>
+      );
+    },
+  },
+];
+
+/** Contribute an answer surface without editing this file. Prepended by default so a
+ *  plugin's renderer matches before the built-ins (override-wins); pass {last:true} to
+ *  append as a fallback. */
+export function registerTurnRenderer(renderer: TurnRenderer, opts?: { last?: boolean }): void {
+  if (opts?.last) TURN_RENDERERS.push(renderer);
+  else TURN_RENDERERS.unshift(renderer);
+}
+
 function InvestigateBody({
   turn, onShowSource, onDeeper, connectionId,
 }: {
@@ -578,54 +657,8 @@ function InvestigateBody({
   onDeeper?: (question: string, insightId: string | null) => void;
   connectionId?: string;
 }) {
-  const qm = turn.queryMode;
-
-  // Tier 0: the explorer's pre-computed dossier — no ADA was run.
-  if (turn.dossierReport) {
-    return (
-      <DossierReportView
-        dossier={turn.dossierReport}
-        onDeeper={onDeeper ? () => onDeeper(turn.question, turn.dossierInsightId) : undefined}
-      />
-    );
-  }
-
-  if (qm === "investigate" || turn.adaReport) {
-    return (
-      <InvestigationReportView
-        report={turn.adaReport ?? undefined}
-        streamingPhases={turn.adaReport ? undefined : turn.phases}
-        onShowSource={onShowSource}
-      />
-    );
-  }
-
-  if (qm === "explore" && turn.exploreReport) {
-    return (
-      <ExplorationReportView
-        report={turn.exploreReport}
-        subQuestions={turn.subQuestions}
-        subqAnswers={turn.subqAnswers}
-        queryCount={turn.subqAnswers.length}
-        connectionId={connectionId}
-        investigationId={turn.investigationId ?? undefined}
-      />
-    );
-  }
-
-  // Direct route — renders like Quick mode, source chip available
-  if (qm === "direct") {
-    const rep = turn.report as Record<string, unknown> | null;
-    const headline = rep ? ((rep.headline ?? rep.summary ?? "") as string) : null;
-    return (
-      <>
-        {headline && <p className="aug-fs-sm text-zinc-300 leading-relaxed mb-2">{headline}</p>}
-        <ResultFigure turn={turn} onShowSource={onShowSource} />
-      </>
-    );
-  }
-
-  return null;
+  const renderer = TURN_RENDERERS.find((r) => r.match(turn));
+  return renderer ? renderer.render(turn, { onShowSource, onDeeper, connectionId }) : null;
 }
 
 // ── Collapsible chevron ───────────────────────────────────────────────────────
