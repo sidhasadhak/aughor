@@ -1,0 +1,159 @@
+# Part 2 — Scoping & Sequencing (2026-07-04)
+
+The plan of record for executing Part 2 of the architecture review
+([`PART-2-uiux-nomenclature-and-layering.md`](PART-2-uiux-nomenclature-and-layering.md)).
+Part 1 + DATA-05/06 + full RBAC + DATA-06 depth + item 2b are all shipped; Part 2 is
+the last untouched arc.
+
+Part 2 is **not a redesign** — it is finishing **three consolidations the codebase
+started and stopped mid-way**, plus one backend architecture axis:
+
+- **Track A — one enforced design layer** (tokens → primitives → composites)
+- **Track B — one shell + one render protocol** (`<Workspace>`, renderer registry)
+- **Track C — one noun model** (kill the `ADA`/`Insight`/`Finding`/mode overloads)
+- **Track D — the eight functional planes** (AL: `trust.verify` façade, `Capability`
+  template, Semantic plane in the router) — backend, largely independent of A–C
+
+## Grounded numbers (verified against HEAD 2026-07-04, not the review's older commit)
+
+Every count below was re-grepped now. Where it differs from the review, **reality is
+worse** — the debt grew, which strengthens the case for the lint gates first.
+
+| Finding | Review | **Now** | Note |
+|---|---|---|---|
+| Radius violations (`rounded-lg/xl/2xl/3xl/full`) | 156 | **156** | exact |
+| Arbitrary `text-[Npx]` | "arbitrary" | **543** | much larger than implied |
+| Orphaned `ui/` primitives | 9 files, 0 imports | **9 files, 0 `ui/card` imports** | confirmed orphan |
+| Raw `<button>` vs `<Button>` | 183 vs 5 | **204 vs 1** | `<Button>` is effectively dead |
+| Formatting drift (`toLocaleString`/`Intl`) | "under-adopted" | **26 sites** outside `lib/format.ts` | confirmed |
+| Palette triplication | 3 sources | **`palette.ts` has AUG_PALETTE + TABLE_PALETTES + H_PALETTES** | confirmed |
+| `ReportView.tsx` div-soup | large | **769 lines / 31 KB** | confirmed |
+| `ChatMessage.tsx` god-component | 1253 | **1253 lines** | exact |
+| `ADA` jargon leak | 47 files | **49 files (27 py + 22 web)** | `ada_intake/report/synthesize/...` |
+| Sibling panels / NavTabs | 20 panels | **23 `*Panel.tsx`, ~33 tab refs, 2 `*Workspace` exemplars** | confirmed |
+
+---
+
+## Waves (each wave ≈ one branch / PR; every REC = one reversible, mechanically-verified commit)
+
+### Wave 1 — DO NOW · the enforced design layer (unblocks everything else)
+*Every structural rec renders through the primitives, so freeze drift + fix the
+primitive layer first. Highest leverage in Part 2 per the review's own verdict.*
+
+| REC | What | Effort | Risk | Verify |
+|---|---|---|---|---|
+| **REC-U1** | ESLint/CI gate banning `rounded-{lg..full}` + raw `text-[Npx]` in `components/**`,`app/**`; codemod 156 radius + 543 px sites to tokens (`--r2/--r3`, `aug-text-*`); add an explicit `--r-pill` for intentional pills | S | Low–Med | grep for banned classes → 0; CI fails on reintroduction |
+| **REC-U8** | Route `ReportView.KPIHighlight`/`ChatMessage.fmt`/`HistoryDetailPanel` through `lib/format.ts`; lint-ban `toLocaleString`/`Intl.NumberFormat` outside `lib/format.ts` (26 sites) | S | Low | no `toLocaleString` in `components/`; one value renders identically across surfaces |
+| **REC-U4** | One palette source — generate `palette.ts` **and** the CSS `--chart-*` from one TS constant at build (no runtime `getComputedStyle` → SSR-safe); replace `TABLE/H_PALETTES` literal bundles with token ramps; fix stale "Vega-Lite"→"ECharts" label | S | Med (SSR) | six brand hexes in exactly one file; changing `--chart-1` moves series + chrome |
+| **REC-U2** | Rebuild `ui/button/badge/card` from tokens (drop `rounded-xl`/`font-heading`); codemod 204 raw `<button>` → `<Button>` (preserve `type`/native attrs); then **delete the off-brand orphans** or fold into the token'd set | M | Med (form regressions) | raw `<button>` < ~20; `ui/card` imports > 15; form smoke test |
+
+**Guardrails:** never batch radius with color; preserve `type="submit"` in the button
+codemod (add a form smoke test); U4 must generate at build, never read `getComputedStyle`
+at SSR (charts render black otherwise).
+
+### Wave 2 — DO NEXT · composites + structure + the gen-UI protocol
+*Depends on brand-correct primitives (Wave 1). This is where the "answer is a document"
+philosophy reaches every surface and the CopilotKit/AG-UI gap closes.*
+
+| REC | What | Effort | Risk | Depends |
+|---|---|---|---|---|
+| **REC-U3** | Promote `components/brief/*` → `composites/`; export `<FindingCard>`/`<StatusChip>`/`<MetricGrid>`/`<Placeholder>`; fold 11 local `*_STYLE` maps into one `STATUS_SCHEMA`; rewrite `ReportView.tsx` (769→composites, delete `CollapsibleSection`/`KeyFindingCard`/`RecommendationCard`) | M | Med (structure-only!) | U2 |
+| **REC-U6** | **Renderer registry** — `TURN_RENDERERS: {id, match(turn), render(turn,props)}[]` with the 5 existing bodies; reduce `ChatMessage.InvestigateBody` to `renderers.find(match)?.render(...)` | M | Med (match order) | U3 |
+| **REC-U5** | Generalize `IntelligenceWorkspace` → `<Workspace layers scope onLayerChange>`; re-express Intelligence/Canvas/Operations as instances; fold ~23 panels → ~5 workspaces; keep `LEGACY_*_LAYER` deep-link maps | L | Med (deep-links) | U2 |
+| **REC-U7** | `<FigureCaption>` source-footers on `BriefFigure` (sourceTables/rowCount/dateRange); render each recommendation with its `origin_finding` evidence chip (backend provenance already exists — Part 1 Finding Dossier) | M | Low | U3 |
+
+**Guardrails:** REC-U3/U5 are **structure/containment only — do NOT restyle or merge
+component internals in the same commit** (DOM-diff, not color-diff); encode renderer
+priority by array order (dossier before direct) + a unit test.
+
+### Wave 3 — DO LATER · the noun model (widest blast radius — do last)
+*Wants the registry + composites stable first. Boundary-first, `@deprecated` aliases,
+one mode per commit, screenshot each mode.*
+
+| REC | What | Effort | Risk | Depends |
+|---|---|---|---|---|
+| **REC-U9** | Concept renames at the **serialization boundary** — `ada_report`→`report`+`mode:"investigate"`, strip `ADA`/`hypothesis_id` from web-bound payloads (49 files); regen `api.gen.ts`; `types.ts` → `AnswerReport`/`Fact`/`AnalyticalNarrative`; keep old names as `@deprecated` one release | L | **High** | U6 |
+| **REC-U10** | `semantic/contracts.py:SemanticContract`; make `MetricDefinition` + `ontology.OntologyMetric` serialize to it; point planning/enforcement/display at one type (ties to Part 1's #1 20-year ontology bet) | L | High | U9 |
+| **NOM-07/11** | Shared `Safeguard` base for Monitor/Brief/Playbook; one `ExecutionScope` for `canvas_id`/`connection_id`/`scope_schema`/`table_filter` precedence | L | Med | U10 |
+| **LAYER-04** | Settle the `OntologyCanvas`(1280)/`OntologyPanel`(1262)/`OntologyOrgCanvas` orphan — grep mount sites, delete or fold | S | Low | — |
+
+**Guardrails:** never rename backend internals + the wire in one commit; wire-rename
+first behind aliases, internal renames later; screenshot every answer mode after each.
+
+### Wave 4 — the eight planes (AL) · backend, parallelizable with A–C
+*Three reversible moves, each flag-gated with a plane-conformance test — not a rewrite.*
+
+- **AL-01** — hoist the ~9 validation modules behind one `trust.verify(sql|code|metadata, scope) → Verdict` façade; every capability calls it (also closes Part 1 SEC-02 in one place).
+- **AL-02** — collapse the 3 pipelines into one `Capability{generate,validate,execute,interpret}` template with a `domain` param.
+- **AL-05** — insert the Semantic plane into the router so every route carries `SemanticContext`.
+- **Verify:** a new capability (e.g. "forecast") = register one `Capability` impl + reuse Trust/Semantic/Memory planes, with zero edits to Orchestration or the stores.
+
+*Effort: L, and it overlaps the ontology bet — best taken when that bet is picked up, or
+slotted between UI waves since it touches different files.*
+
+---
+
+## Recommended sequence & first slice
+
+1. **Wave 1** in order **REC-U1 → REC-U8 → REC-U4 → REC-U2** (U1/U8 have no deps and are
+   pure wins; U4 before U2 so primitives consume the single palette).
+2. **Wave 2** (U3 → U6/U7 → U5).
+3. **Wave 3** (U9 → U10 → NOM-07/11), with **LAYER-04** droppable in anytime.
+4. **Wave 4 (AL)** slotted in parallel or when the ontology bet is taken up.
+
+**First slice → REC-U1 (radius/type lint gate + codemod).** S effort, no dependencies,
+High leverage, and it's the "make drift cheap-to-prevent" move the 20-year view calls the
+thing that "ages worst" if skipped. Concrete steps:
+1. Add a flat-config ESLint rule (or a CI `grep` gate) failing on `rounded-(lg|xl|2xl|3xl|full)`
+   and raw `text-\[\d+px\]` under `components/**`,`app/**`.
+2. Introduce a `--r-pill` token; allowlist it for the handful of intentional pills.
+3. Codemod 156 radius + 543 px sites to the nearest token (mechanical, screenshot-diff a
+   few high-traffic surfaces after).
+4. Wire the gate into `.github/workflows/ci.yml` (frontend job) — blocking, baseline zero,
+   the same discipline as the ruff gate.
+
+**Verification bar (all waves):** `tsc --noEmit` + `next build` clean, the new lint gate
+green, and a screenshot-diff of `direct` vs `investigate` answers (the review's one
+unverified visual claim — worth capturing early to prove the "two visual languages" thesis
+before/after).
+
+**Cross-cutting rules (from the review's failure-mode pass):** design layer before
+consolidation; never restyle while migrating structure; never rename concepts + move files
+in one commit; boundary-first renames with `@deprecated` aliases; flag-gate U9/U10; one
+reversible commit per REC with a mechanical verify.
+
+---
+
+## Progress log
+
+### ✅ REC-U1 — design-token lint gate + codemod (2026-07-04)
+Shipped. `web/scripts/check-design-tokens.mjs` (blocking CI gate, `npm run lint:tokens`,
+baseline zero) + a codemod of **711 sites across 41 files**: 161 raw radius →
+`rounded-[var(--r3)]` / `rounded-[var(--r-pill)]`, 546 raw `text-[Npx]` → `aug-fs-*`.
+New tokens: `--r-pill` (tokens.css + tokens-v2.css) and a **size-only** `aug-fs-*` family
+in `type.css`. Verified: gate green + fails-on-reintroduction, `tsc` + `next build` clean,
+compiled-CSS inspection (correct `font-size` / `border-radius:var(...)`, zero invalid
+rules), and browser screenshots of two views (Briefing empty-state + Query Builder).
+
+**Two discoveries that reshape later waves — read before U2/U3/U4:**
+
+1. **The app runs a *v2* theme, not `styles/tokens.css`.** `app/globals.css` imports
+   `aughor-v2/theme/tokens-v2.css` *after* the legacy `styles/tokens.css`, and v2
+   **redefines the same token names with different values** (e.g. `--r3` is 6px in the
+   legacy file but **10px** in v2 — v2 wins). So there are **two live token systems**,
+   the legacy one shadowed. This IS the "color-model triplication / parallel-system"
+   smell (UX-04, exec summary) made concrete. **REC-U4 (one palette source) and REC-U2
+   (rebuild primitives) must target `aughor-v2/theme/` as canonical and retire/reconcile
+   the legacy `styles/tokens.css`** — not the other way round. (`aug-fs-*` was added to
+   `type.css`, which v2 does *not* shadow, so type is unaffected.)
+
+2. **The `[--var]` bracket convention is silently broken under Tailwind v4** — a systemic
+   latent bug. `text-[--t1]` compiles to `color:--t1` (a bare custom-property name, which
+   is invalid CSS and dropped by the browser); it only *looks* fine because text colour
+   **inherits** from a root `color:var(--t1)`. Non-inheriting properties (border-radius,
+   backgrounds where the parent differs) are genuinely not applying. The correct v4 form
+   is `[var(--x)]` (explicit) or `(--x)` (v4 shorthand). REC-U1's radius codemod uses
+   `[var(--r3)]`; the **hundreds of pre-existing `text-[--t*]` / `bg-[--*]` sites are a
+   separate, high-value cleanup** (candidate for its own gate: ban bare `-[--…]`, require
+   `-[var(--…)]`). Note Tailwind v4 also scans comment/hint text for class candidates —
+   keep token examples in the `[var(--…)]` form in comments too.
