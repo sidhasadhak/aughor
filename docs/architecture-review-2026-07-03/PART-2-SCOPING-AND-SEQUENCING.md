@@ -126,6 +126,25 @@ reversible commit per REC with a mechanical verify.
 
 ## Progress log
 
+### ◑ Wave 2 in progress — composites + structure + gen-UI
+
+**✅ REC-U6 — turn renderer registry (2026-07-04).** ChatMessage's `InvestigateBody`
+if-chain (dossier→ada→explore→direct) → a `TURN_RENDERERS` registry (first-match-wins by
+array order = the old priority) + `registerTurnRenderer()` so a pack can contribute an
+answer surface without editing ChatMessage — the LAYER-05 gen-UI seam. Behaviour-preserving
+by construction (no JS test runner in web/; verified tsc + next build). *Follow-up: move the
+render bodies out of ChatMessage to actually shrink the 1.25k-line file.*
+
+**✅ LAYER-04 — RESOLVED, not an orphan (2026-07-04).** The review flagged it *unconfirmed*.
+Confirmed the live chain: `page.tsx → IntelligenceWorkspace → OntologyPanel` renders BOTH
+`<OntologyCanvas>` (OntologyPanel:1203) and `<OntologyOrgCanvas>` (:1154); `OntologyCanvas`
+also exports `EntityCluster`/`measureCluster` used by `OntologyOrgCanvas`. All three are
+live — no deletion/fold. Documentation-only outcome.
+
+**Remaining Wave 2:** REC-U3 (promote Brief* + rewrite ReportView div-soup — needs live
+report data to visually verify), REC-U5 (generalize `<Workspace>`, fold ~23 panels — L),
+REC-U7 (chart source-footers + grounded recs — needs chart data).
+
 ### ✅ Wave 1 COMPLETE — the enforced design layer (2026-07-04): U1 · U8 · U4 · U2
 
 ### ✅ REC-U2 — primitive-layer ratchet (2026-07-04)
