@@ -126,6 +126,18 @@ reversible commit per REC with a mechanical verify.
 
 ## Progress log
 
+### ✅ REC-U4 — one palette source (2026-07-04)
+Shipped. The chart palette was already single-sourced from `--chart-*` (the ECharts
+theme reads them live); the hard-coded `AUG_PALETTE` hex ramp was **dead code** (unused
+since the Vega→ECharts migration) — deleted. `TABLE_PALETTES`/`H_PALETTES` (previously
+unrelated Tailwind colours) now **derive from the six `--chart-*` tokens** via
+`color-mix()` at the old `/NN` alphas, delivered as inline-style objects (SchemaCards /
+ReportView apply via `style`), so card chrome and chart series share one ramp and flip
+together in dark/light — the REC-U4 verify. Removed the redundant `--chart-1..6` from the
+shadowed legacy `styles/tokens.css` (now defined once, in the active v2 theme — advances
+discovery #1). Verified: tsc + build, both gates green, browser eval confirms the
+`color-mix(var(--chart-N) …)` derivations resolve to the exact brand rgba.
+
 ### ✅ REC-U8 — formatting adoption gate (2026-07-04)
 Shipped. `web/scripts/check-formatting.mjs` (blocking CI gate, `npm run lint:format`,
 baseline zero) bans `toLocaleString` / `Intl.*Format` in `components/`,`app/`. Migrated
