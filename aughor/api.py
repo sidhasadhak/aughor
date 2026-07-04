@@ -159,7 +159,10 @@ class _OrgContextMiddleware:
                 tolerate(_exc, "org contextvar reset (best-effort)", counter="org.reset")
 
 
-app = FastAPI(title="Aughor API", lifespan=_lifespan, dependencies=[Depends(_require_auth)])
+from aughor.rbac.deps import enforce_rbac  # noqa: E402
+
+app = FastAPI(title="Aughor API", lifespan=_lifespan,
+              dependencies=[Depends(_require_auth), Depends(enforce_rbac)])
 app.add_middleware(_OrgContextMiddleware)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────

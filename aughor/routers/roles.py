@@ -15,12 +15,10 @@ from pydantic import BaseModel
 from aughor.org.context import current_org_id
 from aughor.rbac import (
     BUILTIN_ROLES,
-    Permission,
     is_builtin_role,
     permissions_for,
     resolve_roles,
 )
-from aughor.rbac.deps import gate_permission
 from aughor.rbac.store import assign_role, list_assignments, revoke_role
 from aughor.security.authz import get_principal
 
@@ -58,7 +56,7 @@ def my_access(request: Request):
     }
 
 
-@router.get("/rbac/assignments", dependencies=[gate_permission(Permission.ADMIN_MANAGE_ROLES)])
+@router.get("/rbac/assignments")
 def get_assignments():
     """Every role grant in the caller's org (the admin roster)."""
     org = current_org_id()
@@ -69,8 +67,7 @@ def get_assignments():
     ]
 
 
-@router.post("/rbac/assignments", status_code=201,
-             dependencies=[gate_permission(Permission.ADMIN_MANAGE_ROLES)])
+@router.post("/rbac/assignments", status_code=201)
 def create_assignment(req: AssignRoleRequest):
     """Grant a built-in role to a user in the caller's org. Idempotent."""
     role = (req.role or "").strip().lower()
@@ -83,7 +80,7 @@ def create_assignment(req: AssignRoleRequest):
             "created_at": a.created_at, "updated_at": a.updated_at}
 
 
-@router.delete("/rbac/assignments", dependencies=[gate_permission(Permission.ADMIN_MANAGE_ROLES)])
+@router.delete("/rbac/assignments")
 def delete_assignment(user_id: str = Query(...), role: str = Query(...)):
     """Revoke a role grant from a user in the caller's org."""
     removed = revoke_role(current_org_id(), user_id.strip(), (role or "").strip().lower())

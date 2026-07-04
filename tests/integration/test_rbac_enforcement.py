@@ -148,3 +148,22 @@ def test_roster_is_org_scoped(client):
     client.post("/rbac/assignments", headers=b, json={"user_id": "bob", "role": "viewer"})
     users_a = {x["user_id"] for x in client.get("/rbac/assignments", headers=a).json()}
     assert "bob" not in users_a and "alice" in users_a
+
+
+# ── The broad write-floor (P4): the whole mutating surface, not just curated routes ──
+
+def test_write_floor_blocks_a_viewer_on_any_unlisted_mutation(client, monkeypatch):
+    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")  # 'vic' stays a default viewer
+    h = _h("rbacp4-floor", "vic")
+    # A mutation with NO explicit policy entry still 403s a viewer via the write floor…
+    assert client.delete("/connections/nope/files/x.csv", headers=h).status_code == 403
+    # …while reads stay open to the viewer (no write permission needed).
+    assert client.get("/connections", headers=h).status_code == 200
+
+
+def test_write_floor_lets_an_analyst_mutate(client, monkeypatch):
+    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")
+    org = "rbacp4-floor2"
+    store.assign_role(org, "ana", "analyst")  # analyst holds resource.write
+    # the same unlisted mutation is NOT 403 for an analyst (the handler then 404s the id)
+    assert client.delete("/connections/nope/files/x.csv", headers=_h(org, "ana")).status_code != 403

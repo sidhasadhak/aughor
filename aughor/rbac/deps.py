@@ -60,5 +60,61 @@ def require_permission(perm: Permission):
 
 
 def gate_permission(perm: Permission) -> Depends:
-    """Sugar for route decorators: ``dependencies=[gate_permission(Permission.X)]``."""
+    """Sugar for a one-off route gate: ``dependencies=[gate_permission(Permission.X)]``.
+
+    For the standard surface, enforcement is centralized in ``policy.py`` +
+    ``enforce_rbac`` (below) — this remains for the occasional route that needs a
+    bespoke gate outside the policy table."""
     return Depends(require_permission(perm))
+
+
+# Never gated — health probes and the schema/docs browser must answer regardless.
+_ENFORCE_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json")
+
+
+def enforce_rbac(request: Request) -> None:
+    """App-wide RBAC enforcement (the P4 broad gate).
+
+    A global dependency that resolves the permission each endpoint requires from the
+    declarative ``policy.py`` table and 403s a caller whose roles don't grant it. Like
+    the per-route gate it is a **double no-op** — inert unless identity is on AND the
+    org's tier grants ``Capability.RBAC_SSO`` — so localhost and non-RBAC tiers are
+    unchanged. The org's first identified caller is bootstrapped as owner.
+
+    Self-contained (resolves its own principal) so it's order-independent w.r.t.
+    ``api._require_auth``; when identity is required but absent, ``_require_auth``
+    still issues the 401 and this simply no-ops.
+    """
+    path = request.url.path
+    if any(path.startswith(p) for p in _ENFORCE_EXEMPT):
+        return
+
+    from aughor.security.authz import require_identity_enabled, resolve_principal
+    if not require_identity_enabled():
+        return
+    principal = resolve_principal(request)
+    if principal is None:
+        return  # _require_auth issues the 401 for a missing identity
+
+    from aughor.licensing import Capability, has_capability
+    if not has_capability(Capability.RBAC_SSO):
+        return  # RBAC is an enterprise capability; not enforced without it
+
+    from aughor.rbac.resolver import has_permission, maybe_bootstrap_owner
+    maybe_bootstrap_owner(principal)  # first identified caller of the org → owner
+
+    from aughor.rbac.policy import required_permission
+    route = request.scope.get("route")
+    template = getattr(route, "path", None) or path
+    perm = required_permission(request.method, template)
+    if perm is None:
+        return
+    if not has_permission(principal, perm):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "permission_denied",
+                "permission": perm.value,
+                "hint": f"your role does not grant '{perm.value}'.",
+            },
+        )

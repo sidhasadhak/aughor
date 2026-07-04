@@ -33,8 +33,6 @@ from aughor.routers._shared import (
 
 logger = logging.getLogger(__name__)
 from aughor.licensing import Capability, gate
-from aughor.rbac import Permission
-from aughor.rbac.deps import gate_permission
 
 router = APIRouter(tags=["investigations"])
 
@@ -2733,8 +2731,7 @@ def get_investigation_detail(inv_id: str, principal=Depends(get_principal)):
     return inv
 
 
-@router.get("/investigations/{inv_id}/export",
-            dependencies=[gate_permission(Permission.RESOURCE_EXPORT)])
+@router.get("/investigations/{inv_id}/export")
 def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False,
                          principal=Depends(get_principal)):
     """Download a stored analysis as a polished PDF or PowerPoint (`format=pdf|pptx`).
@@ -2777,8 +2774,7 @@ def clear_investigations(workspace_id: str | None = None):
     return purge_investigations_bulk(None if allowed is None else list(allowed))
 
 
-@router.delete("/investigations/{inv_id}", status_code=204,
-               dependencies=[gate_permission(Permission.RESOURCE_DELETE)])
+@router.delete("/investigations/{inv_id}", status_code=204)
 def delete_investigation_endpoint(inv_id: str, principal=Depends(get_principal)):
     """Delete one investigation and its full footprint (history row, evidence
     claims, RAG vector entry). 404 if it doesn't exist."""

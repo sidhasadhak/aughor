@@ -27,8 +27,6 @@ from aughor.routers._shared import (
     invalidate_schema_cache as _invalidate_schema_cache,
     kickoff_exploration as _kickoff_exploration,
 )
-from aughor.rbac import Permission
-from aughor.rbac.deps import gate_permission
 from aughor.tools.schema import norm_type
 
 logger = logging.getLogger(__name__)
@@ -91,8 +89,7 @@ def get_connections(request: Request):
     return conns
 
 
-@router.post("/connections", status_code=201,
-             dependencies=[gate_permission(Permission.CONNECTION_CREATE)])
+@router.post("/connections", status_code=201)
 async def create_connection(req: AddConnectionRequest,
                             idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key")):
     # Idempotent retry (API-03): a repeated POST with the same key returns the
@@ -161,8 +158,7 @@ async def test_connection(conn_id: str):
         return {"ok": False, "message": str(e)}
 
 
-@router.delete("/connections/{conn_id}", status_code=204,
-               dependencies=[gate_permission(Permission.CONNECTION_DELETE)])
+@router.delete("/connections/{conn_id}", status_code=204)
 def remove_connection(conn_id: str):
     # P4: connection delete triggers a cascade purge (profiles, investigations,
     # briefings, monitors, packs, vectors, uploads) — the most destructive action in

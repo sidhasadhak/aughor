@@ -11,8 +11,9 @@ behind ``Capability.RBAC_SSO``).
 """
 from __future__ import annotations
 
-from aughor.rbac.deps import gate_permission, require_permission
+from aughor.rbac.deps import enforce_rbac, gate_permission, require_permission
 from aughor.rbac.permissions import ALL_PERMISSIONS, Permission
+from aughor.rbac.policy import required_permission
 from aughor.rbac.resolver import (
     default_role,
     has_permission,
@@ -49,4 +50,6 @@ __all__ = [
     "default_role",
     "require_permission",
     "gate_permission",
+    "enforce_rbac",
+    "required_permission",
 ]
