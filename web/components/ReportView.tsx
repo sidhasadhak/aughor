@@ -185,15 +185,16 @@ function HypothesisAccordion({
   const vc = VERDICT_STYLE[hypothesis.verdict];
 
   return (
-    <div className={`rounded-[var(--r3)] border ${palette.ring} overflow-hidden`}>
+    <div className="rounded-[var(--r3)] border overflow-hidden" style={palette.ring}>
       {/* ── Header ── */}
       <button
         onClick={() => setOpen(o => !o)}
-        className={`w-full text-left px-4 py-3 transition group ${open ? palette.dimBg : "hover:bg-zinc-700/40"}`}
+        className={`w-full text-left px-4 py-3 transition group ${open ? "" : "hover:bg-zinc-700/40"}`}
+        style={open ? palette.dimBg : undefined}
       >
         <div className="flex items-start gap-3">
           {/* H-label badge */}
-          <span className={`mt-0.5 shrink-0 text-xs font-mono font-semibold px-1.5 py-0.5 rounded border ${palette.badge}`}>
+          <span className="mt-0.5 shrink-0 text-xs font-mono font-semibold px-1.5 py-0.5 rounded border" style={palette.badge}>
             H{index + 1}
           </span>
 
@@ -227,7 +228,7 @@ function HypothesisAccordion({
 
       {/* ── Expanded detail ── */}
       {open && (
-        <div className={`border-t ${palette.ring} divide-y divide-zinc-600/50`}>
+        <div className="border-t divide-y divide-zinc-600/50" style={palette.ring}>
 
           {/* 1. Key finding */}
           <div className="px-4 py-3 space-y-1.5">
@@ -378,7 +379,7 @@ function KeyFindingCard({
             </div>
             {/* Hypothesis chip */}
             {palette && hypothesisIndex >= 0 && (
-              <span className={`aug-fs-xs font-mono px-1.5 py-0.5 rounded border ${palette.badge}`}>
+              <span className="aug-fs-xs font-mono px-1.5 py-0.5 rounded border" style={palette.badge}>
                 H{hypothesisIndex + 1}
               </span>
             )}

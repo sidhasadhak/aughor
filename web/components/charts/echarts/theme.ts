@@ -44,7 +44,8 @@ export function readChartTokens(): ChartTokens {
     cssVar("--chart-4", "#8B68D8"),
     cssVar("--chart-5", "#E64848"),
     cssVar("--chart-6", "#30B8E0"),
-    // Extended hues for high-cardinality categorical encodings (match AUG_PALETTE).
+    // Extended hues for high-cardinality categorical encodings — the overflow ramp
+    // past the six brand tokens. This is their single home (REC-U4).
     "#F97316", "#EC4899", "#10B981", "#6366F1", "#F59E0B", "#14B8A6",
     "#A855F7", "#22D3EE", "#84CC16", "#E879F9", "#34D399", "#FB923C",
   ];

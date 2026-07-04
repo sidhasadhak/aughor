@@ -86,13 +86,11 @@
   /* ── Special surfaces ── */
   --code-bg:   #0a0b0c;
 
-  /* ── Chart palette (M23) ── */
-  --chart-1: #4C8EEE;   /* blue — primary metric / first series   */
-  --chart-2: #2EC87B;   /* green — comparison / positive          */
-  --chart-3: #E0AD00;   /* amber — secondary metric               */
-  --chart-4: #8B68D8;   /* violet — tertiary series               */
-  --chart-5: #E64848;   /* coral — warning / negative             */
-  --chart-6: #30B8E0;   /* cyan — additional series               */
+  /* ── Chart palette (M23) ──
+     The six brand series colours (--chart-1..6) are defined ONCE in the active theme
+     aughor-v2/theme/tokens-v2.css (REC-U4 — one palette source), which is imported
+     after this file and is authoritative. Both the ECharts theme and the card-chrome
+     palettes (lib/palette.ts) derive from those tokens. */
   --chart-threshold-warn:   #BD8800;
   --chart-threshold-crit:   #C42A2A;
   --chart-threshold-target: #18985A;
@@ -215,13 +213,7 @@
   --color-zinc-200: #2A2A2A;
   --color-zinc-100: #1F1F1F;
 
-  /* Charts: the Tableau 10 palette + light axes. */
-  --chart-1: #1F77B4;
-  --chart-2: #2CA02C;
-  --chart-3: #FF7F0E;
-  --chart-4: #9467BD;
-  --chart-5: #D62728;
-  --chart-6: #17BECF;
+  /* Charts: light axes. Series colours (--chart-1..6) live in the active v2 theme. */
   --chart-threshold-warn:   #B25D00;
   --chart-threshold-crit:   #D62728;
   --chart-threshold-target: #2CA02C;

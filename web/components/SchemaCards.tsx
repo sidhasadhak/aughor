@@ -25,16 +25,16 @@ function TableCard({ table, palette }: { table: SchemaTable; palette: TablePalet
   const totalCols = table.columns.length;
 
   return (
-    <div className={`rounded border ${palette.border} bg-zinc-800 overflow-hidden flex flex-col`}>
+    <div className="rounded border bg-zinc-800 overflow-hidden flex flex-col" style={palette.border}>
       {/* Card header — compact */}
-      <div className={`${palette.header} px-2.5 py-1.5 flex items-center justify-between gap-2`}>
+      <div className="px-2.5 py-1.5 flex items-center justify-between gap-2" style={palette.header}>
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className={`w-1.5 h-1.5 rounded-[var(--r-pill)] shrink-0 ${palette.dot}`} />
+          <span className="w-1.5 h-1.5 rounded-[var(--r-pill)] shrink-0" style={palette.dot} />
           <span className="font-mono font-semibold aug-fs-xs text-white truncate">{table.name}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {table.row_count && (
-            <span className={`aug-fs-xs px-1 py-px rounded font-mono ${palette.badge}`}>
+            <span className="aug-fs-xs px-1 py-px rounded font-mono" style={palette.badge}>
               {formatCount(Number(table.row_count))}r
             </span>
           )}
