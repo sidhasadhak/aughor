@@ -126,6 +126,18 @@ reversible commit per REC with a mechanical verify.
 
 ## Progress log
 
+### ✅ REC-U8 — formatting adoption gate (2026-07-04)
+Shipped. `web/scripts/check-formatting.mjs` (blocking CI gate, `npm run lint:format`,
+baseline zero) bans `toLocaleString` / `Intl.*Format` in `components/`,`app/`. Migrated
+**22 sites across 20 files**: the two local reimplementations (`ChatMessage.fmt` —
+lowercase-k drift — and `PivotTable.fmt`) now delegate to `compactNumber`/
+`formatPercent`/`formatMetricValue`; 14 counts → `formatCount` (pins en-US); 6 timestamps
++ HistoryDetailPanel's hand-built date → a new `formatTimestamp(x, "full"|"short")` in
+`format.ts`. Count/timestamp migrations are behaviour-preserving by construction. Verified:
+both gates green, tsc + next build, isolated server mounts with no runtime errors. The gate
+caught 2 offenders (`PivotTable`'s arg'd `toLocaleString`) a plain grep missed — the value
+of an executable gate over a one-time sweep.
+
 ### ✅ REC-U1 — design-token lint gate + codemod (2026-07-04)
 Shipped. `web/scripts/check-design-tokens.mjs` (blocking CI gate, `npm run lint:tokens`,
 baseline zero) + a codemod of **711 sites across 41 files**: 161 raw radius →
