@@ -17,6 +17,7 @@ import { logOutcome, getInvestigationOutcomes, type RecOutcome, type RecStatus }
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { SHARE_COL_PATTERN, buildColumnFormatter, compactNumber, pct } from "@/lib/format";
 import { H_PALETTES } from "@/lib/palette";
+import { StatusChip, chipTone, type ChipHue } from "@/components/brief/StatusChip";
 
 interface Props {
   report: Report;
@@ -27,18 +28,21 @@ interface Props {
   invId?: string | null;
 }
 
-const VERDICT_STYLE: Record<Verdict, { label: string; chip: string; bar: string }> = {
-  confirmed:    { label: "Confirmed",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400", bar: "bg-emerald-500" },
-  refuted:      { label: "Refuted",      chip: "border-red-500/30 bg-red-500/10 text-red-400",             bar: "bg-red-500"     },
-  inconclusive: { label: "Inconclusive", chip: "border-amber-500/30 bg-amber-500/10 text-amber-400",       bar: "bg-amber-500"   },
-  untested:     { label: "Untested",     chip: "border-zinc-600 bg-zinc-800/50 text-zinc-500",              bar: "bg-zinc-700"    },
+// Semantic maps only — a verdict/signal → its hue + label/icon. The chip classes live
+// in the one StatusChip vocabulary (REC-U3), so a "confirmed"/"accepted" chip is the
+// same green everywhere and adding a status is a one-line entry here.
+const VERDICT_META: Record<Verdict, { label: string; hue: ChipHue }> = {
+  confirmed:    { label: "Confirmed",    hue: "positive" },
+  refuted:      { label: "Refuted",      hue: "negative" },
+  inconclusive: { label: "Inconclusive", hue: "caution"  },
+  untested:     { label: "Untested",     hue: "muted"    },
 };
 
-const STAT_STYLE: Record<StatResult["type"], { icon: string; chip: string }> = {
-  anomaly:      { icon: "⚡", chip: "border-amber-500/20 bg-amber-500/5 text-amber-300"   },
-  trend:        { icon: "↗",  chip: "border-blue-500/20 bg-blue-500/5 text-blue-300"      },
-  comparison:   { icon: "⟺", chip: "border-violet-500/20 bg-violet-500/5 text-violet-300" },
-  distribution: { icon: "≈",  chip: "border-zinc-600 bg-zinc-800/50 text-zinc-400"         },
+const STAT_META: Record<StatResult["type"], { icon: string; hue: ChipHue }> = {
+  anomaly:      { icon: "⚡", hue: "caution" },
+  trend:        { icon: "↗",  hue: "info"    },
+  comparison:   { icon: "⟺", hue: "accent"  },
+  distribution: { icon: "≈",  hue: "muted"   },
 };
 
 // ── Collapsible section (used in bottom report sections) ─────────────────────
@@ -75,10 +79,10 @@ function CollapsibleSection({
 // ── Statistical signal callout ────────────────────────────────────────────────
 
 function StatCallout({ stat }: { stat: StatResult }) {
-  const s = STAT_STYLE[stat.type];
+  const m = STAT_META[stat.type];
   return (
-    <div className={`rounded border p-2.5 flex items-start gap-2.5 ${s.chip}`}>
-      <span className="text-xs shrink-0 mt-0.5 font-mono">{s.icon}</span>
+    <div className={`rounded border p-2.5 flex items-start gap-2.5 ${chipTone(m.hue, "soft").chip}`}>
+      <span className="text-xs shrink-0 mt-0.5 font-mono">{m.icon}</span>
       <div className="min-w-0 space-y-0.5">
         <p className="text-xs leading-snug">{stat.interpretation}</p>
         {stat.sigma != null && (
@@ -182,7 +186,8 @@ function HypothesisAccordion({
 }) {
   const [open, setOpen] = useState(false);
   const palette = H_PALETTES[index % H_PALETTES.length];
-  const vc = VERDICT_STYLE[hypothesis.verdict];
+  const vm = VERDICT_META[hypothesis.verdict];
+  const vt = chipTone(vm.hue);
 
   return (
     <div className="rounded-[var(--r3)] border overflow-hidden" style={palette.ring}>
@@ -205,9 +210,7 @@ function HypothesisAccordion({
 
           {/* Verdict + confidence + toggle */}
           <div className="flex items-center gap-2 shrink-0 ml-2">
-            <span className={`aug-fs-xs font-medium px-1.5 py-0.5 rounded border ${vc.chip}`}>
-              {vc.label}
-            </span>
+            <StatusChip hue={vm.hue}>{vm.label}</StatusChip>
             <span className="aug-fs-xs font-mono text-zinc-500 w-8 text-right">
               {Math.round(hypothesis.confidence * 100)}%
             </span>
@@ -220,7 +223,7 @@ function HypothesisAccordion({
         {/* Confidence bar */}
         <div className="mt-2.5 ml-10 h-[3px] rounded-[var(--r-pill)] bg-zinc-800 overflow-hidden">
           <div
-            className={`h-full rounded-[var(--r-pill)] ${vc.bar} transition-all duration-300`}
+            className={`h-full rounded-[var(--r-pill)] ${vt.bar} transition-all duration-300`}
             style={{ width: `${hypothesis.confidence * 100}%` }}
           />
         </div>
@@ -417,12 +420,12 @@ function KeyFindingCard({
 
 // ── Outcome status styles ─────────────────────────────────────────────────────
 
-const STATUS_STYLE: Record<RecStatus, { label: string; chip: string }> = {
-  accepted:    { label: "Accepted",    chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"       },
-  implemented: { label: "Implemented", chip: "border-violet-500/30 bg-violet-500/10 text-violet-400" },
-  verified:    { label: "Verified",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
-  rejected:    { label: "Rejected",    chip: "border-red-500/30 bg-red-500/10 text-red-400"          },
-  dismissed:   { label: "Dismissed",   chip: "border-zinc-600 bg-zinc-800/50 text-zinc-500"          },
+const STATUS_META: Record<RecStatus, { label: string; hue: ChipHue }> = {
+  accepted:    { label: "Accepted",    hue: "info"     },
+  implemented: { label: "Implemented", hue: "accent"   },
+  verified:    { label: "Verified",    hue: "positive" },
+  rejected:    { label: "Rejected",    hue: "negative" },
+  dismissed:   { label: "Dismissed",   hue: "muted"    },
 };
 
 function RecommendationCard({
@@ -453,7 +456,7 @@ function RecommendationCard({
     }
   }, [invId, index, action]);
 
-  const current = outcome ? STATUS_STYLE[outcome.status] : null;
+  const current = outcome ? STATUS_META[outcome.status] : null;
 
   return (
     <div className="rounded-[var(--r3)] border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
@@ -464,9 +467,7 @@ function RecommendationCard({
       <div className="shrink-0 relative">
         {current ? (
           <div className="flex items-center gap-1.5">
-            <span className={`aug-fs-xs font-medium px-1.5 py-0.5 rounded border ${current.chip}`}>
-              {current.label}
-            </span>
+            <StatusChip hue={current.hue}>{current.label}</StatusChip>
             <button
               onClick={() => setMenuOpen(o => !o)}
               className="aug-fs-xs text-zinc-500 hover:text-zinc-400 transition px-1"
