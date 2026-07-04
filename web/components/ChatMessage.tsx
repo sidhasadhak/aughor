@@ -50,6 +50,7 @@ import {
 } from "@/lib/format";
 import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { deriveFigureSource } from "@/lib/figureSource";
 import {
   DATE_COL,
   SHARE_COL,
@@ -294,6 +295,7 @@ function ResultFigure({
   const { columns, rows, chartType } = turn;
   if (!columns.length) return null;
 
+  const source = deriveFigureSource(turn.sql, columns, rows);
   const isSingleRow = rows.length === 1;
   const hasDate = columns.some((c) => DATE_COL.test(c));
   const hasCat  = columns.some((c, i) => !isNumeric(rows[0]?.[i]));
@@ -322,7 +324,7 @@ function ResultFigure({
   if (showChart) {
     return (
       <div className="flex flex-col gap-1.5">
-        <BriefFigure caption={sourceTitle}>
+        <BriefFigure caption={sourceTitle} source={source}>
           <ResultChartCard columns={columns} rows={rows} chartType={chartType} chartConfig={turn.chartConfig} title={sourceTitle} />
         </BriefFigure>
         {onShowSource && (
@@ -339,7 +341,7 @@ function ResultFigure({
   }
 
   return (
-    <BriefFigure caption={sourceTitle}>
+    <BriefFigure caption={sourceTitle} source={source}>
       <SqlResultTable columns={columns} rows={rows} maxHeight={320} />
     </BriefFigure>
   );

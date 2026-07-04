@@ -18,6 +18,7 @@ import React, { useState } from "react";
 import { renderEmphasis } from "@/components/brief/BriefProse";
 import { deltaFavorable } from "@/lib/favorability";
 import { localizeCurrency } from "@/lib/orgSettings";
+import { formatCount } from "@/lib/format";
 
 export { BriefProse, renderEmphasis } from "@/components/brief/BriefProse";
 
@@ -159,12 +160,43 @@ export function BriefMetrics({
 }
 
 // ── Figure — the ONLY framed block. A caption + a chart/table on a dark canvas. ─
+
+/** Provenance for a figure's data — rendered as the source footer (REC-U7). Every
+ *  field is optional; the footer only shows the parts that are present. */
+export interface FigureSource {
+  tables?: string[];   // input tables the query read
+  rowCount?: number;   // rows behind the exhibit
+  dateRange?: string;  // e.g. "Jan 2024 – Dec 2024"
+}
+
+/** The exhibit footer: "Source: orders, order_items · 12,345 rows · Jan–Dec 2024".
+ *  A chart is only as trustworthy as its provenance — this makes it inspectable. */
+export function FigureCaption({ source }: { source: FigureSource }) {
+  const parts: string[] = [];
+  if (source.tables?.length) parts.push(`Source: ${source.tables.join(", ")}`);
+  if (typeof source.rowCount === "number") parts.push(`${formatCount(source.rowCount)} rows`);
+  if (source.dateRange) parts.push(source.dateRange);
+  if (!parts.length) return null;
+  return (
+    <figcaption className="aug-fs-xs text-zinc-500 mt-2 pt-2 border-t border-zinc-700/40 flex flex-wrap gap-x-1.5">
+      {parts.map((p, i) => (
+        <span key={i} className="whitespace-nowrap">
+          {i > 0 && <span className="text-zinc-600 mr-1.5">·</span>}
+          {p}
+        </span>
+      ))}
+    </figcaption>
+  );
+}
+
 export function BriefFigure({
   caption,
+  source,
   children,
   className = "",
 }: {
   caption?: string;
+  source?: FigureSource;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -173,8 +205,9 @@ export function BriefFigure({
       className={`rounded-md border border-zinc-700/50 overflow-hidden p-3 m-0 ${className}`}
       style={{ background: "var(--bg-0)" }}
     >
-      {caption && <figcaption className="aug-text-xs text-zinc-500 mb-2">{caption}</figcaption>}
+      {caption && <figcaption className="aug-fs-xs text-zinc-500 mb-2">{caption}</figcaption>}
       {children}
+      {source && <FigureCaption source={source} />}
     </figure>
   );
 }
