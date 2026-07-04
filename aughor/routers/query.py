@@ -467,6 +467,24 @@ def query_validate(body: _QueryValidateRequest):
     }
 
 
+class _SemanticContextRequest(BaseModel):
+    conn_id: str
+    question: str = ""
+    schema_name: str | None = None
+
+
+@router.post("/query/semantic-context")
+def query_semantic_context(body: _SemanticContextRequest):
+    """Resolve the Semantic plane (AL-05) for a question — what the platform knows about it:
+    governed metrics, the ontology object model, the cached business profile, and whether the
+    knowledge base covers it. The plane's read-only introspection surface; the same `resolve()`
+    is what orchestration will attach to the live answer path. Reads caches only (no DB connect)."""
+    if not (body.conn_id or "").strip():
+        raise HTTPException(status_code=400, detail="conn_id is required")
+    from aughor.semantic.context import resolve
+    return resolve(body.question or "", body.conn_id, body.schema_name).summary()
+
+
 class _PostprocRequest(BaseModel):
     columns: list[str]
     rows: list[list]

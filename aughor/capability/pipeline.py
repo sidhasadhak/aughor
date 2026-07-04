@@ -21,10 +21,15 @@ from aughor.trust import Scope, Verdict, verify as trust_verify
 
 @dataclass
 class CapabilityRequest:
-    """What a capability is asked to answer, plus the scope its guards/probes need."""
+    """What a capability is asked to answer, plus the scope its guards/probes need.
+
+    `semantic` carries a resolved `SemanticContext` from the Semantic plane (AL-05) — the review's
+    "Capability takes Question × Scope × SemanticContext" contract. Typed loosely (`Any`) so the
+    Capability plane stays independent of the Semantic plane; orchestration composes them."""
     question: str = ""
     artifact: str = ""                                 # a pre-supplied artifact (e.g. user SQL)
     scope: Scope = field(default_factory=Scope)
+    semantic: Any = None                               # a semantic.SemanticContext, attached by orchestration
     context: dict[str, Any] = field(default_factory=dict)
 
 
