@@ -128,6 +128,23 @@ reversible commit per REC with a mechanical verify.
 
 ### ◑ Wave 2 in progress — composites + structure + gen-UI
 
+**✅ REC-U7 — chart source-footers (2026-07-04).** `BriefFigure` takes an optional
+`source: FigureSource` → renders `<FigureCaption>` ("Source: order_items · N rows · date
+range"); `lib/figureSource.ts:deriveFigureSource` derives it from the result (tables via a
+FROM/JOIN scan, row count, first date column's min–max reusing format.ts granularity).
+Wired into ChatMessage's ResultFigure. **Live-verified on luxexperience**: "total GMV by
+brand tier" → bar chart with "Source: luxexperience.order_items · 3 rows". *The
+recommendation-grounding half (link each rec to its origin_finding) is a separate backend
+change — recs carry no finding anchor today — deferred.*
+
+**✅ Follow-up composition on the deep/direct path (2026-07-04, `feat(agent)`).** Not a
+numbered REC but the same "answer surface" arc: the quick /chat (Insight) path composed
+follow-ups; the DEEP path (which owns the DIRECT lookup branch) didn't. Threaded `history`
+through /investigate + /ask→deep, built a `_followup_origin` from the prior turn (anchors
+ADA's origin_finding + the direct branch's prior_analyses), and stopped route_question
+wiping the seed. **Live-verified on luxexperience**: "break that down by platform, just for
+ultra" kept the GMV metric + returns filter, added platform, filtered ultra. +7 tests.
+
 **✅ REC-U6 — turn renderer registry (2026-07-04).** ChatMessage's `InvestigateBody`
 if-chain (dossier→ada→explore→direct) → a `TURN_RENDERERS` registry (first-match-wins by
 array order = the old priority) + `registerTurnRenderer()` so a pack can contribute an
@@ -141,9 +158,13 @@ Confirmed the live chain: `page.tsx → IntelligenceWorkspace → OntologyPanel`
 also exports `EntityCluster`/`measureCluster` used by `OntologyOrgCanvas`. All three are
 live — no deletion/fold. Documentation-only outcome.
 
-**Remaining Wave 2:** REC-U3 (promote Brief* + rewrite ReportView div-soup — needs live
-report data to visually verify), REC-U5 (generalize `<Workspace>`, fold ~23 panels — L),
-REC-U7 (chart source-footers + grounded recs — needs chart data).
+**Remaining Wave 2:** REC-U3 (promote Brief* + rewrite the 771-line ReportView div-soup +
+fold its 3 style maps into one STATUS_SCHEMA). NOTE from the U7 work: ReportView is a
+**legacy** renderer — only HistoryDetailPanel uses it; the live canvas direct-answer already
+renders via the Brief* family (ChatMessage). So U3's value is narrowing the history-detail
+surface onto Brief*; it's a large rewrite needing new FindingCard/StatusChip/MetricGrid
+composites + a legacy report in history to screenshot-diff. REC-U5 (generalize `<Workspace>`,
+fold ~23 panels — L).
 
 ### ✅ Wave 1 COMPLETE — the enforced design layer (2026-07-04): U1 · U8 · U4 · U2
 
