@@ -128,6 +128,25 @@ reversible commit per REC with a mechanical verify.
 
 ### ◑ Wave 4 in progress — the eight functional planes (AL)
 
+**◑ AL-05 — the Semantic plane, resolved once (2026-07-04).** The review's "single biggest
+architectural gap": the crown-jewel semantic material (governed metrics, ontology, business profile,
+KB) is consulted **ad-hoc** — ~9 inline calls scattered across `agent/nodes.py` +
+`routers/investigations.py` — not a plane in the request path. Built `aughor/semantic/context.py`:
+a `SemanticContext` dataclass + `resolve(question, connection_id, scope_schema) -> SemanticContext`
+that **composes the existing consultations** (delegation, not rewrite) — `metrics.list_metrics`
+(+ optional schema filter), `ontology.store.load_latest_ontology`, `profile.store.load_raw` (cached,
+no LLM inference), `kb_retriever.has_strong_kb_match` — each **fail-open** (a missing ontology / empty
+catalogue / unreachable KB leaves its field default; `resolve` never raises). Tied to AL-02:
+`CapabilityRequest` gained a `semantic` field (the review's "Capability takes Question × Scope ×
+SemanticContext"), typed loosely so the planes stay independent. **First consumer wired**:
+`/query/semantic-context` (read-only, reads caches only — no DB connect) returns `SemanticContext.summary()`
+("what the platform knows about this question"). **Verified (pytest): 7 tests** — composition (all four
+sources bundled), fail-open (an erroring source degrades to default, others still resolve), `summary()`
+shape, the `CapabilityRequest` tie, and the endpoint (200 + stable shape; 400 on missing conn); ruff
+clean; 21 AL-01/AL-02 tests still green. *Deferred (the invasive half): threading the resolved context
+through the live `_stream_ask` → every node (so every route carries it) behind a flag, and feeding it
+into `SqlCapability.generate` (metric-aware SQL) — the "not a big bang" migration.*
+
 **◑ AL-02 — the Capability plane template + one real instance (2026-07-04).** The three answer
 pipelines are the *same shape* built three times (Data: SQL-gen → validate → execute → interpret;
 Code: same but unimplemented; Metadata: handler → interpret). Modeled that shape once in a new
