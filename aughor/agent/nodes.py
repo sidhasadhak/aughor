@@ -16,7 +16,6 @@ from aughor.agent.prompts import (
     ROUTE_QUESTION_PROMPT,
     SCORE_EVIDENCE_PROMPT,
     SYNTHESIZE_PROMPT,
-    WRITE_SQL_PROMPT,
     format_pitfall_section,
 )
 from aughor.rules import get_rules_block
@@ -34,7 +33,6 @@ from aughor.agent.state import (
     ReplanDecision,
     RouteDecision,
     SQLFix,
-    SQLOutput,
 )
 from pydantic import BaseModel as _BaseModel
 
@@ -658,26 +656,19 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
         except Exception:
             pass
         def _write(extra: str = "") -> str | None:
-            try:
-                sql_out: SQLOutput = llm.complete(
-                    system="You are a SQL expert. Translate the query intent into one SQL SELECT statement.",
-                    user=WRITE_SQL_PROMPT.format(
-                        dialect=_dialect,
-                        hypothesis_description=h.description,
-                        intent_description=intent.get("description", ""),
-                        intent_tables=intent_tables,
-                        intent_filters=intent_filters,
-                        intent_aggregation=intent_aggregation,
-                        schema=_schema_ctx,
-                        pitfall_section=pitfall_section,
-                        sql_examples_section=sql_examples_section,
-                        ontology_actions_section=ontology_actions_section + intent_formula_section + extra,
-                    ),
-                    response_model=SQLOutput,
-                )
-                return sql_out.sql.strip() if sql_out.sql and sql_out.sql.strip() else None
-            except Exception:
-                return None
+            # One WRITE_SQL_PROMPT call site — delegate to the shared NL→SQL generator that the
+            # Capability plane also uses (AL-02 convergence). Same prompt, same `coder` provider;
+            # its internal fail-open now goes through tolerate() instead of a silent except-pass.
+            from aughor.capability.sql_generate import generate_sql
+            return generate_sql(
+                h.description, schema_text=_schema_ctx, dialect=_dialect,
+                intent_description=intent.get("description", ""),
+                intent_tables=intent_tables, intent_filters=intent_filters,
+                intent_aggregation=intent_aggregation,
+                pitfall_section=pitfall_section, sql_examples_section=sql_examples_section,
+                ontology_actions_section=ontology_actions_section + intent_formula_section + extra,
+                provider=llm,
+            ) or None
 
         sql = _write()
         # B-7 hard gate — if the SQL drifted from a governed formula this hypothesis

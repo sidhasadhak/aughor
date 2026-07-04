@@ -12,10 +12,22 @@ from __future__ import annotations
 from typing import Any, Optional
 
 
-def generate_sql(question: str, schema_text: str = "", dialect: str = "duckdb",
-                 *, provider: Optional[Any] = None) -> str:
-    """Translate `question` into one SQL SELECT against `schema_text`. `provider` is injectable
-    (defaults to the `coder` role) so callers/tests can supply their own. Returns "" on any error."""
+def generate_sql(question: str, schema_text: str = "", dialect: str = "duckdb", *,
+                 intent_description: Optional[str] = None,
+                 intent_tables: str = "(any relevant table in the schema)",
+                 intent_filters: str = "none",
+                 intent_aggregation: str = "none",
+                 pitfall_section: str = "",
+                 sql_examples_section: str = "",
+                 ontology_actions_section: str = "",
+                 provider: Optional[Any] = None) -> str:
+    """Translate `question` (the hypothesis / NL ask) into one SQL SELECT against `schema_text`.
+
+    The single `WRITE_SQL_PROMPT` call site: the capability's `generate` phase uses the plain
+    (question-only) form; the deep answer path (`nodes._gen_sql`) passes its planned intent + the
+    pitfall / examples / ontology sections through the keyword params, so both share one prompt.
+    `intent_description` defaults to `question`. `provider` is injectable (defaults to the `coder`
+    role). Returns "" on any error (the caller treats an empty artifact as a no-op)."""
     q = (question or "").strip()
     if not q:
         return ""
@@ -27,18 +39,18 @@ def generate_sql(question: str, schema_text: str = "", dialect: str = "duckdb",
             from aughor.llm.provider import get_provider
             prov = get_provider("coder")
         out: SQLOutput = prov.complete(
-            system="You are a SQL expert. Translate the question into one SQL SELECT statement.",
+            system="You are a SQL expert. Translate the query intent into one SQL SELECT statement.",
             user=WRITE_SQL_PROMPT.format(
                 dialect=dialect,
                 hypothesis_description=q,
-                intent_description=q,
-                intent_tables="(any relevant table in the schema)",
-                intent_filters="none",
-                intent_aggregation="none",
+                intent_description=(intent_description if intent_description is not None else q),
+                intent_tables=intent_tables,
+                intent_filters=intent_filters,
+                intent_aggregation=intent_aggregation,
                 schema=schema_text or "",
-                pitfall_section="",
-                sql_examples_section="",
-                ontology_actions_section="",
+                pitfall_section=pitfall_section,
+                sql_examples_section=sql_examples_section,
+                ontology_actions_section=ontology_actions_section,
             ),
             response_model=SQLOutput,
         )

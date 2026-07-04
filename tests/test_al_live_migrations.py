@@ -86,9 +86,11 @@ class _FakeProvider:
     """Stands in for the `coder` provider so NL→SQL generation is deterministic in tests."""
     def __init__(self, sql: str):
         self._sql = sql
+        self.last_user = ""
 
     def complete(self, **kwargs):
         from aughor.agent.state import SQLOutput
+        self.last_user = kwargs.get("user", "")
         return SQLOutput(sql=self._sql, reasoning="")
 
 
@@ -97,6 +99,18 @@ def test_al02_generate_sql_from_question():
     out = generate_sql("show me all orders", schema_text="orders(id)",
                        provider=_FakeProvider("SELECT * FROM orders"))
     assert out == "SELECT * FROM orders"
+
+
+def test_al02_generate_sql_threads_rich_context():
+    # The extended generator (used by the ADA path's _gen_sql) must thread the intent + pitfall +
+    # schema + ontology sections into the one WRITE_SQL_PROMPT — so the convergence keeps context.
+    from aughor.capability.sql_generate import generate_sql
+    prov = _FakeProvider("SELECT 1")
+    generate_sql("hypothesis text", schema_text="SCHEMA_MARK", dialect="duckdb",
+                 intent_description="INTENT_MARK", pitfall_section="PITFALL_MARK",
+                 ontology_actions_section="ONTOLOGY_MARK", provider=prov)
+    for mark in ("hypothesis text", "INTENT_MARK", "SCHEMA_MARK", "PITFALL_MARK", "ONTOLOGY_MARK"):
+        assert mark in prov.last_user, mark
 
 
 def test_al02_generate_sql_empty_question_is_empty():

@@ -148,10 +148,14 @@ a **complete** capability — `generate` translates a question to SQL via a new 
 `capability/sql_generate.py` (reusing the answer path's `WRITE_SQL_PROMPT` + `coder` provider — a
 shared prompt, not a fork), so the Data domain runs **end-to-end through the one template**
 (generate → validate=`trust.verify` → execute → interpret). Wired at a new `POST
-/query/capability-answer` (non-streaming, template-driven counterpart to `/ask`). *Migrating the deep
-`ada_*` graph's per-intent generation onto this shared function is the remaining larger step — the
-graph's `_gen_sql` is a closure over ~9 node-locals, so that extraction is deferred; the plane is now
-a first-class complete answer path a new domain (forecast) extends by registering one impl.*
+/query/capability-answer` (non-streaming, template-driven counterpart to `/ask`). **✅ The deep ADA
+path now shares the one generator too:** `generate_sql` was extended to expose the full
+`WRITE_SQL_PROMPT` context (intent / pitfall / examples / ontology sections + injectable provider),
+and `nodes._gen_sql._write` was converged onto it (same prompt, same `coder` provider — byte-identical
+LLM call; its old silent `except: return None` now routes through `tolerate`, so `WRITE_SQL_PROMPT` /
+`SQLOutput` are dropped from `nodes.py` and the swallow-count drops). **One WRITE_SQL_PROMPT call site
+now** — the capability's `generate` and the ADA path both invoke it. *(enforce_gate / the metric-drift
+B-7 gate stays in the node as the post-generation wrapper; that's orthogonal.)*
 
 **Verified (pytest): 12 AL-live tests** — AL-01 blocks a `DELETE` before execute (flag on) / executes
 unchanged (flag off) / passes clean SELECTs; AL-05 dormant-by-default / resolves-when-on / state
