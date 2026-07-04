@@ -24,7 +24,35 @@ def register_agent_plugins() -> None:
     _register_ingest_sinks()
     _register_schema_annotators()
     _register_execution_hooks()
+    _register_authz_resolvers()
     _REGISTERED = True
+
+
+# ── Authz resolvers (Pattern C) — invert security/authz's reach into agent stores ─
+
+def _register_authz_resolvers() -> None:
+    """Map an agent resource id → its connection id, so object-level authz can resolve
+    its tenant (conn→org) without the platform importing the agent's stores."""
+    from aughor.kernel.registries import resource_org as rreg
+
+    def _monitor_conn(monitor_id: str):
+        from aughor.monitors.store import get_monitor
+        m = get_monitor(monitor_id)
+        return m.conn_id if m else None
+
+    def _alert_conn(alert_id: str):
+        from aughor.monitors.store import get_alert
+        a = get_alert(alert_id)
+        return a.conn_id if a else None
+
+    def _brief_conn(sub_id: str):
+        from aughor.briefs.store import get_subscription
+        sub = get_subscription(sub_id)
+        return sub.conn_id if sub else None
+
+    rreg.register_resource_conn_resolver("monitor", _monitor_conn)
+    rreg.register_resource_conn_resolver("alert", _alert_conn)
+    rreg.register_resource_conn_resolver("brief", _brief_conn)
 
 
 # ── Schema annotators (Pattern B) — invert db/connection.py's schema enrichment ─

@@ -71,7 +71,12 @@ def get_principal(request: Request) -> Optional[Principal]:
 
 def _resource_org(kind: str, resource_id: str) -> Optional[str]:
     """The org that owns a resource, or None when it can't be determined (missing
-    resource, or a shared builtin connection)."""
+    resource, or a shared builtin connection).
+
+    Every resource resolves its tenant through its connection — ``connections`` is
+    the one table that carries ``org_id`` (DATA-06). Monitors, alerts and brief
+    subscriptions all key by ``conn_id``, so the resolution is uniform.
+    """
     from aughor.db.registry import get_connection_org
     if kind == "connection":
         return get_connection_org(resource_id)
@@ -84,7 +89,17 @@ def _resource_org(kind: str, resource_id: str) -> Optional[str]:
         inv = get_investigation(resource_id)
         conn_id = (inv or {}).get("connection_id")
         return get_connection_org(conn_id) if conn_id else None
-    return None
+    if kind == "saved_query":
+        from aughor.savedquery.store import get_saved_query
+        q = get_saved_query(resource_id)
+        return get_connection_org(q.connection_id) if q and q.connection_id else None
+    # Agent-owned resources (monitor / alert / brief subscription) live in agent stores
+    # the platform must not import — the Agent registers a resource→connection resolver
+    # in the registry at bootstrap, and we resolve conn→org here (org lives on the
+    # connection). Bare platform (no agent) → no resolver → None → allow, as above.
+    from aughor.kernel.registries import resource_org as _rreg
+    conn_id = _rreg.resolve_resource_conn(kind, resource_id)
+    return get_connection_org(conn_id) if conn_id else None
 
 
 def authorize_resource(kind: str, resource_id: Optional[str], principal: Optional[Principal]) -> bool:
@@ -107,3 +122,22 @@ def check_owner(kind: str, resource_id: Optional[str], principal: Optional[Princ
     """Raise 403 when ``principal`` doesn't own the resource; no-op in localhost mode."""
     if not authorize_resource(kind, resource_id, principal):
         raise HTTPException(status_code=403, detail=f"forbidden: {kind} belongs to another org")
+
+
+# ── Read-path tenancy: org-scope list/read endpoints ─────────────────────────────
+
+def org_visible_conn_ids() -> Optional[set[str]]:
+    """The connection ids visible to the current request's org, or ``None`` (no org
+    filter) in localhost / identity-off mode — DATA-06 read-path scoping.
+
+    Monitors, alerts, brief subscriptions and canvases are all keyed by ``conn_id``
+    and carry no ``org_id`` of their own; a connection's org is the tenant boundary.
+    Restricting a list to the org's connections therefore org-scopes every one of
+    them, consistent with ``list_investigations``'s ``WHERE org_id`` clause. Relies on
+    ``current_org_id()`` being bound for the request by ``_OrgContextMiddleware``.
+    """
+    if not require_identity_enabled():
+        return None
+    from aughor.db.registry import list_connections
+    # list_connections() is itself org-filtered when identity is on (registry.py).
+    return {c["id"] for c in list_connections()}

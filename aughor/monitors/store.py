@@ -335,6 +335,20 @@ def get_alerts(
             conn.close()
 
 
+def get_alert(alert_id: str) -> Optional[MonitorAlert]:
+    """Fetch a single alert by id (used for object-level authz — an alert's org is
+    its connection's org). Returns None when the id is unknown."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM monitor_alerts WHERE id = ?", (alert_id,)
+            ).fetchone()
+            return _row_to_alert(row) if row else None
+        finally:
+            conn.close()
+
+
 def acknowledge_alert(alert_id: str) -> Optional[MonitorAlert]:
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()

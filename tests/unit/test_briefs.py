@@ -133,17 +133,25 @@ def test_deliver_subscription_fires_and_records(monkeypatch, tmp_path):
 
 # ── router: validation ───────────────────────────────────────────────────────
 
+def _fake_request():
+    # A request with no bound principal → get_principal() is None → the DATA-06
+    # connection owner-check is a no-op (localhost mode), leaving these tests to
+    # exercise the validation branches they target.
+    from types import SimpleNamespace
+    return SimpleNamespace(state=SimpleNamespace())
+
+
 def test_router_create_rejects_missing_trigger(monkeypatch):
     from aughor.routers.briefs import create_brief_subscription, _SubscriptionBody
     import aughor.actions.store as astore
     monkeypatch.setattr(astore, "get_trigger", lambda tid: None)
     with pytest.raises(HTTPException) as ei:
-        create_brief_subscription(_SubscriptionBody(conn_id="c1", name="W", trigger_id="nope"))
+        create_brief_subscription(_SubscriptionBody(conn_id="c1", name="W", trigger_id="nope"), _fake_request())
     assert ei.value.status_code == 400
 
 
 def test_router_create_rejects_bad_period(monkeypatch):
     from aughor.routers.briefs import create_brief_subscription, _SubscriptionBody
     with pytest.raises(HTTPException) as ei:
-        create_brief_subscription(_SubscriptionBody(conn_id="c1", name="W", trigger_id="t1", period="month"))
+        create_brief_subscription(_SubscriptionBody(conn_id="c1", name="W", trigger_id="t1", period="month"), _fake_request())
     assert ei.value.status_code == 422

@@ -38,28 +38,35 @@ def _make_job_fn(monitor_id: str):
             from aughor.monitors.store import get_monitor, append_alert
             from aughor.monitors.runner import run_monitor
             from aughor.db.connection import open_connection_for
+            from aughor.db.registry import get_connection_org
+            from aughor.org.context import using_org
 
             monitor = get_monitor(monitor_id)
             if monitor is None or not monitor.enabled:
                 return
 
-            db = open_connection_for(monitor.conn_id)
-            try:
-                alert = run_monitor(monitor, db)
-            finally:
+            # DATA-06: a background tick carries no request context, so current_org_id()
+            # would default to 'default' and mis-stamp the emitted monitor.alert event.
+            # Re-bind the monitor's tenant (its connection's org) for the run — the same
+            # re-bind the kernel does for a boot-recovered job (kernel/jobs.py).
+            with using_org(get_connection_org(monitor.conn_id) or ""):
+                db = open_connection_for(monitor.conn_id)
                 try:
-                    db.close()
-                except Exception as exc:
-                    from aughor.kernel.errors import tolerate
-                    tolerate(exc, "closing the per-tick db handle is best-effort; the monitor result is already computed",
-                             counter="monitors.scheduler.tick.db_close")
+                    alert = run_monitor(monitor, db)
+                finally:
+                    try:
+                        db.close()
+                    except Exception as exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(exc, "closing the per-tick db handle is best-effort; the monitor result is already computed",
+                                 counter="monitors.scheduler.tick.db_close")
 
-            if alert is not None:
-                append_alert(alert)
-                logger.info(
-                    "Monitor '%s' fired [%s]: %s",
-                    monitor.name, alert.severity, alert.message[:120],
-                )
+                if alert is not None:
+                    append_alert(alert)
+                    logger.info(
+                        "Monitor '%s' fired [%s]: %s",
+                        monitor.name, alert.severity, alert.message[:120],
+                    )
         except Exception as exc:
             logger.error("Monitor job %s crashed: %s", monitor_id, exc)
 
@@ -119,25 +126,31 @@ def trigger_now(monitor_id: str) -> Optional[MonitorAlert]:
         from aughor.monitors.store import get_monitor, append_alert
         from aughor.monitors.runner import run_monitor
         from aughor.db.connection import open_connection_for
+        from aughor.db.registry import get_connection_org
+        from aughor.org.context import using_org
 
         monitor = get_monitor(monitor_id)
         if not monitor:
             return None
-        db = open_connection_for(monitor.conn_id)
-        try:
-            # Manual test endpoint — bypass the anti-flap debounce so the user
-            # always sees the raw verdict, even within a grace window.
-            alert = run_monitor(monitor, db, suppress=False)
-        finally:
+        # DATA-06: bind the monitor's tenant for the run (the caller's request org and
+        # the connection's org agree once the owner-check passes; binding the
+        # connection's org is authoritative and matches the background _job path).
+        with using_org(get_connection_org(monitor.conn_id) or ""):
+            db = open_connection_for(monitor.conn_id)
             try:
-                db.close()
-            except Exception as exc:
-                from aughor.kernel.errors import tolerate
-                tolerate(exc, "closing the test-trigger db handle is best-effort; the monitor result is already computed",
-                         counter="monitors.scheduler.trigger_now.db_close")
-        if alert is not None:
-            append_alert(alert)
-        return alert
+                # Manual test endpoint — bypass the anti-flap debounce so the user
+                # always sees the raw verdict, even within a grace window.
+                alert = run_monitor(monitor, db, suppress=False)
+            finally:
+                try:
+                    db.close()
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "closing the test-trigger db handle is best-effort; the monitor result is already computed",
+                             counter="monitors.scheduler.trigger_now.db_close")
+            if alert is not None:
+                append_alert(alert)
+            return alert
     except Exception as exc:
         logger.error("trigger_now failed for monitor %s: %s", monitor_id, exc)
         return None

@@ -27,10 +27,16 @@ def _make_job_fn(sub_id: str):
         try:
             from aughor.briefs.store    import get_subscription
             from aughor.briefs.delivery import deliver_subscription
+            from aughor.db.registry     import get_connection_org
+            from aughor.org.context     import using_org
             sub = get_subscription(sub_id)
             if sub is None or not sub.enabled:
                 return
-            result = deliver_subscription(sub)
+            # DATA-06: a background delivery has no request context — bind the
+            # subscription's tenant (its connection's org) so the digest is built and
+            # any persisted trace stamps the right org (mirrors the monitor scheduler).
+            with using_org(get_connection_org(sub.conn_id) or ""):
+                result = deliver_subscription(sub)
             logger.info("Brief '%s' delivered [%s]", sub.name, result.get("status"))
         except Exception as exc:
             logger.error("Brief job %s crashed: %s", sub_id, exc)
@@ -72,10 +78,13 @@ def trigger_now(sub_id: str) -> Optional[dict]:
     try:
         from aughor.briefs.store    import get_subscription
         from aughor.briefs.delivery import deliver_subscription
+        from aughor.db.registry     import get_connection_org
+        from aughor.org.context     import using_org
         sub = get_subscription(sub_id)
         if not sub:
             return None
-        return deliver_subscription(sub)
+        with using_org(get_connection_org(sub.conn_id) or ""):  # DATA-06: bind the sub's tenant
+            return deliver_subscription(sub)
     except Exception as exc:
         logger.error("trigger_now failed for brief %s: %s", sub_id, exc)
         return None
