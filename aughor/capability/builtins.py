@@ -1,11 +1,12 @@
 """Built-in capability instances (AL-02) — the real pipelines, each DELEGATING to existing code.
 
 `SqlCapability` is the Data domain expressed as a `CapabilityPipeline`: its four phases call the
-functions that already do the work (Trust plane for validate, the connection for execute, the
-existing result formatter for interpret), so this is composition, not a rewrite. `generate` uses a
-pre-supplied artifact (user SQL / a plan's SQL); wiring the LLM question→SQL step (`nodes._gen_sql`)
-and the full narrative synthesis, and migrating the live investigate/explore orchestration onto the
-template, are the deferred AL-02 slices.
+functions that already do the work (the shared NL→SQL generator for generate, the Trust plane for
+validate, the connection for execute, the existing result formatter for interpret), so this is
+composition, not a rewrite. `generate` uses a pre-supplied artifact when given (the answer path
+supplies already-planned SQL) else translates the question via `sql_generate`. Migrating the live
+ADA/investigate graph's per-intent generation onto this shared function — and the full narrative
+synthesis for interpret — remain the larger AL-02 steps.
 """
 from __future__ import annotations
 
@@ -20,8 +21,15 @@ class SqlCapability:
     kind = "sql"
 
     def generate(self, req: CapabilityRequest) -> str:
-        # A pre-supplied artifact is used as-is; LLM question→SQL generation is the deferred step.
-        return (req.artifact or "").strip()
+        # A pre-supplied artifact is used as-is (the answer path supplies already-planned SQL);
+        # otherwise translate the question to SQL via the shared NL→SQL generator.
+        if (req.artifact or "").strip():
+            return req.artifact.strip()
+        if not (req.question or "").strip():
+            return ""
+        from aughor.capability.sql_generate import generate_sql
+        return generate_sql(req.question, schema_text=(req.scope.schema or ""),
+                            dialect=(req.scope.dialect or "duckdb"))
 
     def validate(self, artifact: str, req: CapabilityRequest) -> Verdict:
         # The whole point of the plane: validate IS the Trust plane, not a per-path guard subset.

@@ -78,3 +78,72 @@ def test_al05_agentstate_carries_the_field():
     from aughor.agent.state import AgentState  # noqa: F401
     state: dict = {"semantic_context": "sentinel"}
     assert state["semantic_context"] == "sentinel"
+
+
+# ── AL-02 — the Capability plane as a live end-to-end answer path ─────────────────────────
+
+class _FakeProvider:
+    """Stands in for the `coder` provider so NL→SQL generation is deterministic in tests."""
+    def __init__(self, sql: str):
+        self._sql = sql
+
+    def complete(self, **kwargs):
+        from aughor.agent.state import SQLOutput
+        return SQLOutput(sql=self._sql, reasoning="")
+
+
+def test_al02_generate_sql_from_question():
+    from aughor.capability.sql_generate import generate_sql
+    out = generate_sql("show me all orders", schema_text="orders(id)",
+                       provider=_FakeProvider("SELECT * FROM orders"))
+    assert out == "SELECT * FROM orders"
+
+
+def test_al02_generate_sql_empty_question_is_empty():
+    from aughor.capability.sql_generate import generate_sql
+    assert generate_sql("", provider=_FakeProvider("x")) == ""
+
+
+def test_al02_capability_generates_from_question(monkeypatch):
+    monkeypatch.setattr("aughor.capability.sql_generate.generate_sql", lambda *a, **k: "SELECT 1 AS n")
+    from aughor.capability.builtins import SqlCapability
+    from aughor.capability import CapabilityRequest
+    from aughor.trust import Scope
+    cap = SqlCapability()
+    assert cap.generate(CapabilityRequest(question="anything", scope=Scope())) == "SELECT 1 AS n"
+    # A pre-supplied artifact still wins (the answer path supplies already-planned SQL).
+    assert cap.generate(CapabilityRequest(artifact="SELECT 2", question="ignored")) == "SELECT 2"
+
+
+def test_al02_full_answer_end_to_end(monkeypatch):
+    monkeypatch.setattr("aughor.capability.sql_generate.generate_sql", lambda *a, **k: "SELECT 1 AS n")
+    from aughor.capability import run_capability, CapabilityRequest
+    from aughor.trust import Scope
+    spy = _SpyConn()
+    res = run_capability("data", CapabilityRequest(question="how many?",
+                                                   scope=Scope(conn=spy, dialect="duckdb")))
+    assert res.ok is True
+    assert res.artifact == "SELECT 1 AS n"                # generated, then executed
+    assert res.trace == ("generate", "validate", "execute", "interpret")
+    assert res.output["row_count"] == 1
+    assert res.narrative
+
+
+def test_al02_endpoint_answers_when_flag_on(client, builtin_conn_id, monkeypatch):
+    monkeypatch.setenv("AUGHOR_CAPABILITY_PIPELINE_LIVE", "1")
+    monkeypatch.setattr("aughor.capability.sql_generate.generate_sql", lambda *a, **k: "SELECT 1 AS n")
+    r = client.post("/query/capability-answer",
+                    json={"conn_id": builtin_conn_id, "question": "how many rows?"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["sql"] == "SELECT 1 AS n"
+    assert body["trace"] == ["generate", "validate", "execute", "interpret"]
+    assert body["row_count"] == 1
+
+
+def test_al02_endpoint_disabled_when_flag_off(client, builtin_conn_id, monkeypatch):
+    monkeypatch.delenv("AUGHOR_CAPABILITY_PIPELINE_LIVE", raising=False)
+    r = client.post("/query/capability-answer",
+                    json={"conn_id": builtin_conn_id, "question": "q"})
+    assert r.status_code == 404

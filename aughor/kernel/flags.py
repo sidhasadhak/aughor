@@ -28,6 +28,7 @@ FLAG_ENV = {
     "trust.verify_facade": "AUGHOR_TRUST_FACADE",
     "trust.verify_live": "AUGHOR_TRUST_VERIFY_LIVE",
     "semantic.resolve_live": "AUGHOR_SEMANTIC_RESOLVE_LIVE",
+    "capability.pipeline_live": "AUGHOR_CAPABILITY_PIPELINE_LIVE",
 }
 
 # Human-facing copy for the Settings UI.
@@ -67,6 +68,10 @@ FLAG_META = {
     "semantic.resolve_live": {
         "label": "Semantic plane resolved at the router",
         "description": "Resolve the Semantic plane (metrics · ontology · profile · KB) once when a deep investigation is seeded and attach the SemanticContext to the run state, so every node reads one consistent context instead of re-consulting ad-hoc. Off by default (AL-05 live migration).",
+    },
+    "capability.pipeline_live": {
+        "label": "Capability plane answer path",
+        "description": "Enable the end-to-end Capability-plane answer path (/query/capability-answer): a data question runs generate → validate (trust.verify) → execute → interpret through the one CapabilityPipeline template. Off by default (AL-02 live migration).",
     },
 }
 

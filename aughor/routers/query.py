@@ -485,6 +485,60 @@ def query_semantic_context(body: _SemanticContextRequest):
     return resolve(body.question or "", body.conn_id, body.schema_name).summary()
 
 
+class _CapabilityAnswerRequest(BaseModel):
+    conn_id: str
+    question: str
+    dialect: str = "duckdb"
+
+
+@router.post("/query/capability-answer")
+def query_capability_answer(body: _CapabilityAnswerRequest):
+    """Answer a data question end-to-end through the Capability plane (AL-02): one
+    `CapabilityPipeline` runs generate (NL→SQL) → validate (`trust.verify`) → execute → interpret
+    and returns the whole result. The non-streaming, template-driven counterpart to /ask — behind
+    the `capability.pipeline_live` flag while the plane lands."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("capability.pipeline_live"):
+        raise HTTPException(status_code=404, detail="capability answer path is disabled")
+    if not (body.question or "").strip():
+        raise HTTPException(status_code=400, detail="question is required")
+    from aughor.db.connection import open_connection_for
+    try:
+        db = open_connection_for(body.conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        try:
+            schema = db.get_schema()
+        except Exception:
+            schema = ""
+        from aughor.capability import run_capability, CapabilityRequest
+        from aughor.trust import Scope
+        res = run_capability("data", CapabilityRequest(
+            question=body.question,
+            scope=Scope(conn=db, schema=schema, dialect=body.dialect or "duckdb")))
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "capability-answer: db close", counter="capability_answer.close")
+    if res is None:
+        raise HTTPException(status_code=500, detail="the 'data' capability is not registered")
+    return {
+        "ok": res.ok,
+        "sql": res.artifact,
+        "narrative": res.narrative,
+        "columns": res.output.get("columns", []),
+        "rows": res.output.get("rows", []),
+        "row_count": res.output.get("row_count", 0),
+        "error": res.error,
+        "blockers": [{"name": c.name, "reason": c.reason}
+                     for c in (res.verdict.blockers if res.verdict else [])],
+        "trace": list(res.trace),
+    }
+
+
 class _PostprocRequest(BaseModel):
     columns: list[str]
     rows: list[list]
