@@ -128,8 +128,8 @@ reversible commit per REC with a mechanical verify.
 
 ### ◑ Wave 4 in progress — the eight functional planes (AL)
 
-**◑ AL live-path migrations — the planes now run ON the deep answer path, flag-gated (2026-07-04).**
-With all three planes built + conformance-tested, wired two onto the live Deep-Analysis path, each
+**◑ AL live-path migrations — all three planes now run ON a live answer path, flag-gated (2026-07-04).**
+With all three planes built + conformance-tested, wired each onto a live answer path,
 **default-off → byte-identical** until enabled:
 - **AL-01 live** (`trust.verify_live` / `AUGHOR_TRUST_VERIFY_LIVE`): `agent/investigate.py:_execute_safe`
   routes every generated SQL through `trust.verify` (conn-less Scope → only the pure readonly + E1
@@ -143,15 +143,22 @@ With all three planes built + conformance-tested, wired two onto the live Deep-A
   carries SemanticContext" goal, additively (the ad-hoc consultations still work; they migrate onto
   the state incrementally).
 
-**Verified (pytest): 6 tests** — AL-01 blocks a `DELETE` before execute (flag on) / executes
-unchanged (flag off) / passes clean SELECTs; AL-05 dormant-by-default / resolves-when-on / the state
-field carries it. Full-suite collect 2400 clean; 66 investigate/ADA tests + 37 plane/regression tests
-green; ruff clean. **AL-02 live migration — honestly deferred (the review's "not a big bang"):** its
-meaningful form is routing SQL *generation* through the `CapabilityPipeline` template, but generation
-is distributed across the `ada_*` graph nodes (no single question→SQL function), and at the execute
-seam a Capability call is redundant with the AL-01 gate. So the Capability plane + its conformance
-test stand; the generation-through-template migration is a genuine multi-node refactor, left as the
-one remaining Wave-4 piece rather than shipped as a contrived redundant seam.
+**AL-02 live** (`capability.pipeline_live` / `AUGHOR_CAPABILITY_PIPELINE_LIVE`): `SqlCapability` is now
+a **complete** capability — `generate` translates a question to SQL via a new standalone
+`capability/sql_generate.py` (reusing the answer path's `WRITE_SQL_PROMPT` + `coder` provider — a
+shared prompt, not a fork), so the Data domain runs **end-to-end through the one template**
+(generate → validate=`trust.verify` → execute → interpret). Wired at a new `POST
+/query/capability-answer` (non-streaming, template-driven counterpart to `/ask`). *Migrating the deep
+`ada_*` graph's per-intent generation onto this shared function is the remaining larger step — the
+graph's `_gen_sql` is a closure over ~9 node-locals, so that extraction is deferred; the plane is now
+a first-class complete answer path a new domain (forecast) extends by registering one impl.*
+
+**Verified (pytest): 12 AL-live tests** — AL-01 blocks a `DELETE` before execute (flag on) / executes
+unchanged (flag off) / passes clean SELECTs; AL-05 dormant-by-default / resolves-when-on / state
+carries it; **AL-02 generate-from-question, full generate→validate→execute→interpret end-to-end on a
+spy conn, and the `/query/capability-answer` endpoint (200 with the answer when on, 404 when off) —
+all with a stubbed provider (no live LLM)**. Full-suite collect 2406 clean; 45 plane/regression tests
++ all ratchets green; ruff clean.
 
 **◑ AL-05 — the Semantic plane, resolved once (2026-07-04).** The review's "single biggest
 architectural gap": the crown-jewel semantic material (governed metrics, ontology, business profile,
