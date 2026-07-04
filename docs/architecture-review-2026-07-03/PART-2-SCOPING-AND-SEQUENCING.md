@@ -128,6 +128,27 @@ reversible commit per REC with a mechanical verify.
 
 ### ◑ Wave 4 in progress — the eight functional planes (AL)
 
+**◑ AL-02 — the Capability plane template + one real instance (2026-07-04).** The three answer
+pipelines are the *same shape* built three times (Data: SQL-gen → validate → execute → interpret;
+Code: same but unimplemented; Metadata: handler → interpret). Modeled that shape once in a new
+`aughor/capability` plane: a `CapabilityPipeline` Protocol (`generate/validate/execute/interpret`
++ `domain`/`kind`), a `run()` template that sequences the four phases — **`validate` routes through
+the Trust plane** (`trust.verify`, so AL-02 consumes AL-01) and a BLOCK **short-circuits before
+execute** (a mutating statement never reaches the DB) while a repair from `validate` is adopted as
+the executed artifact — and a dict registry (`register_capability`/`get_capability`/`run_capability`,
+matching the `kernel/registries` idiom). Named `CapabilityPipeline`, not `Capability`, to avoid the
+`licensing.capabilities.Capability` (permission enum) clash. **One real instance**: `SqlCapability`
+(domain `"data"`) whose phases *delegate* to existing code — `trust.verify` (validate),
+`conn.execute` (execute), `format_result_for_llm` (interpret) — runnable end-to-end with no LLM.
+**Purely additive** (only new files; zero edits to existing code → no regression surface).
+**Verified (pytest): 8 conformance tests** — the review's acceptance bar (*register a toy
+`forecast` capability from outside → it runs through the template unchanged*), block short-circuit
+(a `DELETE` never reaches a spy connection), repair adoption, and `SqlCapability` end-to-end on both
+a spy connection and the **real DuckDB fixture**; ruff clean. *Deferred (documented): the LLM
+question→SQL `generate` (`nodes._gen_sql`) + full narrative synthesis; the Code/Metadata instances;
+and migrating the live investigate/explore orchestration onto the template behind a flag — the
+"not a big bang" step.*
+
 **◑ AL-01 — the Trust plane, built + conformance-tested + first consumer wired (2026-07-04).**
 The ~9 validation modules were diffused across the three answer paths, each grown a *different
 subset* (grep-confirmed: `check_join_value_domains` in 6 paths, `run_trust_checks` in only the
