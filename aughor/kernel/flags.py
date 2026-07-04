@@ -25,6 +25,7 @@ FLAG_ENV = {
     "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
     "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
+    "trust.verify_facade": "AUGHOR_TRUST_FACADE",
 }
 
 # Human-facing copy for the Settings UI.
@@ -52,6 +53,10 @@ FLAG_META = {
     "ada.parallel_lenses": {
         "label": "Parallel Deep-Analysis lenses",
         "description": "For a cross-sectional Deep-Analysis ('why is X high/low'), run independent investigative lenses (segment/where ∥ mechanism/why) concurrently instead of one bundled scan — a deeper, multi-angle answer at ~flat wall-clock. Multiplies concurrent LLM calls (bounded by the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
+    },
+    "trust.verify_facade": {
+        "label": "Unified trust.verify façade",
+        "description": "Route SQL validation through the one Trust-plane façade (aughor/trust) — one Verdict composing the read-only/mutation gate, E1 footguns, preflight repair, and value-domain/fan-out probes — instead of a per-path guard subset. Adds the AST read-only gate to the /query/validate surface (closes SEC-02 there). Off by default while the plane lands (AL-01).",
     },
 }
 

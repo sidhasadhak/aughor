@@ -438,8 +438,23 @@ def query_validate(body: _QueryValidateRequest):
         except Exception as exc:
             tolerate(exc, "validate: db close", counter="validate.close")
 
+    # AL-01 · Trust plane (behind trust.verify_facade): the AST read-only gate the answer
+    # paths never ran on generated SQL. Additive — a mutating/DDL statement or a disallowed
+    # function is a hard blocker, distinct from the advisory warnings above. Pure (no conn),
+    # so it runs after the connection is closed.
+    mutation_blockers: list = []
+    try:
+        from aughor.kernel.flags import flag_enabled
+        if flag_enabled("trust.verify_facade"):
+            from aughor.trust import verify as trust_verify, Scope
+            verdict = trust_verify(sql, Scope(dialect=dialect))
+            mutation_blockers = [{"name": c.name, "reason": c.reason, **c.detail}
+                                 for c in verdict.blockers]
+    except Exception as exc:
+        tolerate(exc, "validate: trust facade", counter="validate.trust_facade")
+
     issues = (len(fanout_hits) + len(join_warnings) + len(filter_warnings)
-              + len(grain_warnings) + len(trust_findings))
+              + len(grain_warnings) + len(trust_findings) + len(mutation_blockers))
     return {
         "passed": issues == 0,
         "issue_count": issues,
@@ -448,6 +463,7 @@ def query_validate(body: _QueryValidateRequest):
         "filter_warnings": filter_warnings,
         "grain_warnings": grain_warnings,
         "trust_findings": trust_findings,
+        "mutation_blockers": mutation_blockers,
     }
 
 
