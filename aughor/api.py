@@ -559,6 +559,7 @@ from aughor.routers import (  # noqa: E402
     volumes,
     verify,
     approvals,
+    roles as roles_router,
     packs as packs_router,
 )
 
@@ -590,3 +591,4 @@ app.include_router(profile.router)
 app.include_router(orgsettings.router)
 app.include_router(verify.router)
 app.include_router(packs_router.router)
+app.include_router(roles_router.router)

@@ -69,3 +69,48 @@ def permissions_for(principal: Optional[Principal]) -> frozenset[Permission]:
 def has_permission(principal: Optional[Principal], perm: Permission) -> bool:
     """True when the principal's roles grant ``perm``. The check P3 enforces."""
     return perm in permissions_for(principal)
+
+
+# ── First-user-is-owner bootstrap (P3) ────────────────────────────────────────
+#
+# When identity is flipped on, an org with zero assignments has no one who can run
+# ``admin.manage_roles`` — so nobody could ever grant the first owner. The standard
+# resolution is to make the org's FIRST identified caller its owner. Default-on
+# (``AUGHOR_RBAC_AUTO_BOOTSTRAP=0`` disables it for deployments that pre-seed roles
+# from an IdP), invoked once per org per process at the enforcement seam.
+
+_bootstrapped_orgs: set[str] = set()  # per-process cache: orgs already checked
+
+
+def auto_bootstrap_enabled() -> bool:
+    return os.getenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "1") != "0"
+
+
+def maybe_bootstrap_owner(principal: Optional[Principal]) -> bool:
+    """Make ``principal`` the org owner iff the org has no assignments yet.
+
+    Idempotent + cached (one store check per org per process). Returns True only on
+    the request that actually performed the bootstrap. No-op when identity is off,
+    auto-bootstrap is disabled, or the org already has any assignment.
+    """
+    if principal is None or not auto_bootstrap_enabled():
+        return False
+    org = principal.org_id
+    if org in _bootstrapped_orgs:
+        return False
+    try:
+        from aughor.rbac.store import assign_role, count_assignments
+        empty = count_assignments(org) == 0
+        _bootstrapped_orgs.add(org)  # don't re-check this org this process, either way
+        if empty:
+            assign_role(org, principal.user_id, OWNER)
+            return True
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "RBAC owner bootstrap is best-effort", counter="rbac.bootstrap")
+    return False
+
+
+def _reset_bootstrap_cache() -> None:
+    """Test hook — clear the per-process bootstrap cache."""
+    _bootstrapped_orgs.clear()

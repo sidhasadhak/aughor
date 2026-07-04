@@ -122,3 +122,13 @@ def list_assignments(org_id: str) -> List[RoleAssignment]:
         (org_id,),
     ).fetchall()
     return [_row_to_assignment(r) for r in rows]
+
+
+def count_assignments(org_id: str) -> int:
+    """How many role grants exist in an org — 0 means "un-bootstrapped" (P3 uses
+    this to make the org's first identified user its owner)."""
+    c = _conn()
+    _ensure_schema(c)
+    return c.execute(
+        "SELECT COUNT(*) FROM role_assignments WHERE org_id = ?", (org_id,)
+    ).fetchone()[0]
