@@ -160,7 +160,10 @@ def route_question(state: AgentState) -> dict[str, Any]:
             "current_hypothesis_idx": 0,
             "iteration": 0,
             "pitfalls": [],
-            "prior_analyses": [],
+            # Preserve any origin seed (a drill or a follow-up base) — route_question
+            # runs first, so there are no stale priors to clear, and the direct/explore
+            # branches read prior_analyses to compose on that base (REC follow-up).
+            "prior_analyses": state.get("prior_analyses") or [],
         }
     if effective_mode == "final_text":
         return {
@@ -170,7 +173,10 @@ def route_question(state: AgentState) -> dict[str, Any]:
             "current_hypothesis_idx": 0,
             "iteration": 0,
             "pitfalls": [],
-            "prior_analyses": [],
+            # Preserve any origin seed (a drill or a follow-up base) — route_question
+            # runs first, so there are no stale priors to clear, and the direct/explore
+            # branches read prior_analyses to compose on that base (REC follow-up).
+            "prior_analyses": state.get("prior_analyses") or [],
         }
     if effective_mode == "explore":
         return {
@@ -181,7 +187,10 @@ def route_question(state: AgentState) -> dict[str, Any]:
             "subq_answers": [],
             "explore_report": None,
             "pitfalls": [],
-            "prior_analyses": [],
+            # Preserve any origin seed (a drill or a follow-up base) — route_question
+            # runs first, so there are no stale priors to clear, and the direct/explore
+            # branches read prior_analyses to compose on that base (REC follow-up).
+            "prior_analyses": state.get("prior_analyses") or [],
         }
     return {**base, "query_mode": "investigate"}
 
