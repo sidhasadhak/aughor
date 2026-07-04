@@ -58,6 +58,9 @@
   --r1: 4px;
   --r2: 6px;
   --r3: 10px;
+  --r-pill: 9999px;  /* pills/avatars/dots — the one full-round exception (REC-U1).
+                        Also in styles/tokens.css for the legacy theme; kept here so
+                        the active v2 theme is self-contained. */
 
   /* Layout — slightly roomier shell */
   --sidebar: 232px;

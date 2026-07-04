@@ -32,7 +32,7 @@ function FileTypeChip({ filename }: { filename: string }) {
   };
   const style = map[ext] ?? { label: ext.toUpperCase(), chip: "border-zinc-600 bg-zinc-800 text-zinc-400" };
   return (
-    <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded border ${style.chip}`}>
+    <span className={`aug-fs-xs font-mono px-1.5 py-0.5 rounded border ${style.chip}`}>
       {style.label}
     </span>
   );
@@ -127,7 +127,7 @@ export function DocumentUploader() {
         />
         {uploading ? (
           <div className="space-y-2">
-            <div className="h-5 w-5 rounded-full border-2 border-violet-500 border-t-transparent animate-spin mx-auto" />
+            <div className="h-5 w-5 rounded-[var(--r-pill)] border-2 border-violet-500 border-t-transparent animate-spin mx-auto" />
             <p className="text-sm text-zinc-400">Indexing…</p>
           </div>
         ) : (
@@ -151,7 +151,7 @@ export function DocumentUploader() {
       {/* Document list */}
       {docs.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-mono">
+          <p className="aug-fs-xs text-zinc-500 uppercase tracking-widest font-mono">
             {docs.length} document{docs.length !== 1 ? "s" : ""} indexed
           </p>
           <div className="space-y-2">
@@ -163,14 +163,14 @@ export function DocumentUploader() {
                 <FileTypeChip filename={doc.filename} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-zinc-200 truncate">{doc.title}</p>
-                  <p className="text-[11px] text-zinc-500 font-mono mt-0.5">
+                  <p className="aug-fs-xs text-zinc-500 font-mono mt-0.5">
                     {doc.filename} · {doc.chunk_count} chunk{doc.chunk_count !== 1 ? "s" : ""} · {timeAgo(doc.uploaded_at)}
                   </p>
                 </div>
                 <button
                   onClick={() => handleDelete(doc.doc_id)}
                   disabled={deletingId === doc.doc_id}
-                  className="shrink-0 text-[11px] text-zinc-500 hover:text-red-400 border border-zinc-700 hover:border-red-500/40 rounded px-2 py-1 transition"
+                  className="shrink-0 aug-fs-xs text-zinc-500 hover:text-red-400 border border-zinc-700 hover:border-red-500/40 rounded px-2 py-1 transition"
                 >
                   {deletingId === doc.doc_id ? "…" : "Remove"}
                 </button>

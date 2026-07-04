@@ -42,11 +42,11 @@ function MetricHealthCard({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ background: s.dot }} />
-          <span className="text-[11px] font-mono" style={{ color: s.text }}>{s.label}</span>
+          <span className="w-[6px] h-[6px] rounded-[var(--r-pill)] shrink-0" style={{ background: s.dot }} />
+          <span className="aug-fs-xs font-mono" style={{ color: s.text }}>{s.label}</span>
         </div>
         {item.target_period && (
-          <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-[3px]"
+          <span className="aug-fs-xs font-mono px-1.5 py-0.5 rounded-[3px]"
             style={{ background: "var(--bg-0)", border: "0.5px solid var(--b0)", color: "var(--t4)" }}>
             {item.target_period}
           </span>
@@ -55,19 +55,19 @@ function MetricHealthCard({
 
       {/* Metric name */}
       <div>
-        <p className="text-[13px] font-medium text-[--t1]">{item.label}</p>
+        <p className="aug-fs-ui font-medium text-[--t1]">{item.label}</p>
         {item.benchmark_source && (
-          <p className="text-[11px] mt-0.5 text-[--t4]">{item.benchmark_source}</p>
+          <p className="aug-fs-xs mt-0.5 text-[--t4]">{item.benchmark_source}</p>
         )}
       </div>
 
       {/* Values */}
       <div className="flex items-end justify-between gap-2">
         <div>
-          <p className="text-[22px] font-semibold font-mono leading-none text-[--t1]">
+          <p className="aug-fs-display font-semibold font-mono leading-none text-[--t1]">
             {fmtValue(item.current, item.unit)}
           </p>
-          <p className="text-[11px] mt-1 font-mono text-[--t3]">
+          <p className="aug-fs-xs mt-1 font-mono text-[--t3]">
             target {fmtValue(item.target, item.unit)}
             {item.variance !== null && (
               <span className="ml-1.5" style={{ color: item.variance < 0 ? "var(--red5)" : "var(--grn4)" }}>
@@ -82,7 +82,7 @@ function MetricHealthCard({
       {(item.status === "yellow" || item.status === "red") && (
         <button
           onClick={() => onInvestigate(item.label)}
-          className="mt-auto text-[11px] px-2.5 py-1 rounded-[4px] transition-all text-left"
+          className="mt-auto aug-fs-xs px-2.5 py-1 rounded-[4px] transition-all text-left"
           style={{ border: `0.5px solid ${s.border}`, background: "var(--bg-0)", color: s.text }}
           onMouseEnter={e => (e.currentTarget.style.background = s.bg)}
           onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-0)")}
@@ -138,16 +138,16 @@ export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealt
     <div>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
-          <p className="text-[14px] font-medium text-[--t1]">Business Health</p>
+          <p className="aug-fs-ui font-medium text-[--t1]">Business Health</p>
           <div className="flex items-center gap-2">
             {redYellow.length > 0 && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full font-mono"
+              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-pill)] font-mono"
                 style={{ background: "var(--red1)", border: "0.5px solid var(--red2)", color: "var(--red5)" }}>
                 {redYellow.length} need attention
               </span>
             )}
             {redYellow.length === 0 && green.length > 0 && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full font-mono"
+              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-pill)] font-mono"
                 style={{ background: "var(--grn1)", border: "0.5px solid var(--grn2)", color: "var(--grn4)" }}>
                 all on target
               </span>

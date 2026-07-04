@@ -110,7 +110,7 @@ interface Props {
 }
 
 const SELECT_CLS =
-  "text-[11px] rounded border bg-transparent px-1.5 py-0.5 outline-none cursor-pointer";
+  "aug-fs-xs rounded border bg-transparent px-1.5 py-0.5 outline-none cursor-pointer";
 const selectStyle = { borderColor: "var(--chart-grid)", color: "var(--t2)" } as const;
 
 export function ResultChartCard({ columns, rows, title, chartType, chartConfig, custom, heightScale, onSelect }: Props) {
@@ -179,7 +179,7 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
   const hint = typeSel === "auto" ? (chartType ?? "auto") : (TYPE_TO_HINT[typeSel] ?? "auto");
   const Dropdown = (label: string, value: string, opts: { v: string; t: string }[], on: (v: string) => void) => (
     <label className="flex items-center gap-1" style={{ color: "var(--t3)" }}>
-      <span className="text-[10px] uppercase tracking-wide">{label}</span>
+      <span className="aug-fs-xs uppercase tracking-wide">{label}</span>
       <select className={SELECT_CLS} style={selectStyle} value={value} onChange={(e) => on(e.target.value)}>
         {opts.map((o) => <option key={o.v} value={o.v}>{o.t}</option>)}
       </select>
@@ -203,13 +203,13 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
                   (["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() })),
                   (v) => setAggSel(v as Agg))}
               {rateSummed && (
-                <span className="text-[10px]" style={{ color: "var(--amber4, #B25D00)" }} title="Summing a rate/ratio is usually not meaningful — AVG is the grain-correct aggregate.">
+                <span className="aug-fs-xs" style={{ color: "var(--amber4, #B25D00)" }} title="Summing a rate/ratio is usually not meaningful — AVG is the grain-correct aggregate.">
                   ⚠ summing a rate
                 </span>
               )}
               {metricCols.length >= 1 &&
                 Dropdown("Transform", transformOp, TRANSFORM_OPTS, (v) => setTransformOp(v as PostprocOp | "none"))}
-              {tErr && <span className="text-[10px]" style={{ color: "var(--amber4, #B25D00)" }} title={tErr}>⚠ transform n/a</span>}
+              {tErr && <span className="aug-fs-xs" style={{ color: "var(--amber4, #B25D00)" }} title={tErr}>⚠ transform n/a</span>}
             </>
           )}
         </div>

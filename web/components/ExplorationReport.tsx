@@ -28,7 +28,7 @@ const PURPOSE_STYLE: Record<string, { label: string; chip: string; icon: string 
 
 // One small uppercase section label, used everywhere for a consistent rhythm.
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] uppercase tracking-wide text-zinc-500">{children}</p>;
+  return <p className="aug-fs-xs uppercase tracking-wide text-zinc-500">{children}</p>;
 }
 
 // ── Sub-question step — chart + table shown upfront, only SQL collapsed ────────
@@ -54,7 +54,7 @@ function SubQuestionCard({
       <div className="flex gap-3 pb-6">
         {/* Step number */}
         <div className="shrink-0 z-10">
-          <div className="h-8 w-8 rounded-full border border-zinc-700 bg-zinc-900 flex items-center justify-center text-[12px] font-mono text-zinc-400">
+          <div className="h-8 w-8 rounded-[var(--r-pill)] border border-zinc-700 bg-zinc-900 flex items-center justify-center aug-fs-sm font-mono text-zinc-400">
             {index + 1}
           </div>
         </div>
@@ -63,15 +63,15 @@ function SubQuestionCard({
         <div className="flex-1 min-w-0 space-y-2.5">
           {/* Question + purpose chip */}
           <div className="flex items-start gap-2 flex-wrap">
-            <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${ps.chip}`}>
+            <span className={`aug-fs-xs font-mono px-1.5 py-0.5 rounded border shrink-0 ${ps.chip}`}>
               {ps.icon} {ps.label}
             </span>
-            <p className="text-[13px] text-zinc-300 leading-snug flex-1 min-w-0">{answer.question}</p>
+            <p className="aug-fs-ui text-zinc-300 leading-snug flex-1 min-w-0">{answer.question}</p>
           </div>
 
           {/* Answer takeaway */}
           {answer.answer && (
-            <p className="text-[13px] text-zinc-100 leading-relaxed">{answer.answer}</p>
+            <p className="aug-fs-ui text-zinc-100 leading-relaxed">{answer.answer}</p>
           )}
 
           {/* Evidence — chart with grain-aware controls + chart⇄table toggle */}
@@ -80,22 +80,22 @@ function SubQuestionCard({
           )}
 
           {answer.error && (
-            <pre className="text-[12px] text-red-400/90 rounded border border-red-500/20 p-2.5 overflow-x-auto whitespace-pre-wrap font-code" style={{ background: "var(--bg-0)" }}>
+            <pre className="aug-fs-sm text-red-400/90 rounded border border-red-500/20 p-2.5 overflow-x-auto whitespace-pre-wrap font-code" style={{ background: "var(--bg-0)" }}>
               {answer.error}
             </pre>
           )}
 
           {/* Insight */}
           {answer.insight && answer.insight !== answer.answer && (
-            <p className="text-[12px] text-zinc-400 leading-relaxed border-t border-zinc-800/60 pt-2">
-              <span className="text-zinc-500 uppercase tracking-wide text-[11px] mr-1.5">Insight</span>
+            <p className="aug-fs-sm text-zinc-400 leading-relaxed border-t border-zinc-800/60 pt-2">
+              <span className="text-zinc-500 uppercase tracking-wide aug-fs-xs mr-1.5">Insight</span>
               {answer.insight}
             </p>
           )}
 
           {/* Refinement (what it led to next) */}
           {answer.refinement && (
-            <p className="text-[12px] text-zinc-500 leading-relaxed">→ {answer.refinement}</p>
+            <p className="aug-fs-sm text-zinc-500 leading-relaxed">→ {answer.refinement}</p>
           )}
 
           {/* SQL — the only collapsed detail */}
@@ -103,12 +103,12 @@ function SubQuestionCard({
             <div>
               <button
                 onClick={() => setSqlOpen(o => !o)}
-                className="text-[11px] text-zinc-500 hover:text-zinc-400 transition flex items-center gap-1"
+                className="aug-fs-xs text-zinc-500 hover:text-zinc-400 transition flex items-center gap-1"
               >
                 <span className="inline-block w-2">{sqlOpen ? "▼" : "▶"}</span> SQL
               </button>
               {sqlOpen && (
-                <pre className="mt-1.5 text-[12px] text-zinc-400 rounded border border-zinc-800 p-2.5 overflow-x-auto whitespace-pre-wrap font-code leading-relaxed" style={{ background: "var(--bg-0)" }}>
+                <pre className="mt-1.5 aug-fs-sm text-zinc-400 rounded border border-zinc-800 p-2.5 overflow-x-auto whitespace-pre-wrap font-code leading-relaxed" style={{ background: "var(--bg-0)" }}>
                   {answer.sql}
                 </pre>
               )}
@@ -130,7 +130,7 @@ const BAND_STYLE: Record<string, string> = {
 
 function ConfidenceChip({ band, earned }: { band: string; earned: number }) {
   return (
-    <span className={`shrink-0 text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded border ${BAND_STYLE[band] ?? BAND_STYLE.low}`}
+    <span className={`shrink-0 aug-fs-xs font-mono uppercase tracking-wide px-2 py-0.5 rounded border ${BAND_STYLE[band] ?? BAND_STYLE.low}`}
       title="Computed from guard coverage × chain completeness × data trust — not asserted by the model.">
       {band} confidence · {Math.round(earned * 100)}%
     </span>
@@ -146,7 +146,7 @@ const CHECK_MARK: Record<string, { sym: string; cls: string }> = {
 function VerificationPanel({ v }: { v: NonNullable<ExplorationReportType["verification"]> }) {
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-zinc-400 font-mono">
+      <div className="flex flex-wrap gap-x-5 gap-y-1 aug-fs-xs text-zinc-400 font-mono">
         <span>earned confidence <span className="text-zinc-200">{Math.round(v.earned_confidence * 100)}%</span></span>
         <span>data trust <span className="text-zinc-200">{Math.round(v.data_trust * 100)}%</span></span>
         <span>guard coverage <span className="text-zinc-200">{Math.round(v.coverage * 100)}%</span></span>
@@ -169,7 +169,7 @@ function VerificationPanel({ v }: { v: NonNullable<ExplorationReportType["verifi
       {v.signals.length > 0 && (
         <ul className="space-y-1 pt-1">
           {v.signals.map((s, i) => (
-            <li key={i} className="text-[11px] text-zinc-500 flex items-start gap-2">
+            <li key={i} className="aug-fs-xs text-zinc-500 flex items-start gap-2">
               <span className="shrink-0 mt-0.5">·</span><span>{s}</span>
             </li>
           ))}
@@ -198,15 +198,15 @@ function FindingVerdict({ headline, connectionId, investigationId }: {
   };
   if (done) {
     return (
-      <div className="border-t border-zinc-800/60 pt-4 text-[11px] text-zinc-500">
+      <div className="border-t border-zinc-800/60 pt-4 aug-fs-xs text-zinc-500">
         Thanks — recorded as <span className="text-zinc-300">{done}</span>. This calibrates future confidence.
       </div>
     );
   }
-  const btn = "text-[11px] px-2.5 py-1 rounded border transition-colors disabled:opacity-50";
+  const btn = "aug-fs-xs px-2.5 py-1 rounded border transition-colors disabled:opacity-50";
   return (
     <div className="border-t border-zinc-800/60 pt-4 flex items-center gap-2 flex-wrap">
-      <span className="text-[11px] text-zinc-500 mr-1">Was this finding right?</span>
+      <span className="aug-fs-xs text-zinc-500 mr-1">Was this finding right?</span>
       <button disabled={busy} onClick={() => send("accept")}
         className={`${btn} border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10`}>Accept</button>
       <button disabled={busy} onClick={() => send("correct")}
@@ -222,7 +222,7 @@ export function ExplorationReportView({ report, subqAnswers, queryCount, connect
   const showNarrative = report.narrative && report.narrative.trim() !== (report.conclusion ?? "").trim();
 
   return (
-    <div className="space-y-6 text-[13px] text-zinc-300">
+    <div className="space-y-6 aug-fs-ui text-zinc-300">
       {/* Answer */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-3">
@@ -231,7 +231,7 @@ export function ExplorationReportView({ report, subqAnswers, queryCount, connect
             <ConfidenceChip band={report.verification.confidence_band} earned={report.verification.earned_confidence} />
           )}
         </div>
-        <p className="text-[15px] font-medium text-zinc-100 leading-snug">{report.headline}</p>
+        <p className="aug-fs-h2 font-medium text-zinc-100 leading-snug">{report.headline}</p>
       </div>
 
       {/* Summary — conclusion + narrative merged into one block */}
@@ -265,7 +265,7 @@ export function ExplorationReportView({ report, subqAnswers, queryCount, connect
               <ol className="space-y-2">
                 {report.recommended_actions.map((action, i) => (
                   <li key={i} className="flex items-start gap-2.5">
-                    <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full border border-zinc-700 text-zinc-400 text-[11px] font-mono flex items-center justify-center">
+                    <span className="shrink-0 mt-0.5 w-5 h-5 rounded-[var(--r-pill)] border border-zinc-700 text-zinc-400 aug-fs-xs font-mono flex items-center justify-center">
                       {i + 1}
                     </span>
                     <p className="leading-relaxed">{action}</p>
@@ -282,7 +282,7 @@ export function ExplorationReportView({ report, subqAnswers, queryCount, connect
                   <li key={i} className="leading-relaxed flex items-start gap-2">
                     <span className="shrink-0 mt-0.5 text-zinc-500">—</span>
                     <span>
-                      <code className="text-[12px] text-zinc-400">{note.column ? `${note.table}.${note.column}` : note.table}</code>
+                      <code className="aug-fs-sm text-zinc-400">{note.column ? `${note.table}.${note.column}` : note.table}</code>
                       <span className="text-zinc-400"> {note.issue}</span>
                       {note.recommended_fix && <span className="text-zinc-500"> · Fix: {note.recommended_fix}</span>}
                     </span>
@@ -305,7 +305,7 @@ export function ExplorationReportView({ report, subqAnswers, queryCount, connect
         <FindingVerdict headline={report.headline} connectionId={connectionId} investigationId={investigationId} />
       )}
 
-      <p className="text-[11px] text-zinc-500 pt-1">
+      <p className="aug-fs-xs text-zinc-500 pt-1">
         {queryCount} quer{queryCount === 1 ? "y" : "ies"} · {subqAnswers.length} step{subqAnswers.length !== 1 ? "s" : ""}
       </p>
     </div>

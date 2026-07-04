@@ -56,7 +56,7 @@ function ExecuteButton({ invId, index, text }: { invId: string; index: number; t
   };
 
   if (done) return (
-    <span className="text-[11px] text-emerald-400 font-medium px-1.5">✓ {done}</span>
+    <span className="aug-fs-xs text-emerald-400 font-medium px-1.5">✓ {done}</span>
   );
 
   return (
@@ -64,16 +64,16 @@ function ExecuteButton({ invId, index, text }: { invId: string; index: number; t
       <button
         onClick={() => setOpen(o => !o)}
         disabled={!!firing}
-        className="text-[11px] text-violet-400 hover:text-violet-300 border border-violet-500/30 hover:border-violet-400/50 rounded px-2 py-1 transition whitespace-nowrap"
+        className="aug-fs-xs text-violet-400 hover:text-violet-300 border border-violet-500/30 hover:border-violet-400/50 rounded px-2 py-1 transition whitespace-nowrap"
       >
         {firing ? "…" : "Execute →"}
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-20 min-w-[160px] rounded-lg border border-zinc-600 bg-zinc-900 shadow-xl overflow-hidden">
+          <div className="absolute right-0 top-full mt-1 z-20 min-w-[160px] rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-xl overflow-hidden">
             {triggers.length === 0
-              ? <p className="text-[11px] text-zinc-500 px-3 py-2">No triggers configured.<br/>Set up one in Action Hub.</p>
+              ? <p className="aug-fs-xs text-zinc-500 px-3 py-2">No triggers configured.<br/>Set up one in Action Hub.</p>
               : triggers.map(t => (
                   <button
                     key={t.id}
@@ -149,7 +149,7 @@ function ActionRow({
 
   return (
     <div className={`flex items-start gap-3 py-2.5 border-b border-zinc-700/40 last:border-0 ${!isPending ? "opacity-60" : ""}`}>
-      <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-zinc-800 border border-zinc-600 text-[11px] font-mono text-zinc-400 mt-0.5">
+      <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-[var(--r-pill)] bg-zinc-800 border border-zinc-600 aug-fs-xs font-mono text-zinc-400 mt-0.5">
         {index + 1}
       </span>
       <p className="text-sm text-zinc-300 leading-snug flex-1">{text}</p>
@@ -157,13 +157,13 @@ function ActionRow({
       <div className="shrink-0 relative">
         {current ? (
           <div className="flex items-center gap-1.5">
-            <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded border ${current.chip}`}>
+            <span className={`aug-fs-xs font-medium px-1.5 py-0.5 rounded border ${current.chip}`}>
               {current.label}
             </span>
             {isPending && (
               <button
                 onClick={() => setMenuOpen(o => !o)}
-                className="text-[11px] text-zinc-500 hover:text-zinc-400 transition px-1"
+                className="aug-fs-xs text-zinc-500 hover:text-zinc-400 transition px-1"
               >
                 ▾
               </button>
@@ -173,13 +173,13 @@ function ActionRow({
           <button
             onClick={() => setMenuOpen(o => !o)}
             disabled={saving}
-            className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-600 hover:border-zinc-500 rounded px-2 py-1 transition whitespace-nowrap"
+            className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-zinc-600 hover:border-zinc-500 rounded px-2 py-1 transition whitespace-nowrap"
           >
             {saving ? "…" : "Mark"}
           </button>
         )}
         {menuOpen && (
-          <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-lg border border-zinc-600 bg-zinc-900 shadow-xl overflow-hidden">
+          <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-xl overflow-hidden">
             {(["accepted", "implemented", "verified", "rejected", "dismissed"] as RecStatus[]).map(s => (
               <button
                 key={s}
@@ -221,23 +221,23 @@ function InvCard({
   }, []);
 
   return (
-    <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 overflow-hidden">
+    <div className="rounded-[var(--r3)] border border-zinc-700 bg-zinc-800/50 overflow-hidden">
       {/* Card header */}
       <div className="px-4 py-3 border-b border-zinc-700/60 flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-zinc-200 leading-snug line-clamp-2">{inv.question}</p>
-          <p className="text-[11px] text-zinc-500 font-mono mt-1">{timeAgo(inv.completed_at ?? inv.started_at)}</p>
+          <p className="aug-fs-xs text-zinc-500 font-mono mt-1">{timeAgo(inv.completed_at ?? inv.started_at)}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {pending > 0 && (
-            <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400">
+            <span className="aug-fs-xs font-mono px-1.5 py-0.5 rounded-[var(--r-pill)] bg-amber-500/20 border border-amber-500/30 text-amber-400">
               {pending} pending
             </span>
           )}
           {onOpenInvestigation && (
             <button
               onClick={() => onOpenInvestigation(inv.id)}
-              className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 transition"
+              className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 transition"
             >
               View →
             </button>
@@ -356,11 +356,11 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
         </div>
         <div className="flex items-center gap-2">
           {pendingCount > 0 && (
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400">
+            <span className="aug-fs-xs font-mono px-2 py-0.5 rounded-[var(--r-pill)] bg-amber-500/20 border border-amber-500/30 text-amber-400">
               {pendingCount} pending
             </span>
           )}
-          <div className="flex rounded-lg border border-zinc-700 overflow-hidden text-[11px]">
+          <div className="flex rounded-[var(--r3)] border border-zinc-700 overflow-hidden aug-fs-xs">
             {(["pending", "all"] as const).map(f => (
               <button
                 key={f}

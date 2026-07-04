@@ -105,17 +105,17 @@ function ClusterTile({
       className="group flex items-center gap-2 mb-1.5 max-w-full text-left"
       title={`Open ${connName} → ${schema}`}
     >
-      <span className="w-2 h-2 rounded-full bg-violet-400 shrink-0" />
-      <span className="text-[12px] font-semibold text-zinc-200 group-hover:text-violet-200 transition truncate">
+      <span className="w-2 h-2 rounded-[var(--r-pill)] bg-violet-400 shrink-0" />
+      <span className="aug-fs-sm font-semibold text-zinc-200 group-hover:text-violet-200 transition truncate">
         {connName}
       </span>
-      <span className="text-zinc-500 text-[12px]">·</span>
-      <span className="text-[12px] text-zinc-400 truncate">{schema}</span>
-      <span className="text-[10px] uppercase tracking-wider text-zinc-500 border border-zinc-700/60 rounded px-1 py-0.5 shrink-0">
+      <span className="text-zinc-500 aug-fs-sm">·</span>
+      <span className="aug-fs-sm text-zinc-400 truncate">{schema}</span>
+      <span className="aug-fs-xs uppercase tracking-wider text-zinc-500 border border-zinc-700/60 rounded px-1 py-0.5 shrink-0">
         {connType}
       </span>
       {graph && (
-        <span className="text-[11px] text-zinc-500 shrink-0">
+        <span className="aug-fs-xs text-zinc-500 shrink-0">
           {entityCount} {entityCount === 1 ? "entity" : "entities"}
         </span>
       )}
@@ -127,7 +127,7 @@ function ClusterTile({
       <div style={{ width: SHELL_W }}>
         {label}
         <div className="flex items-center justify-center" style={{ height: SHELL_H }}>
-          <div className="w-5 h-5 border-2 border-violet-500/60 border-t-transparent rounded-full animate-spin" />
+          <div className="w-5 h-5 border-2 border-violet-500/60 border-t-transparent rounded-[var(--r-pill)] animate-spin" />
         </div>
       </div>
     );
@@ -136,7 +136,7 @@ function ClusterTile({
     return (
       <div style={{ width: SHELL_W }}>
         {label}
-        <div className="flex items-center justify-center text-[11px] text-zinc-500" style={{ height: 90 }}>
+        <div className="flex items-center justify-center aug-fs-xs text-zinc-500" style={{ height: 90 }}>
           no ontology yet
         </div>
       </div>
@@ -239,18 +239,18 @@ export function OntologyOrgCanvas({
   return (
     <div className="w-full h-full relative" style={{ background: "#11171D" }}>
       {/* Title */}
-      <div className="absolute top-3 left-3 z-20 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-lg px-3.5 py-2 pointer-events-none">
-        <p className="text-[12px] font-semibold text-zinc-200">Organization Ontology</p>
-        <p className="text-[11px] text-zinc-500">{connCount} connections · {schemaCount} schemas · drag nodes · pinch to zoom</p>
+      <div className="absolute top-3 left-3 z-20 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-[var(--r3)] px-3.5 py-2 pointer-events-none">
+        <p className="aug-fs-sm font-semibold text-zinc-200">Organization Ontology</p>
+        <p className="aug-fs-xs text-zinc-500">{connCount} connections · {schemaCount} schemas · drag nodes · pinch to zoom</p>
       </div>
 
       {/* Zoom controls */}
-      <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-lg px-2.5 py-1.5 select-none">
+      <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-[var(--r3)] px-2.5 py-1.5 select-none">
         <button
           onClick={() => setZoom(z => Math.max(0.15, +(z - 0.05).toFixed(2)))}
           className="w-5 h-5 flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-base font-mono transition"
         >−</button>
-        <span className="text-[11px] font-mono text-zinc-400 w-8 text-center">{Math.round(zoom * 100)}%</span>
+        <span className="aug-fs-xs font-mono text-zinc-400 w-8 text-center">{Math.round(zoom * 100)}%</span>
         <button
           onClick={() => setZoom(z => Math.min(1.5, +(z + 0.05).toFixed(2)))}
           className="w-5 h-5 flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-base font-mono transition"
@@ -259,7 +259,7 @@ export function OntologyOrgCanvas({
 
       {loading ? (
         <div className="w-full h-full flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-[var(--r-pill)] animate-spin" />
         </div>
       ) : (
         <div ref={scrollRef} className="w-full h-full overflow-auto" style={DOTS}>

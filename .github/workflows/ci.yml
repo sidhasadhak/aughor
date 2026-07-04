@@ -52,6 +52,11 @@ jobs:
         run: npm ci --legacy-peer-deps
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: Design-token gate
+        # Blocking, baseline zero (REC-U1): no raw radius / pixel font-size in
+        # components/ or app/ — the enforcement half of the 3-tier design layer,
+        # same discipline as the backend ruff gate.
+        run: npm run lint:tokens
 
   lint:
     name: Backend · ruff

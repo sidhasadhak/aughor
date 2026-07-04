@@ -32,7 +32,7 @@ export function SignificanceBadge({
       className={`inline-flex items-center gap-1.5 aug-text-xs ${className}`}
       title={note || (significant ? "Statistically significant" : "Not distinguishable from random variation")}
     >
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+      <span className={`w-1.5 h-1.5 rounded-[var(--r-pill)] shrink-0 ${dot}`} />
       <span className={txt}>{label}</span>
       {note && <span className="text-zinc-500 font-mono">· {note}</span>}
     </span>

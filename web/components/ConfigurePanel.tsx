@@ -52,7 +52,7 @@ function TabBar({
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
-          className={`px-4 py-2.5 text-[12px] font-medium transition-colors border-b-2 -mb-px ${
+          className={`px-4 py-2.5 aug-fs-sm font-medium transition-colors border-b-2 -mb-px ${
             active === t.id
               ? "border-[--blue3] text-[--t1]"
               : "border-transparent text-[--t3] hover:text-[--t1]"
@@ -126,7 +126,7 @@ function AboutTab({
           onChange={(e) => setDesc(e.target.value)}
           rows={4}
           placeholder="What is this canvas about? Auto-generated from your data — edit anytime."
-          className="w-full resize-none border border-[--b2] rounded-md px-3 py-2 text-[12px] text-[--t1] placeholder:text-[--t4] focus:outline-none focus:border-[--bfocus] transition-colors"
+          className="w-full resize-none border border-[--b2] rounded-md px-3 py-2 aug-fs-sm text-[--t1] placeholder:text-[--t4] focus:outline-none focus:border-[--bfocus] transition-colors"
           style={{ background: "var(--bg-0)", fontFamily: "var(--font-ui)" }}
         />
       </div>
@@ -145,7 +145,7 @@ function AboutTab({
         <p className="aug-label mb-3">Scope</p>
         <div className="rounded-md border border-[--b1] overflow-hidden" style={{ background: "var(--bg-3)" }}>
           {scopeRows.map((r, i) => (
-            <div key={r.label} className={`flex items-start px-3 py-2.5 gap-4 text-[12px] ${i > 0 ? "border-t border-[--b0]" : ""}`}>
+            <div key={r.label} className={`flex items-start px-3 py-2.5 gap-4 aug-fs-sm ${i > 0 ? "border-t border-[--b0]" : ""}`}>
               <span className="w-20 shrink-0 text-[--t3]">{r.label}</span>
               <span className="text-[--t1] font-mono break-all">{r.value}</span>
             </div>
@@ -202,8 +202,8 @@ function TableDetail({
           <button onClick={onClose} className="text-[--t3] hover:text-[--t1] transition">
             <span className="rotate-180 inline-block"><ChevronRightIcon label="Back" size="small" /></span>
           </button>
-          <span className="text-[12px] font-semibold text-[--t1] font-mono">{table.name}</span>
-          <span className="text-[11px] text-[--t3]">
+          <span className="aug-fs-sm font-semibold text-[--t1] font-mono">{table.name}</span>
+          <span className="aug-fs-xs text-[--t3]">
             {table.columns.length} cols · {Number(table.row_count).toLocaleString()} rows
           </span>
         </div>
@@ -217,7 +217,7 @@ function TableDetail({
 
       {subtab === "overview" && (
         <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-[12px]">
+          <table className="w-full aug-fs-sm">
             <thead className="sticky top-0 z-10">
               <tr style={{ background: "var(--bg-3)" }}>
                 <th className="px-3 py-2 text-left text-[--t2] font-semibold">Column</th>
@@ -241,13 +241,13 @@ function TableDetail({
       {subtab === "sample" && (
         <div className="flex-1 overflow-auto">
           {loading && (
-            <div className="flex items-center justify-center h-24 text-[12px] text-[--t2]">Loading…</div>
+            <div className="flex items-center justify-center h-24 aug-fs-sm text-[--t2]">Loading…</div>
           )}
           {!loading && sampleCols.length > 0 && (
             <SqlResultTable columns={sampleCols} rows={sampleRows as unknown[][]} maxHeight={420} />
           )}
           {!loading && sampleCols.length === 0 && loaded && (
-            <p className="text-[12px] text-[--t2] p-4">No data available.</p>
+            <p className="aug-fs-sm text-[--t2] p-4">No data available.</p>
           )}
         </div>
       )}
@@ -332,7 +332,7 @@ function DataTab({
       {/* Scope note + filter */}
       <div className="px-3 py-2 border-b border-[--b1] shrink-0 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] text-[--t3]">
+          <p className="aug-fs-xs text-[--t3]">
             {isAll
               ? "All tables included in this canvas."
               : `${includedCount} of ${allTables.length} table${allTables.length === 1 ? "" : "s"} included.`}
@@ -342,7 +342,7 @@ function DataTab({
             <button
               onClick={() => setAll(true)}
               disabled={isAll || saving}
-              className="text-[11px] text-[--t3] hover:text-[--t1] disabled:opacity-40 transition"
+              className="aug-fs-xs text-[--t3] hover:text-[--t1] disabled:opacity-40 transition"
             >
               Include all
             </button>
@@ -350,7 +350,7 @@ function DataTab({
             <button
               onClick={() => setAll(false)}
               disabled={includedCount === 0 || saving}
-              className="text-[11px] text-[--t3] hover:text-[--t1] disabled:opacity-40 transition"
+              className="aug-fs-xs text-[--t3] hover:text-[--t1] disabled:opacity-40 transition"
             >
               Clear
             </button>
@@ -380,7 +380,7 @@ function DataTab({
           return (
           <div
             key={t.name}
-            className="w-full flex items-center px-3 py-2.5 text-[12px] border-b border-[--b0] hover:bg-[--bg-hover] transition group"
+            className="w-full flex items-center px-3 py-2.5 aug-fs-sm border-b border-[--b0] hover:bg-[--bg-hover] transition group"
           >
             {/* Membership checkbox */}
             <button
@@ -417,10 +417,10 @@ function DataTab({
           );
         })}
         {filter && filtered.length === 0 && (
-          <p className="text-[12px] text-[--t2] p-4">No tables match &ldquo;{filter}&rdquo;.</p>
+          <p className="aug-fs-sm text-[--t2] p-4">No tables match &ldquo;{filter}&rdquo;.</p>
         )}
         {!filter && allTables.length === 0 && (
-          <p className="text-[12px] text-[--t2] p-4">No tables available in this connection.</p>
+          <p className="aug-fs-sm text-[--t2] p-4">No tables available in this connection.</p>
         )}
       </div>
     </div>
@@ -464,7 +464,7 @@ function InstructionsTab({ canvasId }: { canvasId: string }) {
 
       {subtab === "text" && (
         <div className="flex-1 flex flex-col overflow-hidden p-3 gap-2">
-          <p className="text-[12px] text-[--t2] leading-relaxed">
+          <p className="aug-fs-sm text-[--t2] leading-relaxed">
             Plain-English instructions the AI follows for every query on this canvas. Describe business rules, metric definitions, fiscal calendar, naming conventions, etc.
           </p>
           <textarea
@@ -472,7 +472,7 @@ function InstructionsTab({ canvasId }: { canvasId: string }) {
             onChange={(e) => setText(e.target.value)}
             disabled={!loaded}
             placeholder={loaded ? "* Revenue uses the net_revenue column, not gross_revenue\n* Fiscal year starts in February\n* Always include region when comparing performance" : "Loading…"}
-            className="flex-1 resize-none border border-[--b2] rounded-md px-3 py-2.5 text-[12px] font-mono text-[--t1] placeholder:text-[--t4] focus:outline-none focus:border-[--bfocus] transition-colors"
+            className="flex-1 resize-none border border-[--b2] rounded-md px-3 py-2.5 aug-fs-sm font-mono text-[--t1] placeholder:text-[--t4] focus:outline-none focus:border-[--bfocus] transition-colors"
             style={{ background: "var(--bg-0)" }}
           />
           <div className="flex justify-end shrink-0">
@@ -536,8 +536,8 @@ export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate }:
         <div className="flex items-center justify-between px-4 py-3 border-b border-[--b1] shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-[--t3]"><InformationIcon label="Configure" size="small" /></span>
-            <span className="text-[12px] font-semibold text-[--t1]">Configure</span>
-            <span className="text-[11px] text-[--t3] truncate max-w-[180px]">{canvas.name}</span>
+            <span className="aug-fs-sm font-semibold text-[--t1]">Configure</span>
+            <span className="aug-fs-xs text-[--t3] truncate max-w-[180px]">{canvas.name}</span>
           </div>
           <button onClick={onClose} className="text-[--t3] hover:text-[--t1] transition">
             <CloseIcon label="Close" size="small" />

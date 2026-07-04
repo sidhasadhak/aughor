@@ -43,7 +43,7 @@ function StatRow({ label, value, sub, highlight }: StatRowProps) {
       <span className="text-xs text-zinc-400">{label}</span>
       <div className="text-right">
         <span className={`text-xs font-mono ${valColor}`}>{value}</span>
-        {sub && <span className="text-[11px] text-zinc-500 ml-1.5">{sub}</span>}
+        {sub && <span className="aug-fs-xs text-zinc-500 ml-1.5">{sub}</span>}
       </div>
     </div>
   );
@@ -57,8 +57,8 @@ interface SectionProps {
 function Section({ title, children }: SectionProps) {
   return (
     <div className="mb-5">
-      <p className="text-[11px] uppercase tracking-widest text-zinc-500 mb-2">{title}</p>
-      <div className="bg-white/[0.03] rounded-lg px-3 py-0.5">
+      <p className="aug-fs-xs uppercase tracking-widest text-zinc-500 mb-2">{title}</p>
+      <div className="bg-white/[0.03] rounded-[var(--r3)] px-3 py-0.5">
         {children}
       </div>
     </div>
@@ -120,7 +120,7 @@ export function SystemPanel() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-sm font-medium text-zinc-200">System Stats</h2>
-          <p className="text-[11px] text-zinc-500 mt-0.5">
+          <p className="aug-fs-xs text-zinc-500 mt-0.5">
             Uptime: {uptime(stats.uptime_seconds)}
             {lastRefresh && (
               <span className="ml-2">· refreshed {lastRefresh.toLocaleTimeString()}</span>
@@ -130,7 +130,7 @@ export function SystemPanel() {
         <button
           onClick={handleReset}
           disabled={resetting}
-          className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-white/10 rounded px-2 py-1 transition-colors disabled:opacity-40"
+          className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-white/10 rounded px-2 py-1 transition-colors disabled:opacity-40"
         >
           {resetting ? "Resetting…" : "Reset counters"}
         </button>
@@ -220,7 +220,7 @@ export function SystemPanel() {
         />
       </Section>
 
-      <p className="text-[11px] text-zinc-500 text-center mt-2">
+      <p className="aug-fs-xs text-zinc-500 text-center mt-2">
         Counters reset on server restart · auto-refreshes every 15s
       </p>
     </div>
@@ -254,14 +254,14 @@ function FeatureFlags() {
                 {f.source === "runtime" ? "override" : `env: ${f.env_var}`}
               </span>
             </div>
-            <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">{f.description}</p>
+            <p className="aug-fs-xs text-zinc-500 mt-0.5 leading-snug">{f.description}</p>
           </div>
           <button
             onClick={() => toggle(name, !f.value)}
             disabled={busy === name}
             role="switch"
             aria-checked={f.value}
-            className="shrink-0 mt-0.5 rounded-full transition-colors disabled:opacity-50"
+            className="shrink-0 mt-0.5 rounded-[var(--r-pill)] transition-colors disabled:opacity-50"
             style={{
               width: 36, height: 20, padding: 2,
               background: f.value ? "var(--grn2)" : "var(--bg-3)",

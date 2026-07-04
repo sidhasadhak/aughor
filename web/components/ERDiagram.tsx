@@ -154,11 +154,11 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
       style={{ left: layout.x, top: layout.y, width: CARD_W }}
     >
       {/* "Table" label */}
-      <span className="text-[11px] text-zinc-500 px-0.5" style={{ height: LABEL_H, lineHeight: `${LABEL_H}px` }}>
+      <span className="aug-fs-xs text-zinc-500 px-0.5" style={{ height: LABEL_H, lineHeight: `${LABEL_H}px` }}>
         Table
       </span>
 
-      <div className="rounded-lg border border-zinc-600 overflow-hidden shadow-lg shadow-black/40">
+      <div className="rounded-[var(--r3)] border border-zinc-600 overflow-hidden shadow-lg shadow-black/40">
         {/* Header */}
         <div
           className="flex items-center gap-2.5 px-3 bg-zinc-900 border-b border-zinc-700/80"
@@ -168,11 +168,11 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
             <TableIcon label="Table" size="small" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[12px] font-semibold font-mono text-zinc-100 truncate leading-snug">
+            <div className="aug-fs-sm font-semibold font-mono text-zinc-100 truncate leading-snug">
               {table.name}
             </div>
             {table.row_count && (
-              <div className="text-[11px] font-mono text-zinc-500 leading-none mt-px">
+              <div className="aug-fs-xs font-mono text-zinc-500 leading-none mt-px">
                 {Number(table.row_count).toLocaleString()} rows
               </div>
             )}
@@ -194,19 +194,19 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
                 {/* Badge — fixed 28px slot */}
                 <div className="w-7 flex items-center justify-center shrink-0">
                   {isPk ? (
-                    <span className="text-[11px] font-bold text-amber-400 border border-amber-400/50 rounded px-[3px] py-px leading-tight">
+                    <span className="aug-fs-xs font-bold text-amber-400 border border-amber-400/50 rounded px-[3px] py-px leading-tight">
                       PK
                     </span>
                   ) : col.is_fk ? (
-                    <span className="text-[11px] font-bold text-violet-400 border border-violet-400/50 rounded px-[3px] py-px leading-tight">
+                    <span className="aug-fs-xs font-bold text-violet-400 border border-violet-400/50 rounded px-[3px] py-px leading-tight">
                       FK
                     </span>
                   ) : null}
                 </div>
-                <span className="flex-1 text-[11px] font-mono text-zinc-300 truncate min-w-0">
+                <span className="flex-1 aug-fs-xs font-mono text-zinc-300 truncate min-w-0">
                   {col.name}
                 </span>
-                <span className="text-[11px] font-mono text-zinc-500 shrink-0 pl-2">
+                <span className="aug-fs-xs font-mono text-zinc-500 shrink-0 pl-2">
                   {type}
                 </span>
               </div>
@@ -218,7 +218,7 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
         {hiddenCount > 0 && (
           <button
             onClick={onExpand}
-            className="w-full bg-zinc-800 text-[11px] text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors border-t border-zinc-700/50 text-center"
+            className="w-full bg-zinc-800 aug-fs-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors border-t border-zinc-700/50 text-center"
             style={{ height: FOOTER_H, lineHeight: `${FOOTER_H}px` }}
           >
             {expanded ? "Show less" : `Show ${hiddenCount} more column${hiddenCount !== 1 ? "s" : ""}`}

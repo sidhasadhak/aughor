@@ -95,7 +95,7 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
           {[0, 1, 2].map(i => (
             <span
               key={i}
-              className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-600 animate-bounce"
+              className="inline-block h-1.5 w-1.5 rounded-[var(--r-pill)] bg-zinc-600 animate-bounce"
               style={{ animationDelay: `${i * 150}ms` }}
             />
           ))}
@@ -293,7 +293,7 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleContinue(); }
                 }}
                 placeholder="Ask anything about your data…"
-                className="w-full bg-transparent text-[12px] text-zinc-100 placeholder:text-zinc-500 px-4 pt-3 pb-2 resize-none focus:outline-none"
+                className="w-full bg-transparent aug-fs-sm text-zinc-100 placeholder:text-zinc-500 px-4 pt-3 pb-2 resize-none focus:outline-none"
               />
               <div className="flex items-center justify-between px-3 pb-2.5">
                 {/* Mode toggle */}
@@ -333,13 +333,13 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
                   onClick={handleContinue}
                   disabled={!followUp.trim()}
                   title="Send"
-                  className="w-7 h-7 rounded-lg text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
+                  className="w-7 h-7 rounded-[var(--r3)] text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
                 >
                   <AtlasSendIcon label="Send" size="small" />
                 </button>
               </div>
             </div>
-            <p className="text-[12px] text-center" style={{ color: "var(--t4)" }}>Always review the accuracy of responses.</p>
+            <p className="aug-fs-sm text-center" style={{ color: "var(--t4)" }}>Always review the accuracy of responses.</p>
           </div>
         </div>
       )}

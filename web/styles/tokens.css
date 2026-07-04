@@ -68,7 +68,12 @@
   --r1: 2px;   /* micro: badges, inline chips         */
   --r2: 4px;   /* default: buttons, inputs, cards      */
   --r3: 6px;   /* large: panels, modals, callouts      */
-  /* max is --r3 — never exceed 6px in product surfaces */
+  /* max is --r3 — never exceed 6px on rectangular surfaces */
+  --r-pill: 9999px;  /* the ONE sanctioned exception: pills, avatars, status dots
+                        (fully-rounded). Use rounded-[var(--r-pill)] — never the raw
+                        rounded-full — so the design-token lint gate stays green.
+                        (Tailwind v4: the bracket must wrap var(); a bare [--x] emits
+                        invalid CSS that the browser drops.) */
 
   /* ── Layout ── */
   --sidebar:  224px;

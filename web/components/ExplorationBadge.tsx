@@ -60,7 +60,7 @@ export function ExplorationBadge({ connectionId, className }: Props) {
     <div className={cn("flex items-center gap-1.5 pl-4 mt-0.5", className)}>
       <span
         className={cn(
-          "w-1.5 h-1.5 rounded-full shrink-0",
+          "w-1.5 h-1.5 rounded-[var(--r-pill)] shrink-0",
           isActive && !status.paused ? "bg-violet-400 animate-pulse" : "",
           isActive &&  status.paused ? "bg-yellow-500"               : "",
           isComplete                 ? "bg-emerald-500"              : "",
@@ -69,7 +69,7 @@ export function ExplorationBadge({ connectionId, className }: Props) {
       />
       <span
         className={cn(
-          "text-[11px]",
+          "aug-fs-xs",
           isComplete ? "text-emerald-400/70" : isFailed ? "text-red-400/70" : "text-zinc-500",
         )}
       >
