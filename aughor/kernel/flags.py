@@ -26,6 +26,8 @@ FLAG_ENV = {
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
     "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
     "trust.verify_facade": "AUGHOR_TRUST_FACADE",
+    "trust.verify_live": "AUGHOR_TRUST_VERIFY_LIVE",
+    "semantic.resolve_live": "AUGHOR_SEMANTIC_RESOLVE_LIVE",
 }
 
 # Human-facing copy for the Settings UI.
@@ -57,6 +59,14 @@ FLAG_META = {
     "trust.verify_facade": {
         "label": "Unified trust.verify façade",
         "description": "Route SQL validation through the one Trust-plane façade (aughor/trust) — one Verdict composing the read-only/mutation gate, E1 footguns, preflight repair, and value-domain/fan-out probes — instead of a per-path guard subset. Adds the AST read-only gate to the /query/validate surface (closes SEC-02 there). Off by default while the plane lands (AL-01).",
+    },
+    "trust.verify_live": {
+        "label": "Trust plane on the deep answer path",
+        "description": "In the Deep-Analysis executor, route every generated SQL through trust.verify before execute — the AST read-only BLOCK the generation path never ran (defence-in-depth; the connection layer is already fail-closed). A blocked statement returns a blocked result instead of executing. Off by default (AL-01 live migration).",
+    },
+    "semantic.resolve_live": {
+        "label": "Semantic plane resolved at the router",
+        "description": "Resolve the Semantic plane (metrics · ontology · profile · KB) once when a deep investigation is seeded and attach the SemanticContext to the run state, so every node reads one consistent context instead of re-consulting ad-hoc. Off by default (AL-05 live migration).",
     },
 }
 

@@ -100,3 +100,18 @@ def resolve(question: str, connection_id: str, scope_schema: str | None = None, 
         _tolerate(exc, "semantic.resolve: kb")
 
     return ctx
+
+
+def resolve_if_enabled(question: str, connection_id: str, scope_schema: str | None = None, *,
+                       schema_text: str = "") -> SemanticContext | None:
+    """Resolve the Semantic plane only when the `semantic.resolve_live` flag is on; else `None`
+    (the plane stays dormant, the answer path unchanged). This keeps the flag check + the fail-open
+    at the plane boundary, so the router/seed site is a single call — the AL-05 live wire."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        if not flag_enabled("semantic.resolve_live"):
+            return None
+        return resolve(question, connection_id, scope_schema, schema_text=schema_text)
+    except Exception as exc:
+        _tolerate(exc, "semantic.resolve_if_enabled")
+        return None

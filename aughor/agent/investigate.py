@@ -572,6 +572,28 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
         except Exception:
             pass
 
+    # AL-01 (behind trust.verify_live) — route the generated SQL through the one Trust plane's
+    # decisive read-only gate before execute: the mutation / DDL / disallowed-function BLOCK the
+    # generation path never ran (the connection layer is already fail-closed, so this is
+    # defence-in-depth at the plane). Conn-less Scope → only the pure readonly + E1 checks run
+    # (the preflight/join/grain guards already run inline above/below — no double work). A BLOCK
+    # returns a blocked QueryResult (handled downstream like any failed query), never raises.
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("trust.verify_live"):
+        try:
+            from aughor.trust import verify as _trust_verify, Scope as _TrustScope
+            _verdict = _trust_verify(sql, _TrustScope(schema=schema,
+                                                      dialect=getattr(conn, "dialect", "duckdb")),
+                                     kind="sql")
+            if not _verdict.ok:
+                from aughor.platform.contracts.execution import QueryResult
+                return QueryResult(hypothesis_id=phase_id, sql=sql, columns=[], rows=[],
+                                   row_count=0, error=f"[BLOCKED] {_verdict.reason}")
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "AL-01 trust.verify live gate (advisory; execute proceeds)",
+                     counter="trust.verify_live")
+
     result = conn.execute(phase_id, sql)
 
     # Determine whether to retry: hard error OR suspicious zero-row result

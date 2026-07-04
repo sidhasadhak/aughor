@@ -2161,6 +2161,14 @@ async def _stream_investigation(
                 _origin = _followup_origin(history)
         _seed_priors = [_render_origin_prose(_origin)] if _origin else []
 
+        # AL-05 (Semantic plane) — resolve the ontology / metrics / profile / KB once here and
+        # carry it on the run state, so every node reads one consistent SemanticContext instead of
+        # re-consulting ad-hoc. Flag-gated + fail-open in the helper → None (no-op) when off.
+        from aughor.semantic.context import resolve_if_enabled as _resolve_semantic
+        _semantic_context = _resolve_semantic(question, connection_id,
+                                              scope_schema=scope_schema or None,
+                                              schema_text=schema_for_agent or "")
+
         initial_state: AgentState = {
             "question": question, "connection_id": connection_id, "investigation_id": inv_id,
             "trace_id": trace_id,
@@ -2177,6 +2185,7 @@ async def _stream_investigation(
             "data_catalog": data_catalog or "",
             "subq_data_portrait": {},
             "final_text_answer": "",
+            "semantic_context": _semantic_context,
         }
 
         import time
