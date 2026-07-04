@@ -126,6 +126,33 @@ reversible commit per REC with a mechanical verify.
 
 ## Progress log
 
+### ◑ Wave 4 in progress — the eight functional planes (AL)
+
+**◑ AL-01 — the Trust plane, built + conformance-tested + first consumer wired (2026-07-04).**
+The ~9 validation modules were diffused across the three answer paths, each grown a *different
+subset* (grep-confirmed: `check_join_value_domains` in 6 paths, `run_trust_checks` in only the
+query router, `readonly.is_mutating` in *none* of the generation paths — only the execution
+gate). Hoisted them behind one `aughor/trust` plane: `verify(artifact, scope) -> Verdict`
+(`trust/verdict.py` = `Scope`/`Check`/`Verdict`; `trust/__init__.py` = the façade). It
+**delegates** (composition, not rewrite) — for `kind="sql"`: `readonly` → **BLOCK** (mutation /
+destruction / disallowed-function; the decisive gate, never swallowed — this is the guard the
+generation paths were missing, so it closes Part 1 **SEC-02** at the plane), `trust_checks` →
+**WARN** (E1 footguns, pure), and conn-gated `preflight_repair` (repair, folds its receipt +
+returns repaired SQL as `Verdict.artifact`) / `join_guard` / `grain_guard` → repair/WARN. `ok`
+is derived: false iff a BLOCK check failed; WARNs are advisory and never flip it. Flag-gated
+(`trust.verify_facade` / `AUGHOR_TRUST_FACADE`, default off). **First consumer wired**:
+`/query/validate` gains a flag-gated `mutation_blockers` field (additive — existing keys
+untouched), closing the SEC-02 read-only gap on that surface. **Verified (pytest — the whole
+reason Wave 4 was sequenced before the remaining UI slices): 13 plane-conformance tests** (BLOCK
+decisiveness, WARN-never-flips-ok, delegation parity `verify(sql).ok == not is_mutating(sql)`,
+non-sql-kind passthrough) **+ 2 integration tests on the real `/query/validate` path** (flag on →
+a `DELETE` is blocked; flag off → field empty); ruff clean; 21 existing query/safety/packs tests
+green. *Deferred to later AL-01 slices (documented, not dropped): the `code`/`metadata` kinds;
+the `semantic_validator`/`sql_consistency`/`verify`/`soma`/`sql_consensus` guards; and migrating
+the answer paths (investigate/explore/nodes) off their inline guard calls onto the façade. AL-02
+(one `Capability{generate,validate,execute,interpret}` template) and AL-05 (Semantic plane in the
+router) are the next Wave 4 moves.*
+
 ### ◑ Wave 2 in progress — composites + structure + gen-UI
 
 **◑ REC-U5 — the one Workspace shell, extracted (2026-07-04).** Pulled the generic
