@@ -38,7 +38,9 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-title"
       className={cn(
-        "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",
+        // font-heading was an undefined (no-op) class — the app has no heading font
+        // family token; the type scale carries weight/size (REC-U2).
+        "text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",
         className
       )}
       {...props}
