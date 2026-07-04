@@ -128,6 +128,18 @@ reversible commit per REC with a mechanical verify.
 
 ### ◑ Wave 2 in progress — composites + structure + gen-UI
 
+**◑ REC-U3a — one StatusChip vocabulary (2026-07-04).** Folded ReportView's three
+copy-pasted chip style maps (VERDICT_STYLE / STAT_STYLE / STATUS_STYLE) into one shared
+`components/brief/StatusChip.tsx` — a hue × strength scale + `<StatusChip>` + `chipTone()`.
+ReportView keeps only thin semantic maps (status → hue + label); classes live once. The
+review's "0 local `*_STYLE` maps" for this surface. **Zero-visual-change by construction**
+(each hue×strength preserves the exact original class strings — verified byte-identical;
+build + compiled-CSS confirm). *U3b — the structural migration (container → Brief,
+CollapsibleSection → BriefDetails, KeyFindingCard → a Brief FindingCard) — is a real
+LAYOUT change to a LEGACY renderer (ReportView; direct reports skip history indexing, so
+there's no live legacy report to screenshot-diff) with badge/colored-title subtleties.
+Deferred rather than shipped unverified — low value (legacy view) + unverifiable now.*
+
 **✅ REC-U7 — chart source-footers (2026-07-04).** `BriefFigure` takes an optional
 `source: FigureSource` → renders `<FigureCaption>` ("Source: order_items · N rows · date
 range"); `lib/figureSource.ts:deriveFigureSource` derives it from the result (tables via a
