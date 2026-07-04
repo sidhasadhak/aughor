@@ -53,11 +53,9 @@ class SemanticContext:
 
 
 def _tolerate(exc: Exception, where: str) -> None:
-    try:
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, where, counter="semantic.resolve")
-    except Exception:
-        pass
+    # `tolerate` is the kernel's swallow-logger and never raises — call it directly (no wrapper).
+    from aughor.kernel.errors import tolerate
+    tolerate(exc, where, counter="semantic.resolve")
 
 
 def resolve(question: str, connection_id: str, scope_schema: str | None = None, *,

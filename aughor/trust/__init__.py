@@ -34,12 +34,10 @@ __all__ = ["verify", "Verdict", "Check", "Scope", "BLOCK", "WARN", "INFO"]
 
 def _tolerate(exc: Exception, where: str, counter: str = "") -> None:
     """Advisory guards fail-open (their absence degrades to 'no warning', never a crash). The
-    readonly BLOCK verdict is the one exception — it is called directly, never routed here."""
-    try:
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, where, counter=counter or "trust.verify")
-    except Exception:
-        pass
+    readonly BLOCK verdict is the one exception — it is called directly, never routed here.
+    `tolerate` is the kernel's swallow-logger and never raises, so no wrapper guard is needed."""
+    from aughor.kernel.errors import tolerate
+    tolerate(exc, where, counter=counter or "trust.verify")
 
 
 def verify(artifact: str, scope: Scope | None = None, *, kind: str = "sql") -> Verdict:
