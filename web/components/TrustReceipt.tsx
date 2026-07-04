@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { getAnswerReceipt, type InsightReceipt } from "@/lib/api";
 import { costSummary } from "@/lib/cost";
+import { formatTimestamp } from "@/lib/format";
 
 const REL_LABEL: Record<string, string> = {
   metric_available: "metric",
@@ -84,7 +85,7 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
         }}>
           {rec.job && (
             <div style={{ fontSize: 11, color: "var(--t3)" }}>
-              Recorded {new Date(rec.artifact.created_at).toLocaleString()} · version {rec.artifact.version}
+              Recorded {formatTimestamp(rec.artifact.created_at)} · version {rec.artifact.version}
             </div>
           )}
           {costSummary(rec.cost) && (

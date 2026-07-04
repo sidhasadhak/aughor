@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatCount } from "@/lib/format";
 import {
   getSchemaProfile,
   getExplorationFindings,
@@ -113,7 +114,7 @@ function TableCard({
         </span>
         {rowCount != null && (
           <span style={{ fontSize: 10, color: "var(--t3)", background: "var(--bg-2)", padding: "1px 6px", borderRadius: 3 }}>
-            {rowCount.toLocaleString()} rows
+            {formatCount(rowCount)} rows
           </span>
         )}
         {grain && (
@@ -170,7 +171,7 @@ function TableCard({
               </span>
               <NullBar rate={col.null_rate ?? 0} />
               <span style={{ fontSize: 11, color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>
-                {col.distinct_count?.toLocaleString() ?? "—"}
+                {formatCount(col.distinct_count) ?? "—"}
               </span>
               <ShapeCell dist={distFor(col)} />
               <div style={{ overflow: "hidden" }}>

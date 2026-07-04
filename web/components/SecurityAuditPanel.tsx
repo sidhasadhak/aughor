@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { formatCount } from "@/lib/format";
 import { API_BASE } from "@/lib/config";
 import { ActivityLog } from "@/components/ActivityLog";
 import {
@@ -764,7 +765,7 @@ export function SecurityAuditPanel({
                       <SqlCell digest={rec.sql_digest} full={rec.sql_full} />
                     </td>
                     <td style={{ padding: "8px 12px", color: "var(--t2)", textAlign: "right", whiteSpace: "nowrap" }}>
-                      {rec.row_count.toLocaleString()}
+                      {formatCount(rec.row_count)}
                     </td>
                     <td style={{ padding: "8px 12px", color: "var(--t2)", textAlign: "right", whiteSpace: "nowrap" }}>
                       {rec.duration_ms < 1000

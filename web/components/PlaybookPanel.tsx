@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { API_BASE as BASE } from "@/lib/config";
-import { pct } from "@/lib/format";
+import { pct, formatTimestamp } from "@/lib/format";
 import { getPlaybookVersions, type PlaybookVersion } from "@/lib/api";
 
 interface PlaybookEntry {
@@ -368,7 +368,7 @@ function VersionHistory({ entryId, currentVersion }: { entryId: string; currentV
             <div key={v.version} className="flex items-center gap-3 aug-fs-xs" style={{ color: "var(--t3)" }}>
               <span className="font-mono px-1.5 py-0.5 rounded-[3px]"
                 style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t2)" }}>v{v.version}</span>
-              <span style={{ color: "var(--t4)" }}>{v.saved_at ? new Date(v.saved_at).toLocaleString() : ""}</span>
+              <span style={{ color: "var(--t4)" }}>{v.saved_at ? formatTimestamp(v.saved_at) : ""}</span>
               <span className="font-mono truncate" style={{ color: "var(--t4)" }} title={v.receipt}>{v.receipt ? v.receipt.slice(0, 16) + "…" : ""}</span>
             </div>
           ))}

@@ -57,6 +57,10 @@ jobs:
         # components/ or app/ — the enforcement half of the 3-tier design layer,
         # same discipline as the backend ruff gate.
         run: npm run lint:tokens
+      - name: Formatting gate
+        # Blocking, baseline zero (REC-U8): number/date rendering routes through
+        # lib/format.ts — no re-implemented toLocaleString / Intl.*Format in the UI.
+        run: npm run lint:format
 
   lint:
     name: Backend · ruff

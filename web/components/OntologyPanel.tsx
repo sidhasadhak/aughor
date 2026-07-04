@@ -32,7 +32,7 @@ import { OntologyCanvas } from "./OntologyCanvas";
 import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
 import { ProcessMapper } from "./ProcessMapper";
 import { cn } from "@/lib/utils";
-import { verbLabel } from "@/lib/format";
+import { verbLabel, formatCount, formatTimestamp } from "@/lib/format";
 
 // ── Small reusable bits ───────────────────────────────────────────────────────
 
@@ -227,7 +227,7 @@ function EntityDetailDrawer({
           <p className="aug-fs-xs font-mono text-zinc-500 truncate">{entity.source_tables[0]}</p>
           {lifecycleCounts && totalActive > 0 && (
             <p className="aug-fs-xs text-emerald-400/70 mt-0.5">
-              {totalActive.toLocaleString()} active records
+              {formatCount(totalActive)} active records
             </p>
           )}
         </div>
@@ -366,7 +366,7 @@ function EntityDetailDrawer({
                             "aug-fs-xs font-sans tabular-nums",
                             isTerm ? "text-zinc-500" : "text-violet-400/70",
                           )}>
-                            {cnt.toLocaleString()}
+                            {formatCount(cnt)}
                           </span>
                         )}
                       </span>
@@ -812,7 +812,7 @@ function OntologySettings({
               Last built
             </p>
             <p className="aug-fs-xs text-zinc-400 font-mono">
-              {new Date(graph.generated_at).toLocaleString()}
+              {formatTimestamp(graph.generated_at)}
             </p>
           </div>
         )}

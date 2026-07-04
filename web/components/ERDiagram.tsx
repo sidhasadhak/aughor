@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useLayoutEffect, useState } from "react";
+import { formatCount } from "@/lib/format";
 import TableIcon from "@atlaskit/icon/core/table";
 import { RichSchema, SchemaTable, SchemaJoin } from "@/lib/api";
 
@@ -173,7 +174,7 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
             </div>
             {table.row_count && (
               <div className="aug-fs-xs font-mono text-zinc-500 leading-none mt-px">
-                {Number(table.row_count).toLocaleString()} rows
+                {formatCount(Number(table.row_count))} rows
               </div>
             )}
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { compactNumber } from "@/lib/format";
+import { compactNumber, formatCount } from "@/lib/format";
 import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
   createCanvas, updateCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
@@ -214,7 +214,7 @@ const isNum  = (t: string) => NUM_T.some(k  => t.toLowerCase().includes(k));
 const isDate = (t: string) => DATE_T.some(k => t.toLowerCase().includes(k));
 const dot    = (t: string) => isNum(t) ? "bg-emerald-500" : isDate(t) ? "bg-blue-400" : "bg-zinc-500";
 const fmtMs  = (ms: number) => ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms/1000).toFixed(2)}s`;
-const fmtN   = (n: number) => n.toLocaleString();
+const fmtN   = (n: number) => formatCount(n);
 
 function autoAlias(agg: AggFn, col: string, expr: string) {
   return agg === "CUSTOM"

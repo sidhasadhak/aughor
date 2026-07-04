@@ -6,6 +6,7 @@
 // trim tables to shrink the context (deterministic rescope, no agent re-run).
 
 import { useMemo, useState } from "react";
+import { formatCount } from "@/lib/format";
 import { rescopeContext } from "@/lib/api";
 import type { ContextManifest } from "@/lib/investigationStream";
 
@@ -46,11 +47,11 @@ export function ContextRibbon({
       <div className="flex items-center gap-2 aug-text-xs" style={{ color: "var(--t4)" }}>
         <span className="uppercase tracking-wide">Context</span>
         <span style={{ color: "var(--t3)" }}>
-          {kept.length} table{kept.length === 1 ? "" : "s"} · ~{tokens.toLocaleString()} tokens
+          {kept.length} table{kept.length === 1 ? "" : "s"} · ~{formatCount(tokens)} tokens
         </span>
         {delta > 0 && (
           <span className="font-mono" style={{ color: "#4ade80" }}>
-            −{delta.toLocaleString()} tok
+            −{formatCount(delta)} tok
           </span>
         )}
         {busy && <span style={{ color: "var(--t4)" }}>…</span>}

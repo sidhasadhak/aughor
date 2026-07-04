@@ -277,6 +277,25 @@ export function fmtDate(v: string, gran: Gran): string {
 }
 
 /**
+ * Wall-clock timestamp for receipts / sync-status / "data as of" chrome — the ONE
+ * home for the `new Date(x).toLocaleString()` calls that were scattered across
+ * components (REC-U8). `style`: "full" → locale date+time; "short" → "Jan 5, 03:42 PM".
+ * Returns "—" for empty and echoes the raw input for an unparseable value.
+ */
+export function formatTimestamp(
+  v: string | number | Date | null | undefined,
+  style: "full" | "short" = "full",
+): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const d = v instanceof Date ? v : new Date(v);
+  if (isNaN(d.getTime())) return String(v);
+  if (style === "short") {
+    return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+  return d.toLocaleString();
+}
+
+/**
  * d3-time-format spec for a temporal (continuous) axis at the detected grain.
  * Shows the year on every tick only when the range spans multiple years.
  */

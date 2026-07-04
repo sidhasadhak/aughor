@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { ReportView } from "@/components/ReportView";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
+import { formatTimestamp } from "@/lib/format";
 import type { Hypothesis, QueryCitation, Report, ADAReport, ExplorationReport, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import { API_BASE } from "@/lib/config";
 import { localizeCurrency } from "@/lib/orgSettings";
@@ -421,7 +422,7 @@ function EvidenceClaimCard({
         )}
         {claim.data_freshness && (
           <span style={{ fontSize: 11, color: "var(--t4)" }}>
-            data as of {new Date(claim.data_freshness).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+            data as of {formatTimestamp(claim.data_freshness, "short")}
           </span>
         )}
       </div>

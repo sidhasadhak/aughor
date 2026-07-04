@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatCount } from "@/lib/format";
 import {
   addConnection,
   getConnectorTypes,
@@ -266,7 +267,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           <div style={{ minWidth: 0 }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Configure import</p>
             <p style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 1 }}>
-              <strong style={{ color: "var(--t2)" }}>{staged.file.name}</strong> · {a.row_count.toLocaleString()} rows · {a.columns.length} columns
+              <strong style={{ color: "var(--t2)" }}>{staged.file.name}</strong> · {formatCount(a.row_count)} rows · {a.columns.length} columns
               {queue.length > 0 && <> · {queue.length} more queued</>}
             </p>
           </div>

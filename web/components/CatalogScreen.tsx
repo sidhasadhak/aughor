@@ -19,7 +19,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
 import { useSchema } from "@/lib/schema-context";
-import { compactNumber, isNumericType } from "@/lib/format";
+import { compactNumber, isNumericType, formatTimestamp } from "@/lib/format";
 import { bare, schemaOf } from "@/lib/tableName";
 import {
   getCatalogTree, getConnections, addConnection, deleteConnection,
@@ -225,7 +225,7 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
         ? `${BASE_API}/connections/${connId}/knowledge-sync/status`
         : `${BASE_API}/connections/${connId}/sync-status`;
       fetch(endpoint).then(r => r.json())
-        .then(d => setStatus(d.last_sync ? `Last sync: ${new Date(d.last_sync).toLocaleString()}` : "Never synced"))
+        .then(d => setStatus(d.last_sync ? `Last sync: ${formatTimestamp(d.last_sync)}` : "Never synced"))
         .catch(() => setStatus(null));
     }
     if (isFileUpload) {

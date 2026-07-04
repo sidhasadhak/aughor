@@ -43,6 +43,9 @@ import {
   detectGranularity,
   fmtDate,
   cleanLabel,
+  compactNumber,
+  formatPercent,
+  formatCount,
   GRAN_WORD,
 } from "@/lib/format";
 import { Chart } from "@/components/Chart";
@@ -158,16 +161,11 @@ function fmt(col: string, val: unknown, gran?: Gran): string {
   if (ORDINAL_COL.test(col)) return s;
   const n = Number(val);
   if (!isNaN(n)) {
-    if (SHARE_COL.test(col)) {
-      // Ratio stored as decimal fraction (e.g. 0.118 = 11.8%) — multiply ×100
-      if (Math.abs(n) <= 1)          return `${(n * 100).toFixed(2)}%`;
-      // Already a percentage (e.g. 11.8 or -60.89) — display as-is with % suffix
-      return `${n.toFixed(2)}%`;
-    }
-    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-    if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-    if (!Number.isInteger(n)) return n.toFixed(2);
-    return n.toLocaleString();
+    // Route through the ONE formatter (REC-U8) — no more hand-rolled k/M/%: a
+    // share column reads as a percent (ratio-or-percent aware), everything else
+    // as the app's compact number, so "45.3K" is "45.3K" everywhere.
+    if (SHARE_COL.test(col)) return formatPercent(n, 2);
+    return compactNumber(n);
   }
   return s;
 }
@@ -203,7 +201,7 @@ function computeSummary(columns: string[], rows: unknown[][], sql?: string | nul
   );
 
   if (numIdx === -1) {
-    return n === 1 ? "1 result." : `${n.toLocaleString()} rows returned.`;
+    return n === 1 ? "1 result." : `${formatCount(n)} rows returned.`;
   }
 
   const numCol = columns[numIdx];

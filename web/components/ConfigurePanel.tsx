@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
-import { compactNumber } from "@/lib/format";
+import { compactNumber, formatCount } from "@/lib/format";
 import CloseIcon         from "@atlaskit/icon/core/close";
 import ChevronRightIcon  from "@atlaskit/icon/core/chevron-right";
 import TableIcon         from "@atlaskit/icon/core/table";
@@ -204,7 +204,7 @@ function TableDetail({
           </button>
           <span className="aug-fs-sm font-semibold text-[--t1] font-mono">{table.name}</span>
           <span className="aug-fs-xs text-[--t3]">
-            {table.columns.length} cols · {Number(table.row_count).toLocaleString()} rows
+            {table.columns.length} cols · {formatCount(Number(table.row_count))} rows
           </span>
         </div>
       </div>
