@@ -128,6 +128,38 @@ reversible commit per REC with a mechanical verify.
 
 ### ◑ Wave 2 in progress — composites + structure + gen-UI
 
+**◑ REC-U5 — the one Workspace shell, extracted (2026-07-04).** Pulled the generic
+`<Workspace layers layer onLayerChange ariaLabel renderIcon headerControls renderLayer>`
+shell out of `IntelligenceWorkspace` into `components/Workspace.tsx`: it owns the header
+chrome (active title + optional controls slot + the segmented perspective switcher) and the
+keep-alive layered body (visited-Set mount-once, `display`-toggled, now keyed by layer id).
+`IntelligenceWorkspace` is re-expressed as a thin *instance* — it keeps only its own scope
+(connection + schema pickers as `headerControls`, the five panels via `renderLayer`, the
+inline icon set via `renderIcon`) and shrank 144→62 lines of body. **Behaviour-preserving
+by construction** (DOM-diff, not color-diff — every inline style/class/aria preserved
+byte-for-byte; the only change is the body's sibling order now follows the switcher order
+instead of the old hand-written order, which is immaterial under `position:absolute;inset:0`
+and now keyed for stable identity). Verified: `tsc --noEmit` clean, all three design gates
+green (the switcher's one `<button>` moved file-to-file → the raw-element ratchet holds at
+204), dev server compiling without errors. *Deferred (the risky half REC-U5 also names):
+the panel-folding (~23 panels → ~5 workspaces) and re-expressing the Canvas/Operations
+workspaces as instances — those touch deep-links (`LEGACY_INTEL_LAYER` in `page.tsx`) and
+CanvasWorkspace's different tab chrome, so they're a separate ratchet-down, same discipline
+as U2. The seam is now in place for them. Live click-through of the five layers was blocked
+this session by the shared-dir Next dev lock (a peer session holds `:3000`; no second
+`next dev` in one dir) + no Chrome MCP — the change is structure-only and fully type-covered.*
+
+**◑ REC-U7 part 2 (rec→origin_finding chips) — stays deferred, confirmed why (2026-07-04).**
+Re-mapped the flow to check the earlier deferral. Confirmed `ADARecommendation` still carries
+no finding anchor (`action`/`expected_impact`/`owner`/`timeline` only), and the frontend chip
+is trivial — but the *value* depends on knowing which finding motivates each recommendation,
+which the `ada_synthesize` LLM does not reason about today (it gets the evidence as one prose
+block and emits unanchored action text). Every linking strategy (ask-the-LLM-to-cite /
+post-hoc semantic match / bracketed-id extraction) has a hallucination-or-ambiguity caveat
+needing a quick synthesis experiment. Shipping a provenance chip over an unreliable anchor
+would be a hollow feature — deferral is correct; do it as a scoped backend experiment, not a
+UI-first change.
+
 **◑ REC-U3a — one StatusChip vocabulary (2026-07-04).** Folded ReportView's three
 copy-pasted chip style maps (VERDICT_STYLE / STAT_STYLE / STATUS_STYLE) into one shared
 `components/brief/StatusChip.tsx` — a hue × strength scale + `<StatusChip>` + `chipTone()`.
