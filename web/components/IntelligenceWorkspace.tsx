@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { getCatalogTree } from "@/lib/api";
+import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
 // The four perspectives are heavy graph/data views — load each only when its
@@ -40,7 +41,7 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 
 export type IntelLayer = "briefing" | "hub" | "ontology" | "evidence" | "org";
 
-const LAYERS: { id: IntelLayer; icon: string; label: string; blurb: string }[] = [
+const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "briefing", icon: "brief",   label: "Briefing", blurb: "Cross-domain synthesis" },
   { id: "hub",      icon: "layers",  label: "Hub",      blurb: "Domain knowledge & data profile" },
   { id: "ontology", icon: "node",    label: "Ontology", blurb: "Object model & relationships" },
@@ -73,17 +74,11 @@ type Props = {
  * Palantir's Object Explorer or Databricks' Catalog Explorer present one entity
  * through several lenses.
  *
- * Keep-alive: a layer is mounted the first time it's opened and then stays
- * mounted (display toggled), so graph zoom/scroll/fetch state survives layer
- * switches. Layers that have never been visited aren't mounted at all.
+ * An *instance* of the generic `<Workspace>` shell: it owns the Intelligence-specific
+ * scope (connection + schema pickers, the five panels, the icon set); the shell owns
+ * the header chrome, the perspective switcher, and the keep-alive layered body.
  */
 export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, canvasId, workspaceId }: Props) {
-  // Mount a layer the first time it becomes active, then keep it mounted.
-  const [visited, setVisited] = useState<Set<IntelLayer>>(() => new Set([layer]));
-  useEffect(() => {
-    setVisited(prev => (prev.has(layer) ? prev : new Set(prev).add(layer)));
-  }, [layer]);
-
   // Shared schema scope — one selector that filters Briefing, Hub, and Domains
   // together (a connection can expose several schemas; a canvas is already scoped).
   const [schemas, setSchemas]               = useState<string[]>([]);
@@ -108,142 +103,65 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
   const showConnPicker = !canvasId && !!onConnectionChange && (connections?.length ?? 0) > 1;
   const showSchema = !canvasId && schemas.length > 1;
 
-  const active = LAYERS.find(l => l.id === layer)!;
+  const headerControls = (showConnPicker || showSchema) ? (
+    <>
+      {/* Connection picker — lists only briefings-enabled connections (Catalog opt-in). */}
+      {showConnPicker && (
+        <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>Connection</span>
+          <select
+            value={connectionId}
+            onChange={e => onConnectionChange?.(e.target.value)}
+            aria-label="Connection"
+            style={{
+              fontSize: 12, color: "var(--t2)", background: "var(--bg-2)",
+              border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+              padding: "3px 8px", cursor: "pointer", maxWidth: 200,
+            }}
+          >
+            {connections!.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+      )}
+
+      {/* Shared schema scope — drives Briefing / Hub / Domains together. Only shown
+          when the connection exposes more than one schema (and never for a canvas). */}
+      {showSchema && (
+        <label style={{ marginLeft: showConnPicker ? 0 : "auto", display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>Schema</span>
+          <select
+            value={selectedSchema ?? ""}
+            onChange={e => setSelectedSchema(e.target.value || null)}
+            aria-label="Schema scope"
+            style={{
+              fontSize: 12, color: "var(--t2)", background: "var(--bg-2)",
+              border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+              padding: "3px 8px", cursor: "pointer",
+            }}
+          >
+            {/* TEMP (2026-06-26): "All schemas" option removed — select each schema individually. */}
+            {schemas.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+      )}
+    </>
+  ) : undefined;
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-      {/* Workspace header — title + perspective switcher */}
-      <div className="aug-content-header" style={{ gap: 14 }}>
-        <Icon name={active.icon} size={14} color="var(--t3)" />
-        <span style={{ fontSize: 13, fontWeight: 500 }}>{active.label}</span>
-        <span style={{ fontSize: 11, color: "var(--t3)" }}>· {active.blurb}</span>
-
-        {/* Connection picker — lists only briefings-enabled connections (Catalog opt-in). */}
-        {showConnPicker && (
-          <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>Connection</span>
-            <select
-              value={connectionId}
-              onChange={e => onConnectionChange?.(e.target.value)}
-              aria-label="Connection"
-              style={{
-                fontSize: 12, color: "var(--t2)", background: "var(--bg-2)",
-                border: "1px solid var(--b1)", borderRadius: "var(--r2)",
-                padding: "3px 8px", cursor: "pointer", maxWidth: 200,
-              }}
-            >
-              {connections!.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </label>
-        )}
-
-        {/* Shared schema scope — drives Briefing / Hub / Domains together. Only shown
-            when the connection exposes more than one schema (and never for a canvas). */}
-        {showSchema && (
-          <label style={{ marginLeft: showConnPicker ? 0 : "auto", display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>Schema</span>
-            <select
-              value={selectedSchema ?? ""}
-              onChange={e => setSelectedSchema(e.target.value || null)}
-              aria-label="Schema scope"
-              style={{
-                fontSize: 12, color: "var(--t2)", background: "var(--bg-2)",
-                border: "1px solid var(--b1)", borderRadius: "var(--r2)",
-                padding: "3px 8px", cursor: "pointer",
-              }}
-            >
-              {/* TEMP (2026-06-26): "All schemas" option removed — select each schema individually. */}
-              {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-        )}
-
-        {/* Layer switcher — segmented control */}
-        <div
-          role="tablist"
-          aria-label="Intelligence layers"
-          style={{
-            marginLeft: (showConnPicker || showSchema) ? 0 : "auto",
-            display: "flex",
-            gap: 2,
-            padding: 2,
-            background: "var(--bg-2)",
-            border: "1px solid var(--b1)",
-            borderRadius: "var(--r3)",
-          }}
-        >
-          {LAYERS.map(l => {
-            const on = l.id === layer;
-            return (
-              <button
-                key={l.id}
-                role="tab"
-                aria-selected={on}
-                onClick={() => onLayerChange(l.id)}
-                title={l.blurb}
-                className="aug-btn"
-                style={{
-                  padding: "4px 11px",
-                  borderRadius: "var(--r2)",
-                  border: "1px solid transparent",
-                  background: on ? "var(--bg-sel)" : "transparent",
-                  color: on ? "var(--blue5)" : "var(--t2)",
-                  fontWeight: on ? 500 : 400,
-                }}
-              >
-                <Icon name={l.icon} size={13} color={on ? "var(--blue4)" : "currentColor"} />
-                {l.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Layered body — visited layers stay mounted; only the active one shows. */}
-      <div style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}>
-        {visited.has("briefing") && (
-          <Layer show={layer === "briefing"}>
-            <BriefingPanel connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} workspaceId={workspaceId} />
-          </Layer>
-        )}
-        {visited.has("ontology") && (
-          <Layer show={layer === "ontology"}>
-            <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} />
-          </Layer>
-        )}
-        {visited.has("hub") && (
-          <Layer show={layer === "hub"}>
-            <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />
-          </Layer>
-        )}
-        {visited.has("evidence") && (
-          <Layer show={layer === "evidence"}>
-            <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />
-          </Layer>
-        )}
-        {visited.has("org") && (
-          <Layer show={layer === "org"}>
-            <OrgIntelPanel />
-          </Layer>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Layer({ show, children }: { show: boolean; children: React.ReactNode }) {
-  return (
-    <div
-      className={show ? "aug-anim-fade" : undefined}
-      style={{
-        position: "absolute",
-        inset: 0,
-        display: show ? "flex" : "none",
-        flexDirection: "column",
-        overflow: "hidden",
+    <Workspace
+      layers={LAYERS}
+      layer={layer}
+      onLayerChange={onLayerChange}
+      ariaLabel="Intelligence layers"
+      renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
+      headerControls={headerControls}
+      renderLayer={id => {
+        if (id === "briefing") return <BriefingPanel connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} workspaceId={workspaceId} />;
+        if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} />;
+        if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;
+        if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
+        return <OrgIntelPanel />; // "org"
       }}
-    >
-      {children}
-    </div>
+    />
   );
 }
