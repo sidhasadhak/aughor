@@ -126,6 +126,19 @@ reversible commit per REC with a mechanical verify.
 
 ## Progress log
 
+### ✅ Wave 1 COMPLETE — the enforced design layer (2026-07-04): U1 · U8 · U4 · U2
+
+### ✅ REC-U2 — primitive-layer ratchet (2026-07-04)
+Shipped. The review's "off-brand orphaned ui/" premise was overtaken — the `ui/*`
+primitives are modern shadcn v4 wired to the theme tokens, and REC-U1 already replaced
+their `rounded-xl`. Removed the last off-brand bit (`font-heading`, an undefined no-op
+class in `ui/card`). The real gap — 204 raw `<button>`s predating the primitive layer —
+is handled by a **one-way ratchet** (`scripts/check-raw-elements.mjs`, `npm run
+lint:elements`, blocking CI, baseline 204) rather than a risky blind codemod (which would
+add the default `bg-primary` variant and break custom styling — the review's own failure
+mode). Raw-`<button>` count may only shrink; convert to `<Button>` opportunistically and
+lower the baseline. Full retro-adoption is incremental ratchet-down work.
+
 ### ✅ REC-U4 — one palette source (2026-07-04)
 Shipped. The chart palette was already single-sourced from `--chart-*` (the ECharts
 theme reads them live); the hard-coded `AUG_PALETTE` hex ramp was **dead code** (unused
