@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from aughor.db.registry import BUILTIN_ID
@@ -106,14 +106,25 @@ def health():
 
 
 @router.get("/capabilities")
-def get_capabilities(connection_id: str | None = None):
-    """The active tier + the capabilities it grants, for the frontend to show/lock/upsell UI.
-    Defaults to the `enterprise` tier (everything on) until a lower tier is assigned."""
-    from aughor.licensing import resolve_tier, capabilities_for
+def get_capabilities(request: Request, connection_id: str | None = None):
+    """The active tier + the capabilities the caller can exercise, for the frontend to
+    show/lock/upsell UI. Defaults to the `enterprise` tier (everything on) until a lower
+    tier is assigned.
+
+    The capability set is **role-aware** (RBAC P2): it's the tier's grant intersected
+    with the caller's role ceiling, so a viewer's UI reflects its role — not just the
+    org's plan. In localhost / identity-off mode this is exactly the tier set (unchanged).
+    """
+    from aughor.licensing import resolve_tier
+    from aughor.rbac import effective_capabilities, resolve_roles
+    from aughor.security.authz import get_principal
+    principal = get_principal(request)
     tier = resolve_tier(connection_id)
+    caps = effective_capabilities(principal, connection_id)
     return {
         "tier": tier.value,
-        "capabilities": sorted(c.value for c in capabilities_for(tier)),
+        "capabilities": sorted(c.value for c in caps),
+        "roles": resolve_roles(principal),
     }
 
 

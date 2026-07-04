@@ -178,6 +178,17 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   `_OrgContextMiddleware` that binds `current_org_id()` to the request, and kernel jobs that re-bind their own
   org at execution (survives restart/boot-recovery). **licensing tiers** (Free/Pro/Enterprise, 402 → upsell),
   **governed-intelligence MCP server**, time-to-first-insight instrumentation.
+- **Role-based access control (RBAC)** — a second authorization axis orthogonal to licensing (`aughor/rbac/`,
+  flag-gated on `AUGHOR_REQUIRE_IDENTITY` **and** the `RBAC_SSO` capability → localhost/non-RBAC tiers
+  unchanged). A built-in role ladder **viewer ⊂ analyst ⊂ owner** over a small permission taxonomy, an
+  org-scoped assignment store, and a **first-user-is-owner** bootstrap so enabling identity never locks out
+  admin. Enforcement is centralized in one auditable **declarative policy table** (`rbac/policy.py`,
+  `(method, route-template) → permission`) consulted by a global dependency — a viewer reads anything but
+  mutates nothing anywhere, owner-only verbs (roles/settings/grants/billing) stay owner-gated — so the whole
+  surface's authz lives in one place rather than 150+ scattered decorators. Roles also impose a
+  **capability ceiling** (`tier_caps ∩ role_ceiling`), surfaced through `GET /capabilities` so the UI reflects
+  role, not just plan. Managed from a **Settings → Access** roster (assign/revoke; `GET /rbac/me` gates the
+  admin surface). Tier still gates 402; role gates 403.
 - **Security perimeter** — a **fail-closed** SQL safety gate (an errored gate BLOCKS, never allows),
   Postgres opened session-read-only, an **SSRF allowlist** on outbound webhook URLs (create + send-time),
   **prompt-injection fencing** of untrusted DB content fed to the LLM, a global exception handler (no stack

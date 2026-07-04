@@ -159,7 +159,10 @@ class _OrgContextMiddleware:
                 tolerate(_exc, "org contextvar reset (best-effort)", counter="org.reset")
 
 
-app = FastAPI(title="Aughor API", lifespan=_lifespan, dependencies=[Depends(_require_auth)])
+from aughor.rbac.deps import enforce_rbac  # noqa: E402
+
+app = FastAPI(title="Aughor API", lifespan=_lifespan,
+              dependencies=[Depends(_require_auth), Depends(enforce_rbac)])
 app.add_middleware(_OrgContextMiddleware)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
@@ -559,6 +562,7 @@ from aughor.routers import (  # noqa: E402
     volumes,
     verify,
     approvals,
+    roles as roles_router,
     packs as packs_router,
 )
 
@@ -590,3 +594,4 @@ app.include_router(profile.router)
 app.include_router(orgsettings.router)
 app.include_router(verify.router)
 app.include_router(packs_router.router)
+app.include_router(roles_router.router)

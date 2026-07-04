@@ -3242,6 +3242,69 @@ export async function setSystemFlag(name: string, value: boolean): Promise<Syste
   return res.json();
 }
 
+// ── RBAC (roles & permissions) ──────────────────────────────────────────────
+
+export interface MyAccess {
+  user_id: string | null;
+  org_id: string;
+  roles: string[];
+  permissions: string[];
+}
+
+export interface RoleInfo {
+  name: string;
+  description: string;
+  permissions: string[];
+}
+
+export interface RoleAssignment {
+  org_id: string;
+  user_id: string;
+  role: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The caller's effective identity, roles and permissions (for gating admin UI). */
+export async function getMyAccess(): Promise<MyAccess | null> {
+  const res = await fetch(`${BASE}/rbac/me`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/** The built-in role catalogue + the permissions each grants. */
+export async function getRoleCatalogue(): Promise<RoleInfo[]> {
+  const res = await fetch(`${BASE}/rbac/roles`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+/** The org's role roster. Returns null when the caller can't manage roles (403). */
+export async function getRoleAssignments(): Promise<RoleAssignment[] | null> {
+  const res = await fetch(`${BASE}/rbac/assignments`);
+  if (res.status === 403) return null;
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function assignRole(userId: string, role: string): Promise<RoleAssignment | null> {
+  const res = await fetch(`${BASE}/rbac/assignments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: userId, role }),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function revokeRole(userId: string, role: string): Promise<boolean> {
+  const q = `user_id=${encodeURIComponent(userId)}&role=${encodeURIComponent(role)}`;
+  const res = await fetch(`${BASE}/rbac/assignments?${q}`, { method: "DELETE" });
+  if (!res.ok) return false;
+  const data = await res.json();
+  return !!data.removed;
+}
+
 // ── Specialist packs (Domain Expertise Packs) ───────────────────────────────────
 
 export interface PackSummary {

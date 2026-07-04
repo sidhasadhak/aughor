@@ -36,6 +36,7 @@ const HistoryDetailPanel= dynamic(() => import("@/components/HistoryDetailPanel"
 // layers of one unified workspace.
 const IntelligenceWorkspace = dynamic(() => import("@/components/IntelligenceWorkspace").then(m => ({ default: m.IntelligenceWorkspace })), { ssr: false, loading });
 const SystemPanel       = dynamic(() => import("@/components/SystemPanel").then(m => ({ default: m.SystemPanel })),          { ssr: false, loading });
+const RolesPanel        = dynamic(() => import("@/components/RolesPanel").then(m => ({ default: m.RolesPanel })),            { ssr: false, loading });
 const ProcessHealthPanel= dynamic(() => import("@/components/ProcessHealthPanel").then(m => ({ default: m.ProcessHealthPanel })), { ssr: false, loading });
 const PlaybookPanel     = dynamic(() => import("@/components/PlaybookPanel").then(m => ({ default: m.PlaybookPanel })),      { ssr: false, loading });
 const RecommendationInbox= dynamic(() => import("@/components/RecommendationInbox").then(m => ({ default: m.RecommendationInbox })), { ssr: false, loading });
@@ -1170,10 +1171,11 @@ function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme
     { id: "light", icon: "sun",  label: "Light", desc: "White backgrounds, dark text" },
   ];
 
-  type SettingsTab = "organization" | "appearance" | "models" | "system";
+  type SettingsTab = "organization" | "access" | "appearance" | "models" | "system";
   const [sub, setSub] = useState<SettingsTab>("organization");
   const SUBS: Array<{ id: SettingsTab; label: string }> = [
     { id: "organization", label: "Organization" },
+    { id: "access",       label: "Access" },
     { id: "appearance",   label: "Appearance" },
     { id: "models",       label: "Models" },
     { id: "system",       label: "System" },
@@ -1241,6 +1243,8 @@ function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme
         )}
 
         {sub === "models" && <InferencePanel />}
+
+        {sub === "access" && <RolesPanel />}
 
         {sub === "system" && <SystemPanel />}
 
