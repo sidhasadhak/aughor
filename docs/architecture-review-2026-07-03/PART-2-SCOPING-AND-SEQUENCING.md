@@ -128,6 +128,31 @@ reversible commit per REC with a mechanical verify.
 
 ### ◑ Wave 4 in progress — the eight functional planes (AL)
 
+**◑ AL live-path migrations — the planes now run ON the deep answer path, flag-gated (2026-07-04).**
+With all three planes built + conformance-tested, wired two onto the live Deep-Analysis path, each
+**default-off → byte-identical** until enabled:
+- **AL-01 live** (`trust.verify_live` / `AUGHOR_TRUST_VERIFY_LIVE`): `agent/investigate.py:_execute_safe`
+  routes every generated SQL through `trust.verify` (conn-less Scope → only the pure readonly + E1
+  checks, no double-work with the preflight/join/grain guards already inline) right before
+  `conn.execute`; a readonly BLOCK **returns a blocked `QueryResult`** (handled downstream like any
+  failed query, never raises) — the mutation gate the generation path never ran.
+- **AL-05 live** (`semantic.resolve_live` / `AUGHOR_SEMANTIC_RESOLVE_LIVE`): a deep investigation
+  resolves the Semantic plane once at seed (`routers/investigations.py` `initial_state`) via
+  `semantic.context.resolve_if_enabled` (flag-gated + fail-open) and carries it on a new
+  `AgentState.semantic_context` field, so every node reads one consistent context — the "every route
+  carries SemanticContext" goal, additively (the ad-hoc consultations still work; they migrate onto
+  the state incrementally).
+
+**Verified (pytest): 6 tests** — AL-01 blocks a `DELETE` before execute (flag on) / executes
+unchanged (flag off) / passes clean SELECTs; AL-05 dormant-by-default / resolves-when-on / the state
+field carries it. Full-suite collect 2400 clean; 66 investigate/ADA tests + 37 plane/regression tests
+green; ruff clean. **AL-02 live migration — honestly deferred (the review's "not a big bang"):** its
+meaningful form is routing SQL *generation* through the `CapabilityPipeline` template, but generation
+is distributed across the `ada_*` graph nodes (no single question→SQL function), and at the execute
+seam a Capability call is redundant with the AL-01 gate. So the Capability plane + its conformance
+test stand; the generation-through-template migration is a genuine multi-node refactor, left as the
+one remaining Wave-4 piece rather than shipped as a contrived redundant seam.
+
 **◑ AL-05 — the Semantic plane, resolved once (2026-07-04).** The review's "single biggest
 architectural gap": the crown-jewel semantic material (governed metrics, ontology, business profile,
 KB) is consulted **ad-hoc** — ~9 inline calls scattered across `agent/nodes.py` +
