@@ -231,6 +231,20 @@ router) are the next Wave 4 moves.*
 
 ### ◑ Wave 2 in progress — composites + structure + gen-UI
 
+**✅ REC-U5 — first panel-fold: the Operations workspace (2026-07-05).** With the `<Workspace>`
+shell in place, folded the three Operations rail tabs (Monitors / Action Hub / Security & Audit)
+into one `OperationsWorkspace` — an *instance* of `<Workspace>` (3 layers), mirroring
+IntelligenceWorkspace. `page.tsx` drops the three separate `tab === …` render blocks (and the three
+now-dead panel imports) for one `tab === "operations"`; a `LEGACY_OPS_LAYER` deep-link map routes the
+kept rail items → the workspace layer (and the legacy `activity` deep-link → Security layer on the
+Activity lens); the Sidebar gets a computed `activeNav = tab === "operations" ? opsLayer : tab` so the
+right rail item highlights. Security & Audit's own `security ↔ activity` lens is threaded through
+(`secLens`) so it's preserved inside the layer. **Live-verified on the running app** (own dev server,
+after killing the peer's): each rail item deep-links to its layer, the segmented switcher swaps layers
++ syncs the sidebar highlight, the nested lens toggles, exactly one rail item is `.active`, zero
+console errors; tsc + all three web gates green. *Remaining folds (Data: Catalog/Builder/Semantic;
+re-express CanvasWorkspace — its richer header + eager-mount need care) are the same pattern.*
+
 **◑ REC-U5 — the one Workspace shell, extracted (2026-07-04).** Pulled the generic
 `<Workspace layers layer onLayerChange ariaLabel renderIcon headerControls renderLayer>`
 shell out of `IntelligenceWorkspace` into `components/Workspace.tsx`: it owns the header
