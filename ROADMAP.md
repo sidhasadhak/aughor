@@ -98,8 +98,17 @@ by that segment) — turning two independent findings into the actionable "does 
 where the metric is worst?" verdict. Runs only when both a WHERE and a WHY finding exist; fail-open.
 **Real-path verified** (womenswear, both flags on): 5th phase crosses size_fit × platform segment
 WITHIN womenswear → luxury 42.59% vs off-price 41.83% → honest "UNIFORM: broad product-level sizing
-issue, not a luxury concentration". Remaining WHY ideas (not built): second-level drill on the dominant
-reason (by brand/product) · peer benchmark on the reason (is 42% size/fit abnormal vs menswear?).*
+issue, not a luxury concentration".
+**✅ Deepen-the-WHY lenses** (flag `ada.why_deepen`, default-off): `_run_reason_benchmark_lens` (is the
+leading reason abnormal for the subject or a brand-wide baseline? — reason share across subject + peers)
++ `_run_reason_drill_lens` (which brands/products drive it? — reason returns composed by a finer product
+dim). **Real-path verified** (womenswear): benchmark → size_fit 42.2% squarely in the 39.6–44.5% peer
+range (brand-wide baseline, not womenswear-specific); drill → size_fit spread across 70 brands, top ~2%
+(systemic, not a few-brand problem). With #1/#2 the four WHY additions conclude a coherent, honest,
+actionable story: womenswear's high returns are a **systemic, brand-wide, segment-uniform sizing
+problem → platform-wide fit initiative**, not brand/segment/category targeting — every verdict honestly
+"uniform/spread", never a fabricated concentration. Multilens forward-chain refactored to compute the
+WHY phase once and fan interaction+benchmark+drill off it (`_forward` helper, fail-open).*
 
 **Shipped 2026-07-03** (branch `2026-07-02-ada-temporal-intake-grain`, merged; deterministic, full suite
 green — the **Deep Analysis report-quality arc**, see the "What we've built" entry below):
