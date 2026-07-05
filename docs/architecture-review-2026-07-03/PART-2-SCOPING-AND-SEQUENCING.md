@@ -157,6 +157,16 @@ LLM call; its old silent `except: return None` now routes through `tolerate`, so
 now** — the capability's `generate` and the ADA path both invoke it. *(enforce_gate / the metric-drift
 B-7 gate stays in the node as the post-generation wrapper; that's orthogonal.)*
 
+**✅ Live-verified on the running server (2026-07-05, flags flipped via the ledger override,
+then restored):** `/query/capability-answer` on the real `workspace`/luxexperience connection —
+`domain:"metadata"` returned the real 7.4 KB schema (4-phase trace, no SQL run); `domain:"data"`
+answered *"how many brands are there?"* → the shared `sql_generate` produced
+`SELECT COUNT(DISTINCT brand) FROM luxexperience.brands` → `trust.verify` passed → executed →
+**70** (matches the data). One real-path run proves AL-02 end-to-end, the `_gen_sql` convergence,
+AND the `trust.verify_live` gate together. The **AL-05 consumer** (`nodes._metrics_for_state`) reads
+`semantic_context.metrics` when resolved, else `list_metrics()` — the first node to actually read the
+threaded context. The **metadata domain** is a second real Capability registered alongside `data`.
+
 **Verified (pytest): 12 AL-live tests** — AL-01 blocks a `DELETE` before execute (flag on) / executes
 unchanged (flag off) / passes clean SELECTs; AL-05 dormant-by-default / resolves-when-on / state
 carries it; **AL-02 generate-from-question, full generate→validate→execute→interpret end-to-end on a
