@@ -65,6 +65,11 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   lexicographic order of numeric text, text↔numeric comparison) as labelled caveats, never overwriting the query.
 - **Finding-trust ladder** — guards → quarantine → dismiss-with-reason; pre-emission insight verification;
   numeral grounding; ratio-aware cross-sectional scans; angle-feasibility + repair intent-preservation gates.
+- **Numeric grounding, reconciled** — a claimed figure is credited when it appears in the result cells **or is
+  derived from them** (a % change / share / delta), so the grounding advisory stops crying wolf on valid
+  arithmetic; a fired trust caveat then **caps report confidence** (HIGH→MEDIUM, so "high confidence" can't sit
+  beside "claim not grounded"); and each narrator finding **binds to the query whose cells actually contain its
+  numbers**, so a z-score card can't inherit a period-over-period finding's figures just because both are "by tier".
 - **Grain-aware cross-section** — an **event-only** dimension (return reason/condition) is read as a
   **composition** (share of the event), never a tautological "rate by it" (which is always 100%);
   a **saturated** result (every group pinned at 0/100%) triggers a single grain-corrected reattempt; and
@@ -75,6 +80,13 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   directive), so the WHERE/WHY/WHEN cards can't contradict each other (per-order 40% vs per-line-item 76%);
   and the event-rate-aware **temporal-axis recovery** runs at **intake**, so a metric on a dateless child
   table still trends on the join-reachable purchase date instead of being declared non-temporal.
+- **Period-comparison integrity guards** — a period-over-period comparison is trustworthy only when the two
+  windows are like-for-like, so three deterministic guards run at **intake**: a **duration-mismatch** guard (a
+  prior window far shorter than the observation — the ~18× "56-months-vs-3-months" artifact), a **density**
+  guard (a window whose calendar span is fine but is sparsely populated — an internal gap/ramp), and a
+  **trailing-partial** guard (an incomplete final period that reads as a false drop). When one fires it is
+  **enforced**, not merely advised: the absolute-change waterfall is neutralised and the summary reframed to
+  average per-period run-rate, so the report can't headline a duration artifact the narrator was told to avoid.
 
 ## 3. Evidence, trust receipts & statistical rigor
 
