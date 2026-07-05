@@ -163,6 +163,15 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 
 ## 12. Platform & infrastructure
 
+- **Functional-plane consolidation** (Part 2 of the 2026-07-03 review, flag-gated) — the diffused agent
+  runtime is being re-drawn as clean horizontal planes, each with a typed contract + a conformance test:
+  a **Trust plane** (`aughor/trust:verify(sql|code|metadata, scope) → Verdict`) hoisting the ~9 scattered
+  validation guards behind one façade (the read-only/mutation gate now runs on the generation path too);
+  a **Capability plane** (`aughor/capability`) — one `Generate→Validate→Execute→Interpret` template
+  parameterized by domain (`data` SQL + `metadata` schema-Q&A), whose `validate` *is* the Trust plane;
+  and a **Semantic plane** (`aughor/semantic/context.py:resolve → SemanticContext`) that resolves
+  metrics/ontology/profile/KB **once** per run instead of ad-hoc, read back by the planner. Live-verified
+  end-to-end (`POST /query/capability-answer`). Each plane is a swap-point; a new capability = register one impl.
 - **Job Kernel / event spine** — state machine + heartbeats + boot recovery + idempotency + scope
   cancellation; investigations, monitors & briefs run as first-class kernel jobs with crash-recovery (boot salvage).
 - **Real-time SSE streaming**, **resumable investigations**, **human-in-the-loop interrupt**.
@@ -258,6 +267,11 @@ activity log (with fix-and-save / fix-all), and the Data Canvas (scoped editing,
 An **enforced 3-tier design layer** (Part 2 of the 2026-07-03 review): design tokens (radius/type/palette,
 theme-aware light/dark) → the `ui/*` primitives → the `Brief*` composite family, kept honest by three
 baseline-zero blocking CI gates (tokens · formatting · raw-element ratchet) so drift can't re-accumulate.
+One **`<Workspace>` shell** (header + perspective switcher + keep-alive body) that the sidebar sections are
+folded onto — Intelligence, **Operations** (Monitors / Action Hub / Security & Audit), and **Data**
+(Catalog / Query Builder / Semantic Layer) each render as one perspective-switched surface instead of a row
+of separate full-screen tabs (deep-links preserved). A **turn renderer registry** (`TURN_RENDERERS` +
+`registerTurnRenderer`) lets a pack contribute an answer surface without editing the chat god-component.
 
 ## How it fits together
 

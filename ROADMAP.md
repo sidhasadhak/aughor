@@ -14,24 +14,30 @@
 
 ## 0 · Immediate next action ⏭️
 
-**Active arc — Part 2 of the architecture review (the UI/design/nomenclature/eight-plane consolidation).**
-Two branches are open in review (not yet merged): `2026-07-04-data06-depth-web-peerdep` (DATA-06 depth
-+ the react peer-dep item 2b) and `2026-07-04-part2-recU1-design-layer` (Part 2 — Wave 1 design layer
-done, Wave 2 in progress). Wave 2 has shipped the **REC-U5** `<Workspace>` shell (extracted from
-`IntelligenceWorkspace`; the risky panel-folding + Canvas/Operations re-expression is a separate
-ratchet-down slice), and **Wave 4** has begun: **AL-01** — the Trust plane
-(`aughor/trust:verify() -> Verdict`) hoisting the ~9 diffused validation modules behind one
-façade, flag-gated + conformance-tested, first consumer wired at `/query/validate` (closes SEC-02
-there); **AL-02** — the Capability plane (`aughor/capability`: a `CapabilityPipeline` template
-whose `validate` routes through `trust.verify`, a registry, and a real `SqlCapability` instance
-delegating to existing code); and **AL-05** — the Semantic plane (`aughor/semantic/context.py`:
-`resolve() -> SemanticContext` composing metrics/ontology/profile/KB fail-open, tied into the
-`CapabilityRequest`, first consumer `/query/semantic-context`). **All three AL planes now exist
-(Trust · Capability · Semantic), each conformance-tested.** Next up on Part 2: the AL migrations
-onto the live answer paths (the deferred "not a big bang" wiring), then the U5 ratchet-down, then
-**Wave 3** nomenclature LAST (U9 = the ~49-file `ADA` rename, highest blast radius — do it with
-`@deprecated` aliases, one mode per commit). Full sequencing + progress log:
-[`docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md).
+**Part 2 of the architecture review — the design-layer / eight-plane / workspace-consolidation arc (PR #101).**
+Shipped: **Wave 1** (four enforced web CI gates — design-token · formatting · raw-element · tsc — +
+one-palette); **Wave 2** (renderer registry · chart source-footers · `StatusChip` · the `<Workspace>`
+shell + the **Operations & Data workspace folds**, live-verified); **Wave 4** (**all three AL planes —
+Trust `aughor/trust` · Capability `aughor/capability` · Semantic `aughor/semantic/context.py` — built,
+conformance-tested, AND live-wired flag-gated**; the deep ADA generator converged onto one shared
+`sql_generate`; the AL-05 `semantic_context` consumer; a second real Capability domain `metadata`).
+**Live-verified end-to-end on real data** (`/query/capability-answer` → correct SQL + answer). Full
+log: [`PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md).
+
+**⏭️ NEXT SESSION — remaining Part 2, in order (the dev servers are scriptable via `preview_*` on :8000/:3000):**
+1. **Wave 3 · U9 — the ~49-file `ADA` rename (highest blast radius, saved for last).** Rename at the
+   *serialization boundary*: `ada_report`→`report` + `mode:"investigate"`, strip `ADA`/`hypothesis_id`
+   from web-bound payloads; regen `web/lib/api.gen.ts`; `types.ts` → `AnswerReport`/`Fact`. Do it
+   **boundary-first with `@deprecated` aliases, one mode per commit, screenshot each answer mode.**
+2. **U10 — `semantic/contracts.py:SemanticContract`**: make `MetricDefinition` + `ontology.OntologyMetric`
+   serialize to it, then repoint planning/enforcement/display at one type (high blast radius → flag-gate).
+3. **NOM-07/11** — a shared `Safeguard` base (Monitor/Brief/Playbook) + one `ExecutionScope`
+   (`canvas_id`/`connection_id`/`scope_schema`/`table_filter` precedence).
+4. **PR #100** (`2026-07-04-data06-depth-web-peerdep` — DATA-06 depth + the react peer-dep item 2b) is
+   still open; it and #101 both touched `ci.yml`/`web/package.json`, so **rebase #100 on the new main +
+   resolve the conflict** — its `overrides` fix then lets the README drop the `--legacy-peer-deps` flag.
+*Deferred with reasons (see the log): `CanvasWorkspace` re-express (rich header + eager-mount don't fit
+the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment).*
 
 **Also queued — parallelize the investigation loop with LangGraph's map-reduce / multi-agent primitives.**
 The womenswear-returns investigation took **~8.4 min** — not from slow SQL (dimension queries
