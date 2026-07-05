@@ -67,14 +67,17 @@ def get_canvases(include_legacy: bool = True, workspace_id: str | None = None):
     from aughor.canvas.store import list_canvases
     from aughor.db.history import last_activity_by_canvas
     from aughor.metastore import accessible_catalog_ids
+    from aughor.security.authz import org_visible_conn_ids
     allowed = accessible_catalog_ids(workspace_id)
+    org_conns = org_visible_conn_ids()  # DATA-06: another org's canvases never appear
     activity = last_activity_by_canvas()
     out = []
     for c in list_canvases(include_legacy=include_legacy):
-        if allowed is not None:
-            conn = getattr(c, "primary_connection_id", None) or (c.scopes[0].connection_id if c.scopes else None)
-            if conn not in allowed:
-                continue
+        conn = getattr(c, "primary_connection_id", None) or (c.scopes[0].connection_id if c.scopes else None)
+        if allowed is not None and conn not in allowed:
+            continue
+        if org_conns is not None and conn not in org_conns:
+            continue
         d = c.model_dump()
         # Most recent investigation/chat timestamp for this canvas (drives the
         # "latest investigation" sort and the recently-used section).

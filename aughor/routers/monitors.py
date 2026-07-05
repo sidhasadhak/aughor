@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ValidationError
 
 from aughor.licensing import Capability, gate
@@ -19,7 +19,20 @@ from aughor.monitors.store import (
     acknowledge_alert,
 )
 
-router = APIRouter(tags=["monitors"])
+
+def _monitor_owner_guard(request: Request) -> None:
+    """Object-level authz (SEC-05 / DATA-06): a by-id monitor or alert route is
+    reachable only by the org that owns the underlying connection. No-op on routes
+    without a ``monitor_id``/``alert_id`` (list/create) and in localhost mode."""
+    from aughor.security.authz import check_owner, get_principal
+    principal = get_principal(request)
+    if (mid := request.path_params.get("monitor_id")):
+        check_owner("monitor", mid, principal)
+    if (aid := request.path_params.get("alert_id")):
+        check_owner("alert", aid, principal)
+
+
+router = APIRouter(tags=["monitors"], dependencies=[Depends(_monitor_owner_guard)])
 
 
 # ── Request bodies ─────────────────────────────────────────────────────────────
@@ -76,12 +89,15 @@ def list_monitors_route(
     # Fail-closed workspace tenancy gate: None => unscoped (management/default view),
     # a set => only those connections, empty-set => an unknown workspace surfaces nothing.
     from aughor.metastore import accessible_catalog_ids
+    from aughor.security.authz import org_visible_conn_ids
 
     allowed = accessible_catalog_ids(workspace_id)
+    org_conns = org_visible_conn_ids()  # DATA-06: None in localhost, else this org's connections
     return [
         m.model_dump()
         for m in list_monitors(conn_id=conn_id)
-        if allowed is None or m.conn_id in allowed
+        if (allowed is None or m.conn_id in allowed)
+        and (org_conns is None or m.conn_id in org_conns)
     ]
 
 
@@ -94,7 +110,10 @@ def get_monitor_route(monitor_id: str) -> dict:
 
 
 @router.post("/monitors", status_code=201, dependencies=[gate(Capability.MONITORS)])
-def create_monitor(req: CreateMonitorRequest) -> dict:
+def create_monitor(req: CreateMonitorRequest, request: Request) -> dict:
+    # DATA-06: can't attach a monitor to a connection your org can't see.
+    from aughor.security.authz import check_owner, get_principal
+    check_owner("connection", req.conn_id, get_principal(request))
     # CreateMonitorRequest is permissive (str fields); Monitor enforces strict
     # Literals (alert_on, threshold_direction, …). Translate a domain-model
     # validation failure into a clean 422 instead of leaking a 500.
@@ -213,14 +232,17 @@ def get_all_alerts(
     and/or scoped to the active workspace (fail-closed: an unknown workspace
     surfaces nothing)."""
     from aughor.metastore import accessible_catalog_ids
+    from aughor.security.authz import org_visible_conn_ids
 
     allowed = accessible_catalog_ids(workspace_id)
+    org_conns = org_visible_conn_ids()  # DATA-06: cross-org alerts never leak into the feed
     return [
         a.model_dump()
         for a in get_alerts(
             conn_id=conn_id, limit=limit, unacknowledged_only=unacknowledged_only
         )
-        if allowed is None or a.conn_id in allowed
+        if (allowed is None or a.conn_id in allowed)
+        and (org_conns is None or a.conn_id in org_conns)
     ]
 
 
@@ -235,8 +257,10 @@ def ack_alert(alert_id: str) -> dict:
 # ── Digest ─────────────────────────────────────────────────────────────────────
 
 @router.get("/monitors/digest")
-def get_digest(conn_id: str, period: str = "week") -> dict:
+def get_digest(conn_id: str, request: Request, period: str = "week") -> dict:
     """Build and return the intelligence digest for a connection."""
+    from aughor.security.authz import check_owner, get_principal
+    check_owner("connection", conn_id, get_principal(request))  # DATA-06: no cross-org digest
     if period not in ("week", "day"):
         raise HTTPException(status_code=422, detail="period must be 'week' or 'day'")
     try:

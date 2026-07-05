@@ -18,6 +18,7 @@ def manifest() -> dict[str, list[str]]:
         execution_hooks as _eh,
         ingestion as _ing,
         purge_hooks as _ph,
+        resource_org as _ro,
         schema_annotators as _sa,
     )
     return {
@@ -30,4 +31,5 @@ def manifest() -> dict[str, list[str]]:
         "ingest_sinks": list(_ing._SINKS),
         "post_execute_hooks": [n for n, _ in _eh._POST_EXECUTE],
         "on_connect_hooks": [n for n, _ in _eh._ON_CONNECT],
+        "resource_org_resolvers": _ro.registered_kinds(),
     }

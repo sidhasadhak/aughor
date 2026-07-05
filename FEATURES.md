@@ -193,7 +193,13 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   off) **enforced on the read path**: a request-identity + object-level-authz seam (`security/authz.py` — a
   `Principal`, owner-checks on by-id routes), org-scoped `list_connections` / investigation history, a pure-ASGI
   `_OrgContextMiddleware` that binds `current_org_id()` to the request, and kernel jobs that re-bind their own
-  org at execution (survives restart/boot-recovery). **licensing tiers** (Free/Pro/Enterprise, 402 → upsell),
+  org at execution (survives restart/boot-recovery). The same `resource → connection → org` enforcement now
+  covers the **monitor / alert / brief-subscription / canvas / saved-query** surfaces too — router-level
+  owner-guards (403 cross-org), `org_visible_conn_ids()` list-filtering so another org's rows never surface,
+  connection owner-checks on the create/digest paths, and org-binding of the **monitor + brief background
+  schedulers** (a background tick stamps the connection's tenant, not `'default'`); the agent's monitor/brief
+  stores stay behind a `kernel/registries/resource_org.py` resolver registry so the platform never imports them.
+  **licensing tiers** (Free/Pro/Enterprise, 402 → upsell),
   **governed-intelligence MCP server**, time-to-first-insight instrumentation.
 - **Role-based access control (RBAC)** — a second authorization axis orthogonal to licensing (`aughor/rbac/`,
   flag-gated on `AUGHOR_REQUIRE_IDENTITY` **and** the `RBAC_SSO` capability → localhost/non-RBAC tiers

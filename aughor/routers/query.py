@@ -5,12 +5,22 @@ import asyncio
 import re
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from aughor.licensing import Capability, gate
 
-router = APIRouter(tags=["query"])
+
+def _saved_query_owner_guard(request: Request) -> None:
+    """Object-level authz (SEC-05 / DATA-06): a by-id saved-query route is reachable
+    only by the org that owns its connection. No-op on the many other query routes
+    (no ``query_id``) and in localhost mode."""
+    from aughor.security.authz import check_owner, get_principal
+    if (qid := request.path_params.get("query_id")):
+        check_owner("saved_query", qid, get_principal(request))
+
+
+router = APIRouter(tags=["query"], dependencies=[Depends(_saved_query_owner_guard)])
 
 
 class _QueryRunRequest(BaseModel):
@@ -622,12 +632,20 @@ class _UpdateSavedQueryRequest(BaseModel):
 def saved_queries_list(connection_id: str | None = None):
     """List saved queries, optionally filtered to one connection (newest first)."""
     from aughor.savedquery.store import list_saved_queries
-    return [q.model_dump() for q in list_saved_queries(connection_id)]
+    from aughor.security.authz import org_visible_conn_ids
+    org_conns = org_visible_conn_ids()  # DATA-06: only this org's saved queries
+    return [
+        q.model_dump()
+        for q in list_saved_queries(connection_id)
+        if org_conns is None or q.connection_id in org_conns
+    ]
 
 
 @router.post("/saved-queries", status_code=201)
-def saved_queries_create(body: _SaveQueryRequest):
+def saved_queries_create(body: _SaveQueryRequest, request: Request):
     """Create a saved query from the current builder state."""
+    from aughor.security.authz import check_owner, get_principal
+    check_owner("connection", body.connection_id, get_principal(request))  # DATA-06
     if not body.name.strip():
         raise HTTPException(status_code=400, detail="name is required")
     from aughor.savedquery.store import create_saved_query

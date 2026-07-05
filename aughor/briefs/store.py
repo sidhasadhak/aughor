@@ -10,8 +10,11 @@ from pathlib import Path
 from typing import Optional
 
 from aughor.briefs.models import BriefSubscription
+from aughor.db.sqlite_util import resolve_db_path
 
-_PATH = Path("data/brief_subscriptions.json")
+# Honour an AUGHOR_BRIEFS_FILE override (the conftest points it at a temp dir) so the
+# suite can never mutate the live data/ store — the OPS-02/DATA-01 hermeticity rule.
+_PATH = resolve_db_path("AUGHOR_BRIEFS_FILE", Path("data/brief_subscriptions.json"))
 
 
 from aughor.util.time import now_iso_z as _now

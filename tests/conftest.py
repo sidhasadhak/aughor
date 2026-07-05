@@ -35,6 +35,7 @@ for _env, _file in (
     ("AUGHOR_ARTIFACTS_DB", "artifacts.db"),
     ("AUGHOR_EVIDENCE_DB", "evidence_ledger.db"),
     ("AUGHOR_MONITORS_DB", "monitors.db"),
+    ("AUGHOR_BRIEFS_FILE", "brief_subscriptions.json"),
     ("AUGHOR_ORGS_DB", "orgs.db"),
     ("AUGHOR_SAVEDQUERY_DB", "saved_queries.db"),
     ("AUGHOR_VOLUMES_DB", "volumes.db"),

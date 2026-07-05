@@ -46,10 +46,13 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
-        # --legacy-peer-deps: the tree carries a pre-existing peer-dep conflict
-        # (@atlaskit/icon peers react ^18; the app is on react 19). Local dev installs
-        # leniently; strict `npm ci` needs the flag. Reconciling the dep is a follow-up.
-        run: npm ci --legacy-peer-deps
+        # Strict install — no --legacy-peer-deps. A package.json `overrides` block pins
+        # react/react-dom to a single version across the whole tree, so the @atlaskit/*
+        # packages that still peer react ^18 (icon / skeleton / tile) resolve to the
+        # app's react 19 instead of ERESOLVE-ing. (Keep the override versions in lockstep
+        # with the react/react-dom deps if either is bumped — the `$react` self-ref form
+        # is npm-11-only and CI runs node 20 / npm 10, so the versions are explicit.)
+        run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Design-token gate
