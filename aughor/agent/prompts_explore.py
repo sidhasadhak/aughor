@@ -66,9 +66,31 @@ Rules:
 4. Do NOT include sub-questions about data the schema does not contain.
 5. If the schema profiles show a data range, use it. Do not use made-up ranges.
 6. Keep sub-questions concrete and SQL-testable. Vague sub-questions produce useless queries.
-
+{parallelism_guidance}
 Constraints from the question (extract before writing sub-questions):
 {constraint_section}
+"""
+
+# Injected into the decompose prompt ONLY when the parallel-wave executor is enabled
+# (flag `explore.parallel_subq`); empty otherwise so the default prompt is byte-identical.
+# The wave executor runs every sub-question whose `depends_on` are all satisfied concurrently,
+# so an over-linked (deep-chain) plan serializes work that could run at once. This steers the
+# planner toward a WIDE, SHALLOW dependency graph — the realized parallelism is entirely a
+# function of how independent the emitted `depends_on` are.
+PARALLEL_DECOMPOSITION_GUIDANCE = """\
+PARALLELISM — these sub-questions run CONCURRENTLY in dependency waves, so the shape of
+`depends_on` decides how fast the investigation finishes:
+  • Cite `depends_on` ONLY when a sub-question genuinely needs another's ACTUAL OUTPUT VALUES
+    before it can be written — e.g. a drill_down into "the transition zone found in Q2" truly
+    needs Q2's result. If two sub-questions could be answered in EITHER order, they have NO
+    dependency between them.
+  • Independent CUTS of the same landscape — the same metric sliced by different segments,
+    dimensions, or time periods — do NOT depend on each other. Each depends only on the
+    landscape (typically Q1), so they all run in ONE wave.
+  • Prefer a WIDE, SHALLOW graph (landscape → many parallel cuts → an optional synthesis) over
+    a DEEP chain (Q1→Q2→Q3→Q4). A deep chain runs one-at-a-time; only build one when each step
+    truly consumes the previous step's findings.
+  • Do NOT invent dependencies just to impose an order.
 """
 
 PLAN_SUBQ_PROMPT = """\
