@@ -32,15 +32,28 @@
   install simplified back to plain `npm install`).
 Full log: [`PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md).
 
-**⏭️ NEXT — in order:**
-1. **U9 follow-ups (small, guardrail-separated internals).** The wire is clean; the internals still say
-   ADA: rename `AgentState.ada_report` (+ graph/cli/router state reads) in one internal-only commit;
-   strip `hypothesis_id` from web-bound payloads; regen `web/lib/api.gen.ts` (the `/ada/...` receipt
-   route name); `ADARecommendation`→`AnswerRecommendation`; and after one release, drop the
-   `ada_report` deprecated wire alias (web `case` + MCP fallback + `types.ts` alias).
-2. **U10 — the invasive half (flag-gated):** repoint planning/enforcement/display at `SemanticContract`
+**✅ U9 follow-ups DONE (2026-07-05, branch `2026-07-05-u9-followups-internal`, 3 themed commits).**
+The internals no longer say ADA: **(1a)** renamed `AgentState.ada_report`→`answer_report` (every
+graph/router/cli state read) + backing TypedDicts `ADAReport`/`ADARecommendation`→`AnswerReport`/
+`AnswerRecommendation` + the LLM `ADARecommendationModel`→`AnswerRecommendationModel`; **(1d)** web
+`ADARecommendation`→`AnswerRecommendation` (+ `@deprecated` alias, incl. the duplicate local interface
+in `InvestigationReport.tsx`); **(1c)** de-ADA'd the trust-receipt route `/ada/…/receipt`→
+`/answer/…/receipt` (canonical) with `/ada` kept as a `deprecated=True` delegating alias one release,
++ surgical `api.gen.ts` add. **Verified:** full suite 2467 pass, ruff 0, tsc + 3 web gates green, both
+receipt routes 404 identically (TestClient), no live `data/` writes.
+- **Deliberately NOT done — two judgement calls:** *(1b) strip `hypothesis_id`* — **skipped**: it is
+  load-bearing, not an ADA leak. The web actively reads it (`ReportView` links findings↔hypotheses,
+  `HistoryDetailPanel`/`SecurityAuditPanel` display it) off the classic `report`/`score` events — it is
+  the evidence/citation model. Stripping breaks real UI. *Deprecated `ada_report` wire alias drop* —
+  deferred by its own "after one release" qualifier (added last release; still soaking).
+- **Untouched by design (persisted identity):** the artifact `kind="ada_report"` + `natural_key="ada:…"`
+  receipt keys (looked up by natural_key only; renaming orphans persisted rows).
+- **New finding → separate follow-up:** `web/lib/api.gen.ts` is **~5,700 lines stale** (missing ~40
+  routes: `/ask`, `/jobs`, `/rbac`, `/packs`, `/verify`, `/query/*`, …) → `npm run gen:api` isn't
+  CI-wired. Catch it up + add a codegen CI gate in its own PR (not nomenclature churn).
+1. **U10 — the invasive half (flag-gated):** repoint planning/enforcement/display at `SemanticContract`
    (one metric type platform-wide — the 20-year ontology bet's type unification).
-3. **Parallelize the investigation loop** (below — the biggest wall-clock win queued).
+2. **Parallelize the investigation loop** (below — the biggest wall-clock win queued).
 *Deferred with reasons (see the log): `CanvasWorkspace` re-express (rich header + eager-mount don't fit
 the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment),
 NOM-07 (`PlaybookEntry` doesn't fit the scheduled-check mold; touches persisted models).*
