@@ -68,8 +68,47 @@ parallel, bounded by the P6 budget governor), then hypothesis testing and cross-
 **deterministic fan-out over an LLM supervisor/swarm** — consistent with our deterministic-first
 thesis. Full analysis + plan + guardrails: [`docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`](docs/PARALLEL_MULTIAGENT_GROUNDWORK.md).
 
-**Also queued** (from the same investigation-framework analysis): metric-aware dimension priority
-(scan the causal dimension, e.g. return *reason*, before descriptive ones) and auto-drill WHERE→WHY.
+**✅ Shipped 2026-07-05** (branch `2026-07-05-investigation-quality`, both investigation-framework
+follow-ups as one additive, flag-gated feature `AUGHOR_CAUSAL_DRILL`; default-off = byte-identical;
+full suite 2475 green): **metric-aware dimension priority** — `_prioritize_dimensions(causal_first=)`
+floats diagnostic dims (reason/condition/defect/fit) ahead of the descriptive taxonomy so they survive
+the per-phase query cap instead of falling to "other"; **auto-drill WHERE→WHY** — after the rate scan,
+`_causal_split` peels event-only dims (tautological as a rate) into the existing (live-proven)
+`_run_composition_lens` WHY lens, emitting a "Mechanism / Reason Scan — Why" phase instead of stopping
+at WHERE. Reuses `_is_event_dim`/`_run_composition_lens`; no graph change; fires only on a clean
+top-level scan. **LIVE-VALIDATED** on the canonical womenswear-returns question (real `/investigate` on
+the `workspace`/luxexperience connection, `AUGHOR_CAUSAL_DRILL=1`): routed investigate (conf 0.95);
+`cross_section` localised WHERE ("40.5% luxury-segment platforms vs 27.0% off-price"); the auto-drilled
+`cross_section_mechanism` WHY phase fired ("size/fit issues = 42% of all returns, 2× the next reason");
+synthesis headline led with BOTH — "driven by luxury platform segment and size/fit issues, **not brand
+or tier**" (item 1's causal dims surfaced over the descriptive ones). No live-store pollution
+(write-stores isolated).
+*Follow-on (same branch): the serial-drill feature above is **inert when `ada.parallel_lenses` is on**
+(the live default) — so its causal-relevance idea was landed where it actually runs: **causal-relevance
+ranking in the WHY composition lens** (`_select_why_dims` in `_run_composition_lens`). The multilens WHY
+composed every event dim uniformly (womenswear → 4 findings, 3 of them ops noise: carrier/refund-method
+scored non-significant); now it leads with the causal dims (reason/condition) and drops the pure-ops
+dims (`_OPERATIONAL_DIMENSION_KEYWORDS`) when a causal dim is present — fail-safe keeps all when nothing
+looks causal. Improves BOTH paths (shared lens). **Real-path verified** (multilens womenswear run: WHY
+4 findings → 2, ops noise gone, summary leads with size/fit).
+**✅ #2 WHY×WHERE interaction lens** (flag `ada.why_where_interaction`, default-off): after the
+parallel WHERE+WHY lenses, `_run_interaction_lens` forward-chains one LLM-planned query crossing the
+leading reason with the WHERE lens's high-impact segment (the reason's share of the subject's returns
+by that segment) — turning two independent findings into the actionable "does the cause concentrate
+where the metric is worst?" verdict. Runs only when both a WHERE and a WHY finding exist; fail-open.
+**Real-path verified** (womenswear, both flags on): 5th phase crosses size_fit × platform segment
+WITHIN womenswear → luxury 42.59% vs off-price 41.83% → honest "UNIFORM: broad product-level sizing
+issue, not a luxury concentration".
+**✅ Deepen-the-WHY lenses** (flag `ada.why_deepen`, default-off): `_run_reason_benchmark_lens` (is the
+leading reason abnormal for the subject or a brand-wide baseline? — reason share across subject + peers)
++ `_run_reason_drill_lens` (which brands/products drive it? — reason returns composed by a finer product
+dim). **Real-path verified** (womenswear): benchmark → size_fit 42.2% squarely in the 39.6–44.5% peer
+range (brand-wide baseline, not womenswear-specific); drill → size_fit spread across 70 brands, top ~2%
+(systemic, not a few-brand problem). With #1/#2 the four WHY additions conclude a coherent, honest,
+actionable story: womenswear's high returns are a **systemic, brand-wide, segment-uniform sizing
+problem → platform-wide fit initiative**, not brand/segment/category targeting — every verdict honestly
+"uniform/spread", never a fabricated concentration. Multilens forward-chain refactored to compute the
+WHY phase once and fan interaction+benchmark+drill off it (`_forward` helper, fail-open).*
 
 **Shipped 2026-07-03** (branch `2026-07-02-ada-temporal-intake-grain`, merged; deterministic, full suite
 green — the **Deep Analysis report-quality arc**, see the "What we've built" entry below):
