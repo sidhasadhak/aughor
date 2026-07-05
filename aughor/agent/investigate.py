@@ -53,6 +53,16 @@ _CAUSAL_DIMENSION_KEYWORDS: list[str] = [
     "quality", "fit", "status", "issue", "complaint", "root_cause",
 ]
 
+# Operational / logistics event dimensions — WHO shipped the return, HOW it was refunded. These live
+# on the event table (so they'd tautologically rate to 100%) but, unlike a return *reason*, they are
+# downstream ops metadata, NOT a cause of the elevated event rate. A "why is X high" composition should
+# not lead with — or clutter itself with — them (the womenswear WHY came back with 4 pies, 3 of them
+# ops noise: carrier/refund_method scored non-significant). Kept distinct from the causal vocabulary.
+_OPERATIONAL_DIMENSION_KEYWORDS: list[str] = [
+    "carrier", "courier", "shipping", "ship_method", "shipment", "tracking",
+    "refund_method", "payment_method", "warehouse", "logistics", "fulfillment",
+]
+
 
 def _prioritize_dimensions(dimensions: list[str], causal_first: bool = False) -> list[str]:
     """Sort dimensions by spec-mandated priority: customer → channel → category → geo → other. When
@@ -4340,6 +4350,23 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
     return phase, anomalous
 
 
+def _select_why_dims(event_dims: list) -> list:
+    """Order the event dims for the WHY composition by causal relevance and DROP the pure-operational
+    ones (carrier / refund method / shipping) when a genuinely causal dim (reason / condition / defect)
+    is present — a "why is X high" lens should lead with the CAUSE, not logistics metadata, which
+    otherwise dilutes the finding (the womenswear WHY returned 4 pies, 3 of them ops noise). Neutral
+    dims (neither vocabulary) are kept as context after the causes. Fail-safe: when NOTHING matches the
+    causal vocabulary, keep every dim unchanged so an unusually-named reason column is never silently
+    dropped. Order-preserving within each group."""
+    causal = [d for d in event_dims if any(k in _dim_column(d) for k in _CAUSAL_DIMENSION_KEYWORDS)]
+    if not causal:
+        return list(event_dims)          # nothing recognisably causal → don't drop anything
+    operational = [d for d in event_dims if d not in causal
+                   and any(k in _dim_column(d) for k in _OPERATIONAL_DIMENSION_KEYWORDS)]
+    neutral = [d for d in event_dims if d not in causal and d not in operational]
+    return causal + neutral              # lead with causes, keep neutral context, drop ops noise
+
+
 def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_dims: list) -> Optional[dict]:
     """The WHY lens for EVENT-only dimensions (return reason / condition / carrier / refund method).
     A 'rate by' these is tautologically 100% (a row exists only if the event happened), so instead we
@@ -4349,6 +4376,9 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
     question = state["question"]
     metric_label = intake.get("metric_label", "the metric")
     schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    # Lead the WHY with the causal dims; drop downstream ops metadata (carrier/refund method) so the
+    # composition answers "why", not "how it shipped" (fail-safe keeps all when nothing looks causal).
+    event_dims = _select_why_dims(event_dims)
     dims_list = "\n".join(f"  - {d}" for d in event_dims[:6])
     try:
         _run = run_analysis_phase(
