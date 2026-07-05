@@ -29,10 +29,16 @@ log: [`PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PA
    *serialization boundary*: `ada_report`→`report` + `mode:"investigate"`, strip `ADA`/`hypothesis_id`
    from web-bound payloads; regen `web/lib/api.gen.ts`; `types.ts` → `AnswerReport`/`Fact`. Do it
    **boundary-first with `@deprecated` aliases, one mode per commit, screenshot each answer mode.**
-2. **U10 — `semantic/contracts.py:SemanticContract`**: make `MetricDefinition` + `ontology.OntologyMetric`
-   serialize to it, then repoint planning/enforcement/display at one type (high blast radius → flag-gate).
-3. **NOM-07/11** — a shared `Safeguard` base (Monitor/Brief/Playbook) + one `ExecutionScope`
-   (`canvas_id`/`connection_id`/`scope_schema`/`table_filter` precedence).
+2. ~~**U10 — `semantic/contracts.py:SemanticContract`**~~ **✅ FIRST SLICE SHIPPED 2026-07-05**: the
+   contract type + `from_metric_definition`/`from_ontology_metric` adapters, leveraged via
+   `SemanticContext.contracts()` (catalog ∪ ontology, deduped, surfaced as `contract_count` on
+   `/query/semantic-context`). **Remaining (deferred, flag-gated):** repoint planning/enforcement/display
+   at the one type (the invasive, high-blast-radius half).
+3. ~~**NOM-11** — one `ExecutionScope` (`canvas_id`/`connection_id`/`scope_schema`/`table_filter`
+   precedence).~~ **✅ SHIPPED 2026-07-05** (`aughor/canvas/scope.py`): four hand-rolled canvas-scope
+   blocks in `routers/investigations.py` collapsed onto one value object (−62 lines), fixing a
+   salvage/resume sibling-schema leak. **NOM-07** (shared `Safeguard` base) **deferred** — `PlaybookEntry`
+   doesn't fit the scheduled-check mold and it touches persisted models (see the Part-2 log).
 4. **PR #100** (`2026-07-04-data06-depth-web-peerdep` — DATA-06 depth + the react peer-dep item 2b) is
    still open; it and #101 both touched `ci.yml`/`web/package.json`, so **rebase #100 on the new main +
    resolve the conflict** — its `overrides` fix then lets the README drop the `--legacy-peer-deps` flag.

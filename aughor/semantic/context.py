@@ -33,6 +33,31 @@ class SemanticContext:
     profile: dict | None = None                          # cached business profile (raw dict)
     has_kb_match: bool = False
 
+    def contracts(self) -> list:
+        """The governed metrics unified across sources as one `SemanticContract` list (REC-U10).
+
+        Both metric shapes — the curated catalog (`self.metrics`) and the ontology-derived
+        metrics (`self.ontology.metrics`) — serialize to the one contract, deduped by key with
+        the **catalog winning** on a collision (a human-approved definition supersedes the
+        builder's inference). Fail-open: a malformed source entry is skipped, never raised."""
+        from aughor.semantic.contracts import SemanticContract
+        by_key: dict[str, Any] = {}
+        # Ontology first, so a same-key catalog metric overwrites it.
+        onto_metrics = getattr(self.ontology, "metrics", None) or {}
+        for om in (onto_metrics.values() if isinstance(onto_metrics, dict) else onto_metrics):
+            try:
+                c = SemanticContract.from_ontology_metric(om)
+                by_key[c.key] = c
+            except Exception as exc:
+                _tolerate(exc, "semantic.contracts: ontology")
+        for md in self.metrics or []:
+            try:
+                c = SemanticContract.from_metric_definition(md)
+                by_key[c.key] = c
+            except Exception as exc:
+                _tolerate(exc, "semantic.contracts: catalog")
+        return list(by_key.values())
+
     def summary(self) -> dict:
         """A JSON-safe digest — what the platform knows about this question. For the API surface."""
         ents = getattr(self.ontology, "entities", {}) or {}
@@ -43,6 +68,7 @@ class SemanticContext:
             "scope_schema": self.scope_schema,
             "metric_count": len(self.metrics),
             "metric_names": [getattr(m, "name", str(m)) for m in self.metrics][:20],
+            "contract_count": len(self.contracts()),   # catalog ∪ ontology, deduped (REC-U10)
             "has_ontology": self.ontology is not None,
             "ontology_entities": len(ents),
             "ontology_relationships": len(rels),

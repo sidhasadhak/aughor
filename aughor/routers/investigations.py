@@ -394,20 +394,10 @@ async def salvage_orphaned_investigation(
     db = None
     try:
         from aughor.agent.graph import build_graph_generic
-        canvas_scope_schema: Optional[str] = None
-        if canvas_id:
-            try:
-                from aughor.canvas.store import get_canvas
-                canvas = get_canvas(canvas_id)
-                if canvas and canvas.scopes:
-                    canvas_scope_schema = canvas.scopes[0].schema_name
-            except Exception:
-                logger.debug("salvage: canvas scope lookup failed for %s", canvas_id, exc_info=True)
-        if canvas_scope_schema:
-            from aughor.db.connection import open_connection_for_with_schema
-            db = open_connection_for_with_schema(connection_id, schema_name=canvas_scope_schema)
-        else:
-            db = open_connection_for(connection_id)
+        from aughor.canvas.scope import resolve_execution_scope
+        # One scope resolver — unlike the old inline block this ALSO pins the derived owning
+        # schema of a table-list-scoped canvas (the salvage-path sibling-schema leak fix).
+        db = resolve_execution_scope(connection_id, canvas_id).open()
         agent = build_graph_generic(db, hitl=False)
         config = {"configurable": {"thread_id": inv_id}}
         try:
@@ -909,37 +899,20 @@ async def _stream_chat(
     # dataset and carry schema_name=None with a table-list scope, so the
     # schema_name override below constrains nothing — without an explicit table
     # filter a Bakehouse canvas can answer from the ecommerce schema.
-    canvas_scope_schema: str | None = None
-    canvas_scope_tables: list[str] = []
-    canvas_scope_full = True
-    if canvas_id:
-        try:
-            from aughor.canvas.store import get_canvas
-            canvas = get_canvas(canvas_id)
-            if canvas and canvas.scopes:
-                _scope = canvas.scopes[0]
-                canvas_scope_schema = _scope.schema_name
-                canvas_scope_tables = list(_scope.tables or [])
-                canvas_scope_full = _scope.is_full_schema
-        except Exception:
-            pass
-    # A table-list-scoped canvas on a multi-schema connection carries schema-qualified
-    # table names (e.g. "missimi.orders") with schema_name=None. Derive the single owning
-    # schema so the connection PINS search_path to it — otherwise an unqualified `FROM orders`
-    # in generated/compiled SQL leaks to a sibling schema's same-named table (the missimi
-    # canvas silently answering from netflix.orders/main.orders). canvas_scope_schema is left
-    # untouched so the "ALLOWED TABLES" prompt block (the explicit allow-list) still drives.
-    canvas_scope_eff_schema = canvas_scope_schema
-    if not canvas_scope_eff_schema and canvas_scope_tables:
-        _scope_schemas = {t.split(".")[0] for t in canvas_scope_tables if "." in t}
-        if len(_scope_schemas) == 1:
-            canvas_scope_eff_schema = next(iter(_scope_schemas))
+    # One scope resolver (ExecutionScope): the declared schema drives the explicit
+    # "DEFAULT SCHEMA"/"ALLOWED TABLES" prompt block, while eff_schema PINS search_path —
+    # the declared schema, else the single owning schema derived from a schema-qualified
+    # table list (missimi.orders → 'missimi'). Without the pin an unqualified `FROM orders`
+    # leaks to a sibling schema's same-named table (missimi silently answering from netflix).
+    from aughor.canvas.scope import resolve_execution_scope
+    _es = resolve_execution_scope(connection_id, canvas_id)
+    connection_id = _es.connection_id                # canvas's primary connection wins
+    canvas_scope_schema = _es.declared_schema        # raw declared → the prompt note
+    canvas_scope_tables = list(_es.tables)
+    canvas_scope_full = _es.is_full_schema
+    canvas_scope_eff_schema = _es.eff_schema
     try:
-        if canvas_id and canvas_scope_eff_schema:
-            from aughor.db.connection import open_connection_for_with_schema
-            db = open_connection_for_with_schema(connection_id, schema_name=canvas_scope_eff_schema)
-        else:
-            db = open_connection_for(connection_id)
+        db = _es.open()
     except KeyError as e:
         yield _sse("error", {"message": str(e)})
         return
@@ -1920,46 +1893,22 @@ async def _stream_investigation(
 ) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
 
-    canvas_schema_context: str = ""
-    canvas_scope_schema: str | None = None
-    canvas_scope_tables: list[str] = []
-    if canvas_id:
-        try:
-            from aughor.canvas.store import get_canvas
-            from aughor.tools.schema import build_canvas_schema_context
-            canvas = get_canvas(canvas_id)
-            if canvas and canvas.primary_connection_id:
-                connection_id = canvas.primary_connection_id
-                canvas_scope_schema = canvas.scopes[0].schema_name if canvas.scopes else None
-                canvas_scope_tables = list(canvas.scopes[0].tables or []) if canvas.scopes else []
-                canvas_schema_context = build_canvas_schema_context(canvas)
-        except Exception:
-            pass
-
-    # A table-list-scoped canvas on a multi-schema connection carries schema-qualified
-    # table names (e.g. "missimi.orders") with schema_name=None. Derive the single owning
-    # schema so the deep connection PINS search_path AND the DEFAULT SCHEMA note is injected
-    # — exactly as the chat path does. WITHOUT this the deep path left scope_schema=None, so
-    # bare names + the explore linker's full-schema FK expansion leaked to a sibling schema
-    # (missimi deep answering from another demo dataset). Mirrors _stream_chat.
-    canvas_scope_eff_schema = canvas_scope_schema
-    if not canvas_scope_eff_schema and canvas_scope_tables:
-        _scope_schemas = {t.split(".")[0] for t in canvas_scope_tables if "." in t}
-        if len(_scope_schemas) == 1:
-            canvas_scope_eff_schema = next(iter(_scope_schemas))
-
-    # A non-canvas investigation (e.g. a briefing "pull the thread") can scope to a
-    # specific schema the same way a canvas does: open the connection bound to that
-    # schema and inject the DEFAULT SCHEMA prefix below. Canvas scope wins when both
-    # are present.
-    scope_schema = canvas_scope_eff_schema or (schema_scope if not canvas_id else None)
+    # One scope resolver (ExecutionScope). A canvas pins its own connection + declared
+    # schema + table filter; a non-canvas investigation (e.g. a briefing "pull the thread")
+    # honours schema_scope instead (canvas wins when both are present). eff_schema derives
+    # the single owning schema of a schema-qualified table list so bare names + the explore
+    # linker's full-schema FK expansion can't leak to a sibling schema — the deep path used
+    # to leave this None (missimi deep answering from another demo dataset).
+    from aughor.canvas.scope import resolve_execution_scope
+    from aughor.tools.schema import build_canvas_schema_context
+    _es = resolve_execution_scope(connection_id, canvas_id, schema_scope=schema_scope,
+                                  schema_context_builder=build_canvas_schema_context)
+    connection_id = _es.connection_id
+    canvas_schema_context = _es.schema_context
+    scope_schema = _es.eff_schema
 
     try:
-        if scope_schema:
-            from aughor.db.connection import open_connection_for_with_schema
-            db = open_connection_for_with_schema(connection_id, schema_name=scope_schema)
-        else:
-            db = open_connection_for(connection_id)
+        db = _es.open()
     except KeyError as e:
         yield _sse("error", {"message": str(e)})
         return
@@ -2424,22 +2373,10 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
         yield _sse("error", {"message": f"Investigation is not paused (status: {inv.get('status')})"})
         yield _sse("done", {})
         return
-    # Resume with canvas schema override if applicable
-    canvas_scope_schema: str | None = None
-    if inv.get("canvas_id"):
-        try:
-            from aughor.canvas.store import get_canvas
-            canvas = get_canvas(inv["canvas_id"])
-            if canvas and canvas.scopes:
-                canvas_scope_schema = canvas.scopes[0].schema_name
-        except Exception:
-            pass
+    # Resume with the canvas scope (declared schema + derived owning-schema pin) if applicable.
+    from aughor.canvas.scope import resolve_execution_scope
     try:
-        if canvas_scope_schema:
-            from aughor.db.connection import open_connection_for_with_schema
-            db = open_connection_for_with_schema(inv["connection_id"], schema_name=canvas_scope_schema)
-        else:
-            db = open_connection_for(inv["connection_id"])
+        db = resolve_execution_scope(inv["connection_id"], inv.get("canvas_id")).open()
     except Exception as e:
         yield _sse("error", {"message": str(e)})
         yield _sse("done", {})

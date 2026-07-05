@@ -107,7 +107,9 @@ def _stub_agent(monkeypatch, checkpoint_values):
     class _DB:
         def close(self): pass
 
-    monkeypatch.setattr(inv_mod, "open_connection_for", lambda cid: _DB())
+    # Salvage now opens via ExecutionScope.open(), which imports from the canonical source —
+    # patch there (not the router re-export) so the stub takes.
+    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: _DB())
     agent = SimpleNamespace(get_state=lambda cfg: SimpleNamespace(values=checkpoint_values))
     monkeypatch.setattr(graph_mod, "build_graph_generic", lambda db, hitl=False: agent)
 
