@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 from aughor.agent.prompts_explore import (
     BUILD_LEDGER_PROMPT,
     DECOMPOSE_EXPLORATION_PROMPT,
+    PARALLEL_DECOMPOSITION_GUIDANCE,
     PLAN_SUBQ_PROMPT,
     REASON_OVER_RESULT_PROMPT,
     REFUTE_FINDING_PROMPT,
@@ -188,11 +189,16 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
     # Extract explicit user constraints from the question (re-use decompose pattern)
     constraint_section = "No explicit constraints detected."
 
+    # The parallel-wave executor (flag `explore.parallel_subq`) reads the plan's `depends_on`
+    # to decide what runs concurrently — so under the flag we steer the planner toward a wide,
+    # shallow dependency graph. Off → the prompt + downstream are byte-identical to the serial form.
+    parallel_on = _parallel_subq_on()
+
     # Resilience: the planner is the single point where an exploration most often
     # dies (LLM/provider hiccup or an assertion-style prompt that yields no chain).
     # Retry once with a corrective nudge, then fall back to a deterministic floor
     # chain so the investigation ALWAYS proceeds to real queries + synthesis.
-    sub_questions = _plan_exploration_chain(state, scan_section, constraint_section)
+    sub_questions = _plan_exploration_chain(state, scan_section, constraint_section, parallel_on)
     if not sub_questions:
         sub_questions = _floor_chain(state)
 
@@ -211,6 +217,15 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
     # contiguous Q1..Qn with no duplicate keys (planner can emit two 'Q3').
     sub_questions = _canonicalize_subq_ids(sub_questions[:MAX_SUBQ])
 
+    # Under the parallel flag: deterministic dependency hygiene (a landscape can't depend on a
+    # sibling) + log the realized wave layering so the achieved parallelism is measurable on the
+    # real path without an LLM-variance A/B. No-op / byte-identical on the serial path.
+    if parallel_on:
+        sub_questions = _normalize_depends_on(sub_questions)
+        sched = _wave_schedule(sub_questions)
+        logger.info("[explore] wave schedule: %d wave(s), widths %s (%d sub-questions)",
+                    len(sched), [len(w) for w in sched], len(sub_questions))
+
     return {
         "sub_questions": sub_questions,
         "current_subq_idx": 0,
@@ -225,16 +240,25 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
     }
 
 
-def _plan_exploration_chain(state: AgentState, scan_section: str, constraint_section: str) -> list[SubQuestion]:
+def _plan_exploration_chain(state: AgentState, scan_section: str, constraint_section: str,
+                            parallel_on: bool = False) -> list[SubQuestion]:
     """Run the decompose planner with one corrective retry. Never raises —
-    returns [] only if the LLM truly can't produce a valid SQL-answerable chain."""
+    returns [] only if the LLM truly can't produce a valid SQL-answerable chain.
+
+    ``parallel_on`` (the `explore.parallel_subq` flag) injects the wide-DAG guidance + a
+    dependency-graph system role; when off the prompt is byte-identical to the sequential form."""
     llm = get_provider("coder")
     base_user = DECOMPOSE_EXPLORATION_PROMPT.format(
         question=state["question"],
         schema=state["schema_context"],
         scan_section=scan_section,
         constraint_section=constraint_section,
+        parallelism_guidance=(PARALLEL_DECOMPOSITION_GUIDANCE if parallel_on else ""),
     )
+    system = ("You are a senior data analyst designing an investigation as a dependency graph of "
+              "sub-questions — independent lines of inquiry run in parallel, dependent ones in sequence."
+              if parallel_on else
+              "You are a senior data analyst designing a sequential investigative chain.")
     for attempt in range(2):
         user = base_user if attempt == 0 else (
             base_user
@@ -246,7 +270,7 @@ def _plan_exploration_chain(state: AgentState, scan_section: str, constraint_sec
         )
         try:
             plan: _ExplorationPlan = llm.complete(
-                system="You are a senior data analyst designing a sequential investigative chain.",
+                system=system,
                 user=user,
                 response_model=_ExplorationPlan,
             )
@@ -311,6 +335,54 @@ def _canonicalize_subq_ids(sqs: list[SubQuestion]) -> list[SubQuestion]:
                 remapped.append(earlier[-1])
         out.append(SubQuestion(**{**sq.model_dump(), "id": new_ids[i], "depends_on": remapped}))
     return out
+
+
+def _parallel_subq_on() -> bool:
+    """The `explore.parallel_subq` flag, resolved fail-safe (mirrors graph._parallel_subq_enabled —
+    a ledger read can fail in a bare test harness). Off → the serial decompose path, unchanged."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("explore.parallel_subq")
+    except Exception:
+        return False
+
+
+def _normalize_depends_on(sqs: list[SubQuestion]) -> list[SubQuestion]:
+    """Deterministic dependency hygiene for the wave scheduler. A `landscape` sub-question grounds
+    the whole investigation and cannot depend on a sibling, so its depends_on is cleared — a plan
+    that spuriously links it would otherwise push it out of the first wave and stall every dependent
+    behind it. We ONLY drop dependencies that provably cannot be real (dropping a genuine data
+    dependency would let a sub-question run before its input exists); real chain-widening is left to
+    the planner + the DAG guidance. Forward/dangling/duplicate refs are already removed by
+    _canonicalize_subq_ids, so the input here is a clean backward-only DAG."""
+    out: list[SubQuestion] = []
+    for sq in sqs:
+        if (getattr(sq, "purpose", "") or "").strip().lower() == "landscape" and (sq.depends_on or []):
+            out.append(SubQuestion(**{**sq.model_dump(), "depends_on": []}))
+        else:
+            out.append(sq)
+    return out
+
+
+def _wave_schedule(sqs: list[SubQuestion]) -> list[list[str]]:
+    """The deterministic wave layering the executor will follow, computed purely from depends_on:
+    wave 1 = every sub-question with no (in-chain) dependency; wave k = those whose deps all landed
+    in earlier waves. The observable measure of realized parallelism — the wave *widths* are what the
+    P-A+ prompt change is trying to grow. On the canonicalized DAG (backward-only refs, no cycles)
+    this exactly predicts the wave loop's `_ready_subqs` sequence; a dangling ref is treated as
+    satisfied and any residual cycle flushes as a final wave, so the layering always terminates."""
+    ids = {sq.id for sq in sqs}
+    pending = {sq.id: {d for d in (sq.depends_on or []) if d in ids} for sq in sqs}
+    order = [sq.id for sq in sqs]
+    done: set = set()
+    waves: list[list[str]] = []
+    while len(done) < len(order):
+        ready = [i for i in order if i not in done and pending[i] <= done]
+        if not ready:                       # unbreakable cycle — flush the remainder, never loop
+            ready = [i for i in order if i not in done]
+        waves.append(ready)
+        done.update(ready)
+    return waves
 
 
 # Sub-questions that only make sense with multiple time periods. Pruned pre-flight when
