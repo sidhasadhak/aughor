@@ -68,8 +68,17 @@ parallel, bounded by the P6 budget governor), then hypothesis testing and cross-
 **deterministic fan-out over an LLM supervisor/swarm** — consistent with our deterministic-first
 thesis. Full analysis + plan + guardrails: [`docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`](docs/PARALLEL_MULTIAGENT_GROUNDWORK.md).
 
-**Also queued** (from the same investigation-framework analysis): metric-aware dimension priority
-(scan the causal dimension, e.g. return *reason*, before descriptive ones) and auto-drill WHERE→WHY.
+**✅ Shipped 2026-07-05** (branch `2026-07-05-investigation-quality`, both investigation-framework
+follow-ups as one additive, flag-gated feature `AUGHOR_CAUSAL_DRILL`; default-off = byte-identical;
+full suite 2475 green): **metric-aware dimension priority** — `_prioritize_dimensions(causal_first=)`
+floats diagnostic dims (reason/condition/defect/fit) ahead of the descriptive taxonomy so they survive
+the per-phase query cap instead of falling to "other"; **auto-drill WHERE→WHY** — after the rate scan,
+`_causal_split` peels event-only dims (tautological as a rate) into the existing (live-proven)
+`_run_composition_lens` WHY lens, emitting a "Mechanism / Reason Scan — Why" phase instead of stopping
+at WHERE. Reuses `_is_event_dim`/`_run_composition_lens`; no graph change; fires only on a clean
+top-level scan. *Recommended before flipping the flag on by default: one live run on the canonical
+womenswear-returns investigation (the composition machinery is already live-proven via the multilens
+path; this validates it firing from the serial default path end-to-end).*
 
 **Shipped 2026-07-03** (branch `2026-07-02-ada-temporal-intake-grain`, merged; deterministic, full suite
 green — the **Deep Analysis report-quality arc**, see the "What we've built" entry below):
