@@ -82,7 +82,7 @@ interface WaterfallEntry {
   structural: boolean;
 }
 
-interface ADARecommendation {
+interface AnswerRecommendation {
   action: string;
   expected_impact: string;
   owner: string;
@@ -100,7 +100,7 @@ export interface AnswerReport {
   attribution_waterfall: WaterfallEntry[];
   confidence: "HIGH" | "MEDIUM" | "LOW";
   confidence_justification: string;
-  recommendations: ADARecommendation[];
+  recommendations: AnswerRecommendation[];
   data_gaps: string[];
   // Phase-2 structural trust artifacts (Orchestrator) — optional; older reports omit them.
   contradiction_report?: {
@@ -261,7 +261,7 @@ function WaterfallSection({ entries }: { entries: WaterfallEntry[] }) {
 
 // ── Recommended actions — numbered, bold-lead, muted trailing meta ─────────────
 
-function RecommendationsList({ recs }: { recs: ADARecommendation[] }) {
+function RecommendationsList({ recs }: { recs: AnswerRecommendation[] }) {
   if (!recs.length) return null;
   return (
     <ol className="flex flex-col gap-2.5">
