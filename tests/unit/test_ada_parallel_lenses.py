@@ -310,6 +310,72 @@ def test_flag_on_registers_multilens_node():
     assert "ada_cross_section_multilens" in nodes
 
 
+# ── WHY×WHERE interaction lens (flag ada.why_where_interaction) ─────────────────
+
+def _install_interaction_stubs(monkeypatch, *, why_findings=True, interaction_phase=True):
+    """Stub the rate + composition lenses (composition carries findings — the interaction gate needs
+    it) and the interaction lens (sentinel). No temporal axis. Returns the captured interaction args."""
+    def xsec(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
+             extra_dims=None, extra_schema=None, extra_directive=None, grain=None):
+        pid = (phase_meta or ("cross_section", "X", "🧭"))[0]
+        return {"investigation_phases": state.get("investigation_phases", []) + [{"phase_id": pid}],
+                "_cross_section_summary": f"WHERE::{pid}"}
+    def comp(state, conn, event_dims):
+        ph = {"phase_id": "cross_section_mechanism", "summary": "size/fit 42%"}
+        ph["findings"] = [{"title": "by reason"}] if why_findings else []
+        return ph
+    captured = {}
+    def interact(state, conn, where_summary, why_summary):
+        captured["where"], captured["why"] = where_summary, why_summary
+        return {"phase_id": "cross_section_interaction", "summary": "concentrates in luxury"} \
+            if interaction_phase else None
+    monkeypatch.setattr(inv, "ada_cross_section", xsec)
+    monkeypatch.setattr(inv, "_run_composition_lens", comp)
+    monkeypatch.setattr(inv, "_run_interaction_lens", interact)
+    monkeypatch.setattr(inv, "_resolve_temporal_axis", lambda s, c=None: None)
+    return captured
+
+
+def test_interaction_appends_and_gets_both_summaries_when_flag_on(monkeypatch):
+    captured = _install_interaction_stubs(monkeypatch)
+    monkeypatch.setenv("AUGHOR_ADA_WHY_WHERE_INTERACTION", "1")
+    out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
+    ids = [p["phase_id"] for p in out["investigation_phases"]]
+    assert ids[-1] == "cross_section_interaction"           # forward-chained last
+    assert captured["why"] == "size/fit 42%" and "WHERE::" in captured["where"]
+
+
+def test_interaction_off_by_default(monkeypatch):
+    _install_interaction_stubs(monkeypatch)
+    monkeypatch.delenv("AUGHOR_ADA_WHY_WHERE_INTERACTION", raising=False)
+    out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
+    assert "cross_section_interaction" not in [p["phase_id"] for p in out["investigation_phases"]]
+
+
+def test_interaction_skipped_without_why_findings(monkeypatch):
+    # composition ran but produced no findings → nothing to cross → no interaction (even flag-on)
+    _install_interaction_stubs(monkeypatch, why_findings=False)
+    monkeypatch.setenv("AUGHOR_ADA_WHY_WHERE_INTERACTION", "1")
+    out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
+    assert "cross_section_interaction" not in [p["phase_id"] for p in out["investigation_phases"]]
+
+
+def test_run_interaction_lens_crosses_reason_and_segment(monkeypatch):
+    # the lens hands run_analysis_phase a cross query with BOTH lens summaries as context
+    seen = {}
+    def rate_stub(conn, **kw):
+        seen["plan_user"], seen["phase_id"] = kw.get("plan_user", ""), kw.get("phase_id")
+        return inv._PhaseRun(ok=True, results=[])
+    monkeypatch.setattr(inv, "run_analysis_phase", rate_stub)
+    state = {"question": "Why are womenswear returns so high?", "connection_id": "t",
+             "schema_context": "lux.returns(reason)",
+             "_ada_intake": {"metric_label": "return rate", "filtered_schema": "lux.returns(reason)"}}
+    ph = inv._run_interaction_lens(state, object(), "luxury 40.5% vs off-price 27%", "size/fit 42% of returns")
+    assert seen["phase_id"] == "cross_section_interaction"
+    assert "luxury 40.5%" in seen["plan_user"] and "size/fit 42%" in seen["plan_user"]
+    assert ph["phase_id"] == "cross_section_interaction"
+
+
 # ── Temporal WHEN lens: axis resolver ──────────────────────────────────────────
 
 _TYPED = {
