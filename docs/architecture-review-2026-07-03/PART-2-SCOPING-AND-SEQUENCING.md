@@ -126,6 +126,46 @@ reversible commit per REC with a mechanical verify.
 
 ## Progress log
 
+### ◑ Wave 3 — U9 the ADA→answer rename (2026-07-05, branch `2026-07-05-u9-ada-report-rename`)
+
+**✅ U9 slice 1 — web type `ADAReport` → `AnswerReport` (type-layer, non-breaking).** Renamed the
+report type across `types.ts` + its consumers (`investigationStream.ts`, `HistoryDetailPanel.tsx`)
+**and the duplicate local `interface ADAReport` in `InvestigationReport.tsx`** (the review's exact
+"same type defined twice" complaint). Kept `export type ADAReport = AnswerReport` `@deprecated` one
+release. A type-only identifier rename → **tsc erases it; runtime is byte-identical** (not
+browser-observable), so tsc + the 3 web gates green is the conclusive verification. `ADARecommendation`
+left for a follow-up (less central; a `Recommendation` name risks a broad collision).
+
+**✅ U9 slice 2 — the wire rename `ada_report` → `answer_report` (SSE event + payload field).** The
+deep-investigate report crossed the wire as an `ada_report` event carrying an `ada_report` field — the
+internal ADA codename leaking to every client. Grounding first surfaced **two facts the doc's
+`ada_report`→`report` shorthand hid**: (1) `ada_report` (from `ada_synthesize`) and `report` (from the
+**classic** `synthesize` node) are **DISTINCT, both-active wire events** with different payloads +
+renderers (`InvestigationReportView` vs `ReportView`; both nodes wire to END in `agent/graph.py`), so a
+blind `ada_report`→`report` rename **collides** and mis-routes the ADA payload; (2) the wire has a
+**second consumer the doc's file list missed** — the MCP client (`mcp/client.py`). So the rename used a
+**collision-free distinct name** (`answer_report`, matching the `AnswerReport` type) done **lockstep
+across every consumer**, each keeping `ada_report` as a `@deprecated` fallback one release so nothing
+breaks mid-deploy:
+- **backend** `routers/investigations.py` — all 3 emit sites (375 salvage / 2005 cache / 2279 live) now
+  `_sse("answer_report", {"answer_report": …, "mode":"investigate", …})`; the value is unchanged.
+- **web** `investigationStream.ts` (dispatch + `summarisePayload`) + the `types.ts` event union handle
+  BOTH event names and read `answer_report ?? ada_report`. The `ADA_REPORT` action → `adaReport` state →
+  `InvestigationReportView` render path is **untouched** — only the transport name changed, so the
+  rendered report is byte-identical by construction.
+- **mcp client** folds either event/field.
+
+*Deliberately NOT renamed here (guardrail — never rename internals + the wire in one commit): the
+internal `AgentState.ada_report` field (read by cli/agent/router state) and the `kind="ada_report"`
+receipt storage keys (368/2295, internal). Those + the `hypothesis_id` strip + `api.gen.ts` regen +
+`ADARecommendation` are the remaining U9 follow-ups.* **Verified:** full backend suite 2407 pass, tsc +
+3 web gates green, ruff clean, MCP tests cover BOTH the new name and the deprecated alias, web app loads
+clean, and the live `/investigate` SSE stream emits `answer_report` (no `ada_report` leak) — payload
+sane (headline · phases · investigation_id · mode). **Live-verified in the browser (the guardrail's
+screenshot):** a fresh Deep run in the Luxury Retail Operations canvas (`11085f06`, 5m44s) streamed
+through the renamed wire and rendered the full report (headline "window-length artifact", executive
+summary, key numbers, High confidence, baseline section) with **zero console errors**.
+
 ### ✅ Wave 3 — U10: one SemanticContract (2026-07-05)
 
 **✅ REC-U10 — `aughor/semantic/contracts.py:SemanticContract` + two adapters.** A governed

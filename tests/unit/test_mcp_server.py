@@ -113,7 +113,7 @@ def test_deep_analysis_returns_report_and_receipt():
         "/investigate": httpx.Response(200, content=_sse([
             {"type": "start", "investigation_id": "inv9"},
             {"type": "hypotheses", "hypotheses": [{"text": "h1"}]},
-            {"type": "ada_report", "ada_report": {"findings": [{"x": 1}]}, "investigation_id": "inv9"},
+            {"type": "answer_report", "answer_report": {"findings": [{"x": 1}]}, "investigation_id": "inv9"},
             {"type": "done"},
         ])),
         "/ada/conn1/inv9/receipt": httpx.Response(200, json={"natural_key": "ada:conn1:inv9"}),
@@ -125,6 +125,22 @@ def test_deep_analysis_returns_report_and_receipt():
     assert res["report"] == {"findings": [{"x": 1}]}
     assert res["hypotheses"] == [{"text": "h1"}]
     assert res["receipt"]["natural_key"] == "ada:conn1:inv9"
+
+
+def test_deep_analysis_accepts_deprecated_ada_report_wire_alias():
+    # The old `ada_report` event/field is kept one release (REC-U9) — a client on the new
+    # code must still fold a stream from an older server.
+    routes = {
+        "/investigate": httpx.Response(200, content=_sse([
+            {"type": "start", "investigation_id": "inv9"},
+            {"type": "ada_report", "ada_report": {"findings": [{"x": 1}]}, "investigation_id": "inv9"},
+            {"type": "done"},
+        ])),
+        "/ada/conn1/inv9/receipt": httpx.Response(200, json={"natural_key": "ada:conn1:inv9"}),
+    }
+    res = _run(_client(routes).deep_analysis("why did margin fall", "conn1"))
+    assert res["report_kind"] == "ada"
+    assert res["report"] == {"findings": [{"x": 1}]}
 
 
 def test_deep_analysis_running_when_no_terminal_report():

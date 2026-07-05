@@ -372,9 +372,9 @@ def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str, s
                     payload_extra={"investigation_id": inv_id, "partial": True},
                 )
                 payload = ada_save if isinstance(ada, dict) else ada.model_dump()
-                return _sse("ada_report", {
-                    "ada_report": payload, "investigation_id": inv_id,
-                    "query_mode": "investigate", "partial": True,
+                return _sse("answer_report", {
+                    "answer_report": payload, "investigation_id": inv_id,
+                    "query_mode": "investigate", "mode": "investigate", "partial": True,
                 })
     except Exception:
         return None
@@ -1951,7 +1951,7 @@ async def _stream_investigation(
                 yield _sse("hypotheses", {"hypotheses": cached["hypotheses"]})
             qh = cached.get("query_history") or []
             if report_type == "investigate":
-                yield _sse("ada_report", {"ada_report": cached_report, "investigation_id": cached_id, "query_mode": "investigate", "from_cache": True, "cached_question": cached["question"], "cache_score": round(score, 3)})
+                yield _sse("answer_report", {"answer_report": cached_report, "investigation_id": cached_id, "query_mode": "investigate", "mode": "investigate", "from_cache": True, "cached_question": cached["question"], "cache_score": round(score, 3)})
             elif report_type == "explore":
                 yield _sse("explore_report", {"explore_report": cached_report, "sub_questions": cached_report.get("sub_questions", []), "subq_answers": cached_report.get("subq_answers", []), "query_count": cached.get("query_count", len(qh)), "investigation_id": cached_id, "query_mode": "explore", "from_cache": True, "cached_question": cached["question"], "cache_score": round(score, 3)})
             else:
@@ -2225,7 +2225,7 @@ async def _stream_investigation(
                 ada = merged["ada_report"]
                 qh = merged.get("query_history", [])
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
-                yield _sse("ada_report", {"ada_report": ada, "investigation_id": inv_id, "query_mode": "investigate"})
+                yield _sse("answer_report", {"answer_report": ada, "investigation_id": inv_id, "query_mode": "investigate", "mode": "investigate"})
                 try:
                     from aughor.llm.provider import get_provider as _gp
                     fq: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {ada.get('headline', '') if isinstance(ada, dict) else str(ada)[:200]}", response_model=_FollowUpBase)

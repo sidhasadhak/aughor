@@ -14,36 +14,36 @@
 
 ## 0 · Immediate next action ⏭️
 
-**Part 2 of the architecture review — the design-layer / eight-plane / workspace-consolidation arc (PR #101).**
-Shipped: **Wave 1** (four enforced web CI gates — design-token · formatting · raw-element · tsc — +
-one-palette); **Wave 2** (renderer registry · chart source-footers · `StatusChip` · the `<Workspace>`
-shell + the **Operations & Data workspace folds**, live-verified); **Wave 4** (**all three AL planes —
-Trust `aughor/trust` · Capability `aughor/capability` · Semantic `aughor/semantic/context.py` — built,
-conformance-tested, AND live-wired flag-gated**; the deep ADA generator converged onto one shared
-`sql_generate`; the AL-05 `semantic_context` consumer; a second real Capability domain `metadata`).
-**Live-verified end-to-end on real data** (`/query/capability-answer` → correct SQL + answer). Full
-log: [`PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md).
+**Part 2 of the architecture review — SHIPPED through Wave 3 (PRs #101 → #100 → #102 → the U9 PR).**
+- **Wave 1** four enforced web CI gates (design-token · formatting · raw-element · tsc) + one-palette.
+- **Wave 2** renderer registry · chart source-footers · `StatusChip` · the `<Workspace>` shell + the
+  Operations & Data workspace folds (live-verified).
+- **Wave 4** all three AL planes (Trust `aughor/trust` · Capability `aughor/capability` · Semantic
+  `aughor/semantic/context.py`) built, conformance-tested, AND live-wired flag-gated; one shared
+  `sql_generate`; the `metadata` Capability domain. Live-verified (`/query/capability-answer`).
+- **Wave 3 (2026-07-05):** **NOM-11** `ExecutionScope` (4 router call sites → one value object, −62
+  lines, salvage/resume sibling-schema leak fixed) · **U10 first slice** `SemanticContract` (+
+  `SemanticContext.contracts()`, catalog ∪ ontology deduped on `/query/semantic-context`) · **U9
+  slices 1–2** — the web report type `ADAReport`→`AnswerReport` AND the wire rename
+  `ada_report`→`answer_report` (SSE event + field, all 3 emit sites, lockstep across web + MCP client,
+  old name kept `@deprecated` one release; **live-verified**: real SSE capture emits `answer_report`
+  with zero old-name leaks, and a fresh Deep run rendered end-to-end in the browser, 0 console errors).
+- Plus **DATA-06 depth** + the react peer-dep `overrides` fix (PR #100 — strict `npm ci`, README
+  install simplified back to plain `npm install`).
+Full log: [`PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md).
 
-**⏭️ NEXT SESSION — remaining Part 2, in order (the dev servers are scriptable via `preview_*` on :8000/:3000):**
-1. **Wave 3 · U9 — the ~49-file `ADA` rename (highest blast radius, saved for last).** Rename at the
-   *serialization boundary*: `ada_report`→`report` + `mode:"investigate"`, strip `ADA`/`hypothesis_id`
-   from web-bound payloads; regen `web/lib/api.gen.ts`; `types.ts` → `AnswerReport`/`Fact`. Do it
-   **boundary-first with `@deprecated` aliases, one mode per commit, screenshot each answer mode.**
-2. ~~**U10 — `semantic/contracts.py:SemanticContract`**~~ **✅ FIRST SLICE SHIPPED 2026-07-05**: the
-   contract type + `from_metric_definition`/`from_ontology_metric` adapters, leveraged via
-   `SemanticContext.contracts()` (catalog ∪ ontology, deduped, surfaced as `contract_count` on
-   `/query/semantic-context`). **Remaining (deferred, flag-gated):** repoint planning/enforcement/display
-   at the one type (the invasive, high-blast-radius half).
-3. ~~**NOM-11** — one `ExecutionScope` (`canvas_id`/`connection_id`/`scope_schema`/`table_filter`
-   precedence).~~ **✅ SHIPPED 2026-07-05** (`aughor/canvas/scope.py`): four hand-rolled canvas-scope
-   blocks in `routers/investigations.py` collapsed onto one value object (−62 lines), fixing a
-   salvage/resume sibling-schema leak. **NOM-07** (shared `Safeguard` base) **deferred** — `PlaybookEntry`
-   doesn't fit the scheduled-check mold and it touches persisted models (see the Part-2 log).
-4. **PR #100** (`2026-07-04-data06-depth-web-peerdep` — DATA-06 depth + the react peer-dep item 2b) is
-   still open; it and #101 both touched `ci.yml`/`web/package.json`, so **rebase #100 on the new main +
-   resolve the conflict** — its `overrides` fix then lets the README drop the `--legacy-peer-deps` flag.
+**⏭️ NEXT — in order:**
+1. **U9 follow-ups (small, guardrail-separated internals).** The wire is clean; the internals still say
+   ADA: rename `AgentState.ada_report` (+ graph/cli/router state reads) in one internal-only commit;
+   strip `hypothesis_id` from web-bound payloads; regen `web/lib/api.gen.ts` (the `/ada/...` receipt
+   route name); `ADARecommendation`→`AnswerRecommendation`; and after one release, drop the
+   `ada_report` deprecated wire alias (web `case` + MCP fallback + `types.ts` alias).
+2. **U10 — the invasive half (flag-gated):** repoint planning/enforcement/display at `SemanticContract`
+   (one metric type platform-wide — the 20-year ontology bet's type unification).
+3. **Parallelize the investigation loop** (below — the biggest wall-clock win queued).
 *Deferred with reasons (see the log): `CanvasWorkspace` re-express (rich header + eager-mount don't fit
-the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment).*
+the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment),
+NOM-07 (`PlaybookEntry` doesn't fit the scheduled-check mold; touches persisted models).*
 
 **Also queued — parallelize the investigation loop with LangGraph's map-reduce / multi-agent primitives.**
 The womenswear-returns investigation took **~8.4 min** — not from slow SQL (dimension queries

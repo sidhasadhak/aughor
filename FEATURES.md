@@ -172,6 +172,13 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   and a **Semantic plane** (`aughor/semantic/context.py:resolve → SemanticContext`) that resolves
   metrics/ontology/profile/KB **once** per run instead of ad-hoc, read back by the planner. Live-verified
   end-to-end (`POST /query/capability-answer`). Each plane is a swap-point; a new capability = register one impl.
+- **One noun model at the boundaries** (Part 2 Wave 3) — **`ExecutionScope`** (`aughor/canvas/scope.py`):
+  the canvas/connection/schema/table-filter precedence resolved once (was hand-rolled at 4 router call
+  sites; fixes a salvage/resume sibling-schema leak). **`SemanticContract`** (`aughor/semantic/contracts.py`):
+  the one governed-metric type both the curated catalog and the ontology serialize to, unified via
+  `SemanticContext.contracts()` (catalog wins on collision). **`answer_report`** — the deep-report SSE
+  event/field renamed from the internal `ada_report` codename across every consumer (web + MCP), old name
+  kept as a `@deprecated` wire alias one release; the web report type is now `AnswerReport`.
 - **Job Kernel / event spine** — state machine + heartbeats + boot recovery + idempotency + scope
   cancellation; investigations, monitors & briefs run as first-class kernel jobs with crash-recovery (boot salvage).
 - **Real-time SSE streaming**, **resumable investigations**, **human-in-the-loop interrupt**.

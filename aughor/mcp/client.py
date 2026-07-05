@@ -238,8 +238,8 @@ class AughorClient:
                     acc["investigation_id"] = ev.get("investigation_id") or acc["investigation_id"]
                 elif t == "hypotheses":
                     acc["hypotheses"] = ev.get("hypotheses")
-                elif t == "ada_report":
-                    acc["report"], acc["report_kind"] = ev.get("ada_report"), "ada"
+                elif t in ("answer_report", "ada_report"):  # ada_report = deprecated wire alias (U9)
+                    acc["report"], acc["report_kind"] = ev.get("answer_report") or ev.get("ada_report"), "ada"
                     acc["from_cache"] = bool(ev.get("from_cache"))
                     acc["investigation_id"] = ev.get("investigation_id") or acc["investigation_id"]
                 elif t == "explore_report":

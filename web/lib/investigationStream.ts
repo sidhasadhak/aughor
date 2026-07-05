@@ -6,7 +6,7 @@
 // place that interprets the /investigate (and /chat) event stream, so the two
 // hooks can never drift.
 
-import type { ADAReport, ExplorationReport, Hypothesis, InvestigationPhase, SubQuestion, SubQuestionAnswer } from "@/lib/types";
+import type { AnswerReport, ExplorationReport, Hypothesis, InvestigationPhase, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import type { PlaybookRef, FindingDossier } from "@/lib/api";
 
 // Re-export so existing imports keep working
@@ -93,7 +93,7 @@ export interface ChatTurn {
   // Investigate mode — ADA phases stream in progressively
   statusText: string | null;
   phases: InvestigationPhase[];
-  adaReport: ADAReport | null;
+  adaReport: AnswerReport | null;
   report: Record<string, unknown> | null;
   queryMode: string | null;
 
@@ -173,7 +173,7 @@ export type ChatAction =
   | { type: "CHART_CONFIG"; chartConfig: Record<string, unknown> }
   | { type: "STATUS_TEXT";  text: string }
   | { type: "PHASE";        phase: InvestigationPhase }
-  | { type: "ADA_REPORT";   report: ADAReport; queryMode: string; investigationId: string | null }
+  | { type: "ADA_REPORT";   report: AnswerReport; queryMode: string; investigationId: string | null }
   | { type: "EXPLORE_REPORT"; report: ExplorationReport; subQuestions: SubQuestion[]; subqAnswers: SubQuestionAnswer[]; investigationId: string | null }
   | { type: "DOSSIER_REPORT"; dossier: FindingDossier; insightId: string | null }
   | { type: "REPORT";       report: Record<string, unknown>; queryMode: string; investigationId: string | null }
@@ -322,7 +322,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 function summarisePayload(type: string, p: Record<string, unknown>): string {
   switch (type) {
     case "phase_complete": return `phase: ${(p.phase as { phase_id?: string })?.phase_id ?? "?"}`;
-    case "ada_report":     return `headline: ${String((p.ada_report as { headline?: string })?.headline ?? "").slice(0, 60)}`;
+    case "answer_report":
+    case "ada_report":     return `headline: ${String(((p.answer_report ?? p.ada_report) as { headline?: string })?.headline ?? "").slice(0, 60)}`;
     case "explore_report": return `narrative: ${String((p.explore_report as { narrative?: string })?.narrative ?? "").slice(0, 60)}`;
     case "route":          return `${p.depth ?? "?"} · ${String(p.why ?? "").slice(0, 40)}`;
     case "clarify":        return `${p.source ?? "?"} · ${String(p.question ?? "").slice(0, 40)}`;
@@ -412,9 +413,10 @@ export async function consumeStream(
             case "hypotheses":
               dispatch({ type: "HYPOTHESES", hypotheses: (p.hypotheses as Hypothesis[]) ?? [] });
               break;
-            case "ada_report":
+            case "answer_report":
+            case "ada_report":   // deprecated wire alias, kept one release (REC-U9)
               if (p.from_cache) dispatch({ type: "CACHE_META", fromCache: true, cachedQuestion: (p.cached_question as string) ?? null });
-              dispatch({ type: "ADA_REPORT", report: p.ada_report as ADAReport, queryMode: (p.query_mode as string) ?? "investigate", investigationId: (p.investigation_id as string) ?? null });
+              dispatch({ type: "ADA_REPORT", report: (p.answer_report ?? p.ada_report) as AnswerReport, queryMode: (p.query_mode as string) ?? "investigate", investigationId: (p.investigation_id as string) ?? null });
               break;
             case "dossier_report":
               dispatch({ type: "DOSSIER_REPORT", dossier: p.dossier as FindingDossier, insightId: (p.insight_id as string) ?? null });
