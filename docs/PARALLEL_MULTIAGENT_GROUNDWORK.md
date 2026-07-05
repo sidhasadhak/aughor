@@ -197,9 +197,16 @@ is already deterministic, so an LLM supervisor would add latency + cost for a de
 - **P-A ✅ SHIPPED (2026-07-02): parallel *waves* over the explore sub-question chain.** Independent
   sub-questions run as concurrent branches reduced through the existing `operator.add` state — but via
   in-process `ContextThreadPoolExecutor`, **not** `Send` (see §0 for why: contextvar-borne budget/metering).
-  Measured 1.48× on a width-3 wave. **Next within P-A:** teach the decompose planner to emit accurate
-  `depends_on` (wider waves), then apply the same wave pattern to hypothesis testing / per-dimension
-  cross-section mini-agents. Target: N independent units in ~1× wall-clock instead of ~N×.
+  Measured 1.48× on a width-3 wave.
+- **P-A+ ✅ SHIPPED (2026-07-05, branch `2026-07-05-explore-wider-waves`): wider waves.** The 1.48×
+  cap was the *planner's* sequential bias (deep `depends_on` chains → narrow waves), not the executor.
+  Fix, all under `explore.parallel_subq` (byte-identical off): (1) the decompose prompt gains a flag-only
+  `{parallelism_guidance}` block steering a **wide, shallow DAG** — independent cuts of one landscape
+  depend only on the landscape, never each other; (2) `_normalize_depends_on` deterministically clears a
+  `landscape`'s deps (it can't depend on a sibling) so a spurious link can't stall wave 1 — only drops
+  provably-unreal deps; (3) `_wave_schedule` layers the DAG into waves and logs the widths, so realized
+  parallelism is measurable on the real path without an LLM-variance A/B. **Next within P-A:** apply the
+  wave pattern to hypothesis testing / per-dimension cross-section; live-A/B the new wave widths.
 - **P-B: parallelize the pre-flight retrievals** (KB / playbook / prior-analyses / scan) as concurrent
   nodes — near-free wall-clock (little/no extra LLM cost).
 - **P-C: refactor `run_analysis_phase` into a phase subgraph** so phases compose and can run concurrently.
