@@ -44,45 +44,26 @@ def _norm(name: str) -> str:
     return (name or "").strip().lower().replace(" ", "_").replace("-", "_")
 
 
-def resolve_canonical_metrics(
-    connection_id: str = "",
-    schema_name: Optional[str] = None,
-    *,
-    catalog=None,
-    ontology=None,
-    schema_text: Optional[str] = None,
-) -> list[CanonicalMetric]:
-    """Merge the catalog + ontology metric stores into one deduplicated, precedence-ranked
-    list (sorted by name). ``catalog`` (iterable of MetricDefinition) and ``ontology``
-    (an OntologyGraph) are injectable for testing; otherwise loaded live and best-effort.
+# ── Source loaders — the three governed-metric stores, loaded once and shared by BOTH the
+#    CanonicalMetric resolver and the contract-native resolver (REC-U10). Extracting them here
+#    is what lets the two resolvers stay in lockstep instead of drifting: they consume the same
+#    raw source models and differ only in the (cheap) mapping to their target type. ─────────────
 
-    ``schema_text`` lets a caller that ALREADY holds the connection's schema pass it in,
-    so the catalog schema-filter below doesn't re-introspect it. That re-introspection was
-    the dominant per-investigation latency cost on big warehouses (a 75k-schema fetch took
-    ~17s, paid on EVERY call, duplicating the schema the caller had already cached).
-    """
-    by_name: dict[str, CanonicalMetric] = {}
+def _load_catalog_metrics(connection_id: str, schema_text: Optional[str], catalog) -> list:
+    """Curated catalog (data/metrics.json) — highest authority, schema-filtered.
 
-    def _consider(m: CanonicalMetric) -> None:
-        key = _norm(m.name)
-        if not key or not (m.sql or "").strip():
-            return
-        cur = by_name.get(key)
-        if cur is None or m.rank > cur.rank:
-            by_name[key] = m
-
-    # 1. Curated catalog (data/metrics.json) — highest authority.
+    ``catalog`` is injectable for testing; otherwise loaded live and best-effort. Metrics are
+    GLOBAL, so filter to the target schema by table+column existence — one connection's curated
+    ``revenue=SUM(total_amount)`` must NOT inject into TPC-H (whose orders table has
+    ``o_totalprice``, not ``total_amount``). ``schema_text`` lets a caller that already holds the
+    schema pass it in, avoiding a re-introspection (the dominant per-investigation latency cost —
+    a 75k-schema fetch took ~17s, paid on EVERY call)."""
     if catalog is None:
         try:
             from aughor.semantic.metrics import list_metrics
             catalog = list_metrics()
         except Exception:
             catalog = []
-
-    # Metrics are GLOBAL. Filter the catalog to the target schema by table+column
-    # existence so one connection's metric can't pollute another's prompt (the
-    # #2 leak class: a curated revenue=SUM(total_amount) metric must NOT inject
-    # into TPC-H, whose orders table has o_totalprice, not total_amount).
     catalog = list(catalog or [])
     if catalog and connection_id:
         _schema_text = schema_text or ""
@@ -110,8 +91,63 @@ def resolve_canonical_metrics(
         if _schema_text:
             from aughor.semantic.metrics import filter_metrics_to_schema
             catalog = filter_metrics_to_schema(catalog, _schema_text)
+    return list(catalog or [])
 
-    for md in catalog or []:
+
+def _load_ontology_metrics(connection_id: str, schema_name: Optional[str], ontology) -> list:
+    """The ontology's metrics (LLM-enriched, gated by M24c verification). ``ontology`` (an
+    OntologyGraph) is injectable for testing; otherwise loaded live and best-effort."""
+    if ontology is None and connection_id:
+        try:
+            from aughor.ontology.store import load_latest_ontology
+            ontology = load_latest_ontology(connection_id, schema_name)
+        except Exception:
+            ontology = None
+    return list((getattr(ontology, "metrics", {}) or {}).values()) if ontology is not None else []
+
+
+def _load_profile_north_stars(connection_id: str, schema_name: Optional[str]) -> list:
+    """The connection's GOVERNED, build-time-audited north-star metrics (the same value_sql the
+    Briefing/KPI strip run). These are the source of truth for connection-specific metrics like
+    missimi's gross margin; injecting them is what lets ADA BIND to the real formula instead of
+    re-deriving (RC2). Best-effort — a missing profile just drops this source."""
+    if not connection_id:
+        return []
+    try:
+        from aughor.profile.store import load as _load_profile
+        _prof = _load_profile(connection_id, schema_name)
+        return list(getattr(_prof, "north_star_metrics", None) or [])
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "profile north-star injection is best-effort; catalog + ontology "
+                 "metrics still resolve without it", counter="canonical.north_star")
+        return []
+
+
+def resolve_canonical_metrics(
+    connection_id: str = "",
+    schema_name: Optional[str] = None,
+    *,
+    catalog=None,
+    ontology=None,
+    schema_text: Optional[str] = None,
+) -> list[CanonicalMetric]:
+    """Merge the catalog + ontology + profile north-star stores into one deduplicated,
+    precedence-ranked list (sorted by name). ``catalog`` / ``ontology`` are injectable for
+    testing; otherwise loaded live and best-effort. See the source loaders for the schema-filter
+    + latency notes."""
+    by_name: dict[str, CanonicalMetric] = {}
+
+    def _consider(m: CanonicalMetric) -> None:
+        key = _norm(m.name)
+        if not key or not (m.sql or "").strip():
+            return
+        cur = by_name.get(key)
+        if cur is None or m.rank > cur.rank:
+            by_name[key] = m
+
+    # 1. Curated catalog — highest authority.
+    for md in _load_catalog_metrics(connection_id, schema_text, catalog):
         _consider(CanonicalMetric(
             name=getattr(md, "name", "") or "",
             label=getattr(md, "label", "") or getattr(md, "name", ""),
@@ -124,14 +160,7 @@ def resolve_canonical_metrics(
         ))
 
     # 2. Ontology metrics — verified outrank unverified; both below the catalog.
-    if ontology is None and connection_id:
-        try:
-            from aughor.ontology.store import load_latest_ontology
-            ontology = load_latest_ontology(connection_id, schema_name)
-        except Exception:
-            ontology = None
-    onto_metrics = (getattr(ontology, "metrics", {}) or {}).values() if ontology is not None else []
-    for om in onto_metrics:
+    for om in _load_ontology_metrics(connection_id, schema_name, ontology):
         verified = bool(getattr(om, "verified", False))
         _consider(CanonicalMetric(
             name=getattr(om, "id", "") or "",
@@ -143,35 +172,62 @@ def resolve_canonical_metrics(
             verified=verified,
         ))
 
-    # 3. BusinessProfile north-star metrics — the connection's GOVERNED, build-time-audited
-    # formulas (the same value_sql the Briefing/KPI strip run). These are the source of
-    # truth for connection-specific metrics like missimi's gross margin; injecting them is
-    # what lets ADA BIND to the real formula instead of re-deriving (RC2). The full value_sql
-    # (with its FROM/WHERE) is the most faithful reference — it also makes the absence of a
-    # 'quantity' column explicit.
-    if connection_id:
-        try:
-            from aughor.profile.store import load as _load_profile
-            _prof = _load_profile(connection_id, schema_name)
-            for nsm in (getattr(_prof, "north_star_metrics", None) or []):
-                vsql = (getattr(nsm, "value_sql", "") or "").strip()
-                if not vsql:
-                    continue
-                _consider(CanonicalMetric(
-                    name=getattr(nsm, "name", "") or "",
-                    label=getattr(nsm, "name", "") or "",
-                    sql=vsql,
-                    unit=getattr(nsm, "unit_or_range", "") or "",
-                    source="profile_governed",
-                    verified=True,
-                    caveats=(getattr(nsm, "definition", "") or "")[:160],
-                ))
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "profile north-star injection is best-effort; catalog + ontology "
-                     "metrics still resolve without it", counter="canonical.north_star")
+    # 3. BusinessProfile north-star metrics — the connection's governed formulas (above the
+    # ontology, below the human catalog). The full value_sql (with its FROM/WHERE) is the most
+    # faithful reference.
+    for nsm in _load_profile_north_stars(connection_id, schema_name):
+        vsql = (getattr(nsm, "value_sql", "") or "").strip()
+        if not vsql:
+            continue
+        _consider(CanonicalMetric(
+            name=getattr(nsm, "name", "") or "",
+            label=getattr(nsm, "name", "") or "",
+            sql=vsql,
+            unit=getattr(nsm, "unit_or_range", "") or "",
+            source="profile_governed",
+            verified=True,
+            caveats=(getattr(nsm, "definition", "") or "")[:160],
+        ))
 
     return sorted(by_name.values(), key=lambda m: m.name)
+
+
+def resolve_contracts(
+    connection_id: str = "",
+    schema_name: Optional[str] = None,
+    *,
+    catalog=None,
+    ontology=None,
+    schema_text: Optional[str] = None,
+) -> list:
+    """The contract-native twin of ``resolve_canonical_metrics`` (REC-U10): resolve the SAME
+    three governed-metric stores into one deduped, precedence-ranked ``list[SemanticContract]`` —
+    the one type planning/enforcement/display point at. Precedence (highest first): curated
+    catalog > profile-governed > verified ontology > unverified ontology, deduped by normalized
+    key. Shares the source loaders (so it can't drift from the canonical resolver) but carries the
+    FULL contract — thresholds, additivity, divergence rules — that the ``CanonicalMetric`` shape
+    dropped. Fail-open per entry; never raises."""
+    from aughor.kernel.errors import tolerate
+    from aughor.semantic.contracts import SemanticContract, dedup_by_rank
+
+    out: list = []
+    for md in _load_catalog_metrics(connection_id, schema_text, catalog):
+        try:
+            out.append(SemanticContract.from_metric_definition(md))
+        except Exception as exc:
+            tolerate(exc, "resolve_contracts: catalog metric skipped", counter="canonical.contracts")
+    for om in _load_ontology_metrics(connection_id, schema_name, ontology):
+        try:
+            out.append(SemanticContract.from_ontology_metric(om))
+        except Exception as exc:
+            tolerate(exc, "resolve_contracts: ontology metric skipped", counter="canonical.contracts")
+    for nsm in _load_profile_north_stars(connection_id, schema_name):
+        try:
+            out.append(SemanticContract.from_north_star_metric(nsm))
+        except Exception as exc:
+            tolerate(exc, "resolve_contracts: north-star metric skipped", counter="canonical.contracts")
+
+    return dedup_by_rank(out)
 
 
 def render_canonical_metrics_block(metrics, *, include_unverified: bool = False) -> str:
@@ -191,11 +247,45 @@ def render_canonical_metrics_block(metrics, *, include_unverified: bool = False)
     return "\n".join(lines)
 
 
+def render_contracts_block(contracts, *, include_unverified: bool = False) -> str:
+    """The contract-native twin of ``render_canonical_metrics_block`` — renders a
+    ``list[SemanticContract]`` to the SAME prompt block, byte-for-byte. The render-authority
+    signal is the contract's ``injectable`` property, which is defined to equal the legacy
+    ``CanonicalMetric.verified`` exactly (catalog/profile authoritative by provenance; ontology
+    only once self-verified), so a flag flip is a pure no-op on the emitted text. ``key`` fills
+    the ``name`` slot (they're the same identifier from each source)."""
+    usable = [c for c in contracts if (c.sql or "").strip() and (c.injectable or include_unverified)]
+    if not usable:
+        return ""
+    lines = ["CANONICAL METRICS — use these EXACT formulas; never re-derive a metric listed here:"]
+    for c in usable:
+        unit = f" [{c.unit}]" if c.unit else ""
+        tag = "" if c.injectable else " (unverified — use only if no verified form exists)"
+        lines.append(f"  - {c.key}{unit} = {c.sql}{tag}")
+        if c.caveats:
+            lines.append(f"      caveat: {c.caveats}")
+    return "\n".join(lines)
+
+
+def _contract_live() -> bool:
+    """Whether the planning path renders from the one SemanticContract (REC-U10 invasive half).
+    Fail-safe to the legacy CanonicalMetric path if the flag store is unreachable."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("semantic.contract_live")
+    except Exception:
+        return False
+
+
 def canonical_metrics_block(connection_id: str = "", schema_name: Optional[str] = None,
                             schema_text: Optional[str] = None) -> str:
     """Convenience: resolve + render in one call (the form callers inject). No-op safe.
     Pass ``schema_text`` when the caller already holds the schema to avoid a costly
-    re-introspection (see resolve_canonical_metrics)."""
+    re-introspection (see resolve_canonical_metrics). When ``semantic.contract_live`` is on this
+    renders from the unified SemanticContract instead — byte-identical output (REC-U10)."""
+    if _contract_live():
+        return render_contracts_block(
+            resolve_contracts(connection_id, schema_name, schema_text=schema_text))
     return render_canonical_metrics_block(
         resolve_canonical_metrics(connection_id, schema_name, schema_text=schema_text))
 
@@ -229,9 +319,17 @@ def unified_metric_grounding(connection_id: str = "", schema_name: Optional[str]
         tolerate(exc, "unified grounding: governed-catalog block best-effort; "
                  "canonical metrics still inject", counter="canonical.unified_catalog")
     try:
-        extra = [m for m in resolve_canonical_metrics(connection_id, schema_name, schema_text=schema_text)
-                 if m.source != "catalog"]   # catalog already rendered above with its governance
-        block = render_canonical_metrics_block(extra)
+        # catalog already rendered above (build_metrics_block) with its governance — so this half
+        # renders only the north-star + ontology formulas. Under semantic.contract_live it resolves
+        # from the unified SemanticContract; byte-identical to the CanonicalMetric path (REC-U10).
+        if _contract_live():
+            extra = [c for c in resolve_contracts(connection_id, schema_name, schema_text=schema_text)
+                     if c.source != "catalog"]
+            block = render_contracts_block(extra)
+        else:
+            extra = [m for m in resolve_canonical_metrics(connection_id, schema_name, schema_text=schema_text)
+                     if m.source != "catalog"]
+            block = render_canonical_metrics_block(extra)
         if block:
             parts.append(block)
     except Exception as exc:

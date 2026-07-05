@@ -30,6 +30,7 @@ FLAG_ENV = {
     "trust.verify_facade": "AUGHOR_TRUST_FACADE",
     "trust.verify_live": "AUGHOR_TRUST_VERIFY_LIVE",
     "semantic.resolve_live": "AUGHOR_SEMANTIC_RESOLVE_LIVE",
+    "semantic.contract_live": "AUGHOR_SEMANTIC_CONTRACT_LIVE",
     "capability.pipeline_live": "AUGHOR_CAPABILITY_PIPELINE_LIVE",
 }
 
@@ -78,6 +79,10 @@ FLAG_META = {
     "semantic.resolve_live": {
         "label": "Semantic plane resolved at the router",
         "description": "Resolve the Semantic plane (metrics · ontology · profile · KB) once when a deep investigation is seeded and attach the SemanticContext to the run state, so every node reads one consistent context instead of re-consulting ad-hoc. Off by default (AL-05 live migration).",
+    },
+    "semantic.contract_live": {
+        "label": "Unified metric contract (planning)",
+        "description": "Render the governed-metric grounding block from the one SemanticContract type (catalog ∪ profile north-star ∪ ontology, deduped by precedence) instead of the parallel CanonicalMetric shape. Byte-identical output today — this repoints the planning path at the single metric contract, the 20-year ontology bet's type unification (REC-U10). Off by default while the migration lands.",
     },
     "capability.pipeline_live": {
         "label": "Capability plane answer path",
