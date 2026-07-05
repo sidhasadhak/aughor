@@ -297,42 +297,94 @@ def _part_exceeds_whole(rows, columns=None) -> str | None:
     return None
 
 
+def _salient_number_pairs(text: str) -> list:
+    """(token, float) for every salient number the narration asserts — currency, comma-grouped
+    counts, percentages. The token is kept for human-readable messages."""
+    out = []
+    for tok in _CLAIM_NUM_RE.findall(text or ""):
+        v = _safe_float(re.sub(r"[\$,%\s]", "", tok))
+        if v is not None:
+            out.append((tok, v))
+    return out
+
+
+def _result_cells(rows) -> list:
+    """Flatten every numeric cell from the result (row cap keeps it cheap on wide results)."""
+    cells = []
+    for r in (rows or [])[:200]:
+        row = r.values() if isinstance(r, dict) else r
+        cells.extend(v for v in (_safe_float(c) for c in row) if v is not None)
+    return cells
+
+
+def _dedup_cells(cells: list, cap: int = 48) -> list:
+    """Deduped, bounded subset for the O(n²) derivation scan."""
+    uniq, seen = [], set()
+    for c in cells:
+        k = round(c, 6)
+        if k not in seen:
+            seen.add(k)
+            uniq.append(c)
+        if len(uniq) >= cap:
+            break
+    return uniq
+
+
+def _number_grounded(v: float, cells: list, uniq: list) -> bool:
+    """A number is grounded if it matches a cell (raw / ±percent-fraction, within 1%) OR is
+    DERIVED from a cell pair — a % change ((b-a)/a·100), a share (b/a·100) or a raw delta (b-a).
+    Crediting derivations stops the check crying wolf on valid arithmetic (e.g. a '+1,506%'
+    growth computed from €986K → €15.84M that appears in no single cell)."""
+    def close(a, b):
+        return b != 0 and abs(a - b) <= abs(b) * 0.01 + 1e-6
+    for c in cells:
+        for cand in (c, c * 100.0, c / 100.0):  # percent ↔ fraction
+            if close(v, cand):
+                return True
+    if v == 0.0:
+        return True
+    for a in uniq:
+        if a == 0:
+            continue
+        for b in uniq:
+            for cand in ((b - a) / a * 100.0, abs(b - a) / abs(a) * 100.0, b / a * 100.0, b - a):
+                if close(v, cand):
+                    return True
+    return False
+
+
 def _claim_numbers_grounded(finding_text: str, rows) -> str | None:
     """Conservative claim-grounding: every salient number the NARRATION asserts (currency,
     comma-grouped counts, percentages) should trace to the actual result. Flags ONLY gross
-    fabrication — ≥2 salient numbers asserted and NONE found in the rows (a percentage is
-    matched against both its raw value and its 0..1 fraction; magnitudes within 1%). Rounding,
-    abbreviations ($1.3M) and a single derived figure never trip it — false positives here
-    would drop good insights, so the bar is deliberately high."""
+    fabrication — ≥2 salient numbers asserted and NONE grounded (raw or derived) in the rows.
+    Rounding, abbreviations ($1.3M) and a single derived figure never trip it — false positives
+    here would drop good insights, so the bar is deliberately high."""
     if not finding_text or not rows:
         return None
-    vals = []
-    for tok in _CLAIM_NUM_RE.findall(finding_text):
-        v = _safe_float(re.sub(r"[\$,%\s]", "", tok))
-        if v is not None:
-            vals.append((tok, v))
-    if len(vals) < 2:
+    pairs = _salient_number_pairs(finding_text)
+    if len(pairs) < 2:
         return None
-    # flatten numeric cells from the result
-    cells = []
-    for r in rows[:200]:
-        row = r.values() if isinstance(r, dict) else r
-        cells.extend(v for v in (_safe_float(c) for c in row) if v is not None)
+    cells = _result_cells(rows)
     if not cells:
         return None
-
-    def grounded(v):
-        for c in cells:
-            for cand in (c, c * 100.0, c / 100.0):  # percent ↔ fraction
-                if cand == 0:
-                    continue
-                if abs(v - cand) <= abs(cand) * 0.01 + 1e-6:
-                    return True
-        return v == 0.0
-    if not any(grounded(v) for _, v in vals):
+    uniq = _dedup_cells(cells)
+    if not any(_number_grounded(v, cells, uniq) for _, v in pairs):
         return (f"claim not grounded: none of the asserted figures "
-                f"{[t for t, _ in vals][:4]} appear in the query result")
+                f"{[t for t, _ in pairs][:4]} appear in the query result")
     return None
+
+
+def grounded_fraction(finding_text: str, rows) -> float:
+    """Fraction of the text's salient numbers grounded (raw or derived) in the result cells.
+    Used to break narrator↔query binding ties by NUMERIC evidence: a finding binds to the query
+    whose result actually contains its numbers, so a z-score card can't inherit a PoP finding's
+    numbers just because they share a dimension. 0.0 when there are no numbers or no cells."""
+    pairs = _salient_number_pairs(finding_text)
+    cells = _result_cells(rows)
+    if not pairs or not cells:
+        return 0.0
+    uniq = _dedup_cells(cells)
+    return sum(1 for _, v in pairs if _number_grounded(v, cells, uniq)) / len(pairs)
 
 
 # RC4 — implausible ratio/turnover magnitude. A turnover or multiplier is bounded by

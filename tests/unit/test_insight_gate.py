@@ -73,6 +73,18 @@ class TestClaimGrounding:
         rows = [["0.663"]]                                      # 66.3% ↔ 0.663
         assert _claim_numbers_grounded("margin 66.3% and 66.2%", rows) is None
 
+    def test_derived_percent_change_not_flagged(self):
+        # the GMV repro: +1,506% is (15.84M - 986K)/986K·100 — a valid derivation from the
+        # cells, not a fabrication. Must NOT flag just because the % appears in no single cell.
+        rows = [["luxury", "15840000", "986000"], ["ultra", "15240000", "964000"]]
+        assert _claim_numbers_grounded(
+            "Luxury grew +1,506% and ultra +1,481% over the window", rows) is None
+
+    def test_true_fabrication_still_flagged_when_derivation_aware(self):
+        # two asserted figures, neither present nor derivable from the cells → still flagged
+        rows = [["A", "10"], ["B", "20"]]
+        assert _claim_numbers_grounded("Total was $8,451,207 across 44,910 orders", rows)
+
 
 class TestVerifyInsightEndToEnd:
     def test_tautology_dropped(self):

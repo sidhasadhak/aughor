@@ -919,11 +919,18 @@ def _label_tokens(label: str, extra_stop=frozenset()) -> set:
     }
 
 
-def _align_narrator_findings(queries, narrator_findings, extra_stop=frozenset()):
+def _align_narrator_findings(queries, narrator_findings, extra_stop=frozenset(), result_rows=None):
     """Bind each query to the narrator finding describing its SAME dimension.
     Returns (aligned, by_token): aligned[i] is the finding model for queries[i] (or
     None when no trustworthy match exists); by_token[i] is True when the match was
-    made on a shared dimension token (so the query's own title is authoritative)."""
+    made on a shared dimension token (so the query's own title is authoritative).
+
+    When ``result_rows`` is given, ties on dimension-token overlap are broken by NUMERIC
+    grounding — each finding binds to the query whose result cells actually contain its
+    numbers. Without this, two queries over the SAME dimension but a different measure
+    (e.g. a z-score-by-tier and a PoP-change-by-tier) tie on {tier} and the finding can bind
+    to the wrong measure, so a z-score card inherits the PoP finding's figures (its title is
+    then overwritten to the query's, masking the swap)."""
     n, m = len(queries), len(narrator_findings)
     aligned = [None] * n
     by_token = [False] * n
@@ -931,13 +938,19 @@ def _align_narrator_findings(queries, narrator_findings, extra_stop=frozenset())
         return aligned, by_token
     q_tok = [_label_tokens(getattr(q, "title", ""), extra_stop) for q in queries]
     f_tok = [_label_tokens(getattr(f, "title", ""), extra_stop) for f in narrator_findings]
+    gmat = None
+    if result_rows:
+        from aughor.explorer.verify import grounded_fraction
+        gmat = [[grounded_fraction(getattr(narrator_findings[fi], "interpretation", "") or "",
+                                   result_rows[qi] if qi < len(result_rows) else None)
+                 for fi in range(m)] for qi in range(n)]
     used = set()
     cands = sorted(
-        ((len(q_tok[qi] & f_tok[fi]), qi, fi)
+        ((len(q_tok[qi] & f_tok[fi]), (gmat[qi][fi] if gmat else 0.0), qi, fi)
          for qi in range(n) for fi in range(m) if q_tok[qi] & f_tok[fi]),
-        key=lambda c: (-c[0], c[1], c[2]),
+        key=lambda c: (-c[0], -c[1], c[2], c[3]),
     )
-    for _ov, qi, fi in cands:
+    for _ov, _g, qi, fi in cands:
         if aligned[qi] is None and fi not in used:
             aligned[qi] = narrator_findings[fi]
             by_token[qi] = True
@@ -964,7 +977,10 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
     query that produced the rows whenever the match is dimension-certain, so a card can
     never describe a different slice than its chart."""
     extra = _label_tokens(metric_label)
-    aligned, by_token = _align_narrator_findings([q for q, _ in results], narrator_findings, extra)
+    aligned, by_token = _align_narrator_findings(
+        [q for q, _ in results], narrator_findings, extra,
+        result_rows=[getattr(r, "rows", None) for _, r in results],
+    )
     out: list[InvestigationFinding] = []
     for i, (q, r) in enumerate(results):
         model = aligned[i]
@@ -1511,6 +1527,25 @@ def _extract_data_date_range(scan_context: str, table: str = "") -> tuple:
     return min(dates), max(dates)
 
 
+def _resolve_probe_ref(table: str, date_column: str) -> tuple[str, str]:
+    """Resolve (table_ref, column) for a cheap date probe. The date column frequently lives in a
+    DIFFERENT table than the metric table (the metric is in order_items but order_purchase_ts is in
+    orders, reachable only via a join). Probing the metric table then errors ("column not found"),
+    the bounds come back empty, and the window clamp silently no-ops. When date_column is qualified,
+    probe the table it names. Shared by the span and density probes; pure string logic."""
+    col = str(date_column).split(".")[-1].replace('"', "").replace(";", "")
+    _dc = str(date_column).replace('"', "").replace(";", "").strip()
+    _dparts = [p for p in _dc.split(".") if p]
+    if len(_dparts) >= 3:
+        ref = ".".join(_dparts[:-1])                       # schema.table.col → schema.table
+    elif len(_dparts) == 2:
+        _sch = str(table).replace('"', "").split(".")
+        ref = f"{_sch[0]}.{_dparts[0]}" if len(_sch) >= 2 else _dparts[0]   # borrow metric schema
+    else:
+        ref = str(table).replace('"', "").replace(";", "")
+    return ref.replace(";", ""), col
+
+
 def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
     """Authoritative (min, max) of the metric table's date column via one cheap
     probe. The DATA PORTRAIT is empty on the ADA path (scan_context is never
@@ -1523,23 +1558,7 @@ def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
     try:
         from aughor.db.connection import open_connection_for
         db = open_connection_for(conn_id)
-        col = str(date_column).split(".")[-1].replace('"', "").replace(";", "")
-        # The date column frequently lives in a DIFFERENT table than the metric table — the metric
-        # is in order_items but order_purchase_ts is in orders, reachable only via a join. Probing
-        # the metric table then errors ("column not found"), the bounds come back empty, and the
-        # window clamp/re-anchor silently no-ops — which is exactly how an investigation ends up
-        # observing the OLDEST year (2022) and comparing to a non-existent prior year (2021) when the
-        # data actually runs to 2025. When date_column is qualified, probe the table it names.
-        _dc = str(date_column).replace('"', "").replace(";", "").strip()
-        _dparts = [p for p in _dc.split(".") if p]
-        if len(_dparts) >= 3:
-            ref = ".".join(_dparts[:-1])                       # schema.table.col → schema.table
-        elif len(_dparts) == 2:
-            _sch = str(table).replace('"', "").split(".")
-            ref = f"{_sch[0]}.{_dparts[0]}" if len(_sch) >= 2 else _dparts[0]   # borrow metric schema
-        else:
-            ref = str(table).replace('"', "").replace(";", "")
-        ref = ref.replace(";", "")
+        ref, col = _resolve_probe_ref(table, date_column)
         res = db.execute("intake_span", f"SELECT MIN({col}), MAX({col}) FROM {ref}")
         if res.error or not res.rows or len(res.rows[0]) < 2:
             return None, None
@@ -1549,6 +1568,71 @@ def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
         return None, None
     except Exception:
         return None, None
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
+def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, end: str) -> "int | None":
+    """Count of distinct POPULATED months of the metric's date column within [start, end]. A
+    cheap, dialect-robust probe (COUNT DISTINCT of the 'YYYY-MM' text prefix). Returns None on any
+    failure (fail-open, like the span probe). Feeds the density guard: a window whose calendar span
+    survived the clamp but whose real data is sparse (a gap / slow ramp) is still a thin PoP baseline."""
+    if not conn_id or not table or not date_col or not start or not end:
+        return None
+    s, e = str(start)[:10], str(end)[:10]
+    if not (re.match(r"^\d{4}-\d{2}-\d{2}$", s) and re.match(r"^\d{4}-\d{2}-\d{2}$", e)):
+        return None
+    db = None
+    try:
+        from aughor.db.connection import open_connection_for
+        db = open_connection_for(conn_id)
+        ref, col = _resolve_probe_ref(table, date_col)
+        res = db.execute(
+            "intake_density",
+            f"SELECT COUNT(DISTINCT substr(CAST({col} AS VARCHAR), 1, 7)) "
+            f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}'",
+        )
+        if res.error or not res.rows or res.rows[0][0] is None:
+            return None
+        return int(res.rows[0][0])
+    except Exception:
+        return None
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
+def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: str) -> "list | None":
+    """Ordered [(YYYY-MM, row_count)] for the metric's date column within [start, end]. Cheap and
+    dialect-robust (GROUP BY the 'YYYY-MM' text prefix). Feeds the trailing-partial guard. Returns
+    None on any failure (fail-open, like the other probes)."""
+    if not conn_id or not table or not date_col or not start or not end:
+        return None
+    s, e = str(start)[:10], str(end)[:10]
+    if not (re.match(r"^\d{4}-\d{2}-\d{2}$", s) and re.match(r"^\d{4}-\d{2}-\d{2}$", e)):
+        return None
+    db = None
+    try:
+        from aughor.db.connection import open_connection_for
+        db = open_connection_for(conn_id)
+        ref, col = _resolve_probe_ref(table, date_col)
+        res = db.execute(
+            "intake_monthly",
+            f"SELECT substr(CAST({col} AS VARCHAR), 1, 7) AS m, COUNT(*) AS n "
+            f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}' GROUP BY 1 ORDER BY 1",
+        )
+        if res.error or not res.rows:
+            return None
+        return [(str(r[0]), int(r[1])) for r in res.rows if r[0] is not None]
+    except Exception:
+        return None
     finally:
         if db is not None:
             try:
@@ -1569,6 +1653,24 @@ def _question_pins_period(question: str, obs_start: str, obs_end: str) -> bool:
         return False  # no explicit year → relative framing, safe to re-anchor
     obs_years = {(obs_start or "")[:4], (obs_end or "")[:4]}
     return bool(q_years & obs_years)
+
+
+# When the (clipped) prior window is shorter than this fraction of the observation
+# window, an absolute period-over-period total or % change between them is a duration
+# artifact (a sum scales with length), NOT a run-rate shift — flag it and steer the
+# planner to average per-period run-rate rather than headlining the raw totals.
+_POP_DURATION_MISMATCH = 0.66
+# Stable machine-readable marker embedded in the coverage note when the mismatch fires.
+# The synthesis reads it back to ENFORCE the run-rate reframe deterministically (rather
+# than trusting the narrator to heed an advisory note). Single source of truth for both.
+_POP_MISMATCH_SIGNATURE = "DURATION ARTIFACTS"
+# The density guard only fires on a comparison window of at least this many calendar months —
+# below it, "few populated periods" is normal (a genuinely short window), not a sparse baseline.
+_MIN_SPARSE_SPAN_MONTHS = 4
+# Trailing-partial guard: the final observation month is flagged as likely-incomplete when its row
+# count falls below this fraction of the window's typical (median) month, over at least N months.
+_TRAILING_PARTIAL_RATIO = 0.5
+_MIN_TRAILING_MONTHS = 3
 
 
 def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
@@ -1669,6 +1771,39 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
                     f"(requested {cs_} → {ce_})"
                 )
 
+    # ── Duration-mismatch guard ────────────────────────────────────────────────
+    # After clipping, the prior window can end up FAR shorter than the observation
+    # (e.g. a "last 56 months" run whose prior-56-month window was clipped to the ~3
+    # real months that exist before the data starts). The re-anchor step labelled it
+    # "Prior 56 months", but it is now a stub — so an absolute period-over-period total
+    # or % change between the two is a duration artifact (~18× purely from length), not
+    # a run-rate shift. Relabel the comparison honestly and tell the planner to report
+    # an AVERAGE per-period run-rate instead of headlining the raw totals.
+    try:
+        _cs2 = (getattr(intake, "comparison_start", "") or "")[:10]
+        _ce2 = (getattr(intake, "comparison_end", "") or "")[:10]
+        _obs_s = (intake.observation_start or "")[:10]
+        _obs_e = (intake.observation_end or "")[:10]
+        _is_same = (_cs2 == _obs_s and _ce2 == _obs_e)   # comparison already collapsed onto obs
+        if _cs2 and _ce2 and not _is_same:
+            _obs_days = (datetime.fromisoformat(_obs_e) - datetime.fromisoformat(_obs_s)).days + 1
+            _cmp_days = (datetime.fromisoformat(_ce2) - datetime.fromisoformat(_cs2)).days + 1
+            if (_obs_days > 0 and _cmp_days > 0
+                    and min(_obs_days, _cmp_days) < _POP_DURATION_MISMATCH * max(_obs_days, _cmp_days)):
+                _obs_m = max(1, round(_obs_days / 30.44))
+                _cmp_m = max(1, round(_cmp_days / 30.44))
+                intake.comparison_label = f"Prior ~{_cmp_m} month(s) available (data begins {dmin[:10]})"
+                notes.append(
+                    f"comparison window (~{_cmp_m} month(s), {_cs2} → {_ce2}) is far shorter than the "
+                    f"observation window (~{_obs_m} months) — absolute period-over-period totals and % "
+                    f"changes between them are {_POP_MISMATCH_SIGNATURE}, not run-rate shifts; report "
+                    f"AVERAGE per-period run-rate and do NOT headline the absolute totals or their % change"
+                )
+    except (ValueError, TypeError) as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "duration-mismatch guard is best-effort on malformed dates",
+                 counter="intake.duration_mismatch_parse_failed")
+
     try:
         cov_days = (datetime.fromisoformat(intake.observation_end)
                     - datetime.fromisoformat(intake.observation_start)).days + 1
@@ -1705,6 +1840,151 @@ def _validate_intake_windows(intake, dmin, dmax):
             f"observation_end and explain in intake_notes that there is no prior period to compare against."
         )
     return None
+
+
+def _months_between(a: str, b: str) -> "int | None":
+    """Inclusive calendar-month span between two ISO dates (a ≤ b): (y2−y1)·12 + (m2−m1) + 1."""
+    try:
+        ya, ma = int(a[:4]), int(a[5:7])
+        yb, mb = int(b[:4]), int(b[5:7])
+    except (ValueError, TypeError, IndexError):
+        return None
+    return (yb - ya) * 12 + (mb - ma) + 1
+
+
+def _sparse_comparison_decision(intake, span_months, populated) -> "str | None":
+    """Pure decision half of the density guard: when a comparison window spans enough calendar
+    months but only a fraction are populated, its absolute total is a thin baseline. Relabel the
+    window honestly and return a run-rate note carrying the mismatch signature (so the enforcing
+    reframe applies). Returns None when the window is dense enough or the inputs are unknown."""
+    if span_months is None or populated is None:
+        return None
+    if span_months >= _MIN_SPARSE_SPAN_MONTHS and 0 <= populated < _POP_DURATION_MISMATCH * span_months:
+        intake.comparison_label = (
+            f"Prior window sparsely populated ({populated} of ~{span_months} months have data)"
+        )
+        return (
+            f"the comparison window spans ~{span_months} months but only {populated} contain data — its "
+            f"absolute total is a thin baseline, so period-over-period totals and % changes are "
+            f"{_POP_MISMATCH_SIGNATURE}, not run-rate shifts; use AVERAGE per-populated-period run-rate"
+        )
+    return None
+
+
+def _flag_sparse_comparison(intake, conn_id: str, table: str, date_col: str,
+                            span_guard_fired: bool) -> "str | None":
+    """Density guard — complements the date-SPAN guard in `_clamp_intake_to_coverage`. A comparison
+    window whose calendar span survived the clamp but is SPARSELY populated (an internal gap, or a
+    slow product ramp) is still a thin PoP baseline that the span check cannot see. Probes populated
+    months in the FINAL comparison window and, on a sparse result, relabels + returns a run-rate note.
+    Skipped when the span guard already fired (no double-flag), for a cross-sectional intake, or when
+    no distinct prior period exists."""
+    if span_guard_fired or getattr(intake, "cross_sectional", False):
+        return None
+    cs = (getattr(intake, "comparison_start", "") or "")[:10]
+    ce = (getattr(intake, "comparison_end", "") or "")[:10]
+    os_ = (getattr(intake, "observation_start", "") or "")[:10]
+    oe_ = (getattr(intake, "observation_end", "") or "")[:10]
+    if not cs or not ce or (cs == os_ and ce == oe_):   # no distinct prior period
+        return None
+    span_months = _months_between(cs, ce)
+    populated = _populated_month_count(conn_id, table, date_col, cs, ce)
+    return _sparse_comparison_decision(intake, span_months, populated)
+
+
+def _trailing_partial_decision(intake, monthly_counts) -> "str | None":
+    """Pure decision half of the trailing-partial guard: when the LAST month of the observation
+    window carries far fewer rows than the window's typical (median) month, it is likely an
+    INCOMPLETE period that reads as a false drop. Flag it honestly (do NOT overclaim a real
+    decline — a genuine crash looks the same, so the note asks the reader to verify completeness).
+    Returns a note, else None."""
+    if not monthly_counts or len(monthly_counts) < _MIN_TRAILING_MONTHS:
+        return None
+    counts = [n for _, n in monthly_counts]
+    last_m, last_n = monthly_counts[-1]
+    prior = sorted(counts[:-1])
+    if not prior:
+        return None
+    mid = (prior[len(prior) // 2] if len(prior) % 2
+           else (prior[len(prior) // 2 - 1] + prior[len(prior) // 2]) / 2)
+    if mid > 0 and last_n < _TRAILING_PARTIAL_RATIO * mid:
+        intake.observation_label = (
+            (getattr(intake, "observation_label", "") or "").rstrip()
+            + f" — final period {last_m} may be incomplete"
+        ).strip()
+        return (
+            f"the final observation period {last_m} has {last_n} rows vs a typical ~{mid:.0f}/month — it "
+            f"is likely an INCOMPLETE (partial) period, so a drop in the last period may be a reporting "
+            f"artifact, not a real decline; verify the period is complete before attributing a decline to it"
+        )
+    return None
+
+
+def _flag_trailing_partial(intake, conn_id: str, table: str, date_col: str) -> "str | None":
+    """Trailing-partial guard — the profiler computes `trailing_partial` for the whole table, but
+    the intake window selection never consumed it, so an incomplete final month reads as a sharp
+    drop. Probe the observation window's monthly volumes and flag a likely-incomplete final period.
+    Skipped for a cross-sectional intake or a window with no dates."""
+    if getattr(intake, "cross_sectional", False):
+        return None
+    os_ = (getattr(intake, "observation_start", "") or "")[:10]
+    oe_ = (getattr(intake, "observation_end", "") or "")[:10]
+    if not os_ or not oe_:
+        return None
+    return _trailing_partial_decision(intake, _monthly_counts(conn_id, table, date_col, os_, oe_))
+
+
+def _cap_confidence_on_trust_advisory(synth, phases) -> bool:
+    """Report-quality wiring gap #2: a report cannot honestly stand at HIGH confidence while a
+    trust advisory (an unverified/flagged finding) is shown unreconciled beneath it. Cap
+    HIGH → MEDIUM when any finding carries a ``trust_caveat``; returns True when it demoted.
+    Deterministic, no-op unless confidence is currently HIGH. Deliberately downstream of the
+    claim-grounding check being derived-number-aware (fix #3) so a valid % derivation, which no
+    longer trips the caveat, never costs confidence."""
+    if not synth or getattr(synth, "confidence", "") != "HIGH":
+        return False
+    caveats = [f.get("trust_caveat") for p in (phases or []) for f in (p.get("findings") or [])
+               if f.get("trust_caveat")]
+    if not caveats:
+        return False
+    synth.confidence = "MEDIUM"
+    synth.confidence_justification = (
+        "Capped below HIGH — a trust advisory fired on the evidence: "
+        + str(caveats[0])
+        + (f" (+{len(caveats) - 1} more)" if len(caveats) > 1 else "")
+        + ". " + (getattr(synth, "confidence_justification", "") or "")
+    ).strip()
+    return True
+
+
+def _reframe_on_pop_duration_mismatch(synth, intake_data, question: str = "") -> bool:
+    """Report-quality wiring gap #1 (enforcing half): when the coverage clamp flagged a duration
+    mismatch (a short prior window against a long observation), an absolute period-over-period
+    total or its % change is a duration artifact. Rather than trust the narrator to heed the
+    advisory note, DETERMINISTICALLY neutralise the absolute-change decomposition and reframe the
+    summary to run-rate — mirrors the cross-sectional reframe below. Keyed off the coverage note's
+    stable signature so it fires exactly when the deterministic guard did. Returns True when it acted."""
+    if not synth or not intake_data:
+        return False
+    if _POP_MISMATCH_SIGNATURE not in (intake_data.get("intake_notes") or ""):
+        return False
+    # an absolute-change waterfall between mismatched-length windows is meaningless
+    synth.attribution_waterfall = []
+    _reframe = (
+        "The observation and prior windows differ sharply in length, so absolute totals and their "
+        "% change between the two periods are duration artifacts, not run-rate shifts — read the "
+        "figures below as average per-period run-rate. "
+    )
+    _es = synth.executive_summary or ""
+    if "duration artifact" not in _es.lower() and "run-rate" not in _es.lower():
+        synth.executive_summary = (_reframe + _es).strip()[:900]
+    _gap = ("The prior period is far shorter than the observation window, so no like-for-like absolute "
+            "period-over-period comparison is possible; average per-period run-rate is used instead.")
+    _gaps = list(getattr(synth, "data_gaps", None) or [])
+    if not any("run-rate" in g.lower() for g in _gaps):
+        _gaps.insert(0, _gap)
+    synth.data_gaps = _gaps
+    return True
 
 
 _DIAGNOSTIC_RE = re.compile(
@@ -2080,8 +2360,21 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         _cmin = min([d for d in (_smin, _pmin) if d], default="")
         _cmax = max([d for d in (_smax, _pmax) if d], default="")
         _cov_note = _clamp_intake_to_coverage(intake, _cmin, _cmax, question=state.get("question", ""))
-        if _cov_note:
-            intake.intake_notes = f"{_cov_note} {intake.intake_notes or ''}".strip()
+        # Density guard: a comparison window whose date-SPAN survived the clamp but is sparsely
+        # populated (internal gap / slow ramp) is still a thin PoP baseline — probe it. Skipped when
+        # the span guard already flagged the same window (no double-flag).
+        _dens_note = _flag_sparse_comparison(
+            intake, state.get("connection_id") or "", intake.metric_table or "",
+            intake.date_column or "",
+            span_guard_fired=bool(_cov_note and _POP_MISMATCH_SIGNATURE in _cov_note),
+        )
+        # Trailing-partial guard: an incomplete final observation month reads as a false drop.
+        _tp_note = _flag_trailing_partial(
+            intake, state.get("connection_id") or "", intake.metric_table or "", intake.date_column or "",
+        )
+        _notes = " ".join(n for n in (_cov_note, _dens_note, _tp_note) if n)
+        if _notes:
+            intake.intake_notes = f"{_notes} {intake.intake_notes or ''}".strip()
 
     if intake is None:
         phase = _phase_result(
@@ -4460,6 +4753,9 @@ def ada_synthesize(state: AgentState) -> dict:
                 "attributed and no recommendation can be made. " + (synth.executive_summary or "")
             ).strip()[:600]
 
+    # Trust-advisory floor (report-quality wiring gap #2) — cap HIGH → MEDIUM when an advisory fired.
+    _cap_confidence_on_trust_advisory(synth, phases)
+
     # F3/F2 — a CROSS-SECTIONAL scan ranks the metric ACROSS dimensions at a point in time; it
     # measures no temporal change, so:
     #   F3: never emit a "share of total CHANGE" attribution waterfall — there is nothing to
@@ -4484,6 +4780,10 @@ def ada_synthesize(state: AgentState) -> dict:
             if not any("period-over-period" in g.lower() for g in _gaps):
                 _gaps.insert(0, _gap)
             synth.data_gaps = _gaps
+
+    # Enforcing half of report-quality fix #1: if the coverage clamp flagged a duration mismatch,
+    # deterministically reframe to run-rate — don't rely on the narrator heeding the advisory note.
+    _reframe_on_pop_duration_mismatch(synth, intake_data, question)
 
     def _coerce_amount_sign(label: str, pct: float) -> str:
         """Keep a waterfall amount_label's leading sign in agreement with its

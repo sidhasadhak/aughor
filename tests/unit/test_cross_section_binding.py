@@ -95,6 +95,34 @@ def test_label_tokens_collapse_to_dimension():
     assert I._label_tokens("By City") == {"city"}
 
 
+def test_numeric_grounding_breaks_same_dimension_tie():
+    """Two queries over the SAME dimension (brand tier) but different MEASURES — a z-score
+    query and a PoP-change query — tie on {tier}. Each narrator finding must bind to the query
+    whose cells actually contain its numbers, not by list position (which swapped them and let
+    a z-score card inherit the PoP finding's figures)."""
+    q_zscore = _q("Total GMV by brand tier")
+    q_pop = _q("Total GMV by brand tier")
+    r_zscore = _R(["tier", "obs_gmv", "baseline_mean", "z_score"], [["ultra", 445844, 254385, 5.05]], "q_z")
+    r_pop = _R(["tier", "obs", "prior", "delta"], [["ultra", 445844, 541198, -95354]], "q_p")
+    results = [(q_zscore, r_zscore), (q_pop, r_pop)]
+    # narrator lists the PoP finding FIRST — the old index tie-break would bind it to q_zscore
+    f_pop = _f("GMV by brand tier", "Ultra GMV fell -95,354 EUR from 541,198 to 445,844, a -17.6% decline.")
+    f_zscore = _f("GMV by brand tier",
+                  "Ultra observation GMV of 445,844 sits 5.05 std above its baseline mean of 254,385.")
+    narrator = [f_pop, f_zscore]
+
+    findings = I._assemble_phase_findings(results, narrator, "baseline", metric_label="GMV")
+
+    # the z-score card carries the z-score prose (baseline/std), NEVER the PoP decline
+    assert "baseline" in findings[0]["interpretation"].lower()
+    assert "95,354" not in findings[0]["interpretation"]
+    # the PoP card carries the decline prose
+    assert "95,354" in findings[1]["interpretation"]
+    # and each is now internally grounded → no false trust caveat
+    assert findings[0]["trust_caveat"] is None
+    assert findings[1]["trust_caveat"] is None
+
+
 def test_temporal_titles_keep_narrator_label():
     """A time-series query (no dimension token) should keep the narrator's richer title,
     matched positionally — title grounding only fires on a dimension-certain match."""
