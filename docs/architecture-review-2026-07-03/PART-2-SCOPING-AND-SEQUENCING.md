@@ -126,6 +126,31 @@ reversible commit per REC with a mechanical verify.
 
 ## Progress log
 
+### ✅ Wave 3 — NOM-11: one ExecutionScope value object (2026-07-05)
+
+**✅ NOM-11 — `aughor/canvas/scope.py:ExecutionScope` + `resolve_execution_scope`.** The
+canvas-scope precedence (declared `scopes[0].schema_name` → the single owning schema derived
+from a schema-qualified table list `missimi.orders`→`missimi` → a non-canvas `schema_scope`)
+was hand-rolled at **four** call sites in `routers/investigations.py` (`_stream_chat`,
+`_stream_investigation`, crash-salvage, resume). Two of them — **salvage + resume** — only read
+`schema_name` and skipped the table-list derivation, so a table-list-scoped canvas being
+*recovered or resumed* pinned nothing and could answer an unqualified `FROM orders` from a
+sibling schema (the exact leak the live paths guard against). One frozen value object now owns
+the precedence: `eff_schema` is derived (not stored), `.open()` pins `search_path` when it
+resolves, `resolve_execution_scope` is fail-open. All four blocks migrated (**−62 lines** in the
+router); salvage + resume now pin like the live paths (bug fixed). **14 unit tests +
+124 investigation/canvas tests + ratchet + ruff green.** *(The `_stub_agent` test patches
+`aughor.db.connection.open_connection_for` — the source `.open()` imports — not the router
+re-export.)*
+
+**⏸ NOM-07 (shared `Safeguard` base for Monitor/Brief/Playbook) — deferred with reason.**
+`Monitor` and `BriefSubscription` share a scheduled-safeguard shape (`conn_id`+`name`+cron+
+`enabled`+timestamps+last-run status), but **`PlaybookEntry` doesn't fit** — it's a conditional
+recommendation with no schedule, no connection binding, no `enabled`. A base that fits 2 of 3
+subjects and touches *persisted* pydantic models (store round-trips, serialization) is more risk
+than payoff right now; NOM-11 was the clean, high-value half of the pair. Revisit if a third
+genuinely-scheduled safeguard appears.
+
 ### ◑ Wave 4 in progress — the eight functional planes (AL)
 
 **◑ AL live-path migrations — all three planes now run ON a live answer path, flag-gated (2026-07-04).**
