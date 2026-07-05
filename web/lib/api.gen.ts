@@ -328,6 +328,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/answer/{connection_id}/{inv_id}/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Answer Receipt
+         * @description K3-wide Trust Receipt for an agentic (deep-analysis) answer report — executed
+         *     queries, input tables, registered metrics + B-7 enforcement verdict. 404 for
+         *     investigations produced before receipts.
+         */
+        get: operations["get_answer_receipt_answer__connection_id___inv_id__receipt_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ada/{connection_id}/{inv_id}/receipt": {
         parameters: {
             query?: never;
@@ -337,9 +359,9 @@ export interface paths {
         };
         /**
          * Get Ada Receipt
-         * @description K3-wide Trust Receipt for an agentic (ADA) report — executed queries,
-         *     input tables, registered metrics + B-7 enforcement verdict. 404 for
-         *     investigations produced before receipts.
+         * @deprecated
+         * @description @deprecated Use `/answer/{connection_id}/{inv_id}/receipt`. Kept one release
+         *     for the `ADA`→answer rename (REC-U9).
          */
         get: operations["get_ada_receipt_ada__connection_id___inv_id__receipt_get"];
         put?: never;
@@ -5573,6 +5595,38 @@ export interface operations {
             header?: never;
             path: {
                 session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_answer_receipt_answer__connection_id___inv_id__receipt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                inv_id: string;
             };
             cookie?: never;
         };

@@ -2809,16 +2809,25 @@ def get_chat_session_turns(session_id: str):
     return turns
 
 
-@router.get("/ada/{connection_id}/{inv_id}/receipt")
-def get_ada_receipt(connection_id: str, inv_id: str):
-    """K3-wide Trust Receipt for an agentic (ADA) report — executed queries,
-    input tables, registered metrics + B-7 enforcement verdict. 404 for
+@router.get("/answer/{connection_id}/{inv_id}/receipt")
+def get_answer_receipt(connection_id: str, inv_id: str):
+    """K3-wide Trust Receipt for an agentic (deep-analysis) answer report — executed
+    queries, input tables, registered metrics + B-7 enforcement verdict. 404 for
     investigations produced before receipts."""
     from aughor.kernel.ledger import Ledger
+    # natural_key stays `ada:` — a persisted storage identity; renaming it would
+    # orphan every receipt written before this rename. Only the URL path is de-ADA'd.
     rec = Ledger.default().receipt(f"ada:{connection_id}:{inv_id}")
     if rec is None:
         raise HTTPException(status_code=404, detail="No receipt for this report")
     return rec
+
+
+@router.get("/ada/{connection_id}/{inv_id}/receipt", deprecated=True)
+def get_ada_receipt(connection_id: str, inv_id: str):
+    """@deprecated Use `/answer/{connection_id}/{inv_id}/receipt`. Kept one release
+    for the `ADA`→answer rename (REC-U9)."""
+    return get_answer_receipt(connection_id, inv_id)
 
 
 @router.get("/chat/{connection_id}/{turn_id}/receipt")
