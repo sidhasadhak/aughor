@@ -52,6 +52,46 @@ def test_flag_gating(monkeypatch):
     assert inv._causal_drill_enabled() is False
 
 
+# ── multilens improvement #1: causal-relevance in the WHY composition ───────────
+
+def test_select_why_dims_drops_operational_noise():
+    # the real womenswear event dims: reason (cause), condition (cause), carrier + refund_method (ops)
+    dims = ["lux.returns.reason", "lux.return_logistics.carrier",
+            "lux.return_logistics.condition", "lux.return_logistics.refund_method"]
+    # leads with the causes; drops the logistics/ops metadata that diluted the WHY (4 pies → 2)
+    assert inv._select_why_dims(dims) == ["lux.returns.reason", "lux.return_logistics.condition"]
+
+
+def test_select_why_dims_keeps_neutral_as_context():
+    # a dim in neither vocabulary is kept (after the causes) — never silently dropped
+    dims = ["db.returns.reason", "db.returns.segment_at_return", "db.return_logistics.carrier"]
+    assert inv._select_why_dims(dims) == ["db.returns.reason", "db.returns.segment_at_return"]
+
+
+def test_select_why_dims_fallback_keeps_all_when_nothing_causal():
+    # no recognisably-causal column → keep every dim unchanged (don't drop to zero on odd schemas)
+    dims = ["db.returns.disposition", "db.return_logistics.carrier"]
+    assert inv._select_why_dims(dims) == dims
+
+
+def test_composition_lens_composes_only_the_selected_why_dims(monkeypatch):
+    # the lens must hand run_analysis_phase ONLY the causal dims — proving the ops noise is gone
+    seen = {}
+    def rate_stub(conn, **kw):
+        seen["plan_user"] = kw.get("plan_user", "")
+        return inv._PhaseRun(ok=True, results=[])
+    monkeypatch.setattr(inv, "run_analysis_phase", rate_stub)
+    state = {"question": "Why are womenswear returns so high?",
+             "schema_context": "lux.returns(reason)", "connection_id": "t",
+             "_ada_intake": {"metric_label": "return rate", "filtered_schema": "lux.returns(reason)"}}
+    inv._run_composition_lens(state, object(), [
+        "lux.returns.reason", "lux.return_logistics.carrier",
+        "lux.return_logistics.condition", "lux.return_logistics.refund_method"])
+    pu = seen["plan_user"]
+    assert "returns.reason" in pu and "return_logistics.condition" in pu
+    assert "carrier" not in pu and "refund_method" not in pu
+
+
 # ── item 2: the WHERE→WHY drill wiring in ada_cross_section ─────────────────────
 
 _MIXED_DIMS = [
