@@ -85,4 +85,7 @@ def bump(counter: str, n: int = 1) -> None:
     try:
         stats.inc(counter, n)
     except Exception:
-        pass
+        # No trail by design: this IS the trail mechanism — a failing counter
+        # increment has nowhere sane to report (tolerate() itself increments a
+        # counter) and must never break a guard path.
+        return

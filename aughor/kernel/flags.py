@@ -25,6 +25,7 @@ FLAG_ENV = {
     "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
     "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
+    "ada.parallel_phases": "AUGHOR_ADA_PARALLEL_PHASES",
     "ada.why_where_interaction": "AUGHOR_ADA_WHY_WHERE_INTERACTION",
     "ada.why_deepen": "AUGHOR_ADA_WHY_DEEPEN",
     "trust.verify_facade": "AUGHOR_TRUST_FACADE",
@@ -70,6 +71,10 @@ FLAG_META = {
     "ada.parallel_lenses": {
         "label": "Parallel Deep-Analysis lenses",
         "description": "For a cross-sectional Deep-Analysis ('why is X high/low'), run independent investigative lenses (segment/where ∥ mechanism/why) concurrently instead of one bundled scan — a deeper, multi-angle answer at ~flat wall-clock. Multiplies concurrent LLM calls (bounded by the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
+    },
+    "ada.parallel_phases": {
+        "label": "Parallel Deep-Analysis phases",
+        "description": "Run the temporal investigation's middle phases (baseline ∥ decomposition ∥ dimensional) as one concurrent wave instead of a serial chain, keeping the serial tier-routers' early-stop semantics post-hoc (anything the serial path would have skipped is dropped from the report). Behavioral stays sequential — it targets the dimensional dominant finding. Cuts deep-run wall-clock; multiplies concurrent LLM calls (bounded by the P6 token budget). Off by default.",
     },
     "ada.why_where_interaction": {
         "label": "WHY×WHERE interaction lens",

@@ -495,6 +495,8 @@ class AgentState(TypedDict):
     _dimensional_summary: Optional[str]
     _dimensional_passes: Optional[str]     # dominant finding → seeds Tier-3 targeting
     _behavioral_summary: Optional[str]
+    # ada.parallel_phases — the wave node's post-hoc routing decision (phase_waves.py)
+    _wave_next: NotRequired[Optional[str]]
 
     # AL-05 (Semantic plane) — the SemanticContext resolved once at seed (metrics · ontology ·
     # profile · KB), carried so every node reads one consistent context instead of re-consulting
