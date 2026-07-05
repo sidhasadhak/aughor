@@ -55,6 +55,18 @@ from aughor import telemetry as _telemetry
 MAX_ITER = int(__import__("os").getenv("AUGHOR_MAX_ITER", "6"))
 
 
+def _metrics_for_state(state) -> list:
+    """AL-05 — the first live *consumer* of the resolved Semantic plane. When a run carries a
+    `semantic_context` (resolved once at seed, schema-filtered), read its metrics instead of
+    re-consulting `list_metrics()`, so every node works off ONE metric set. Falls back to a direct
+    consult when no context is present (the `semantic.resolve_live` flag off → byte-identical)."""
+    sc = state.get("semantic_context")
+    if sc is not None and hasattr(sc, "metrics"):
+        return list(sc.metrics)
+    from aughor.semantic.metrics import list_metrics
+    return list_metrics()
+
+
 # A DRIVER / RELATIONSHIP question ("do late deliveries lower reviews", "is there a correlation
 # between order value and review score") is answered fastest and most consistently by the
 # investigate path's cross-sectional comparison — segment the metric across the condition (the Q4
@@ -611,8 +623,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     _ontology_formulas_section = ""
     _targeted_metrics: list = []   # governed metrics this hypothesis targets (B-7 gate)
     try:
-        from aughor.semantic.metrics import list_metrics as _list_metrics
-        all_metrics = _list_metrics()
+        all_metrics = _metrics_for_state(state)   # AL-05: reuse the resolved Semantic plane's metrics
         hyp_lower = h.description.lower()
         matched_formulas: list[str] = []
         for m in all_metrics:

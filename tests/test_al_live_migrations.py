@@ -80,6 +80,24 @@ def test_al05_agentstate_carries_the_field():
     assert state["semantic_context"] == "sentinel"
 
 
+def test_al05_metrics_consumer_uses_resolved_context():
+    # The first live CONSUMER: a node reads the resolved metrics instead of re-consulting.
+    from aughor.agent.nodes import _metrics_for_state
+    from aughor.semantic.context import SemanticContext
+
+    class _M:
+        def __init__(self, n): self.name = n
+    sc = SemanticContext(question="q", connection_id="c", metrics=[_M("gmv"), _M("aov")])
+    assert [m.name for m in _metrics_for_state({"semantic_context": sc})] == ["gmv", "aov"]
+
+
+def test_al05_metrics_consumer_falls_back_without_context(monkeypatch):
+    from aughor.agent import nodes
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: ["SENTINEL"])
+    assert nodes._metrics_for_state({}) == ["SENTINEL"]                       # no context
+    assert nodes._metrics_for_state({"semantic_context": None}) == ["SENTINEL"]  # flag off → None
+
+
 # ── AL-02 — the Capability plane as a live end-to-end answer path ─────────────────────────
 
 class _FakeProvider:
