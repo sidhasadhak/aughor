@@ -25,10 +25,16 @@ conformance-tested, AND live-wired flag-gated**; the deep ADA generator converge
 log: [`PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md).
 
 **⏭️ NEXT SESSION — remaining Part 2, in order (the dev servers are scriptable via `preview_*` on :8000/:3000):**
-1. **Wave 3 · U9 — the ~49-file `ADA` rename (highest blast radius, saved for last).** Rename at the
-   *serialization boundary*: `ada_report`→`report` + `mode:"investigate"`, strip `ADA`/`hypothesis_id`
-   from web-bound payloads; regen `web/lib/api.gen.ts`; `types.ts` → `AnswerReport`/`Fact`. Do it
-   **boundary-first with `@deprecated` aliases, one mode per commit, screenshot each answer mode.**
+1. **Wave 3 · U9 — the `ADA` rename (highest blast radius).** ◑ **Slice 1 DONE** (branch
+   `2026-07-05-u9-ada-report-rename`): the web report type `ADAReport`→`AnswerReport` (+ `@deprecated`
+   alias, incl. the duplicate local interface in `InvestigationReport.tsx`; tsc-verified, non-breaking).
+   **⚠️ Remaining — the wire rename (the risky crux):** grounding found the doc's `ada_report`→`report`
+   shorthand **collides** — `ada_report` (ADA `ada_synthesize` path) and `report` (classic `synthesize`
+   path) are DISTINCT, both-active wire events with different payloads + renderers. Killing the ADA name
+   needs unifying the two report paths OR a distinct clean name, done **lockstep backend+web with the web
+   keeping both `case`s (non-breaking even mid-deploy), + a live-verified screenshot of BOTH the ADA and
+   classic `investigate` runs** (why it's its own slice). `hypothesis_id` strip + `api.gen.ts` regen +
+   `ADARecommendation` ride along. Full analysis in the scoping-doc progress log.
 2. ~~**U10 — `semantic/contracts.py:SemanticContract`**~~ **✅ FIRST SLICE SHIPPED 2026-07-05**: the
    contract type + `from_metric_definition`/`from_ontology_metric` adapters, leveraged via
    `SemanticContext.contracts()` (catalog ∪ ontology, deduped, surfaced as `contract_count` on
@@ -39,9 +45,9 @@ log: [`PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PA
    blocks in `routers/investigations.py` collapsed onto one value object (−62 lines), fixing a
    salvage/resume sibling-schema leak. **NOM-07** (shared `Safeguard` base) **deferred** — `PlaybookEntry`
    doesn't fit the scheduled-check mold and it touches persisted models (see the Part-2 log).
-4. **PR #100** (`2026-07-04-data06-depth-web-peerdep` — DATA-06 depth + the react peer-dep item 2b) is
-   still open; it and #101 both touched `ci.yml`/`web/package.json`, so **rebase #100 on the new main +
-   resolve the conflict** — its `overrides` fix then lets the README drop the `--legacy-peer-deps` flag.
+4. ~~**PR #100** rebase~~ **✅ DONE 2026-07-05** — rebased on the new main, ROADMAP/FEATURES conflict
+   resolved, force-pushed, **CI-green + MERGEABLE** (strict `npm ci` + `overrides` verified). Left for a
+   human merge. Once merged, the README can drop the `--legacy-peer-deps` flag.
 *Deferred with reasons (see the log): `CanvasWorkspace` re-express (rich header + eager-mount don't fit
 the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment).*
 

@@ -126,6 +126,38 @@ reversible commit per REC with a mechanical verify.
 
 ## Progress log
 
+### ◑ Wave 3 — U9 the ADA→answer rename (2026-07-05, branch `2026-07-05-u9-ada-report-rename`)
+
+**✅ U9 slice 1 — web type `ADAReport` → `AnswerReport` (type-layer, non-breaking).** Renamed the
+report type across `types.ts` + its consumers (`investigationStream.ts`, `HistoryDetailPanel.tsx`)
+**and the duplicate local `interface ADAReport` in `InvestigationReport.tsx`** (the review's exact
+"same type defined twice" complaint). Kept `export type ADAReport = AnswerReport` `@deprecated` one
+release. A type-only identifier rename → **tsc erases it; runtime is byte-identical** (not
+browser-observable), so tsc + the 3 web gates green is the conclusive verification. `ADARecommendation`
+left for a follow-up (less central; a `Recommendation` name risks a broad collision).
+
+**⚠️ U9 wire rename — the risky crux, precisely scoped for a live-verified pass (NOT done).** Grounding
+the boundary surfaced **two facts the doc's `ada_report`→`report` shorthand hid**, both raising the risk:
+1. **`ada_report` and `report` are DISTINCT, both-active wire events.** `ada_report` is emitted by the
+   `ada_synthesize` node (the ADA intake→scan→synthesize path; payload `{ada_report: <AnswerReport>,
+   investigation_id, query_mode:"investigate"}`; web `case "ada_report"` → `ADA_REPORT` action →
+   `adaReport` state → `InvestigationReportView`). `report` is emitted by the **classic** `synthesize`
+   node (the hypothesis-driven `plan_queries`→`synthesize` path; payload `{report: <Report>, hypotheses,
+   query_history, ...}`; web `case "report"` → `REPORT` action → generic `report` state → `ReportView`).
+   **Both nodes are wired in the live graph** (`agent/graph.py` — `ada_synthesize`→END AND
+   `synthesize`→END). So a blind `ada_report`→`report` rename **collides**; killing the ADA name needs
+   either (a) *unifying* the two report paths onto one event+renderer (the two payload shapes +
+   renderers differ → a real design change), or (b) renaming `ada_report` to a distinct non-`report`
+   clean name.
+2. **Emit sites (backend `routers/investigations.py`):** `ada_report` at **375** (salvage/partial),
+   **2005** (cache hit), **2279** (live `ada_synthesize`); `+kind="ada_report"` receipt keys at 368/2295
+   (internal storage, not the wire). Web dispatch: `investigationStream.ts` `case "ada_report"` (415).
+   **Safe approach when taken up:** lockstep backend+web, web keeps BOTH `case`s dispatching the SAME
+   action (so the rename can't break the render even mid-deploy), `@deprecated` field alias one release,
+   **and screenshot a live `investigate` run of BOTH the ADA and classic paths** (the guardrail's
+   "screenshot each mode") — neither is cheap (multi-minute LLM runs), which is why this is its own slice.
+   The `hypothesis_id` strip + `api.gen.ts` regen + `ADARecommendation` rename ride along with it.
+
 ### ✅ Wave 3 — U10: one SemanticContract (2026-07-05)
 
 **✅ REC-U10 — `aughor/semantic/contracts.py:SemanticContract` + two adapters.** A governed
