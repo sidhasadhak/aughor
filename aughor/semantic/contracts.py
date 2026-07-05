@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:  # avoid import cost / any cycle at module load — adapters import lazily
     from aughor.ontology.models import OntologyMetric
+    from aughor.profile.models import NorthStarMetric
     from aughor.semantic.metrics import MetricDefinition
 
 
@@ -33,7 +34,8 @@ class SemanticContract(BaseModel):
     key: str = Field(description="Stable snake_case identifier (MetricDefinition.name / OntologyMetric.id)")
     label: str = Field(description="Human display name")
     sql: str = Field(description="Canonical SQL expression (the approved/verified formula)")
-    source: Literal["catalog", "ontology"] = Field(description="Which representation this was serialized from")
+    source: Literal["catalog", "profile", "ontology"] = Field(
+        description="Which representation this was serialized from — the three governed-metric stores")
     description: str = ""
 
     # Shape / presentation
@@ -71,6 +73,28 @@ class SemanticContract(BaseModel):
         """Whether the SQL may be injected as 'use this exact expression'. Governance approval
         (catalog) OR live self-verification (ontology) each earn trust."""
         return self.verified or self.status == "approved"
+
+    @property
+    def rank(self) -> int:
+        """Precedence when the same `key` resolves from more than one store — higher wins.
+        Mirrors the legacy `canonical._SOURCE_RANK`: a human-curated catalog metric outranks the
+        connection's governed north-star, which outranks a self-verified ontology formula, which
+        outranks an unverified one. This is the dedup authority the whole platform points at."""
+        if self.source == "catalog":
+            return 4
+        if self.source == "profile":
+            return 3
+        return 2 if self.verified else 1        # ontology: verified outranks unverified
+
+    @property
+    def injectable(self) -> bool:
+        """Whether this formula renders as an authoritative 'use this EXACT SQL' line — the
+        legacy `CanonicalMetric.verified` render policy, preserved byte-for-byte: catalog and
+        profile SQL are authoritative by provenance (a human/audit wrote them); an ontology
+        formula is authoritative only once the builder has self-verified it against live data.
+        (Governance-tightening a draft catalog metric out of this set is a deliberate future
+        step tracked under U10 — this property intentionally does NOT gate on `status`.)"""
+        return self.source in ("catalog", "profile") or self.verified
 
     # ── Adapters — the single bridge each source crosses to become the one contract ──────────
 
@@ -125,3 +149,45 @@ class SemanticContract(BaseModel):
             verified=om.verified,
             verification_note=om.verification_note,
         )
+
+    @classmethod
+    def from_north_star_metric(cls, nsm: "NorthStarMetric") -> "SemanticContract":
+        """Serialize a connection's governed north-star metric (the BusinessProfile's build-time-
+        audited KPI formulas — the same `value_sql` the Briefing/KPI strip run). These are
+        authoritative by provenance: governed + audited at build time, so `verified=True` /
+        `status="approved"`. `definition` is the plain-English caveat; `unit_or_range` the unit.
+        Maps the same fields the legacy `CanonicalMetric` profile-governed row carried."""
+        return cls(
+            key=nsm.name,
+            label=nsm.name,
+            sql=nsm.value_sql,
+            source="profile",
+            description=nsm.definition,
+            unit=nsm.unit_or_range or None,
+            caveats=(nsm.definition or "")[:160],
+            status="approved",
+            verified=True,
+        )
+
+
+def _norm_key(key: str) -> str:
+    """Normalize a contract key for dedup — mirrors `canonical._norm` (so "Net Revenue" and
+    "net_revenue" collapse to the same metric across stores)."""
+    return (key or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def dedup_by_rank(contracts) -> list["SemanticContract"]:
+    """Collapse same-key contracts to the highest-`rank` source, sorted by key — the ONE dedup
+    authority both the planning resolver (`canonical.resolve_contracts`) and the display path
+    (`SemanticContext.contracts`) share, so a metric resolves to the same governed definition
+    everywhere. Skips entries with an empty key or empty SQL. Order-independent: precedence is
+    by `rank`, never insertion order (catalog > profile > verified ontology > unverified)."""
+    by_key: dict[str, "SemanticContract"] = {}
+    for c in contracts:
+        if not (getattr(c, "key", "") or "").strip() or not (getattr(c, "sql", "") or "").strip():
+            continue
+        k = _norm_key(c.key)
+        cur = by_key.get(k)
+        if cur is None or c.rank > cur.rank:
+            by_key[k] = c
+    return sorted(by_key.values(), key=lambda c: c.key)

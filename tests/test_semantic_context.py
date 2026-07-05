@@ -118,6 +118,59 @@ def test_summary_reports_unified_contract_count():
     assert s["contract_count"] == 2                   # catalog ∪ ontology
 
 
+# ── contracts(): the THIRD store (profile north-star) + rank precedence (REC-U10) ─────────
+
+def _profile_with_ns(name="gross_margin", value_sql="SUM(m)/NULLIF(SUM(p),0)"):
+    return {"industry": "DTC", "north_star_metrics": [{
+        "name": name, "definition": "gross margin rate", "maps_to": "t.m,t.p",
+        "why_it_matters": "profit", "unit_or_range": "%", "value_sql": value_sql}]}
+
+
+def test_contracts_includes_profile_north_star():
+    from aughor.semantic.metrics import MetricDefinition
+    ctx = SemanticContext(question="q", connection_id="c",
+                          metrics=[MetricDefinition(name="mrr", label="MRR", sql="SUM(a)")],
+                          profile=_profile_with_ns())
+    by_key = {c.key: c for c in ctx.contracts()}
+    assert set(by_key) == {"mrr", "gross_margin"}
+    assert by_key["gross_margin"].source == "profile" and by_key["gross_margin"].is_trusted
+
+
+def test_contracts_precedence_catalog_over_profile_over_ontology():
+    from aughor.semantic.metrics import MetricDefinition
+    from aughor.ontology.models import OntologyMetric
+    ctx = SemanticContext(
+        question="q", connection_id="c",
+        metrics=[MetricDefinition(name="revenue", label="R", sql="SUM(catalog)")],
+        ontology=_OntoWithMetrics({"revenue": OntologyMetric(id="revenue", display_name="R",
+                                    entity="order", formula_sql="SUM(onto)", verified=True)}),
+        profile=_profile_with_ns(name="revenue", value_sql="SUM(profile)"),
+    )
+    contracts = ctx.contracts()
+    assert len(contracts) == 1                          # one key across all three stores
+    assert contracts[0].source == "catalog" and contracts[0].sql == "SUM(catalog)"
+
+
+def test_contracts_malformed_north_star_is_skipped():
+    from aughor.semantic.metrics import MetricDefinition
+    ctx = SemanticContext(question="q", connection_id="c",
+                          metrics=[MetricDefinition(name="ok", label="OK", sql="SUM(a)")],
+                          profile={"north_star_metrics": [{"name": "junk"}]})  # missing required fields
+    keys = [c.key for c in ctx.contracts()]             # must NOT raise
+    assert keys == ["ok"]
+
+
+def test_summary_surfaces_serialized_contracts():
+    from aughor.semantic.metrics import MetricDefinition
+    ctx = SemanticContext(question="q", connection_id="c",
+                          metrics=[MetricDefinition(name="mrr", label="MRR", sql="SUM(a)", unit="$")])
+    s = ctx.summary()
+    assert isinstance(s["contracts"], list)
+    assert s["contract_count"] == len(s["contracts"]) == 1
+    c0 = s["contracts"][0]
+    assert c0["key"] == "mrr" and c0["source"] == "catalog" and c0["sql"] == "SUM(a)"
+
+
 # ── Fail-open: one erroring source never sinks the resolve ────────────────────────────────
 
 def test_resolve_is_fail_open(monkeypatch):
@@ -165,6 +218,11 @@ def test_semantic_context_endpoint(client, builtin_conn_id):
     for key in ("question", "connection_id", "metric_count", "has_ontology", "has_kb_match"):
         assert key in body
     assert body["connection_id"] == builtin_conn_id
+    # The unified metric contract is surfaced on the real HTTP path (REC-U10 display repoint).
+    assert "contract_count" in body and isinstance(body["contracts"], list)
+    assert len(body["contracts"]) == min(body["contract_count"], 100)
+    for c in body["contracts"]:                          # each is a serialized SemanticContract
+        assert {"key", "sql", "source"} <= set(c) and c["source"] in ("catalog", "profile", "ontology")
 
 
 def test_semantic_context_endpoint_requires_conn(client):

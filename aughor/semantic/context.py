@@ -17,6 +17,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+# Bound the serialized contract list on the `/query/semantic-context` summary — plenty for a
+# governed catalog (metrics number in the tens), keeps the API payload from ballooning.
+_CONTRACT_SUMMARY_CAP = 100
+
 
 @dataclass
 class SemanticContext:
@@ -34,41 +38,65 @@ class SemanticContext:
     has_kb_match: bool = False
 
     def contracts(self) -> list:
-        """The governed metrics unified across sources as one `SemanticContract` list (REC-U10).
-
-        Both metric shapes — the curated catalog (`self.metrics`) and the ontology-derived
-        metrics (`self.ontology.metrics`) — serialize to the one contract, deduped by key with
-        the **catalog winning** on a collision (a human-approved definition supersedes the
-        builder's inference). Fail-open: a malformed source entry is skipped, never raised."""
-        from aughor.semantic.contracts import SemanticContract
-        by_key: dict[str, Any] = {}
-        # Ontology first, so a same-key catalog metric overwrites it.
+        """The governed metrics unified across all three stores as one `SemanticContract` list
+        (REC-U10). The curated catalog (`self.metrics`), the ontology-derived metrics
+        (`self.ontology.metrics`), and the connection's governed north-star metrics (parsed from
+        the cached `self.profile`) each serialize to the one contract, then collapse via the
+        shared `dedup_by_rank` — the SAME dedup authority the planning path
+        (`canonical.resolve_contracts`) uses, so a metric resolves to the same governed definition
+        in display and planning alike. Precedence: catalog > profile > verified ontology >
+        unverified. Fail-open: a malformed source entry is skipped, never raised."""
+        from aughor.semantic.contracts import SemanticContract, dedup_by_rank
+        out: list = []
         onto_metrics = getattr(self.ontology, "metrics", None) or {}
         for om in (onto_metrics.values() if isinstance(onto_metrics, dict) else onto_metrics):
             try:
-                c = SemanticContract.from_ontology_metric(om)
-                by_key[c.key] = c
+                out.append(SemanticContract.from_ontology_metric(om))
             except Exception as exc:
                 _tolerate(exc, "semantic.contracts: ontology")
         for md in self.metrics or []:
             try:
-                c = SemanticContract.from_metric_definition(md)
-                by_key[c.key] = c
+                out.append(SemanticContract.from_metric_definition(md))
             except Exception as exc:
                 _tolerate(exc, "semantic.contracts: catalog")
-        return list(by_key.values())
+        for nsm in self._north_star_metrics():
+            try:
+                out.append(SemanticContract.from_north_star_metric(nsm))
+            except Exception as exc:
+                _tolerate(exc, "semantic.contracts: profile north-star")
+        return dedup_by_rank(out)
+
+    def _north_star_metrics(self) -> list:
+        """The connection's governed north-star metrics, parsed from the cached (raw-dict) profile
+        into typed `NorthStarMetric`s so they can serialize to a contract. Best-effort — a profile
+        without north-stars (or with malformed entries) simply contributes none."""
+        raw = self.profile if isinstance(self.profile, dict) else {}
+        entries = raw.get("north_star_metrics") or []
+        if not isinstance(entries, list):
+            return []
+        from aughor.profile.models import NorthStarMetric
+        out: list = []
+        for nd in entries:
+            try:
+                out.append(NorthStarMetric(**nd) if isinstance(nd, dict) else nd)
+            except Exception as exc:
+                _tolerate(exc, "semantic.contracts: north-star parse")
+        return out
 
     def summary(self) -> dict:
         """A JSON-safe digest — what the platform knows about this question. For the API surface."""
         ents = getattr(self.ontology, "entities", {}) or {}
         rels = getattr(self.ontology, "relationships", {}) or {}
+        contracts = self.contracts()                    # catalog ∪ profile ∪ ontology, deduped (REC-U10)
         return {
             "question": self.question,
             "connection_id": self.connection_id,
             "scope_schema": self.scope_schema,
             "metric_count": len(self.metrics),
             "metric_names": [getattr(m, "name", str(m)) for m in self.metrics][:20],
-            "contract_count": len(self.contracts()),   # catalog ∪ ontology, deduped (REC-U10)
+            "contract_count": len(contracts),
+            # The unified metric type itself, surfaced (not just its count) — the display repoint.
+            "contracts": [c.model_dump() for c in contracts[:_CONTRACT_SUMMARY_CAP]],
             "has_ontology": self.ontology is not None,
             "ontology_entities": len(ents),
             "ontology_relationships": len(rels),
