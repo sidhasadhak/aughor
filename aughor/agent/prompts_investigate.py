@@ -783,7 +783,7 @@ class WaterfallEntryModel(BaseModel):
     structural: bool
 
 
-class ADARecommendationModel(BaseModel):
+class AnswerRecommendationModel(BaseModel):
     action: str
     expected_impact: str
     owner: str
@@ -805,7 +805,7 @@ class ADASynthesisModel(BaseModel):
     attribution_waterfall: list[WaterfallEntryModel]
     confidence: Literal["HIGH", "MEDIUM", "LOW"]
     confidence_justification: str
-    recommendations: list[ADARecommendationModel]
+    recommendations: list[AnswerRecommendationModel]
     data_gaps: list[str] = Field(default_factory=list)
     causal_links: list[CausalLinkModel] = Field(
         default_factory=list,

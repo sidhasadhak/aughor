@@ -355,7 +355,7 @@ def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str, s
         if merged.get("investigation_phases"):
             from aughor.agent.investigate import ada_synthesize
             out = ada_synthesize(merged)
-            ada = out.get("ada_report")
+            ada = out.get("answer_report")
             if ada:
                 ada_save = (dict(ada) if isinstance(ada, dict) else ada.model_dump())
                 ada_save["_report_type"] = "investigate"
@@ -2128,7 +2128,7 @@ async def _stream_investigation(
             "report": None, "hitl_enabled": hitl, "human_feedback": None,
             "query_mode": None, "route_reasoning": None, "route_confidence": None, "replan_decision": None,
             "sub_questions": [], "current_subq_idx": 0, "subq_answers": [], "explore_report": None,
-            "investigation_phases": [], "ada_report": None, "_ada_intake": None,
+            "investigation_phases": [], "answer_report": None, "_ada_intake": None,
             "canvas_id": canvas_id, "canvas_schema_context": canvas_schema_context,
             "scope_schema": scope_schema or "",
             "data_catalog": data_catalog or "",
@@ -2221,8 +2221,8 @@ async def _stream_investigation(
                 phases = merged.get("investigation_phases", [])
                 if phases:
                     yield _sse("phase_complete", {"phase": phases[-1], "all_phases": phases})
-            elif node_name == "ada_synthesize" and merged.get("ada_report"):
-                ada = merged["ada_report"]
+            elif node_name == "ada_synthesize" and merged.get("answer_report"):
+                ada = merged["answer_report"]
                 qh = merged.get("query_history", [])
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
                 yield _sse("answer_report", {"answer_report": ada, "investigation_id": inv_id, "query_mode": "investigate", "mode": "investigate"})
@@ -2809,16 +2809,25 @@ def get_chat_session_turns(session_id: str):
     return turns
 
 
-@router.get("/ada/{connection_id}/{inv_id}/receipt")
-def get_ada_receipt(connection_id: str, inv_id: str):
-    """K3-wide Trust Receipt for an agentic (ADA) report — executed queries,
-    input tables, registered metrics + B-7 enforcement verdict. 404 for
+@router.get("/answer/{connection_id}/{inv_id}/receipt")
+def get_answer_receipt(connection_id: str, inv_id: str):
+    """K3-wide Trust Receipt for an agentic (deep-analysis) answer report — executed
+    queries, input tables, registered metrics + B-7 enforcement verdict. 404 for
     investigations produced before receipts."""
     from aughor.kernel.ledger import Ledger
+    # natural_key stays `ada:` — a persisted storage identity; renaming it would
+    # orphan every receipt written before this rename. Only the URL path is de-ADA'd.
     rec = Ledger.default().receipt(f"ada:{connection_id}:{inv_id}")
     if rec is None:
         raise HTTPException(status_code=404, detail="No receipt for this report")
     return rec
+
+
+@router.get("/ada/{connection_id}/{inv_id}/receipt", deprecated=True)
+def get_ada_receipt(connection_id: str, inv_id: str):
+    """@deprecated Use `/answer/{connection_id}/{inv_id}/receipt`. Kept one release
+    for the `ADA`→answer rename (REC-U9)."""
+    return get_answer_receipt(connection_id, inv_id)
 
 
 @router.get("/chat/{connection_id}/{turn_id}/receipt")

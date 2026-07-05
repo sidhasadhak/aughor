@@ -347,14 +347,14 @@ class WaterfallEntry(TypedDict):
     structural: bool    # vs transient
 
 
-class ADARecommendation(TypedDict):
+class AnswerRecommendation(TypedDict):
     action: str
     expected_impact: str
     owner: str
     timeline: str
 
 
-class ADAReport(TypedDict):
+class AnswerReport(TypedDict):
     headline: str
     executive_summary: str
     metric: str
@@ -365,7 +365,7 @@ class ADAReport(TypedDict):
     attribution_waterfall: list[WaterfallEntry]
     confidence: str            # "HIGH"|"MEDIUM"|"LOW"
     confidence_justification: str
-    recommendations: list[ADARecommendation]
+    recommendations: list[AnswerRecommendation]
     data_gaps: list[str]
     # Phase-2 structural trust artifacts (Orchestrator). Optional — older cached reports
     # may omit them; the UI reads each via .get(). See agent/orchestrator.py.
@@ -479,7 +479,7 @@ class AgentState(TypedDict):
 
     # ADA investigate mode state (only when query_mode == "investigate")
     investigation_phases: list[InvestigationPhaseResult]
-    ada_report: Optional[ADAReport]
+    answer_report: Optional[AnswerReport]
     _ada_intake: Optional[dict]      # intake spec passed between ADA phase nodes
 
     # Plan-then-SQL: set by plan_queries, consumed by execute_planned_queries

@@ -162,12 +162,15 @@ export interface WaterfallEntry {
   structural: boolean;
 }
 
-export interface ADARecommendation {
+export interface AnswerRecommendation {
   action: string;
   expected_impact: string;
   owner: string;
   timeline: string;
 }
+
+/** @deprecated Use {@link AnswerRecommendation}. Kept one release for the `ADA`→answer rename (REC-U9). */
+export type ADARecommendation = AnswerRecommendation;
 
 export interface AnswerReport {
   headline: string;
@@ -180,7 +183,7 @@ export interface AnswerReport {
   attribution_waterfall: WaterfallEntry[];
   confidence: "HIGH" | "MEDIUM" | "LOW";
   confidence_justification: string;
-  recommendations: ADARecommendation[];
+  recommendations: AnswerRecommendation[];
   data_gaps: string[];
   // Phase-2 structural trust artifacts (Orchestrator) — optional; older reports omit them.
   contradiction_report?: {
