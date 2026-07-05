@@ -7,6 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "lint:tokens": "node scripts/check-design-tokens.mjs",
+    "lint:format": "node scripts/check-formatting.mjs",
+    "lint:elements": "node scripts/check-raw-elements.mjs",
     "gen:api": "npx -y openapi-typescript http://localhost:8000/openapi.json -o lib/api.gen.ts"
   },
   "dependencies": {

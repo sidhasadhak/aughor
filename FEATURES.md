@@ -32,8 +32,10 @@ On top of the depths, the conversational agent (the unified-answer-path arc, PR 
   question instead of guessing: deterministic under-spec + value-term detection (`aughor/agent/clarify.py`)
   **plus SOMA candidate-disagreement** (`aughor/agent/soma.py`) — generate N candidate readings, execute
   them, and ask **only when their results diverge**, with the readings' labels as grounded option chips.
-- **Conversational follow-ups** — "now break that down by region" composes on the prior query
-  (`aughor/agent/followup.py` + a result digest carried across turns), for quick and deep turns alike.
+- **Conversational follow-ups** — "now break that down by region / just for the ultra tier" composes on the
+  prior query (`aughor/agent/followup.py` + a result digest carried across turns), on **every** path: the
+  quick Insight path, AND the deep/Direct-lookup path (a follow-up in a canvas anchors on the previous turn's
+  query via an origin-finding seed — kept its metric/filters/grain, extended by the new dimension).
 - **Progressive escalation (ITS)** — a quick answer that's inconclusive (errored, empty on an analytical
   question, or a "why" answered by a single figure) **offers** a deeper investigation rather than leaving
   a thin answer (`aughor/agent/escalate.py`).
@@ -139,7 +141,13 @@ Builder" from Insights/Deep. Schema-qualified correctness; user-typed SQL is **g
   series so it matches the chart.
 - **Source-data panel** — a **"Source data"** trigger on every finding chart (report + quick answer) opens
   a right-side drawer: the result table + the **SQL at 50%** + an **"Explore with Query Builder"** hand-off.
-- **The Brief** — the answer surface with agent-reasoning quality + data-shape intelligence.
+- **Chart source-footers** — a provenance line under every exhibit ("Source: order_items · 12,345 rows ·
+  Jan–Dec 2024"), derived from the query result (input tables, row count, date range) — a chart is only as
+  trustworthy as its source, made inspectable at a glance.
+- **The Brief** — the answer surface with agent-reasoning quality + data-shape intelligence. **One enforced
+  3-tier design layer** (tokens → primitives → composites) behind it — a `StatusChip` vocabulary, a size-only
+  type scale, and a **turn renderer registry** (`registerTurnRenderer`) so a domain pack can contribute a
+  custom answer surface without a frontend release (the AI-native "the agent composes its own UI" seam).
 - **KPI highlight / ThoughtSpot-style scorecard**, smart report formatting + collapsible sections,
   thinking trace, **PDF / PowerPoint export**.
 
@@ -155,6 +163,15 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 
 ## 12. Platform & infrastructure
 
+- **Functional-plane consolidation** (Part 2 of the 2026-07-03 review, flag-gated) — the diffused agent
+  runtime is being re-drawn as clean horizontal planes, each with a typed contract + a conformance test:
+  a **Trust plane** (`aughor/trust:verify(sql|code|metadata, scope) → Verdict`) hoisting the ~9 scattered
+  validation guards behind one façade (the read-only/mutation gate now runs on the generation path too);
+  a **Capability plane** (`aughor/capability`) — one `Generate→Validate→Execute→Interpret` template
+  parameterized by domain (`data` SQL + `metadata` schema-Q&A), whose `validate` *is* the Trust plane;
+  and a **Semantic plane** (`aughor/semantic/context.py:resolve → SemanticContext`) that resolves
+  metrics/ontology/profile/KB **once** per run instead of ad-hoc, read back by the planner. Live-verified
+  end-to-end (`POST /query/capability-answer`). Each plane is a swap-point; a new capability = register one impl.
 - **Job Kernel / event spine** — state machine + heartbeats + boot recovery + idempotency + scope
   cancellation; investigations, monitors & briefs run as first-class kernel jobs with crash-recovery (boot salvage).
 - **Real-time SSE streaming**, **resumable investigations**, **human-in-the-loop interrupt**.
@@ -208,6 +225,12 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 - **CI gate** (`.github/workflows/ci.yml`) — pytest (`not e2e/eval`) + frontend `tsc --noEmit` on every PR,
   plus **ruff at zero and blocking** (pinned; a sane ruleset that surfaced + fixed several real latent
   `NameError`s). ~2,300 tests; the suite is fully store-isolated so it can never mutate live data.
+- **Enforced frontend design layer** (Part 2 of the 2026-07-03 review) — three baseline-zero, *blocking*
+  web gates, the ruff discipline applied to the UI: a **design-token gate** (`lint:tokens` — no raw radius or
+  `text-[Npx]`; the scale is the source of truth), a **formatting gate** (`lint:format` — all number/date
+  rendering routes through `lib/format.ts`, so the same value can't read "45.3K" in one surface and "45,300"
+  in another), and a **raw-`<button>` ratchet** (`lint:elements` — the primitive layer's adoption can only
+  grow). Drift is frozen by construction, not by review vigilance.
 - **Verification substrate (Bet 0)** + **Specialist Agents** (Domain Expertise Packs) + ongoing audit hardening.
 
 ---
@@ -238,9 +261,17 @@ A delta-measurement ratchet (`evals/ratchet.py`) records accuracy + tokens/run t
 
 ## Frontend
 
-Next.js / React / Tailwind. Streaming investigation UI, Databricks-brand + Genie-style chat, home page,
+Next.js / React / Tailwind (v4). Streaming investigation UI, Databricks-brand + Genie-style chat, home page,
 catalog tab (3-panel + sample data), navigation redesign + command palette + ask-hero, design system v2,
 activity log (with fix-and-save / fix-all), and the Data Canvas (scoped editing, list ranking, recents, rename).
+An **enforced 3-tier design layer** (Part 2 of the 2026-07-03 review): design tokens (radius/type/palette,
+theme-aware light/dark) → the `ui/*` primitives → the `Brief*` composite family, kept honest by three
+baseline-zero blocking CI gates (tokens · formatting · raw-element ratchet) so drift can't re-accumulate.
+One **`<Workspace>` shell** (header + perspective switcher + keep-alive body) that the sidebar sections are
+folded onto — Intelligence, **Operations** (Monitors / Action Hub / Security & Audit), and **Data**
+(Catalog / Query Builder / Semantic Layer) each render as one perspective-switched surface instead of a row
+of separate full-screen tabs (deep-links preserved). A **turn renderer registry** (`TURN_RENDERERS` +
+`registerTurnRenderer`) lets a pack contribute an answer surface without editing the chat god-component.
 
 ## How it fits together
 

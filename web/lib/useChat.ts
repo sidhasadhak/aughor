@@ -94,7 +94,9 @@ export function useChat() {
         res = await fetch(`${BASE}/investigate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question, connection_id: connectionId, canvas_id: opts.canvasId ?? null, skip_cache: opts.skipCache ?? false, insight_id: opts.insightId ?? null, deep: opts.deep ?? false }),
+          // history: a follow-up in a canvas composes on the previous query (parity
+          // with the quick /chat + /ask paths), not just the auto route.
+          body: JSON.stringify({ question, connection_id: connectionId, canvas_id: opts.canvasId ?? null, skip_cache: opts.skipCache ?? false, insight_id: opts.insightId ?? null, deep: opts.deep ?? false, history: chatHistory() }),
           signal,
         });
       } else if (mode === "auto") {

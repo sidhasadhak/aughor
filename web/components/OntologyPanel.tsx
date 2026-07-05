@@ -32,7 +32,7 @@ import { OntologyCanvas } from "./OntologyCanvas";
 import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
 import { ProcessMapper } from "./ProcessMapper";
 import { cn } from "@/lib/utils";
-import { verbLabel } from "@/lib/format";
+import { verbLabel, formatCount, formatTimestamp } from "@/lib/format";
 
 // ── Small reusable bits ───────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ function SqlToggle({ sql }: { sql: string }) {
     <div>
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition mt-1"
+        className="flex items-center gap-1 aug-fs-xs text-zinc-500 hover:text-zinc-300 transition mt-1"
       >
         <span className={cn("transition-transform", open && "rotate-180")}>
           <ChevronDownIcon label="" size="small" />
@@ -50,7 +50,7 @@ function SqlToggle({ sql }: { sql: string }) {
         SQL
       </button>
       {open && (
-        <pre className="mt-1.5 text-[11px] font-code text-zinc-300 bg-zinc-950 border border-zinc-700/60 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
+        <pre className="mt-1.5 aug-fs-xs font-code text-zinc-300 bg-zinc-950 border border-zinc-700/60 rounded-[var(--r3)] p-3 overflow-x-auto whitespace-pre-wrap">
           {sql}
         </pre>
       )}
@@ -64,7 +64,7 @@ function ConfidencePill({ c }: { c: string }) {
     : c === "exact"  ? "text-sky-400 border-sky-500/25 bg-sky-500/8"
     :                  "text-zinc-500 border-zinc-600 bg-zinc-800";
   return (
-    <span className={cn("text-[8px] uppercase tracking-wide border rounded px-1.5 py-0.5", cls)}>
+    <span className={cn("aug-fs-xs uppercase tracking-wide border rounded px-1.5 py-0.5", cls)}>
       {c}
     </span>
   );
@@ -219,15 +219,15 @@ function EntityDetailDrawer({
           <div className="flex items-center gap-1.5 flex-wrap">
             <p className="text-sm font-semibold text-zinc-100 truncate">{entity.display_name}</p>
             {entity.domain && (
-              <span className="text-[8px] uppercase tracking-wide border border-violet-500/25 bg-violet-500/8 text-violet-400 rounded px-1.5 py-0.5 shrink-0">
+              <span className="aug-fs-xs uppercase tracking-wide border border-violet-500/25 bg-violet-500/8 text-violet-400 rounded px-1.5 py-0.5 shrink-0">
                 {entity.domain}
               </span>
             )}
           </div>
-          <p className="text-[11px] font-mono text-zinc-500 truncate">{entity.source_tables[0]}</p>
+          <p className="aug-fs-xs font-mono text-zinc-500 truncate">{entity.source_tables[0]}</p>
           {lifecycleCounts && totalActive > 0 && (
-            <p className="text-[11px] text-emerald-400/70 mt-0.5">
-              {totalActive.toLocaleString()} active records
+            <p className="aug-fs-xs text-emerald-400/70 mt-0.5">
+              {formatCount(totalActive)} active records
             </p>
           )}
         </div>
@@ -240,7 +240,7 @@ function EntityDetailDrawer({
                   : `Investigate ${entity.display_name}: what is driving recent changes in this entity?`;
                 onInvestigate(q);
               }}
-              className="text-[11px] text-violet-400 hover:text-violet-300 border border-violet-500/30 hover:border-violet-400/50 rounded px-2 py-1 transition"
+              className="aug-fs-xs text-violet-400 hover:text-violet-300 border border-violet-500/30 hover:border-violet-400/50 rounded px-2 py-1 transition"
             >
               Investigate →
             </button>
@@ -261,7 +261,7 @@ function EntityDetailDrawer({
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              "px-3 py-2.5 text-[11px] font-medium transition border-b-2 -mb-px capitalize",
+              "px-3 py-2.5 aug-fs-xs font-medium transition border-b-2 -mb-px capitalize",
               tab === t.id
                 ? "border-violet-500 text-violet-400"
                 : "border-transparent text-zinc-500 hover:text-zinc-300",
@@ -269,7 +269,7 @@ function EntityDetailDrawer({
           >
             {t.label ?? t.id}
             {typeof t.count === "number" && t.count > 0 && (
-              <span className="ml-1 text-[11px] text-zinc-500">{t.count}</span>
+              <span className="ml-1 aug-fs-xs text-zinc-500">{t.count}</span>
             )}
           </button>
         ))}
@@ -283,7 +283,7 @@ function EntityDetailDrawer({
           <>
             {/* Description */}
             <div>
-              <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
+              <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
                 Description
               </p>
               {editingDesc ? (
@@ -299,13 +299,13 @@ function EntityDetailDrawer({
                     <button
                       onClick={saveDesc}
                       disabled={saving}
-                      className="text-[11px] text-emerald-400 hover:text-emerald-300 disabled:opacity-40"
+                      className="aug-fs-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-40"
                     >
                       {saving ? "saving…" : "save"}
                     </button>
                     <button
                       onClick={() => { setDraft(entity.description); setEditingDesc(false); }}
-                      className="text-[11px] text-zinc-500 hover:text-zinc-300"
+                      className="aug-fs-xs text-zinc-500 hover:text-zinc-300"
                     >
                       cancel
                     </button>
@@ -326,12 +326,12 @@ function EntityDetailDrawer({
 
             {/* Grain */}
             <div>
-              <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
+              <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
                 Identity key
               </p>
               <code className="text-zinc-400 font-code">{entity.identity_key}</code>
               <span className={cn(
-                "ml-2 text-[11px] border rounded px-1.5 py-0.5",
+                "ml-2 aug-fs-xs border rounded px-1.5 py-0.5",
                 entity.grain_verified
                   ? "text-emerald-400 border-emerald-500/25"
                   : "text-zinc-500 border-zinc-600",
@@ -343,7 +343,7 @@ function EntityDetailDrawer({
             {/* Lifecycle */}
             {entity.has_lifecycle && (
               <div>
-                <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
+                <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
                   Lifecycle — <span className="font-mono normal-case">{entity.lifecycle_column}</span>
                 </p>
                 <div className="flex flex-wrap gap-1 mb-2">
@@ -354,7 +354,7 @@ function EntityDetailDrawer({
                       <span
                         key={s}
                         className={cn(
-                          "text-[11px] font-mono rounded px-1.5 py-0.5 border flex items-center gap-1",
+                          "aug-fs-xs font-mono rounded px-1.5 py-0.5 border flex items-center gap-1",
                           isTerm
                             ? "text-zinc-500 border-zinc-600/60 bg-zinc-800/50"
                             : "text-violet-300 border-violet-500/20 bg-violet-500/10",
@@ -363,10 +363,10 @@ function EntityDetailDrawer({
                         {s}
                         {cnt !== undefined && (
                           <span className={cn(
-                            "text-[8px] font-sans tabular-nums",
+                            "aug-fs-xs font-sans tabular-nums",
                             isTerm ? "text-zinc-500" : "text-violet-400/70",
                           )}>
-                            {cnt.toLocaleString()}
+                            {formatCount(cnt)}
                           </span>
                         )}
                       </span>
@@ -375,8 +375,8 @@ function EntityDetailDrawer({
                 </div>
                 {entity.active_filter && (
                   <div>
-                    <p className="text-[11px] text-zinc-500 mb-1">Active filter</p>
-                    <code className="text-[11px] text-emerald-300 font-code bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1 block">
+                    <p className="aug-fs-xs text-zinc-500 mb-1">Active filter</p>
+                    <code className="aug-fs-xs text-emerald-300 font-code bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1 block">
                       {entity.active_filter}
                     </code>
                   </div>
@@ -387,12 +387,12 @@ function EntityDetailDrawer({
             {/* Business rules */}
             {entity.default_filters.length > 0 && (
               <div>
-                <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
+                <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
                   Default filters
                 </p>
                 <div className="space-y-1">
                   {entity.default_filters.map((f, i) => (
-                    <code key={i} className="block text-[11px] font-code text-amber-300/80 bg-zinc-800 border border-zinc-700/40 rounded px-2 py-1">
+                    <code key={i} className="block aug-fs-xs font-code text-amber-300/80 bg-zinc-800 border border-zinc-700/40 rounded px-2 py-1">
                       {f}
                     </code>
                   ))}
@@ -403,21 +403,21 @@ function EntityDetailDrawer({
             {/* Computed properties */}
             {entity.computed_properties && entity.computed_properties.length > 0 && (
               <div>
-                <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
+                <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
                   Computed properties
                 </p>
                 <div className="space-y-1.5">
                   {entity.computed_properties.map(cp => (
-                    <div key={cp.id} className="bg-zinc-800/50 border border-zinc-700/40 rounded-lg px-2.5 py-2 space-y-1">
+                    <div key={cp.id} className="bg-zinc-800/50 border border-zinc-700/40 rounded-[var(--r3)] px-2.5 py-2 space-y-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-zinc-300 font-medium">{cp.label}</span>
+                        <span className="aug-fs-xs text-zinc-300 font-medium">{cp.label}</span>
                         {cp.unit && (
-                          <span className="text-[11px] text-zinc-500 border border-zinc-700 rounded px-1 py-0.5">
+                          <span className="aug-fs-xs text-zinc-500 border border-zinc-700 rounded px-1 py-0.5">
                             {cp.unit}
                           </span>
                         )}
                       </div>
-                      <code className="block text-[11px] font-code text-emerald-300/80 leading-snug">
+                      <code className="block aug-fs-xs font-code text-emerald-300/80 leading-snug">
                         {cp.formula_sql}
                       </code>
                     </div>
@@ -437,7 +437,7 @@ function EntityDetailDrawer({
             ].map(({ label, rels }) =>
               rels.length > 0 ? (
                 <div key={label}>
-                  <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
+                  <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
                     {label}
                   </p>
                   <div className="space-y-2">
@@ -479,13 +479,13 @@ function EntityDetailDrawer({
               <p className="text-zinc-500 text-center py-6">No metrics defined.</p>
             ) : (
               metrics.map(m => (
-                <div key={m.id} className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3 space-y-2">
+                <div key={m.id} className="bg-zinc-800/50 border border-zinc-700/50 rounded-[var(--r3)] p-3 space-y-2">
                   <div className="flex items-center gap-2">
                     <p className="text-xs font-semibold text-zinc-200">{m.display_name}</p>
-                    {m.unit && <span className="text-[11px] text-zinc-500">{m.unit}</span>}
+                    {m.unit && <span className="aug-fs-xs text-zinc-500">{m.unit}</span>}
                   </div>
                   {m.description && <p className="text-zinc-500">{m.description}</p>}
-                  <code className="block text-[11px] font-code text-emerald-300 bg-zinc-950 border border-zinc-700/40 rounded px-2 py-1.5">
+                  <code className="block aug-fs-xs font-code text-emerald-300 bg-zinc-950 border border-zinc-700/40 rounded px-2 py-1.5">
                     {m.formula_sql}
                   </code>
                 </div>
@@ -515,28 +515,28 @@ function RelationshipRow({
 }) {
   const isFrom = rel.from_entity === fromPov;
   return (
-    <div className="bg-zinc-800/50 border border-zinc-700/40 rounded-lg px-3 py-2.5 space-y-1.5">
+    <div className="bg-zinc-800/50 border border-zinc-700/40 rounded-[var(--r3)] px-3 py-2.5 space-y-1.5">
       <div className="flex items-center gap-1.5 flex-wrap">
         {isFrom ? (
           <>
-            <span className="text-[11px] text-zinc-400 font-semibold">→</span>
+            <span className="aug-fs-xs text-zinc-400 font-semibold">→</span>
             <span className="text-xs text-zinc-200">{rel.to_entity}</span>
           </>
         ) : (
           <>
             <span className="text-xs text-zinc-200">{rel.from_entity}</span>
-            <span className="text-[11px] text-zinc-400 font-semibold">→</span>
+            <span className="aug-fs-xs text-zinc-400 font-semibold">→</span>
           </>
         )}
-        <span className="text-[11px] text-violet-400 font-mono">
+        <span className="aug-fs-xs text-violet-400 font-mono">
           {verbLabel(rel.verb)}
         </span>
-        <span className="text-[11px] font-mono text-zinc-500 border border-zinc-600 rounded px-1 py-0.5">
+        <span className="aug-fs-xs font-mono text-zinc-500 border border-zinc-600 rounded px-1 py-0.5">
           {rel.cardinality}
         </span>
         <ConfidencePill c={rel.join_confidence} />
       </div>
-      <code className="text-[11px] font-code text-zinc-500 block truncate">{rel.join_sql}</code>
+      <code className="aug-fs-xs font-code text-zinc-500 block truncate">{rel.join_sql}</code>
     </div>
   );
 }
@@ -573,13 +573,13 @@ function ActionRow({
   };
 
   return (
-    <div className="bg-zinc-800/50 border border-zinc-700/40 rounded-lg p-3 space-y-2">
+    <div className="bg-zinc-800/50 border border-zinc-700/40 rounded-[var(--r3)] p-3 space-y-2">
       <div className="flex items-center gap-1.5 flex-wrap">
-        <code className="text-[11px] font-code text-violet-300 font-semibold truncate">
+        <code className="aug-fs-xs font-code text-violet-300 font-semibold truncate">
           {action.id}()
         </code>
         <span className={cn(
-          "text-[8px] uppercase tracking-wider border rounded px-1.5 py-0.5",
+          "aug-fs-xs uppercase tracking-wider border rounded px-1.5 py-0.5",
           typeColors[action.action_type] ?? "text-zinc-500 border-zinc-600",
         )}>
           {action.action_type}
@@ -595,17 +595,17 @@ function ActionRow({
             autoFocus
           />
           <div className="flex gap-2">
-            <button onClick={save} disabled={saving} className="text-[11px] text-emerald-400 hover:text-emerald-300 disabled:opacity-40">
+            <button onClick={save} disabled={saving} className="aug-fs-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-40">
               {saving ? "saving…" : "save"}
             </button>
-            <button onClick={() => { setDraft(action.description); setEditDesc(false); }} className="text-[11px] text-zinc-500 hover:text-zinc-300">
+            <button onClick={() => { setDraft(action.description); setEditDesc(false); }} className="aug-fs-xs text-zinc-500 hover:text-zinc-300">
               cancel
             </button>
           </div>
         </div>
       ) : (
         <p
-          className="text-[11px] text-zinc-500 cursor-pointer hover:text-zinc-300 transition leading-relaxed"
+          className="aug-fs-xs text-zinc-500 cursor-pointer hover:text-zinc-300 transition leading-relaxed"
           onClick={() => setEditDesc(true)}
           title="Click to edit"
         >
@@ -616,7 +616,7 @@ function ActionRow({
       {action.business_rules_enforced.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {action.business_rules_enforced.map((r, i) => (
-            <span key={i} className="text-[8px] text-amber-400/70 border border-amber-500/15 bg-amber-500/8 rounded px-1.5 py-0.5">
+            <span key={i} className="aug-fs-xs text-amber-400/70 border border-amber-500/15 bg-amber-500/8 rounded px-1.5 py-0.5">
               {r}
             </span>
           ))}
@@ -670,36 +670,36 @@ function EdgeSqlPanel({
   return (
     <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 w-[480px] max-w-[90vw] bg-zinc-900 border border-zinc-700/70 rounded-md shadow-2xl shadow-black/60 overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-700/60">
-        <span className="text-[11px] text-violet-400 font-mono font-semibold flex-1 truncate">
+        <span className="aug-fs-xs text-violet-400 font-mono font-semibold flex-1 truncate">
           {fromEntity?.display_name ?? rel.from_entity}
           <span className="text-zinc-500 mx-1.5">→</span>
           {toEntity?.display_name ?? rel.to_entity}
           <span className="text-zinc-500 ml-2 font-sans font-normal">{verbLabel(rel.verb)}</span>
         </span>
-        <span className="text-[8px] font-mono text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">{rel.cardinality}</span>
+        <span className="aug-fs-xs font-mono text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">{rel.cardinality}</span>
         <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition ml-1">
           <CloseIcon label="Close" size="small" />
         </button>
       </div>
-      <pre className="text-[11px] font-code text-zinc-300 bg-zinc-950 px-4 py-3 overflow-x-auto whitespace-pre leading-relaxed">
+      <pre className="aug-fs-xs font-code text-zinc-300 bg-zinc-950 px-4 py-3 overflow-x-auto whitespace-pre leading-relaxed">
         {sql}
       </pre>
       <div className="flex items-center gap-2 px-4 py-2.5 border-t border-zinc-700/60">
         <button
           onClick={copy}
-          className="text-[11px] text-zinc-400 hover:text-zinc-200 border border-zinc-700 hover:border-zinc-500 rounded px-2.5 py-1 transition"
+          className="aug-fs-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 hover:border-zinc-500 rounded px-2.5 py-1 transition"
         >
           {copied ? "Copied ✓" : "Copy SQL"}
         </button>
         {onInvestigate && (
           <button
             onClick={() => onInvestigate(investigateQ)}
-            className="text-[11px] text-violet-400 hover:text-violet-300 border border-violet-500/30 hover:border-violet-400/50 rounded px-2.5 py-1 transition"
+            className="aug-fs-xs text-violet-400 hover:text-violet-300 border border-violet-500/30 hover:border-violet-400/50 rounded px-2.5 py-1 transition"
           >
             Send to Chat →
           </button>
         )}
-        <span className="ml-auto text-[11px] text-zinc-500">click edge to inspect joins</span>
+        <span className="ml-auto aug-fs-xs text-zinc-500">click edge to inspect joins</span>
       </div>
     </div>
   );
@@ -774,10 +774,10 @@ function OntologySettings({
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         {/* Refresh schedule */}
         <div>
-          <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
+          <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
             Auto-refresh interval
           </p>
-          <p className="text-[11px] text-zinc-500 mb-3 leading-relaxed">
+          <p className="aug-fs-xs text-zinc-500 mb-3 leading-relaxed">
             Automatically invalidate and rebuild the ontology on a schedule.
             The rebuild runs in the background when the interval elapses.
           </p>
@@ -788,7 +788,7 @@ function OntologySettings({
                 onClick={() => saveRefresh(opt.value)}
                 disabled={saving}
                 className={cn(
-                  "py-2 text-[11px] rounded-lg border transition font-medium",
+                  "py-2 aug-fs-xs rounded-[var(--r3)] border transition font-medium",
                   currentHours === opt.value
                     ? "bg-violet-500/15 border-violet-500/40 text-violet-300"
                     : "bg-zinc-800/60 border-zinc-700/50 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200",
@@ -799,7 +799,7 @@ function OntologySettings({
             ))}
           </div>
           {currentHours && (
-            <p className="text-[11px] text-violet-400/70 mt-2">
+            <p className="aug-fs-xs text-violet-400/70 mt-2">
               Refreshes every {currentHours}h
             </p>
           )}
@@ -808,25 +808,25 @@ function OntologySettings({
         {/* Last built */}
         {graph && (
           <div>
-            <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
+            <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
               Last built
             </p>
-            <p className="text-[11px] text-zinc-400 font-mono">
-              {new Date(graph.generated_at).toLocaleString()}
+            <p className="aug-fs-xs text-zinc-400 font-mono">
+              {formatTimestamp(graph.generated_at)}
             </p>
           </div>
         )}
 
         {/* Manual rebuild */}
         <div>
-          <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
+          <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
             Manual rebuild
           </p>
           <button
             onClick={handleRebuild}
             disabled={rebuilding}
             className={cn(
-              "w-full py-2 text-[11px] rounded-lg border transition",
+              "w-full py-2 aug-fs-xs rounded-[var(--r3)] border transition",
               rebuilding
                 ? "border-zinc-700 text-zinc-500 cursor-not-allowed"
                 : "border-violet-500/30 text-violet-400 hover:bg-violet-500/10 hover:border-violet-400/50",
@@ -836,7 +836,7 @@ function OntologySettings({
           </button>
           {rebuildMsg && (
             <p className={cn(
-              "text-[11px] mt-2",
+              "aug-fs-xs mt-2",
               rebuildMsg.startsWith("Rebuilt") ? "text-emerald-400" : "text-red-400",
             )}>
               {rebuildMsg}
@@ -890,32 +890,32 @@ function DuplicatesDrawer({ connId, onClose, onMerged }: {
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-        {loading && <p className="text-[11px] text-zinc-500">Scanning for duplicates…</p>}
-        {error && <p className="text-[11px] text-red-400">{error}</p>}
+        {loading && <p className="aug-fs-xs text-zinc-500">Scanning for duplicates…</p>}
+        {error && <p className="aug-fs-xs text-red-400">{error}</p>}
         {!loading && !error && clusters?.length === 0 && (
-          <p className="text-[11px] text-zinc-500">
+          <p className="aug-fs-xs text-zinc-500">
             No likely duplicates found. (Detection uses embeddings; if none are configured it returns nothing.)
           </p>
         )}
         {clusters?.map((c, i) => (
           <div key={i} className="rounded border border-violet-500/25 bg-violet-500/[0.04] p-2.5 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] text-violet-300">{c.entities.length} entities</span>
-              <span className="text-[10px] text-zinc-500">similarity {Math.round(c.similarity * 100)}%</span>
+              <span className="aug-fs-xs text-violet-300">{c.entities.length} entities</span>
+              <span className="aug-fs-xs text-zinc-500">similarity {Math.round(c.similarity * 100)}%</span>
             </div>
             <ul className="space-y-0.5">
               {c.entities.map(e => (
-                <li key={e.id} className="text-[11px] text-zinc-300">
+                <li key={e.id} className="aug-fs-xs text-zinc-300">
                   {e.display_name} <span className="text-zinc-500">({e.source_tables.join(", ") || "—"})</span>
                 </li>
               ))}
             </ul>
             <div className="flex flex-col gap-1 pt-0.5">
-              <span className="text-[10px] text-zinc-500">Merge all into:</span>
+              <span className="aug-fs-xs text-zinc-500">Merge all into:</span>
               <div className="flex flex-wrap gap-1">
                 {c.entities.map(e => (
                   <button key={e.id} onClick={() => doMerge(c, e.id)} disabled={merging !== null}
-                    className="text-[10px] px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40">
+                    className="aug-fs-xs px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40">
                     {merging === e.id ? "Merging…" : e.display_name}
                   </button>
                 ))}
@@ -974,7 +974,7 @@ function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void
         </button>
       </div>
       {autonomy && (
-        <div className="px-3 py-2 border-b border-zinc-800/70 text-[10px] text-zinc-500">
+        <div className="px-3 py-2 border-b border-zinc-800/70 aug-fs-xs text-zinc-500">
           autonomy{" "}
           <span className={cn("font-medium", _AUTONOMY_TONE[autonomy.level] ?? "text-zinc-400")}>
             L{autonomy.level} · {autonomy.label}
@@ -983,10 +983,10 @@ function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-        {loading && <p className="text-[11px] text-zinc-500">Loading skills…</p>}
-        {error && <p className="text-[11px] text-red-400">{error}</p>}
+        {loading && <p className="aug-fs-xs text-zinc-500">Loading skills…</p>}
+        {error && <p className="aug-fs-xs text-red-400">{error}</p>}
         {!loading && !error && skills?.length === 0 && (
-          <p className="text-[11px] text-zinc-500">
+          <p className="aug-fs-xs text-zinc-500">
             No learned skills yet. A skill is crystallized from a finished investigation
             (its grounded, read-only query) — run a deep analysis, then “Save as skill”.
           </p>
@@ -994,25 +994,25 @@ function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void
         {skills?.map(sk => (
           <div key={sk.id} className="rounded border border-violet-500/25 bg-violet-500/[0.04] p-2.5 space-y-1.5">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-violet-200 truncate" title={sk.display_name}>{sk.display_name}</span>
-              <span className="text-[10px] text-zinc-500 shrink-0">{sk.action_type} · used {sk.usage_count ?? 0}×</span>
+              <span className="aug-fs-xs text-violet-200 truncate" title={sk.display_name}>{sk.display_name}</span>
+              <span className="aug-fs-xs text-zinc-500 shrink-0">{sk.action_type} · used {sk.usage_count ?? 0}×</span>
             </div>
-            {sk.description && <p className="text-[10px] text-zinc-500 line-clamp-2">{sk.description}</p>}
-            <pre className="text-[10px] text-zinc-400 bg-zinc-900/60 rounded p-1.5 overflow-x-auto whitespace-pre-wrap break-words max-h-24">{sk.sql_template}</pre>
+            {sk.description && <p className="aug-fs-xs text-zinc-500 line-clamp-2">{sk.description}</p>}
+            <pre className="aug-fs-xs text-zinc-400 bg-zinc-900/60 rounded p-1.5 overflow-x-auto whitespace-pre-wrap break-words max-h-24">{sk.sql_template}</pre>
             {sk.parameters?.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {sk.parameters.map(p => (
-                  <span key={p.name} className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{`{${p.name}}`}</span>
+                  <span key={p.name} className="aug-fs-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{`{${p.name}}`}</span>
                 ))}
               </div>
             )}
             <div className="flex gap-1 pt-0.5">
               <button onClick={() => doUse(sk.id)} disabled={busy !== null}
-                className="text-[10px] px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40">
+                className="aug-fs-xs px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40">
                 {busy === sk.id ? "…" : "Use"}
               </button>
               <button onClick={() => doDelete(sk.id)} disabled={busy !== null}
-                className="text-[10px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-red-300 hover:border-red-500/40 transition disabled:opacity-40">
+                className="aug-fs-xs px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-red-300 hover:border-red-500/40 transition disabled:opacity-40">
                 Delete
               </button>
             </div>
@@ -1074,7 +1074,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
       <p className="text-xs font-semibold text-zinc-300">Business Ontology</p>
 
       {/* Org ⟷ Connection view toggle */}
-      <div className="flex items-center rounded-md border border-zinc-700 overflow-hidden text-[11px]">
+      <div className="flex items-center rounded-md border border-zinc-700 overflow-hidden aug-fs-xs">
         <button
           onClick={() => setOrgMode(true)}
           className={cn(
@@ -1094,22 +1094,22 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
       {!orgMode && graph && (
         <div className="flex items-center gap-2 ml-auto">
           {graph.enriched ? (
-            <span className="text-[11px] text-emerald-400 border border-emerald-500/20 bg-emerald-500/8 rounded-full px-2 py-0.5">
+            <span className="aug-fs-xs text-emerald-400 border border-emerald-500/20 bg-emerald-500/8 rounded-[var(--r-pill)] px-2 py-0.5">
               semantically enriched
             </span>
           ) : (
-            <span className="text-[11px] text-zinc-500 border border-zinc-700 rounded-full px-2 py-0.5">
+            <span className="aug-fs-xs text-zinc-500 border border-zinc-700 rounded-[var(--r-pill)] px-2 py-0.5">
               structural only
             </span>
           )}
-          <span className="text-[11px] text-zinc-500">
+          <span className="aug-fs-xs text-zinc-500">
             {Object.keys(graph.entities).length} entities
             · {Object.keys(graph.relationships).length} relationships
           </span>
           <button
             onClick={() => { setShowDuplicates(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowSkills(false); }}
             className={cn(
-              "text-[11px] px-2 py-0.5 rounded border transition",
+              "aug-fs-xs px-2 py-0.5 rounded border transition",
               showDuplicates
                 ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
                 : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
@@ -1121,7 +1121,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
           <button
             onClick={() => { setShowSkills(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); }}
             className={cn(
-              "text-[11px] px-2 py-0.5 rounded border transition",
+              "aug-fs-xs px-2 py-0.5 rounded border transition",
               showSkills
                 ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
                 : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
@@ -1166,7 +1166,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
         {headerBar}
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-3">
-            <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto" />
+            <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-[var(--r-pill)] animate-spin mx-auto" />
             <p className="text-sm text-zinc-500">Building ontology…</p>
           </div>
         </div>
@@ -1180,7 +1180,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
         {headerBar}
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="text-center space-y-3 max-w-sm">
-            <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center mx-auto">
+            <div className="w-10 h-10 rounded-[var(--r-pill)] bg-zinc-800 flex items-center justify-center mx-auto">
               <NodeIcon label="" size="medium" color="var(--ds-icon-subtle)" />
             </div>
             <p className="text-sm text-zinc-400">

@@ -52,6 +52,20 @@ jobs:
         run: npm ci --legacy-peer-deps
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: Design-token gate
+        # Blocking, baseline zero (REC-U1): no raw radius / pixel font-size in
+        # components/ or app/ — the enforcement half of the 3-tier design layer,
+        # same discipline as the backend ruff gate.
+        run: npm run lint:tokens
+      - name: Formatting gate
+        # Blocking, baseline zero (REC-U8): number/date rendering routes through
+        # lib/format.ts — no re-implemented toLocaleString / Intl.*Format in the UI.
+        run: npm run lint:format
+      - name: Raw-element ratchet
+        # One-way ratchet (REC-U2): the raw-<button> count may only shrink. New
+        # buttons use <Button> (components/ui/button); lower the baseline as the
+        # existing ones are converted.
+        run: npm run lint:elements
 
   lint:
     name: Backend · ruff

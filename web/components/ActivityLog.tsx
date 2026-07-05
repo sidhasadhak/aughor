@@ -153,23 +153,23 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
   const meta = phaseMeta(status.phase);
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "var(--b2)", background: "var(--bg-0)" }}>
-      <span className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded font-medium"
+      <span className="flex items-center gap-1.5 aug-fs-xs px-2 py-0.5 rounded font-medium"
         style={isStopped && !isRunning ? { background: "var(--bg-3)", color: "var(--t3)" } : { background: meta.bg, color: meta.color }}>
-        {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: meta.color }} />}
+        {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] animate-pulse" style={{ background: meta.color }} />}
         {isStopped && !isRunning ? "stopped" : status.phase === "complete" ? "complete" : status.phase === "pending" ? "idle" : meta.label}
       </span>
-      <span className="text-[11px]" style={{ color: "var(--t4)" }}>
+      <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
         {status.queries_executed > 0 && `${status.queries_executed} queries`}
         {status.facts_discovered > 0 && ` · ${status.facts_discovered} facts`}
         {status.insights_found    > 0 && ` · ${status.insights_found} insights`}
       </span>
       <div className="ml-auto flex items-center gap-2">
-        <span className="text-[11px]" style={{ color: "var(--t3)" }}>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           {status.tables_total > 0 && `${status.tables_total} tables · ${status.joins_total} joins`}
         </span>
         {isRunning && (
           <button onClick={onStop} disabled={stopping}
-            className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
+            className="flex items-center gap-1 aug-fs-xs px-2.5 py-1 rounded transition-all disabled:opacity-40"
             style={{ background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)" }}>
             <span className="w-2 h-2 rounded-sm inline-block" style={{ background: "var(--red4)" }} />
             {stopping ? "stopping…" : "Stop"}
@@ -177,12 +177,12 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
         )}
         {isStopped && !isRunning && (<>
           <button onClick={onResume} disabled={resuming || restarting}
-            className="text-[11px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
+            className="aug-fs-xs px-2.5 py-1 rounded transition-all disabled:opacity-40"
             style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
             {resuming ? "resuming…" : "Resume"}
           </button>
           <button onClick={onRestart} disabled={resuming || restarting}
-            className="text-[11px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
+            className="aug-fs-xs px-2.5 py-1 rounded transition-all disabled:opacity-40"
             style={{ background: "var(--amb1)", color: "var(--amb4)", border: "0.5px solid var(--amb2)" }}>
             {restarting ? "restarting…" : "Restart"}
           </button>
@@ -219,7 +219,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
   }
 
   if (!open) return (
-    <button onClick={() => setOpen(true)} className="text-[11px] px-2.5 py-1 rounded mt-2"
+    <button onClick={() => setOpen(true)} className="aug-fs-xs px-2.5 py-1 rounded mt-2"
       style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
       ↺ Retry with fix
     </button>
@@ -227,32 +227,32 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
 
   return (
     <div className="rounded-md p-3 space-y-2 mt-2" style={{ background: "var(--bg-0)", border: "0.5px solid var(--b2)" }}>
-      <p className="text-[11px] uppercase tracking-widest" style={{ color: "var(--t4)" }}>Guidance (optional)</p>
+      <p className="aug-fs-xs uppercase tracking-widest" style={{ color: "var(--t4)" }}>Guidance (optional)</p>
       <div className="flex gap-2">
         <input type="text" value={hint} onChange={e => setHint(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !loading && handleRetry()}
           placeholder="e.g. use click_ts instead of click_id…"
-          className="flex-1 text-[11px] rounded px-2.5 py-1.5 focus:outline-none"
+          className="flex-1 aug-fs-xs rounded px-2.5 py-1.5 focus:outline-none"
           style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t2)" }} />
         <button onClick={handleRetry} disabled={loading}
-          className="text-[11px] px-3 py-1.5 rounded disabled:opacity-40 shrink-0"
+          className="aug-fs-xs px-3 py-1.5 rounded disabled:opacity-40 shrink-0"
           style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
           {loading ? "fixing…" : "Run fix"}
         </button>
         <button onClick={() => { setOpen(false); setResult(null); }}
-          className="text-[11px] px-2 py-1.5 rounded" style={{ color: "var(--t4)" }}>✕</button>
+          className="aug-fs-xs px-2 py-1.5 rounded" style={{ color: "var(--t4)" }}>✕</button>
       </div>
       {result && (
         <div className="space-y-2 pt-1">
-          {result.explanation && <p className="text-[11px]" style={{ color: "var(--blue4)" }}>{result.explanation}</p>}
-          <pre className="text-[11px] font-code rounded p-2 overflow-x-auto"
+          {result.explanation && <p className="aug-fs-xs" style={{ color: "var(--blue4)" }}>{result.explanation}</p>}
+          <pre className="aug-fs-xs font-code rounded p-2 overflow-x-auto"
             style={{ background: "var(--code-bg)", color: "var(--t3)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
             {result.corrected_sql}
           </pre>
           {result.ok ? (
             <>
               <div className="overflow-x-auto rounded" style={{ background: "var(--code-bg)" }}>
-                <table className="text-[11px] font-mono w-full">
+                <table className="aug-fs-xs font-mono w-full">
                   <thead><tr>{result.columns.map(c => (
                     <th key={c} className="px-2 py-1 text-left font-medium"
                       style={{ color: "var(--t3)", borderBottom: "0.5px solid var(--b2)" }}>{c}</th>
@@ -267,7 +267,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
               {/* Save the successful fix as a finding (through the Phase-8 guards) */}
               {!saved ? (
                 <button onClick={handleSave} disabled={saving}
-                  className="text-[11px] px-3 py-1.5 rounded disabled:opacity-40"
+                  className="aug-fs-xs px-3 py-1.5 rounded disabled:opacity-40"
                   style={{ background: "var(--grn1)", color: "var(--grn4)", border: "0.5px solid var(--grn2)" }}>
                   {saving ? "saving…" : "Save as finding"}
                 </button>
@@ -276,7 +276,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
               )}
             </>
           ) : (
-            <pre className="text-[11px] font-code rounded p-2"
+            <pre className="aug-fs-xs font-code rounded p-2"
               style={{ background: "var(--red1)", color: "var(--red4)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {result.error}
             </pre>
@@ -301,7 +301,7 @@ function SaveFeedback({ saved }: { saved: FixSaveResult }) {
     text = `✓ Query fixed — ${saved.reason ?? "no finding stored"}`;
   }
   return (
-    <p className="text-[11px] px-2.5 py-1.5 rounded" style={{ background: tone.bg, color: tone.fg, border: `0.5px solid ${tone.bd}` }}>
+    <p className="aug-fs-xs px-2.5 py-1.5 rounded" style={{ background: tone.bg, color: tone.fg, border: `0.5px solid ${tone.bd}` }}>
       {text}
     </p>
   );
@@ -650,8 +650,8 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
       <div className="h-full flex flex-col">
         <StatusBar status={status} stopped={stopped} onStop={handleStop} onResume={handleResume} onRestart={handleRestart} stopping={stopping} resuming={resuming} restarting={restarting} />
         <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: "var(--t4)" }}>
-          <p className="text-[12px]">No activity recorded yet.</p>
-          <p className="text-[11px]" style={{ color: "var(--t4)" }}>Activity appears here as background exploration runs.</p>
+          <p className="aug-fs-sm">No activity recorded yet.</p>
+          <p className="aug-fs-xs" style={{ color: "var(--t4)" }}>Activity appears here as background exploration runs.</p>
         </div>
       </div>
     );
@@ -705,7 +705,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
             {fixAllSummary.failed > 0 && ` · ${fixAllSummary.failed} still failing`}
           </span>
         )}
-        <span className="text-[11px]" style={{ color: "var(--t4)" }}>
+        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
           {showAll ? `${filtered.length}` : `${Math.min(DEFAULT_LIMIT, filtered.length)} of ${filtered.length}`}
           {isRunning && <span className="ml-2 animate-pulse" style={{ color: "var(--t3)" }}>● live</span>}
         </span>
@@ -724,7 +724,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
       {/* Table */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ background: "var(--bg-0)" }}>
         {displayed.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-[11px]" style={{ color: "var(--t4)" }}>
+          <div className="flex items-center justify-center h-32 aug-fs-xs" style={{ color: "var(--t4)" }}>
             No entries match the current filters.
           </div>
         ) : (

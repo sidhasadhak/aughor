@@ -25,20 +25,20 @@ function TableCard({ table, palette }: { table: SchemaTable; palette: TablePalet
   const totalCols = table.columns.length;
 
   return (
-    <div className={`rounded border ${palette.border} bg-zinc-800 overflow-hidden flex flex-col`}>
+    <div className="rounded border bg-zinc-800 overflow-hidden flex flex-col" style={palette.border}>
       {/* Card header — compact */}
-      <div className={`${palette.header} px-2.5 py-1.5 flex items-center justify-between gap-2`}>
+      <div className="px-2.5 py-1.5 flex items-center justify-between gap-2" style={palette.header}>
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${palette.dot}`} />
-          <span className="font-mono font-semibold text-[11px] text-white truncate">{table.name}</span>
+          <span className="w-1.5 h-1.5 rounded-[var(--r-pill)] shrink-0" style={palette.dot} />
+          <span className="font-mono font-semibold aug-fs-xs text-white truncate">{table.name}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {table.row_count && (
-            <span className={`text-[11px] px-1 py-px rounded font-mono ${palette.badge}`}>
+            <span className="aug-fs-xs px-1 py-px rounded font-mono" style={palette.badge}>
               {formatCount(Number(table.row_count))}r
             </span>
           )}
-          <span className="text-[11px] px-1 py-px rounded bg-zinc-800/80 text-zinc-500 font-mono">
+          <span className="aug-fs-xs px-1 py-px rounded bg-zinc-800/80 text-zinc-500 font-mono">
             {totalCols}c
           </span>
         </div>
@@ -52,11 +52,11 @@ function TableCard({ table, palette }: { table: SchemaTable; palette: TablePalet
             <div key={col.name} className="px-2.5 py-[3px] flex items-center justify-between gap-2 hover:bg-zinc-700/40 transition-colors">
               <div className="flex items-center gap-1 min-w-0">
                 {col.is_fk && (
-                  <span title="Foreign key" className="text-[8px] text-zinc-500 font-mono border border-zinc-600 rounded px-0.5 leading-tight shrink-0">FK</span>
+                  <span title="Foreign key" className="aug-fs-xs text-zinc-500 font-mono border border-zinc-600 rounded px-0.5 leading-tight shrink-0">FK</span>
                 )}
-                <span className="text-[11px] font-mono text-zinc-300 truncate">{col.name}</span>
+                <span className="aug-fs-xs font-mono text-zinc-300 truncate">{col.name}</span>
               </div>
-              <span className={`text-[11px] font-mono px-1 py-px rounded shrink-0 ${chip.cls}`}>{chip.label}</span>
+              <span className={`aug-fs-xs font-mono px-1 py-px rounded shrink-0 ${chip.cls}`}>{chip.label}</span>
             </div>
           );
         })}
@@ -70,14 +70,14 @@ function JoinPaths({ joins }: { joins: SchemaJoin[] }) {
   if (!joins.length) return null;
   return (
     <div>
-      <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+      <h3 className="aug-fs-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
         Detected Join Paths
       </h3>
       <div className="grid grid-cols-1 gap-1.5">
         {joins.map((j, i) => (
           <div
             key={i}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-600 text-xs font-mono"
+            className="flex items-center gap-2 px-3 py-2 rounded-[var(--r3)] bg-zinc-800 border border-zinc-600 text-xs font-mono"
           >
             <span className="text-zinc-300">{j.t1}</span>
             <span className="text-zinc-500">.</span>
@@ -86,7 +86,7 @@ function JoinPaths({ joins }: { joins: SchemaJoin[] }) {
             <span className="text-zinc-300">{j.t2}</span>
             <span className="text-zinc-500">.</span>
             <span className="text-violet-400">{j.c2}</span>
-            <span className={`ml-auto text-[11px] px-1.5 py-0.5 rounded ${
+            <span className={`ml-auto aug-fs-xs px-1.5 py-0.5 rounded ${
               j.match === "exact"
                 ? "bg-emerald-500/15 text-emerald-400"
                 : "bg-amber-500/15 text-amber-400"
@@ -104,11 +104,11 @@ function JoinPaths({ joins }: { joins: SchemaJoin[] }) {
 function Warnings({ warnings }: { warnings: SchemaWarning[] }) {
   return (
     <div>
-      <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+      <h3 className="aug-fs-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
         SQL Warnings &amp; Modeling Notes
       </h3>
       {warnings.length === 0 ? (
-        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-zinc-800 border border-zinc-600 text-xs text-zinc-500">
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-[var(--r3)] bg-zinc-800 border border-zinc-600 text-xs text-zinc-500">
           <span className="text-emerald-500">✓</span>
           No type mismatches or modeling issues detected
         </div>
@@ -117,7 +117,7 @@ function Warnings({ warnings }: { warnings: SchemaWarning[] }) {
           {warnings.map((w, i) => (
             <div
               key={i}
-              className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs border ${
+              className={`flex items-start gap-2 px-3 py-2 rounded-[var(--r3)] text-xs border ${
                 w.level === "warn"
                   ? "bg-amber-500/5 border-amber-500/20 text-amber-300"
                   : "bg-zinc-800 border-zinc-600 text-zinc-400"
@@ -138,7 +138,7 @@ function StatChip({ value, label, accent }: { value: string | number; label: str
   return (
     <div className="flex items-baseline gap-1 px-2 py-1 rounded bg-zinc-800 border border-zinc-600">
       <span className={`text-xs font-semibold tabular-nums ${accent ?? "text-zinc-100"}`}>{value}</span>
-      <span className="text-[11px] text-zinc-500">{label}</span>
+      <span className="aug-fs-xs text-zinc-500">{label}</span>
     </div>
   );
 }

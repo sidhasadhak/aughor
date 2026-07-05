@@ -72,31 +72,31 @@ function EpisodeRow({ ep, domain }: { ep: ExplorationEpisode; domain: string }) 
         onClick={() => setExpanded(e => !e)}
       >
         <span
-          className="shrink-0 mt-0.5 text-[11px] px-1.5 py-0.5 rounded"
+          className="shrink-0 mt-0.5 aug-fs-xs px-1.5 py-0.5 rounded"
           style={{ background: meta.bg, color: meta.color, border: `0.5px solid ${meta.border}` }}
         >
           {angle ?? "query"}
         </span>
-        <span className="flex-1 text-[11px] text-left leading-relaxed" style={{ color: "var(--t2)" }}>
+        <span className="flex-1 aug-fs-xs text-left leading-relaxed" style={{ color: "var(--t2)" }}>
           {question}
         </span>
         {isError
-          ? <span className="text-[11px] text-amber-400 shrink-0">error</span>
-          : <span className="text-[11px] shrink-0" style={{ color: "var(--t4)" }}>{expanded ? "▲" : "▼"}</span>
+          ? <span className="aug-fs-xs text-amber-400 shrink-0">error</span>
+          : <span className="aug-fs-xs shrink-0" style={{ color: "var(--t4)" }}>{expanded ? "▲" : "▼"}</span>
         }
       </button>
       {expanded && (
         <div className="border-t px-3 pb-3 pt-2 space-y-2" style={{ borderColor: "var(--b1)" }}>
           <div>
-            <p className="text-[11px] uppercase tracking-widest mb-1" style={{ color: "var(--t4)" }}>SQL</p>
-            <pre className="text-[11px] font-code leading-relaxed overflow-x-auto rounded p-2"
+            <p className="aug-fs-xs uppercase tracking-widest mb-1" style={{ color: "var(--t4)" }}>SQL</p>
+            <pre className="aug-fs-xs font-code leading-relaxed overflow-x-auto rounded p-2"
               style={{ background: "var(--bg-0)", color: "var(--t2)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {ep.sql}
             </pre>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-widest mb-1" style={{ color: "var(--t4)" }}>Result</p>
-            <pre className="text-[11px] font-code leading-relaxed overflow-x-auto rounded p-2"
+            <p className="aug-fs-xs uppercase tracking-widest mb-1" style={{ color: "var(--t4)" }}>Result</p>
+            <pre className="aug-fs-xs font-code leading-relaxed overflow-x-auto rounded p-2"
               style={{ background: isError ? "var(--red1)" : "var(--bg-0)", color: isError ? "var(--red4)" : "var(--t2)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {obsPreview}
             </pre>
@@ -613,8 +613,8 @@ export function DomainIntelPanel({ connectionId, isActive, canvasId }: Props) {
           <line x1="24" y1="9.5" x2="18.5" y2="14.5" stroke="var(--t4)" strokeWidth="1" />
           <line x1="8" y1="22.5" x2="13.5" y2="17.5" stroke="var(--t4)" strokeWidth="1" />
         </svg>
-        <p className="text-[12px]">Domain intelligence not yet available.</p>
-        <p className="text-[11px]" style={{ color: "var(--t4)" }}>
+        <p className="aug-fs-sm">Domain intelligence not yet available.</p>
+        <p className="aug-fs-xs" style={{ color: "var(--t4)" }}>
           Exploration must complete the ontology build + Phase 8 first.
         </p>
       </div>

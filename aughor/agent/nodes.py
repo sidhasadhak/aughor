@@ -16,7 +16,6 @@ from aughor.agent.prompts import (
     ROUTE_QUESTION_PROMPT,
     SCORE_EVIDENCE_PROMPT,
     SYNTHESIZE_PROMPT,
-    WRITE_SQL_PROMPT,
     format_pitfall_section,
 )
 from aughor.rules import get_rules_block
@@ -34,7 +33,6 @@ from aughor.agent.state import (
     ReplanDecision,
     RouteDecision,
     SQLFix,
-    SQLOutput,
 )
 from pydantic import BaseModel as _BaseModel
 
@@ -55,6 +53,18 @@ from aughor.tools.stats import analyze_query_result
 from aughor import telemetry as _telemetry
 
 MAX_ITER = int(__import__("os").getenv("AUGHOR_MAX_ITER", "6"))
+
+
+def _metrics_for_state(state) -> list:
+    """AL-05 — the first live *consumer* of the resolved Semantic plane. When a run carries a
+    `semantic_context` (resolved once at seed, schema-filtered), read its metrics instead of
+    re-consulting `list_metrics()`, so every node works off ONE metric set. Falls back to a direct
+    consult when no context is present (the `semantic.resolve_live` flag off → byte-identical)."""
+    sc = state.get("semantic_context")
+    if sc is not None and hasattr(sc, "metrics"):
+        return list(sc.metrics)
+    from aughor.semantic.metrics import list_metrics
+    return list_metrics()
 
 
 # A DRIVER / RELATIONSHIP question ("do late deliveries lower reviews", "is there a correlation
@@ -160,7 +170,10 @@ def route_question(state: AgentState) -> dict[str, Any]:
             "current_hypothesis_idx": 0,
             "iteration": 0,
             "pitfalls": [],
-            "prior_analyses": [],
+            # Preserve any origin seed (a drill or a follow-up base) — route_question
+            # runs first, so there are no stale priors to clear, and the direct/explore
+            # branches read prior_analyses to compose on that base (REC follow-up).
+            "prior_analyses": state.get("prior_analyses") or [],
         }
     if effective_mode == "final_text":
         return {
@@ -170,7 +183,10 @@ def route_question(state: AgentState) -> dict[str, Any]:
             "current_hypothesis_idx": 0,
             "iteration": 0,
             "pitfalls": [],
-            "prior_analyses": [],
+            # Preserve any origin seed (a drill or a follow-up base) — route_question
+            # runs first, so there are no stale priors to clear, and the direct/explore
+            # branches read prior_analyses to compose on that base (REC follow-up).
+            "prior_analyses": state.get("prior_analyses") or [],
         }
     if effective_mode == "explore":
         return {
@@ -181,7 +197,10 @@ def route_question(state: AgentState) -> dict[str, Any]:
             "subq_answers": [],
             "explore_report": None,
             "pitfalls": [],
-            "prior_analyses": [],
+            # Preserve any origin seed (a drill or a follow-up base) — route_question
+            # runs first, so there are no stale priors to clear, and the direct/explore
+            # branches read prior_analyses to compose on that base (REC follow-up).
+            "prior_analyses": state.get("prior_analyses") or [],
         }
     return {**base, "query_mode": "investigate"}
 
@@ -604,8 +623,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     _ontology_formulas_section = ""
     _targeted_metrics: list = []   # governed metrics this hypothesis targets (B-7 gate)
     try:
-        from aughor.semantic.metrics import list_metrics as _list_metrics
-        all_metrics = _list_metrics()
+        all_metrics = _metrics_for_state(state)   # AL-05: reuse the resolved Semantic plane's metrics
         hyp_lower = h.description.lower()
         matched_formulas: list[str] = []
         for m in all_metrics:
@@ -649,26 +667,19 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
         except Exception:
             pass
         def _write(extra: str = "") -> str | None:
-            try:
-                sql_out: SQLOutput = llm.complete(
-                    system="You are a SQL expert. Translate the query intent into one SQL SELECT statement.",
-                    user=WRITE_SQL_PROMPT.format(
-                        dialect=_dialect,
-                        hypothesis_description=h.description,
-                        intent_description=intent.get("description", ""),
-                        intent_tables=intent_tables,
-                        intent_filters=intent_filters,
-                        intent_aggregation=intent_aggregation,
-                        schema=_schema_ctx,
-                        pitfall_section=pitfall_section,
-                        sql_examples_section=sql_examples_section,
-                        ontology_actions_section=ontology_actions_section + intent_formula_section + extra,
-                    ),
-                    response_model=SQLOutput,
-                )
-                return sql_out.sql.strip() if sql_out.sql and sql_out.sql.strip() else None
-            except Exception:
-                return None
+            # One WRITE_SQL_PROMPT call site — delegate to the shared NL→SQL generator that the
+            # Capability plane also uses (AL-02 convergence). Same prompt, same `coder` provider;
+            # its internal fail-open now goes through tolerate() instead of a silent except-pass.
+            from aughor.capability.sql_generate import generate_sql
+            return generate_sql(
+                h.description, schema_text=_schema_ctx, dialect=_dialect,
+                intent_description=intent.get("description", ""),
+                intent_tables=intent_tables, intent_filters=intent_filters,
+                intent_aggregation=intent_aggregation,
+                pitfall_section=pitfall_section, sql_examples_section=sql_examples_section,
+                ontology_actions_section=ontology_actions_section + intent_formula_section + extra,
+                provider=llm,
+            ) or None
 
         sql = _write()
         # B-7 hard gate — if the SQL drifted from a governed formula this hypothesis

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { compactNumber } from "@/lib/format";
+import { compactNumber, formatCount } from "@/lib/format";
 import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
   createCanvas, updateCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
@@ -66,7 +66,7 @@ function SemanticStepPanel({
   result: SemanticOpResult | null;
   onApply: () => void; onRevert: () => void;
 }) {
-  const inputCls = "text-[11px] px-2 py-1 rounded border border-zinc-700 bg-transparent text-zinc-200 focus:border-violet-500/60 outline-none";
+  const inputCls = "aug-fs-xs px-2 py-1 rounded border border-zinc-700 bg-transparent text-zinc-200 focus:border-violet-500/60 outline-none";
   const canApply = Boolean(col && (
     op === "filter" ? predicate.trim()
     : op === "extract" ? fields.some(f => f.name.trim())
@@ -77,7 +77,7 @@ function SemanticStepPanel({
   return (
     <div className="rounded border border-violet-500/25 bg-violet-500/[0.04]">
       <button onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-violet-300 hover:text-violet-200 transition">
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 aug-fs-xs text-violet-300 hover:text-violet-200 transition">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l1.9 5.8L20 10l-5.1 2.2L12 18l-2.9-5.8L4 10l6.1-1.2z"/></svg>
         Semantic step
         <span className="text-zinc-500">— reason over a text column with an LLM</span>
@@ -92,7 +92,7 @@ function SemanticStepPanel({
               <option value="top_k">top-k — rank &amp; keep best</option>
               <option value="aggregate">aggregate — summarize to one</option>
             </select>
-            <span className="text-[11px] text-zinc-500">on</span>
+            <span className="aug-fs-xs text-zinc-500">on</span>
             <select value={col} onChange={e => setCol(e.target.value)} className={inputCls}>
               {columns.map(c => (
                 <option key={c} value={c}>{c}{textCols.includes(c) ? "" : " (not text?)"}</option>
@@ -108,7 +108,7 @@ function SemanticStepPanel({
             <div className="flex items-center gap-2">
               <input value={criterion} onChange={e => setCriterion(e.target.value)}
                 placeholder="rank by… e.g. 'most severe outage'" className={`${inputCls} flex-1`} />
-              <span className="text-[11px] text-zinc-500">keep</span>
+              <span className="aug-fs-xs text-zinc-500">keep</span>
               <input type="number" min={1} value={k}
                 onChange={e => setK(Math.max(1, parseInt(e.target.value) || 1))} className={`${inputCls} w-16`} />
             </div>
@@ -132,28 +132,28 @@ function SemanticStepPanel({
                 </div>
               ))}
               <button onClick={() => setFields([...fields, { name: "", description: "" }])}
-                className="text-[11px] text-violet-400 hover:text-violet-300 self-start">+ field</button>
+                className="aug-fs-xs text-violet-400 hover:text-violet-300 self-start">+ field</button>
             </div>
           )}
 
           <div className="flex items-center gap-2">
             <button onClick={onApply} disabled={!canApply || applying}
-              className="text-[11px] px-3 py-1 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40 flex items-center gap-1.5">
-              {applying && <span className="w-3 h-3 border border-violet-300 border-t-transparent rounded-full animate-spin" />}
+              className="aug-fs-xs px-3 py-1 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40 flex items-center gap-1.5">
+              {applying && <span className="w-3 h-3 border border-violet-300 border-t-transparent rounded-[var(--r-pill)] animate-spin" />}
               {applying ? "Applying…" : "Apply"}
             </button>
             {result && (
               <button onClick={onRevert}
-                className="text-[11px] px-2 py-1 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 transition">Revert</button>
+                className="aug-fs-xs px-2 py-1 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 transition">Revert</button>
             )}
             {result && !result.error && (
-              <span className="text-[11px] text-zinc-400">{result.input_rows} → {result.output_rows} rows · {result.llm_calls} call{result.llm_calls === 1 ? "" : "s"}</span>
+              <span className="aug-fs-xs text-zinc-400">{result.input_rows} → {result.output_rows} rows · {result.llm_calls} call{result.llm_calls === 1 ? "" : "s"}</span>
             )}
           </div>
 
-          {error && <div className="text-[11px] text-red-400">{error}</div>}
+          {error && <div className="aug-fs-xs text-red-400">{error}</div>}
           {result?.notes?.length ? (
-            <ul className="text-[11px] text-zinc-500 list-disc pl-4">
+            <ul className="aug-fs-xs text-zinc-500 list-disc pl-4">
               {result.notes.map((n, i) => <li key={i}>{n}</li>)}
             </ul>
           ) : null}
@@ -214,7 +214,7 @@ const isNum  = (t: string) => NUM_T.some(k  => t.toLowerCase().includes(k));
 const isDate = (t: string) => DATE_T.some(k => t.toLowerCase().includes(k));
 const dot    = (t: string) => isNum(t) ? "bg-emerald-500" : isDate(t) ? "bg-blue-400" : "bg-zinc-500";
 const fmtMs  = (ms: number) => ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms/1000).toFixed(2)}s`;
-const fmtN   = (n: number) => n.toLocaleString();
+const fmtN   = (n: number) => formatCount(n);
 
 function autoAlias(agg: AggFn, col: string, expr: string) {
   return agg === "CUSTOM"
@@ -631,19 +631,19 @@ function ColRow({ col, tableName, onAddDim, onAddMeasure }: {
       <svg width="8" height="11" viewBox="0 0 8 14" className="text-zinc-500 group-hover:text-zinc-300 shrink-0 transition-colors">
         {[1,5,9,13].map(y=>[1,5].map(x=><circle key={`${x}${y}`} cx={x} cy={y} r="1.2" fill="currentColor"/>)).flat()}
       </svg>
-      <span className={`w-2 h-2 rounded-full shrink-0 ${dot(col.type)}`} />
-      <span className="text-[12px] font-mono text-zinc-200 truncate flex-1" title={`${col.name} (${col.type})`}>
+      <span className={`w-2 h-2 rounded-[var(--r-pill)] shrink-0 ${dot(col.type)}`} />
+      <span className="aug-fs-sm font-mono text-zinc-200 truncate flex-1" title={`${col.name} (${col.type})`}>
         {col.name}
       </span>
-      <span className="hidden group-hover:inline text-[11px] text-zinc-500 font-mono shrink-0 uppercase">
+      <span className="hidden group-hover:inline aug-fs-xs text-zinc-500 font-mono shrink-0 uppercase">
         {col.type.split(" ")[0].slice(0,6)}
       </span>
-      {col.is_fk && <span className="text-[11px] text-zinc-500">FK</span>}
+      {col.is_fk && <span className="aug-fs-xs text-zinc-500">FK</span>}
       <div className="hidden group-hover:flex gap-0.5 shrink-0">
         <button onMouseDown={e=>{e.stopPropagation();onAddDim();}} title="Add as dimension"
-          className="px-1.5 py-0.5 rounded text-[11px] font-bold bg-blue-500/20 text-blue-400 hover:bg-blue-500/40 transition">D</button>
+          className="px-1.5 py-0.5 rounded aug-fs-xs font-bold bg-blue-500/20 text-blue-400 hover:bg-blue-500/40 transition">D</button>
         <button onMouseDown={e=>{e.stopPropagation();onAddMeasure();}} title="Add as metric"
-          className="px-1.5 py-0.5 rounded text-[11px] font-bold bg-violet-500/20 text-violet-400 hover:bg-violet-500/40 transition">M</button>
+          className="px-1.5 py-0.5 rounded aug-fs-xs font-bold bg-violet-500/20 text-violet-400 hover:bg-violet-500/40 transition">M</button>
       </div>
     </div>
   );
@@ -675,16 +675,16 @@ function AggPicker({ col, table, onAdd, onCancel }: {
         <div className="flex items-start justify-between mb-5">
           <div>
             <p className="text-base font-semibold text-zinc-100">Configure Metric</p>
-            <p className="text-[12px] font-mono text-zinc-500 mt-0.5">{table}.{col.name} · {col.type}</p>
+            <p className="aug-fs-sm font-mono text-zinc-500 mt-0.5">{table}.{col.name} · {col.type}</p>
           </div>
           <button onClick={onCancel} className="text-zinc-500 hover:text-zinc-300 text-lg p-0.5 leading-none">×</button>
         </div>
 
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">Aggregation function</p>
+        <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">Aggregation function</p>
         <div className="grid grid-cols-5 gap-2 mb-5">
           {AGG_OPTIONS.map(o => (
             <button key={o.fn} onClick={() => changeAgg(o.fn as AggFn)} title={o.hint}
-              className={`py-2 text-[11px] font-medium rounded-lg border transition ${
+              className={`py-2 aug-fs-xs font-medium rounded-[var(--r3)] border transition ${
                 agg === o.fn ? `${o.cls} ring-2 ring-current/40` : "text-zinc-500 border-zinc-700 bg-zinc-800/50 hover:border-zinc-500 hover:text-zinc-300"
               }`}>
               {o.label}
@@ -694,36 +694,36 @@ function AggPicker({ col, table, onAdd, onCancel }: {
 
         {agg === "CUSTOM" && (
           <div className="mb-5">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">SQL expression</p>
+            <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">SQL expression</p>
             <input ref={exprRef} value={expr} onChange={e => setExpr(e.target.value)}
               placeholder="e.g. ROUND(SUM(revenue) / COUNT(*), 2)"
-              className="w-full text-[12px] font-mono bg-zinc-800 border border-zinc-600 rounded-md px-3 py-2.5 text-zinc-200 outline-none focus:border-zinc-400 transition" />
+              className="w-full aug-fs-sm font-mono bg-zinc-800 border border-zinc-600 rounded-md px-3 py-2.5 text-zinc-200 outline-none focus:border-zinc-400 transition" />
           </div>
         )}
 
         <div className="mb-5">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Column alias</p>
+          <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Column alias</p>
           <input value={alias} onChange={e => { aliasEdited.current = true; setAlias(e.target.value); }}
             placeholder="metric_name"
-            className="w-full text-[12px] font-mono bg-zinc-800 border border-zinc-600 rounded-md px-3 py-2.5 text-zinc-200 outline-none focus:border-zinc-400 transition" />
+            className="w-full aug-fs-sm font-mono bg-zinc-800 border border-zinc-600 rounded-md px-3 py-2.5 text-zinc-200 outline-none focus:border-zinc-400 transition" />
         </div>
 
         <div className="mb-6 px-4 py-3 rounded-md bg-zinc-800/70 border border-zinc-700/60">
-          <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5">SQL preview</p>
-          <p className="text-[13px] font-mono text-emerald-400 break-all">
+          <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5">SQL preview</p>
+          <p className="aug-fs-ui font-mono text-emerald-400 break-all">
             {preview} <span className="text-zinc-500">AS</span> {alias || "alias"}
           </p>
         </div>
 
         <div className="flex gap-3 justify-end">
           <button onClick={onCancel}
-            className="px-4 py-2 text-[13px] text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-md transition">
+            className="px-4 py-2 aug-fs-ui text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-md transition">
             Cancel
           </button>
           <button
             onClick={() => onAdd({ id:uid(), col:col.name, table, agg, customExpr:expr, alias: alias||autoAlias(agg,col.name,expr) })}
             disabled={agg === "CUSTOM" && !expr.trim()}
-            className="px-5 py-2 text-[13px] bg-blue-600 hover:bg-blue-500 text-white rounded-md font-semibold transition disabled:opacity-40">
+            className="px-5 py-2 aug-fs-ui bg-blue-600 hover:bg-blue-500 text-white rounded-md font-semibold transition disabled:opacity-40">
             Add Metric
           </button>
         </div>
@@ -744,14 +744,14 @@ function AcDropdown({ items, active, setActive, onSelect, onClose, pos }: {
       <div className="fixed z-50 min-w-[220px] max-w-[320px] rounded-md border border-zinc-600/90 bg-zinc-900 shadow-2xl overflow-hidden"
         style={{ top: flipUp ? pos.top - items.length * 28 - 40 : pos.top, left: pos.left }}>
         <div className="px-3 py-1.5 border-b border-zinc-700/50 flex items-center justify-between">
-          <span className="text-[11px] text-zinc-500 font-medium">Suggestions</span>
-          <span className="text-[11px] text-zinc-500">↑↓  ↵ insert  Esc</span>
+          <span className="aug-fs-xs text-zinc-500 font-medium">Suggestions</span>
+          <span className="aug-fs-xs text-zinc-500">↑↓  ↵ insert  Esc</span>
         </div>
         {items.map((s, i) => (
           <button key={s}
             onMouseDown={e => { e.preventDefault(); onSelect(s); }}
             onMouseEnter={() => setActive(i)}
-            className={`w-full text-left px-3 py-[7px] text-[12px] font-mono transition ${
+            className={`w-full text-left px-3 py-[7px] aug-fs-sm font-mono transition ${
               i === active ? "bg-blue-600/25 text-blue-200" : "text-zinc-300 hover:bg-zinc-800"
             }`}>{s}</button>
         ))}
@@ -908,9 +908,9 @@ function ResultsPane({
       {/* Result meta + CSV (the Chart/Table choice now lives in the DATA-tab dropdown) */}
       <div className="flex items-center gap-2.5">
         <div className="ml-auto flex items-center gap-2.5">
-          <span className="text-[11px]" style={{ color: "var(--t3)" }}>{meta}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{meta}</span>
           <button onClick={exportCsv} title="Download results as CSV"
-            className="text-[11px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition flex items-center gap-1">
+            className="aug-fs-xs px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition flex items-center gap-1">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             CSV
           </button>
@@ -956,11 +956,11 @@ function ResultsPane({
           <button
             onClick={handleCreateCanvas}
             disabled={creatingCanvas}
-            className="text-[11px] px-3 py-1.5 rounded border border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition disabled:opacity-50 flex items-center gap-1.5"
+            className="aug-fs-xs px-3 py-1.5 rounded border border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition disabled:opacity-50 flex items-center gap-1.5"
           >
             {creatingCanvas ? (
               <>
-                <span className="w-3 h-3 border border-violet-400 border-t-transparent rounded-full animate-spin" />
+                <span className="w-3 h-3 border border-violet-400 border-t-transparent rounded-[var(--r-pill)] animate-spin" />
                 Creating…
               </>
             ) : (
@@ -1592,15 +1592,15 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
           <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
           <rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>
         </svg>
-        <span className="text-[14px] font-semibold text-zinc-200">Query Builder</span>
+        <span className="aug-fs-ui font-semibold text-zinc-200">Query Builder</span>
 
         <div className="h-5 w-px bg-zinc-700/60 mx-1" />
 
         {/* Connection */}
         <div className="flex items-center gap-2">
-          <span className="text-[12px] text-zinc-500">Connection</span>
+          <span className="aug-fs-sm text-zinc-500">Connection</span>
           <select value={connId} onChange={e=>setConnId(e.target.value)}
-            className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1 text-zinc-200 outline-none hover:border-zinc-500 transition cursor-pointer">
+            className="aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 text-zinc-200 outline-none hover:border-zinc-500 transition cursor-pointer">
             {connections.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
@@ -1614,12 +1614,12 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
               const found = isPrimary || !!js?.join;
               return (
                 <span key={t} title={js?.join ? `${js.join.t1}.${js.join.c1} = ${js.join.t2}.${js.join.c2}` : undefined}
-                  className={`flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full border shrink-0 ${
+                  className={`flex items-center gap-1.5 aug-fs-xs font-mono px-2.5 py-0.5 rounded-[var(--r-pill)] border shrink-0 ${
                     isPrimary ? "bg-blue-500/10 border-blue-500/30 text-blue-300"
                     : found ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
                             : "bg-amber-500/10  border-amber-500/30  text-amber-300"
                 }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isPrimary ? "bg-blue-400" : found ? "bg-emerald-400" : "bg-amber-400"}`} />
+                  <span className={`w-1.5 h-1.5 rounded-[var(--r-pill)] ${isPrimary ? "bg-blue-400" : found ? "bg-emerald-400" : "bg-amber-400"}`} />
                   {t}
                   {!isPrimary && <button onClick={()=>removeJoin(t)} className="opacity-50 hover:opacity-100 ml-0.5 leading-none">×</button>}
                 </span>
@@ -1627,12 +1627,12 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
             })}
           </div>
         ) : result ? (
-          <span className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full border shrink-0 bg-violet-500/10 border-violet-500/30 text-violet-300 ml-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+          <span className="flex items-center gap-1.5 aug-fs-xs font-mono px-2.5 py-0.5 rounded-[var(--r-pill)] border shrink-0 bg-violet-500/10 border-violet-500/30 text-violet-300 ml-1">
+            <span className="w-1.5 h-1.5 rounded-[var(--r-pill)] bg-violet-400" />
             imported query · edit SQL below
           </span>
         ) : (
-          <span className="text-[12px] text-zinc-500 ml-1">Drag a field from the catalog to begin</span>
+          <span className="aug-fs-sm text-zinc-500 ml-1">Drag a field from the catalog to begin</span>
         )}
 
         {/* Right controls */}
@@ -1642,7 +1642,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
           <div className="relative flex items-center gap-1.5">
             <button onClick={() => { setShowSaved(v => !v); refreshSavedList(); }}
               title="Open saved queries"
-              className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+              className="flex items-center gap-1 aug-fs-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="shrink-0">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
               </svg>
@@ -1652,7 +1652,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
             </button>
             <button onClick={onSaveClick} disabled={!sql.trim()}
               title={savedId ? "Update this saved query" : "Save the current query"}
-              className={`text-[11px] rounded-lg px-2.5 py-1 transition border disabled:opacity-40 ${
+              className={`aug-fs-xs rounded-[var(--r3)] px-2.5 py-1 transition border disabled:opacity-40 ${
                 savingState === "saved" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
                   : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100"
               }`}>
@@ -1665,22 +1665,22 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                 <div className="fixed inset-0 z-30" onClick={() => setShowSaved(false)} />
                 <div className="absolute right-0 top-full mt-2 z-40 w-72 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">
                   <div className="px-3 py-2 border-b border-zinc-700/50 flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-zinc-400">Saved queries</span>
+                    <span className="aug-fs-xs font-semibold text-zinc-400">Saved queries</span>
                     <button onClick={() => { setSavedId(null); setSaveName(suggestedName()); setShowSaved(false); setShowSaveName(true); }}
                       disabled={!sql.trim()}
-                      className="text-[11px] text-blue-400 hover:text-blue-300 disabled:opacity-40">+ Save current as…</button>
+                      className="aug-fs-xs text-blue-400 hover:text-blue-300 disabled:opacity-40">+ Save current as…</button>
                   </div>
                   <div className="max-h-[320px] overflow-y-auto">
                     {savedList.length === 0 ? (
-                      <p className="px-3 py-3 text-[11px] text-zinc-500">No saved queries for this connection yet.</p>
+                      <p className="px-3 py-3 aug-fs-xs text-zinc-500">No saved queries for this connection yet.</p>
                     ) : savedList.map(q => (
                       <div key={q.id} onClick={() => loadSaved(q)}
                         className={`group/sq flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-800/70 border-b border-zinc-700/30 last:border-0 ${q.id === savedId ? "bg-zinc-800/40" : ""}`}>
                         <div className="min-w-0 flex-1">
-                          <p className="text-[12px] text-zinc-200 truncate">{q.name}</p>
-                          <p className="text-[10px] text-zinc-500 truncate font-mono">{(q.sql || "").replace(/\s+/g, " ").slice(0, 52)}</p>
+                          <p className="aug-fs-sm text-zinc-200 truncate">{q.name}</p>
+                          <p className="aug-fs-xs text-zinc-500 truncate font-mono">{(q.sql || "").replace(/\s+/g, " ").slice(0, 52)}</p>
                         </div>
-                        {q.id === savedId && <span className="text-[9px] text-blue-400 shrink-0">active</span>}
+                        {q.id === savedId && <span className="aug-fs-xs text-blue-400 shrink-0">active</span>}
                         <button onClick={(e) => removeSaved(q.id, e)} title="Delete saved query"
                           className="opacity-0 group-hover/sq:opacity-100 text-zinc-500 hover:text-red-400 shrink-0 leading-none">✕</button>
                       </div>
@@ -1695,15 +1695,15 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowSaveName(false)} />
                 <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl p-3">
-                  <p className="text-[11px] font-semibold text-zinc-400 mb-2">Save query as</p>
+                  <p className="aug-fs-xs font-semibold text-zinc-400 mb-2">Save query as</p>
                   <input autoFocus value={saveName} onChange={e => setSaveName(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") doCreateSaved(saveName); if (e.key === "Escape") setShowSaveName(false); }}
                     placeholder="Query name"
-                    className="w-full text-[12px] bg-zinc-800 border border-zinc-600 rounded-md px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-400" />
+                    className="w-full aug-fs-sm bg-zinc-800 border border-zinc-600 rounded-md px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-400" />
                   <div className="flex justify-end gap-2 mt-2.5">
-                    <button onClick={() => setShowSaveName(false)} className="text-[11px] text-zinc-400 hover:text-zinc-200 px-2 py-1">Cancel</button>
+                    <button onClick={() => setShowSaveName(false)} className="aug-fs-xs text-zinc-400 hover:text-zinc-200 px-2 py-1">Cancel</button>
                     <button onClick={() => doCreateSaved(saveName)} disabled={!saveName.trim()}
-                      className="text-[11px] bg-blue-600 hover:bg-blue-500 text-white rounded-md px-3 py-1 font-medium disabled:opacity-40">Save</button>
+                      className="aug-fs-xs bg-blue-600 hover:bg-blue-500 text-white rounded-md px-3 py-1 font-medium disabled:opacity-40">Save</button>
                   </div>
                 </div>
               </>
@@ -1713,7 +1713,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
           {!autoSql && (
             <button
               onClick={() => { setAutoSql(true); if (primaryTable) setSql(buildSql(primaryTable,joinedTables,schemaJoins,dims,measures,filters,orderBy,limit,tableSchemas,timeSpec,having)); }}
-              className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+              className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
               ↺ Regenerate SQL
             </button>
           )}
@@ -1734,15 +1734,15 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
           })()}
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input type="checkbox" checked={useCache} onChange={e=>setUseCache(e.target.checked)} className="w-3 h-3 accent-violet-500" />
-            <span className="text-[11px] text-zinc-500">Cache</span>
+            <span className="aug-fs-xs text-zinc-500">Cache</span>
           </label>
           <button onClick={triggerRun} disabled={running||!sql.trim()}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[13px] font-semibold transition ${
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-[var(--r3)] aug-fs-ui font-semibold transition ${
               running ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
                       : "bg-blue-600 hover:bg-blue-500 text-white shadow-sm"
             }`}>
             {running
-              ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Running…</>
+              ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-[var(--r-pill)] animate-spin"/>Running…</>
               : <><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>Run</>
             }
           </button>
@@ -1757,34 +1757,34 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
           {/* Header */}
           <div className="px-4 pt-4 pb-3 border-b border-zinc-700/30">
             <div className="flex items-center justify-between mb-2.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Catalog</p>
-              <span className="text-[11px] text-zinc-500">{tableNames.length} tables</span>
+              <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-400">Catalog</p>
+              <span className="aug-fs-xs text-zinc-500">{tableNames.length} tables</span>
             </div>
             <div className="flex items-center gap-2 bg-zinc-800/70 border border-zinc-700 rounded-md px-3 py-2">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" strokeWidth="2" strokeLinecap="round">
                 <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
               <input placeholder="Search tables &amp; columns…" value={colSearch} onChange={e=>setColSearch(e.target.value)}
-                className="bg-transparent text-[12px] text-zinc-300 outline-none placeholder-zinc-500 w-full" />
+                className="bg-transparent aug-fs-sm text-zinc-300 outline-none placeholder-zinc-500 w-full" />
               {colSearch && <button onClick={()=>setColSearch("")} className="text-zinc-500 hover:text-zinc-400 leading-none">✕</button>}
             </div>
             {/* type legend */}
             <div className="flex items-center gap-3 mt-2.5">
               {[["bg-emerald-500","num"],["bg-blue-400","date"],["bg-zinc-500","text"]].map(([d,l])=>(
-                <span key={l} className="flex items-center gap-1.5 text-[11px] text-zinc-500">
-                  <span className={`w-2 h-2 rounded-full ${d}`}/>{l}
+                <span key={l} className="flex items-center gap-1.5 aug-fs-xs text-zinc-500">
+                  <span className={`w-2 h-2 rounded-[var(--r-pill)] ${d}`}/>{l}
                 </span>
               ))}
-              <span className="ml-auto text-[11px] text-zinc-500">drag to auto-join</span>
+              <span className="ml-auto aug-fs-xs text-zinc-500">drag to auto-join</span>
             </div>
           </div>
 
           {/* Catalog → Schema → Table → columns hierarchy */}
           <div className="flex-1 overflow-y-auto py-1">
             {loadingTree ? (
-              <p className="text-[12px] text-zinc-500 px-4 py-4 animate-pulse">Loading catalog…</p>
+              <p className="aug-fs-sm text-zinc-500 px-4 py-4 animate-pulse">Loading catalog…</p>
             ) : tableNames.length === 0 ? (
-              <p className="text-[12px] text-zinc-500 px-4 py-4">No tables in this connection.</p>
+              <p className="aug-fs-sm text-zinc-500 px-4 py-4">No tables in this connection.</p>
             ) : (() => {
               const q = colSearch.toLowerCase().trim();
 
@@ -1820,8 +1820,8 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                             <polyline points="2,1 6,4 2,7"/>
                           </svg>
                           {dbIcon}
-                          <span className={`text-[12px] font-semibold truncate ${isActive ? "text-zinc-100" : "text-zinc-300"}`}>{entry.name}</span>
-                          {isActive && <span className="ml-auto text-[9px] text-blue-400 shrink-0">active</span>}
+                          <span className={`aug-fs-sm font-semibold truncate ${isActive ? "text-zinc-100" : "text-zinc-300"}`}>{entry.name}</span>
+                          {isActive && <span className="ml-auto aug-fs-xs text-blue-400 shrink-0">active</span>}
                         </button>
 
                         {/* Active connection → full rich tree */}
@@ -1846,7 +1846,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
                             <path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/>
                           </svg>
-                          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-300 truncate">{schema.name}</span>
+                          <span className="aug-fs-xs font-semibold uppercase tracking-wide text-zinc-300 truncate">{schema.name}</span>
                         </button>
 
                         {/* Tables under schema */}
@@ -1881,31 +1881,31 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={isResolved?"var(--t1)":"var(--t2)"} strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
                                     <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>
                                   </svg>
-                                  <span className={`text-[12px] font-mono truncate ${isResolved ? "text-zinc-100 font-semibold" : "text-zinc-200"}`}>{tbl}</span>
-                                  {rc && <span className="text-[10px] text-zinc-500 shrink-0">{rc}</span>}
+                                  <span className={`aug-fs-sm font-mono truncate ${isResolved ? "text-zinc-100 font-semibold" : "text-zinc-200"}`}>{tbl}</span>
+                                  {rc && <span className="aug-fs-xs text-zinc-500 shrink-0">{rc}</span>}
                                 </button>
                                 {deg > 0 && (
-                                  <span title={`${deg} related table${deg>1?"s":""}`} className="hidden sm:flex items-center gap-0.5 text-[10px] text-zinc-500 shrink-0">
+                                  <span title={`${deg} related table${deg>1?"s":""}`} className="hidden sm:flex items-center gap-0.5 aug-fs-xs text-zinc-500 shrink-0">
                                     ⋈{deg}
                                   </span>
                                 )}
                                 {isPrimary ? (
-                                  <span className="text-[10px] text-blue-400 shrink-0 font-medium">primary</span>
+                                  <span className="aug-fs-xs text-blue-400 shrink-0 font-medium">primary</span>
                                 ) : isJoined ? (
                                   <span title={js?.join ? `${js.join.t1}.${js.join.c1} = ${js.join.t2}.${js.join.c2}` : "no join — wire in SQL"}
-                                    className={`text-[11px] shrink-0 ${js?.join ? "text-emerald-500" : "text-amber-500"}`}>{js?.join ? "✓" : "⚠"}</span>
+                                    className={`aug-fs-xs shrink-0 ${js?.join ? "text-emerald-500" : "text-amber-500"}`}>{js?.join ? "✓" : "⚠"}</span>
                                 ) : iso ? (
-                                  <span title="No detected joins to other tables" className="text-[10px] text-zinc-500 shrink-0">isolated</span>
+                                  <span title="No detected joins to other tables" className="aug-fs-xs text-zinc-500 shrink-0">isolated</span>
                                 ) : (
                                   <button onClick={()=>ensureTable(tbl, schema.name)} title="Add to query (auto-join)"
-                                    className="opacity-0 group-hover/tbl:opacity-100 text-[11px] text-zinc-500 hover:text-blue-400 border border-zinc-700 hover:border-blue-500/50 rounded px-1.5 leading-tight transition shrink-0">
+                                    className="opacity-0 group-hover/tbl:opacity-100 aug-fs-xs text-zinc-500 hover:text-blue-400 border border-zinc-700 hover:border-blue-500/50 rounded px-1.5 leading-tight transition shrink-0">
                                     + add
                                   </button>
                                 )}
                               </div>
                               {open && (
                                 loadingCols && cols.length === 0
-                                  ? <div className="pl-11 py-1.5"><span className="text-[11px] text-zinc-500 animate-pulse">Loading columns…</span></div>
+                                  ? <div className="pl-11 py-1.5"><span className="aug-fs-xs text-zinc-500 animate-pulse">Loading columns…</span></div>
                                   : cols.length > 0
                                     ? cols.map(col => (
                                       <div key={col.name} className="ml-7 pl-2 border-l border-zinc-700/40">
@@ -1916,7 +1916,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                                       </div>
                                     ))
                                     : <div className="pl-11 py-1.5">
-                                      <span className="text-[11px] text-zinc-500">
+                                      <span className="aug-fs-xs text-zinc-500">
                                         {loadingTableCols.has(tbl) ? "Loading columns…" : "No columns available — schema may need refresh"}
                                       </span>
                                     </div>
@@ -1948,8 +1948,8 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
                                   <path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/>
                                 </svg>
-                                <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 truncate">{schema.name}</span>
-                                <span className="ml-auto text-[10px] text-zinc-500 shrink-0">{visT.length}</span>
+                                <span className="aug-fs-xs font-semibold uppercase tracking-wide text-zinc-400 truncate">{schema.name}</span>
+                                <span className="ml-auto aug-fs-xs text-zinc-500 shrink-0">{visT.length}</span>
                               </button>
                               {sOpen && visT.map(t => (
                                 <button key={t.name} onClick={() => { setConnId(entry.conn_id); setExpandedConns(p => ({ ...p, [entry.conn_id]: true })); }}
@@ -1958,9 +1958,9 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--t2)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
                                     <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>
                                   </svg>
-                                  <span className="text-[12px] font-mono text-zinc-300 truncate">{t.name}</span>
-                                  {t.row_count != null && <span className="text-[10px] text-zinc-500 shrink-0">{fmtRows(String(t.row_count))}</span>}
-                                  <span className="ml-auto opacity-0 group-hover/pt:opacity-100 text-[10px] text-blue-400 shrink-0">open →</span>
+                                  <span className="aug-fs-sm font-mono text-zinc-300 truncate">{t.name}</span>
+                                  {t.row_count != null && <span className="aug-fs-xs text-zinc-500 shrink-0">{fmtRows(String(t.row_count))}</span>}
+                                  <span className="ml-auto opacity-0 group-hover/pt:opacity-100 aug-fs-xs text-blue-400 shrink-0">open →</span>
                                 </button>
                               ))}
                             </div>
@@ -1984,7 +1984,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
             <div className="flex items-center gap-1 px-4 pt-2 border-b border-zinc-700/40 shrink-0">
               {(["data","customize"] as const).map(tab => (
                 <button key={tab} onClick={()=>{ setRailTab(tab); if (controlsCollapsed) setControlsCollapsed(false); }}
-                  className={`text-[12px] font-semibold uppercase tracking-wide px-3 py-2 -mb-px border-b-2 transition ${railTab===tab ? "border-blue-500 text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-300"}`}>
+                  className={`aug-fs-sm font-semibold uppercase tracking-wide px-3 py-2 -mb-px border-b-2 transition ${railTab===tab ? "border-blue-500 text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-300"}`}>
                   {tab}
                 </button>
               ))}
@@ -2000,9 +2000,9 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                   Replaces both the old chart-type gallery and the Chart/Table toggle above the chart. */}
               {result && !result.error && (
                 <div className="pb-1 flex items-center gap-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Display</p>
+                  <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500">Display</p>
                   <select value={vizType} onChange={e=>setVizType(e.target.value as VizMode)}
-                    className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition min-w-[150px]">
+                    className="aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition min-w-[150px]">
                     {availTypes.length > 0 && (
                       <optgroup label="Chart">
                         {(["auto", ...availTypes] as VizMode[]).map(t => (
@@ -2027,15 +2027,15 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     <rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
                   </svg>
                   <div className="min-w-0">
-                    <p className="text-[13px] font-medium text-zinc-300">Drag a field from the catalog to begin</p>
-                    <p className="text-[11px] text-zinc-500 mt-0.5">Drop columns into Dimensions or Metrics below. Fields from related tables join automatically along the studied schema relationships.</p>
+                    <p className="aug-fs-ui font-medium text-zinc-300">Drag a field from the catalog to begin</p>
+                    <p className="aug-fs-xs text-zinc-500 mt-0.5">Drop columns into Dimensions or Metrics below. Fields from related tables join automatically along the studied schema relationships.</p>
                   </div>
                 </div>
               )}
 
               {/* Auto-join hint */}
               {joinHint && (
-                <div className="flex items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-[12px] text-blue-200">
+                <div className="flex items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 aug-fs-sm text-blue-200">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                     <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
                   </svg>
@@ -2050,7 +2050,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                 {/* DIMENSIONS */}
                 <div>
                   <div className="mb-1.5">
-                    <p className="text-[13px] font-semibold text-zinc-300">Dimensions <span className="text-[11px] font-normal text-zinc-500">· GROUP BY</span></p>
+                    <p className="aug-fs-ui font-semibold text-zinc-300">Dimensions <span className="aug-fs-xs font-normal text-zinc-500">· GROUP BY</span></p>
                   </div>
                   <div
                     onDragOver={e=>{e.preventDefault();setOverDims(true);}}
@@ -2062,10 +2062,10 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     }`}
                   >
                     {dims.length === 0 && (
-                      <p className={`w-full px-1 text-[11px] italic ${overDims?"text-blue-400":"text-zinc-500"}`}>{overDims ? "Release to add dimension" : "Drop a column or click D"}</p>
+                      <p className={`w-full px-1 aug-fs-xs italic ${overDims?"text-blue-400":"text-zinc-500"}`}>{overDims ? "Release to add dimension" : "Drop a column or click D"}</p>
                     )}
                     {dims.map(d => (
-                      <span key={d.id} className="inline-flex flex-wrap items-center gap-1 max-w-full text-[12px] font-mono px-2 py-1 rounded-lg border bg-blue-500/10 border-blue-500/30 text-blue-300">
+                      <span key={d.id} className="inline-flex flex-wrap items-center gap-1 max-w-full aug-fs-sm font-mono px-2 py-1 rounded-[var(--r3)] border bg-blue-500/10 border-blue-500/30 text-blue-300">
                         <span className="truncate max-w-[150px]" title={isMulti ? `${d.table}.${d.col}` : d.col}>{isMulti ? `${d.table}.${d.col}` : d.col}</span>
                         {/* Date dims: grain (DATE_TRUNC) + relative range (WHERE) inline on the chip */}
                         {(tableCols[d.table]?.find(c=>c.name===d.col)?.type?.toLowerCase().includes("date") ||
@@ -2076,7 +2076,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                               const t = e.target.value as DimItem["transform"];
                               setDims(p => p.map(x => x.id === d.id ? { ...x, transform: t || undefined } : x));
                             }}
-                            className="text-[10px] bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-zinc-300 outline-none ml-1"
+                            className="aug-fs-xs bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-zinc-300 outline-none ml-1"
                             onClick={e=> e.stopPropagation()}
                           >
                             <option value="">raw</option>
@@ -2090,7 +2090,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                           <select
                             value={d.range || "all"}
                             onChange={e=> { const r=e.target.value; setDims(p => p.map(x => x.id === d.id ? { ...x, range: r==="all"?undefined:r } : x)); }}
-                            className={`text-[10px] bg-zinc-800 border rounded px-1 py-0.5 outline-none ${d.range ? "border-blue-500/50 text-blue-300" : "border-zinc-700 text-zinc-300"}`}
+                            className={`aug-fs-xs bg-zinc-800 border rounded px-1 py-0.5 outline-none ${d.range ? "border-blue-500/50 text-blue-300" : "border-zinc-700 text-zinc-300"}`}
                             onClick={e=> e.stopPropagation()}
                             title="Relative time range (WHERE)"
                           >
@@ -2107,12 +2107,12 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                 <div>
                   <div className="flex items-start justify-between mb-1.5">
                     <div>
-                      <p className="text-[13px] font-semibold text-zinc-300">Metrics <span className="text-[11px] font-normal text-zinc-500">· aggregations</span></p>
+                      <p className="aug-fs-ui font-semibold text-zinc-300">Metrics <span className="aug-fs-xs font-normal text-zinc-500">· aggregations</span></p>
                     </div>
                     {metrics.length > 0 && (
                       <div className="relative">
                         <button onClick={()=>setShowMetricsCatalog(v=>!v)}
-                          className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300 transition whitespace-nowrap">
+                          className="aug-fs-xs px-2.5 py-1 rounded-[var(--r3)] border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300 transition whitespace-nowrap">
                           📊 Catalog
                         </button>
                         {showMetricsCatalog && (
@@ -2120,14 +2120,14 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                             <div className="fixed inset-0 z-30" onClick={()=>setShowMetricsCatalog(false)}/>
                             <div className="absolute right-0 top-full mt-2 z-40 w-68 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden min-w-[260px]">
                               <div className="px-4 py-2.5 border-b border-zinc-700/50">
-                                <p className="text-[11px] font-semibold text-zinc-400">Metrics Catalog</p>
+                                <p className="aug-fs-xs font-semibold text-zinc-400">Metrics Catalog</p>
                               </div>
                               {metrics.map(m => (
                                 <button key={m.name}
                                   onClick={()=>{setMeasures(p=>[...p,{id:uid(),col:"",table:primaryTable??"",agg:"CUSTOM",customExpr:m.sql,alias:m.name,fromMetric:m.name}]);setShowMetricsCatalog(false);}}
                                   className="w-full text-left px-4 py-3 hover:bg-zinc-800/70 transition border-b border-zinc-700/30 last:border-0">
-                                  <p className="text-[12px] font-semibold text-zinc-200">{m.label}</p>
-                                  <p className="text-[11px] font-mono text-zinc-500 truncate mt-0.5">{m.sql}</p>
+                                  <p className="aug-fs-sm font-semibold text-zinc-200">{m.label}</p>
+                                  <p className="aug-fs-xs font-mono text-zinc-500 truncate mt-0.5">{m.sql}</p>
                                 </button>
                               ))}
                             </div>
@@ -2146,24 +2146,24 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     }`}
                   >
                     {measures.length === 0 && (
-                      <p className={`w-full px-1 text-[11px] italic ${overMeasures?"text-violet-400":"text-zinc-500"}`}>{overMeasures ? "Release to configure metric" : "Drop a column or click M"}</p>
+                      <p className={`w-full px-1 aug-fs-xs italic ${overMeasures?"text-violet-400":"text-zinc-500"}`}>{overMeasures ? "Release to configure metric" : "Drop a column or click M"}</p>
                     )}
                     {measures.map(m => {
                       const ao = AGG_OPTIONS.find(o=>o.fn===m.agg);
                       const warn = grainWarning(m, measureGrains, grainQtyCols);
                       return (
                         <span key={m.id} title={warn || `${measureExpr(m,isMulti)} AS ${m.alias}`}
-                          className={`inline-flex items-center gap-1.5 text-[12px] font-mono px-2.5 py-1 rounded-lg border ${
+                          className={`inline-flex items-center gap-1.5 aug-fs-sm font-mono px-2.5 py-1 rounded-[var(--r3)] border ${
                             warn ? "text-amber-200 border-amber-500/50 bg-amber-500/10"
                                  : (ao?.cls ?? "text-violet-300 border-violet-500/30 bg-violet-500/10")}`}>
-                          <span className="text-[11px] font-sans opacity-70">{m.fromMetric?"📊":m.agg==="CUSTOM"?"fx":m.agg}</span>
+                          <span className="aug-fs-xs font-sans opacity-70">{m.fromMetric?"📊":m.agg==="CUSTOM"?"fx":m.agg}</span>
                           <span className="max-w-[120px] truncate">{m.alias||measureExpr(m,isMulti)}</span>
                           {warn && (
                             <>
                               <span title={warn} className="text-amber-400 cursor-help">⚠</span>
                               {m.agg === "SUM" && (
                                 <button onClick={()=>fixGrainMeasure(m)} title={`Rewrite as SUM(${m.col} × quantity)`}
-                                  className="text-[10px] text-amber-300 hover:text-amber-100 underline decoration-dotted">fix</button>
+                                  className="aug-fs-xs text-amber-300 hover:text-amber-100 underline decoration-dotted">fix</button>
                               )}
                             </>
                           )}
@@ -2180,17 +2180,17 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                 <div className="rounded-md border border-zinc-700/50 bg-zinc-800/20">
                   <button onClick={()=>setJoinsOpen(o=>!o)} className="w-full flex items-center gap-2 px-3 py-2 text-left">
                     <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`shrink-0 text-zinc-500 transition-transform ${joinsOpen?"rotate-90":""}`}><polyline points="2,1 6,4 2,7"/></svg>
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Resolved joins · {allTables.length} tables</span>
+                    <span className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500">Resolved joins · {allTables.length} tables</span>
                     {fanOutRisk && (
                       <span title="One-to-many joins can repeat rows from the parent table, inflating SUM/COUNT. Verify the aggregation grain."
-                        className="ml-auto flex items-center gap-1 text-[11px] text-amber-400/90 border border-amber-500/30 bg-amber-500/5 rounded px-1.5 py-0.5">⚠ fan-out</span>
+                        className="ml-auto flex items-center gap-1 aug-fs-xs text-amber-400/90 border border-amber-500/30 bg-amber-500/5 rounded px-1.5 py-0.5">⚠ fan-out</span>
                     )}
                   </button>
                   {joinsOpen && (
                     <div className="px-3 pb-2.5 space-y-1.5">
                       {joinStatuses.map(({table, join, pivot}) => (
-                        <div key={table} className="flex items-center gap-2 text-[11px] font-mono">
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${join?"bg-emerald-400":"bg-red-400"}`}/>
+                        <div key={table} className="flex items-center gap-2 aug-fs-xs font-mono">
+                          <span className={`w-2 h-2 rounded-[var(--r-pill)] shrink-0 ${join?"bg-emerald-400":"bg-red-400"}`}/>
                           <span className="text-zinc-500">{join ? pivot : primaryTable}</span>
                           <span className="text-zinc-500">→</span>
                           <span className="text-zinc-300">{table}</span>
@@ -2198,7 +2198,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                             <>
                               <span className="text-zinc-500 mx-1">ON</span>
                               <span className="text-emerald-400 truncate">{join.t1}.{join.c1} = {join.t2}.{join.c2}</span>
-                              <span className={`ml-auto shrink-0 text-[11px] px-1.5 py-0.5 rounded border ${join.match==="exact" ? "text-emerald-600 border-emerald-700/50 bg-emerald-500/5" : "text-amber-600 border-amber-700/50 bg-amber-500/5"}`}>{join.match}</span>
+                              <span className={`ml-auto shrink-0 aug-fs-xs px-1.5 py-0.5 rounded border ${join.match==="exact" ? "text-emerald-600 border-emerald-700/50 bg-emerald-500/5" : "text-amber-600 border-amber-700/50 bg-amber-500/5"}`}>{join.match}</span>
                             </>
                           ) : <span className="text-red-400 ml-2 italic">no join — wire in SQL</span>}
                         </div>
@@ -2213,11 +2213,11 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
 
               {/* FILTERS */}
               <div className="border-t border-zinc-700/30 pt-4">
-                <p className="text-[13px] font-semibold text-zinc-300 mb-1">Filters</p>
-                <p className="text-[11px] text-zinc-500 mb-3">WHERE — narrow down your results</p>
+                <p className="aug-fs-ui font-semibold text-zinc-300 mb-1">Filters</p>
+                <p className="aug-fs-xs text-zinc-500 mb-3">WHERE — narrow down your results</p>
                 <div className="flex flex-wrap gap-2 items-center min-h-[36px]">
                   {filters.map(f => (
-                    <span key={f.id} className="inline-flex items-center gap-1.5 text-[12px] font-mono px-3 py-1 rounded-lg border bg-amber-500/10 border-amber-500/30 text-amber-300">
+                    <span key={f.id} className="inline-flex items-center gap-1.5 aug-fs-sm font-mono px-3 py-1 rounded-[var(--r3)] border bg-amber-500/10 border-amber-500/30 text-amber-300">
                       {NO_VAL_OPS.includes(f.op) ? `${qualify(f.col,f.table,isMulti)} ${f.op}` : `${qualify(f.col,f.table,isMulti)} ${f.op} ${f.val}`}
                       <button onClick={()=>setFilters(p=>p.filter(x=>x.id!==f.id))} className="opacity-50 hover:opacity-100 text-sm leading-none">×</button>
                     </span>
@@ -2226,27 +2226,27 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     <div className="flex items-center gap-2 flex-wrap p-3 rounded-md border border-zinc-700/60 bg-zinc-800/30">
                       {isMulti && (
                         <select value={nfTable} onChange={e=>{ setNfTable(e.target.value); setNfCol(""); setNfDistinct([]); }}
-                          className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                          className="aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                           <option value="">table</option>
                           {allTables.map(t=><option key={t} value={t}>{t}</option>)}
                         </select>
                       )}
                       <select value={nfCol} onChange={e=>{ const c=e.target.value; setNfCol(c); loadDistinct(nfTable||primaryTable||"", c); }}
-                        className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                        className="aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                         <option value="">column</option>
                         {(isMulti&&nfTable ? tableCols[nfTable]??[] : allTables.flatMap(t=>tableCols[t]??[])).map(c=>(
                           <option key={c.name} value={c.name}>{c.name}</option>
                         ))}
                       </select>
                       <select value={nfOp} onChange={e=>setNfOp(e.target.value as FilterOp)}
-                        className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                        className="aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                         {FILTER_OPS.map(op=><option key={op} value={op}>{op}</option>)}
                       </select>
                       {!NO_VAL_OPS.includes(nfOp) && (
                         <>
                           <input value={nfVal} onChange={e=>setNfVal(e.target.value)} list="qb-nf-distinct"
                             onKeyDown={e=>{if(e.key==="Enter")commitFilter();}} placeholder="value" autoFocus
-                            className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-40 transition" />
+                            className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-40 transition" />
                           {nfDistinct.length > 0 && (
                             <datalist id="qb-nf-distinct">
                               {nfDistinct.map(v => <option key={v} value={v} />)}
@@ -2254,12 +2254,12 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                           )}
                         </>
                       )}
-                      <button onClick={commitFilter} className="px-3 py-1.5 text-[12px] rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium transition">Add</button>
-                      <button onClick={()=>setShowAddFilter(false)} className="text-[12px] text-zinc-500 hover:text-zinc-300 px-1.5 transition">Cancel</button>
+                      <button onClick={commitFilter} className="px-3 py-1.5 aug-fs-sm rounded-[var(--r3)] bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium transition">Add</button>
+                      <button onClick={()=>setShowAddFilter(false)} className="aug-fs-sm text-zinc-500 hover:text-zinc-300 px-1.5 transition">Cancel</button>
                     </div>
                   ) : (
                     <button onClick={()=>setShowAddFilter(true)}
-                      className="flex items-center gap-1.5 text-[12px] border border-dashed border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 transition">
+                      className="flex items-center gap-1.5 aug-fs-sm border border-dashed border-zinc-700 rounded-[var(--r3)] px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 transition">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                       </svg>
@@ -2272,26 +2272,26 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
               {/* HAVING — filter on aggregated metrics */}
               {measures.length > 0 && (
                 <div className="border-t border-zinc-700/30 pt-4">
-                  <p className="text-[13px] font-semibold text-zinc-300 mb-1">Having</p>
-                  <p className="text-[11px] text-zinc-500 mb-3">HAVING — filter on aggregated metrics (e.g. total &gt; 1000)</p>
+                  <p className="aug-fs-ui font-semibold text-zinc-300 mb-1">Having</p>
+                  <p className="aug-fs-xs text-zinc-500 mb-3">HAVING — filter on aggregated metrics (e.g. total &gt; 1000)</p>
                   <div className="flex flex-col gap-2 items-start">
                     {having.map(h => (
                       <div key={h.id} className="flex items-center gap-2 flex-wrap">
                         <select value={h.measureId} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,measureId:e.target.value}:x))}
-                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition max-w-[200px]">
+                          className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition max-w-[200px]">
                           {measures.map(mm=><option key={mm.id} value={mm.id}>{mm.alias||measureExpr(mm,isMulti)}</option>)}
                         </select>
                         <select value={h.op} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,op:e.target.value}:x))}
-                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                          className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                           {HAVING_OPS.map(op=><option key={op} value={op}>{op}</option>)}
                         </select>
                         <input value={h.val} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,val:e.target.value}:x))} placeholder="value"
-                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-28 transition" />
+                          className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-28 transition" />
                         <button onClick={()=>setHaving(p=>p.filter(x=>x.id!==h.id))} className="text-zinc-500 hover:text-red-400 text-sm leading-none px-1">×</button>
                       </div>
                     ))}
                     <button onClick={()=>setHaving(p=>[...p,{id:uid(),measureId:measures[0].id,op:">",val:""}])}
-                      className="flex items-center gap-1.5 text-[12px] border border-dashed border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 transition">
+                      className="flex items-center gap-1.5 aug-fs-sm border border-dashed border-zinc-700 rounded-[var(--r3)] px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 transition">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                       </svg>
@@ -2304,20 +2304,20 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
               {/* ORDER BY + LIMIT */}
               <div className="border-t border-zinc-700/30 pt-4 flex items-end gap-6">
                 <div>
-                  <p className="text-[12px] text-zinc-500 mb-2">ORDER BY</p>
+                  <p className="aug-fs-sm text-zinc-500 mb-2">ORDER BY</p>
                   <input value={orderBy} onChange={e=>setOrderBy(e.target.value)}
                     placeholder="e.g. total_revenue DESC"
-                    className="text-[12px] font-mono bg-zinc-800/60 border border-zinc-700 rounded-md px-3 py-2 text-zinc-200 outline-none focus:border-zinc-500 w-56 transition" />
+                    className="aug-fs-sm font-mono bg-zinc-800/60 border border-zinc-700 rounded-md px-3 py-2 text-zinc-200 outline-none focus:border-zinc-500 w-56 transition" />
                 </div>
                 <div>
-                  <p className="text-[12px] text-zinc-500 mb-2">LIMIT</p>
+                  <p className="aug-fs-sm text-zinc-500 mb-2">LIMIT</p>
                   <input type="number" min={0} max={50000} value={limit || ""} onChange={e=>{
                       const v = e.target.value;
                       setLimit(v === "" ? 0 : Math.max(0, parseInt(v) || 0));
                     }}
                     placeholder="∞"
                     title="Rows to preview. Blank or 0 = no limit (unbounded — use with care on large tables)."
-                    className="text-[12px] font-mono bg-zinc-800/60 border border-zinc-700 rounded-md px-3 py-2 text-zinc-200 outline-none focus:border-zinc-500 w-24 transition" />
+                    className="aug-fs-sm font-mono bg-zinc-800/60 border border-zinc-700 rounded-md px-3 py-2 text-zinc-200 outline-none focus:border-zinc-500 w-24 transition" />
                 </div>
               </div>
 
@@ -2330,27 +2330,27 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                 <div className="flex items-center gap-2 mb-2">
                   <button onClick={()=>setSqlOpen(o=>!o)} className="flex items-center gap-2">
                     <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`shrink-0 text-zinc-500 transition-transform ${sqlOpen?"rotate-90":""}`}><polyline points="2,1 6,4 2,7"/></svg>
-                    <p className="text-[13px] font-semibold text-zinc-300">SQL</p>
+                    <p className="aug-fs-ui font-semibold text-zinc-300">SQL</p>
                   </button>
                   {!autoSql && (
-                    <span className="text-[11px] text-amber-500/80 border border-amber-500/20 bg-amber-500/5 rounded-md px-1.5 py-0.5">
+                    <span className="aug-fs-xs text-amber-500/80 border border-amber-500/20 bg-amber-500/5 rounded-md px-1.5 py-0.5">
                       manually edited
                     </span>
                   )}
                   {sqlOpen && (
                     <div className="ml-auto flex items-center gap-2">
-                      {importMsg && <span className="text-[11px] text-zinc-500 italic max-w-[220px] truncate" title={importMsg}>{importMsg}</span>}
-                      <span className="text-[11px] text-zinc-500">⌘↵ to run</span>
+                      {importMsg && <span className="aug-fs-xs text-zinc-500 italic max-w-[220px] truncate" title={importMsg}>{importMsg}</span>}
+                      <span className="aug-fs-xs text-zinc-500">⌘↵ to run</span>
                       <button onClick={importSqlToBuilder} title="Reverse-compile this SQL into the visual builder's chips"
-                        className="text-[11px] text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+                        className="aug-fs-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
                         Import → builder
                       </button>
                       <button onClick={()=>{ if (sql.trim()) { setSql(formatSql(sql)); setAutoSql(false); } }}
-                        className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+                        className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
                         Format
                       </button>
                       <button onClick={()=>navigator.clipboard.writeText(sql).catch(()=>{})}
-                        className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+                        className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
                         Copy
                       </button>
                     </div>
@@ -2374,53 +2374,53 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
             {/* CUSTOMIZE tab — chart styling */}
             <div className={`flex-1 overflow-y-auto px-5 py-4 space-y-5 ${railTab==="customize"?"":"hidden"}`}>
               {availTypes.length === 0 ? (
-                <p className="text-[12px] text-zinc-500">Run a chartable query, then customize its chart here.</p>
+                <p className="aug-fs-sm text-zinc-500">Run a chartable query, then customize its chart here.</p>
               ) : (
                 <>
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Chart title</p>
+                    <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Chart title</p>
                     <input value={chartTitle} onChange={e=>setChartTitle(e.target.value)} placeholder="(auto)"
-                      className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
+                      className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
                   </div>
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Labels</p>
+                    <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Labels</p>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={showDataLabels} onChange={e=>setShowDataLabels(e.target.checked)} className="w-3.5 h-3.5 accent-blue-500" />
-                      <span className="text-[12px] text-zinc-300">Show data labels on the chart</span>
+                      <span className="aug-fs-sm text-zinc-300">Show data labels on the chart</span>
                     </label>
                   </div>
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Color scheme</p>
+                    <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Color scheme</p>
                     <select value={colorScheme} onChange={e=>setColorScheme(e.target.value)}
-                      className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                       {COLOR_SCHEMES.map(([v,l])=><option key={v} value={v}>{l}</option>)}
                     </select>
-                    <p className="text-[10px] text-zinc-600 mt-1">Applies to multi-series charts.</p>
+                    <p className="aug-fs-xs text-zinc-600 mt-1">Applies to multi-series charts.</p>
                   </div>
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Number format</p>
+                    <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Number format</p>
                     <select value={numberFormat} onChange={e=>setNumberFormat(e.target.value)}
-                      className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                       {NUMBER_FORMATS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
                     </select>
                   </div>
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Legend</p>
+                    <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Legend</p>
                     <select value={legendPos} onChange={e=>setLegendPos(e.target.value)}
-                      className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                       {LEGEND_POS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
                     </select>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">X axis title</p>
+                      <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">X axis title</p>
                       <input value={xTitle} onChange={e=>setXTitle(e.target.value)} placeholder="(auto)"
-                        className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
+                        className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
                     </div>
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Y axis title</p>
+                      <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Y axis title</p>
                       <input value={yTitle} onChange={e=>setYTitle(e.target.value)} placeholder="(auto)"
-                        className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
+                        className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
                     </div>
                   </div>
                 </>
@@ -2442,23 +2442,23 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
             {(running || runError || result) ? (
               <div className="pb-6">
                 <div className="flex items-center gap-3 mb-4">
-                  <p className="text-[15px] font-semibold text-zinc-100">{savedName || (primaryTable ?? "Results")}</p>
+                  <p className="aug-fs-h2 font-semibold text-zinc-100">{savedName || (primaryTable ?? "Results")}</p>
                   {result && !result.error && (
-                    <span className="text-[12px] text-zinc-400">
+                    <span className="aug-fs-sm text-zinc-400">
                       {fmtN(result.row_count)} rows · {fmtMs(result.duration_ms)}
-                      {result.cached && <span className="ml-2 text-[11px] text-violet-400 border border-violet-500/30 rounded-md px-1.5 py-0.5">cached</span>}
+                      {result.cached && <span className="ml-2 aug-fs-xs text-violet-400 border border-violet-500/30 rounded-md px-1.5 py-0.5">cached</span>}
                     </span>
                   )}
                 </div>
                 {running && (
                   <div className="flex items-center gap-2 py-16 justify-center text-zinc-500">
-                    <span className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-400 rounded-full animate-spin"/>
-                    <span className="text-[12px]">Running query…</span>
+                    <span className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-400 rounded-[var(--r-pill)] animate-spin"/>
+                    <span className="aug-fs-sm">Running query…</span>
                   </div>
                 )}
                 {runError && !running && (
                   <div className="p-4 rounded-md border border-red-500/20 bg-red-500/5">
-                    <p className="text-[12px] font-mono text-red-400">{runError}</p>
+                    <p className="aug-fs-sm font-mono text-red-400">{runError}</p>
                   </div>
                 )}
                 {result && !running && (
@@ -2482,7 +2482,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" className="opacity-50">
                   <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
                 </svg>
-                <p className="text-[12px] italic">Configure your query in the panel, then <strong className="text-zinc-400 font-normal not-italic">Run</strong> or press <kbd className="text-zinc-400 bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-[11px]">⌘↵</kbd></p>
+                <p className="aug-fs-sm italic">Configure your query in the panel, then <strong className="text-zinc-400 font-normal not-italic">Run</strong> or press <kbd className="text-zinc-400 bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 aug-fs-xs">⌘↵</kbd></p>
               </div>
             )}
           </main>

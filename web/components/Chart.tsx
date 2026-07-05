@@ -363,7 +363,7 @@ export function Chart({
 
       {chrome && (
         <div onMouseDown={startDrag} className="flex items-center justify-center h-3 cursor-ns-resize group/drag">
-          <div className="w-10 h-0.5 rounded-full bg-zinc-800 group-hover/drag:bg-zinc-600 transition-colors" />
+          <div className="w-10 h-0.5 rounded-[var(--r-pill)] bg-zinc-800 group-hover/drag:bg-zinc-600 transition-colors" />
         </div>
       )}
     </div>

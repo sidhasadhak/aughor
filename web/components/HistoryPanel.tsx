@@ -85,7 +85,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-6">
         <p className="text-sm text-zinc-500">No investigations yet.</p>
-        <p className="text-[11px] text-zinc-500">Run your first to see it here.</p>
+        <p className="aug-fs-xs text-zinc-500">Run your first to see it here.</p>
       </div>
     );
   }
@@ -109,12 +109,12 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                 onClick={handleClearAll}
                 disabled={clearing}
                 title="Delete all investigations and chats"
-                className="text-[11px] text-zinc-500 hover:text-red-400 transition disabled:opacity-50"
+                className="aug-fs-xs text-zinc-500 hover:text-red-400 transition disabled:opacity-50"
               >
                 {clearing ? "Clearing…" : "Clear all"}
               </button>
             )}
-            <span className="text-[11px] text-[--t3]">{items.length}</span>
+            <span className="aug-fs-xs text-[--t3]">{items.length}</span>
           </div>
         </div>
         <input
@@ -127,7 +127,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
       </div>
       <ul className="flex-1 overflow-y-auto divide-y divide-zinc-600/40">
         {filtered.length === 0 && (
-          <li className="px-4 py-6 text-center text-[11px] text-zinc-500">No matches</li>
+          <li className="px-4 py-6 text-center aug-fs-xs text-zinc-500">No matches</li>
         )}
         {filtered.map(inv => {
           const isSelected = inv.id === selectedId;
@@ -149,7 +149,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   <div className="flex items-center gap-1.5 flex-1 min-w-0">
                     {/* Kind badge */}
                     <span className={cn(
-                      "inline-flex shrink-0 items-center px-1 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wider",
+                      "inline-flex shrink-0 items-center px-1 py-0.5 rounded aug-fs-xs font-semibold uppercase tracking-wider",
                       isChat
                         ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                         : "bg-violet-500/10 text-violet-400 border border-violet-500/20"
@@ -167,18 +167,18 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                     {!isChat && (
                       <span
                         title={isIndexed ? "Indexed in Qdrant — eligible for cache" : "Not yet indexed"}
-                        className={cn("text-[11px]", isIndexed ? "text-emerald-400" : "text-zinc-500")}
+                        className={cn("aug-fs-xs", isIndexed ? "text-emerald-400" : "text-zinc-500")}
                       >
                         ◉
                       </span>
                     )}
-                    <span className="text-[11px] text-zinc-500">{timeAgo(inv.started_at)}</span>
+                    <span className="aug-fs-xs text-zinc-500">{timeAgo(inv.started_at)}</span>
                   </div>
                 </div>
                 {inv.headline && (
-                  <p className="mt-1 text-[11px] text-zinc-500 line-clamp-1">{localizeCurrency(inv.headline).replace(/\*+/g, "")}</p>
+                  <p className="mt-1 aug-fs-xs text-zinc-500 line-clamp-1">{localizeCurrency(inv.headline).replace(/\*+/g, "")}</p>
                 )}
-                <div className="mt-1.5 flex items-center gap-3 text-[11px] text-zinc-500 flex-wrap">
+                <div className="mt-1.5 flex items-center gap-3 aug-fs-xs text-zinc-500 flex-wrap">
                   {!isChat && <span>{inv.hypothesis_count} hypotheses</span>}
                   {!isChat && <span>·</span>}
                   <span>{inv.query_count} {isChat ? "query" : "queries"}</span>
@@ -187,19 +187,19 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   {inv.status === "timed_out" && (
                     <>
                       <span>·</span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-amber-500/20 bg-amber-500/10 text-amber-400 text-[11px] font-medium" title="Investigation exceeded the time limit">⏱ timed out</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-amber-500/20 bg-amber-500/10 text-amber-400 aug-fs-xs font-medium" title="Investigation exceeded the time limit">⏱ timed out</span>
                     </>
                   )}
                   {inv.status === "failed" && (
                     <>
                       <span>·</span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-red-500/20 bg-red-500/10 text-red-400 text-[11px] font-medium">✕ failed</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-red-500/20 bg-red-500/10 text-red-400 aug-fs-xs font-medium">✕ failed</span>
                     </>
                   )}
                   {inv.status === "running" && (
                     <>
                       <span>·</span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 text-[11px] font-medium">● running</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 aug-fs-xs font-medium">● running</span>
                     </>
                   )}
                 </div>

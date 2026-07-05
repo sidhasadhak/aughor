@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 from typing_extensions import NotRequired, TypedDict
 
 from pydantic import BaseModel, Field, field_validator
@@ -495,3 +495,8 @@ class AgentState(TypedDict):
     _dimensional_summary: Optional[str]
     _dimensional_passes: Optional[str]     # dominant finding → seeds Tier-3 targeting
     _behavioral_summary: Optional[str]
+
+    # AL-05 (Semantic plane) — the SemanticContext resolved once at seed (metrics · ontology ·
+    # profile · KB), carried so every node reads one consistent context instead of re-consulting
+    # ad-hoc. NotRequired + None when the semantic.resolve_live flag is off (the default).
+    semantic_context: NotRequired[Optional[Any]]

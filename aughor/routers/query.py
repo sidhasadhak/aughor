@@ -438,8 +438,23 @@ def query_validate(body: _QueryValidateRequest):
         except Exception as exc:
             tolerate(exc, "validate: db close", counter="validate.close")
 
+    # AL-01 · Trust plane (behind trust.verify_facade): the AST read-only gate the answer
+    # paths never ran on generated SQL. Additive — a mutating/DDL statement or a disallowed
+    # function is a hard blocker, distinct from the advisory warnings above. Pure (no conn),
+    # so it runs after the connection is closed.
+    mutation_blockers: list = []
+    try:
+        from aughor.kernel.flags import flag_enabled
+        if flag_enabled("trust.verify_facade"):
+            from aughor.trust import verify as trust_verify, Scope
+            verdict = trust_verify(sql, Scope(dialect=dialect))
+            mutation_blockers = [{"name": c.name, "reason": c.reason, **c.detail}
+                                 for c in verdict.blockers]
+    except Exception as exc:
+        tolerate(exc, "validate: trust facade", counter="validate.trust_facade")
+
     issues = (len(fanout_hits) + len(join_warnings) + len(filter_warnings)
-              + len(grain_warnings) + len(trust_findings))
+              + len(grain_warnings) + len(trust_findings) + len(mutation_blockers))
     return {
         "passed": issues == 0,
         "issue_count": issues,
@@ -448,6 +463,80 @@ def query_validate(body: _QueryValidateRequest):
         "filter_warnings": filter_warnings,
         "grain_warnings": grain_warnings,
         "trust_findings": trust_findings,
+        "mutation_blockers": mutation_blockers,
+    }
+
+
+class _SemanticContextRequest(BaseModel):
+    conn_id: str
+    question: str = ""
+    schema_name: str | None = None
+
+
+@router.post("/query/semantic-context")
+def query_semantic_context(body: _SemanticContextRequest):
+    """Resolve the Semantic plane (AL-05) for a question — what the platform knows about it:
+    governed metrics, the ontology object model, the cached business profile, and whether the
+    knowledge base covers it. The plane's read-only introspection surface; the same `resolve()`
+    is what orchestration will attach to the live answer path. Reads caches only (no DB connect)."""
+    if not (body.conn_id or "").strip():
+        raise HTTPException(status_code=400, detail="conn_id is required")
+    from aughor.semantic.context import resolve
+    return resolve(body.question or "", body.conn_id, body.schema_name).summary()
+
+
+class _CapabilityAnswerRequest(BaseModel):
+    conn_id: str
+    question: str
+    dialect: str = "duckdb"
+    domain: str = "data"          # which Capability plane domain: "data" (SQL) | "metadata" (schema)
+
+
+@router.post("/query/capability-answer")
+def query_capability_answer(body: _CapabilityAnswerRequest):
+    """Answer a data question end-to-end through the Capability plane (AL-02): one
+    `CapabilityPipeline` runs generate (NL→SQL) → validate (`trust.verify`) → execute → interpret
+    and returns the whole result. The non-streaming, template-driven counterpart to /ask — behind
+    the `capability.pipeline_live` flag while the plane lands."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("capability.pipeline_live"):
+        raise HTTPException(status_code=404, detail="capability answer path is disabled")
+    if not (body.question or "").strip():
+        raise HTTPException(status_code=400, detail="question is required")
+    from aughor.db.connection import open_connection_for
+    try:
+        db = open_connection_for(body.conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        try:
+            schema = db.get_schema()
+        except Exception:
+            schema = ""
+        from aughor.capability import run_capability, CapabilityRequest
+        from aughor.trust import Scope
+        res = run_capability(body.domain or "data", CapabilityRequest(
+            question=body.question,
+            scope=Scope(conn=db, schema=schema, dialect=body.dialect or "duckdb")))
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "capability-answer: db close", counter="capability_answer.close")
+    if res is None:
+        raise HTTPException(status_code=400, detail=f"unknown capability domain: {body.domain!r}")
+    return {
+        "ok": res.ok,
+        "sql": res.artifact,
+        "narrative": res.narrative,
+        "columns": res.output.get("columns", []),
+        "rows": res.output.get("rows", []),
+        "row_count": res.output.get("row_count", 0),
+        "error": res.error,
+        "blockers": [{"name": c.name, "reason": c.reason}
+                     for c in (res.verdict.blockers if res.verdict else [])],
+        "trace": list(res.trace),
     }
 
 

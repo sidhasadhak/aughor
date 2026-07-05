@@ -319,7 +319,7 @@ export function SqlResultTable({
           <button
             onClick={() => setShowTotals(v => !v)}
             title="Show a totals row summing numeric columns"
-            className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${showTotals ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+            className={`aug-fs-xs px-2 py-0.5 rounded border transition-colors ${showTotals ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
           >
             Σ Totals {showTotals ? "on" : "off"}
           </button>

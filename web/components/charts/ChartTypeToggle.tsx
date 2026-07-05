@@ -56,7 +56,7 @@ export function ChartTypeToggle({ value, available, onChange }: Props) {
           key={t}
           title={LABELS[t]}
           onClick={() => onChange(t)}
-          className={`px-1.5 py-0.5 rounded text-[11px] font-mono transition-colors ${
+          className={`px-1.5 py-0.5 rounded aug-fs-xs font-mono transition-colors ${
             value === t
               ? "bg-blue-500/20 text-blue-300 border border-blue-500/40"
               : "text-zinc-500 hover:text-zinc-300 border border-transparent"

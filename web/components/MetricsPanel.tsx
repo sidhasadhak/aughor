@@ -67,14 +67,14 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
     <div className="rounded-md border border-zinc-700 bg-zinc-800/40 p-3">
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <span className="text-xs font-medium text-zinc-300">Governance</span>
-        <span className={`text-[10px] px-1.5 rounded border ${STATUS_STYLE[status] ?? STATUS_STYLE.draft}`}>
+        <span className={`aug-fs-xs px-1.5 rounded border ${STATUS_STYLE[status] ?? STATUS_STYLE.draft}`}>
           {status}{metric.version ? ` v${metric.version}` : ""}
         </span>
         {metric.approved_by && status === "approved" && (
-          <span className="text-[11px] text-zinc-500">approved by {metric.approved_by}</span>
+          <span className="aug-fs-xs text-zinc-500">approved by {metric.approved_by}</span>
         )}
         {metric.proposed_by && status === "proposed" && (
-          <span className="text-[11px] text-zinc-500">proposed by {metric.proposed_by}</span>
+          <span className="aug-fs-xs text-zinc-500">proposed by {metric.proposed_by}</span>
         )}
       </div>
       {actions.length > 0 && (
@@ -100,16 +100,16 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
           ))}
         </div>
       )}
-      {err && <div className="text-[11px] text-red-400 mt-1.5">{err}</div>}
+      {err && <div className="aug-fs-xs text-red-400 mt-1.5">{err}</div>}
       {audit.length > 0 && (
         <div className="mt-2">
-          <button onClick={() => setShowAudit(s => !s)} className="text-[11px] text-zinc-400 hover:text-zinc-200">
+          <button onClick={() => setShowAudit(s => !s)} className="aug-fs-xs text-zinc-400 hover:text-zinc-200">
             {showAudit ? "▾" : "▸"} audit trail ({audit.length})
           </button>
           {showAudit && (
             <div className="mt-1 flex flex-col gap-0.5">
               {audit.map((a, i) => (
-                <div key={i} className="text-[11px] text-zinc-500 font-mono">
+                <div key={i} className="aug-fs-xs text-zinc-500 font-mono">
                   {a.at.slice(0, 19).replace("T", " ")} · <span className="text-zinc-300">{a.actor}</span>{" "}
                   {a.action} <span className="text-zinc-600">{a.from}→{a.to}</span>{a.version ? ` v${a.version}` : ""}
                 </div>
@@ -360,7 +360,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                   <span className="text-sm font-medium text-zinc-200 truncate">{m.label}</span>
                   {m.status && (
                     <span
-                      className={`text-[9px] px-1 rounded border shrink-0 ${STATUS_STYLE[m.status] ?? STATUS_STYLE.draft}`}
+                      className={`aug-fs-xs px-1 rounded border shrink-0 ${STATUS_STYLE[m.status] ?? STATUS_STYLE.draft}`}
                       title={`Governance status: ${m.status}${m.version ? ` (v${m.version})` : ""}`}
                     >
                       {m.status}{m.status === "approved" && m.version ? ` v${m.version}` : ""}
@@ -368,7 +368,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                   )}
                   {nameCounts[m.name] > 1 && (
                     <span
-                      className="text-[10px] text-amber-400 shrink-0"
+                      className="aug-fs-xs text-amber-400 shrink-0"
                       title={`Duplicate name "${m.name}" — two definitions share this identity. Downstream only one is used (most-recent wins). Delete removes ALL copies (then re-add one canonical definition), or rename/scope one here.`}
                     >
                       ⚠ dup
@@ -377,18 +377,18 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                 </div>
                 <div className="text-xs text-zinc-500 font-mono truncate">{m.name}</div>
                 {m.owner && (
-                  <div className="text-[11px] text-zinc-500 truncate">{m.owner}</div>
+                  <div className="aug-fs-xs text-zinc-500 truncate">{m.owner}</div>
                 )}
               </div>
               <div className="flex items-center gap-1 ml-2 flex-shrink-0">
                 {m.target_value != null && (
-                  <span className="w-[5px] h-[5px] rounded-full bg-emerald-400/60 shrink-0" title="Has target" />
+                  <span className="w-[5px] h-[5px] rounded-[var(--r-pill)] bg-emerald-400/60 shrink-0" title="Has target" />
                 )}
                 {m.quality_tests.length > 0 && (
-                  <span className="w-[5px] h-[5px] rounded-full bg-blue-400/60 shrink-0" title="Has quality tests" />
+                  <span className="w-[5px] h-[5px] rounded-[var(--r-pill)] bg-blue-400/60 shrink-0" title="Has quality tests" />
                 )}
                 {m.unit && (
-                  <Badge className="text-[11px] px-1 py-0 border-zinc-600 bg-zinc-800 text-zinc-400">
+                  <Badge className="aug-fs-xs px-1 py-0 border-zinc-600 bg-zinc-800 text-zinc-400">
                     {m.unit}
                   </Badge>
                 )}
@@ -672,7 +672,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
 function SectionHeader({ label }: { label: string }) {
   return (
     <div className="pt-2 border-t border-zinc-700/50">
-      <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">{label}</p>
+      <p className="aug-fs-xs font-semibold text-zinc-500 uppercase tracking-wider">{label}</p>
     </div>
   );
 }

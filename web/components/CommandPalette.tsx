@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { formatCount } from "@/lib/format";
 import Fuse, { type FuseResult, type FuseResultMatch } from "fuse.js";
 import { API_BASE } from "@/lib/config";
 
@@ -209,7 +210,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     const tableItems: PaletteItem[] = tables.map(t => ({
       id: `table-${t.name}`,
       label: t.name,
-      sublabel: t.row_count ? `${Number(t.row_count).toLocaleString()} rows` : undefined,
+      sublabel: t.row_count ? `${formatCount(Number(t.row_count))} rows` : undefined,
       type: "table" as ItemType,
       icon: "table",
       accent: "var(--cyn3)",

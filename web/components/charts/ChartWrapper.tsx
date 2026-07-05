@@ -95,7 +95,7 @@ export function ChartWrapper({
             <span className="text-xs text-center max-w-xs" style={{ color: "var(--t3)" }}>
               {error}
             </span>
-            <span className="text-[11px] px-2 py-0.5 rounded border" style={{ borderColor: "var(--red3)", color: "var(--red4)" }}>
+            <span className="aug-fs-xs px-2 py-0.5 rounded border" style={{ borderColor: "var(--red3)", color: "var(--red4)" }}>
               Retry by refreshing the query
             </span>
           </div>

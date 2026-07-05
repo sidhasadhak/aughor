@@ -28,7 +28,7 @@ export function HypothesisCard({ hypothesis, index, stats = [] }: Props) {
     .sort((a, b) => (b.sigma ?? 0) - (a.sigma ?? 0))[0];
 
   return (
-    <div className="rounded-lg border border-zinc-600 bg-zinc-800/60 p-4 space-y-3 transition-all duration-500">
+    <div className="rounded-[var(--r3)] border border-zinc-600 bg-zinc-800/60 p-4 space-y-3 transition-all duration-500">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 min-w-0">
           <span className="mt-0.5 shrink-0 text-xs font-mono text-zinc-500">H{index + 1}</span>
@@ -60,9 +60,9 @@ export function HypothesisCard({ hypothesis, index, stats = [] }: Props) {
               <span>Confidence</span>
               <span className="font-mono">{pct}%</span>
             </div>
-            <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+            <div className="h-1.5 w-full rounded-[var(--r-pill)] bg-zinc-800 overflow-hidden">
               <div
-                className={cn("h-full rounded-full transition-all duration-700", styles.bar)}
+                className={cn("h-full rounded-[var(--r-pill)] transition-all duration-700", styles.bar)}
                 style={{ width: `${pct}%` }}
               />
             </div>

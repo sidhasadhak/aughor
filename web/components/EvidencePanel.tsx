@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
+import { formatTimestamp } from "@/lib/format";
 import {
   getRecentEvidenceClaims,
   submitClaimFeedback,
@@ -31,8 +32,7 @@ const FEEDBACK_META: Record<Feedback, { label: string; color: string }> = {
 };
 
 function fmtWhen(iso: string | null): string {
-  if (!iso) return "—";
-  try { return new Date(iso).toLocaleString(); } catch { return iso; }
+  return formatTimestamp(iso);
 }
 
 function ClaimCard({ claim, onInvestigate, onFeedback }: {

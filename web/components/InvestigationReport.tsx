@@ -129,7 +129,7 @@ function FindingTable({ columns, rows, label }: { columns: string[]; rows: (stri
     <div>
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-500 transition-colors"
+        className="flex items-center gap-1 aug-fs-xs text-zinc-500 hover:text-zinc-500 transition-colors"
       >
         {open ? <ChevronDownIcon label="" size="small" /> : <ChevronRightIcon label="" size="small" />}
         {label} · {rows.length} rows
@@ -249,8 +249,8 @@ function WaterfallSection({ entries }: { entries: WaterfallEntry[] }) {
                 </span>
               </span>
             </div>
-            <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full ${isNeg ? "bg-red-500/60" : "bg-emerald-500/60"}`} style={{ width: `${barW}%` }} />
+            <div className="h-1 bg-zinc-800 rounded-[var(--r-pill)] overflow-hidden">
+              <div className={`h-full rounded-[var(--r-pill)] ${isNeg ? "bg-red-500/60" : "bg-emerald-500/60"}`} style={{ width: `${barW}%` }} />
             </div>
           </div>
         );
@@ -342,7 +342,7 @@ function ConfidenceDetail({ report }: { report: ADAReport }) {
       <div className="flex flex-col gap-1.5">
         {factors.map(f => (
           <div key={f.label} className="flex items-start gap-2">
-            <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${dotColor[f.tone]}`} />
+            <span className={`mt-1 w-1.5 h-1.5 rounded-[var(--r-pill)] shrink-0 ${dotColor[f.tone]}`} />
             <span className="text-zinc-500 shrink-0 w-36">{f.label}</span>
             <span className="text-zinc-300">{f.value}</span>
           </div>
@@ -442,12 +442,12 @@ function InvestigationDetails({ report, intakePhase }: { report: ADAReport; inta
       {hasIntake && (
         <BriefDetailBlock label="Question intake">
           <div className="rounded-md border border-zinc-800/60 overflow-hidden" style={{ background: "var(--bg-0)" }}>
-            <table className="w-full text-[11px]">
+            <table className="w-full aug-fs-xs">
               <tbody>
                 {intakeRows.map((row, i) => (
                   <tr key={i} className="border-b border-zinc-900/50 last:border-0">
                     <td className="py-1.5 px-3 text-zinc-500 whitespace-nowrap w-28">{String(row[0])}</td>
-                    <td className="py-1.5 px-3 text-zinc-300 font-mono text-[11px] leading-relaxed">{String(row[1])}</td>
+                    <td className="py-1.5 px-3 text-zinc-300 font-mono aug-fs-xs leading-relaxed">{String(row[1])}</td>
                   </tr>
                 ))}
               </tbody>
@@ -467,7 +467,7 @@ function InvestigationDetails({ report, intakePhase }: { report: ADAReport; inta
                     <button
                       onClick={() => openInBuilder(q.sql)}
                       title="Open this query in the Query Builder"
-                      className="shrink-0 text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+                      className="shrink-0 aug-fs-xs text-blue-400 hover:text-blue-300 transition-colors"
                     >
                       Open in Query Builder →
                     </button>
@@ -504,18 +504,18 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
             <RetryIcon label="Loading" size="small" />
           </span>
         )}
-        <span className={`text-[11px] font-medium uppercase tracking-wide ${isSkipped ? "text-zinc-500" : "text-zinc-400"}`}>
+        <span className={`aug-fs-xs font-medium uppercase tracking-wide ${isSkipped ? "text-zinc-500" : "text-zinc-400"}`}>
           {phase.phase_name}
         </span>
-        {isSkipped && <span className="text-[11px] text-zinc-500 italic">{phase.skipped_reason}</span>}
+        {isSkipped && <span className="aug-fs-xs text-zinc-500 italic">{phase.skipped_reason}</span>}
       </div>
       {phase.summary && !isSkipped && (
-        <div className="text-[11px] text-zinc-500 leading-relaxed">{renderEmphasis(phase.summary)}</div>
+        <div className="aug-fs-xs text-zinc-500 leading-relaxed">{renderEmphasis(phase.summary)}</div>
       )}
       {/* A running phase with nothing rendered yet — name the wait so the gap reads as progress,
           not a frozen chart (the per-phase interpret is a slow LLM round-trip). */}
       {isRunning && findings.length === 0 && (
-        <div className="text-[11px] text-zinc-500 italic pl-2 animate-pulse">Reading the results…</div>
+        <div className="aug-fs-xs text-zinc-500 italic pl-2 animate-pulse">Reading the results…</div>
       )}
       {findings.map(f => {
         const hasChart = f.columns.length > 0 && f.rows.length >= 2 && f.chart_type !== "none";

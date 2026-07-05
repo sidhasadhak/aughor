@@ -112,7 +112,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
         onBlur={() => setFocused(false)}
         disabled={streaming}
         placeholder={multiline ? "Ask anything about your data…" : "Ask your question…"}
-        className="w-full bg-transparent text-[12px] text-zinc-100 placeholder:text-zinc-500 px-4 pt-3 pb-2 resize-none focus:outline-none disabled:opacity-50"
+        className="w-full bg-transparent aug-fs-sm text-zinc-100 placeholder:text-zinc-500 px-4 pt-3 pb-2 resize-none focus:outline-none disabled:opacity-50"
       />
 
       {/* Toggle row — mode buttons left, actions right */}
@@ -171,7 +171,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
           {!multiline && !streaming && (
             <button
               onClick={onClear}
-              className="text-[12px] transition-colors px-1"
+              className="aug-fs-sm transition-colors px-1"
               style={{ color: "var(--t3)" }}
               title="Clear conversation"
             >
@@ -193,7 +193,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             onClick={() => fileInputRef.current?.click()}
             title="Attach file (PDF, CSV)"
             disabled={streaming}
-            className="flex items-center justify-center rounded-lg transition-colors disabled:opacity-30"
+            className="flex items-center justify-center rounded-[var(--r3)] transition-colors disabled:opacity-30"
             style={{
               width: 30, height: 30,
               color: attachedFile ? "var(--blue4)" : "var(--t3)",
@@ -212,7 +212,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             <button
               onClick={onStop}
               title="Stop"
-              className="rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/25 transition"
+              className="rounded-[var(--r3)] bg-red-500/15 border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/25 transition"
               style={{ width: 30, height: 30 }}
             >
               <VideoStopIcon label="Stop" size="small" />
@@ -222,7 +222,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               onClick={() => onSend()}
               disabled={!input.trim()}
               title="Send"
-              className="rounded-lg text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
+              className="rounded-[var(--r3)] text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
               style={{ width: 30, height: 30 }}
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -263,14 +263,14 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
   };
 
   return (
-    <div className="fixed bottom-0 right-0 z-50 flex flex-col bg-zinc-950 border border-zinc-700/80 rounded-tl-xl shadow-2xl" style={{ width: 520, height: 380 }}>
+    <div className="fixed bottom-0 right-0 z-50 flex flex-col bg-zinc-950 border border-zinc-700/80 rounded-tl-[var(--r3)] shadow-2xl" style={{ width: 520, height: 380 }}>
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 shrink-0">
         <span className="text-emerald-400"><AngleBracketsIcon label="Debug log" size="small" /></span>
-        <span className="text-[11px] font-mono text-zinc-300 flex-1">SSE Event Log · {events.length} events</span>
-        <span className="text-[11px] text-zinc-500 mr-2">⌘⇧L to close</span>
+        <span className="aug-fs-xs font-mono text-zinc-300 flex-1">SSE Event Log · {events.length} events</span>
+        <span className="aug-fs-xs text-zinc-500 mr-2">⌘⇧L to close</span>
         <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition"><CloseIcon label="Close" size="small" /></button>
       </div>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 font-mono text-[11px]">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 font-mono aug-fs-xs">
         {events.length === 0 ? (
           <p className="text-zinc-500 p-3">No events yet. Send a message to start.</p>
         ) : events.map((ev, i) => (
@@ -287,7 +287,7 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
               <span className="text-zinc-500 truncate flex-1">{ev.summary}</span>
             </button>
             {expanded === i && (
-              <pre className="px-4 py-2 text-[11px] text-zinc-400 bg-zinc-900/60 overflow-x-auto whitespace-pre-wrap leading-relaxed">
+              <pre className="px-4 py-2 aug-fs-xs text-zinc-400 bg-zinc-900/60 overflow-x-auto whitespace-pre-wrap leading-relaxed">
                 {JSON.stringify(ev.payload, null, 2)}
               </pre>
             )}
@@ -602,8 +602,8 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
             {!capabilities && (
               <div className="text-center">
-                <p className="text-[12px] font-bold text-zinc-200">Ask your data anything</p>
-                <p className="text-[12px] text-zinc-500 mt-1.5">
+                <p className="aug-fs-sm font-bold text-zinc-200">Ask your data anything</p>
+                <p className="aug-fs-sm text-zinc-500 mt-1.5">
                   <span className="text-zinc-400 font-bold">Auto</span> picks the right depth for each question —
                   or choose <span className="text-zinc-400 font-bold">Insight</span> /{" "}
                   <span className="text-violet-400/90 font-bold">Deep</span> yourself.
@@ -613,7 +613,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
             <InputBox {...inputBoxProps} multiline />
 
-            <p className="text-[12px] text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
+            <p className="aug-fs-sm text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
 
             {/* Suggestions */}
             <div className="pt-1">
@@ -621,7 +621,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               {loadingStarters ? (
                 <div className="grid grid-cols-2 gap-1.5">
                   {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-14 rounded-lg animate-pulse" style={{ background: "var(--bg-1)" }} />
+                    <div key={i} className="h-14 rounded-[var(--r3)] animate-pulse" style={{ background: "var(--bg-1)" }} />
                   ))}
                 </div>
               ) : (
@@ -630,7 +630,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     <button
                       key={s.text}
                       onClick={() => handleSend(s.text, s.mode)}
-                      className="flex items-start gap-1.5 px-3 py-2 rounded-lg text-[11.5px] text-left leading-snug transition-all"
+                      className="flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all"
                       style={s.mode === "investigate" ? {
                         background: "var(--bg-1)",
                         border: "0.5px solid var(--grn1)",
@@ -659,7 +659,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         }
                       }}
                     >
-                      <span className="shrink-0 mt-0.5 opacity-70 text-[13px]">
+                      <span className="shrink-0 mt-0.5 opacity-70 aug-fs-ui">
                         {s.mode === "investigate"
                           ? <AiSparkleIcon label="" size="small" />
                           : <CommentIcon label="" size="small" />}
@@ -763,7 +763,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
             }}>
               <div className="w-[90%] mx-auto space-y-2" style={{ pointerEvents: "all" }}>
                 <InputBox {...inputBoxProps} />
-                <p className="text-[12px] text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
+                <p className="aug-fs-sm text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
               </div>
             </div>
 

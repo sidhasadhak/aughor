@@ -16,6 +16,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
+import { formatTimestamp } from "@/lib/format";
 import {
   getDomainInsights,
   getCanvasDomainInsights,
@@ -1010,7 +1011,7 @@ function RevalidateRow({ dossier, connectionId, insightId }: {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<RevalidateResult | null>(null);
   const asOf = (result?.revalidated_at ?? (dossier as { revalidated_at?: string }).revalidated_at ?? dossier.generated_at);
-  const asOfText = asOf ? new Date(asOf).toLocaleString() : "—";
+  const asOfText = asOf ? formatTimestamp(asOf) : "—";
   const badge =
     result?.status === "confirmed" ? { c: "var(--grn4)", t: "Confirmed — still holds against current data" } :
     result?.status === "drifted"   ? { c: "var(--amb4)", t: `Drifted — ${(result.ungrounded ?? []).join(", ") || "a value moved"}` } :
@@ -1056,7 +1057,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
     getInsightReceipt(connectionId, insight.id).then(r => setReceipt(r)).catch(() => {});
   }, [insight, connectionId]);
   if (!insight) return null;
-  const fresh = insight.generated_at ? new Date(insight.generated_at).toLocaleString() : "—";
+  const fresh = insight.generated_at ? formatTimestamp(insight.generated_at) : "—";
   // The explorer's captured derivation, if this finding postdates dossier tracking.
   const dossier = receipt?.artifact?.payload?.dossier;
   const Stat = ({ label, value }: { label: string; value: string }) => (
@@ -1139,11 +1140,11 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
                   <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--t2)" }}>
                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: receipt.job.state === "SUCCEEDED" ? "var(--grn4)" : "var(--amb4)", flexShrink: 0 }} />
                     Computed by {receipt.job.kind} job <span style={{ color: "var(--t1)", fontWeight: 500 }}>{receipt.job.id}</span>
-                    {receipt.job.finished_at ? ` · finished ${new Date(receipt.job.finished_at).toLocaleString()}` : ""}
+                    {receipt.job.finished_at ? ` · finished ${formatTimestamp(receipt.job.finished_at)}` : ""}
                   </div>
                 )}
                 <div style={{ fontSize: 11, color: "var(--t2)" }}>
-                  Version {receipt.artifact.version}{receipt.artifact.version > 1 ? " (earlier versions preserved)" : ""} · recorded {new Date(receipt.artifact.created_at).toLocaleString()}
+                  Version {receipt.artifact.version}{receipt.artifact.version > 1 ? " (earlier versions preserved)" : ""} · recorded {formatTimestamp(receipt.artifact.created_at)}
                 </div>
                 {receipt.lineage.filter(l => l.relation === "input").length > 0 && (
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const, alignItems: "center" }}>

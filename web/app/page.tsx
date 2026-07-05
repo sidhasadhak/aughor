@@ -17,6 +17,8 @@ import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
+import type { OpsLayer } from "@/components/OperationsWorkspace";
+import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
 
 function LoadingPanel() {
   return (
@@ -35,6 +37,7 @@ const HistoryDetailPanel= dynamic(() => import("@/components/HistoryDetailPanel"
 // are now lazily loaded *inside* IntelligenceWorkspace, which fans them into
 // layers of one unified workspace.
 const IntelligenceWorkspace = dynamic(() => import("@/components/IntelligenceWorkspace").then(m => ({ default: m.IntelligenceWorkspace })), { ssr: false, loading });
+const OperationsWorkspace = dynamic(() => import("@/components/OperationsWorkspace").then(m => ({ default: m.OperationsWorkspace })), { ssr: false, loading });
 const SystemPanel       = dynamic(() => import("@/components/SystemPanel").then(m => ({ default: m.SystemPanel })),          { ssr: false, loading });
 const RolesPanel        = dynamic(() => import("@/components/RolesPanel").then(m => ({ default: m.RolesPanel })),            { ssr: false, loading });
 const ProcessHealthPanel= dynamic(() => import("@/components/ProcessHealthPanel").then(m => ({ default: m.ProcessHealthPanel })), { ssr: false, loading });
@@ -45,9 +48,7 @@ const CatalogScreen     = dynamic(() => import("@/components/CatalogScreen").the
 const CanvasBrowser     = dynamic(() => import("@/components/CanvasBrowser").then(m => ({ default: m.CanvasBrowser })),      { ssr: false, loading });
 const CanvasCreator     = dynamic(() => import("@/components/CanvasCreator").then(m => ({ default: m.CanvasCreator })),      { ssr: false, loading });
 const CanvasWorkspace   = dynamic(() => import("@/components/CanvasWorkspace").then(m => ({ default: m.CanvasWorkspace })),  { ssr: false, loading });
-const ActionHubPanel    = dynamic(() => import("@/components/ActionHubPanel").then(m => ({ default: m.ActionHubPanel })),    { ssr: false, loading });
-const MonitorsPanel     = dynamic(() => import("@/components/MonitorsPanel").then(m => ({ default: m.MonitorsPanel })),      { ssr: false, loading });
-const SecurityAuditPanel= dynamic(() => import("@/components/SecurityAuditPanel").then(m => ({ default: m.SecurityAuditPanel })), { ssr: false, loading });
+// Monitors / Action Hub / Security & Audit now render inside OperationsWorkspace (REC-U5).
 const QueryBuilder      = dynamic(() => import("@/components/QueryBuilder").then(m => ({ default: m.QueryBuilder })),        { ssr: false, loading });
 const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
 const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
@@ -95,6 +96,8 @@ type NavTab =
   | "intel"             // legacy deep-link → intelligence/domains layer
   | "org-intel"         // legacy deep-link → intelligence/org layer
   | "ontology"          // legacy deep-link → intelligence/ontology layer
+  | "operations"        // unified Operations workspace (Monitors / Action Hub / Security)
+  | "data"              // unified Data workspace (Catalog / Query Builder / Semantic Layer)
   | "health"
   | "playbook"
   | "catalog"
@@ -479,6 +482,15 @@ const NAV_SECTIONS = [
     ],
   },
 ] as const;
+
+// The Data rail items render as layers of one Data workspace (REC-U5), mirroring
+// Intelligence / Operations. The switcher labels/icons match the sidebar.
+type DataLayer = "catalog" | "builder" | "semantic";
+const DATA_LAYERS: WorkspaceLayer<DataLayer>[] = [
+  { id: "catalog",  icon: "db",      label: "Catalog",       blurb: "Tables, schemas & profiles" },
+  { id: "builder",  icon: "builder", label: "Query Builder", blurb: "Compose SQL visually" },
+  { id: "semantic", icon: "layers",  label: "Semantic Layer", blurb: "Metrics, entities & glossary" },
+];
 
 function Sidebar({
   tab,
@@ -1579,6 +1591,8 @@ export default function Home() {
   // Drill into a known finding: routes the first chat turn to the Tier-0 Finding Dossier.
   const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
   const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
+  const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
+  const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
   const [secLens, setSecLens] = useState<"security" | "activity">("security");
   const [showHistory, setShowHistory] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -1748,6 +1762,20 @@ export default function Home() {
     "org-intel":  "org",
   };
 
+  // The three Operations rail items are now layers of one Operations workspace (REC-U5).
+  const LEGACY_OPS_LAYER: Partial<Record<NavTab, OpsLayer>> = {
+    monitors: "monitors",
+    actions:  "actions",
+    security: "security",
+  };
+
+  // The three Data rail items are now layers of one Data workspace (REC-U5).
+  const LEGACY_DATA_LAYER: Partial<Record<NavTab, DataLayer>> = {
+    catalog:  "catalog",
+    builder:  "builder",
+    semantic: "semantic",
+  };
+
   const handleNavigate = (t: NavTab) => {
     // Always dismiss any floating overlays when the user navigates.
     // The History backdrop is fixed inset-0 and will intercept sidebar clicks
@@ -1764,10 +1792,12 @@ export default function Home() {
     }
 
     // "Audit Log" was merged into the Security & Audit workspace (directive #6).
-    // Legacy navigations to `activity` now open Security at its Activity lens.
+    // Legacy navigations to `activity` now open the Operations workspace at its Security
+    // layer on the Activity lens.
     if (t === "activity") {
       setSecLens("activity");
-      setTab("security");
+      setOpsLayer("security");
+      setTab("operations");
       return;
     }
 
@@ -1776,6 +1806,22 @@ export default function Home() {
     if (layer) {
       setIntelLayer(layer);
       setTab("intelligence");
+      return;
+    }
+
+    // The Monitors / Action Hub / Security rail items open the Operations workspace layer.
+    const ops = LEGACY_OPS_LAYER[t];
+    if (ops) {
+      setOpsLayer(ops);
+      setTab("operations");
+      return;
+    }
+
+    // The Catalog / Query Builder / Semantic rail items open the Data workspace layer.
+    const data = LEGACY_DATA_LAYER[t];
+    if (data) {
+      setDataLayer(data);
+      setTab("data");
       return;
     }
     setTab(t);
@@ -1800,7 +1846,8 @@ export default function Home() {
     const c = connId || selectedConn;
     if (c && c !== selectedConn) setSelectedConn(c);
     setBuilderImport({ connId: c, sql, nonce: Date.now() });
-    setTab("builder");
+    setDataLayer("builder");
+    setTab("data");
   };
 
   const handleAddConn = async (name: string, type: string, dsn: string, schema?: string, meta?: Record<string, string>) => {
@@ -1873,7 +1920,7 @@ export default function Home() {
       <div className="aug-body">
 
         {/* Sidebar */}
-        <Sidebar tab={tab} onNavigate={handleNavigate} selectedConn={selectedConn} />
+        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? dataLayer : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} />
 
         {/* Content */}
         <SchemaProvider connId={selectedConn}>
@@ -2032,14 +2079,16 @@ export default function Home() {
                 default lens (see tab === "intelligence" above). */}
 
             {/* ── SECURITY & AUDIT (merged Security + Audit Log — directive #6) ── */}
-            {tab === "security" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <SecurityAuditPanel
-                  connId={selectedConn ?? undefined}
-                  lens={secLens}
-                  onLensChange={setSecLens}
-                />
-              </div>
+            {/* ── OPERATIONS (Monitors / Action Hub / Security & Audit) ── */}
+            {tab === "operations" && (
+              <OperationsWorkspace
+                connId={selectedConn ?? undefined}
+                workspaceId={selectedWorkspace}
+                layer={opsLayer}
+                onLayerChange={setOpsLayer}
+                secLens={secLens}
+                onSecLensChange={setSecLens}
+              />
             )}
 
             {/* ── PLAYBOOK ── */}
@@ -2084,60 +2133,47 @@ export default function Home() {
               </div>
             )}
 
-            {/* ── QUERY BUILDER ── */}
-            {tab === "builder" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <QueryBuilder initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} />
-              </div>
+            {/* ── DATA (Catalog / Query Builder / Semantic Layer) ── */}
+            {/* Monitors + Action Hub render as layers of the Operations workspace above. */}
+            {tab === "data" && (
+              <WorkspaceShell
+                layers={DATA_LAYERS}
+                layer={dataLayer}
+                onLayerChange={setDataLayer}
+                ariaLabel="Data views"
+                renderIcon={(name, size, color) => <NavIcon name={name} size={size} color={color} />}
+                renderLayer={id => {
+                  if (id === "builder") return (
+                    <QueryBuilder initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} />
+                  );
+                  if (id === "semantic") return (
+                    <SemanticLayerPanel
+                      connectionId={selectedConn ?? ""}
+                      connName={wsConnections.find(c => c.id === selectedConn)?.name}
+                      connections={wsConnections.map(c => ({ id: c.id, name: c.name }))}
+                    />
+                  );
+                  return ( // "catalog"
+                    <CatalogScreen
+                      connections={wsConnections}
+                      workspaceId={selectedWorkspace}
+                      selectedConn={selectedConn}
+                      onSelect={setSelectedConn}
+                      onDeleteConn={conn => setPendingDeleteConn(conn)}
+                      onChatWithTable={(table, connId) => {
+                        if (connId !== selectedConn) setSelectedConn(connId);
+                        goToChat(`Tell me about the ${table} table`);
+                      }}
+                    />
+                  );
+                }}
+              />
             )}
 
-            {/* ── MONITORS ── */}
-            {tab === "monitors" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <MonitorsPanel connId={selectedConn ?? undefined} workspaceId={selectedWorkspace} />
-              </div>
-            )}
-
-            {/* ── ACTION HUB ── */}
-            {tab === "actions" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <ActionHubPanel />
-              </div>
-            )}
-
-            {/* ── CONNECTIONS ── */}
             {/* ── METRICS ── */}
             {tab === "metrics" && (
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
                 <MetricsPanel connId={selectedConn ?? undefined} />
-              </div>
-            )}
-
-            {/* ── CATALOG ── */}
-            {tab === "catalog" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <CatalogScreen
-                  connections={wsConnections}
-                  workspaceId={selectedWorkspace}
-                  selectedConn={selectedConn}
-                  onSelect={setSelectedConn}
-                  onDeleteConn={conn => setPendingDeleteConn(conn)}
-                  onChatWithTable={(table, connId) => {
-                    if (connId !== selectedConn) setSelectedConn(connId);
-                    goToChat(`Tell me about the ${table} table`);
-                  }}
-                />
-              </div>
-            )}
-
-            {/* ── SEMANTIC LAYER ── */}
-            {tab === "semantic" && (
-              <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                <SemanticLayerPanel
-                  connectionId={selectedConn ?? ""}
-                  connName={wsConnections.find(c => c.id === selectedConn)?.name}
-                  connections={wsConnections.map(c => ({ id: c.id, name: c.name }))}
-                />
               </div>
             )}
 

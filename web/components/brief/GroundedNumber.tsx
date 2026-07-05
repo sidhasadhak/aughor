@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { formatCount } from "@/lib/format";
 
 // ── "Show the receipt": click any number to see the exact query + the cell that backs it ──
 //
@@ -72,7 +73,7 @@ function fmtCell(v: number | null): string {
   const a = Math.abs(v);
   if (a >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
   if (a >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
-  if (a >= 1e3) return v.toLocaleString();
+  if (a >= 1e3) return formatCount(v);
   return Number.isInteger(v) ? String(v) : v.toFixed(2);
 }
 

@@ -461,6 +461,10 @@ class InvestigateRequest(BaseModel):
     # "Investigate deeper" escalation: run ADA, seeded with that dossier.
     insight_id: Optional[str] = None
     deep: bool = False
+    # Recent conversation turns (question + SQL + result digest), so a follow-up in a
+    # canvas composes on the previous query instead of starting cold — parity with the
+    # quick /chat path. Same shape /chat + /ask accept.
+    history: list[ChatHistoryTurn] = []
 
 
 class FeedbackRequest(BaseModel):
@@ -1867,6 +1871,39 @@ async def _build_origin_finding(
     return None
 
 
+def _followup_origin(history: list) -> Optional[dict]:
+    """A structured origin_finding built from the PREVIOUS turn — the base a follow-up
+    question composes on. Same shape as ``_build_origin_finding`` so ada_intake anchors
+    on it and the direct/explore branches see it via prior_analyses. The ``finding`` text
+    is a compose-on-base directive; the ``sql`` is the base query to keep/extend."""
+    from aughor.explorer.scope import tables_in_sql
+    if not history:
+        return None
+    prior = history[-1]
+    _get = (lambda k: getattr(prior, k, None)) if not isinstance(prior, dict) else prior.get
+    _sql = (_get("sql") or "").strip()
+    if not _sql:
+        return None
+    _q = (_get("question") or "").strip()
+    _headline = (_get("headline") or "").strip()
+    key_rows = _get("key_rows") or []
+    _cells = "; ".join(" | ".join(str(c) for c in (row or [])[:6]) for row in key_rows[:3])
+    directive = (
+        f"FOLLOW-UP — compose on the previous query. Prior question: \"{_q}\". Keep its "
+        f"metric, filters, grain and time window unless this question changes them, and "
+        f"resolve 'that' / 'those' / 'the top one' against its result. Do NOT start from scratch."
+    )
+    return {
+        "insight_id": "",
+        "finding": directive,
+        "sql": _sql,
+        "tables": sorted(tables_in_sql(_sql)),
+        "result_cells": _cells,
+        "structural": [],
+        "narrative": _headline,
+    }
+
+
 async def _stream_investigation(
     question: str,
     connection_id: str,
@@ -1879,6 +1916,7 @@ async def _stream_investigation(
     seed_context: str = "",
     insight_id: Optional[str] = None,
     deep: bool = False,
+    history: Optional[list] = None,
 ) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
 
@@ -2111,7 +2149,25 @@ async def _stream_investigation(
         # it into prior_analyses (the channel those read). scan_context stays empty —
         # exploratory_scan overwrites it, so seeding there is a no-op.
         _origin = await _build_origin_finding(connection_id, insight_id, seed_context, seed_sql)
+        # Follow-up composition (the quick /chat path already does this via
+        # build_history_section). When THIS question is a continuation and no explicit
+        # drill seed was given, anchor the run on the previous turn's query — the same
+        # origin_finding channel ADA reads + prior_analyses the direct/explore branches
+        # read — so "break that down / for luxury only / that one" composes on the base
+        # instead of starting from scratch.
+        if _origin is None and history:
+            from aughor.agent.followup import is_followup
+            if is_followup(question):
+                _origin = _followup_origin(history)
         _seed_priors = [_render_origin_prose(_origin)] if _origin else []
+
+        # AL-05 (Semantic plane) — resolve the ontology / metrics / profile / KB once here and
+        # carry it on the run state, so every node reads one consistent SemanticContext instead of
+        # re-consulting ad-hoc. Flag-gated + fail-open in the helper → None (no-op) when off.
+        from aughor.semantic.context import resolve_if_enabled as _resolve_semantic
+        _semantic_context = _resolve_semantic(question, connection_id,
+                                              scope_schema=scope_schema or None,
+                                              schema_text=schema_for_agent or "")
 
         initial_state: AgentState = {
             "question": question, "connection_id": connection_id, "investigation_id": inv_id,
@@ -2129,6 +2185,7 @@ async def _stream_investigation(
             "data_catalog": data_catalog or "",
             "subq_data_portrait": {},
             "final_text_answer": "",
+            "semantic_context": _semantic_context,
         }
 
         import time
@@ -2540,6 +2597,7 @@ async def _investigation_job_streamed(
     seed_context: str = "",
     insight_id: Optional[str] = None,
     deep: bool = False,
+    history: Optional[list] = None,
 ) -> AsyncGenerator[str, None]:
     """Run the investigation as a first-class supervised kernel job (K1).
 
@@ -2561,7 +2619,7 @@ async def _investigation_job_streamed(
                 question, connection_id, request,
                 hitl=hitl, skip_cache=skip_cache, canvas_id=canvas_id,
                 schema_scope=schema_scope, seed_sql=seed_sql, seed_context=seed_context,
-                insight_id=insight_id, deep=deep,
+                insight_id=insight_id, deep=deep, history=history,
             ):
                 await queue.put(sse)
         finally:
@@ -2589,7 +2647,7 @@ async def investigate(req: InvestigateRequest, request: Request):
             req.question, conn_id, request,
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
             schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
-            insight_id=req.insight_id, deep=req.deep,
+            insight_id=req.insight_id, deep=req.deep, history=req.history,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -2636,6 +2694,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
             schema_scope=req.schema_name, seed_sql=req.seed_sql,
             seed_context=req.seed_context, insight_id=req.insight_id, deep=req.deep,
+            history=req.history,  # follow-up composition on the deep path (parity with quick)
         ):
             yield sse
     else:

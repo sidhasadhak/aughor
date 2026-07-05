@@ -25,6 +25,10 @@ FLAG_ENV = {
     "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
     "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
+    "trust.verify_facade": "AUGHOR_TRUST_FACADE",
+    "trust.verify_live": "AUGHOR_TRUST_VERIFY_LIVE",
+    "semantic.resolve_live": "AUGHOR_SEMANTIC_RESOLVE_LIVE",
+    "capability.pipeline_live": "AUGHOR_CAPABILITY_PIPELINE_LIVE",
 }
 
 # Human-facing copy for the Settings UI.
@@ -52,6 +56,22 @@ FLAG_META = {
     "ada.parallel_lenses": {
         "label": "Parallel Deep-Analysis lenses",
         "description": "For a cross-sectional Deep-Analysis ('why is X high/low'), run independent investigative lenses (segment/where ∥ mechanism/why) concurrently instead of one bundled scan — a deeper, multi-angle answer at ~flat wall-clock. Multiplies concurrent LLM calls (bounded by the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
+    },
+    "trust.verify_facade": {
+        "label": "Unified trust.verify façade",
+        "description": "Route SQL validation through the one Trust-plane façade (aughor/trust) — one Verdict composing the read-only/mutation gate, E1 footguns, preflight repair, and value-domain/fan-out probes — instead of a per-path guard subset. Adds the AST read-only gate to the /query/validate surface (closes SEC-02 there). Off by default while the plane lands (AL-01).",
+    },
+    "trust.verify_live": {
+        "label": "Trust plane on the deep answer path",
+        "description": "In the Deep-Analysis executor, route every generated SQL through trust.verify before execute — the AST read-only BLOCK the generation path never ran (defence-in-depth; the connection layer is already fail-closed). A blocked statement returns a blocked result instead of executing. Off by default (AL-01 live migration).",
+    },
+    "semantic.resolve_live": {
+        "label": "Semantic plane resolved at the router",
+        "description": "Resolve the Semantic plane (metrics · ontology · profile · KB) once when a deep investigation is seeded and attach the SemanticContext to the run state, so every node reads one consistent context instead of re-consulting ad-hoc. Off by default (AL-05 live migration).",
+    },
+    "capability.pipeline_live": {
+        "label": "Capability plane answer path",
+        "description": "Enable the end-to-end Capability-plane answer path (/query/capability-answer): a data question runs generate → validate (trust.verify) → execute → interpret through the one CapabilityPipeline template. Off by default (AL-02 live migration).",
     },
 }
 

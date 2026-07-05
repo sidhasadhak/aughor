@@ -22,10 +22,10 @@ export function PacksManager() {
 
   return (
     <div className="mb-5">
-      <p className="text-[11px] uppercase tracking-widest text-zinc-500 mb-2">
+      <p className="aug-fs-xs uppercase tracking-widest text-zinc-500 mb-2">
         Specialist packs{enabled ? "" : " · flag off (gated)"}
       </p>
-      <div className="bg-white/[0.03] rounded-lg divide-y divide-white/5">
+      <div className="bg-white/[0.03] rounded-[var(--r3)] divide-y divide-white/5">
         {packs.map(p => (
           <div key={p.id} className="px-3 py-2">
             <button onClick={() => setSel(sel === p.id ? null : p.id)}
@@ -37,7 +37,7 @@ export function PacksManager() {
                 </Badge>
                 <Badge color={p.ok ? "#46b06a" : "#e5534b"}>{p.ok ? "valid" : "invalid"}</Badge>
               </span>
-              <span className="text-[11px] text-zinc-500">
+              <span className="aug-fs-xs text-zinc-500">
                 {(p.metrics ?? 0)}m · {(p.roles ?? 0)}r · {(p.evals ?? 0)}e {sel === p.id ? "▾" : "▸"}
               </span>
             </button>
@@ -118,8 +118,8 @@ function PackDeploy({ packId }: { packId: string }) {
     setDeltas(ds => ds.filter(d => d.id !== id));
   };
 
-  const inp = "text-[11px] bg-[var(--bg-2)] border border-[var(--b1)] rounded px-2 py-1 text-zinc-300";
-  const btn = "text-[11px] px-2 py-1 rounded border border-zinc-700 text-zinc-300 hover:bg-white/5 disabled:opacity-40";
+  const inp = "aug-fs-xs bg-[var(--bg-2)] border border-[var(--b1)] rounded px-2 py-1 text-zinc-300";
+  const btn = "aug-fs-xs px-2 py-1 rounded border border-zinc-700 text-zinc-300 hover:bg-white/5 disabled:opacity-40";
 
   return (
     <div className="mt-2 pl-1 space-y-3">
@@ -143,15 +143,15 @@ function PackDeploy({ packId }: { packId: string }) {
           {busy === "evaluate" ? "Evaluating…" : "3 · Evaluate"}
         </button>
       </div>
-      <p className="text-[10px] text-zinc-600">Deploy a pack: propose → bind + verify → evaluate → (set status active + enable the flag to steer runs).</p>
-      {err && <p className="text-[11px] text-rose-400">{err}</p>}
+      <p className="aug-fs-xs text-zinc-600">Deploy a pack: propose → bind + verify → evaluate → (set status active + enable the flag to steer runs).</p>
+      {err && <p className="aug-fs-xs text-rose-400">{err}</p>}
 
       {/* Step 1 — groundability (a PROPOSAL, not a deployment) */}
       {proposals && (() => {
         const total = Object.keys(proposals).length;
         const groundable = Object.values(proposals).filter(c => c.bound).length;
         return (
-          <div className="text-[11px]">
+          <div className="aug-fs-xs">
             <div className="text-zinc-500 mb-1">
               Proposed bindings — {fullyGroundable
                 ? <span className="text-emerald-400">all {total} roles groundable</span>
@@ -176,7 +176,7 @@ function PackDeploy({ packId }: { packId: string }) {
 
       {/* Step 3 — evals (pass/fail) shown SEPARATELY from activation readiness */}
       {evalRes && (
-        <div className="text-[11px] space-y-1">
+        <div className="aug-fs-xs space-y-1">
           <div className="text-zinc-500">
             Evals — {evalRes.pass_rate != null
               ? <span className={evalRes.pass_rate === 1 ? "text-emerald-400" : "text-amber-400"}>{Math.round(evalRes.pass_rate * 100)}% pass</span>
@@ -199,7 +199,7 @@ function PackDeploy({ packId }: { packId: string }) {
 
       {/* Flywheel changelog */}
       {deltas.length > 0 && (
-        <div className="text-[11px]">
+        <div className="aug-fs-xs">
           <div className="text-zinc-500 mb-1">Expert changelog — {deltas.length} proposed learning(s)</div>
           {deltas.map(d => (
             <div key={d.id} className="flex items-start justify-between gap-2 py-1 border-b border-white/5 last:border-0">

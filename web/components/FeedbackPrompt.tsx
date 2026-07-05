@@ -54,7 +54,7 @@ export function FeedbackPrompt({ investigationId, hypotheses, onSubmit, postComp
         {hypotheses.map((h, i) => (
           <div
             key={h.id}
-            className={`rounded-lg border px-3 py-2 flex items-start gap-3 ${VERDICT_COLOR[h.verdict] ?? VERDICT_COLOR.untested}`}
+            className={`rounded-[var(--r3)] border px-3 py-2 flex items-start gap-3 ${VERDICT_COLOR[h.verdict] ?? VERDICT_COLOR.untested}`}
           >
             <span className="text-xs font-mono shrink-0 mt-0.5">H{i + 1}</span>
             <div className="flex-1 min-w-0">
@@ -74,7 +74,7 @@ export function FeedbackPrompt({ investigationId, hypotheses, onSubmit, postComp
           Optional: add context, correct an interpretation, or redirect the report focus
         </label>
         <textarea
-          className="w-full rounded-lg bg-zinc-800 border border-zinc-600 text-sm text-zinc-100 placeholder:text-zinc-400 p-3 resize-none focus:outline-none focus:ring-1 focus:ring-violet-500 transition"
+          className="w-full rounded-[var(--r3)] bg-zinc-800 border border-zinc-600 text-sm text-zinc-100 placeholder:text-zinc-400 p-3 resize-none focus:outline-none focus:ring-1 focus:ring-violet-500 transition"
           rows={3}
           placeholder="e.g. Focus on APAC segment, the EU numbers are expected due to the Nov promotion. Ignore H3."
           value={feedback}
@@ -91,7 +91,7 @@ export function FeedbackPrompt({ investigationId, hypotheses, onSubmit, postComp
         <button
           onClick={handleSubmit}
           disabled={submitting}
-          className="flex-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium py-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          className="flex-1 rounded-[var(--r3)] bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium py-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
         >
           {submitting ? (postCompletion ? "Submitting…" : "Generating report…") : (postCompletion ? "Submit feedback" : "Generate report →")}
         </button>

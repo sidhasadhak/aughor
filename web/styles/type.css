@@ -58,6 +58,20 @@
   color: var(--t1);
 }
 
+/* ── Size-only scale (font-size, nothing else) ───────────────────────────────
+   The raw sizing half of the type scale. Unlike aug-text-* (which also set color,
+   weight and line-height), these set ONLY font-size, so they can replace a raw
+   `text-[Npx]` without silently changing an element's colour or weight. Use these
+   when you need a scale size but keep the element's own colour/weight; use
+   aug-text-* when you want the full semantic treatment. Sizes mirror the scale
+   above; 11px is the legibility floor (sub-11px raw sizes round up to it). */
+.aug-fs-xs      { font-size: 11px; }  /* labels, captions, meta (min) */
+.aug-fs-sm      { font-size: 12px; }  /* secondary text, table cells */
+.aug-fs-ui      { font-size: 13px; }  /* base UI text */
+.aug-fs-h2      { font-size: 15px; }  /* subheadings */
+.aug-fs-h1      { font-size: 18px; }  /* headings */
+.aug-fs-display { font-size: 22px; }  /* hero stat numbers */
+
 /* ── Section label (UPPERCASE, 11px minimum) ── */
 /* Overrides the aug-label in globals.css — kept here as canonical definition.
    10px was below the legibility floor; 11px is the corrected value. */

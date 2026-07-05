@@ -43,10 +43,14 @@ import {
   detectGranularity,
   fmtDate,
   cleanLabel,
+  compactNumber,
+  formatPercent,
+  formatCount,
   GRAN_WORD,
 } from "@/lib/format";
 import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { deriveFigureSource } from "@/lib/figureSource";
 import {
   DATE_COL,
   SHARE_COL,
@@ -158,16 +162,11 @@ function fmt(col: string, val: unknown, gran?: Gran): string {
   if (ORDINAL_COL.test(col)) return s;
   const n = Number(val);
   if (!isNaN(n)) {
-    if (SHARE_COL.test(col)) {
-      // Ratio stored as decimal fraction (e.g. 0.118 = 11.8%) — multiply ×100
-      if (Math.abs(n) <= 1)          return `${(n * 100).toFixed(2)}%`;
-      // Already a percentage (e.g. 11.8 or -60.89) — display as-is with % suffix
-      return `${n.toFixed(2)}%`;
-    }
-    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-    if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-    if (!Number.isInteger(n)) return n.toFixed(2);
-    return n.toLocaleString();
+    // Route through the ONE formatter (REC-U8) — no more hand-rolled k/M/%: a
+    // share column reads as a percent (ratio-or-percent aware), everything else
+    // as the app's compact number, so "45.3K" is "45.3K" everywhere.
+    if (SHARE_COL.test(col)) return formatPercent(n, 2);
+    return compactNumber(n);
   }
   return s;
 }
@@ -203,7 +202,7 @@ function computeSummary(columns: string[], rows: unknown[][], sql?: string | nul
   );
 
   if (numIdx === -1) {
-    return n === 1 ? "1 result." : `${n.toLocaleString()} rows returned.`;
+    return n === 1 ? "1 result." : `${formatCount(n)} rows returned.`;
   }
 
   const numCol = columns[numIdx];
@@ -296,6 +295,7 @@ function ResultFigure({
   const { columns, rows, chartType } = turn;
   if (!columns.length) return null;
 
+  const source = deriveFigureSource(turn.sql, columns, rows);
   const isSingleRow = rows.length === 1;
   const hasDate = columns.some((c) => DATE_COL.test(c));
   const hasCat  = columns.some((c, i) => !isNumeric(rows[0]?.[i]));
@@ -324,7 +324,7 @@ function ResultFigure({
   if (showChart) {
     return (
       <div className="flex flex-col gap-1.5">
-        <BriefFigure caption={sourceTitle}>
+        <BriefFigure caption={sourceTitle} source={source}>
           <ResultChartCard columns={columns} rows={rows} chartType={chartType} chartConfig={turn.chartConfig} title={sourceTitle} />
         </BriefFigure>
         {onShowSource && (
@@ -341,7 +341,7 @@ function ResultFigure({
   }
 
   return (
-    <BriefFigure caption={sourceTitle}>
+    <BriefFigure caption={sourceTitle} source={source}>
       <SqlResultTable columns={columns} rows={rows} maxHeight={320} />
     </BriefFigure>
   );
@@ -360,7 +360,7 @@ function SqlBlock({ sql }: { sql: string }) {
 
   return (
     <div className="relative group/sql">
-      <pre className="text-[12px] font-code text-zinc-400 rounded p-2.5 pr-10 overflow-x-auto whitespace-pre-wrap leading-relaxed" style={{ background: "var(--code-bg)" }}>
+      <pre className="aug-fs-sm font-code text-zinc-400 rounded p-2.5 pr-10 overflow-x-auto whitespace-pre-wrap leading-relaxed" style={{ background: "var(--code-bg)" }}>
         {sql}
       </pre>
       <button
@@ -400,7 +400,7 @@ function FormattedSql({ sql }: { sql: string }) {
   if (lastIdx < sql.length) parts.push(<span key="tail">{sql.slice(lastIdx)}</span>);
 
   return (
-    <pre className="text-[12px] font-code text-zinc-300 p-3 overflow-x-auto whitespace-pre leading-[1.65]" style={{ background: "transparent" }}>
+    <pre className="aug-fs-sm font-code text-zinc-300 p-3 overflow-x-auto whitespace-pre leading-[1.65]" style={{ background: "transparent" }}>
       {parts}
     </pre>
   );
@@ -437,7 +437,7 @@ export function SourcePanel({
           <span className="shrink-0 text-zinc-400">
             <TableIcon label="Table" size="small" />
           </span>
-          <span className="text-[12px] font-medium text-zinc-200 truncate">{title}</span>
+          <span className="aug-fs-sm font-medium text-zinc-200 truncate">{title}</span>
         </div>
         <div className="flex items-center gap-0.5 flex-shrink-0 ml-2">
           {/* Download CSV */}
@@ -467,13 +467,13 @@ export function SourcePanel({
 
       {/* Data table — scrollable */}
       <div className="flex-1 overflow-auto min-h-0">
-        <table className="text-[12px] w-full">
+        <table className="aug-fs-sm w-full">
           <thead className="sticky top-0 z-10" style={{ background: "#0f1923" }}>
             <tr className="border-b border-zinc-700/60">
               {columns.map((c, ci) => (
                 <th key={ci} className="px-3 py-1.5 text-left text-zinc-400 whitespace-nowrap font-medium">
                   <div className="flex items-center gap-1">
-                    <span className="text-zinc-500 font-mono text-[11px] select-none">
+                    <span className="text-zinc-500 font-mono aug-fs-xs select-none">
                       {isNumeric(rows[0]?.[ci]) ? "1.2" : "Ac"}
                     </span>
                     {cleanLabel(c)}
@@ -501,14 +501,14 @@ export function SourcePanel({
       {sql && (
         <div className="flex-1 min-h-0 flex flex-col border-t border-zinc-700/60">
           <div className="flex items-center justify-between gap-2 px-3 py-1.5 flex-shrink-0 border-b border-zinc-700/40">
-            <span className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300">
+            <span className="flex items-center gap-1.5 aug-fs-sm font-medium text-zinc-300">
               <AngleBracketsIcon label="SQL" size="small" /> SQL
             </span>
             {openInBuilder && (
               <button
                 onClick={() => openInBuilder(sql)}
                 title="Open this query in the Query Builder"
-                className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors whitespace-nowrap"
+                className="flex items-center gap-1 aug-fs-xs text-blue-400 hover:text-blue-300 transition-colors whitespace-nowrap"
               >
                 Explore with Query Builder
                 <ArrowRightIcon label="" size="small" />
@@ -533,7 +533,7 @@ function Section({
     <div className="mt-2">
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[12px] text-zinc-500 hover:text-zinc-400 transition-colors py-1"
+        className="flex items-center gap-1 aug-fs-sm text-zinc-500 hover:text-zinc-400 transition-colors py-1"
       >
         <span className={`transition-transform duration-150 inline-block ${open ? "rotate-90" : ""}`}>›</span>
         {label}
@@ -572,6 +572,85 @@ function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onD
 }
 
 // ── Investigate body — delegates to the appropriate rich report view ──────────
+// ── Turn renderer registry (the gen-UI seam · REC-U6 / LAYER-05) ──────────────
+// Each answer *shape* (dossier / ADA / explore / direct) is a registry entry, not a
+// branch in a god-component. First match wins — array order IS priority (dossier
+// before ADA before explore before direct, exactly the old if-chain). Adding a new
+// answer surface = one entry; InvestigateBody never changes. `registerTurnRenderer`
+// lets a pack/plugin contribute a surface (prepended → matches before the built-ins)
+// without touching this file — the seam the "agent composes its own UI" thesis needs.
+export interface TurnRenderProps {
+  onShowSource?: (data: SourcePanelData) => void;
+  onDeeper?: (question: string, insightId: string | null) => void;
+  connectionId?: string;
+}
+
+export interface TurnRenderer {
+  id: string;
+  match: (turn: ChatTurn) => boolean;
+  render: (turn: ChatTurn, props: TurnRenderProps) => React.ReactNode;
+}
+
+export const TURN_RENDERERS: TurnRenderer[] = [
+  {
+    id: "dossier", // Tier 0: the explorer's pre-computed dossier — no ADA was run.
+    match: (t) => !!t.dossierReport,
+    render: (t, p) => (
+      <DossierReportView
+        dossier={t.dossierReport!}
+        onDeeper={p.onDeeper ? () => p.onDeeper!(t.question, t.dossierInsightId) : undefined}
+      />
+    ),
+  },
+  {
+    id: "ada",
+    match: (t) => t.queryMode === "investigate" || !!t.adaReport,
+    render: (t, p) => (
+      <InvestigationReportView
+        report={t.adaReport ?? undefined}
+        streamingPhases={t.adaReport ? undefined : t.phases}
+        onShowSource={p.onShowSource}
+      />
+    ),
+  },
+  {
+    id: "explore",
+    match: (t) => t.queryMode === "explore" && !!t.exploreReport,
+    render: (t, p) => (
+      <ExplorationReportView
+        report={t.exploreReport!}
+        subQuestions={t.subQuestions}
+        subqAnswers={t.subqAnswers}
+        queryCount={t.subqAnswers.length}
+        connectionId={p.connectionId}
+        investigationId={t.investigationId ?? undefined}
+      />
+    ),
+  },
+  {
+    id: "direct", // Direct route — renders like Quick mode, source chip available.
+    match: (t) => t.queryMode === "direct",
+    render: (t, p) => {
+      const rep = t.report as Record<string, unknown> | null;
+      const headline = rep ? ((rep.headline ?? rep.summary ?? "") as string) : null;
+      return (
+        <>
+          {headline && <p className="aug-fs-sm text-zinc-300 leading-relaxed mb-2">{headline}</p>}
+          <ResultFigure turn={t} onShowSource={p.onShowSource} />
+        </>
+      );
+    },
+  },
+];
+
+/** Contribute an answer surface without editing this file. Prepended by default so a
+ *  plugin's renderer matches before the built-ins (override-wins); pass {last:true} to
+ *  append as a fallback. */
+export function registerTurnRenderer(renderer: TurnRenderer, opts?: { last?: boolean }): void {
+  if (opts?.last) TURN_RENDERERS.push(renderer);
+  else TURN_RENDERERS.unshift(renderer);
+}
+
 function InvestigateBody({
   turn, onShowSource, onDeeper, connectionId,
 }: {
@@ -580,54 +659,8 @@ function InvestigateBody({
   onDeeper?: (question: string, insightId: string | null) => void;
   connectionId?: string;
 }) {
-  const qm = turn.queryMode;
-
-  // Tier 0: the explorer's pre-computed dossier — no ADA was run.
-  if (turn.dossierReport) {
-    return (
-      <DossierReportView
-        dossier={turn.dossierReport}
-        onDeeper={onDeeper ? () => onDeeper(turn.question, turn.dossierInsightId) : undefined}
-      />
-    );
-  }
-
-  if (qm === "investigate" || turn.adaReport) {
-    return (
-      <InvestigationReportView
-        report={turn.adaReport ?? undefined}
-        streamingPhases={turn.adaReport ? undefined : turn.phases}
-        onShowSource={onShowSource}
-      />
-    );
-  }
-
-  if (qm === "explore" && turn.exploreReport) {
-    return (
-      <ExplorationReportView
-        report={turn.exploreReport}
-        subQuestions={turn.subQuestions}
-        subqAnswers={turn.subqAnswers}
-        queryCount={turn.subqAnswers.length}
-        connectionId={connectionId}
-        investigationId={turn.investigationId ?? undefined}
-      />
-    );
-  }
-
-  // Direct route — renders like Quick mode, source chip available
-  if (qm === "direct") {
-    const rep = turn.report as Record<string, unknown> | null;
-    const headline = rep ? ((rep.headline ?? rep.summary ?? "") as string) : null;
-    return (
-      <>
-        {headline && <p className="text-[12px] text-zinc-300 leading-relaxed mb-2">{headline}</p>}
-        <ResultFigure turn={turn} onShowSource={onShowSource} />
-      </>
-    );
-  }
-
-  return null;
+  const renderer = TURN_RENDERERS.find((r) => r.match(turn));
+  return renderer ? renderer.render(turn, { onShowSource, onDeeper, connectionId }) : null;
 }
 
 // ── Collapsible chevron ───────────────────────────────────────────────────────
@@ -678,8 +711,8 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
         <span className="shrink-0 text-amber-400/90">
           <WarningIcon label="Playbook" size="small" />
         </span>
-        <span className="text-[11px] font-medium uppercase tracking-wide text-amber-400/90">Playbook referenced</span>
-        <span className="text-[11px] text-zinc-500">— {items.length} item{items.length !== 1 ? "s" : ""}</span>
+        <span className="aug-fs-xs font-medium uppercase tracking-wide text-amber-400/90">Playbook referenced</span>
+        <span className="aug-fs-xs text-zinc-500">— {items.length} item{items.length !== 1 ? "s" : ""}</span>
         <span className="ml-auto shrink-0 text-amber-600">{open ? "▲" : "▼"}</span>
       </button>
       {open && (
@@ -687,7 +720,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
         {items.map(item => (
           <div key={item.id} className="px-3 py-2.5 group/pb">
             <div className="flex items-start gap-2">
-              <span className="shrink-0 mt-1 w-1.5 h-1.5 rounded-full bg-amber-400/70" />
+              <span className="shrink-0 mt-1 w-1.5 h-1.5 rounded-[var(--r-pill)] bg-amber-400/70" />
               <div className="flex-1 min-w-0">
                 {editing === item.id ? (
                   <div className="space-y-1.5">
@@ -695,23 +728,23 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
                       value={draft}
                       onChange={e => setDraft(e.target.value)}
                       rows={2}
-                      className="w-full text-[12px] text-zinc-200 rounded border border-zinc-700 bg-[--bg-0] px-2 py-1.5 resize-none focus:outline-none focus:border-amber-600"
+                      className="w-full aug-fs-sm text-zinc-200 rounded border border-zinc-700 bg-[--bg-0] px-2 py-1.5 resize-none focus:outline-none focus:border-amber-600"
                     />
                     <div className="flex gap-2">
                       <button onClick={() => saveEdit(item.id)} disabled={busy === item.id}
-                        className="text-[11px] px-2 py-0.5 rounded bg-amber-600/20 border border-amber-600/40 text-amber-300 hover:bg-amber-600/30">Save</button>
+                        className="aug-fs-xs px-2 py-0.5 rounded bg-amber-600/20 border border-amber-600/40 text-amber-300 hover:bg-amber-600/30">Save</button>
                       <button onClick={() => setEditing(null)}
-                        className="text-[11px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200">Cancel</button>
+                        className="aug-fs-xs px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200">Cancel</button>
                     </div>
                   </div>
                 ) : (
                   <>
-                    <p className="text-[12px] text-zinc-300 leading-relaxed">{item.recommendation}</p>
+                    <p className="aug-fs-sm text-zinc-300 leading-relaxed">{item.recommendation}</p>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {item.trigger_condition && (
                         <span className="text-[10.5px] text-zinc-500">when {item.trigger_condition}</span>
                       )}
-                      <span className="text-[10px] px-1.5 py-px rounded-full border border-zinc-700 text-zinc-500">
+                      <span className="aug-fs-xs px-1.5 py-px rounded-[var(--r-pill)] border border-zinc-700 text-zinc-500">
                         {item.historical_success_rate > 0 ? `${Math.round(item.historical_success_rate * 100)}% success` : "no outcome data"}
                       </span>
                     </div>
@@ -721,9 +754,9 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
               {editing !== item.id && (
                 <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/pb:opacity-100 transition-opacity">
                   <button onClick={() => { setEditing(item.id); setDraft(item.recommendation); }}
-                    className="text-[11px] px-1.5 py-0.5 rounded text-zinc-500 hover:text-zinc-200" title="Edit">Edit</button>
+                    className="aug-fs-xs px-1.5 py-0.5 rounded text-zinc-500 hover:text-zinc-200" title="Edit">Edit</button>
                   <button onClick={() => remove(item.id)} disabled={busy === item.id}
-                    className="text-[11px] px-1.5 py-0.5 rounded text-zinc-500 hover:text-red-400" title="Remove from playbook">Remove</button>
+                    className="aug-fs-xs px-1.5 py-0.5 rounded text-zinc-500 hover:text-red-400" title="Remove from playbook">Remove</button>
                 </div>
               )}
             </div>
@@ -754,14 +787,14 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-3 py-2 group/trace"
       >
-        <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-violet-400/80">
+        <span className="flex items-center gap-2 aug-fs-xs font-medium uppercase tracking-wide text-violet-400/80">
           {running ? (
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-60" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-400" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-[var(--r-pill)] bg-violet-400 opacity-60" />
+              <span className="relative inline-flex rounded-[var(--r-pill)] h-2 w-2 bg-violet-400" />
             </span>
           ) : (
-            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="inline-flex h-2 w-2 rounded-[var(--r-pill)] bg-emerald-500" />
           )}
           Agent trace
           {!running && !open && (
@@ -785,14 +818,14 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
 function ClarifyingQuestionsBanner({ questions, contextNote }: { questions: string[]; contextNote: string }) {
   if (!questions || questions.length === 0) return null;
   return (
-    <div className="mt-3 mb-3 rounded-lg border border-blue-700/30 p-3" style={{ background: 'color-mix(in srgb, #3b82f6 6%, transparent)' }}>
+    <div className="mt-3 mb-3 rounded-[var(--r3)] border border-blue-700/30 p-3" style={{ background: 'color-mix(in srgb, #3b82f6 6%, transparent)' }}>
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-blue-400">Clarifying questions</span>
+        <span className="aug-fs-xs font-medium uppercase tracking-wide text-blue-400">Clarifying questions</span>
       </div>
-      {contextNote && <p className="text-[11px] text-blue-300/70 mb-2">{contextNote}</p>}
+      {contextNote && <p className="aug-fs-xs text-blue-300/70 mb-2">{contextNote}</p>}
       <div className="flex flex-wrap gap-1.5">
         {questions.map((q, i) => (
-          <span key={i} className="text-[11px] px-2 py-0.5 rounded-full border border-blue-700/40 text-blue-300">{q}</span>
+          <span key={i} className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-pill)] border border-blue-700/40 text-blue-300">{q}</span>
         ))}
       </div>
     </div>
@@ -1081,7 +1114,7 @@ export function ChatMessage({
             </button>
           )}
           <div
-            className="px-3 py-2 rounded-md text-[12px] font-semibold text-white leading-snug"
+            className="px-3 py-2 rounded-md aug-fs-sm font-semibold text-white leading-snug"
             style={{ background: isInvestigate ? "#633D96" : "#05355D" }}
           >
             {turn.question}
@@ -1115,10 +1148,10 @@ export function ChatMessage({
             <div className="flex items-center gap-3 py-2">
               <span className="flex gap-1">
                 {[0, 150, 300].map(d => (
-                  <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                  <span key={d} className="w-1.5 h-1.5 rounded-[var(--r-pill)] bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
                 ))}
               </span>
-              <span className="text-[12px] text-zinc-500">
+              <span className="aug-fs-sm text-zinc-500">
                 {turn.statusText || defaultStatusText()}
               </span>
             </div>
@@ -1130,7 +1163,7 @@ export function ChatMessage({
 
       {/* ── Error state ── */}
       {turn.status === "error" && (
-        <p className="text-[12px] text-red-400 py-1">{turn.error}</p>
+        <p className="aug-fs-sm text-red-400 py-1">{turn.error}</p>
       )}
 
       {/* ── Tables used + timing — Deep Analysis keeps these here for now; the
@@ -1138,9 +1171,9 @@ export function ChatMessage({
            into the report itself.) ── */}
       {isDone && isInvestigate && turn.tablesUsed.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap mb-3">
-          <span className="text-[12px] text-zinc-500">Found relevant data</span>
+          <span className="aug-fs-sm text-zinc-500">Found relevant data</span>
           {turn.tablesUsed.map(t => (
-            <span key={t} className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-0.5 rounded-md border border-zinc-700/60 text-zinc-400" style={{ background: "#1e2d3d" }}>
+            <span key={t} className="inline-flex items-center gap-1 aug-fs-sm font-mono px-2 py-0.5 rounded-md border border-zinc-700/60 text-zinc-400" style={{ background: "#1e2d3d" }}>
               <span className="shrink-0 text-zinc-500"><TableIcon label="Table" size="small" /></span>
               {t}
             </span>
@@ -1148,7 +1181,7 @@ export function ChatMessage({
         </div>
       )}
       {isDone && isInvestigate && turn.elapsedMs != null && (
-        <p className="text-[11px] text-zinc-500 mb-3">Completed in {formatElapsed(turn.elapsedMs)}</p>
+        <p className="aug-fs-xs text-zinc-500 mb-3">Completed in {formatElapsed(turn.elapsedMs)}</p>
       )}
 
       {/* ── Insight — the final answer as a clean Brief ── */}
@@ -1166,7 +1199,7 @@ export function ChatMessage({
       {!collapsed && isDone && isInvestigate && (
         <>
           {turn.fromCache && (
-            <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded-lg bg-amber-950/30 border border-amber-800/40 text-[11px] text-amber-400 leading-snug">
+            <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded-[var(--r3)] bg-amber-950/30 border border-amber-800/40 aug-fs-xs text-amber-400 leading-snug">
               <span className="shrink-0 mt-0.5 text-amber-500">
                 <InformationIcon label="Info" size="small" />
               </span>
@@ -1196,7 +1229,7 @@ export function ChatMessage({
                 <button
                   key={i}
                   onClick={() => onFollowUp?.(q)}
-                  className="flex items-center gap-1 text-[12px] text-zinc-500 hover:text-zinc-200 border border-zinc-700/50 hover:border-zinc-600 rounded-full px-2.5 py-[3px] transition-all"
+                  className="flex items-center gap-1 aug-fs-sm text-zinc-500 hover:text-zinc-200 border border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-pill)] px-2.5 py-[3px] transition-all"
                 >
                   <span className="text-zinc-500 shrink-0">
                     <ArrowRightIcon label="" size="small" />
@@ -1239,13 +1272,13 @@ function SaveAsSkillButton({ invId, connectionId }: { invId: string; connectionI
     }
   };
   if (state === "saved")
-    return <span className="text-[11px] text-emerald-400">✓ Saved as skill</span>;
+    return <span className="aug-fs-xs text-emerald-400">✓ Saved as skill</span>;
   return (
     <button
       onClick={save}
       disabled={state === "saving"}
       title={msg || "Crystallize this investigation into a reusable, governed skill (Ontology ▸ Learned skills)"}
-      className="text-[11px] text-violet-400 hover:text-violet-300 border border-violet-500/30 rounded px-2.5 py-1 transition disabled:opacity-50"
+      className="aug-fs-xs text-violet-400 hover:text-violet-300 border border-violet-500/30 rounded px-2.5 py-1 transition disabled:opacity-50"
     >
       {state === "saving" ? "Saving…" : state === "error" ? "Retry — not skill-worthy?" : "Save as skill"}
     </button>

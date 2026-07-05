@@ -162,15 +162,15 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
               {map.lifecycle_column}
             </span>
           </p>
-          <p className="text-[11px] text-zinc-500 mt-0.5">
+          <p className="aug-fs-xs text-zinc-500 mt-0.5">
             {fmt(map.total_records)} total records
             {!map.has_transitions && " · showing state distribution only"}
           </p>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-zinc-500">
-          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" /> ≥80%</span>
-          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-amber-500" /> ≥50%</span>
-          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500" /> &lt;50%</span>
+        <div className="flex items-center gap-3 aug-fs-xs text-zinc-500">
+          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-[var(--r-pill)] bg-emerald-500" /> ≥80%</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-[var(--r-pill)] bg-amber-500" /> ≥50%</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-[var(--r-pill)] bg-red-500" /> &lt;50%</span>
         </div>
       </div>
 
@@ -310,7 +310,7 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
 
       {/* No-transition notice */}
       {!map.has_transitions && map.nodes.length > 0 && (
-        <p className="text-[11px] text-zinc-500 text-center">
+        <p className="aug-fs-xs text-zinc-500 text-center">
           Transition arrows require multiple rows per record tracking state changes over time.
         </p>
       )}

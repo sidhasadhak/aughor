@@ -6,6 +6,7 @@
 // off-target sub-questions (a mis-scoped plan is corrected for ~$0) or reject it.
 
 import { useState } from "react";
+import { formatCount } from "@/lib/format";
 import type { PlanPending } from "@/lib/investigationStream";
 
 const PURPOSE_LABEL: Record<string, string> = {
@@ -48,7 +49,7 @@ export function PlanGateCard({
           Review plan before running
         </span>
         <span className="aug-text-xs font-mono" style={{ color: "var(--t4)" }}>
-          {keptIdx.length}/{plan.subQuestions.length} steps · ~{estKept.toLocaleString()} tok
+          {keptIdx.length}/{plan.subQuestions.length} steps · ~{formatCount(estKept)} tok
         </span>
       </div>
 

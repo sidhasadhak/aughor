@@ -45,13 +45,13 @@ function PhaseBar({ status }: { status: ExplorationStatus }) {
           return (
             <div key={p.key} className="flex-1 relative group">
               <div className={[
-                "h-1 rounded-full transition-colors",
+                "h-1 rounded-[var(--r-pill)] transition-colors",
                 done ? "bg-emerald-500" :
                 active ? "bg-violet-400 animate-pulse" :
                 isFailed && i === cur ? "bg-red-500" :
                 "bg-white/10",
               ].join(" ")} />
-              <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-zinc-500 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 aug-fs-xs text-zinc-500 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
                 {p.label}
               </span>
             </div>
@@ -59,13 +59,13 @@ function PhaseBar({ status }: { status: ExplorationStatus }) {
         })}
       </div>
       <div className="flex items-center justify-between mt-5">
-        <span className="text-[11px] text-zinc-500">
+        <span className="aug-fs-xs text-zinc-500">
           {isComplete ? "Exploration complete" :
            isFailed ? `Failed: ${status.error ?? "unknown error"}` :
            status.paused ? `Paused · ${PHASES[cur]?.label ?? status.phase}` :
            `${PHASES[cur]?.label ?? status.phase}…`}
         </span>
-        <span className="text-[11px] text-zinc-500">
+        <span className="aug-fs-xs text-zinc-500">
           {status.first_insight_seconds != null && (
             <span className="text-emerald-400" title="Time from exploration start to the first insight (B-6 KPI)">
               ⏱ first insight in {fmtDuration(status.first_insight_seconds)} ·{" "}
@@ -102,16 +102,16 @@ function NullMeaningsSection({ nullMeanings }: { nullMeanings: ExplorationFindin
         const [table, col] = key.split(":");
         const info = NULL_LABELS[nm.meaning] ?? { label: nm.meaning, color: "text-zinc-400" };
         return (
-          <div key={key} className="bg-white/[0.03] rounded-lg p-3">
+          <div key={key} className="bg-white/[0.03] rounded-[var(--r3)] p-3">
             <div className="flex items-start justify-between gap-2">
               <span className="text-xs font-mono text-zinc-300">{table}<span className="text-zinc-500">.</span>{col}</span>
-              <span className={`text-[11px] shrink-0 font-medium ${info.color}`}>{info.label}</span>
+              <span className={`aug-fs-xs shrink-0 font-medium ${info.color}`}>{info.label}</span>
             </div>
             {nm.business_rule && (
-              <p className="text-[11px] text-zinc-500 mt-1 font-mono">{nm.business_rule}</p>
+              <p className="aug-fs-xs text-zinc-500 mt-1 font-mono">{nm.business_rule}</p>
             )}
             {nm.null_rate != null && (
-              <p className="text-[11px] text-zinc-500 mt-0.5">{pct(nm.null_rate, 1)} null rate</p>
+              <p className="aug-fs-xs text-zinc-500 mt-0.5">{pct(nm.null_rate, 1)} null rate</p>
             )}
           </div>
         );
@@ -131,21 +131,21 @@ function LifecycleMapsSection({ maps }: { maps: ExplorationFindings["lifecycle_m
   return (
     <div className="space-y-3">
       {entries.map(([table, lm]) => (
-        <div key={table} className="bg-white/[0.03] rounded-lg p-3">
+        <div key={table} className="bg-white/[0.03] rounded-[var(--r3)] p-3">
           <div className="flex items-baseline gap-1.5 mb-2">
             <span className="text-xs font-mono text-zinc-200">{table}</span>
-            <span className="text-zinc-500 text-[11px]">.{lm.status_column}</span>
+            <span className="text-zinc-500 aug-fs-xs">.{lm.status_column}</span>
           </div>
           <div className="flex flex-wrap gap-1 mb-1.5">
             {lm.active_states.map(s => (
-              <span key={s} className="text-[11px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded">{s}</span>
+              <span key={s} className="aug-fs-xs bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded">{s}</span>
             ))}
             {lm.terminal_states.map(s => (
-              <span key={s} className="text-[11px] bg-zinc-500/10 text-zinc-500 px-1.5 py-0.5 rounded">{s}</span>
+              <span key={s} className="aug-fs-xs bg-zinc-500/10 text-zinc-500 px-1.5 py-0.5 rounded">{s}</span>
             ))}
           </div>
           {lm.transitions.length > 0 && (
-            <p className="text-[11px] text-zinc-500">{lm.transitions.length} state transitions mapped</p>
+            <p className="aug-fs-xs text-zinc-500">{lm.transitions.length} state transitions mapped</p>
           )}
         </div>
       ))}
@@ -176,13 +176,13 @@ function InsightsSection({ insights }: { insights: ExplorationFindings["insights
   return (
     <div className="space-y-2">
       {insights.map(ins => (
-        <div key={ins.id} className="bg-white/[0.03] rounded-lg p-3">
-          <p className="text-[11px] text-zinc-300 leading-relaxed">{ins.finding}</p>
+        <div key={ins.id} className="bg-white/[0.03] rounded-[var(--r3)] p-3">
+          <p className="aug-fs-xs text-zinc-300 leading-relaxed">{ins.finding}</p>
           <div className="flex items-center gap-2 mt-2">
-            <span className="text-[11px] text-zinc-500">
+            <span className="aug-fs-xs text-zinc-500">
               {ins.entities_involved.join(" × ")}
             </span>
-            <span className="text-[11px] text-emerald-500/70 ml-auto">
+            <span className="aug-fs-xs text-emerald-500/70 ml-auto">
               {pct(ins.confidence, 0)} confidence
             </span>
           </div>
@@ -290,7 +290,7 @@ export function ExplorationPanel({ connectionId, initialSection, schema }: Props
             key={s.key}
             onClick={() => setActiveSection(s.key)}
             className={[
-              "flex items-center gap-1.5 px-3 py-2 text-[11px] border-b-2 transition-colors whitespace-nowrap",
+              "flex items-center gap-1.5 px-3 py-2 aug-fs-xs border-b-2 transition-colors whitespace-nowrap",
               activeSection === s.key
                 ? "border-violet-400 text-zinc-200"
                 : "border-transparent text-zinc-500 hover:text-zinc-300",
@@ -298,7 +298,7 @@ export function ExplorationPanel({ connectionId, initialSection, schema }: Props
           >
             {s.label}
             {s.badge && (
-              <span className={`text-[11px] font-medium ${s.badgeColor ?? "text-zinc-500"}`}>
+              <span className={`aug-fs-xs font-medium ${s.badgeColor ?? "text-zinc-500"}`}>
                 {s.badge}
               </span>
             )}
