@@ -14,6 +14,24 @@
 
 ## 0 · Immediate next action ⏭️
 
+**NEW (2026-07-06): the 10x + Spider 2.0 program — assessment DONE, execution next.** A full-repo
+assessment (baseline: 2,508 tests green in 97s · ruff 0 · deep path ~8.4 min) + a deep external
+study of the Spider 2.0 benchmark and its July-2026 winners produced one sequenced program of five
+workstreams — **WS4** hygiene (api.gen.ts regen + codegen CI gate · 4 bypass flags into FLAG_ENV ·
+bare-`pass`→`tolerate()` in the 2 hot files · docs drift) → **WS3** accuracy measurement (hermetic
+golden replay + ambiguity eval into CI · live ratchet baseline · guard fire/success counters) →
+**WS5 Phase 0** Spider2 campaign unblock (harness rebuild · live CSV-contract check · the gated
+glm-5.2 grounding-lift A/B; Snowflake access CONFIRMED ready, creds were never the real blocker —
+form + MFA/PAT) → **WS1** fast deep path (wave-parallelize the ADA phases + P-B + caching; target
+≥2×) ∥ **WS5 Phases 1–3** (substrate-on-benchmark · budgeted loop w/ SOMA-style disagreement
+probing · climb to Lite top-3 ≥~72, Snow ≥90 stretch) → **WS2** one SQL executor (unify the 3
+duplicated execute-with-guards paths + guard-parity test). Full spec, evidence, per-file anchors,
+benchmark runbook + the six new findings (containment eval → superset projection; probing lifts
+past the sampling ceiling; verified-identifiers-only; Secure Data Share self-hosting; receipts ==
+submission traces; DivSkill skills ≈ our dormant skills subsystem):
+[`docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md).
+**Never submit to the leaderboard without explicit user permission.**
+
 **Part 2 of the architecture review — SHIPPED through Wave 3 (PRs #101 → #100 → #102 → the U9 PR).**
 - **Wave 1** four enforced web CI gates (design-token · formatting · raw-element · tsc) + one-palette.
 - **Wave 2** renderer registry · chart source-footers · `StatusChip` · the `<Workspace>` shell + the
@@ -67,12 +85,14 @@ the third `"profile"` source + `from_north_star_metric`, a `rank` mirroring `_SO
 executor A/B (real executor, fixed leaf latency) — baseline serial+chains 12.0s → wave+chains 10.7s
 (**1.12×**, executor alone) → wave+wide **8.0s (1.50×)** — the prompt is what unlocks the executor.
 
-**⏭️ Immediate next:**
+**⏭️ Immediate next — now sequenced inside the 10x + Spider 2.0 program (see the block at the top of §0):**
 1. **Continue P-A** — apply the wave pattern to ADA hypothesis-testing / per-dimension cross-section;
-   then **P-B** (parallelize the pre-flight retrievals — near-free, deterministic).
-2. **`web/lib/api.gen.ts` is ~5,700 lines stale** (missing ~40 routes) — regen + add a codegen CI gate.
+   then **P-B** (parallelize the pre-flight retrievals — near-free, deterministic). *→ program WS1.*
+2. **`web/lib/api.gen.ts` is stale** (12,929 lines — missing the `/rbac`, `/jobs`, `/packs`, `/verify`
+   route families) — regen + add a codegen CI gate. *→ program WS4.*
 3. **Retire `CanonicalMetric`** — repoint the `semantic/compiler.py` structured consumer (U10 tail;
-   `build_metrics_block` text / `/health-scorecard` / `/metrics` CRUD still catalog-only).
+   `build_metrics_block` text / `/health-scorecard` / `/metrics` CRUD still catalog-only). *(Standalone,
+   not part of the program.)*
 *Deferred with reasons (see the log): `CanvasWorkspace` re-express (rich header + eager-mount don't fit
 the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment),
 NOM-07 (`PlaybookEntry` doesn't fit the scheduled-check mold; touches persisted models).*
@@ -426,6 +446,43 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 ## 3 · What's left
 
 Verified pending against code/git. `⬜` not started · `◑` partial.
+
+### ▶ The 10x + Spider 2.0 program (2026-07-06 — the active umbrella; spec: [`docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md))
+*Order: WS4 → WS3 → WS5-P0 (gated) → WS1 ∥ WS5-P1–3 → WS2. Baseline to beat is the doc's §0
+(2,508 tests/97s · ruff 0 · deep path ~8.4 min · Lite-local 56.30% w/ glm-5.2). Constraints: additive
+API only · suite green every commit · no new runtime deps · flag-gated default-off · ratchets only down.*
+- ⬜ **WS4 — hygiene batch (first):** regen `api.gen.ts` + CI codegen-drift gate; move
+  `AUGHOR_CAUSAL_DRILL`/`AUGHOR_PREMISE_CHECK`/`AUGHOR_ASK_CLARIFY`/`AUGHOR_CLOSED_LOOP` into
+  `FLAG_ENV` (ledger override + Settings UI); convert the ~28 bare `except: pass` in
+  `routers/investigations.py` + `agent/investigate.py` to `tolerate()` and LOWER the swallow
+  baseline; fix FEATURES.md §13's removed-harness claim.
+- ⬜ **WS3 — accuracy measurement:** hermetic golden reference-replay + ambiguity eval into CI;
+  live full-pipeline ratchet baseline (glm-5.2) + documented pre-merge `ratchet.py check`
+  protocol; guard fire/success counters (grain fired on 20.7% of real predictions in June —
+  make that visible).
+- ⬜ **WS5 — Spider 2.0 top-3 campaign** (target: Lite top-3 ≥~72; Snow ≥90 stretch; glm-5.2 via
+  Ollama Cloud; **Snowflake access ready — the June "dead credential" was a template + the
+  2025-11 MFA/PAT policy change, not a real blocker**). Phase 0 (gated): pull the stale Spider2
+  clone (last 2026-01-30) · rebuild the harness through the RECEIPT path (traces are a submission
+  requirement) · live CSV-contract check on 5–10 gold · request the Secure Data Share (kills the
+  shared-warehouse queue; **draft email for approval — never send unaided**) · the 50-hard-subset
+  grounding-lift A/B that decides scale. Phases 1–3: substrate-on-benchmark (explorer/profiler/
+  ontology over the bench DBs + finally READ the per-instance external-knowledge docs) → budgeted
+  loop (guards on every candidate · ANSWER_SHAPE + `condition_cols` + superset-projection ·
+  SOMA-style disagreement probing tiered on `agent/complexity.py`) → climb + drafted submission.
+  Key evidence: SOMA probing +9.0 over majority vote and **+30.6 EX where zero candidates were
+  right** (execution-grounded machinery lifts past the sampling ceiling — the June conclusion
+  covered ungrounded machinery only); eval is column-CONTAINMENT (extra columns free); ~66% of
+  Snow open-gold has annotation errors (ceiling ~75–85 Lite — don't tune to wrong gold).
+- ⬜ **WS1 — fast deep path:** wave-parallelize the ADA phase flow (`ada.parallel_phases`,
+  in-process executor NOT `Send`) + P-B parallel pre-flight + metric-block/ontology caching +
+  per-role LLM concurrency cap (default 4 queues the lenses). Acceptance: live A/B ≥2×
+  (~8.4 → ≤4 min) at equal finding quality.
+- ⬜ **WS2 — one SQL executor (last, on WS3's regression net):** unify
+  `investigate._execute_safe` / `explore._execute_one_subq` / `nodes.execute_planned_queries`
+  behind one guard-battery/repair runner (home: the AL-01 `trust` façade) + a guard-parity
+  conformance test; port grain-prevention + honesty caveats to the quick path; seed the
+  QUVI-style verified-identifiers-only discipline in the runner design.
 
 ### ▶ Report-quality wiring gaps — three deterministic fixes (next up; source: the GMV brand-tier case, 2026-07-05)
 *Diagnosed from a real "why did total GMV change across brand tiers?" report that led with a +€39.9M / +1,506% headline that its own trust advisory flagged as ungrounded. Root cause is NOT grounding maturity — the trust check fired correctly and the z-score normalization correctly debunked the artifact. These are three wiring gaps between subsystems that already compute the right signals but don't talk to each other. **Impact/dependency order: #1 (independent) → #3 → #2 (#2 depends on #3, else it amplifies #3's false positives).**
