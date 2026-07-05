@@ -76,9 +76,13 @@ the per-phase query cap instead of falling to "other"; **auto-drill WHERE→WHY*
 `_causal_split` peels event-only dims (tautological as a rate) into the existing (live-proven)
 `_run_composition_lens` WHY lens, emitting a "Mechanism / Reason Scan — Why" phase instead of stopping
 at WHERE. Reuses `_is_event_dim`/`_run_composition_lens`; no graph change; fires only on a clean
-top-level scan. *Recommended before flipping the flag on by default: one live run on the canonical
-womenswear-returns investigation (the composition machinery is already live-proven via the multilens
-path; this validates it firing from the serial default path end-to-end).*
+top-level scan. **LIVE-VALIDATED** on the canonical womenswear-returns question (real `/investigate` on
+the `workspace`/luxexperience connection, `AUGHOR_CAUSAL_DRILL=1`): routed investigate (conf 0.95);
+`cross_section` localised WHERE ("40.5% luxury-segment platforms vs 27.0% off-price"); the auto-drilled
+`cross_section_mechanism` WHY phase fired ("size/fit issues = 42% of all returns, 2× the next reason");
+synthesis headline led with BOTH — "driven by luxury platform segment and size/fit issues, **not brand
+or tier**" (item 1's causal dims surfaced over the descriptive ones). No live-store pollution
+(write-stores isolated).
 
 **Shipped 2026-07-03** (branch `2026-07-02-ada-temporal-intake-grain`, merged; deterministic, full suite
 green — the **Deep Analysis report-quality arc**, see the "What we've built" entry below):
