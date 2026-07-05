@@ -251,15 +251,22 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 
 ## 13. Quality bar & engineering discipline
 
-- **Eval suite** — Braintrust investigation-quality evals + golden dataset + the Spider 2.0 NL2SQL harness,
-  with a **reliability-banding protocol** (band runs, McNemar p-value, held-out split) so sub-2-pt effects
-  aren't mistaken for temp-0 noise; guard-coverage reporting on real predictions.
+- **Eval suite** (`evals/`) — the 53-pair golden NL→SQL set with an execution-scored runner
+  (`run_golden.py`: hermetic reference-replay / raw / full-pipeline modes), a delta-measurement
+  **ratchet** (`ratchet.py`: accuracy + tokens vs a pinned baseline), and the interaction-arc evals
+  (`ambiguity_eval.py` · `its_structural.py` · `ablation_eval.py`), with a **reliability-banding
+  protocol** so sub-2-pt effects aren't mistaken for temp-0 noise. *(The one-off Spider 2.0 harness
+  from the June benchmark arc was deliberately removed with the arc's conclusion — see
+  `docs/SPIDER2_PROGRESS_AND_CHALLENGES_2026-06-28.md` §14; a fresh campaign harness is scoped in
+  `docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md` WS5.)*
 - **Fail-graceful-by-contract** — never a 500 / hang / silent-wrong-success.
 - **No silent failures** — the only legal way to swallow an exception is `tolerate()` (logged + counted +
   journaled), enforced by a test ratchet that can only go down.
 - **CI gate** (`.github/workflows/ci.yml`) — pytest (`not e2e/eval`) + frontend `tsc --noEmit` on every PR,
   plus **ruff at zero and blocking** (pinned; a sane ruleset that surfaced + fixed several real latent
-  `NameError`s). ~2,300 tests; the suite is fully store-isolated so it can never mutate live data.
+  `NameError`s), plus a **codegen-drift gate** (the typed TS client `web/lib/api.gen.ts` is regenerated
+  from the route surface via a hermetic offline OpenAPI dump — `scripts/dump_openapi.py` — and CI fails
+  if it's stale). ~2,500 tests; the suite is fully store-isolated so it can never mutate live data.
 - **Enforced frontend design layer** (Part 2 of the 2026-07-03 review) — three baseline-zero, *blocking*
   web gates, the ruff discipline applied to the UI: a **design-token gate** (`lint:tokens` — no raw radius or
   `text-[Npx]`; the scale is the source of truth), a **formatting gate** (`lint:format` — all number/date
@@ -273,7 +280,10 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 ## 14. Human-command surface (AI-FDE-derived, flag-gated)
 
 Studied Palantir Foundry's AI FDE and adopted its *human-in-command* posture as a 7-phase program
-(all flag-gated + additive — default behaviour unchanged; see `docs/`):
+(all flag-gated + additive — default behaviour unchanged; see `docs/`). The close-the-loop and
+premise-validation env vars below are registered in the runtime flag system (`kernel/flags.py`:
+`closed_loop`, `ada.premise_check`) so they're also toggleable at runtime from Settings → System,
+like `ask.clarify` (the ask-vs-guess gate, the one default-ON flag) and `ada.causal_drill`:
 
 - **Close the loop** (`AUGHOR_CLOSED_LOOP`) — captured human corrections/verdicts + trusted queries are
   read back into the planner as priors, so a corrected mistake isn't repeated (+0.70 accuracy on a repeat set).
