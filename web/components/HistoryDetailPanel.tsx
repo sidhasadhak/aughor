@@ -9,7 +9,7 @@ import { ReportView } from "@/components/ReportView";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { formatTimestamp } from "@/lib/format";
-import type { Hypothesis, QueryCitation, Report, ADAReport, ExplorationReport, SubQuestion, SubQuestionAnswer } from "@/lib/types";
+import type { Hypothesis, QueryCitation, Report, AnswerReport, ExplorationReport, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import { API_BASE } from "@/lib/config";
 import { localizeCurrency } from "@/lib/orgSettings";
 import { getEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/lib/api";
@@ -219,7 +219,7 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
               <Separator className="bg-zinc-800" />
 
               {reportType === "investigate" && (
-                <InvestigationReportView report={reportRaw as unknown as ADAReport} />
+                <InvestigationReportView report={reportRaw as unknown as AnswerReport} />
               )}
 
               {reportType === "explore" && (

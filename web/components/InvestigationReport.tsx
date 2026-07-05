@@ -89,7 +89,7 @@ interface ADARecommendation {
   timeline: string;
 }
 
-export interface ADAReport {
+export interface AnswerReport {
   headline: string;
   executive_summary: string;
   metric: string;
@@ -114,7 +114,7 @@ export interface ADAReport {
   plan_reconciliation?: { planned: string[]; actual: string[]; skipped: string[]; unplanned: string[] } | null;
 }
 
-const CONF_TXT: Record<ADAReport["confidence"], string> = {
+const CONF_TXT: Record<AnswerReport["confidence"], string> = {
   HIGH:   "text-emerald-400",
   MEDIUM: "text-amber-400",
   LOW:    "text-red-400",
@@ -288,7 +288,7 @@ function RecommendationsList({ recs }: { recs: ADARecommendation[] }) {
 
 type ConfTone = "good" | "warn" | "neutral";
 
-function buildConfidenceFactors(report: ADAReport): { label: string; value: string; tone: ConfTone }[] {
+function buildConfidenceFactors(report: AnswerReport): { label: string; value: string; tone: ConfTone }[] {
   const { phases, attribution_waterfall, data_gaps } = report;
   const completedPhases = phases.filter(p => p.status === "complete" || p.status === "partial");
   const skippedPhases   = phases.filter(p => p.status === "skipped");
@@ -331,7 +331,7 @@ function buildConfidenceFactors(report: ADAReport): { label: string; value: stri
   ];
 }
 
-function ConfidenceDetail({ report }: { report: ADAReport }) {
+function ConfidenceDetail({ report }: { report: AnswerReport }) {
   const dotColor: Record<ConfTone, string> = { good: "bg-emerald-400", warn: "bg-amber-400", neutral: "bg-zinc-500" };
   const factors = buildConfidenceFactors(report);
   return (
@@ -354,7 +354,7 @@ function ConfidenceDetail({ report }: { report: ADAReport }) {
 
 // ── Cross-phase checks — the Orchestrator's declared plan + consistency verdict ──
 
-function CrossPhaseSection({ report }: { report: ADAReport }) {
+function CrossPhaseSection({ report }: { report: AnswerReport }) {
   const plan = report.orchestration_plan;
   const contradictions = report.contradiction_report?.items ?? [];
   const rec = report.plan_reconciliation;
@@ -390,7 +390,7 @@ function CrossPhaseSection({ report }: { report: ADAReport }) {
 
 // ── Investigation machinery — one quiet disclosure ─────────────────────────────
 
-function InvestigationDetails({ report, intakePhase }: { report: ADAReport; intakePhase?: InvestigationPhase }) {
+function InvestigationDetails({ report, intakePhase }: { report: AnswerReport; intakePhase?: InvestigationPhase }) {
   const hasWaterfall = (report.attribution_waterfall?.length ?? 0) > 0;
   const hasGaps = (report.data_gaps?.length ?? 0) > 0;
   const intakeRows = intakePhase?.findings?.[0]?.rows ?? [];
@@ -545,7 +545,7 @@ export function InvestigationReportView({
   streamingPhases,
   onShowSource,
 }: {
-  report?: ADAReport;
+  report?: AnswerReport;
   streamingPhases?: InvestigationPhase[];
   onShowSource?: ShowSource;
 }) {

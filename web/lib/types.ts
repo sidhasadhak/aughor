@@ -169,7 +169,7 @@ export interface ADARecommendation {
   timeline: string;
 }
 
-export interface ADAReport {
+export interface AnswerReport {
   headline: string;
   executive_summary: string;
   metric: string;
@@ -194,6 +194,9 @@ export interface ADAReport {
   plan_reconciliation?: { planned: string[]; actual: string[]; skipped: string[]; unplanned: string[] } | null;
 }
 
+/** @deprecated Use {@link AnswerReport}. Kept one release for the `ADA`→answer rename (REC-U9). */
+export type ADAReport = AnswerReport;
+
 // SSE event shapes
 export type InvestigationEvent =
   | { type: "start"; question: string; investigation_id?: string }
@@ -207,7 +210,7 @@ export type InvestigationEvent =
   | { type: "explore_report"; explore_report: ExplorationReport; sub_questions: SubQuestion[]; subq_answers: SubQuestionAnswer[]; query_count: number; investigation_id: string; query_mode: "explore" }
   | { type: "paused"; investigation_id: string; hypotheses: Hypothesis[]; scores: EvidenceScore[] }
   | { type: "phase_complete"; phase: InvestigationPhase; all_phases: InvestigationPhase[] }
-  | { type: "ada_report"; ada_report: ADAReport; investigation_id: string; query_mode: "investigate" }
+  | { type: "ada_report"; ada_report: AnswerReport; investigation_id: string; query_mode: "investigate" }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -248,5 +251,5 @@ export interface InvestigationState {
   exploreReport: ExplorationReport | null;
   // ADA investigate mode
   investigationPhases: InvestigationPhase[];
-  adaReport: ADAReport | null;
+  adaReport: AnswerReport | null;
 }
