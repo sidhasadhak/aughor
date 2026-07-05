@@ -83,6 +83,15 @@ the `workspace`/luxexperience connection, `AUGHOR_CAUSAL_DRILL=1`): routed inves
 synthesis headline led with BOTH — "driven by luxury platform segment and size/fit issues, **not brand
 or tier**" (item 1's causal dims surfaced over the descriptive ones). No live-store pollution
 (write-stores isolated).
+*Follow-on (same branch): the serial-drill feature above is **inert when `ada.parallel_lenses` is on**
+(the live default) — so its causal-relevance idea was landed where it actually runs: **causal-relevance
+ranking in the WHY composition lens** (`_select_why_dims` in `_run_composition_lens`). The multilens WHY
+composed every event dim uniformly (womenswear → 4 findings, 3 of them ops noise: carrier/refund-method
+scored non-significant); now it leads with the causal dims (reason/condition) and drops the pure-ops
+dims (`_OPERATIONAL_DIMENSION_KEYWORDS`) when a causal dim is present — fail-safe keeps all when nothing
+looks causal. Improves BOTH paths (shared lens). **Real-path verified** (multilens womenswear run: WHY
+4 findings → 2, ops noise gone, summary leads with size/fit). Next multilens WHY ideas (not built):
+WHY×WHERE interaction · second-level drill on the dominant reason · peer benchmark on the reason.*
 
 **Shipped 2026-07-03** (branch `2026-07-02-ada-temporal-intake-grain`, merged; deterministic, full suite
 green — the **Deep Analysis report-quality arc**, see the "What we've built" entry below):
