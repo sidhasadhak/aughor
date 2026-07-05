@@ -61,7 +61,7 @@ No dashboards to maintain. No SQL to write. No analyst backlog.
 ```bash
 git clone https://github.com/sidhasadhak/aughor.git && cd aughor
 uv sync                                          # 1. Python deps (DuckDB is built in)
-cd web && npm install --legacy-peer-deps && cd ..  # 2. frontend deps
+cd web && npm install && cd ..                   # 2. frontend deps
 cp .env.example .env                             # 3. then edit: set your LLM backend + models
 ./start.sh                                       # 4. API :8000 + web → http://localhost:3000
 ```
