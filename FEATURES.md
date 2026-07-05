@@ -104,6 +104,11 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   binds every per-domain block against the live schema (dry-run/EXPLAIN as the universal binder).
 - **Metrics catalog** — governed metric definitions, targets & health scorecard, one unified resolver
   (`UNIFY`) shared by chat and Deep Analysis, with cross-connection leak prevention.
+- **One metric contract** — a governed metric (curated catalog · connection north-star · ontology-derived)
+  resolves to a single `SemanticContract` type the whole platform points at: one precedence rank (catalog >
+  north-star > verified-ontology > unverified), one render-authority signal, one dedup. Planning renders from
+  it and `/query/semantic-context` surfaces it, flag-gated (`semantic.contract_live`) and byte-identical off —
+  the "20-year ontology bet" type unification (REC-U10).
 - **Business glossary** — manual + dbt-manifest + LLM auto-seed (override precedence), injected into context.
 - **Industry-aware intelligence** — `BusinessProfile` + per-industry metric knowledge base.
 
@@ -198,7 +203,12 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   resilience** (per-endpoint concurrency cap + retry/backoff/deadline); per-phase rate limiting;
   plan-then-SQL separation; non-blocking FastAPI event loop; bounded job concurrency.
 - **Parallel investigation** — independent explore sub-questions run concurrently in dependency-respecting
-  waves (flag `explore.parallel_subq`), and a cross-sectional Deep-Analysis runs independent lenses
+  waves (flag `explore.parallel_subq`); the decompose planner is steered toward a **wide, shallow dependency
+  DAG** (independent cuts of one landscape depend only on the landscape, not each other) with a deterministic
+  `depends_on` normalizer + a logged wave-schedule — moving the realized plan from a serial chain (max wave
+  width ~1) to a landscape → wide-wave → tail shape (~3.7), which is what lets the executor actually save
+  wall-clock (measured: the executor alone on old chains ~1.12×; with the wider plan ~1.50×, growing with
+  per-question independence and LLM latency). A cross-sectional Deep-Analysis runs independent lenses
   concurrently — **segment/where ∥ mechanism/why ∥ temporal/when** — for a deeper multi-angle answer at flat
   latency (flag `ada.parallel_lenses`). The WHEN lens deterministically resolves a population/order date
   (DB-probed, event-date-excluded) so a rate can be trended over time, flags a materially anomalous period, and
