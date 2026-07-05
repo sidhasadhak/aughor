@@ -57,6 +57,67 @@ def test_summary_shape(monkeypatch):
     assert s["connection_id"] == "fixture"
 
 
+# ── contracts(): the two metric shapes unified as SemanticContracts (REC-U10) ─────────────
+
+class _OntoWithMetrics:
+    def __init__(self, metrics): self.metrics = metrics
+
+
+def test_contracts_unifies_catalog_and_ontology():
+    from aughor.semantic.metrics import MetricDefinition
+    from aughor.ontology.models import OntologyMetric
+    ctx = SemanticContext(
+        question="q", connection_id="c",
+        metrics=[MetricDefinition(name="mrr", label="MRR", sql="SUM(a)")],
+        ontology=_OntoWithMetrics({"rev": OntologyMetric(id="rev", display_name="Rev",
+                                                          entity="order", formula_sql="SUM(t)")}),
+    )
+    by_key = {c.key: c for c in ctx.contracts()}
+    assert set(by_key) == {"mrr", "rev"}
+    assert by_key["mrr"].source == "catalog" and by_key["rev"].source == "ontology"
+
+
+def test_contracts_catalog_wins_on_key_collision():
+    from aughor.semantic.metrics import MetricDefinition
+    from aughor.ontology.models import OntologyMetric
+    ctx = SemanticContext(
+        question="q", connection_id="c",
+        metrics=[MetricDefinition(name="revenue", label="Revenue", sql="SUM(catalog)")],
+        ontology=_OntoWithMetrics({"revenue": OntologyMetric(id="revenue", display_name="Revenue",
+                                                             entity="order", formula_sql="SUM(onto)")}),
+    )
+    contracts = ctx.contracts()
+    assert len(contracts) == 1                       # one key, not two
+    assert contracts[0].source == "catalog"          # the human-governed definition wins
+    assert contracts[0].sql == "SUM(catalog)"
+
+
+def test_contracts_is_fail_open_on_bad_entry():
+    from aughor.semantic.metrics import MetricDefinition
+    # A junk ontology metric (missing required fields) is skipped, the good catalog one survives.
+    ctx = SemanticContext(
+        question="q", connection_id="c",
+        metrics=[MetricDefinition(name="ok", label="OK", sql="SUM(a)")],
+        ontology=_OntoWithMetrics({"bad": object()}),   # not an OntologyMetric → adapter raises
+    )
+    keys = [c.key for c in ctx.contracts()]           # must NOT raise
+    assert keys == ["ok"]
+
+
+def test_summary_reports_unified_contract_count():
+    from aughor.semantic.metrics import MetricDefinition
+    from aughor.ontology.models import OntologyMetric
+    ctx = SemanticContext(
+        question="q", connection_id="c",
+        metrics=[MetricDefinition(name="mrr", label="MRR", sql="SUM(a)")],
+        ontology=_OntoWithMetrics({"rev": OntologyMetric(id="rev", display_name="Rev",
+                                                          entity="order", formula_sql="SUM(t)")}),
+    )
+    s = ctx.summary()
+    assert s["metric_count"] == 1                     # catalog only
+    assert s["contract_count"] == 2                   # catalog ∪ ontology
+
+
 # ── Fail-open: one erroring source never sinks the resolve ────────────────────────────────
 
 def test_resolve_is_fail_open(monkeypatch):
