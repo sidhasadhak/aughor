@@ -43,8 +43,10 @@ def _record_memory(inv_id: str, connection_id: str, question: str, state: dict) 
     try:
         from aughor.memory import record_run
         record_run(inv_id, connection_id, question, state)
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "run-reflection memory record is best-effort; the investigation result is already delivered",
+                 counter="investigation.memory_record")
     # Graduated skill promotion: once a connection has EARNED L2 trust, a
     # high-confidence, grounded, read-only run auto-crystallizes into a reusable
     # learned skill — stored under the exact graph.schema_name the planner reads
@@ -54,8 +56,10 @@ def _record_memory(inv_id: str, connection_id: str, question: str, state: dict) 
     try:
         from aughor.memory.skills import auto_crystallize
         auto_crystallize(inv_id, connection_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "skill auto-crystallization is best-effort post-run promotion; the answer is unaffected",
+                 counter="investigation.skill_crystallize")
 
 
 # ── SSE + stream helpers ──────────────────────────────────────────────────────
@@ -136,8 +140,10 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             for p in propose_undefined_metrics(question, cms):
                 lineage.append(("metric_proposed", f"metric:{p['slug']}",
                                 f"no governed definition for “{p['phrase']}” — define it to enforce"))
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "metric-enforcement lineage on the Trust Receipt is best-effort; the receipt still writes without it",
+                     counter="chat.receipt_metrics")
         for e in (guard_edges or []):
             lineage.append(e)
         # Stamp per-run compute onto the artifact so the Trust Receipt shows what the
@@ -1091,8 +1097,10 @@ async def _stream_chat(
         try:
             from aughor.tools.data_catalog import enforce_context_cap
             schema = enforce_context_cap(schema, max_tables=10)
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "10-table context cap is best-effort; answering from the uncapped schema context",
+                     counter="chat.context_cap")
 
         # ── final_text path (MindsDB-style): definitional questions answered from KB ──
         definitional = re.search(
@@ -1111,8 +1119,10 @@ async def _stream_chat(
                         ckb = _ckb_fn(question, connection_id)
                         if ckb:
                             kb_answer = kb_answer + "\n\n" + ckb
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(exc, "connection-KB enrichment of the definitional answer is best-effort; the global-KB answer still serves",
+                                 counter="chat.kb_definitional")
                     if kb_answer.strip():
                         _answer_text = kb_answer.strip()
                         # Emit as `headline` — the only text channel the chat turn
@@ -1132,11 +1142,15 @@ async def _stream_chat(
                                     canvas_id=canvas_id,
                                 )
                             )
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            from aughor.kernel.errors import tolerate
+                            tolerate(exc, "definitional-answer turn save is best-effort; the answer was already streamed",
+                                     counter="chat.turn_save")
                         return
-            except Exception:
-                pass
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "KB-grounded definitional fast-path is best-effort; falling through to the SQL answer path",
+                         counter="chat.kb_definitional")
 
         # Inject schema-prefix note when canvas-scoped
         if canvas_scope_schema:
@@ -1181,8 +1195,10 @@ async def _stream_chat(
                 _pbsec = build_playbook_prompt_section(pb_entries)
                 if _pbsec:
                     prompt = _pbsec + "\n" + prompt
-            except Exception:
-                pass
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "playbook prompt enrichment is best-effort; answering without playbook context",
+                         counter="chat.playbook_section")
 
         # M24c: verified semantic layer — object sets (named WHERE filters) and
         # computed properties for the linked entities, all executed against the
@@ -1215,8 +1231,10 @@ async def _stream_chat(
             _cblk = build_corrections_section(question, connection_id)
             if _cblk:
                 prompt = _cblk + "\n" + prompt
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "human-corrections prompt section is best-effort; answering without correction priors",
+                     counter="chat.corrections_section")
 
         # Semantic Compiler fast-path (backlog #11): for the safe analytical shapes
         # (scalar / timeseries / breakdown / ranking) assemble grounded SQL deterministically
@@ -1324,8 +1342,10 @@ async def _stream_chat(
             _sem_warnings = check_entity_column_alignment(question, final_sql, schema)
             if _sem_warnings:
                 _semantic_fix_hint = " | ".join(w.to_prompt_text() for w in _sem_warnings)
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "entity-column alignment pre-check is best-effort; executing the SQL without the hint",
+                     counter="chat.semantic_alignment")
 
         # ── Fan-out detection (M24d) — multi-fact join amplification ───────────
         # Conservative, zero-false-positive detector (validated on 121 official
@@ -1358,8 +1378,10 @@ async def _stream_chat(
                 if not _adopted:
                     _fanout_fix_hint = _ff.to_prompt_text()
                     yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites})
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "fan-out detection/de-fan guard is best-effort; executing the original SQL",
+                     counter="chat.fanout_guard")
 
         # ── Lint before execution — catch known anti-patterns in code, not prompts ──
         from aughor.sql.lint import lint as _lint_sql, error_hint as _lint_hint, has_errors as _lint_has_errors
@@ -1379,8 +1401,10 @@ async def _stream_chat(
                 if _lint_fix.ok:
                     final_sql = _lint_fix.sql
                     _rcpt["lint"] = True
-            except Exception:
-                pass   # non-fatal — proceed with original SQL
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "lint auto-fix is non-fatal; proceeding with the original SQL",
+                         counter="chat.lint_fix")
 
         # ── Scope guard — block cross-schema leakage on a scoped canvas ──────────
         # search_path pins BARE names to the canvas schema, but an EXPLICITLY
@@ -1520,8 +1544,10 @@ async def _stream_chat(
                         final_sql = fix.sql
                         result = retry
                         yield _sse("sql", {"sql": final_sql})
-            except Exception:
-                pass
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "post-execution SQL repair is best-effort; serving the original result/error",
+                         counter="chat.sql_repair")
 
         if result.error:
             from aughor.agent.escalate import assess_escalation
@@ -1613,8 +1639,10 @@ async def _stream_chat(
                     canvas_id=canvas_id,
                 )
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "chat turn save is best-effort; the answer was already streamed (turn just won't appear in history)",
+                     counter="chat.turn_save")
 
         # K3-wide: the chat answer becomes a versioned ledger artifact with
         # provenance — so EVERY user-facing number carries a Trust Receipt, not
@@ -1662,8 +1690,10 @@ async def _stream_chat(
                 from aughor.ontology.store import load_latest_ontology as _llo
                 _observe_gaps(connection_id, getattr(db, "_schema_name", None) or "default",
                               question, final_sql, _llo(connection_id), dialect=db.dialect)
-            except Exception:
-                pass
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "ontology-gap observation is a best-effort post-answer loop; never touches the response",
+                         counter="chat.ontology_gaps")
 
         # Carry the turn id so the client can fetch this answer's Trust Receipt.
         yield _sse("done", {"inv_id": _chat_inv_id, "has_receipt": bool(_chat_inv_id and final_sql)})
@@ -1740,12 +1770,16 @@ async def _stream_chat(
                     try:
                         from aughor.db.history import update_chat_turn_insight
                         await asyncio.to_thread(lambda: update_chat_turn_insight(_chat_inv_id, _insight_dict))
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(exc, "insight persistence is best-effort; the insight was already streamed this session",
+                                 counter="chat.insight_persist")
             if _pa.questions:
                 yield _sse("followups", {"questions": _pa.questions[:3]})
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "post-answer insight/follow-up enrichment is best-effort; the answer is already done",
+                     counter="chat.post_answer")
 
         # Semantic inspect — logical validation
         try:
@@ -1758,16 +1792,20 @@ async def _stream_chat(
                     "issues":        _ir.issues,
                     "suggested_fix": _ir.suggested_fix,
                 })
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "post-answer semantic inspect is best-effort validation; skipping the warning",
+                     counter="chat.inspect")
 
     except Exception as e:
         yield _sse("error", {"message": str(e)})
     finally:
         try:
             db.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "chat stream connection close is best-effort cleanup",
+                     counter="chat.db_close")
 
 
 # ── Investigation streaming ───────────────────────────────────────────────────
@@ -1971,8 +2009,10 @@ async def _stream_investigation(
         _pb = await asyncio.to_thread(lambda: retrieve_for_metric_and_phases([question], limit=4))
         if _pb:
             yield _sse("playbook_refs", {"items": _pb_serialize(_pb)})
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "surfacing matched playbook items is best-effort; the investigation proceeds without them",
+                 counter="investigation.playbook_refs")
 
     # Pause EVERY explorer bound to this connection — the connection explorer AND any
     # canvas explorers on the same connection — so background exploration doesn't contend
@@ -1988,8 +2028,10 @@ async def _stream_investigation(
             # if this stream dies without reaching its finally-block.
             _e._paused_by_investigation = True
             _paused_explorers.append(_e)
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "explorer pause before investigation is best-effort; an unpaused explorer only adds DB contention",
+                     counter="investigation.explorer_pause")
 
     merged: dict = {}  # bound before try so the except/salvage path can read partial state
     try:
@@ -2047,8 +2089,10 @@ async def _stream_investigation(
             schema = enforce_context_cap(schema, max_tables=10)
             if data_catalog:
                 data_catalog = enforce_context_cap(data_catalog, max_tables=10)
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "10-table context cap is best-effort; investigating with the uncapped schema context",
+                     counter="investigation.context_cap")
 
         # P2 Agent Context surface: expose the assembled working context (which tables
         # the agent is actually looking at, the token budget they cost, the join edges)
@@ -2204,8 +2248,10 @@ async def _stream_investigation(
                                 "questions": _cq.questions[:2],
                                 "context_note": _cq.context_note,
                             })
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(exc, "clarifying-questions generation is best-effort stream enrichment; the investigation continues",
+                                 counter="investigation.clarifying_questions")
             elif node_name == "decompose" and merged.get("hypotheses"):
                 yield _sse("hypotheses", {"hypotheses": [h.model_dump() for h in merged["hypotheses"]]})
             elif node_name == "plan_and_execute":
@@ -2230,8 +2276,10 @@ async def _stream_investigation(
                     from aughor.llm.provider import get_provider as _gp
                     fq: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {ada.get('headline', '') if isinstance(ada, dict) else str(ada)[:200]}", response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fq.questions[:3]})
-                except Exception:
-                    pass
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "follow-up suggestions are best-effort; the report was already emitted",
+                             counter="investigation.followups")
                 ada_save = dict(ada) if isinstance(ada, dict) else ada
                 ada_save["_report_type"] = "investigate"
                 if insight_id and isinstance(ada_save, dict):
@@ -2275,8 +2323,10 @@ async def _stream_investigation(
                     from aughor.llm.provider import get_provider as _gp
                     fqx: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up questions (max 15 words each).", user=f"Original question: {question}\nFindings: {er.headline}", response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fqx.questions[:3]})
-                except Exception:
-                    pass
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "follow-up suggestions are best-effort; the report was already emitted",
+                             counter="investigation.followups")
                 explore_save = {"_report_type": "explore", **er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw}
                 await asyncio.to_thread(lambda: complete_investigation(inv_id, report=explore_save, hypotheses=[], query_history=qh, question=question, connection_id=connection_id, skip_index=False))
                 await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
@@ -2291,8 +2341,10 @@ async def _stream_investigation(
                     summary = getattr(rep, "summary", "") or getattr(rep, "headline", "")
                     fqr: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {str(summary)[:300]}", response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fqr.questions[:3]})
-                except Exception:
-                    pass
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "follow-up suggestions are best-effort; the report was already emitted",
+                             counter="investigation.followups")
                 await asyncio.to_thread(lambda: complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct", origin_insight_id=insight_id))
                 await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
                 report_emitted = True
@@ -2346,8 +2398,10 @@ async def _stream_investigation(
             try:
                 _e.resume()
                 _e._paused_by_investigation = False
-            except Exception:
-                pass
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "explorer resume after investigation is best-effort; the supervisor backstop re-resumes investigation-paused explorers",
+                         counter="investigation.explorer_resume")
         db.close()
         yield _sse("done", {})
 
@@ -2856,8 +2910,10 @@ def log_recommendation_outcome(inv_id: str, rec_index: int, req: OutcomeRequest)
         try:
             from aughor.process.causal import promote_on_outcome
             promote_on_outcome(inv_id, contradicted=(req.status == "rejected"))
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "causal-playbook promotion on outcome is best-effort; the outcome itself is already logged",
+                     counter="investigation.outcome_promote")
     return outcome.model_dump()
 
 

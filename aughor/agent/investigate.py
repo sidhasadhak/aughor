@@ -308,8 +308,10 @@ def _build_grounded_schema(full_schema: str, metric_table: str, dimensions, date
         # the route already added. The route owns scoping in that case.
         if not parse_schema_tables(full_schema):
             return full_schema
-    except Exception:
-        pass
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "grounded-schema format probe is advisory; fall through to manual "
+                       "table filtering", counter="ada.schema_grounding")
     relevant = [metric_table] + [d.rsplit(".", 1)[0] for d in (dimensions or []) if "." in d]
     if date_column and "." in date_column:
         relevant.append(date_column.rsplit(".", 1)[0])
@@ -391,8 +393,10 @@ def _resolve_date_column(date_column: str, metric_table: str, full_schema: str, 
     try:
         from aughor.tools.schema import fk_neighbor_expand
         seeds = fk_neighbor_expand(full_schema, seeds, cap=10)
-    except Exception:
-        pass
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "fk-neighbour expand best-effort; date-column resolution proceeds "
+                       "with bare seeds", counter="ada.date_resolve")
     ordered: list = []
     seen: set = set()
     for group in (seeds, list(typed.keys())):
@@ -583,8 +587,10 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
                 _rw = defan(sql, _ff, dialect=_dialect)
                 if _rw and _rw.strip() != sql.strip() and conn.dry_run(_rw)[0]:
                     sql = _rw
-        except Exception:
-            pass
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "fan-out de-fan rewrite is advisory; the original SQL executes "
+                           "unguarded", counter="ada.exec_defan")
 
     # R2 (mode cross-pollination) — pre-flight the planned query through the SHARED safety pipeline
     # (identifier repair -> dry-run -> deterministic candidate substitution -> typed LLM fix) so a
@@ -594,8 +600,10 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
         try:
             from aughor.sql.safety import preflight_repair
             sql, _ = preflight_repair(conn, sql, schema)
-        except Exception:
-            pass
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "pre-flight SQL repair is fail-open; original SQL executes and "
+                           "the post-execute retry still applies", counter="ada.exec_preflight")
 
     # AL-01 (behind trust.verify_live) — route the generated SQL through the one Trust plane's
     # decisive read-only gate before execute: the mutation / DDL / disallowed-function BLOCK the
@@ -754,8 +762,10 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
             if _accept:
                 retry.sql = fix.fixed_sql
                 result = retry
-        except Exception:
-            pass
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "post-execute LLM fix is best-effort; returning the raw retry "
+                           "result", counter="ada.exec_retry_fix")
     return result
 
 
@@ -1597,8 +1607,10 @@ def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
         if db is not None:
             try:
                 db.close()
-            except Exception:
-                pass
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "intake probe connection close failed; probe result already "
+                               "returned", counter="ada.intake_probe_close")
 
 
 def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, end: str) -> "int | None":
@@ -1630,8 +1642,10 @@ def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, 
         if db is not None:
             try:
                 db.close()
-            except Exception:
-                pass
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "intake probe connection close failed; probe result already "
+                               "returned", counter="ada.intake_probe_close")
 
 
 def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: str) -> "list | None":
@@ -1662,8 +1676,10 @@ def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: st
         if db is not None:
             try:
                 db.close()
-            except Exception:
-                pass
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "intake probe connection close failed; probe result already "
+                               "returned", counter="ada.intake_probe_close")
 
 
 def _question_pins_period(question: str, obs_start: str, obs_end: str) -> bool:
@@ -2248,8 +2264,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                     user=retry_prompt,
                     response_model=IntakeOutput,
                 )
-            except Exception:
-                pass
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "intake correction retry failed; keeping the original intake "
+                               "spec despite validation errors", counter="ada.intake_retry")
 
     # RC1 — metric-feasibility caveat: when the question needs a metric the schema can't
     # support (margin/profit with no cost column; efficiency with no spend/outcome), record
@@ -2348,8 +2366,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                     intake = _retry
                     _qualify_intake_table_names(intake, schema)
                     _unsafe = None
-            except Exception:
-                pass
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "unsafe-metric retry failed; the deterministic safe fallback "
+                               "applies instead", counter="ada.intake_retry")
         if _unsafe:
             _safe = _safe_metric_fallback(intake.metric_sql)
             _metric_note = (
@@ -2489,8 +2509,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 intake_dict["lifecycle_column"]   = entity.lifecycle_column
                 intake_dict["terminal_states"]    = entity.terminal_states
                 intake_dict["lifecycle_states"]   = entity.lifecycle_states
-    except Exception:
-        pass
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "ontology entity enrichment is best-effort; intake proceeds without "
+                       "lifecycle context", counter="ada.intake_ontology")
 
     # Pin canonical entity/metric definitions once so every phase uses the same
     # identifiers/expressions (prevents figures drifting between phases).
@@ -2610,8 +2632,10 @@ def run_analysis_phase(
             ).grounding_block()
             if _block:
                 plan_system_eff = f"{plan_system}\n\n{_block}"
-        except Exception:
-            pass
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "data-understanding grounding block is advisory; planner prompt "
+                           "unchanged", counter="ada.plan_grounding")
 
     # Step 1 — plan (or reuse a preplanned, grain-correct query).
     _preplanned = bool(preplanned is not None and getattr(preplanned, "queries", None))
@@ -3023,8 +3047,10 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
                             updated_intake["_premise_correction_note"] = correction_note
                 except (TypeError, ValueError, ZeroDivisionError):
                     pass
-    except Exception:
-        pass  # Premise check is best-effort — never crash the pipeline
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "premise check is best-effort; investigation proceeds with the "
+                       "original window, never crash the pipeline", counter="ada.premise_check")
 
     phase = _phase_result(
         "baseline", "Baseline & Anomaly Assessment", "📊",
@@ -4988,8 +5014,10 @@ def ada_synthesize(state: AgentState) -> dict:
                     parts.append(f"source: {m.benchmark_source}")
                 lines.append(", ".join(parts))
             metric_targets_section = "\n".join(lines) + "\n"
-    except Exception:
-        pass
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "metric-targets section is advisory; synthesis proceeds without "
+                       "benchmark targets", counter="ada.synth_context")
 
     # Build playbook section — match playbook entries against this investigation's context
     playbook_section = ""
@@ -5009,24 +5037,30 @@ def ada_synthesize(state: AgentState) -> dict:
         matched = retrieve_for_metric_and_phases(labels, limit=5)
         causal_section = build_causal_playbook_section(question, conn_id=state.get("connection_id", ""))
         playbook_section = causal_section + build_playbook_prompt_section(matched)
-    except Exception:
-        pass
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "playbook section is advisory; synthesis proceeds without playbook "
+                       "guidance", counter="ada.synth_context")
 
     # Build external context section from uploaded documents
     external_context_section = ""
     try:
         from aughor.knowledge.indexer import build_external_context_section
         external_context_section = build_external_context_section(question, top_k=4)
-    except Exception:
-        pass
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "external-document context is advisory; synthesis proceeds without "
+                       "uploaded-document grounding", counter="ada.synth_context")
 
     # Build org-wide intelligence section from promoted canvas insights
     org_intelligence_section = ""
     try:
         from aughor.knowledge.org_intelligence import build_org_intelligence_section
         org_intelligence_section = build_org_intelligence_section(question, top_k=5)
-    except Exception:
-        pass
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "org-intelligence section is advisory; synthesis proceeds without "
+                       "promoted canvas insights", counter="ada.synth_context")
 
     synth_prompt = ADA_SYNTHESIZE_PROMPT.format(
         question=question,
@@ -5088,8 +5122,10 @@ def ada_synthesize(state: AgentState) -> dict:
                 for cl in synth.causal_links
             ]
             save_proposals(inv_id, proposals)
-        except Exception:
-            pass
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "causal-proposal save is best-effort; the synthesis output is "
+                           "already complete", counter="ada.synth_causal_save")
 
     # ── Honest confidence floor ───────────────────────────────────────────────
     # A run that gathered no usable data can never be HIGH/MEDIUM confidence,
@@ -5289,8 +5325,10 @@ def ada_synthesize(state: AgentState) -> dict:
             for claim in claims:
                 _ev_store.append_claim(claim)
 
-        except Exception:
-            pass  # evidence ledger is non-critical — never break the investigation
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "evidence-ledger capture is non-critical; never break the "
+                           "investigation output", counter="ada.evidence_ledger")
 
     return {
         "answer_report": answer_report,
