@@ -242,8 +242,21 @@ right rail item highlights. Security & Audit's own `security ↔ activity` lens 
 (`secLens`) so it's preserved inside the layer. **Live-verified on the running app** (own dev server,
 after killing the peer's): each rail item deep-links to its layer, the segmented switcher swaps layers
 + syncs the sidebar highlight, the nested lens toggles, exactly one rail item is `.active`, zero
-console errors; tsc + all three web gates green. *Remaining folds (Data: Catalog/Builder/Semantic;
-re-express CanvasWorkspace — its richer header + eager-mount need care) are the same pattern.*
+console errors; tsc + all three web gates green.
+
+**✅ REC-U5 — second panel-fold: the Data workspace (2026-07-05).** Same pattern for the Data rail
+(Catalog / Query Builder / Semantic Layer). These three panels are tightly coupled to `page.tsx`
+state (Catalog alone takes 6 callbacks), so rather than a prop-bag component this fold renders
+`<Workspace>` **inline** in `page.tsx` — `renderLayer` closes over the existing state/handlers, reusing
+the existing dynamic panel imports + the `NavIcon` set — so it net-*shrinks* `page.tsx` (three
+`tab === …` blocks → one `tab === "data"`). `LEGACY_DATA_LAYER` deep-links + the same computed
+`activeNav`; the insight→builder handoff (`handleOpenInBuilder`) now routes to `data`/`builder`.
+(The `Workspace` primitive is imported `as WorkspaceShell` — `page.tsx` already has a `Workspace`
+domain *type*.) **Live-verified**: each rail item deep-links to its layer, the switcher swaps
+Catalog/Builder/Semantic + syncs the sidebar, cold deep-links land right, exactly one rail item
+`.active`, zero console errors; tsc + gates green. *Two of the three sidebar sections (Operations,
+Data) are now folded; the Intelligence section's Briefing is already IntelligenceWorkspace. Remaining
+U5: re-express CanvasWorkspace (richer header + eager-mount need care).*
 
 **◑ REC-U5 — the one Workspace shell, extracted (2026-07-04).** Pulled the generic
 `<Workspace layers layer onLayerChange ariaLabel renderIcon headerControls renderLayer>`
