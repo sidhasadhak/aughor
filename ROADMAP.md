@@ -51,8 +51,21 @@ receipt routes 404 identically (TestClient), no live `data/` writes.
 - **New finding → separate follow-up:** `web/lib/api.gen.ts` is **~5,700 lines stale** (missing ~40
   routes: `/ask`, `/jobs`, `/rbac`, `/packs`, `/verify`, `/query/*`, …) → `npm run gen:api` isn't
   CI-wired. Catch it up + add a codegen CI gate in its own PR (not nomenclature churn).
-1. **U10 — the invasive half (flag-gated):** repoint planning/enforcement/display at `SemanticContract`
-   (one metric type platform-wide — the 20-year ontology bet's type unification).
+1. **✅ U10 — the invasive half DONE (flag-gated, 2026-07-05, branch `2026-07-05-u10-contract-repoint`,
+   3 commits, NOT pushed).** The two redundant metric-unification types (`canonical.CanonicalMetric`
+   ∥ `semantic.SemanticContract`) collapse onto one at the root, behind `semantic.contract_live` /
+   `AUGHOR_SEMANTIC_CONTRACT_LIVE` (default off = byte-identical). **Contract** grew the third
+   `"profile"` source + `from_north_star_metric`, a `rank` mirroring `_SOURCE_RANK`, an `injectable`
+   property equal to legacy `CanonicalMetric.verified` byte-for-byte, + a shared `dedup_by_rank`.
+   **Planning** — `unified_metric_grounding`/`canonical_metrics_block` render from the contract when
+   the flag is on (proven byte-identical across the toggle on a 3-source fixture); the three source
+   loaders were extracted so `resolve_canonical_metrics` + new `resolve_contracts` share them and
+   can't drift. **Display** — `SemanticContext.contracts()` now resolves all 3 stores via the shared
+   dedup, and `/query/semantic-context` surfaces the serialized contract list (locked on the real
+   HTTP path). Full suite 2501 green, ruff 0, ratchet + platform-boundary green. *Remaining U10
+   follow-ups (structured consumers, NOT this slice): `semantic/compiler.py` reads `CanonicalMetric`
+   objects directly; `build_metrics_block` catalog text, `/health-scorecard` ontology metrics, and
+   `/metrics` CRUD still catalog-only — migrate as they matter, then retire `CanonicalMetric`.*
 2. **Parallelize the investigation loop** (below — the biggest wall-clock win queued).
 *Deferred with reasons (see the log): `CanvasWorkspace` re-express (rich header + eager-mount don't fit
 the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment),
