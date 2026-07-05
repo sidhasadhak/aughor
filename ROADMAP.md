@@ -25,16 +25,16 @@ conformance-tested, AND live-wired flag-gated**; the deep ADA generator converge
 log: [`PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md).
 
 **⏭️ NEXT SESSION — remaining Part 2, in order (the dev servers are scriptable via `preview_*` on :8000/:3000):**
-1. **Wave 3 · U9 — the `ADA` rename (highest blast radius).** ◑ **Slice 1 DONE** (branch
-   `2026-07-05-u9-ada-report-rename`): the web report type `ADAReport`→`AnswerReport` (+ `@deprecated`
-   alias, incl. the duplicate local interface in `InvestigationReport.tsx`; tsc-verified, non-breaking).
-   **⚠️ Remaining — the wire rename (the risky crux):** grounding found the doc's `ada_report`→`report`
-   shorthand **collides** — `ada_report` (ADA `ada_synthesize` path) and `report` (classic `synthesize`
-   path) are DISTINCT, both-active wire events with different payloads + renderers. Killing the ADA name
-   needs unifying the two report paths OR a distinct clean name, done **lockstep backend+web with the web
-   keeping both `case`s (non-breaking even mid-deploy), + a live-verified screenshot of BOTH the ADA and
-   classic `investigate` runs** (why it's its own slice). `hypothesis_id` strip + `api.gen.ts` regen +
-   `ADARecommendation` ride along. Full analysis in the scoping-doc progress log.
+1. **Wave 3 · U9 — the `ADA` rename (highest blast radius).** ✅ **Slices 1–2 DONE** (branch
+   `2026-07-05-u9-ada-report-rename`): **(1)** the web report type `ADAReport`→`AnswerReport` (+
+   `@deprecated` alias, incl. the duplicate local interface; tsc-verified). **(2)** the **wire rename**
+   `ada_report`→`answer_report` (SSE event + payload field, + `mode:"investigate"`) at all 3 backend emit
+   sites — grounding found the doc's `ada_report`→`report` shorthand **collides** (`report` is a distinct,
+   both-active event from the classic `synthesize` path), so the collision-free `answer_report` was used,
+   lockstep across every consumer (web + the **MCP client the doc missed**), each keeping `ada_report` as
+   a `@deprecated` fallback. Verified: full suite 2407, tsc + gates, MCP both-name tests, live SSE emit.
+   **Remaining U9 follow-ups:** the internal `AgentState.ada_report` field + `kind="ada_report"` receipt
+   keys (internal, guardrail-separated), `hypothesis_id` strip, `api.gen.ts` regen, `ADARecommendation`.
 2. ~~**U10 — `semantic/contracts.py:SemanticContract`**~~ **✅ FIRST SLICE SHIPPED 2026-07-05**: the
    contract type + `from_metric_definition`/`from_ontology_metric` adapters, leveraged via
    `SemanticContext.contracts()` (catalog ∪ ontology, deduped, surfaced as `contract_count` on
