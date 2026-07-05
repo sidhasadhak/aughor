@@ -27,6 +27,8 @@ from aughor.agent.investigate import (
     _resolve_probe_ref,
     _sparse_comparison_decision,
     _flag_sparse_comparison,
+    _trailing_partial_decision,
+    _flag_trailing_partial,
     _POP_MISMATCH_SIGNATURE,
 )
 
@@ -256,3 +258,31 @@ class TestDensityGuard:
         # comparison == observation → no distinct prior period to probe
         same = _intake(comparison_start="2023-06-01", comparison_end="2024-05-31")
         assert _flag_sparse_comparison(same, "c", "t", "d", False) is None
+
+
+class TestTrailingPartialGuard:
+    """An incomplete final observation month (far fewer rows than typical) reads as a false drop —
+    the profiler computes this but the intake never consumed it."""
+
+    def test_incomplete_final_month_flagged(self):
+        it = _intake()
+        note = _trailing_partial_decision(it, [("2025-04", 30), ("2025-05", 32), ("2025-06", 5)])
+        assert note and "2025-06" in note
+        assert "incomplete" in note.lower() or "partial" in note.lower()
+        assert "may be incomplete" in it.observation_label   # honest relabel
+
+    def test_full_final_month_not_flagged(self):
+        it = _intake()
+        assert _trailing_partial_decision(it, [("2025-04", 30), ("2025-05", 32), ("2025-06", 31)]) is None
+
+    def test_too_few_months_no_op(self):
+        it = _intake()
+        assert _trailing_partial_decision(it, [("2025-05", 30), ("2025-06", 2)]) is None  # < 3 months
+
+    def test_empty_counts_no_op(self):
+        it = _intake()
+        assert _trailing_partial_decision(it, None) is None
+        assert _trailing_partial_decision(it, []) is None
+
+    def test_flag_skips_cross_sectional(self):
+        assert _flag_trailing_partial(_intake(cross_sectional=True), "c", "t", "d") is None

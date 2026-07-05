@@ -1609,6 +1609,38 @@ def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, 
                 pass
 
 
+def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: str) -> "list | None":
+    """Ordered [(YYYY-MM, row_count)] for the metric's date column within [start, end]. Cheap and
+    dialect-robust (GROUP BY the 'YYYY-MM' text prefix). Feeds the trailing-partial guard. Returns
+    None on any failure (fail-open, like the other probes)."""
+    if not conn_id or not table or not date_col or not start or not end:
+        return None
+    s, e = str(start)[:10], str(end)[:10]
+    if not (re.match(r"^\d{4}-\d{2}-\d{2}$", s) and re.match(r"^\d{4}-\d{2}-\d{2}$", e)):
+        return None
+    db = None
+    try:
+        from aughor.db.connection import open_connection_for
+        db = open_connection_for(conn_id)
+        ref, col = _resolve_probe_ref(table, date_col)
+        res = db.execute(
+            "intake_monthly",
+            f"SELECT substr(CAST({col} AS VARCHAR), 1, 7) AS m, COUNT(*) AS n "
+            f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}' GROUP BY 1 ORDER BY 1",
+        )
+        if res.error or not res.rows:
+            return None
+        return [(str(r[0]), int(r[1])) for r in res.rows if r[0] is not None]
+    except Exception:
+        return None
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
 def _question_pins_period(question: str, obs_start: str, obs_end: str) -> bool:
     """True when the question explicitly names a calendar period (a 4-digit year) that the
     observation window already covers — the user asked for THIS specific period, so it must
@@ -1635,6 +1667,10 @@ _POP_MISMATCH_SIGNATURE = "DURATION ARTIFACTS"
 # The density guard only fires on a comparison window of at least this many calendar months —
 # below it, "few populated periods" is normal (a genuinely short window), not a sparse baseline.
 _MIN_SPARSE_SPAN_MONTHS = 4
+# Trailing-partial guard: the final observation month is flagged as likely-incomplete when its row
+# count falls below this fraction of the window's typical (median) month, over at least N months.
+_TRAILING_PARTIAL_RATIO = 0.5
+_MIN_TRAILING_MONTHS = 3
 
 
 def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
@@ -1854,6 +1890,48 @@ def _flag_sparse_comparison(intake, conn_id: str, table: str, date_col: str,
     span_months = _months_between(cs, ce)
     populated = _populated_month_count(conn_id, table, date_col, cs, ce)
     return _sparse_comparison_decision(intake, span_months, populated)
+
+
+def _trailing_partial_decision(intake, monthly_counts) -> "str | None":
+    """Pure decision half of the trailing-partial guard: when the LAST month of the observation
+    window carries far fewer rows than the window's typical (median) month, it is likely an
+    INCOMPLETE period that reads as a false drop. Flag it honestly (do NOT overclaim a real
+    decline — a genuine crash looks the same, so the note asks the reader to verify completeness).
+    Returns a note, else None."""
+    if not monthly_counts or len(monthly_counts) < _MIN_TRAILING_MONTHS:
+        return None
+    counts = [n for _, n in monthly_counts]
+    last_m, last_n = monthly_counts[-1]
+    prior = sorted(counts[:-1])
+    if not prior:
+        return None
+    mid = (prior[len(prior) // 2] if len(prior) % 2
+           else (prior[len(prior) // 2 - 1] + prior[len(prior) // 2]) / 2)
+    if mid > 0 and last_n < _TRAILING_PARTIAL_RATIO * mid:
+        intake.observation_label = (
+            (getattr(intake, "observation_label", "") or "").rstrip()
+            + f" — final period {last_m} may be incomplete"
+        ).strip()
+        return (
+            f"the final observation period {last_m} has {last_n} rows vs a typical ~{mid:.0f}/month — it "
+            f"is likely an INCOMPLETE (partial) period, so a drop in the last period may be a reporting "
+            f"artifact, not a real decline; verify the period is complete before attributing a decline to it"
+        )
+    return None
+
+
+def _flag_trailing_partial(intake, conn_id: str, table: str, date_col: str) -> "str | None":
+    """Trailing-partial guard — the profiler computes `trailing_partial` for the whole table, but
+    the intake window selection never consumed it, so an incomplete final month reads as a sharp
+    drop. Probe the observation window's monthly volumes and flag a likely-incomplete final period.
+    Skipped for a cross-sectional intake or a window with no dates."""
+    if getattr(intake, "cross_sectional", False):
+        return None
+    os_ = (getattr(intake, "observation_start", "") or "")[:10]
+    oe_ = (getattr(intake, "observation_end", "") or "")[:10]
+    if not os_ or not oe_:
+        return None
+    return _trailing_partial_decision(intake, _monthly_counts(conn_id, table, date_col, os_, oe_))
 
 
 def _cap_confidence_on_trust_advisory(synth, phases) -> bool:
@@ -2290,7 +2368,11 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             intake.date_column or "",
             span_guard_fired=bool(_cov_note and _POP_MISMATCH_SIGNATURE in _cov_note),
         )
-        _notes = " ".join(n for n in (_cov_note, _dens_note) if n)
+        # Trailing-partial guard: an incomplete final observation month reads as a false drop.
+        _tp_note = _flag_trailing_partial(
+            intake, state.get("connection_id") or "", intake.metric_table or "", intake.date_column or "",
+        )
+        _notes = " ".join(n for n in (_cov_note, _dens_note, _tp_note) if n)
         if _notes:
             intake.intake_notes = f"{_notes} {intake.intake_notes or ''}".strip()
 
