@@ -51,22 +51,28 @@ receipt routes 404 identically (TestClient), no live `data/` writes.
 - **New finding → separate follow-up:** `web/lib/api.gen.ts` is **~5,700 lines stale** (missing ~40
   routes: `/ask`, `/jobs`, `/rbac`, `/packs`, `/verify`, `/query/*`, …) → `npm run gen:api` isn't
   CI-wired. Catch it up + add a codegen CI gate in its own PR (not nomenclature churn).
-1. **✅ U10 — the invasive half DONE (flag-gated, 2026-07-05, branch `2026-07-05-u10-contract-repoint`,
-   3 commits, NOT pushed).** The two redundant metric-unification types (`canonical.CanonicalMetric`
-   ∥ `semantic.SemanticContract`) collapse onto one at the root, behind `semantic.contract_live` /
-   `AUGHOR_SEMANTIC_CONTRACT_LIVE` (default off = byte-identical). **Contract** grew the third
-   `"profile"` source + `from_north_star_metric`, a `rank` mirroring `_SOURCE_RANK`, an `injectable`
-   property equal to legacy `CanonicalMetric.verified` byte-for-byte, + a shared `dedup_by_rank`.
-   **Planning** — `unified_metric_grounding`/`canonical_metrics_block` render from the contract when
-   the flag is on (proven byte-identical across the toggle on a 3-source fixture); the three source
-   loaders were extracted so `resolve_canonical_metrics` + new `resolve_contracts` share them and
-   can't drift. **Display** — `SemanticContext.contracts()` now resolves all 3 stores via the shared
-   dedup, and `/query/semantic-context` surfaces the serialized contract list (locked on the real
-   HTTP path). Full suite 2501 green, ruff 0, ratchet + platform-boundary green. *Remaining U10
-   follow-ups (structured consumers, NOT this slice): `semantic/compiler.py` reads `CanonicalMetric`
-   objects directly; `build_metrics_block` catalog text, `/health-scorecard` ontology metrics, and
-   `/metrics` CRUD still catalog-only — migrate as they matter, then retire `CanonicalMetric`.*
-2. **Parallelize the investigation loop** (below — the biggest wall-clock win queued).
+**✅ U10 invasive half — MERGED (PR #108, 2026-07-05).** The two redundant metric-unification types
+(`canonical.CanonicalMetric` ∥ `semantic.SemanticContract`) now collapse onto one at the root, behind
+`semantic.contract_live` / `AUGHOR_SEMANTIC_CONTRACT_LIVE` (default off = byte-identical). Contract grew
+the third `"profile"` source + `from_north_star_metric`, a `rank` mirroring `_SOURCE_RANK`, an
+`injectable` property equal to legacy `CanonicalMetric.verified` byte-for-byte, + a shared
+`dedup_by_rank`; planning (`unified_metric_grounding`/`canonical_metrics_block`) + display
+(`/query/semantic-context` contract list) repointed; 2501 green.
+
+**✅ P-A+ wider parallel waves — MERGED (PR #109, 2026-07-05).** The parallel-explore win was capped at
+1.48× by the *planner's* sequential bias (deep `depends_on` chains → narrow waves). Under
+`explore.parallel_subq` (byte-identical off): a flag-only wide-DAG decompose guidance + a deterministic
+`_normalize_depends_on` (a `landscape` can't depend on a sibling) + `_wave_schedule` observability.
+**Measured:** decompose A/B (real LLM) — mean max wave width **1.17 → 3.67**, #waves **5.83 → 4.00**;
+executor A/B (real executor, fixed leaf latency) — baseline serial+chains 12.0s → wave+chains 10.7s
+(**1.12×**, executor alone) → wave+wide **8.0s (1.50×)** — the prompt is what unlocks the executor.
+
+**⏭️ Immediate next:**
+1. **Continue P-A** — apply the wave pattern to ADA hypothesis-testing / per-dimension cross-section;
+   then **P-B** (parallelize the pre-flight retrievals — near-free, deterministic).
+2. **`web/lib/api.gen.ts` is ~5,700 lines stale** (missing ~40 routes) — regen + add a codegen CI gate.
+3. **Retire `CanonicalMetric`** — repoint the `semantic/compiler.py` structured consumer (U10 tail;
+   `build_metrics_block` text / `/health-scorecard` / `/metrics` CRUD still catalog-only).
 *Deferred with reasons (see the log): `CanvasWorkspace` re-express (rich header + eager-mount don't fit
 the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment),
 NOM-07 (`PlaybookEntry` doesn't fit the scheduled-check mold; touches persisted models).*
@@ -154,6 +160,11 @@ An **autonomous data-analysis platform** that replaces the dashboard-and-analyst
 ## 2 · What we've built ✅
 
 Grouped by area; each ✅ is verified shipped (git + code). Representative commits/PRs in parentheses.
+
+### One metric contract + wider parallel investigation waves (2026-07-05, PRs #108 · #109)
+*Two flag-gated, default-byte-identical improvements to the answer engine — one to the metric type, one to investigation latency.*
+- **U10 — one `SemanticContract` (PR #108).** A governed metric lived as *two* pydantic shapes (`canonical.CanonicalMetric`, wired into planning, and `semantic.SemanticContract`, the richer type). U10's invasive half collapses them onto one behind `semantic.contract_live` / `AUGHOR_SEMANTIC_CONTRACT_LIVE`: the contract grew the third `"profile"` (north-star) source, a source-precedence `rank`, and an `injectable` render-authority signal equal to the legacy behaviour byte-for-byte. Planning (`unified_metric_grounding`) renders from the contract when the flag is on — proven byte-identical across the toggle on a three-source fixture; display (`/query/semantic-context`) now surfaces the unified contract list. The three source loaders were extracted so the old and new resolvers share them and can't drift.
+- **P-A+ — wider parallel waves (PR #109).** The parallel-explore executor's speedup was capped at 1.48× by the *planner's* sequential bias (deep `depends_on` chains → nothing to parallelize). Under `explore.parallel_subq`: a flag-only wide-DAG decompose guidance (independent cuts of one landscape depend only on the landscape, never each other), a deterministic `_normalize_depends_on` (a landscape can't depend on a sibling), and a `_wave_schedule` observability layer that logs the realized wave widths. **Measured on the real path:** decompose A/B (real LLM) moved mean max wave width **1.17 → 3.67** (#waves 5.83 → 4.00); an executor-level wall-clock A/B (real executor, controlled leaf latency) showed the executor *alone* on the old chains buys only **1.12×** while the wide-DAG prompt lifts it to **1.50×** — the prompt is what unlocks the executor.
 
 ### Part 2 of the architecture review — the enforced design layer + gen-UI seam (2026-07-04, branch `2026-07-04-part2-recU1-design-layer`)
 *The frontend had SOTA abstractions (a token system, the `Brief*` "answer is a document" family, a chart-inference engine) but 15 months of feature branches left them unenforced. Part 2 finishes the consolidations. Scoping + progress: [`docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md).*
