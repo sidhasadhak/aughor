@@ -26,6 +26,7 @@ FLAG_ENV = {
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
     "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
     "ada.why_where_interaction": "AUGHOR_ADA_WHY_WHERE_INTERACTION",
+    "ada.why_deepen": "AUGHOR_ADA_WHY_DEEPEN",
     "trust.verify_facade": "AUGHOR_TRUST_FACADE",
     "trust.verify_live": "AUGHOR_TRUST_VERIFY_LIVE",
     "semantic.resolve_live": "AUGHOR_SEMANTIC_RESOLVE_LIVE",
@@ -61,6 +62,10 @@ FLAG_META = {
     "ada.why_where_interaction": {
         "label": "WHY×WHERE interaction lens",
         "description": "After the parallel WHERE and WHY lenses, forward-chain one more query crossing the leading return reason with the highest-impact segment — does the cause concentrate where the metric is worst (→ target that segment) or is it uniform (→ a broad problem)? Turns two independent findings into the actionable link. Adds one LLM-planned query per qualifying run; requires 'Parallel Deep-Analysis lenses'. Off by default.",
+    },
+    "ada.why_deepen": {
+        "label": "Deepen the WHY (benchmark + drill)",
+        "description": "After the WHY lens finds the leading return reason, forward-chain two more queries: a PEER BENCHMARK (is the reason's share abnormally high for the subject vs its peers, or a brand-wide baseline?) and a SECOND-LEVEL DRILL (which brands/products concentrate the leading reason — the fix target?). Establishes whether the cause is real and where to act. Adds two LLM-planned queries per qualifying run; requires 'Parallel Deep-Analysis lenses'. Off by default.",
     },
     "trust.verify_facade": {
         "label": "Unified trust.verify façade",
