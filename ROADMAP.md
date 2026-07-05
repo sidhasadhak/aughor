@@ -90,8 +90,16 @@ composed every event dim uniformly (womenswear → 4 findings, 3 of them ops noi
 scored non-significant); now it leads with the causal dims (reason/condition) and drops the pure-ops
 dims (`_OPERATIONAL_DIMENSION_KEYWORDS`) when a causal dim is present — fail-safe keeps all when nothing
 looks causal. Improves BOTH paths (shared lens). **Real-path verified** (multilens womenswear run: WHY
-4 findings → 2, ops noise gone, summary leads with size/fit). Next multilens WHY ideas (not built):
-WHY×WHERE interaction · second-level drill on the dominant reason · peer benchmark on the reason.*
+4 findings → 2, ops noise gone, summary leads with size/fit).
+**✅ #2 WHY×WHERE interaction lens** (flag `ada.why_where_interaction`, default-off): after the
+parallel WHERE+WHY lenses, `_run_interaction_lens` forward-chains one LLM-planned query crossing the
+leading reason with the WHERE lens's high-impact segment (the reason's share of the subject's returns
+by that segment) — turning two independent findings into the actionable "does the cause concentrate
+where the metric is worst?" verdict. Runs only when both a WHERE and a WHY finding exist; fail-open.
+**Real-path verified** (womenswear, both flags on): 5th phase crosses size_fit × platform segment
+WITHIN womenswear → luxury 42.59% vs off-price 41.83% → honest "UNIFORM: broad product-level sizing
+issue, not a luxury concentration". Remaining WHY ideas (not built): second-level drill on the dominant
+reason (by brand/product) · peer benchmark on the reason (is 42% size/fit abnormal vs menswear?).*
 
 **Shipped 2026-07-03** (branch `2026-07-02-ada-temporal-intake-grain`, merged; deterministic, full suite
 green — the **Deep Analysis report-quality arc**, see the "What we've built" entry below):
