@@ -23,6 +23,11 @@ from aughor.explorer.windowing import (
 from aughor.agent.investigate import (
     _extract_data_date_range,
     _clamp_intake_to_coverage,
+    _months_between,
+    _resolve_probe_ref,
+    _sparse_comparison_decision,
+    _flag_sparse_comparison,
+    _POP_MISMATCH_SIGNATURE,
 )
 
 
@@ -159,6 +164,41 @@ class TestIntakeCoverageClamp:
         assert "no prior period" not in it.comparison_label
         assert note is not None
 
+    def test_duration_mismatch_relabels_and_warns(self):
+        """The GMV brand-tier repro: a ~57-month observation whose 'prior 56 months'
+        window was clipped to the ~3 real months that exist before the data starts.
+        The absolute PoP total between them is an ~18x duration artifact — the guard
+        must relabel the stub comparison honestly and steer to run-rate."""
+        it = _intake(
+            observation_start="2020-10-01", observation_end="2025-06-30",
+            comparison_start="2016-02-01", comparison_end="2020-09-30",
+            comparison_label="Prior 56 months",
+        )
+        note = _clamp_intake_to_coverage(it, "2020-07-01", "2025-06-30")
+        # observation is left intact (it already ends at dmax → no re-anchor)
+        assert it.observation_start == "2020-10-01"
+        assert it.observation_end == "2025-06-30"
+        # prior window clipped to the real ~3 months, and relabelled honestly (not "56")
+        assert it.comparison_start == "2020-07-01"
+        assert it.comparison_end == "2020-09-30"
+        assert "56" not in it.comparison_label
+        assert "2020-07-01" in it.comparison_label
+        # the note carries the duration-artifact warning + the run-rate steer
+        assert note and "DATA COVERAGE" in note
+        assert "duration artifact" in note.lower()
+        assert "run-rate" in note.lower()
+
+    def test_equal_length_windows_do_not_trip_mismatch(self):
+        """A legitimate 12-vs-12 comparison must NOT trip the duration guard."""
+        it = _intake(
+            observation_start="2024-01-01", observation_end="2024-12-30",
+            comparison_start="2023-01-01", comparison_end="2023-12-31",
+            comparison_label="Prior 12 months",
+        )
+        note = _clamp_intake_to_coverage(it, "2023-01-01", "2024-12-30")
+        assert note is None
+        assert it.comparison_label == "Prior 12 months"
+
     def test_cross_sectional_skipped(self):
         it = _intake(cross_sectional=True)
         assert _clamp_intake_to_coverage(it, "2024-05-01", "2024-05-17") is None
@@ -167,3 +207,52 @@ class TestIntakeCoverageClamp:
         it = _intake()
         assert _clamp_intake_to_coverage(it, None, None) is None
         assert it.observation_start == "2023-06-01"
+
+
+class TestDensityGuard:
+    """The density guard catches what the date-span guard structurally cannot: a comparison
+    window whose calendar span looks fine but is sparsely populated (an internal gap / slow ramp)."""
+
+    def test_months_between_inclusive(self):
+        assert _months_between("2020-07-01", "2020-09-30") == 3
+        assert _months_between("2024-01-01", "2024-12-31") == 12
+        assert _months_between("2022-01-15", "2023-01-02") == 13
+        assert _months_between("garbage", "2024-01-01") is None
+
+    def test_resolve_probe_ref(self):
+        assert _resolve_probe_ref("orders", "order_date") == ("orders", "order_date")
+        assert _resolve_probe_ref("shop.orders", "order_date") == ("shop.orders", "order_date")
+        # date column qualified with its own table (lives elsewhere than the metric table)
+        assert _resolve_probe_ref("order_items", "shop.orders.order_ts") == ("shop.orders", "order_ts")
+        # two-part date col borrows the metric table's schema
+        assert _resolve_probe_ref("shop.order_items", "orders.order_ts") == ("shop.orders", "order_ts")
+
+    def test_sparse_decision_flags_thin_baseline(self):
+        it = _intake()
+        note = _sparse_comparison_decision(it, span_months=12, populated=3)
+        assert note and _POP_MISMATCH_SIGNATURE in note
+        assert "3 of ~12" in it.comparison_label       # honest relabel
+        assert "run-rate" in note.lower()
+
+    def test_dense_window_not_flagged(self):
+        it = _intake()
+        assert _sparse_comparison_decision(it, span_months=12, populated=11) is None  # 11 ≥ 0.66·12
+
+    def test_short_window_not_flagged(self):
+        it = _intake()
+        assert _sparse_comparison_decision(it, span_months=3, populated=1) is None     # span < min
+
+    def test_unknown_counts_are_no_op(self):
+        it = _intake()
+        assert _sparse_comparison_decision(it, None, 3) is None
+        assert _sparse_comparison_decision(it, 12, None) is None
+
+    def test_flag_skips_when_span_guard_already_fired(self):
+        # span guard already flagged the window → no double-flag, and no DB probe
+        assert _flag_sparse_comparison(_intake(), "conn", "t", "d", span_guard_fired=True) is None
+
+    def test_flag_skips_cross_sectional_and_same_period(self):
+        assert _flag_sparse_comparison(_intake(cross_sectional=True), "c", "t", "d", False) is None
+        # comparison == observation → no distinct prior period to probe
+        same = _intake(comparison_start="2023-06-01", comparison_end="2024-05-31")
+        assert _flag_sparse_comparison(same, "c", "t", "d", False) is None
