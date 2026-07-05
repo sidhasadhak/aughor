@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -100,9 +101,21 @@ def compare_result_sets(ref_cols, ref_rows, gen_cols, gen_rows) -> dict:
     return scores
 
 
-def _score_vs_reference(ref_cols, ref_rows, gen_cols, gen_rows, gen_ok: bool) -> dict:
-    """Score one already-executed generated result against one reference result."""
+def _score_vs_reference(ref_cols, ref_rows, gen_cols, gen_rows, gen_ok: bool,
+                        ordered: bool = True) -> dict:
+    """Score one already-executed generated result against one reference result.
+
+    ``ordered=False`` means the reference SQL carries no ORDER BY, so row order is
+    engine nondeterminism, not intent — ``top_row_overlap`` then mirrors the
+    set-based ``result_set_match`` instead of penalising a correct answer (or even
+    a byte-identical replay) for the order DuckDB's parallel operators happened to
+    emit. Two identical EMPTY results are likewise a perfect match, not a 0.
+    """
     comparison = compare_result_sets(ref_cols, ref_rows, gen_cols, gen_rows)
+    if not ref_rows and not gen_rows:
+        comparison["top_row_overlap"] = 1.0
+    elif not ordered:
+        comparison["top_row_overlap"] = comparison.get("result_set_match", 0.0)
     overall = (
         comparison.get("column_count_match", 0.0) * 0.15 +
         comparison.get("column_name_match", 0.0) * 0.15 +
@@ -145,8 +158,14 @@ def score_single(db, record: dict, generated_sql: str) -> dict:
     if not gen_ok:
         return {"overall": 0.0, "execution_success": 0.0, "error": f"Generated failed: {gen_err}", "reference_row_count": len(ref_rows)}
 
+    # Row order is only part of the ground truth when the reference SQL asked
+    # for one — otherwise top-5 comparison is engine nondeterminism (see
+    # _score_vs_reference). A subquery-only ORDER BY is treated as ordered too:
+    # over-inclusive is the safe direction (may still apply the order check).
+    ordered = bool(re.search(r"\border\s+by\b", ref_sql, re.IGNORECASE))
+
     # Primary reference first; then any equally-valid alternatives.
-    best = _score_vs_reference(ref_cols, ref_rows, gen_cols, gen_rows, gen_ok)
+    best = _score_vs_reference(ref_cols, ref_rows, gen_cols, gen_rows, gen_ok, ordered=ordered)
     best["matched_reference"] = 0
     alts = record.get("accept_sql") or []
     num_refs = 1
@@ -157,7 +176,8 @@ def score_single(db, record: dict, generated_sql: str) -> dict:
             # fault — skip it rather than let it drag the score down.
             continue
         num_refs += 1
-        cand = _score_vs_reference(alt_cols, alt_rows, gen_cols, gen_rows, gen_ok)
+        cand = _score_vs_reference(alt_cols, alt_rows, gen_cols, gen_rows, gen_ok,
+                                   ordered=bool(re.search(r"\border\s+by\b", alt_sql, re.IGNORECASE)))
         if cand["overall"] > best["overall"]:
             cand["matched_reference"] = i
             best = cand
