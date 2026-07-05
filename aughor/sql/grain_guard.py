@@ -133,6 +133,9 @@ def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[
         findings.append(FanoutFinding(
             fanned_table=rt, join_key=", ".join(keys),
             ratio=float(total) / float(distinct), aggregates=list(aggregates)))
+    if findings:
+        from aughor.stats import bump
+        bump("guard.grain_fanout.fired", len(findings))
     return findings
 
 

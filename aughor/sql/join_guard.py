@@ -258,6 +258,9 @@ def check_join_value_domains(
         from aughor.kernel.errors import tolerate
         tolerate(exc, "join_guard: domain check failed — no warnings emitted",
                  counter="join_guard.check_error")
+    if warnings:
+        from aughor.stats import bump
+        bump("guard.join_domain.fired", len(warnings))
     return warnings
 
 

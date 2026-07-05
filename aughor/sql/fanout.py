@@ -1543,10 +1543,15 @@ def defan(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
     safely rewritten (the caller then falls back to the LLM hint)."""
     if finding is None:
         return None
+    from aughor.stats import bump
+    bump(f"guard.defan.attempt.{finding.kind}")
+    rewritten = None
     if finding.kind == "parent_fanout":
-        return build_parent_fanout_rewrite(sql, finding, dialect)
-    if finding.kind == "chasm":
-        return build_chasm_fanout_rewrite(sql, finding, dialect)
-    if finding.kind == "dim_ratio":
-        return build_dim_ratio_rewrite(sql, finding, dialect)
-    return None
+        rewritten = build_parent_fanout_rewrite(sql, finding, dialect)
+    elif finding.kind == "chasm":
+        rewritten = build_chasm_fanout_rewrite(sql, finding, dialect)
+    elif finding.kind == "dim_ratio":
+        rewritten = build_dim_ratio_rewrite(sql, finding, dialect)
+    if rewritten:
+        bump(f"guard.defan.rewritten.{finding.kind}")
+    return rewritten

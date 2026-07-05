@@ -153,4 +153,7 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
                           f"Text column '{col.name}' is compared to the numeric literal {lit.name}; "
                           f"this compares lexicographically / casts unexpectedly. "
                           f"CAST({col.name} AS <numeric>) for a numeric comparison.")
+    if out:
+        from aughor.stats import bump
+        bump("guard.trust_e1.fired", len(out))
     return out
