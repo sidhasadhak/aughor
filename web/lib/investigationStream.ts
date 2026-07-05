@@ -322,7 +322,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 function summarisePayload(type: string, p: Record<string, unknown>): string {
   switch (type) {
     case "phase_complete": return `phase: ${(p.phase as { phase_id?: string })?.phase_id ?? "?"}`;
-    case "ada_report":     return `headline: ${String((p.ada_report as { headline?: string })?.headline ?? "").slice(0, 60)}`;
+    case "answer_report":
+    case "ada_report":     return `headline: ${String(((p.answer_report ?? p.ada_report) as { headline?: string })?.headline ?? "").slice(0, 60)}`;
     case "explore_report": return `narrative: ${String((p.explore_report as { narrative?: string })?.narrative ?? "").slice(0, 60)}`;
     case "route":          return `${p.depth ?? "?"} · ${String(p.why ?? "").slice(0, 40)}`;
     case "clarify":        return `${p.source ?? "?"} · ${String(p.question ?? "").slice(0, 40)}`;
@@ -412,9 +413,10 @@ export async function consumeStream(
             case "hypotheses":
               dispatch({ type: "HYPOTHESES", hypotheses: (p.hypotheses as Hypothesis[]) ?? [] });
               break;
-            case "ada_report":
+            case "answer_report":
+            case "ada_report":   // deprecated wire alias, kept one release (REC-U9)
               if (p.from_cache) dispatch({ type: "CACHE_META", fromCache: true, cachedQuestion: (p.cached_question as string) ?? null });
-              dispatch({ type: "ADA_REPORT", report: p.ada_report as AnswerReport, queryMode: (p.query_mode as string) ?? "investigate", investigationId: (p.investigation_id as string) ?? null });
+              dispatch({ type: "ADA_REPORT", report: (p.answer_report ?? p.ada_report) as AnswerReport, queryMode: (p.query_mode as string) ?? "investigate", investigationId: (p.investigation_id as string) ?? null });
               break;
             case "dossier_report":
               dispatch({ type: "DOSSIER_REPORT", dossier: p.dossier as FindingDossier, insightId: (p.insight_id as string) ?? null });

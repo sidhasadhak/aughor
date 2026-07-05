@@ -210,6 +210,8 @@ export type InvestigationEvent =
   | { type: "explore_report"; explore_report: ExplorationReport; sub_questions: SubQuestion[]; subq_answers: SubQuestionAnswer[]; query_count: number; investigation_id: string; query_mode: "explore" }
   | { type: "paused"; investigation_id: string; hypotheses: Hypothesis[]; scores: EvidenceScore[] }
   | { type: "phase_complete"; phase: InvestigationPhase; all_phases: InvestigationPhase[] }
+  | { type: "answer_report"; answer_report: AnswerReport; investigation_id: string; query_mode: "investigate"; mode?: "investigate" }
+  /** @deprecated wire alias for `answer_report`, kept one release (REC-U9). */
   | { type: "ada_report"; ada_report: AnswerReport; investigation_id: string; query_mode: "investigate" }
   | { type: "error"; message: string }
   | { type: "done" };
