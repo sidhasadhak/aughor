@@ -1900,8 +1900,9 @@ async def _stream_investigation(
     # linker's full-schema FK expansion can't leak to a sibling schema — the deep path used
     # to leave this None (missimi deep answering from another demo dataset).
     from aughor.canvas.scope import resolve_execution_scope
+    from aughor.tools.schema import build_canvas_schema_context
     _es = resolve_execution_scope(connection_id, canvas_id, schema_scope=schema_scope,
-                                  with_schema_context=True)
+                                  schema_context_builder=build_canvas_schema_context)
     connection_id = _es.connection_id
     canvas_schema_context = _es.schema_context
     scope_schema = _es.eff_schema

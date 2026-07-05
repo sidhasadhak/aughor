@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from aughor.kernel.errors import tolerate
 
@@ -79,13 +79,16 @@ def resolve_execution_scope(
     canvas_id: Optional[str] = None,
     *,
     schema_scope: Optional[str] = None,
-    with_schema_context: bool = False,
+    schema_context_builder: Optional[Callable[[object], str]] = None,
 ) -> ExecutionScope:
     """Resolve the scope an investigation/chat/monitor runs against.
 
     A canvas pins its own connection + schema + table filter (canvas wins over
     ``schema_scope``). For a non-canvas run, ``schema_scope`` is honoured as the schema to
-    pin. Set ``with_schema_context`` to also build the canvas's schema-context prompt block.
+    pin. Pass ``schema_context_builder`` (a ``canvas -> str`` callable) to also populate the
+    canvas's schema-context prompt block — injected rather than imported so this platform
+    module never reaches into the agent layer (the Platform→Agent boundary; the router that
+    owns the prompt builder passes it in).
 
     Fail-open: a missing or unreadable canvas degrades to the bare ``connection_id``.
     """
@@ -103,10 +106,8 @@ def resolve_execution_scope(
                 eff_conn = canvas.primary_connection_id or connection_id
                 declared_schema = canvas.scopes[0].schema_name
                 tables = tuple(canvas.scopes[0].tables or [])
-                if with_schema_context:
-                    from aughor.tools.schema import build_canvas_schema_context
-
-                    schema_context = build_canvas_schema_context(canvas)
+                if schema_context_builder is not None:
+                    schema_context = schema_context_builder(canvas)
         except Exception as e:  # fail-open — a bad canvas must never break a run
             tolerate(e, "canvas scope lookup", counter="canvas_scope", canvas_id=canvas_id)
     elif schema_scope:

@@ -102,13 +102,15 @@ def test_resolve_fail_open_when_canvas_lookup_raises(monkeypatch):
     assert s.eff_schema is None
 
 
-def test_resolve_builds_schema_context_only_when_requested(monkeypatch):
+def test_resolve_builds_schema_context_via_injected_builder(monkeypatch):
+    # The prompt builder is INJECTED (not imported) so this platform module never reaches
+    # into the agent layer — the Platform→Agent boundary.
     cv = Canvas(id="cv4", name="X",
                 scopes=[CanvasScope(connection_id="conn", schema_name="s", tables=["s.t"])])
     _canvas(monkeypatch, cv)
-    monkeypatch.setattr("aughor.tools.schema.build_canvas_schema_context", lambda c: f"CTX:{c.id}")
-    assert resolve_execution_scope("conn", "cv4").schema_context == ""             # off by default
-    assert resolve_execution_scope("conn", "cv4", with_schema_context=True).schema_context == "CTX:cv4"
+    assert resolve_execution_scope("conn", "cv4").schema_context == ""             # no builder → empty
+    built = resolve_execution_scope("conn", "cv4", schema_context_builder=lambda c: f"CTX:{c.id}")
+    assert built.schema_context == "CTX:cv4"
 
 
 # ── .open() branches on eff_schema ───────────────────────────────────────────────────────
