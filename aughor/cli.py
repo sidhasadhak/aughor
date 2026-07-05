@@ -120,11 +120,11 @@ def investigate(question: str, db: str, model: Optional[str], backend: str):
     elapsed_total = time.monotonic() - start
     conn.close()
 
-    # The deep-analysis (ADA) path produces a rich ada_report (phases, per-finding SQL,
+    # The deep-analysis (ADA) path produces a rich answer_report (phases, per-finding SQL,
     # key numbers, real significance). Render that directly — the legacy AnalysisReport
-    # flattens away the SQL and the logic. Fall back to legacy only when no ada_report exists.
-    if final_state.get("ada_report"):
-        _print_ada_report(final_state["ada_report"], elapsed_total)
+    # flattens away the SQL and the logic. Fall back to legacy only when no answer_report exists.
+    if final_state.get("answer_report"):
+        _print_ada_report(final_state["answer_report"], elapsed_total)
     else:
         _print_final_report(final_state, elapsed_total)
 

@@ -2384,7 +2384,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         )
         return {
             "investigation_phases": [phase],
-            "ada_report": None,
+            "answer_report": None,
         }
 
     # Store the intake spec in state via a synthetic phase (no SQL, just metadata)
@@ -4503,10 +4503,10 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
 def ada_synthesize(state: AgentState) -> dict:
     """
     Phase 8 — Synthesis: Attribution Waterfall + Recommendations.
-    Assembles all phase findings into an ADAReport.
+    Assembles all phase findings into an AnswerReport.
     """
     from aughor.agent.prompts_investigate import ADA_SYNTHESIZE_PROMPT, ADASynthesisModel
-    from aughor.agent.state import ADAReport, WaterfallEntry, ADARecommendation
+    from aughor.agent.state import AnswerReport, WaterfallEntry, AnswerRecommendation
 
     question = state["question"]
     phases = state.get("investigation_phases", [])
@@ -4806,7 +4806,7 @@ def ada_synthesize(state: AgentState) -> dict:
             for w in synth.attribution_waterfall
         ]
         recommendations = [
-            ADARecommendation(
+            AnswerRecommendation(
                 action=r.action,
                 expected_impact=r.expected_impact,
                 owner=r.owner,
@@ -4818,7 +4818,7 @@ def ada_synthesize(state: AgentState) -> dict:
         # Don't stamp it with a fabricated MoM/YoY ("vs December 2021") or a "total change" label;
         # those fields belong only to the temporal baseline path.
         _xsec = bool(intake_data.get("cross_sectional"))
-        ada_report = ADAReport(
+        answer_report = AnswerReport(
             headline=synth.headline,
             executive_summary=synth.executive_summary,
             metric=intake_data.get("metric_label", ""),
@@ -4849,7 +4849,7 @@ def ada_synthesize(state: AgentState) -> dict:
         _headline = re.split(r"(?<=[.!?])\s", _summaries[0])[0][:160] if _summaries \
             else "Investigation complete — see the phase findings below."
         _exec = (" ".join(_summaries))[:900] or "See the individual phase findings below for details."
-        ada_report = ADAReport(
+        answer_report = AnswerReport(
             headline=_headline,
             executive_summary=_exec,
             metric=intake_data.get("metric_label", ""),
@@ -4884,12 +4884,12 @@ def ada_synthesize(state: AgentState) -> dict:
                     hypothesis_id=p["phase_id"],
                 ))
     legacy_report = AnalysisReport(
-        headline=ada_report["headline"],
-        verdict=ada_report["executive_summary"],
+        headline=answer_report["headline"],
+        verdict=answer_report["executive_summary"],
         key_findings=legacy_findings[:5],
-        what_is_not_the_cause=[g for g in ada_report["data_gaps"]],
-        risks=[r["action"] for r in ada_report["recommendations"][:2]],
-        recommended_actions=[r["action"] for r in ada_report["recommendations"]],
+        what_is_not_the_cause=[g for g in answer_report["data_gaps"]],
+        risks=[r["action"] for r in answer_report["recommendations"][:2]],
+        recommended_actions=[r["action"] for r in answer_report["recommendations"]],
     )
 
     # ── Persist evidence claims to the ledger ────────────────────────────────
@@ -4929,7 +4929,7 @@ def ada_synthesize(state: AgentState) -> dict:
             pass  # evidence ledger is non-critical — never break the investigation
 
     return {
-        "ada_report": ada_report,
+        "answer_report": answer_report,
         "report": legacy_report,
         "investigation_phases": phases,
     }

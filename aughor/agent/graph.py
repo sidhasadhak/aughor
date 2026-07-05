@@ -308,7 +308,7 @@ def run_investigation(
         "subq_answers": [],
         "explore_report": None,
         "investigation_phases": [],
-        "ada_report": None,
+        "answer_report": None,
         "_ada_intake": None,
         "current_plan": None,
         "data_catalog": "",

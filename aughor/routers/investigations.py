@@ -355,7 +355,7 @@ def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str, s
         if merged.get("investigation_phases"):
             from aughor.agent.investigate import ada_synthesize
             out = ada_synthesize(merged)
-            ada = out.get("ada_report")
+            ada = out.get("answer_report")
             if ada:
                 ada_save = (dict(ada) if isinstance(ada, dict) else ada.model_dump())
                 ada_save["_report_type"] = "investigate"
@@ -2128,7 +2128,7 @@ async def _stream_investigation(
             "report": None, "hitl_enabled": hitl, "human_feedback": None,
             "query_mode": None, "route_reasoning": None, "route_confidence": None, "replan_decision": None,
             "sub_questions": [], "current_subq_idx": 0, "subq_answers": [], "explore_report": None,
-            "investigation_phases": [], "ada_report": None, "_ada_intake": None,
+            "investigation_phases": [], "answer_report": None, "_ada_intake": None,
             "canvas_id": canvas_id, "canvas_schema_context": canvas_schema_context,
             "scope_schema": scope_schema or "",
             "data_catalog": data_catalog or "",
@@ -2221,8 +2221,8 @@ async def _stream_investigation(
                 phases = merged.get("investigation_phases", [])
                 if phases:
                     yield _sse("phase_complete", {"phase": phases[-1], "all_phases": phases})
-            elif node_name == "ada_synthesize" and merged.get("ada_report"):
-                ada = merged["ada_report"]
+            elif node_name == "ada_synthesize" and merged.get("answer_report"):
+                ada = merged["answer_report"]
                 qh = merged.get("query_history", [])
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
                 yield _sse("answer_report", {"answer_report": ada, "investigation_id": inv_id, "query_mode": "investigate", "mode": "investigate"})
