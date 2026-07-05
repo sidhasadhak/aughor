@@ -42,11 +42,27 @@ _DIMENSION_PRIORITY_KEYWORDS: list[list[str]] = [
     ["payment", "payment_method", "payment_type"],
 ]
 
+# Causal / diagnostic dimensions (return reason, item condition, defect, fit, …). For an outcome
+# question — "why is X high/low" — these ARE the answer, yet the descriptive taxonomy above buries
+# them in "other" (rank 6) where the per-phase query cap truncates them before the scan reaches them.
+# When the caller flags a causal scan we float them AHEAD of the descriptive population dims so the
+# WHERE scan covers the differentiators, not brand/tier. (Event-TABLE dims — return reason living on a
+# returns table — are peeled off separately into a composition/WHY lens; see `_causal_split`.)
+_CAUSAL_DIMENSION_KEYWORDS: list[str] = [
+    "reason", "cause", "condition", "driver", "fault", "defect", "damage",
+    "quality", "fit", "status", "issue", "complaint", "root_cause",
+]
 
-def _prioritize_dimensions(dimensions: list[str]) -> list[str]:
-    """Sort dimensions by spec-mandated priority: customer → channel → category → geo → other."""
+
+def _prioritize_dimensions(dimensions: list[str], causal_first: bool = False) -> list[str]:
+    """Sort dimensions by spec-mandated priority: customer → channel → category → geo → other. When
+    ``causal_first`` (an outcome / 'why is X high/low' scan) diagnostic dimensions
+    (reason/condition/defect/…) float to the FRONT — for those questions the causal dimension is the
+    answer, not an afterthought, so it must survive the per-phase query cap."""
     def _rank(dim: str) -> int:
         dl = dim.lower()
+        if causal_first and any(kw in dl for kw in _CAUSAL_DIMENSION_KEYWORDS):
+            return -1
         for i, keywords in enumerate(_DIMENSION_PRIORITY_KEYWORDS):
             if any(kw in dl for kw in keywords):
                 return i
@@ -3349,6 +3365,26 @@ def _premise_enabled() -> bool:
     return os.getenv("AUGHOR_PREMISE_CHECK", "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _causal_drill_enabled() -> bool:
+    """The AUGHOR_CAUSAL_DRILL flag — additive, fail-off; mirrors `_premise_enabled`. When on, the
+    cross-section scan floats causal dimensions to the front (so they survive the query cap) and, after
+    localising WHERE, auto-drills the event-only dims to WHY (a composition/share-of-returns lens)
+    instead of stopping and merely recommending it."""
+    return os.getenv("AUGHOR_CAUSAL_DRILL", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _causal_split(dimensions: list) -> "tuple[list, list]":
+    """Split intake dimensions for a causal (WHERE→WHY) scan: population dims stay in the RATE scan
+    (the WHERE), event-only dims (living on a return/refund/cancel table) are held out for a
+    COMPOSITION lens (the WHY — share of the event by reason/condition, avoiding the tautological 100%
+    rate `_is_event_dim` warns about). Mirrors `_partition_dimensions` but returns the two lists
+    directly for the serial default path. Order-preserving."""
+    dims = [d for d in (dimensions or []) if d]
+    pop = [d for d in dims if not _is_event_dim(d)]
+    event = [d for d in dims if _is_event_dim(d)]
+    return pop, event
+
+
 @_telemetry.node_span("ada_cross_section")
 def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                       dims_override: Optional[list] = None,
@@ -3383,6 +3419,15 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
     metric_table = intake_data.get("metric_table", "")
     dimensions = dims_override if dims_override is not None else intake_data.get("dimensions", [])
+    # Auto-drill WHERE→WHY (flag AUGHOR_CAUSAL_DRILL) — only on a clean top-level scan, never a sub-lens
+    # invocation (dims_override set), which the multilens node already partitions itself. Peel the
+    # event-only dims (return reason/condition — tautological as a rate) aside for a composition/WHY
+    # lens after the rate scan, and float population causal dims ahead of the descriptive ones so the
+    # scan covers the differentiators, not brand/tier.
+    _causal_drill = _causal_drill_enabled() and dims_override is None
+    _why_event_dims: list = []
+    if _causal_drill:
+        dimensions, _why_event_dims = _causal_split(dimensions)
     # #4 — augment with discriminating population attributes the intake missed (price band / season),
     # + a small schema snippet so the join is reachable + a plan directive for the numeric band.
     if extra_dims:
@@ -3392,7 +3437,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # ranking isn't crowded out by the base dimensions under the phase's query cap.
     _augmented = bool(extra_dims or extra_directive)
     _dim_cap = 8 if _augmented else 6
-    prioritized = _prioritize_dimensions(dimensions)
+    prioritized = _prioritize_dimensions(dimensions, causal_first=_causal_drill)
     dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:_dim_cap]) if prioritized else "  (none identified)"
 
     # RATIO vs ADDITIVE metric. A ratio/percentage/per-unit metric (SUM(num)/SUM(den), *100, AVG)
@@ -3676,7 +3721,16 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         "complete" if any(not f["error"] for f in findings) else "partial",
         summary, findings,
     )
-    return {"investigation_phases": phases + [phase], "_cross_section_summary": summary}
+    result_phases = phases + [phase]
+    # Auto-drill WHERE→WHY: the rate scan above localised WHERE the metric concentrates; now compose the
+    # event-only dims (return reason / condition / carrier) to answer WHY — the share of returns each
+    # accounts for — instead of stopping at the WHERE and merely recommending the drill. Fail-open: a
+    # skipped/failed composition never costs the WHERE finding that already ran.
+    if _causal_drill and _why_event_dims:
+        _why_phase = _run_composition_lens(state, conn, _why_event_dims)
+        if _why_phase:
+            result_phases = result_phases + [_why_phase]
+    return {"investigation_phases": result_phases, "_cross_section_summary": summary}
 
 
 # ── Parallel multi-lens cross-section (flag: ada.parallel_lenses) ──────────────
