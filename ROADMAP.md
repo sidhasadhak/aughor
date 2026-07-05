@@ -29,8 +29,11 @@ log: [`PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PA
    *serialization boundary*: `ada_report`→`report` + `mode:"investigate"`, strip `ADA`/`hypothesis_id`
    from web-bound payloads; regen `web/lib/api.gen.ts`; `types.ts` → `AnswerReport`/`Fact`. Do it
    **boundary-first with `@deprecated` aliases, one mode per commit, screenshot each answer mode.**
-2. **U10 — `semantic/contracts.py:SemanticContract`**: make `MetricDefinition` + `ontology.OntologyMetric`
-   serialize to it, then repoint planning/enforcement/display at one type (high blast radius → flag-gate).
+2. ~~**U10 — `semantic/contracts.py:SemanticContract`**~~ **✅ FIRST SLICE SHIPPED 2026-07-05**: the
+   contract type + `from_metric_definition`/`from_ontology_metric` adapters, leveraged via
+   `SemanticContext.contracts()` (catalog ∪ ontology, deduped, surfaced as `contract_count` on
+   `/query/semantic-context`). **Remaining (deferred, flag-gated):** repoint planning/enforcement/display
+   at the one type (the invasive, high-blast-radius half).
 3. ~~**NOM-11** — one `ExecutionScope` (`canvas_id`/`connection_id`/`scope_schema`/`table_filter`
    precedence).~~ **✅ SHIPPED 2026-07-05** (`aughor/canvas/scope.py`): four hand-rolled canvas-scope
    blocks in `routers/investigations.py` collapsed onto one value object (−62 lines), fixing a

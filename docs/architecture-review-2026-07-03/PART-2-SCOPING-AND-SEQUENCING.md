@@ -126,6 +126,27 @@ reversible commit per REC with a mechanical verify.
 
 ## Progress log
 
+### ✅ Wave 3 — U10: one SemanticContract (2026-07-05)
+
+**✅ REC-U10 — `aughor/semantic/contracts.py:SemanticContract` + two adapters.** A governed
+metric lived as *two* pydantic shapes built twice — `semantic.metrics.MetricDefinition` (the
+curated catalog / approve-version governance surface) and `ontology.models.OntologyMetric` (the
+builder-derived + self-verified metric) — same identifier/label/canonical-SQL/tables/unit and a
+byte-identical health-scorecard block, yet planning/enforcement/display special-case both.
+`SemanticContract` is the canonical union (Part 1's #1 "20-year ontology bet"): one source-tagged
+type, with each source's trust signal (governance approval / live verification) folded into
+`is_trusted`. `from_metric_definition` / `from_ontology_metric` are the lossless-where-it-matters
+bridge, field mapping pinned by tests.
+
+**Leveraged, not shelfware:** `SemanticContext.contracts()` (AL-05 plane) serializes the metrics it
+already resolves from BOTH sources into one deduped `SemanticContract` list — **catalog wins on a
+key collision** (a human-approved definition supersedes the builder's inference), fail-open per
+entry — and `summary()` reports `contract_count` (catalog ∪ ontology) alongside `metric_count`, so
+the already-wired `/query/semantic-context` endpoint surfaces the unified total. **9 tests
+(contract adapters + `contracts()` dedup/fail-open); full suite 2429 green.** *The invasive half —
+repointing planning/enforcement/display at the one type — stays deferred behind a flag (the U10
+guardrail).*
+
 ### ✅ Wave 3 — NOM-11: one ExecutionScope value object (2026-07-05)
 
 **✅ NOM-11 — `aughor/canvas/scope.py:ExecutionScope` + `resolve_execution_scope`.** The
