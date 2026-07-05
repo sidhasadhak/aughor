@@ -19,7 +19,6 @@ behaviour change) when there are no relevant priors. Gated behind
 """
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass, field
 
@@ -44,7 +43,9 @@ _MIN_CORRECTION_SCORE = 0.18
 
 def closed_loop_enabled() -> bool:
     """P1 is opt-in until its delta is proven. Off ⇒ call sites are no-ops."""
-    return os.getenv("AUGHOR_CLOSED_LOOP", "").strip().lower() in ("1", "true", "yes", "on")
+    from aughor.kernel.flags import flag_enabled
+
+    return flag_enabled("closed_loop")
 
 
 def _tokens(text: str) -> set[str]:

@@ -10,7 +10,6 @@ progressively as they complete.
 """
 from __future__ import annotations
 
-import os
 import re
 from typing import TYPE_CHECKING, Optional
 
@@ -3372,15 +3371,19 @@ def _premise_direction(question: str) -> "Optional[str]":
 
 
 def _premise_enabled() -> bool:
-    return os.getenv("AUGHOR_PREMISE_CHECK", "").strip().lower() in ("1", "true", "yes", "on")
+    from aughor.kernel.flags import flag_enabled
+
+    return flag_enabled("ada.premise_check")
 
 
 def _causal_drill_enabled() -> bool:
-    """The AUGHOR_CAUSAL_DRILL flag — additive, fail-off; mirrors `_premise_enabled`. When on, the
-    cross-section scan floats causal dimensions to the front (so they survive the query cap) and, after
-    localising WHERE, auto-drills the event-only dims to WHY (a composition/share-of-returns lens)
-    instead of stopping and merely recommending it."""
-    return os.getenv("AUGHOR_CAUSAL_DRILL", "").strip().lower() in ("1", "true", "yes", "on")
+    """The `ada.causal_drill` flag (env `AUGHOR_CAUSAL_DRILL`) — additive, fail-off; mirrors
+    `_premise_enabled`. When on, the cross-section scan floats causal dimensions to the front (so they
+    survive the query cap) and, after localising WHERE, auto-drills the event-only dims to WHY (a
+    composition/share-of-returns lens) instead of stopping and merely recommending it."""
+    from aughor.kernel.flags import flag_enabled
+
+    return flag_enabled("ada.causal_drill")
 
 
 def _causal_split(dimensions: list) -> "tuple[list, list]":

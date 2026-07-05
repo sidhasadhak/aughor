@@ -2606,8 +2606,11 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # fresh auto turn (not an explicit depth override, deep-drill, dossier, or a turn
     # already answering a clarification), ask ONE targeted question instead of guessing.
     # Budget is one ask/turn — the user's answer comes back with skip_clarify set.
+    # Flag `ask.clarify` (env AUGHOR_ASK_CLARIFY) is the rare DEFAULT-ON flag.
+    from aughor.kernel.flags import flag_enabled
+
     if (req.depth == "auto" and not req.deep and not req.insight_id and not req.skip_clarify
-            and os.getenv("AUGHOR_ASK_CLARIFY", "1").lower() not in ("0", "false", "no", "off")):
+            and flag_enabled("ask.clarify")):
         from aughor.agent.clarify import assess_clarification
         decision = assess_clarification(req.question)
         if decision.should_ask:
