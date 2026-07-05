@@ -4471,11 +4471,107 @@ def _run_period_drill(state: AgentState, conn: "DatabaseConnection", axis: dict,
     return phases
 
 
+def _why_where_interaction_enabled() -> bool:
+    """Flag `ada.why_where_interaction` (env AUGHOR_ADA_WHY_WHERE_INTERACTION or ledger override).
+    Off by default; resolved fail-safe → 'off' on any error."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("ada.why_where_interaction")
+    except Exception:
+        return False
+
+
+def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
+                          where_summary: str, why_summary: str) -> Optional[dict]:
+    """Forward-chained WHY×WHERE cross. The WHERE lens found which segment concentrates the metric and
+    the WHY lens found the leading reason — but neither tested whether they're LINKED. This composes the
+    leading reason's SHARE of returns across the highest-impact segment, so "size/fit is 42% of returns"
+    + "high-price returns most" becomes the actionable "size/fit DRIVES the high-price returns → invest
+    in fit for that tier" (or, if flat, "the cause is uniform → a broad problem, not segment-specific").
+    LLM-planned: it reads the two lens summaries + schema to pick the reason + segment and write the
+    join. Returns a phase dict or None. Fail-open."""
+    intake = state.get("_ada_intake") or {}
+    question = state["question"]
+    metric_label = intake.get("metric_label", "the metric")
+    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    try:
+        _run = run_analysis_phase(
+            conn, phase_id="cross_section_interaction",
+            title="Interaction — Where the Cause Concentrates", emoji="🔗",
+            cap=2, schema=schema,
+            plan_system=(
+                "Write ONE query that CROSSES the leading return REASON (from the WHY scan) with the "
+                "SEGMENT dimension the WHERE scan flagged as concentrating the metric — a platform "
+                "tier / price band / channel / region, NOT the question's own subject category (that "
+                "stays a FILTER). KEEP the question's subject filter: you are drilling WITHIN the "
+                "subject, not comparing it to its peers. For each value of that segment dimension, "
+                "compute the SHARE of the subject's returns that are the leading reason: 100.0 * "
+                "SUM(CASE WHEN <reason_col> = '<leading value>' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), "
+                "0) AS leading_reason_share, plus COUNT(*) AS n. Join the reason (event table) to the "
+                "segment dimension (this may require joining through orders / order_items / products). "
+                "ORDER BY leading_reason_share DESC. Return exactly three columns: the segment, "
+                "leading_reason_share, n. This is a SHARE within the subject — do NOT drop the subject "
+                "filter and do NOT compute an overall return rate.") + _ADA_SQL_GROUNDING,
+            plan_user=(
+                f"QUESTION: {question}\nMETRIC: {metric_label}\n"
+                f"WHERE scan found (the segment that concentrates the metric — cross with THIS):\n"
+                f"  {where_summary}\n"
+                f"WHY scan found (the leading reason):\n  {why_summary}\n\n"
+                f"SCHEMA:\n{schema}\n\n"
+                "KEEPING the question's subject filter, cross the LEADING reason with the specific "
+                "high-impact SEGMENT the WHERE scan named (its platform tier / price band / channel — "
+                "not the subject category itself): for each value of that segment, what share of the "
+                "subject's returns is the leading reason? This reveals whether the cause concentrates "
+                "where the metric is worst."),
+            interpret_system=(
+                "Interpret a WHY×WHERE cross — the leading return reason's SHARE of returns by segment. "
+                "State plainly whether the leading reason CONCENTRATES in the high-metric segment (its "
+                "share climbs there → the fix should target that segment) or is roughly UNIFORM across "
+                "segments (→ a broad, not segment-specific, problem). Lead with that verdict + the two "
+                "extreme shares. These are shares of returns, NOT return rates."),
+            interpret_user_fn=(lambda results_text:
+                f"QUESTION: {question}\n\nLEADING-REASON SHARE BY SEGMENT:\n{results_text}\n\n"
+                "Does the leading reason concentrate in the worst segment, or is it uniform? Lead with "
+                "the actionable verdict."),
+            plan_error_msg="Interaction planning failed.", exec_error_msg="Interaction query failed.",
+            question=question, connection_id=state.get("connection_id", ""),
+        )
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "interaction lens best-effort; skipped", counter="ada.interaction_lens")
+        return None
+    if not _run.ok:
+        return _run.error_phase
+    results, interp = _run.results, _run.interpretation
+    if interp and interp.findings:
+        findings = _assemble_phase_findings(results, interp.findings, "interaction", metric_label=metric_label)
+        summary = interp.phase_summary
+    else:
+        findings = [
+            InvestigationFinding(
+                finding_id=f"interaction_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
+                row_count=r.row_count, error=r.error, interpretation="Interaction computed.",
+                key_numbers=[], chart_type=(q.chart_type or "bar_horizontal"), stat_note=None, is_significant=False,
+            )
+            for i, (q, r) in enumerate(results)
+        ]
+        summary = "WHY×WHERE interaction computed."
+    _tag_percent_columns(findings, re.compile(r"share|pct|percent|_of_total", re.I))
+    for _f in findings:
+        _normalize_pct_key_numbers(_f)
+        _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+    return _phase_result(
+        "cross_section_interaction", "Interaction — Where the Cause Concentrates", "🔗",
+        "complete" if any(not f["error"] for f in findings) else "partial", summary, findings,
+    )
+
+
 def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -> dict:
     """Flag-gated parallel multi-lens cross-section. Runs independent lenses CONCURRENTLY — one
     focused segment/mechanism scan per themed dimension group PLUS a temporal WHEN lens when a date
     axis resolves — then, if the WHEN lens flagged an anomalous period, forward-chains a
-    period-scoped drill. Degrades to the single scan when there's nothing to fan out. Only writes
+    period-scoped drill, and (flag `ada.why_where_interaction`) a WHY×WHERE interaction cross.
+    Degrades to the single scan when there's nothing to fan out. Only writes
     investigation_phases (+ the primary's _cross_section_summary), assembled single-threaded here."""
     from concurrent.futures import as_completed
     from aughor.kernel.concurrency import ContextThreadPoolExecutor
@@ -4575,8 +4671,28 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "period drill best-effort; skipped", counter="ada.period_drill")
 
-    _lens_logger.info("[ada] multilens ran %d lens(es)%s → %d phase(s)",
-                      len(specs), (" + period drill" if anomalous else ""), len(merged) - base_n)
+    # Forward-chain #2 (flag `ada.why_where_interaction`): cross the leading reason (WHY) with the
+    # highest-impact segment (WHERE) — does the cause concentrate where the metric is worst? Runs only
+    # when BOTH a WHERE (rate) summary AND a WHY (composition) finding exist to cross; fail-open.
+    _interacted = False
+    if _why_where_interaction_enabled() and primary_summary:
+        _why_phase = next((p for p in merged[base_n:]
+                           if p.get("phase_id") == "cross_section_mechanism" and p.get("findings")), None)
+        if _why_phase:
+            try:
+                _ix = _run_interaction_lens(state, conn, primary_summary, _why_phase.get("summary") or "")
+                if _ix:
+                    merged.append(_ix)
+                    _interacted = True
+            except BudgetExceeded:
+                raise
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "interaction lens best-effort; skipped", counter="ada.interaction_lens")
+
+    _lens_logger.info("[ada] multilens ran %d lens(es)%s%s → %d phase(s)",
+                      len(specs), (" + period drill" if anomalous else ""),
+                      (" + interaction" if _interacted else ""), len(merged) - base_n)
     out = {"investigation_phases": merged}
     if primary_summary is not None:
         out["_cross_section_summary"] = primary_summary
