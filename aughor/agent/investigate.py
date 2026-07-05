@@ -4566,11 +4566,158 @@ def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
     )
 
 
+def _why_deepen_enabled() -> bool:
+    """Flag `ada.why_deepen` (env AUGHOR_ADA_WHY_DEEPEN or ledger override) — the peer-benchmark +
+    second-level-drill WHY lenses. Off by default; fail-safe → 'off' on any error."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("ada.why_deepen")
+    except Exception:
+        return False
+
+
+def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", why_summary: str) -> Optional[dict]:
+    """Peer benchmark for the leading reason: the WHY lens found the leading reason's share of the
+    SUBJECT's returns (e.g. size/fit = 42% of womenswear returns), but is that ABNORMAL? This computes
+    the same reason's share across the subject AND its peers (the other values of the subject's own
+    dimension — other categories) so "42%" becomes "42% vs a 41–44% peer range → a brand-wide baseline,
+    NOT a womenswear-specific problem" (or, if the subject tops the peers, "genuinely elevated → real").
+    LLM-planned. Returns a phase dict or None. Fail-open."""
+    intake = state.get("_ada_intake") or {}
+    question = state["question"]
+    metric_label = intake.get("metric_label", "the metric")
+    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    try:
+        _run = run_analysis_phase(
+            conn, phase_id="reason_benchmark",
+            title="Reason Benchmark — Is the Cause Abnormal?", emoji="📊",
+            cap=2, schema=schema,
+            plan_system=(
+                "Write ONE query that BENCHMARKS the leading return reason (from the WHY scan) for the "
+                "subject against its PEERS. Do NOT restrict to the subject — instead, for EACH value of "
+                "the subject's own dimension (the subject is one value of it, e.g. category = "
+                "'womenswear'; its peers are the other categories), compute the leading reason's share "
+                "of that value's returns: 100.0 * SUM(CASE WHEN <reason_col> = '<leading value>' THEN 1 "
+                "ELSE 0 END) / NULLIF(COUNT(*), 0) AS leading_reason_share, plus COUNT(*) AS n. ORDER BY "
+                "leading_reason_share DESC. Return exactly three columns: the subject-dimension value, "
+                "leading_reason_share, n. This tests whether the leading reason is abnormally high for "
+                "the subject or a brand-wide baseline.") + _ADA_SQL_GROUNDING,
+            plan_user=(
+                f"QUESTION: {question}\nMETRIC: {metric_label}\n"
+                f"WHY scan found (the leading reason + its share of the SUBJECT's returns):\n  {why_summary}\n\n"
+                f"SCHEMA:\n{schema}\n\n"
+                "Benchmark the leading reason ACROSS the subject and its peers (the other values of the "
+                "subject's own dimension): is its share higher for the subject than for its peers, or "
+                "about the same? This tells us whether the cause is subject-specific or brand-wide."),
+            interpret_system=(
+                "Interpret a PEER BENCHMARK — the leading reason's share of returns for the subject vs "
+                "its peer values. State plainly whether the subject's share is ELEVATED above its peers "
+                "(the cause is genuinely worse for the subject → real, subject-specific) or is AT/BELOW "
+                "the peer range (a brand-wide baseline → the framing 'X is high for the subject' is "
+                "misleading — it's high everywhere). Lead with that verdict + the subject's share vs the "
+                "peer range. These are shares of returns, NOT return rates."),
+            interpret_user_fn=(lambda results_text:
+                f"QUESTION: {question}\n\nLEADING-REASON SHARE BY PEER:\n{results_text}\n\n"
+                "Is the leading reason abnormally high for the subject vs its peers, or a brand-wide "
+                "baseline? Lead with the verdict."),
+            plan_error_msg="Benchmark planning failed.", exec_error_msg="Benchmark query failed.",
+            question=question, connection_id=state.get("connection_id", ""),
+        )
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "benchmark lens best-effort; skipped", counter="ada.benchmark_lens")
+        return None
+    return _lens_phase_from_run(_run, "reason_benchmark", "Reason Benchmark — Is the Cause Abnormal?",
+                                "📊", "benchmark", metric_label, "Reason benchmark computed.")
+
+
+def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_summary: str) -> Optional[dict]:
+    """Second-level drill on the leading reason: the WHY lens found WHICH reason dominates (size/fit),
+    but not WHICH products drive it. This restricts to the subject AND the leading reason, then composes
+    by a finer product/brand dimension → "size/fit returns concentrate in brands X/Y" = the actionable
+    fix target (or "evenly spread → not product-specific"). LLM-planned. Returns a phase dict or None.
+    Fail-open."""
+    intake = state.get("_ada_intake") or {}
+    question = state["question"]
+    metric_label = intake.get("metric_label", "the metric")
+    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    try:
+        _run = run_analysis_phase(
+            conn, phase_id="reason_drill",
+            title="Reason Drill — Which Products Concentrate It", emoji="🎯",
+            cap=2, schema=schema,
+            plan_system=(
+                "Write ONE query that DRILLS INTO the leading return reason (from the WHY scan) to find "
+                "WHICH products drive it. Restrict to the question's subject AND the leading reason "
+                "(<reason_col> = '<leading value>'), then compose by a FINER product dimension (brand / "
+                "product line / product name — join through order_items / products as needed): COUNT(*) "
+                "per value AS event_count, plus its share of the leading-reason returns "
+                "(100.0 * COUNT(*) / SUM(COUNT(*)) OVER () AS pct_of_total). ORDER BY event_count DESC. "
+                "Return exactly three columns: the product dimension, event_count, pct_of_total. This "
+                "localises WHICH products the leading reason concentrates in — the fix target.") + _ADA_SQL_GROUNDING,
+            plan_user=(
+                f"QUESTION: {question}\nMETRIC: {metric_label}\n"
+                f"WHY scan found (the leading reason to drill into):\n  {why_summary}\n\n"
+                f"SCHEMA:\n{schema}\n\n"
+                "Within the subject, restrict to the leading reason and compose its returns by a finer "
+                "brand/product dimension: which products concentrate this reason? That is where to act."),
+            interpret_system=(
+                "Interpret a DRILL into the leading reason by product/brand — a composition (shares that "
+                "sum to ~100%) of the leading reason's returns. Name the top brand(s)/product(s) that "
+                "concentrate it (the fix target) and their share; if the reason is spread evenly, say so "
+                "(then it is not product-specific). These are shares of the leading-reason returns, NOT "
+                "return rates."),
+            interpret_user_fn=(lambda results_text:
+                f"QUESTION: {question}\n\nLEADING-REASON RETURNS BY PRODUCT:\n{results_text}\n\n"
+                "Which brands/products concentrate the leading reason? Lead with the fix target."),
+            plan_error_msg="Drill planning failed.", exec_error_msg="Drill query failed.",
+            question=question, connection_id=state.get("connection_id", ""),
+        )
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "reason drill lens best-effort; skipped", counter="ada.reason_drill_lens")
+        return None
+    return _lens_phase_from_run(_run, "reason_drill", "Reason Drill — Which Products Concentrate It",
+                                "🎯", "drill", metric_label, "Reason drill computed.")
+
+
+def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: str,
+                         metric_label: str, empty_summary: str) -> Optional[dict]:
+    """Shared tail for the forward-chained WHY lenses (benchmark/drill): assemble findings from a
+    completed `run_analysis_phase`, tag percent/share columns, and wrap as a phase. Mirrors the
+    composition lens's tail. Returns the error phase on failure, None only if there's nothing."""
+    if not _run.ok:
+        return _run.error_phase
+    results, interp = _run.results, _run.interpretation
+    if interp and interp.findings:
+        findings = _assemble_phase_findings(results, interp.findings, fprefix, metric_label=metric_label)
+        summary = interp.phase_summary
+    else:
+        findings = [
+            InvestigationFinding(
+                finding_id=f"{fprefix}_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
+                row_count=r.row_count, error=r.error, interpretation="Computed.",
+                key_numbers=[], chart_type=(q.chart_type or "bar_horizontal"), stat_note=None, is_significant=False,
+            )
+            for i, (q, r) in enumerate(results)
+        ]
+        summary = empty_summary
+    _tag_percent_columns(findings, re.compile(r"share|pct|percent|_of_total", re.I))
+    for _f in findings:
+        _normalize_pct_key_numbers(_f)
+        _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+    return _phase_result(
+        phase_id, title, emoji,
+        "complete" if any(not f["error"] for f in findings) else "partial", summary, findings,
+    )
+
+
 def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -> dict:
     """Flag-gated parallel multi-lens cross-section. Runs independent lenses CONCURRENTLY — one
     focused segment/mechanism scan per themed dimension group PLUS a temporal WHEN lens when a date
     axis resolves — then, if the WHEN lens flagged an anomalous period, forward-chains a
-    period-scoped drill, and (flag `ada.why_where_interaction`) a WHY×WHERE interaction cross.
+    period-scoped drill, and (flags `ada.why_where_interaction` / `ada.why_deepen`) a WHY×WHERE
+    interaction cross + a reason benchmark + a second-level reason drill.
     Degrades to the single scan when there's nothing to fan out. Only writes
     investigation_phases (+ the primary's _cross_section_summary), assembled single-threaded here."""
     from concurrent.futures import as_completed
@@ -4671,28 +4818,42 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "period drill best-effort; skipped", counter="ada.period_drill")
 
-    # Forward-chain #2 (flag `ada.why_where_interaction`): cross the leading reason (WHY) with the
-    # highest-impact segment (WHERE) — does the cause concentrate where the metric is worst? Runs only
-    # when BOTH a WHERE (rate) summary AND a WHY (composition) finding exist to cross; fail-open.
-    _interacted = False
-    if _why_where_interaction_enabled() and primary_summary:
-        _why_phase = next((p for p in merged[base_n:]
-                           if p.get("phase_id") == "cross_section_mechanism" and p.get("findings")), None)
-        if _why_phase:
-            try:
-                _ix = _run_interaction_lens(state, conn, primary_summary, _why_phase.get("summary") or "")
-                if _ix:
-                    merged.append(_ix)
-                    _interacted = True
-            except BudgetExceeded:
-                raise
-            except Exception as _exc:
-                from aughor.kernel.errors import tolerate
-                tolerate(_exc, "interaction lens best-effort; skipped", counter="ada.interaction_lens")
+    # Forward-chained WHY lenses (all depend on the WHY composition finding). Computed once here.
+    _why_phase = next((p for p in merged[base_n:]
+                       if p.get("phase_id") == "cross_section_mechanism" and p.get("findings")), None)
+    _why_summary = (_why_phase.get("summary") or "") if _why_phase else ""
+    _extras: list = []
+
+    def _forward(label, fn, counter):
+        """Run a forward-chained lens fn()→phase|None, append it, record the label. Fail-open."""
+        try:
+            _ph = fn()
+            if _ph:
+                merged.append(_ph)
+                _extras.append(label)
+        except BudgetExceeded:
+            raise
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, f"{label} lens best-effort; skipped", counter=counter)
+
+    # Forward-chain (flag `ada.why_where_interaction`): cross the leading reason (WHY) with the
+    # highest-impact segment (WHERE) — does the cause concentrate where the metric is worst? Needs
+    # both a WHERE (rate) summary AND a WHY (composition) finding.
+    if _why_phase and primary_summary and _why_where_interaction_enabled():
+        _forward("interaction", lambda: _run_interaction_lens(state, conn, primary_summary, _why_summary),
+                 "ada.interaction_lens")
+    # Forward-chain (flag `ada.why_deepen`): benchmark the leading reason vs peers (is it abnormal?)
+    # + drill it by product (which products drive it?). Both need only the WHY finding.
+    if _why_phase and _why_deepen_enabled():
+        _forward("benchmark", lambda: _run_reason_benchmark_lens(state, conn, _why_summary),
+                 "ada.benchmark_lens")
+        _forward("drill", lambda: _run_reason_drill_lens(state, conn, _why_summary),
+                 "ada.reason_drill_lens")
 
     _lens_logger.info("[ada] multilens ran %d lens(es)%s%s → %d phase(s)",
                       len(specs), (" + period drill" if anomalous else ""),
-                      (" + interaction" if _interacted else ""), len(merged) - base_n)
+                      (" + " + "+".join(_extras) if _extras else ""), len(merged) - base_n)
     out = {"investigation_phases": merged}
     if primary_summary is not None:
         out["_cross_section_summary"] = primary_summary

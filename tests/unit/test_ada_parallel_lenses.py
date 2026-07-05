@@ -376,6 +376,88 @@ def test_run_interaction_lens_crosses_reason_and_segment(monkeypatch):
     assert ph["phase_id"] == "cross_section_interaction"
 
 
+# ── Deepen the WHY: peer benchmark + second-level drill (flag ada.why_deepen) ────
+
+def _install_deepen_stubs(monkeypatch, *, why_findings=True):
+    """Rate + composition (with findings) stubs + benchmark/drill sentinels. No temporal axis."""
+    def xsec(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
+             extra_dims=None, extra_schema=None, extra_directive=None, grain=None):
+        pid = (phase_meta or ("cross_section", "X", "🧭"))[0]
+        return {"investigation_phases": state.get("investigation_phases", []) + [{"phase_id": pid}],
+                "_cross_section_summary": f"WHERE::{pid}"}
+    def comp(state, conn, event_dims):
+        return {"phase_id": "cross_section_mechanism", "summary": "size/fit 42%",
+                "findings": [{"title": "by reason"}] if why_findings else []}
+    seen = {}
+    monkeypatch.setattr(inv, "ada_cross_section", xsec)
+    monkeypatch.setattr(inv, "_run_composition_lens", comp)
+    monkeypatch.setattr(inv, "_resolve_temporal_axis", lambda s, c=None: None)
+    monkeypatch.setattr(inv, "_run_interaction_lens", lambda s, c, w, y: None)  # keep interaction out
+    def bench(state, conn, why_summary):
+        seen["bench_why"] = why_summary
+        return {"phase_id": "reason_benchmark", "summary": "uniform vs peers"}
+    def drill(state, conn, why_summary):
+        seen["drill_why"] = why_summary
+        return {"phase_id": "reason_drill", "summary": "brands X/Y"}
+    monkeypatch.setattr(inv, "_run_reason_benchmark_lens", bench)
+    monkeypatch.setattr(inv, "_run_reason_drill_lens", drill)
+    return seen
+
+
+def test_deepen_appends_benchmark_and_drill_when_flag_on(monkeypatch):
+    seen = _install_deepen_stubs(monkeypatch)
+    monkeypatch.setenv("AUGHOR_ADA_WHY_DEEPEN", "1")
+    out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
+    ids = [p["phase_id"] for p in out["investigation_phases"]]
+    assert "reason_benchmark" in ids and "reason_drill" in ids
+    assert ids.index("reason_benchmark") < ids.index("reason_drill")  # benchmark before drill
+    assert seen["bench_why"] == "size/fit 42%" and seen["drill_why"] == "size/fit 42%"
+
+
+def test_deepen_off_by_default(monkeypatch):
+    _install_deepen_stubs(monkeypatch)
+    monkeypatch.delenv("AUGHOR_ADA_WHY_DEEPEN", raising=False)
+    out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
+    ids = [p["phase_id"] for p in out["investigation_phases"]]
+    assert "reason_benchmark" not in ids and "reason_drill" not in ids
+
+
+def test_deepen_skipped_without_why_findings(monkeypatch):
+    _install_deepen_stubs(monkeypatch, why_findings=False)
+    monkeypatch.setenv("AUGHOR_ADA_WHY_DEEPEN", "1")
+    out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
+    ids = [p["phase_id"] for p in out["investigation_phases"]]
+    assert "reason_benchmark" not in ids and "reason_drill" not in ids
+
+
+def test_run_reason_benchmark_lens_benchmarks_across_peers(monkeypatch):
+    seen = {}
+    def rate_stub(conn, **kw):
+        seen["plan_user"], seen["phase_id"] = kw.get("plan_user", ""), kw.get("phase_id")
+        return inv._PhaseRun(ok=True, results=[])
+    monkeypatch.setattr(inv, "run_analysis_phase", rate_stub)
+    state = {"question": "Why are womenswear returns so high?", "connection_id": "t",
+             "schema_context": "lux.returns(reason,category)",
+             "_ada_intake": {"metric_label": "return rate", "filtered_schema": "lux.returns(reason)"}}
+    ph = inv._run_reason_benchmark_lens(state, object(), "size/fit 42% of returns")
+    assert seen["phase_id"] == "reason_benchmark" and "size/fit 42%" in seen["plan_user"]
+    assert ph["phase_id"] == "reason_benchmark"
+
+
+def test_run_reason_drill_lens_drills_by_product(monkeypatch):
+    seen = {}
+    def rate_stub(conn, **kw):
+        seen["plan_user"], seen["phase_id"] = kw.get("plan_user", ""), kw.get("phase_id")
+        return inv._PhaseRun(ok=True, results=[])
+    monkeypatch.setattr(inv, "run_analysis_phase", rate_stub)
+    state = {"question": "Why are womenswear returns so high?", "connection_id": "t",
+             "schema_context": "lux.returns(reason)",
+             "_ada_intake": {"metric_label": "return rate", "filtered_schema": "lux.returns(reason)"}}
+    ph = inv._run_reason_drill_lens(state, object(), "size/fit 42% of returns")
+    assert seen["phase_id"] == "reason_drill" and "size/fit 42%" in seen["plan_user"]
+    assert ph["phase_id"] == "reason_drill"
+
+
 # ── Temporal WHEN lens: axis resolver ──────────────────────────────────────────
 
 _TYPED = {
