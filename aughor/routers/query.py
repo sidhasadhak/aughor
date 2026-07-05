@@ -489,6 +489,7 @@ class _CapabilityAnswerRequest(BaseModel):
     conn_id: str
     question: str
     dialect: str = "duckdb"
+    domain: str = "data"          # which Capability plane domain: "data" (SQL) | "metadata" (schema)
 
 
 @router.post("/query/capability-answer")
@@ -514,7 +515,7 @@ def query_capability_answer(body: _CapabilityAnswerRequest):
             schema = ""
         from aughor.capability import run_capability, CapabilityRequest
         from aughor.trust import Scope
-        res = run_capability("data", CapabilityRequest(
+        res = run_capability(body.domain or "data", CapabilityRequest(
             question=body.question,
             scope=Scope(conn=db, schema=schema, dialect=body.dialect or "duckdb")))
     finally:
@@ -524,7 +525,7 @@ def query_capability_answer(body: _CapabilityAnswerRequest):
             from aughor.kernel.errors import tolerate
             tolerate(exc, "capability-answer: db close", counter="capability_answer.close")
     if res is None:
-        raise HTTPException(status_code=500, detail="the 'data' capability is not registered")
+        raise HTTPException(status_code=400, detail=f"unknown capability domain: {body.domain!r}")
     return {
         "ok": res.ok,
         "sql": res.artifact,

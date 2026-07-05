@@ -55,6 +55,35 @@ class SqlCapability:
         return format_result_for_llm(r)
 
 
+class MetadataCapability:
+    """The Metadata domain — schema / catalog questions answered WITHOUT running SQL (the review's
+    'Metadata Handler → Interpreter' pipeline). Deterministic: execute reads the connection's schema,
+    interpret returns it. `validate` is the Trust plane's `kind="metadata"` path. Proves the template
+    generalizes past the data domain on a real path; LLM-answered metadata Q&A is a later step."""
+    domain = "metadata"
+    kind = "metadata"
+
+    def generate(self, req: CapabilityRequest) -> str:
+        # No SQL to generate — the artifact is the metadata ask itself.
+        return (req.artifact or req.question or "").strip()
+
+    def validate(self, artifact: str, req: CapabilityRequest) -> Verdict:
+        return default_validate(self.kind, artifact, req)
+
+    def execute(self, artifact: str, req: CapabilityRequest) -> dict:
+        conn = req.scope.conn
+        if conn is None:
+            return {"schema": "", "error": "no connection in scope"}
+        try:
+            return {"schema": conn.get_schema() or ""}
+        except Exception as exc:
+            return {"schema": "", "error": str(exc)}
+
+    def interpret(self, output: dict, req: CapabilityRequest) -> str:
+        return output.get("schema") or output.get("error") or "No schema available."
+
+
 def register_builtins() -> None:
     """Register the built-in capabilities. Idempotent (register overwrites by domain)."""
     register_capability(SqlCapability())
+    register_capability(MetadataCapability())

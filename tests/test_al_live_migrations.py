@@ -179,3 +179,22 @@ def test_al02_endpoint_disabled_when_flag_off(client, builtin_conn_id, monkeypat
     r = client.post("/query/capability-answer",
                     json={"conn_id": builtin_conn_id, "question": "q"})
     assert r.status_code == 404
+
+
+def test_al02_endpoint_metadata_domain(client, builtin_conn_id, monkeypatch):
+    monkeypatch.setenv("AUGHOR_CAPABILITY_PIPELINE_LIVE", "1")
+    r = client.post("/query/capability-answer",
+                    json={"conn_id": builtin_conn_id, "question": "what tables exist?",
+                          "domain": "metadata"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["trace"] == ["generate", "validate", "execute", "interpret"]
+    assert body["narrative"]                          # the schema text
+
+
+def test_al02_endpoint_unknown_domain(client, builtin_conn_id, monkeypatch):
+    monkeypatch.setenv("AUGHOR_CAPABILITY_PIPELINE_LIVE", "1")
+    r = client.post("/query/capability-answer",
+                    json={"conn_id": builtin_conn_id, "question": "q", "domain": "nope"})
+    assert r.status_code == 400

@@ -118,6 +118,28 @@ def test_sql_capability_registered_by_default():
     assert isinstance(get_capability("data"), SqlCapability)
 
 
+# ── The metadata domain — a second real capability (schema, no SQL) ──────────────────────
+
+class _SchemaConn:
+    dialect = "duckdb"
+    def get_schema(self) -> str:
+        return "TABLE orders(id INT, total DECIMAL)"
+    def execute(self, tag, sql):  # never called for the metadata domain
+        raise AssertionError("metadata capability must not execute SQL")
+
+
+def test_metadata_capability_returns_schema(clean_registry):
+    from aughor.capability.builtins import MetadataCapability
+    assert "metadata" in registered_domains()
+    assert isinstance(get_capability("metadata"), MetadataCapability)
+    res = run_capability("metadata", CapabilityRequest(
+        question="what tables do I have?", scope=Scope(conn=_SchemaConn())))
+    assert res.ok is True
+    assert res.trace == ("generate", "validate", "execute", "interpret")
+    assert "orders" in res.narrative                 # the schema is the answer
+    assert res.output["schema"].startswith("TABLE orders")
+
+
 def test_sql_capability_without_connection_is_a_clean_error(clean_registry):
     res = run_capability("data", CapabilityRequest(artifact="SELECT 1", scope=Scope()))
     assert res.ok is False
