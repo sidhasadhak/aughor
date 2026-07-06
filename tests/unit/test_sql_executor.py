@@ -236,15 +236,24 @@ def test_preflight_harden_noop_without_schema():
     assert preflight_harden(_conn(), _GOOD, "") == _GOOD  # no schema → untouched
 
 
-def test_explore_path_calls_the_shared_hardening():
-    """The explore loop (_execute_one_subq) must route through preflight_harden — the
-    parity win (it had neither de-fan nor preflight-repair before WS2 inc.2)."""
-    src = Path(__file__).parent.parent.parent / "aughor" / "agent" / "explore.py"
+def _calls_preflight_harden(rel_path: str) -> bool:
+    src = Path(__file__).parent.parent.parent / rel_path
     tree = ast.parse(src.read_text())
-    calls = [n for n in ast.walk(tree)
-             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-             and n.func.id == "preflight_harden"]
-    assert calls, "explore.py must call the shared preflight_harden before conn.execute"
+    return any(
+        isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+        and n.func.id == "preflight_harden"
+        for n in ast.walk(tree)
+    )
+
+
+def test_guard_parity_all_three_paths_share_the_hardening():
+    """Guard-parity contract: the pre-execute de-fan + preflight-repair hardening runs
+    on ALL three answer paths, not just the deep one. The ADA runner (execute_guarded)
+    owns it; explore and the quick/chat path call the shared preflight_harden. A guard
+    added to preflight_harden now reaches every path by construction."""
+    assert _calls_preflight_harden("aughor/sql/executor.py"), "ADA runner (execute_guarded)"
+    assert _calls_preflight_harden("aughor/agent/explore.py"), "explore _execute_one_subq"
+    assert _calls_preflight_harden("aughor/agent/nodes.py"), "quick/chat execute_planned_queries"
 
 
 def test_investigate_execute_safe_delegates_here(monkeypatch):
