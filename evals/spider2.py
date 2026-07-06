@@ -243,8 +243,29 @@ _BENCH_PROJECTION = (
 )
 
 
+def crystallize_resolution(connection_id: str, question: str, outcome, adopted_sql: str) -> bool:
+    """Ambiguity Ledger write path (I1): when B1 settles a disagreement with executable
+    evidence, crystallize it so the same question class never re-ambiguates on this connection.
+    Subject = the question (so future similar questions match); source = probe. Best-effort."""
+    try:
+        from aughor.semantic.ambiguity_ledger import (
+            AmbiguityResolution, Reading, save_resolution)
+        for dim in outcome.resolved_dims:
+            save_resolution(AmbiguityResolution(
+                connection_id=connection_id, dim_kind=dim.kind, dim_facet=dim.facet,
+                subject=question, schema_scope=dim.subject,
+                readings=[Reading(label=o[:80]) for o in (dim.options or ())][:4],
+                resolved_reading=f"{dim.facet}: {outcome.source}",
+                resolved_sql=adopted_sql, resolution_source="probe",
+                evidence=outcome.reason[:200]))
+        return bool(outcome.resolved_dims)
+    except Exception:
+        return False
+
+
 def run_probe_repair(conn, question: str, seed_sql: str, alt_sqls: list[str],
-                     schema: str, exec_fn) -> tuple[str, dict]:
+                     schema: str, exec_fn, *, connection_id: str = "", ledger: bool = False
+                     ) -> tuple[str, dict]:
     """B1 — the probe-and-repair back half of SOMA-lite. Reached ONLY on candidate
     disagreement (the caller gates on n_signatures > 1). Deterministic AST-diff disagreement
     extraction (I2) → deterministic-first probes over the value/grain guards Aughor already
@@ -340,11 +361,15 @@ def run_probe_repair(conn, question: str, seed_sql: str, alt_sqls: list[str],
     }
     outcome = resolve(question, seed_sql, dims, probe_results, execute_fn=exec_fn,
                       repair_fn=_repair, alternatives=others, reprobe=reprobe)
+    crystallized = False
+    if outcome.accepted and ledger and connection_id:
+        crystallized = crystallize_resolution(connection_id, question, outcome, outcome.sql)
     return (outcome.sql if outcome.accepted else seed_sql), {
         "fired": outcome.accepted,
         "dims": [f"{d.kind}/{d.facet}:{d.subject}" for d in dims],
         "resolved": [f"{d.facet}:{d.subject}" for d in outcome.resolved_dims],
         "source": outcome.source, "reason": outcome.reason[:120], "gates": outcome.gates,
+        "crystallized": crystallized,
     }
 
 
@@ -359,7 +384,7 @@ def _safe_filter_ok(conn, sql, check_filter_value_domains) -> bool:
 
 def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = True,
                  bench_projection: bool = False, col_semantics: bool = False,
-                 candidates: int = 1, probes: bool = False) -> dict:
+                 candidates: int = 1, probes: bool = False, ledger: bool = False) -> dict:
     from aughor.connectors.file.sqlite import SQLiteConnection
     from aughor.sql.closed_loop import execute_with_repair, rows_to_csv
     from aughor.sql.safety import preflight_repair
@@ -394,6 +419,23 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
         if bench_projection:
             engine_note += _BENCH_PROJECTION
 
+        # Ambiguity Ledger read path (I1): a disagreement settled earlier on THIS db (connection
+        # = db name) injects its resolution as an authoritative prior, so the class never
+        # re-ambiguates. On the benchmark this compounds across runs/similar questions; the value
+        # is amortization, not a single-run EX lever. Gated by --ledger.
+        conn_id = record["db"]
+        if ledger:
+            from aughor.semantic.ambiguity_ledger import (
+                build_resolution_block, record_hit, retrieve_resolutions)
+            _matches = retrieve_resolutions(record["question"], conn_id)
+            _led_block = build_resolution_block(_matches)
+            if _led_block:
+                for _res, _sc in _matches:
+                    record_hit(_res.id)
+                engine_note += "\n" + _led_block
+                step("ledger_read", served=len(_matches),
+                     subjects=[r.resolved_reading for r, _ in _matches])
+
         if candidates > 1:
             # Levers 4+5 — strategy-diverse candidates + execution-signature selection
             # (deterministic; no judge LLM). K calls per question — hard-subset use.
@@ -424,7 +466,8 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
             if probes and cr.chosen and cr.n_signatures > 1:
                 alt_sqls = [c.sql for c in cr.candidates if c.ok and c.sql]
                 repaired, pinfo = run_probe_repair(
-                    conn, record["question"], sql, alt_sqls, schema, _exec_lite)
+                    conn, record["question"], sql, alt_sqls, schema, _exec_lite,
+                    connection_id=conn_id, ledger=ledger)
                 step("probe_repair", **pinfo)
                 if pinfo.get("fired"):
                     sql = repaired
@@ -595,6 +638,10 @@ def main() -> int:
                     help="B1 probe-and-repair back half: on candidate disagreement, run "
                          "deterministic-first probes + evidence-gated minimal repair (needs "
                          "--candidates > 1; no-op on agreement)")
+    ap.add_argument("--ledger", action="store_true",
+                    help="Ambiguity Ledger (I1): inject resolutions settled earlier on this db "
+                         "as an authoritative prior (read), and crystallize B1-settled "
+                         "disagreements (write). Value compounds across runs — per-connection burn-down")
     ap.add_argument("--score", action="store_true", help="run the official evaluator over outdir")
     args = ap.parse_args()
 
@@ -615,7 +662,7 @@ def main() -> int:
           f"temp={args.temperature} ek={'off' if args.no_ek else 'on'} "
           f"proj={'on' if args.bench_projection else 'off'} "
           f"colsem={'on' if args.col_semantics else 'off'} cand={max(1, args.candidates)} "
-          f"probes={'on' if args.probes else 'off'} out={outdir}")
+          f"probes={'on' if args.probes else 'off'} ledger={'on' if args.ledger else 'off'} out={outdir}")
 
     results = []
     for i, rec in enumerate(records, 1):
@@ -623,7 +670,7 @@ def main() -> int:
         try:
             r = run_instance(rec, outdir, args.temperature, use_ek=not args.no_ek,
                              bench_projection=args.bench_projection, col_semantics=args.col_semantics,
-                             candidates=max(1, args.candidates), probes=args.probes)
+                             candidates=max(1, args.candidates), probes=args.probes, ledger=args.ledger)
         except Exception as e:
             r = {"id": rec["instance_id"], "ok": False, "error": str(e)[:200]}
         print(f"      -> ok={r.get('ok')} rounds={r.get('rounds')} rows={r.get('rows')} "

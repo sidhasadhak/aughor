@@ -68,3 +68,37 @@ def test_only_reject_and_correct_are_read_back(isolated_verdicts, monkeypatch):
         headline="revenue by product category is healthy")
     from aughor.verify.priors import build_corrections_section
     assert build_corrections_section("revenue by product category?", "samples") == ""
+
+
+# ── Ambiguity Ledger prior (I1) — the resolved-ambiguity block reads back too ──
+def _seed_resolution(conn_id, subject, reading, source="probe"):
+    from aughor.semantic.ambiguity_ledger import AmbiguityResolution, save_resolution
+    return save_resolution(AmbiguityResolution(
+        connection_id=conn_id, dim_kind="AmbiIntent", dim_facet="grain", subject=subject,
+        resolved_reading=reading, resolution_source=source,
+        resolved_sql="GROUP BY player", evidence="a live probe matched the asked grain"))
+
+
+def test_ledger_resolution_reads_back_into_priors(monkeypatch):
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    _seed_resolution("led_conn1", "total runs scored by strikers", "career totals")
+    from aughor.verify.priors import build_priors_section, retrieve_priors
+    section = build_priors_section("what is the average total runs by strikers?", "led_conn1")
+    assert "RESOLVED AMBIGUITIES" in section and "career totals" in section
+    # the served resolution is tracked in the result (the burn-down numerator)
+    res = retrieve_priors("total runs by strikers?", "led_conn1")
+    assert res.fired and res.resolutions
+
+
+def test_ledger_prior_off_when_flag_off(monkeypatch):
+    monkeypatch.delenv("AUGHOR_CLOSED_LOOP", raising=False)
+    _seed_resolution("led_conn2", "total runs by strikers", "career totals")
+    from aughor.verify.priors import build_priors_section
+    assert build_priors_section("total runs by strikers?", "led_conn2") == ""
+
+
+def test_ledger_prior_empty_on_irrelevant_question(monkeypatch):
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    _seed_resolution("led_conn3", "total runs by strikers", "career totals")
+    from aughor.verify.priors import build_priors_section
+    assert build_priors_section("how many suppliers are in France?", "led_conn3") == ""

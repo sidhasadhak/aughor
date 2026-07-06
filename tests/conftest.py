@@ -40,6 +40,7 @@ for _env, _file in (
     ("AUGHOR_SAVEDQUERY_DB", "saved_queries.db"),
     ("AUGHOR_VOLUMES_DB", "volumes.db"),
     ("AUGHOR_VERDICTS_DB", "verdicts.db"),
+    ("AUGHOR_AMBIGUITY_LEDGER_DB", "ambiguity_ledger.db"),
     ("AUGHOR_PACK_DELTAS_DB", "pack_deltas.db"),
     ("AUGHOR_PACK_BINDINGS_DB", "pack_bindings.db"),
     ("AUGHOR_CHECKPOINTS_DB", "checkpoints.db"),
