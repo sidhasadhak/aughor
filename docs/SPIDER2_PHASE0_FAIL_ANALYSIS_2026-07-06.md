@@ -128,6 +128,27 @@ Net: **+1 recovered, −0 regressed** — foundation restored (June-parity conte
 needle-mover; consistent with the diagnosis that the remaining misses are reasoning/
 ambiguity. The candidates lever (the oracle-gap play) is the next controlled measurement.
 
+## Levers 4+5 measured — the second monotonic lever, and the big one
+
+Controlled run on 14 instances (9 remaining misses + local354 + 4 sentinels), `--candidates 4`
+(strategy-diverse generation + execution-signature plurality selection, grain-intent check in
+the loop), vs the A-fix baseline:
+
+- **Sentinels 4/4 + local354 stayed correct — zero regressions again.**
+- **Misses: 3/9 recovered** — local017 (the cause-category/year case that resisted everything,
+  incl. col-semantics), local344, local360.
+- **Attribution (traces): each recovery came from a DIFFERENT strategy** — local017 via
+  plurality-selected `direct`, local344 via `plan_first`, local360 via `adversarial` — the
+  engineered-diversity thesis (CHASE/DivSkill; June's oracle gap) confirmed mechanically: no
+  single prompt catches all three; the deterministic signature selection surfaces them with no
+  judge LLM. On a fully-agreed sentinel (local002) all 4 strategies converged to one signature.
+
+Cumulative on this subset: original → A-fixes (+1) → candidates (+3) = **4 of 10 misses
+recovered, 0/12 sentinel-checks regressed**. Cost: 4× generation per question (hard-subset
+economics; agreement on easy questions suggests a confidence-tiered K later). Full-135
+confirmation run launched — the extrapolation (~1/3 of misses recoverable ⇒ ~60%+) is NOT to
+be trusted until that controlled number lands.
+
 ## Takeaways for the campaign
 
 1. **The cheap prompt/harness levers do NOT move the net score.** The one tested (projection) was
