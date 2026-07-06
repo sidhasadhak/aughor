@@ -70,17 +70,46 @@ def load_instances(subset: str = "local") -> list[dict]:
     return recs
 
 
+def _key_context(conn, tables: list[str]) -> str:
+    """PK markers + FK edges from PRAGMA (A2 — the June 56.3% context had 'DDL + FK
+    paths from PRAGMA'; the rebuild had dropped them, leaving the model to guess join
+    paths). Emitted as `--` comment lines, which `parse_schema_tables` ignores, so the
+    guard battery's schema parsing is untouched."""
+    lines = ["\nKEYS & JOIN PATHS (from the database's declared constraints):"]
+    emitted = 0
+    for t in tables:
+        try:
+            _c, info, _t = conn.raw_execute(f'PRAGMA table_info("{t}")')
+            pks = [r[1] for r in info if r[5]]  # (cid, name, type, notnull, dflt, pk)
+            if pks:
+                lines.append(f"-- {t} PRIMARY KEY: ({', '.join(pks)})")
+                emitted += 1
+        except Exception:
+            pass
+        try:
+            _c, fks, _t = conn.raw_execute(f'PRAGMA foreign_key_list("{t}")')
+            # (id, seq, ref_table, from_col, to_col, on_update, on_delete, match)
+            for fk in fks:
+                lines.append(f"-- {t}.{fk[3]} -> {fk[2]}.{fk[4] or '(pk)'}")
+                emitted += 1
+        except Exception:
+            pass
+    return "\n".join(lines) + "\n" if emitted else ""
+
+
 def build_schema_context(conn) -> str:
-    """The connector's schema text + up to SAMPLE_ROWS real rows per table (the June
-    design: DDL + samples ground the literals), capped so a wide DB can't blow the prompt."""
+    """The connector's schema text + PK/FK key context + up to SAMPLE_ROWS real rows per
+    table (the June design: DDL + FK paths + samples ground the joins and literals),
+    capped so a wide DB can't blow the prompt."""
     schema = conn.get_schema() or ""
-    parts = [schema, "\nSAMPLE ROWS (first rows per table, for value formats — not exhaustive):"]
     try:
         cols, rows, _ = conn.raw_execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
         tables = [r[0] for r in rows]
     except Exception:
         tables = []
+    parts = [schema, _key_context(conn, tables),
+             "\nSAMPLE ROWS (first rows per table, for value formats — not exhaustive):"]
     for t in tables[:60]:
         try:
             cols, rows, _ = conn.raw_execute(f'SELECT * FROM "{t}" LIMIT {SAMPLE_ROWS}')
@@ -166,35 +195,28 @@ def external_knowledge_section(record: dict) -> str:
 
 def generate_sql(question: str, schema: str, document_section: str,
                  temperature: float = 0.0) -> str:
-    """One product-prompt generation (same shape as evals/run_golden.generate_sql_chat)."""
-    from pydantic import BaseModel, Field
+    """One SQL-only generation (A3). Keeps CHAT_SQL_SYSTEM (the SQL discipline incl.
+    ANSWER_SHAPE — the June-proven +8pt rule) but drops the product's CHAT_PROMPT, whose
+    ~6.6k chars are chart-selection rules irrelevant here, and drops the multi-field
+    answer model (headline/chart_type/intent/approach) whose output tax competes with
+    the SQL. June's 56.3% harness generated SQL-only; this restores that configuration."""
+    from pydantic import BaseModel
 
-    from aughor.agent.prompts import CHAT_PROMPT, CHAT_SQL_SYSTEM
+    from aughor.agent.prompts import CHAT_SQL_SYSTEM
     from aughor.llm.provider import get_provider
 
-    class ChatAnswerModel(BaseModel):
+    class SqlOnly(BaseModel):
         sql: str = ""
-        headline: str = ""
-        chart_type: str = "auto"
-        intent: str = ""
-        approach: list[str] = Field(default_factory=list)
 
-    prompt = CHAT_PROMPT.format(
-        schema=schema,
-        history_section="",
-        question=question,
-        schema_qualifier="",
-        kb_patterns_section="",
-        conn_kb_section="",
-        sql_examples_section="",
-        metrics_section="",
-        exploration_section="",
-        causal_section="",
-        document_section=document_section,
+    prompt = (
+        f"DATABASE SCHEMA:\n{schema}\n"
+        f"{document_section}"
+        f"\nQUESTION: {question}\n\n"
+        "Write ONE SQL query that answers the question exactly. Return only the SQL."
     )
     answer = get_provider("coder").complete(
         system=CHAT_SQL_SYSTEM, user=prompt,
-        response_model=ChatAnswerModel, temperature=temperature,
+        response_model=SqlOnly, temperature=temperature,
     )
     return (answer.sql or "").strip()
 
@@ -280,9 +302,93 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
             except Exception:
                 return None
 
-        loop = execute_with_repair(guarded, execute_fn, repair_fn, max_rounds=2)
+        def recover_empty_fn(empty_sql: str):
+            # A1: the June-built empty-result recovery, previously never wired here —
+            # 6 of the 63 misses were 0-row results where gold has rows. Feed the
+            # zero-row diagnosis + live filter-domain warnings to the typed fixer; the
+            # closed loop adopts a rewrite ONLY if it executes AND returns rows.
+            try:
+                from aughor.sql.executor import zero_row_suspicious
+                from aughor.sql.join_guard import check_filter_value_domains
+                diag = zero_row_suspicious(empty_sql) or ""
+                try:
+                    fw = check_filter_value_domains(conn, empty_sql)
+                    if fw:
+                        diag = (diag + "\n" + "\n".join(w.to_prompt_text() for w in fw)).strip()
+                except Exception:
+                    pass
+                err = ("The query executed but returned 0 rows. "
+                       + (diag or "Re-examine the filter literals against the real stored "
+                                  "values, the join path, and the date/year column choice."))
+                from aughor.sql.writer import SqlWriter
+                fixed = SqlWriter(conn, schema_str=schema).fix(empty_sql, err, max_retries=1)
+                return fixed.sql if fixed.ok and fixed.sql else None
+            except Exception:
+                return None
+
+        loop = execute_with_repair(guarded, execute_fn, repair_fn,
+                                   recover_empty_fn=recover_empty_fn, max_rounds=2)
         step("closed_loop", ok=loop.ok, rounds=loop.rounds, rows=loop.row_count,
              receipt=loop.receipt)
+
+        # Lever 7 — deterministic grain-of-intent check: a result that runs clean but
+        # contradicts the question's declared grain ("top three…" → 7 rows, "for each
+        # match" → per-ball rows) gets ONE diagnosis-fed repair round; adopt only if the
+        # retry executes AND lands closer to the expected grain (never go backwards).
+        if loop.ok:
+            try:
+                from aughor.sql.grain_intent import check_result_grain
+
+                def _probe_distinct(col: str):
+                    try:
+                        from aughor.sql.tables import extract_tables
+                        for ref in extract_tables(loop.sql, "sqlite"):
+                            try:
+                                _c, r, _t = conn.raw_execute(
+                                    f'SELECT COUNT(DISTINCT "{col}") FROM "{ref.table}"')
+                                if r and r[0][0]:
+                                    return int(r[0][0])
+                            except Exception:
+                                continue
+                    except Exception:
+                        return None
+                    return None
+
+                try:
+                    _cols_now, _rows_now, _ = conn.raw_execute(loop.sql)
+                except Exception:
+                    _cols_now, _rows_now = [], []
+                _scope_cols: list = []
+                try:
+                    from aughor.sql.tables import extract_tables
+                    for ref in extract_tables(loop.sql, "sqlite"):
+                        _c2, info, _ = conn.raw_execute(f'PRAGMA table_info("{ref.table}")')
+                        _scope_cols.extend(r[1] for r in info)
+                except Exception:
+                    pass
+                diag = check_result_grain(record["question"], len(_rows_now),
+                                          columns_in_scope=_scope_cols,
+                                          count_distinct=_probe_distinct)
+                if diag:
+                    step("grain_intent", diagnosis=diag, rows=len(_rows_now))
+                    cand = repair_fn(loop.sql, diag)
+                    if cand and cand.strip() != loop.sql.strip():
+                        ok2, rows2, _e2 = execute_fn(cand)
+                        if ok2 and check_result_grain(
+                                record["question"],
+                                len(rows2) if isinstance(rows2, list) else -1,
+                                columns_in_scope=_scope_cols,
+                                count_distinct=_probe_distinct) is None:
+                            from aughor.sql.closed_loop import LoopResult
+                            loop = LoopResult(sql=cand.strip(), ok=True,
+                                              row_count=len(rows2) if isinstance(rows2, list) else -1,
+                                              rounds=loop.rounds + 1,
+                                              receipt={**loop.receipt, "grain_repaired": True})
+                            step("grain_repaired", rows=loop.row_count)
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "grain-of-intent check is best-effort; result ships as-is",
+                         counter="spider2.grain_intent")
 
         final_sql = loop.sql.strip().rstrip(";")
         (outdir / "sql").mkdir(parents=True, exist_ok=True)
