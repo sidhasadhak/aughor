@@ -304,6 +304,8 @@ Each session, before working:
 
 ## Progress log
 
+*Next-phase design spec (2026-07-06): [`SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md) — the SOMA-SQL deep read + B1–B3 (probe-and-repair, self-ICL, escalation ladder) + the seven improvisations (headline: the Ambiguity Ledger — resolutions crystallize into the substrate so ambiguity burns down per connection instead of recurring as an inference tax).*
+
 - *2026-07-06 — program written; no execution started. Snowflake access + glm-5.2 (Ollama Cloud) confirmed by user. Next: WS4.*
 - **2026-07-06 — build session (branch `2026-07-06-10x-program`, 12 commits). WS4, WS3, WS2 COMPLETE; WS1 code done (A/B pending); WS5-P0 harness + full run done, scored.**
   - **WS4 (4 commits):** api.gen.ts regen 12,929→16,128 + offline `scripts/dump_openapi.py` + CI `codegen` drift gate · the 4 bypass flags (`ada.premise_check`/`ada.causal_drill`/`ask.clarify`/`closed_loop`) registered in `FLAG_ENV` w/ `FLAG_DEFAULT` preserving ask-clarify default-ON · 47 silent swallows → `tolerate()`, `SILENT_SWALLOW_BASELINE` 263→214 · FEATURES.md drift fixed.
