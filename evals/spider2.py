@@ -148,13 +148,15 @@ def generate_sql(question: str, schema: str, document_section: str,
     return (answer.sql or "").strip()
 
 
-# Benchmark projection directive (WS5 fail-analysis, 2026-07-06): the fail-analysis
-# showed 4 of 8 wrong_shape misses were a gold-wanted intermediate/grouping column the
-# product's ANSWER_SHAPE rule TRIMMED (avg_runs_per_match, Grade, store_id, product_id).
-# The evaluator scores by column CONTAINMENT — a gold column must match some predicted
-# column; extras are free. So for the benchmark (NOT the product) we counter the trim:
-# keep every grouping key + intermediate the computation uses, and emit both forms of an
-# ambiguous metric. This is finding #2 (superset projection) — legal (one SQL, autonomous).
+# Benchmark projection directive (WS5 fail-analysis, 2026-07-06). MEASURED NET-NEGATIVE —
+# opt-in only (--bench-projection), NOT the default. The fail-analysis showed 4 of 8
+# wrong_shape misses were a gold-wanted intermediate/grouping column the product's
+# ANSWER_SHAPE rule TRIMMED, and a misses-only re-run recovered 12/63 — BUT the controlled
+# same-instance comparison (62 instances, projection on vs the original off) scored 31 vs 33:
+# net -2 (5 recovered, 7 regressed). The misses-only view could only SEE recoveries; on
+# previously-correct queries the directive restructures the grain and regresses ~as often,
+# and temp-0 cloud noise inflated the apparent win. Kept as an ablation lever + a recorded
+# negative result — the June meta-pattern (machinery perturbs correct queries) reproduced.
 _BENCH_PROJECTION = (
     "\nOUTPUT COLUMNS (benchmark scoring is by column CONTAINMENT — the expected columns "
     "must each appear among yours; EXTRA columns never hurt, a MISSING one fails the row):\n"
@@ -169,7 +171,7 @@ _BENCH_PROJECTION = (
 
 
 def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = True,
-                 bench_projection: bool = True) -> dict:
+                 bench_projection: bool = False) -> dict:
     from aughor.connectors.file.sqlite import SQLiteConnection
     from aughor.sql.closed_loop import execute_with_repair, rows_to_csv
     from aughor.sql.safety import preflight_repair
@@ -269,8 +271,9 @@ def main() -> int:
     ap.add_argument("--outdir", default="evals/spider2_out")
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--no-ek", action="store_true", help="ablation: skip external-knowledge docs")
-    ap.add_argument("--no-bench-projection", action="store_true",
-                    help="ablation: skip the containment-aware projection directive (superset columns)")
+    ap.add_argument("--bench-projection", action="store_true",
+                    help="ablation (measured NET-NEGATIVE, off by default): containment-aware "
+                         "projection directive — keep intermediates/grouping keys, superset columns")
     ap.add_argument("--score", action="store_true", help="run the official evaluator over outdir")
     args = ap.parse_args()
 
@@ -288,14 +291,15 @@ def main() -> int:
     from aughor.llm.provider import get_provider
     p = get_provider("coder")
     print(f"[spider2] {len(records)} instances | model={p._model} backend={p.backend} "
-          f"temp={args.temperature} ek={'off' if args.no_ek else 'on'} out={outdir}")
+          f"temp={args.temperature} ek={'off' if args.no_ek else 'on'} "
+          f"proj={'on' if args.bench_projection else 'off'} out={outdir}")
 
     results = []
     for i, rec in enumerate(records, 1):
         print(f"  [{i}/{len(records)}] {rec['instance_id']} ...", flush=True)
         try:
             r = run_instance(rec, outdir, args.temperature, use_ek=not args.no_ek,
-                             bench_projection=not args.no_bench_projection)
+                             bench_projection=args.bench_projection)
         except Exception as e:
             r = {"id": rec["instance_id"], "ok": False, "error": str(e)[:200]}
         print(f"      -> ok={r.get('ok')} rounds={r.get('rounds')} rows={r.get('rows')} "

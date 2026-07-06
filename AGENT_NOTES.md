@@ -19,6 +19,11 @@ User-confirmed 2026-07-06: glm-5.2 via Ollama Cloud is THE campaign model; Snowf
 - Confirmed real drift: `web/lib/api.gen.ts` (12,929 lines) missing /rbac /jobs /packs /verify route families, gen:api not CI-wired; FEATURES.md §13 still claims a "Spider 2.0 NL2SQL harness" that was deliberately removed in the 2026-06-29 consolidation (don't rebuild it — fix the doc).
 - Eval assets that DO exist and run: evals/golden_sql_expanded.jsonl (53 pairs), run_golden.py (reference mode = hermetic replay, no LLM; raw/full = live), ratchet.py, ambiguity_eval.py (pure).
 
+## Spider2 measurement lessons (2026-07-06 Phase-0)
+- **NEVER measure a lever on the failing subset alone.** The projection lever looked like +12/63 on a misses-only re-run, but a controlled same-instance on/off comparison (62 instances) was 33→31 = **net −2** (5 recovered, 7 regressed). A misses-only run is structurally blind to regressions on previously-correct queries. Always compare the SAME instances on vs off.
+- temp-0 on glm/qwen cloud is nondeterministic — a ±2 delta at n≈62 is within noise. Don't believe a sub-single-digit lever without a controlled + repeated run. (Reproduces June's "machinery perturbs correct queries" meta-pattern — even a prompt directive does it.)
+- **Ollama Cloud throttles hard under sustained load:** after 3 back-to-back 60–135-instance runs it crawled to ~5 instances/hour and stalled the full re-run at 62/135. Budget for it — iterate on the hard subset, full runs sparingly, or get a dedicated endpoint before Phase-1/2 (dozens of calls/question).
+
 ## Spider2 campaign facts (2026-07-06 study)
 - Local benchmark clone `/Users/amitkamlapure/dev/Spider2` is STALE (last commit 2026-01-30) — `git pull` before any campaign work (gold refreshes landed through 2025-08; auth docs changed).
 - Snowflake access = Google form (12h turnaround) + MFA + PAT; the "dead credential" was a template, never a secret. BigQuery = own GCP project (`bigquery-public-data` covers ~70% of BQ instances).

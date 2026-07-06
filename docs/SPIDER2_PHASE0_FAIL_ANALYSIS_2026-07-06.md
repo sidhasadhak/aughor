@@ -47,23 +47,43 @@ now closed) helps at most 7 on this slice (larger on the cloud tracks).
 - **empty_result (6)** — wrong filter literal; filter-literal binding (shipped) + closed-loop empty
   recovery are the levers; small bucket.
 
-## First lever measured — containment-aware projection (finding #2)
+## First lever measured — containment-aware projection (finding #2): NET-NEGATIVE, discarded
 
-Added `_BENCH_PROJECTION` to `evals/spider2.py` (flag `--no-bench-projection` ablates): counters
-the product ANSWER_SHAPE trim for the benchmark — keep grouping keys + intermediates, emit both
-forms of an ambiguous metric, because extra columns are free under containment.
+Added `_BENCH_PROJECTION` to `evals/spider2.py` (opt-in `--bench-projection`, default OFF): counters
+the product ANSWER_SHAPE trim — keep grouping keys + intermediates, emit both forms of an ambiguous
+metric, because extra columns are free under containment.
 
-**Measured on the 63 hard misses (re-run, projection on): 12 recovered (19% of misses).** The
-flipped ids: local019, 023, 032, 077, 078, 130, 131, 157, 163, 171, 298, 358 — a mix of the
-missing-column wrong_shape cases AND several wrong_values where the extra intermediate column gave
-the scorer a gold-matching vector. A full-135 re-run (projection on) measures the NET lift after any
-grain-change regressions among the 72 previously-correct — recorded in the progress log when it lands.
+**The honest measurement arc (a lesson in controlled evaluation):**
+- Misses-only re-run (63 misses, projection on): **12 recovered** — looked like a clear +12 win.
+- **Controlled same-instance comparison** (the 62 instances of a full re-run that completed before
+  the throttled endpoint stalled, projection-on vs the original projection-off): **31 correct vs 33
+  — NET −2** (5 recovered: local008/017/032/077/298; **7 regressed: local002/009/030/050/063/096/198**).
+
+The +12 was a **measurement artifact**: a misses-only re-run can only *observe* recoveries — it is
+structurally blind to the regressions the directive causes on previously-correct queries (it
+restructures their grain), and temp-0 cloud nondeterminism inflated the apparent gain. The
+controlled view shows the recoveries are offset by regressions — within the range temp-0 noise
+alone could explain. **This reproduces the June meta-pattern precisely: added machinery (even a
+prompt directive) perturbs already-correct queries about as often as it fixes wrong ones on a
+strong model.** The lever is kept only as an ablation switch + this recorded negative result.
+
+*Measurement lesson (→ AGENT_NOTES): never measure a lever on the failing subset alone — it cannot
+see regressions. Always compare the SAME instances on/off, and separate the effect from temp-0
+cloud noise before believing a sub-single-digit delta.*
 
 ## Takeaways for the campaign
 
-1. The cheap prompt/harness levers (projection, ANSWER_SHAPE) have a hard ceiling ~+8–12 points —
-   they clear the wrong_shape bucket and the projection-recoverable wrong_values, and no more.
-2. The **53%→top-tier gap is the wrong_values bucket**, which is ambiguity + grain-of-intent — the
-   exact thing the substrate (Phase 1) + SOMA-style probing (Phase 2) target. That is where the
-   campaign's real budget must go; it is NOT more prompt engineering.
-3. This reproduces the June conclusion on fresh data with a different model — and quantifies it.
+1. **The cheap prompt/harness levers do NOT move the net score.** The one tested (projection) was
+   net −2 under controlled measurement. ANSWER_SHAPE stays (June proved it; it's product-good) but a
+   *more* aggressive projection directive regresses as much as it recovers. Prompt engineering is
+   exhausted on this model — the June conclusion, re-confirmed and quantified on fresh data.
+2. The **53%→top-tier gap is the wrong_values bucket** (grain-of-intent ambiguity), which needs
+   EXECUTION-GROUNDED work, not prompting: the substrate (Phase 1 — resolve the metric/grain/value
+   domain from the DB) + SOMA-style disagreement probing (Phase 2 — generate candidate readings,
+   execute them, resolve only where they diverge). That is the only lever the evidence supports, and
+   where the campaign budget must go.
+3. **Operational blocker surfaced:** the Ollama Cloud endpoint throttles hard under sustained load —
+   after three back-to-back 60–135-instance runs it crawled to ~5 instances/hour, stalling the full
+   controlled re-run at 62/135. A campaign at Phase-1/2 budgets (dozens of calls/question) needs
+   either a faster/dedicated endpoint or the confidence-tiered triggering (probe only the hard cases)
+   the study already flagged. Iterate on the hard subset; full runs sparingly.
