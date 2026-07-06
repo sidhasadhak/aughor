@@ -149,6 +149,39 @@ economics; agreement on easy questions suggests a confidence-tiered K later). Fu
 confirmation run launched — the extrapolation (~1/3 of misses recoverable ⇒ ~60%+) is NOT to
 be trusted until that controlled number lands.
 
+## Full-135 candidates run — the subset win did NOT extrapolate (and what that teaches)
+
+Controlled full-set run (`--candidates 4`, 134/135 completed — local356 stalled on the
+endpoint): **71/134 = 53.0% vs the 53.3% single-shot original. Per-instance: 9 recovered,
+10 regressed — net −1.** The +3/0 subset result was real on those instances (local017
+recovered in BOTH candidate runs) but the 12-sentinel subset was statistically underpowered
+to see a ~16% churn rate among the other 62 previously-correct instances.
+
+**The deeper finding — the measurement noise floor.** Comparing ANY two runs on this
+endpoint/model (temp-0, cloud-nondeterministic) churns roughly ±7–10 instances of 135 —
+we've now observed it three times (projection: 5/7, candidates: 9/10, and pure-rerun
+components inside both). Consequences, stated bluntly:
+1. **Any lever worth < ~10 instances (+7 pts) cannot be proven by single controlled runs**
+   on this setup. This retroactively weakens every sub-10-instance claim this week —
+   including the A-fixes' +1 and the candidates' subset +3 (directionally suggestive; not
+   proven). The June reliability-banding protocol (repeated runs, McNemar) is the only
+   honest instrument at this effect size, and at ~5h/full-run it is barely affordable here.
+2. **Selection-only diversity ≈ the paper's judge-only stage** (+5 on THEIR model, with
+   probing worth +14.9 more). Plurality among four strategies is a popularity contest among
+   the same model's biases; when strategies disagree, the plurality sometimes outvotes a
+   correct direct answer — that is where several regressions came from.
+3. **What survives the noise argument:** (a) deterministic, monotonic-by-construction
+   mechanisms (guards; evidence-gated repair that only edits with executable proof — B1's
+   design constraint exists precisely for this); (b) mechanisms that change the DISTRIBUTION
+   rather than a few instances (a stronger model; the substrate); (c) the Ambiguity-Ledger
+   direction, whose value is amortization and auditability, not single-run EX deltas.
+
+**Decision recorded:** `--candidates` stays opt-in (like the other unproven levers). The
+fourth confirmation of the June meta-pattern — machinery perturbs a strong model's correct
+answers about as often as it fixes wrong ones — now spans prompt rules, schema enrichment,
+AND engineered-diversity selection. Only probing-with-evidence-gates (B1) remains untested
+from the SOMA stack, and it is the one component whose design is monotonic by construction.
+
 ## Takeaways for the campaign
 
 1. **The cheap prompt/harness levers do NOT move the net score.** The one tested (projection) was
