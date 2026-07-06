@@ -451,38 +451,40 @@ Verified pending against code/git. `⬜` not started · `◑` partial.
 *Order: WS4 → WS3 → WS5-P0 (gated) → WS1 ∥ WS5-P1–3 → WS2. Baseline to beat is the doc's §0
 (2,508 tests/97s · ruff 0 · deep path ~8.4 min · Lite-local 56.30% w/ glm-5.2). Constraints: additive
 API only · suite green every commit · no new runtime deps · flag-gated default-off · ratchets only down.*
-- ⬜ **WS4 — hygiene batch (first):** regen `api.gen.ts` + CI codegen-drift gate; move
-  `AUGHOR_CAUSAL_DRILL`/`AUGHOR_PREMISE_CHECK`/`AUGHOR_ASK_CLARIFY`/`AUGHOR_CLOSED_LOOP` into
-  `FLAG_ENV` (ledger override + Settings UI); convert the ~28 bare `except: pass` in
-  `routers/investigations.py` + `agent/investigate.py` to `tolerate()` and LOWER the swallow
-  baseline; fix FEATURES.md §13's removed-harness claim.
-- ⬜ **WS3 — accuracy measurement:** hermetic golden reference-replay + ambiguity eval into CI;
-  live full-pipeline ratchet baseline (glm-5.2) + documented pre-merge `ratchet.py check`
-  protocol; guard fire/success counters (grain fired on 20.7% of real predictions in June —
-  make that visible).
-- ⬜ **WS5 — Spider 2.0 top-3 campaign** (target: Lite top-3 ≥~72; Snow ≥90 stretch; glm-5.2 via
-  Ollama Cloud; **Snowflake access ready — the June "dead credential" was a template + the
-  2025-11 MFA/PAT policy change, not a real blocker**). Phase 0 (gated): pull the stale Spider2
-  clone (last 2026-01-30) · rebuild the harness through the RECEIPT path (traces are a submission
-  requirement) · live CSV-contract check on 5–10 gold · request the Secure Data Share (kills the
-  shared-warehouse queue; **draft email for approval — never send unaided**) · the 50-hard-subset
-  grounding-lift A/B that decides scale. Phases 1–3: substrate-on-benchmark (explorer/profiler/
-  ontology over the bench DBs + finally READ the per-instance external-knowledge docs) → budgeted
-  loop (guards on every candidate · ANSWER_SHAPE + `condition_cols` + superset-projection ·
-  SOMA-style disagreement probing tiered on `agent/complexity.py`) → climb + drafted submission.
-  Key evidence: SOMA probing +9.0 over majority vote and **+30.6 EX where zero candidates were
-  right** (execution-grounded machinery lifts past the sampling ceiling — the June conclusion
-  covered ungrounded machinery only); eval is column-CONTAINMENT (extra columns free); ~66% of
-  Snow open-gold has annotation errors (ceiling ~75–85 Lite — don't tune to wrong gold).
-- ⬜ **WS1 — fast deep path:** wave-parallelize the ADA phase flow (`ada.parallel_phases`,
-  in-process executor NOT `Send`) + P-B parallel pre-flight + metric-block/ontology caching +
-  per-role LLM concurrency cap (default 4 queues the lenses). Acceptance: live A/B ≥2×
-  (~8.4 → ≤4 min) at equal finding quality.
-- ⬜ **WS2 — one SQL executor (last, on WS3's regression net):** unify
-  `investigate._execute_safe` / `explore._execute_one_subq` / `nodes.execute_planned_queries`
-  behind one guard-battery/repair runner (home: the AL-01 `trust` façade) + a guard-parity
-  conformance test; port grain-prevention + honesty caveats to the quick path; seed the
-  QUVI-style verified-identifiers-only discipline in the runner design.
+- ✅ **WS4 — hygiene batch — SHIPPED (branch `2026-07-06-10x-program`, 4 commits).** api.gen.ts
+  regen 12,929→16,128 + offline `scripts/dump_openapi.py` + a blocking CI `codegen` drift gate;
+  the 4 bypass flags registered in `FLAG_ENV` (`ada.premise_check`/`ada.causal_drill`/`ask.clarify`/
+  `closed_loop`) with a `FLAG_DEFAULT` map preserving ask-clarify default-ON byte-for-byte; 47 silent
+  swallows in the 2 hot files → `tolerate()`, `SILENT_SWALLOW_BASELINE` 263→214; FEATURES.md §13 fixed.
+- ✅ **WS3 — accuracy measurement — SHIPPED (2 commits + pinned baseline).** Hermetic
+  `tests/integration/test_golden_reference.py` gate (53/53) — surfaced + fixed real scorer bugs
+  (empty-result / unordered-row false docks) and 6 tie-nondeterministic golden records (one scored
+  0.653 vs its OWN sql); guard fire/repair counters (`aughor.stats.bump`); **live ratchet baseline
+  pinned mean 0.6551 / exec 1.00 / 420.6k tok** (model `qwen3-coder-next:cloud`); protocol in
+  `evals/README.md`.
+- ◑ **WS5 — Spider 2.0 top-3 campaign — P0 harness done (deferred by the user: "spider later").**
+  ✅ `evals/spider2.py` rebuilt through the product pipeline (guards + closed-loop + external-knowledge
+  docs + timestamped submission traces); the full 135 local SQLite ran **135/135 exec-success, official
+  evaluate.py 72/135 = 53.3%** (product prompt on `qwen3-coder-next`; June ref 56.3% w/ glm-5.2 +
+  ANSWER_SHAPE). Data-Share request DRAFTED (`docs/spider2-data-share-request-DRAFT.md`), **not sent**.
+  Remaining (Snowflake access ready — the June "dead credential" was a template + the 2025-11 MFA/PAT
+  policy change): the grounding-lift A/B that decides scale · substrate-on-benchmark · the budgeted
+  loop (ANSWER_SHAPE + `condition_cols` + superset-projection · SOMA-style disagreement probing on
+  `agent/complexity.py`) → climb + drafted submission. Key evidence: SOMA probing +9.0 over majority
+  vote, **+30.6 EX where zero candidates were right**; eval is column-CONTAINMENT (extra columns free);
+  ~66% of Snow open-gold has annotation errors (ceiling ~75–85 Lite).
+- ◑ **WS1 — fast deep path — code SHIPPED, live A/B pending.** ✅ `ada.parallel_phases` wave
+  (`aughor/agent/phase_waves.py`): baseline∥decompose∥dimensional concurrent (in-process executor NOT
+  `Send`), serial tier-router early-stop semantics applied post-hoc, behavioral stays serial (hard
+  dep); 6 tests. Profiling **refuted** the metric-block/ontology caches (15ms/5ms warm — not built).
+  Remaining: the live wall-clock A/B (≥2×); per-role LLM concurrency cap; P-B parallel deep pre-flight.
+- ✅ **WS2 — one SQL executor — SHIPPED (3 commits), with a scope judgement.** The three paths'
+  POST-execute repair loops are legitimately divergent (ADA id-arith+trust · explore R3+KB+triangulation ·
+  quick B-7+consistency) — force-merging would degrade them. What was genuinely duplicated AND
+  missing-in-parity is the PRE-execute deterministic hardening (de-fan → preflight-repair): extracted to
+  `aughor/sql/executor.py` (`execute_guarded` verbatim from ADA `_execute_safe` + shared `preflight_harden`),
+  wired into ALL THREE paths (explore + quick GAINED de-fan + preflight they never had), enforced by
+  `test_guard_parity_all_three_paths_share_the_hardening` + an import-boundary test. +16 tests.
 
 ### ▶ Report-quality wiring gaps — three deterministic fixes (next up; source: the GMV brand-tier case, 2026-07-05)
 *Diagnosed from a real "why did total GMV change across brand tiers?" report that led with a +€39.9M / +1,506% headline that its own trust advisory flagged as ungrounded. Root cause is NOT grounding maturity — the trust check fired correctly and the z-score normalization correctly debunked the artifact. These are three wiring gaps between subsystems that already compute the right signals but don't talk to each other. **Impact/dependency order: #1 (independent) → #3 → #2 (#2 depends on #3, else it amplifies #3's false positives).**
