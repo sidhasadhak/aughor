@@ -311,4 +311,19 @@ Each session, before working:
   - **WS2 (3 commits) — COMPLETE, with a scope judgement:** the three execute-with-guards paths were NOT force-unified — their POST-execute repair loops are legitimately divergent (ADA: id-arith + trust gate; explore: R3 + KB + triangulation + pitfalls; quick: B-7 + consistency + pitfalls), and merging them would degrade explore/quick. What WAS genuinely duplicated AND missing-in-parity is the PRE-execute deterministic hardening (de-fan → preflight-repair). Extracted to `aughor/sql/executor.py` (`execute_guarded` verbatim from ADA `_execute_safe` + the shared `preflight_harden`), wired into all three paths (explore + quick each GAINED de-fan + preflight they never had), enforced by `test_guard_parity_all_three_paths_share_the_hardening`. Import-boundary test keeps the runner below `aughor/agent`. +16 tests.
   - **WS1 — SHIPPED + live-measured (1.23×, honest):** `ada.parallel_phases` wave (`aughor/agent/phase_waves.py`) runs baseline∥decompose∥dimensional concurrently with serial early-stop semantics applied post-hoc; behavioral stays serial (hard dep). 6 tests. Profiling REFUTED the metric-block/ontology caches (15ms/5ms warm) — not built. **Live A/B (real /investigate, luxexperience, n=1 each, isolated stores): serial 373s → wave 304s = 1.23×; both 14 LLM calls, same phase set + MEDIUM confidence = equal quality.** Below the 2× aspiration — the 3 parallelized phases are only part of the 14 calls; intake + synthesis are serial-by-necessity and dominate. A real, quality-neutral win but modest end-to-end; phase-level parallelism is not the dominant lever here (intake-internal + multilens + synthesis are). n=1 (temp-0 cloud noise possible); mechanism unit-test-proven.
   - **WS5-P0 — harness + full run done (scoring, NOT submission):** `evals/spider2.py` (product prompt + guards + closed-loop + external-knowledge docs + timestamped traces). Full 135 local SQLite: **135/135 exec-success; official evaluate.py 72/135 = 53.3%** (June ref 56.3% w/ glm-5.2 + ANSWER_SHAPE; this run = product prompt on qwen3-coder-next). Data-Share request DRAFTED (`docs/spider2-data-share-request-DRAFT.md`), NOT sent.
-  - Suite 2588 green throughout; ruff 0; ratchets only-down. **Next: WS1 live A/B; then WS5 Phase-0 grounding-lift A/B + fail-analysis of the 63 misses.**
+  - Suite 2588 green throughout; ruff 0; ratchets only-down.
+- **2026-07-06 (cont.) — PR #111 opened (WS4/WS3/WS2/WS1); WS5 Phase-0 CLOSED with a negative result.**
+  - PR [#111](https://github.com/sidhasadhak/aughor/pull/111) opened on the branch (the 4 improvement WS).
+  - **WS5 Phase-0 (fail-analysis + first lever) — done, see `docs/SPIDER2_PHASE0_FAIL_ANALYSIS_2026-07-06.md`.**
+    Offline fail-analysis of the 72/135 run: misses = wrong_values 49 (78%) / wrong_shape 8 / empty 6 /
+    0 exec-errors; only 7 misses carry an EK doc. The one cheap lever tried (containment-aware
+    projection, finding #2) LOOKED like +12/63 on a misses-only re-run but was **net −2 under a
+    controlled same-instance comparison** (62 completed, 33→31; 5 recovered / 7 regressed) — a
+    measurement artifact + temp-0 noise; flipped to opt-in, recorded as a negative result. **Conclusion:
+    prompt/harness levers are exhausted on this model (the June meta-pattern, re-confirmed); the
+    53%→top-tier gap is the wrong_values grain-of-intent bucket, addressable ONLY by the substrate
+    (Phase 1) + SOMA-style execution-grounded probing (Phase 2) — the larger builds.** Operational
+    blocker surfaced: Ollama Cloud throttles to ~5 inst/hr under sustained load (stalled the full
+    controlled re-run at 62/135) — Phase 1/2 need a faster/dedicated endpoint or confidence-tiered
+    probing. **Next (decision point): Phase 1 substrate-on-benchmark is a real build + budget commit —
+    await user go; the cheap wins are done.**
