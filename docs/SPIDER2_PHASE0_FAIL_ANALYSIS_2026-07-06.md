@@ -71,6 +71,37 @@ strong model.** The lever is kept only as an ablation switch + this recorded neg
 see regressions. Always compare the SAME instances on/off, and separate the effect from temp-0
 cloud noise before believing a sub-single-digit delta.*
 
+## Per-question loop (throttled-endpoint mode) — root-cause taxonomy of the 63 misses
+
+Tooling: `evals/spider2_diag.py` (`show <id>` full offline diagnostic + official per-question
+score · `run <id>` re-run one instance + score · `triage` compact root-cause hint for all misses).
+Compact triage of the 63 misses:
+
+| Root cause | Count | Nature |
+|---|---|---|
+| **VALUES** (logic / column-choice / computation) | 36 (57%) | same shape, wrong numbers — genuine SQL reasoning |
+| **ROWCOUNT** (grain) | 11 (17%) | aggregation level / "for each X" misread |
+| **MISSING-COL** | 10 (16%) | gold keeps an intermediate/grouping column (the net-negative projection target) |
+| **EMPTY** (filter / join / date-column) | 6 (10%) | wrong filter literal or wrong date column (`db_year` vs `collision_date`) |
+
+## Column-semantics lever — built, tested per-question, NOT a clean win
+
+Hypothesis from inspection: many VALUES/EMPTY misses are COLUMN-CHOICE errors (the model picks the
+wrong column because it sees only DDL + 3 sample rows). Built `column_semantics_section`
+(`evals/spider2.py`, opt-in `--col-semantics`): enumerates distinct values for low-cardinality text
+columns + tags date columns — Aughor's data-portrait signal, harness-side, general (no per-question
+tuning). Tested per-question:
+- **local017** (empty, cause-category + date): still failed — a multi-factor hard case (complex
+  top-2-per-year logic + wrong output shape), not a clean column-choice isolate.
+- **local015** (value-label): still failed — but the gold ships **5 accepted label conventions**
+  (`helmet_worn` / `helmet` / `Helmet Used` / …) and our answer is numerically correct (16.67% / 0%);
+  the label formatting matched none. A benchmark *annotation* limitation the lever can't fix.
+
+Neither flipped. The lever is kept opt-in + unproven (needs a controlled full-set A/B — not
+affordable on the throttled endpoint). The per-question loop reconfirmed, case by case, that the
+misses are genuine reasoning / grain-of-intent ambiguity / annotation issues — NOT mechanically
+fixable by prompt/schema enrichment.
+
 ## Takeaways for the campaign
 
 1. **The cheap prompt/harness levers do NOT move the net score.** The one tested (projection) was

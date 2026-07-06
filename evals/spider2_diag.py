@@ -125,17 +125,62 @@ def show(iid: str, sql_dir: Path = OUT / "sql") -> None:
     print(f"\nVERDICT: {'✅ PASS' if verdict else '❌ FAIL' if verdict is False else '? (unknown)'}")
 
 
-def run(iid: str, bench_projection: bool = False) -> None:
+def run(iid: str, bench_projection: bool = False, col_semantics: bool = False) -> None:
     rec = _record(iid)
     if not rec:
         print(f"no such local instance: {iid}")
         return
     run_dir = Path(tempfile.mkdtemp(prefix=f"diagrun-{iid}-"))
     print(f"running {iid} (bench_projection={bench_projection}) …")
-    r = run_instance(rec, run_dir, temperature=0.0, use_ek=True, bench_projection=bench_projection)
+    r = run_instance(rec, run_dir, temperature=0.0, use_ek=True,
+                     bench_projection=bench_projection, col_semantics=col_semantics)
     print(f"  exec_ok={r.get('ok')} rounds={r.get('rounds')} rows={r.get('rows')}")
     # copy the fresh SQL/CSV into a view and score
     show(iid, sql_dir=run_dir / "sql")
+
+
+def _cols(path: Path):
+    if not path.exists():
+        return []
+    import csv
+    with path.open() as fh:
+        r = next(csv.reader(fh), [])
+    return [c.strip().lower() for c in r]
+
+
+def _rowcount(path: Path) -> int:
+    if not path.exists():
+        return -1
+    return max(0, sum(1 for _ in path.open()) - 1)
+
+
+def triage() -> None:
+    """Compact offline root-cause hint for every miss (no scoring subprocess)."""
+    fa = OUT / "fail_analysis.json"
+    misses = json.loads(fa.read_text())["misses"]
+    for m in misses:
+        iid = m["id"]
+        our = OUT / "exec_result" / f"{iid}.csv"
+        golds = _gold_variants(iid)
+        oc, orc = _cols(our), _rowcount(our)
+        # best gold variant = the one whose columns we best contain
+        best_gc, best_grc = (_cols(golds[0]) if golds else []), (_rowcount(golds[0]) if golds else -1)
+        our_sql = (OUT / "sql" / f"{iid}.sql").read_text().lower() if (OUT / "sql" / f"{iid}.sql").exists() else ""
+        # heuristic root-cause
+        if orc == 0 and best_grc > 0:
+            tag = "EMPTY→filter/join/date"
+        elif len(oc) < len(best_gc):
+            tag = f"MISSING-COL ({len(oc)}<{len(best_gc)})"
+        elif orc != best_grc and best_grc >= 0:
+            tag = f"ROWCOUNT {orc}≠{best_grc} → grain"
+        else:
+            tag = "VALUES (logic/column)"
+        # cheap column-choice signal: does our SQL name a plausibly-wrong year/date col?
+        flags = []
+        if "db_year" in our_sql and "date" not in our_sql.split("db_year")[0][-40:]:
+            flags.append("db_year?")
+        print(f"  {iid:10} {m['cat']:12} {tag:26} {'EK' if m['ek'] else '  '} "
+              f"{' '.join(flags):10} {m['q'][:52]}")
 
 
 def main() -> int:
@@ -143,6 +188,9 @@ def main() -> int:
         print(__doc__)
         return 1
     cmd = sys.argv[1]
+    if cmd == "triage":
+        triage()
+        return 0
     if cmd == "list":
         fa = OUT / "fail_analysis.json"
         if fa.exists():
@@ -154,7 +202,8 @@ def main() -> int:
         if cmd == "show":
             show(iid)
         else:
-            run(iid, bench_projection="--bench-projection" in sys.argv)
+            run(iid, bench_projection="--bench-projection" in sys.argv,
+                col_semantics="--col-semantics" in sys.argv)
         return 0
     print(__doc__)
     return 1

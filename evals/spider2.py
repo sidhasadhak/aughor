@@ -98,6 +98,57 @@ def build_schema_context(conn) -> str:
     return "\n".join(parts)[: MAX_SCHEMA_CHARS + 2_000]
 
 
+def column_semantics_section(conn, max_tables: int = 40, max_distinct: int = 24) -> str:
+    """Distinct-value enumeration for low-cardinality TEXT columns + explicit date-column tags.
+
+    The fail-analysis showed a recurring COLUMN-CHOICE failure: the model picks
+    `primary_collision_factor` over `pcf_violation_category` for "cause", or the
+    administrative `db_year` over the real `collision_date`, because it sees only DDL +
+    3 sample rows — not which column actually holds the domain values. This surfaces, per
+    low-cardinality text column, its full value set (so "cause categories" is identifiable),
+    and tags DATE/TIME columns explicitly. This is Aughor's data-portrait signal, harness-side.
+    General (no per-question tuning); bounded so it can't blow the prompt.
+    """
+    lines = ["\nCOLUMN SEMANTICS (categorical value sets + date columns — pick the column whose "
+             "VALUES match the question's entities):"]
+    try:
+        _c, rows, _t = conn.raw_execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        tables = [r[0] for r in rows]
+    except Exception:
+        return ""
+    emitted = 0
+    for t in tables[:max_tables]:
+        try:
+            cols, _r, _ty = conn.raw_execute(f'SELECT * FROM "{t}" LIMIT 1')
+            info_cols, info_rows, _ = conn.raw_execute(f'PRAGMA table_info("{t}")')
+            types = {r[1]: (r[2] or "").upper() for r in info_rows}
+        except Exception:
+            continue
+        for c in cols:
+            typ = types.get(c, "")
+            try:
+                if any(k in typ for k in ("DATE", "TIME")) or c.lower().endswith(("_date", "_at")):
+                    lines.append(f"-- {t}.{c}: DATE/TIME column (use for time filters/grain)")
+                    emitted += 1
+                    continue
+                if typ and not any(k in typ for k in ("CHAR", "TEXT", "CLOB", "")):
+                    continue  # numeric — skip value enumeration
+                dc, dr, _ = conn.raw_execute(f'SELECT COUNT(DISTINCT "{c}") FROM "{t}"')
+                nd = dr[0][0] if dr else 0
+                if nd and 1 < nd <= max_distinct:
+                    vc, vr, _ = conn.raw_execute(
+                        f'SELECT DISTINCT "{c}" FROM "{t}" WHERE "{c}" IS NOT NULL LIMIT {max_distinct}')
+                    vals = ", ".join(repr(r[0])[:30] for r in vr)
+                    lines.append(f"-- {t}.{c} ∈ {{{vals[:280]}}}")
+                    emitted += 1
+            except Exception:
+                continue
+        if sum(len(x) for x in lines) > 6_000:
+            break
+    return "\n".join(lines) + "\n" if emitted else ""
+
+
 def external_knowledge_section(record: dict) -> str:
     name = record.get("external_knowledge")
     if not name:
@@ -171,7 +222,7 @@ _BENCH_PROJECTION = (
 
 
 def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = True,
-                 bench_projection: bool = False) -> dict:
+                 bench_projection: bool = False, col_semantics: bool = False) -> dict:
     from aughor.connectors.file.sqlite import SQLiteConnection
     from aughor.sql.closed_loop import execute_with_repair, rows_to_csv
     from aughor.sql.safety import preflight_repair
@@ -192,6 +243,11 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
     try:
         t0 = time.time()
         schema = build_schema_context(conn)
+        if col_semantics:
+            sem = column_semantics_section(conn)
+            if sem:
+                schema = schema + "\n" + sem
+                step("col_semantics", chars=len(sem))
         step("schema", chars=len(schema))
         ek = external_knowledge_section(record) if use_ek else ""
         if ek:
@@ -274,6 +330,8 @@ def main() -> int:
     ap.add_argument("--bench-projection", action="store_true",
                     help="ablation (measured NET-NEGATIVE, off by default): containment-aware "
                          "projection directive — keep intermediates/grouping keys, superset columns")
+    ap.add_argument("--col-semantics", action="store_true",
+                    help="enrich schema with categorical value sets + date-column tags (column-choice lever)")
     ap.add_argument("--score", action="store_true", help="run the official evaluator over outdir")
     args = ap.parse_args()
 
@@ -292,14 +350,15 @@ def main() -> int:
     p = get_provider("coder")
     print(f"[spider2] {len(records)} instances | model={p._model} backend={p.backend} "
           f"temp={args.temperature} ek={'off' if args.no_ek else 'on'} "
-          f"proj={'on' if args.bench_projection else 'off'} out={outdir}")
+          f"proj={'on' if args.bench_projection else 'off'} "
+          f"colsem={'on' if args.col_semantics else 'off'} out={outdir}")
 
     results = []
     for i, rec in enumerate(records, 1):
         print(f"  [{i}/{len(records)}] {rec['instance_id']} ...", flush=True)
         try:
             r = run_instance(rec, outdir, args.temperature, use_ek=not args.no_ek,
-                             bench_projection=args.bench_projection)
+                             bench_projection=args.bench_projection, col_semantics=args.col_semantics)
         except Exception as e:
             r = {"id": rec["instance_id"], "ok": False, "error": str(e)[:200]}
         print(f"      -> ok={r.get('ok')} rounds={r.get('rounds')} rows={r.get('rows')} "
