@@ -243,9 +243,123 @@ _BENCH_PROJECTION = (
 )
 
 
+def run_probe_repair(conn, question: str, seed_sql: str, alt_sqls: list[str],
+                     schema: str, exec_fn) -> tuple[str, dict]:
+    """B1 — the probe-and-repair back half of SOMA-lite. Reached ONLY on candidate
+    disagreement (the caller gates on n_signatures > 1). Deterministic AST-diff disagreement
+    extraction (I2) → deterministic-first probes over the value/grain guards Aughor already
+    owns (I3) → evidence-gated minimal repair with the never-go-backwards acceptance gates
+    (I7). Returns (sql, trace_info); sql is the seed unchanged unless a repair cleared all gates.
+    Design: docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md §2/B1."""
+    from aughor.sql.grain_intent import check_result_grain
+    from aughor.sql.join_guard import check_filter_value_domains
+    from aughor.sql.tables import extract_tables
+    from evals.spider2_probes import ProbeResult, extract_disagreements, resolve, run_probes
+
+    others = [s for s in alt_sqls if s and s.strip() != seed_sql.strip()]
+    dims = extract_disagreements([seed_sql, *others])
+    if not dims:
+        return seed_sql, {"fired": False, "reason": "no parseable disagreement"}
+
+    def _grain_diag(sql: str):
+        """Execution-grounded grain diagnosis for one candidate (None ⇒ conforms)."""
+        try:
+            _c, rows, _t = conn.raw_execute(sql.strip().rstrip(";"))
+        except Exception:
+            return "ERR"
+        scope_cols: list = []
+        try:
+            for ref in extract_tables(sql, "sqlite"):
+                _c2, info, _ = conn.raw_execute(f'PRAGMA table_info("{ref.table}")')
+                scope_cols.extend(r[1] for r in info)
+        except Exception:
+            pass
+
+        def _probe_distinct(col: str):
+            try:
+                for ref in extract_tables(sql, "sqlite"):
+                    try:
+                        _c3, r, _ = conn.raw_execute(
+                            f'SELECT COUNT(DISTINCT "{col}") FROM "{ref.table}"')
+                        if r and r[0][0]:
+                            return int(r[0][0])
+                    except Exception:
+                        continue
+            except Exception:
+                return None
+            return None
+
+        return check_result_grain(question, len(rows), columns_in_scope=scope_cols,
+                                  count_distinct=_probe_distinct)
+
+    def _grain_probe(dim):
+        seed_bad = _grain_diag(seed_sql)
+        if seed_bad is None:
+            return None  # seed already conforms — nothing to resolve
+        for alt in others:
+            if _grain_diag(alt) is None:
+                return ProbeResult(dim, True, "grain probe: the seed's row count contradicts the "
+                                   "asked grain; an alternative reading matches it",
+                                   preferred_sql=alt, source="det:grain")
+        diag = seed_bad if isinstance(seed_bad, str) and seed_bad != "ERR" else \
+            "the result grain contradicts the question's declared grain"
+        return ProbeResult(dim, True, diag, hint=diag, source="det:grain")
+
+    def _value_probe(dim):
+        try:
+            w = check_filter_value_domains(conn, seed_sql)
+        except Exception:
+            w = []
+        if not w:
+            return None  # seed's filter literals all bind — nothing to resolve
+        for alt in others:
+            try:
+                if not check_filter_value_domains(conn, alt):
+                    return ProbeResult(dim, True, f"value probe: the seed filters on "
+                                       f"{w[0].bad_value!r} (matches no rows); an alternative "
+                                       f"reading uses a value present in the data",
+                                       preferred_sql=alt, source="det:value")
+            except Exception:
+                continue
+        hint = "; ".join(x.to_prompt_text() for x in w[:2])
+        return ProbeResult(dim, True, hint, hint=hint, source="det:value")
+
+    probe_results = run_probes(dims, det_probes={"grain": _grain_probe, "value": _value_probe})
+
+    def _repair(seed: str, instruction: str):
+        try:
+            from aughor.sql.writer import SqlWriter
+            fixed = SqlWriter(conn, schema_str=schema).fix(seed, instruction, max_retries=1)
+            return fixed.sql if fixed.ok and fixed.sql else None
+        except Exception:
+            return None
+
+    reprobe = {
+        "grain": lambda sql, dim: _grain_diag(sql) is None,
+        "value": lambda sql, dim: not _safe_filter_ok(conn, sql, check_filter_value_domains),
+    }
+    outcome = resolve(question, seed_sql, dims, probe_results, execute_fn=exec_fn,
+                      repair_fn=_repair, alternatives=others, reprobe=reprobe)
+    return (outcome.sql if outcome.accepted else seed_sql), {
+        "fired": outcome.accepted,
+        "dims": [f"{d.kind}/{d.facet}:{d.subject}" for d in dims],
+        "resolved": [f"{d.facet}:{d.subject}" for d in outcome.resolved_dims],
+        "source": outcome.source, "reason": outcome.reason[:120], "gates": outcome.gates,
+    }
+
+
+def _safe_filter_ok(conn, sql, check_filter_value_domains) -> bool:
+    """True if the guard found an unbound literal (i.e. NOT clear). Wrapped so a guard
+    exception fails the reprobe closed (unverifiable ⇒ don't adopt)."""
+    try:
+        return bool(check_filter_value_domains(conn, sql))
+    except Exception:
+        return True
+
+
 def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = True,
                  bench_projection: bool = False, col_semantics: bool = False,
-                 candidates: int = 1) -> dict:
+                 candidates: int = 1, probes: bool = False) -> dict:
     from aughor.connectors.file.sqlite import SQLiteConnection
     from aughor.sql.closed_loop import execute_with_repair, rows_to_csv
     from aughor.sql.safety import preflight_repair
@@ -306,6 +420,14 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
                  detail=[{"strategy": c.strategy, "ok": c.ok, "sig": c.signature,
                           "grain_ok": c.grain_ok, "err": c.error[:80]} for c in cr.candidates])
             sql = cr.chosen.sql if cr.chosen else ""
+            # B1 — probe-and-repair (the SOMA back half): only on disagreement (free signal).
+            if probes and cr.chosen and cr.n_signatures > 1:
+                alt_sqls = [c.sql for c in cr.candidates if c.ok and c.sql]
+                repaired, pinfo = run_probe_repair(
+                    conn, record["question"], sql, alt_sqls, schema, _exec_lite)
+                step("probe_repair", **pinfo)
+                if pinfo.get("fired"):
+                    sql = repaired
         else:
             sql = generate_sql(record["question"], schema, ek + engine_note, temperature)
         step("generated", sql=sql)
@@ -469,6 +591,10 @@ def main() -> int:
     ap.add_argument("--candidates", type=int, default=1,
                     help="strategy-diverse candidates per question (K generations + execution-"
                          "signature selection; default 1 = single-shot)")
+    ap.add_argument("--probes", action="store_true",
+                    help="B1 probe-and-repair back half: on candidate disagreement, run "
+                         "deterministic-first probes + evidence-gated minimal repair (needs "
+                         "--candidates > 1; no-op on agreement)")
     ap.add_argument("--score", action="store_true", help="run the official evaluator over outdir")
     args = ap.parse_args()
 
@@ -488,7 +614,8 @@ def main() -> int:
     print(f"[spider2] {len(records)} instances | model={p._model} backend={p.backend} "
           f"temp={args.temperature} ek={'off' if args.no_ek else 'on'} "
           f"proj={'on' if args.bench_projection else 'off'} "
-          f"colsem={'on' if args.col_semantics else 'off'} cand={max(1, args.candidates)} out={outdir}")
+          f"colsem={'on' if args.col_semantics else 'off'} cand={max(1, args.candidates)} "
+          f"probes={'on' if args.probes else 'off'} out={outdir}")
 
     results = []
     for i, rec in enumerate(records, 1):
@@ -496,7 +623,7 @@ def main() -> int:
         try:
             r = run_instance(rec, outdir, args.temperature, use_ek=not args.no_ek,
                              bench_projection=args.bench_projection, col_semantics=args.col_semantics,
-                             candidates=max(1, args.candidates))
+                             candidates=max(1, args.candidates), probes=args.probes)
         except Exception as e:
             r = {"id": rec["instance_id"], "ok": False, "error": str(e)[:200]}
         print(f"      -> ok={r.get('ok')} rounds={r.get('rounds')} rows={r.get('rows')} "
