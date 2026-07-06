@@ -14,23 +14,34 @@
 
 ## 0 · Immediate next action ⏭️
 
-**NEW (2026-07-06): the 10x + Spider 2.0 program — assessment DONE, execution next.** A full-repo
-assessment (baseline: 2,508 tests green in 97s · ruff 0 · deep path ~8.4 min) + a deep external
-study of the Spider 2.0 benchmark and its July-2026 winners produced one sequenced program of five
-workstreams — **WS4** hygiene (api.gen.ts regen + codegen CI gate · 4 bypass flags into FLAG_ENV ·
-bare-`pass`→`tolerate()` in the 2 hot files · docs drift) → **WS3** accuracy measurement (hermetic
-golden replay + ambiguity eval into CI · live ratchet baseline · guard fire/success counters) →
-**WS5 Phase 0** Spider2 campaign unblock (harness rebuild · live CSV-contract check · the gated
-glm-5.2 grounding-lift A/B; Snowflake access CONFIRMED ready, creds were never the real blocker —
-form + MFA/PAT) → **WS1** fast deep path (wave-parallelize the ADA phases + P-B + caching; target
-≥2×) ∥ **WS5 Phases 1–3** (substrate-on-benchmark · budgeted loop w/ SOMA-style disagreement
-probing · climb to Lite top-3 ≥~72, Snow ≥90 stretch) → **WS2** one SQL executor (unify the 3
-duplicated execute-with-guards paths + guard-parity test). Full spec, evidence, per-file anchors,
-benchmark runbook + the six new findings (containment eval → superset projection; probing lifts
-past the sampling ceiling; verified-identifiers-only; Secure Data Share self-hosting; receipts ==
-submission traces; DivSkill skills ≈ our dormant skills subsystem):
-[`docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md).
-**Never submit to the leaderboard without explicit user permission.**
+**⏭️ NEXT SESSION — start here: the 10x + Spider 2.0 program (branch `2026-07-06-10x-program`, PR
+[#111](https://github.com/sidhasadhak/aughor/pull/111)).** Full handoff + decisions:
+[`docs/SESSION_HANDOFF_2026-07-06.md`](docs/SESSION_HANDOFF_2026-07-06.md). Spec:
+[`docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md); the next
+accuracy phase's design (probe-and-repair + the Ambiguity Ledger) is
+[`docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md).
+
+**SHIPPED this session (all on the branch, suite 2606 green · ruff 0 · tsc + 3 web gates green):**
+- **WS4 hygiene** ✅ (api.gen.ts regen 12,929→16,128 + offline `dump_openapi.py` + CI codegen gate ·
+  4 bypass flags into FLAG_ENV · 47 swallows→`tolerate()`, baseline 263→214 · FEATURES.md drift).
+- **WS3 accuracy measurement** ✅ (hermetic golden-replay CI gate 53/53 — fixed 9 tie-nondeterministic
+  records + 2 scorer bugs · guard fire/repair counters · live ratchet baseline 0.6551 on glm-5.2).
+- **WS2 one SQL executor** ✅ (shared pre-execute hardening across all 3 answer paths + guard-parity
+  test; the post-execute repair loops left divergent by design — see spec §WS2).
+- **WS1 fast deep path** ◑ (`ada.parallel_phases` wave shipped + 6 tests; **live A/B measured 1.23×,
+  NOT 2×** — intake+synthesis dominate; recorded honestly, flag default-off).
+- **WS5-P0 Spider2** ◑ (harness rebuilt through the product pipeline · full 135 run = **72/135 =
+  53.3% on glm-5.2** · fail-analysis + per-question diagnostic tooling · the SOMA deep-read + design).
+
+**The hard-won conclusion (measured, not asserted):** on glm-5.2 @ temp-0 the endpoint has a
+**±7–10-instance noise floor per full run**, so every inference-time lever tried this session landed
+within noise — projection (net −2), col-semantics (no effect), candidates (full-135 net −1). The
+June meta-pattern is now confirmed a **4th time**: machinery perturbs a strong model's correct
+answers about as often as it fixes wrong ones. What the evidence still supports: **B1
+probe-and-repair with evidence-gates (monotonic by construction — the one untested SOMA component),
+the Ambiguity Ledger (amortization, not single-run EX), and a stronger inference option.** Nothing
+else on the cheap-lever menu deserves more endpoint-hours. **Never submit to the leaderboard, and
+never send the Secure-Data-Share email, without explicit user permission.**
 
 **Part 2 of the architecture review — SHIPPED through Wave 3 (PRs #101 → #100 → #102 → the U9 PR).**
 - **Wave 1** four enforced web CI gates (design-token · formatting · raw-element · tsc) + one-palette.
