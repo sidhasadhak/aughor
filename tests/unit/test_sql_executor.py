@@ -190,6 +190,63 @@ def test_preflight_repair_is_invoked_with_schema(monkeypatch):
     assert seen["sql"] == _GOOD and seen["schema"] == "orders campaigns"
 
 
+# ── WS2 inc.2: the shared PRE-execute hardening (de-fan + preflight) ─────────
+
+def _fanout_conn():
+    conn = DuckDBConnection.__new__(DuckDBConnection)
+    conn._path = Path(":memory:")
+    conn._conn = duckdb.connect(":memory:")
+    conn._connection_id = "test"
+    conn._schema_name = None
+    conn._conn.execute("CREATE TABLE orders (o_orderkey INT, o_totalprice DOUBLE)")
+    conn._conn.execute("INSERT INTO orders VALUES (1, 100.0), (2, 50.0)")
+    conn._conn.execute("CREATE TABLE lineitem (l_orderkey INT, l_quantity INT)")
+    conn._conn.execute("INSERT INTO lineitem VALUES (1,1),(1,2),(1,3),(2,1)")
+    return conn
+
+
+_FANOUT_SCHEMA = (
+    "TABLE: orders\n  o_orderkey  INTEGER\n  o_totalprice  DOUBLE\n\n"
+    "TABLE: lineitem\n  l_orderkey  INTEGER\n  l_quantity  INTEGER\n"
+)
+_FANNED = ("SELECT SUM(o.o_totalprice) AS total FROM orders o "
+           "JOIN lineitem l ON o.o_orderkey = l.l_orderkey")
+
+
+def test_preflight_harden_defans_regardless_of_prefix():
+    from aughor.sql.executor import preflight_harden
+
+    before = _count("guard.defan.rewritten.parent_fanout")
+    out = preflight_harden(_fanout_conn(), _FANNED, _FANOUT_SCHEMA,
+                           counter_prefix="explore.exec")
+    assert _count("guard.defan.rewritten.parent_fanout") > before
+    assert "distinct" in out.lower()  # the de-fanned rewrite, not the original fanned SQL
+
+
+def test_preflight_harden_noop_on_clean_sql():
+    from aughor.sql.executor import preflight_harden
+
+    clean = "SELECT SUM(o_totalprice) AS total FROM orders"
+    assert preflight_harden(_fanout_conn(), clean, _FANOUT_SCHEMA).strip() == clean.strip()
+
+
+def test_preflight_harden_noop_without_schema():
+    from aughor.sql.executor import preflight_harden
+
+    assert preflight_harden(_conn(), _GOOD, "") == _GOOD  # no schema → untouched
+
+
+def test_explore_path_calls_the_shared_hardening():
+    """The explore loop (_execute_one_subq) must route through preflight_harden — the
+    parity win (it had neither de-fan nor preflight-repair before WS2 inc.2)."""
+    src = Path(__file__).parent.parent.parent / "aughor" / "agent" / "explore.py"
+    tree = ast.parse(src.read_text())
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+             and n.func.id == "preflight_harden"]
+    assert calls, "explore.py must call the shared preflight_harden before conn.execute"
+
+
 def test_investigate_execute_safe_delegates_here(monkeypatch):
     """The ADA `_execute_safe` is now a thin call-site of the shared runner."""
     from aughor.agent import investigate as I

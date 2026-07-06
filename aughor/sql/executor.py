@@ -73,6 +73,53 @@ def missing_column_hint(err: str):
     )
 
 
+def preflight_harden(conn: "DatabaseConnection", sql: str, schema: str, *,
+                     counter_prefix: str = "ada.exec") -> str:
+    """The pure, deterministic PRE-execute hardening — de-fan then preflight-repair.
+
+    Both are SQL→SQL rewrites gated on a clean dry-run (a rewrite is adopted only if
+    it binds), so on already-correct SQL this is a no-op. Extracted so every answer
+    path shares the SAME hardening: the ADA runner (below) and the explore loop (which
+    had neither de-fan nor preflight-repair before) both call it. Fail-open — any
+    internal hiccup returns the SQL unchanged. ``counter_prefix`` keeps each caller's
+    /dev/stats series distinct (``ada.exec_*`` vs ``explore.exec_*``)."""
+    if not schema:
+        return sql
+    # Deterministic de-fan (#1 correctness): a SUM of a parent measure across a
+    # one-to-many join over-counts (5x). Replace it with the exact dedup BEFORE
+    # executing. Adopt only if it dry-runs clean; silent on anything it can't prove.
+    try:
+        from aughor.sql.fanout import defan, detect_fanout, dimension_ratio_chasm
+        # NB: the platform-side home of the parser (aughor.tools.schema merely
+        # re-exports it; importing it there would cross the platform→agent boundary).
+        from aughor.db.schema_render import parse_schema_tables
+        _dialect = getattr(conn, "dialect", "duckdb")
+        _tc = {t: (list(c.keys()) if isinstance(c, dict) else c)
+               for t, c in parse_schema_tables(schema).items()}
+        _ff = detect_fanout(sql, _tc, dialect=_dialect) or \
+            dimension_ratio_chasm(sql, _tc, dialect=_dialect)
+        if _ff:
+            _rw = defan(sql, _ff, dialect=_dialect)
+            if _rw and _rw.strip() != sql.strip() and conn.dry_run(_rw)[0]:
+                sql = _rw
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "fan-out de-fan rewrite is advisory; the original SQL executes "
+                       "unguarded", counter=f"{counter_prefix}_defan")
+
+    # R2 (mode cross-pollination) — pre-flight through the SHARED safety pipeline
+    # (identifier repair -> dry-run -> deterministic candidate substitution -> typed LLM fix)
+    # so a binder error is repaired BEFORE execute, not only by the post-execute retry. Fail-open.
+    try:
+        from aughor.sql.safety import preflight_repair
+        sql, _ = preflight_repair(conn, sql, schema)
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "pre-flight SQL repair is fail-open; original SQL executes and "
+                       "the post-execute retry still applies", counter=f"{counter_prefix}_preflight")
+    return sql
+
+
 def execute_guarded(
     conn: "DatabaseConnection",
     sql: str,
@@ -99,42 +146,11 @@ def execute_guarded(
     """
     from pydantic import BaseModel
 
-    # Deterministic de-fan (#1 correctness): a SUM of a parent measure across a
-    # one-to-many join over-counts (5x) — and this is a deep-analysis headline
-    # number. Replace it with the exact DISTINCT(parent-key, measure) dedup BEFORE
-    # executing. Adopt only if it dry-runs clean; silent on anything it can't prove.
+    # Pre-execute deterministic hardening (de-fan → preflight-repair), shared with the
+    # explore path. Byte-identical to the inline version this replaced — same guards,
+    # same dry-run gates, same ada.exec_* counters.
     if schema:
-        try:
-            from aughor.sql.fanout import detect_fanout, defan, dimension_ratio_chasm
-            # NB: the platform-side home of the parser (aughor.tools.schema merely
-            # re-exports it; importing it there would cross the platform→agent boundary).
-            from aughor.db.schema_render import parse_schema_tables
-            _dialect = getattr(conn, "dialect", "duckdb")
-            _tc = {t: (list(c.keys()) if isinstance(c, dict) else c)
-                   for t, c in parse_schema_tables(schema).items()}
-            _ff = detect_fanout(sql, _tc, dialect=_dialect) or \
-                dimension_ratio_chasm(sql, _tc, dialect=_dialect)
-            if _ff:
-                _rw = defan(sql, _ff, dialect=_dialect)
-                if _rw and _rw.strip() != sql.strip() and conn.dry_run(_rw)[0]:
-                    sql = _rw
-        except Exception as _exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(_exc, "fan-out de-fan rewrite is advisory; the original SQL executes "
-                           "unguarded", counter="ada.exec_defan")
-
-    # R2 (mode cross-pollination) — pre-flight the planned query through the SHARED safety pipeline
-    # (identifier repair -> dry-run -> deterministic candidate substitution -> typed LLM fix) so a
-    # binder error (e.g. a hallucinated column DuckDB can name the fix for) is repaired BEFORE this
-    # execute rather than only by the post-execute retry below. Fail-open.
-    if schema:
-        try:
-            from aughor.sql.safety import preflight_repair
-            sql, _ = preflight_repair(conn, sql, schema)
-        except Exception as _exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(_exc, "pre-flight SQL repair is fail-open; original SQL executes and "
-                           "the post-execute retry still applies", counter="ada.exec_preflight")
+        sql = preflight_harden(conn, sql, schema, counter_prefix="ada.exec")
 
     # AL-01 (behind trust.verify_live) — route the generated SQL through the one Trust plane's
     # decisive read-only gate before execute: the mutation / DDL / disallowed-function BLOCK the
