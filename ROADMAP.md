@@ -473,11 +473,15 @@ API only · suite green every commit · no new runtime deps · flag-gated defaul
   `agent/complexity.py`) → climb + drafted submission. Key evidence: SOMA probing +9.0 over majority
   vote, **+30.6 EX where zero candidates were right**; eval is column-CONTAINMENT (extra columns free);
   ~66% of Snow open-gold has annotation errors (ceiling ~75–85 Lite).
-- ◑ **WS1 — fast deep path — code SHIPPED, live A/B pending.** ✅ `ada.parallel_phases` wave
-  (`aughor/agent/phase_waves.py`): baseline∥decompose∥dimensional concurrent (in-process executor NOT
-  `Send`), serial tier-router early-stop semantics applied post-hoc, behavioral stays serial (hard
+- ◑ **WS1 — fast deep path — SHIPPED + LIVE-MEASURED (honest: 1.23×, not 2×).** ✅ `ada.parallel_phases`
+  wave (`aughor/agent/phase_waves.py`): baseline∥decompose∥dimensional concurrent (in-process executor
+  NOT `Send`), serial tier-router early-stop semantics applied post-hoc, behavioral stays serial (hard
   dep); 6 tests. Profiling **refuted** the metric-block/ontology caches (15ms/5ms warm — not built).
-  Remaining: the live wall-clock A/B (≥2×); per-role LLM concurrency cap; P-B parallel deep pre-flight.
+  **Live A/B (real /investigate on luxexperience, n=1 each, isolated stores): serial 373s → wave 304s =
+  1.23×, both 14 LLM calls / same phases / same MEDIUM confidence (equal quality).** Below the aspirational
+  2× — the 3 wave phases are only part of the calls; intake + synthesis are serial-by-necessity and
+  dominate. Real free win, modest end-to-end. Bigger remaining levers (deferred): parallelize intake's
+  internal calls + the cross-section multilens + synthesis; per-role LLM concurrency cap; P-B pre-flight.
 - ✅ **WS2 — one SQL executor — SHIPPED (3 commits), with a scope judgement.** The three paths'
   POST-execute repair loops are legitimately divergent (ADA id-arith+trust · explore R3+KB+triangulation ·
   quick B-7+consistency) — force-merging would degrade them. What was genuinely duplicated AND

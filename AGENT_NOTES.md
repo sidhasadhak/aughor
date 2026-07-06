@@ -28,6 +28,7 @@ User-confirmed 2026-07-06: glm-5.2 via Ollama Cloud is THE campaign model; Snowf
 
 ## WS1 measurements (2026-07-06) — profile-first killed two "obvious" optimizations
 - unified_metric_grounding on the real `workspace` connection: cold 496ms, warm **15ms** (inner caches already cover a long-running API); load_latest_ontology: 23ms cold / 5ms warm. Both proposed caches are pointless — REFUTED, don't rebuild. The deep path's wall-clock is ~100% phase-serial LLM calls; the wave work is the only real lever.
+- **WS1 live A/B (real /investigate on luxexperience, "what drove GMV change last quarter", n=1 each, isolated stores):** serial **373s** vs `ada.parallel_phases` **304s = 1.23×**. BOTH arms: 14 LLM calls, same phase set (intake·baseline·decomposition·dimensional), same MEDIUM confidence → **equal coverage/conclusion, zero quality cost**. But 1.23× ≠ the aspirational 2× — the 3 wave phases are only part of the 14 calls; **intake + synthesis are serial-by-necessity and dominate**. HONEST take: the wave is a real, free win but modest end-to-end; the bigger levers are intake's internal calls + cross-section multilens (already flagged) + synthesis, NOT more phase-level parallelism. Don't overclaim 2×. n=1 = temp-0 cloud noise possible; mechanism is unit-test-proven.
 
 ## Build-session lessons (2026-07-06)
 - graph.py imports `route_after_wave` from agent/explore — any same-named local import inside `_compile` makes the name function-local for the WHOLE function → UnboundLocalError on every build. Alias phase-wave's router (`as route_after_phase_wave`).
