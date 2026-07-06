@@ -83,5 +83,11 @@ data/_*backup*/
 data/_stale_findings_backup_*/
 data/finding_dismissals.jsonl
 evals/spider2_out/
+evals/spider2_afix/
+evals/spider2_cand/
+evals/spider2_cand_full/
+evals/spider2_proj/
+evals/spider2_misses_proj/
+evals/spider2_*_run.log
 evals/lsb_out/
 evals/llm_exp/

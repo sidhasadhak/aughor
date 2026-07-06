@@ -72,3 +72,20 @@ class _Stats:
 
 # Module-level singleton — import this everywhere
 stats = _Stats()
+
+
+def bump(counter: str, n: int = 1) -> None:
+    """Fail-safe counter increment for guard/safety code paths.
+
+    The deterministic guards run inside fail-open pipelines where an
+    observability call must never be able to break the query path — this is the
+    shared version of the `_bump` pattern (sql/safety.py) for all guard modules,
+    so guard fire/repair rates are measurable at GET /dev/stats instead of
+    invisible."""
+    try:
+        stats.inc(counter, n)
+    except Exception:
+        # No trail by design: this IS the trail mechanism — a failing counter
+        # increment has nowhere sane to report (tolerate() itself increments a
+        # counter) and must never break a guard path.
+        return

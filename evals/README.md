@@ -70,3 +70,29 @@ Append a line to `golden.jsonl`:
 ## How the agent is invoked
 
 `run.py` calls `build_graph_generic()` directly — **no running server needed**. The LangGraph state machine streams events synchronously; the final `AnalysisReport` is extracted and scored.
+
+## Accuracy measurement protocol (WS3, 2026-07-06)
+
+**Hermetic gates (run automatically in CI — no LLM, no credentials):**
+- `tests/integration/test_golden_reference.py` — replays all 53 golden records'
+  `reference_sql` through the real scorer against a freshly-seeded fixture.
+  Red = the dataset / fixture / scorer drifted (the measurement substrate broke).
+- `tests/unit/test_ambiguity_eval.py` — pins the clarify-detector's recall +
+  false-positive contract.
+- `tests/unit/test_guard_counters.py` — pins the guard fire/repair counters
+  (`guard.defan.*`, `guard.grain_fanout.fired`, `guard.join_domain.fired`,
+  `guard.filter_bind.applied`, `guard.trust_e1.fired`, `sql_safety.*`), visible
+  live at `GET /dev/stats`.
+
+**Live pre-merge check (required for any change touching the answer path —
+generation prompts, guards, schema linking, metric grounding):**
+```bash
+# once per machine/model: record the baseline
+uv run python evals/ratchet.py run --mode full --set-baseline main
+# before merging your change:
+uv run python evals/ratchet.py run --mode full --name my-change
+uv run python evals/ratchet.py check --baseline main --candidate my-change
+```
+The check fails on >2% accuracy drop or >15% token growth (see `ratchet.py`).
+Golden-set caveats: temp-0 cloud models are still nondeterministic — treat
+sub-2-pt deltas as noise unless replicated (`--runs 3` reports the band).

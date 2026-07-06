@@ -604,6 +604,18 @@ def _execute_one_subq(
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "explore schema-escape guard best-effort; query proceeds",
                          counter="explore.scope_guard")
+
+        # WS2: shared pre-execute hardening (de-fan → preflight-repair) — the two
+        # deterministic SQL→SQL guards the explore loop lacked (the ADA runner has had
+        # them). Dry-run-gated, so a no-op on correct SQL; explore keeps its own richer
+        # post-execute repair (R3 error classes, KB fix patterns, triangulation, pitfalls).
+        try:
+            from aughor.sql.executor import preflight_harden
+            sql = preflight_harden(conn, sql, subq_schema, counter_prefix="explore.exec")
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "explore pre-execute hardening best-effort; original SQL executes",
+                     counter="explore.exec_harden")
         result = conn.execute(subq.id, sql)
 
         # Attach predictions

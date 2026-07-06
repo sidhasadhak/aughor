@@ -741,6 +741,17 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     # (new_pitfalls initialised above, before the consistency block)
 
     for sql in queries:
+        # ── WS2: shared pre-execute hardening (de-fan → preflight-repair) ──
+        # The quick path had NEITHER guard (the ADA runner has had both). Dry-run-gated
+        # → a no-op on correct SQL; run first so the warnings below reflect what actually
+        # executes. The quick path keeps its own richer repair loop (R3, KB, B-7, pitfalls).
+        try:
+            from aughor.sql.executor import preflight_harden
+            sql = preflight_harden(conn, sql, state["schema_context"], counter_prefix="chat.exec")
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "chat pre-execute hardening best-effort; original SQL executes",
+                     counter="chat.exec_harden")
         # ── Pre-flight: detect unqualified columns and invalid join paths ──
         from aughor.tools.ambiguity import detect_ambiguous_columns, detect_invalid_joins
         from aughor.tools.semantic_validator import check_entity_column_alignment

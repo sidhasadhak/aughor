@@ -20,6 +20,7 @@ from aughor.agent.nodes import (
     score_evidence,
     synthesize_report,
 )
+from aughor.agent.phase_waves import ada_phase_wave
 from aughor.agent.investigate import (
     ada_intake,
     ada_baseline,
@@ -78,6 +79,15 @@ def _ada_parallel_lenses_enabled() -> bool:
         return False
 
 
+def _ada_parallel_phases_enabled() -> bool:
+    """The ada.parallel_phases flag, resolved fail-safe (env/ledger) → 'off' on any error."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("ada.parallel_phases")
+    except Exception:
+        return False
+
+
 def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_node=None,
              explore_wave_node=None, ada_nodes: dict = None, hitl: bool = False, plan_gate: bool = False):
     graph = StateGraph(AgentState)
@@ -108,11 +118,28 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
         graph.add_edge("ada_cross_section_multilens", "ada_synthesize")
         _xsec_target = "ada_cross_section_multilens"
 
+    # Parallel phase wave (flag: ada.parallel_phases) — the temporal chain's middle phases
+    # (baseline ∥ decompose ∥ dimensional) run as ONE wave node; the serial tier-routers'
+    # early-stop semantics are applied post-hoc inside it (phase_waves.py). Behavioral stays
+    # sequential (it hard-depends on the dimensional dominant finding). Off by default →
+    # the classic serial chain below, byte-identical.
+    _wave_node = ada.get("phase_wave")
+    _baseline_target = "ada_baseline"
+    if _wave_node is not None and _ada_parallel_phases_enabled():
+        from aughor.agent.phase_waves import route_after_wave as route_after_phase_wave
+        graph.add_node("ada_phase_wave", _wave_node)
+        graph.add_conditional_edges(
+            "ada_phase_wave",
+            route_after_phase_wave,
+            {"ada_behavioral": "ada_behavioral", "ada_synthesize": "ada_synthesize"},
+        )
+        _baseline_target = "ada_phase_wave"
+
     graph.add_edge("exploratory_scan",  "ada_intake")
     graph.add_conditional_edges(
         "ada_intake",
         route_after_intake,
-        {"ada_cross_section": _xsec_target, "ada_baseline": "ada_baseline"},
+        {"ada_cross_section": _xsec_target, "ada_baseline": _baseline_target},
     )
 
     graph.add_conditional_edges(
@@ -229,6 +256,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
         "baseline":   partial(ada_baseline,   conn=db),
         "cross_section": partial(ada_cross_section, conn=db),
         "cross_section_multilens": partial(ada_cross_section_multilens, conn=db),
+        "phase_wave":  partial(ada_phase_wave, conn=db),
         "decompose":  partial(ada_decompose,  conn=db),
         "dimensional": partial(ada_dimensional, conn=db),
         "behavioral": partial(ada_behavioral,  conn=db),
@@ -250,6 +278,7 @@ def build_graph_generic(db, hitl: bool = False, plan_gate: bool = False):
         "baseline":    partial(ada_baseline,    conn=db),
         "cross_section": partial(ada_cross_section, conn=db),
         "cross_section_multilens": partial(ada_cross_section_multilens, conn=db),
+        "phase_wave":  partial(ada_phase_wave, conn=db),
         "decompose":   partial(ada_decompose,   conn=db),
         "dimensional": partial(ada_dimensional, conn=db),
         "behavioral":  partial(ada_behavioral,  conn=db),

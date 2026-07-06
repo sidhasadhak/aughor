@@ -14,6 +14,35 @@
 
 ## 0 · Immediate next action ⏭️
 
+**⏭️ NEXT SESSION — start here: the 10x + Spider 2.0 program (branch `2026-07-06-10x-program`, PR
+[#111](https://github.com/sidhasadhak/aughor/pull/111)).** Full handoff + decisions:
+[`docs/SESSION_HANDOFF_2026-07-06.md`](docs/SESSION_HANDOFF_2026-07-06.md). Spec:
+[`docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md); the next
+accuracy phase's design (probe-and-repair + the Ambiguity Ledger) is
+[`docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md).
+
+**SHIPPED this session (all on the branch, suite 2606 green · ruff 0 · tsc + 3 web gates green):**
+- **WS4 hygiene** ✅ (api.gen.ts regen 12,929→16,128 + offline `dump_openapi.py` + CI codegen gate ·
+  4 bypass flags into FLAG_ENV · 47 swallows→`tolerate()`, baseline 263→214 · FEATURES.md drift).
+- **WS3 accuracy measurement** ✅ (hermetic golden-replay CI gate 53/53 — fixed 9 tie-nondeterministic
+  records + 2 scorer bugs · guard fire/repair counters · live ratchet baseline 0.6551 on glm-5.2).
+- **WS2 one SQL executor** ✅ (shared pre-execute hardening across all 3 answer paths + guard-parity
+  test; the post-execute repair loops left divergent by design — see spec §WS2).
+- **WS1 fast deep path** ◑ (`ada.parallel_phases` wave shipped + 6 tests; **live A/B measured 1.23×,
+  NOT 2×** — intake+synthesis dominate; recorded honestly, flag default-off).
+- **WS5-P0 Spider2** ◑ (harness rebuilt through the product pipeline · full 135 run = **72/135 =
+  53.3% on glm-5.2** · fail-analysis + per-question diagnostic tooling · the SOMA deep-read + design).
+
+**The hard-won conclusion (measured, not asserted):** on glm-5.2 @ temp-0 the endpoint has a
+**±7–10-instance noise floor per full run**, so every inference-time lever tried this session landed
+within noise — projection (net −2), col-semantics (no effect), candidates (full-135 net −1). The
+June meta-pattern is now confirmed a **4th time**: machinery perturbs a strong model's correct
+answers about as often as it fixes wrong ones. What the evidence still supports: **B1
+probe-and-repair with evidence-gates (monotonic by construction — the one untested SOMA component),
+the Ambiguity Ledger (amortization, not single-run EX), and a stronger inference option.** Nothing
+else on the cheap-lever menu deserves more endpoint-hours. **Never submit to the leaderboard, and
+never send the Secure-Data-Share email, without explicit user permission.**
+
 **Part 2 of the architecture review — SHIPPED through Wave 3 (PRs #101 → #100 → #102 → the U9 PR).**
 - **Wave 1** four enforced web CI gates (design-token · formatting · raw-element · tsc) + one-palette.
 - **Wave 2** renderer registry · chart source-footers · `StatusChip` · the `<Workspace>` shell + the
@@ -67,12 +96,14 @@ the third `"profile"` source + `from_north_star_metric`, a `rank` mirroring `_SO
 executor A/B (real executor, fixed leaf latency) — baseline serial+chains 12.0s → wave+chains 10.7s
 (**1.12×**, executor alone) → wave+wide **8.0s (1.50×)** — the prompt is what unlocks the executor.
 
-**⏭️ Immediate next:**
+**⏭️ Immediate next — now sequenced inside the 10x + Spider 2.0 program (see the block at the top of §0):**
 1. **Continue P-A** — apply the wave pattern to ADA hypothesis-testing / per-dimension cross-section;
-   then **P-B** (parallelize the pre-flight retrievals — near-free, deterministic).
-2. **`web/lib/api.gen.ts` is ~5,700 lines stale** (missing ~40 routes) — regen + add a codegen CI gate.
+   then **P-B** (parallelize the pre-flight retrievals — near-free, deterministic). *→ program WS1.*
+2. **`web/lib/api.gen.ts` is stale** (12,929 lines — missing the `/rbac`, `/jobs`, `/packs`, `/verify`
+   route families) — regen + add a codegen CI gate. *→ program WS4.*
 3. **Retire `CanonicalMetric`** — repoint the `semantic/compiler.py` structured consumer (U10 tail;
-   `build_metrics_block` text / `/health-scorecard` / `/metrics` CRUD still catalog-only).
+   `build_metrics_block` text / `/health-scorecard` / `/metrics` CRUD still catalog-only). *(Standalone,
+   not part of the program.)*
 *Deferred with reasons (see the log): `CanvasWorkspace` re-express (rich header + eager-mount don't fit
 the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment),
 NOM-07 (`PlaybookEntry` doesn't fit the scheduled-check mold; touches persisted models).*
@@ -426,6 +457,50 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 ## 3 · What's left
 
 Verified pending against code/git. `⬜` not started · `◑` partial.
+
+### ▶ The 10x + Spider 2.0 program (2026-07-06 — the active umbrella; spec: [`docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md))
+*Order: WS4 → WS3 → WS5-P0 (gated) → WS1 ∥ WS5-P1–3 → WS2. Baseline to beat is the doc's §0
+(2,508 tests/97s · ruff 0 · deep path ~8.4 min · Lite-local 56.30% w/ glm-5.2). Constraints: additive
+API only · suite green every commit · no new runtime deps · flag-gated default-off · ratchets only down.*
+- ✅ **WS4 — hygiene batch — SHIPPED (branch `2026-07-06-10x-program`, 4 commits).** api.gen.ts
+  regen 12,929→16,128 + offline `scripts/dump_openapi.py` + a blocking CI `codegen` drift gate;
+  the 4 bypass flags registered in `FLAG_ENV` (`ada.premise_check`/`ada.causal_drill`/`ask.clarify`/
+  `closed_loop`) with a `FLAG_DEFAULT` map preserving ask-clarify default-ON byte-for-byte; 47 silent
+  swallows in the 2 hot files → `tolerate()`, `SILENT_SWALLOW_BASELINE` 263→214; FEATURES.md §13 fixed.
+- ✅ **WS3 — accuracy measurement — SHIPPED (2 commits + pinned baseline).** Hermetic
+  `tests/integration/test_golden_reference.py` gate (53/53) — surfaced + fixed real scorer bugs
+  (empty-result / unordered-row false docks) and 6 tie-nondeterministic golden records (one scored
+  0.653 vs its OWN sql); guard fire/repair counters (`aughor.stats.bump`); **live ratchet baseline
+  pinned mean 0.6551 / exec 1.00 / 420.6k tok** (model `glm-5.2:cloud` — runtime config pins
+  coder=glm-5.2 over the .env default); protocol in `evals/README.md`.
+- ◑ **WS5 — Spider 2.0 top-3 campaign — P0 harness done (deferred by the user: "spider later").**
+  ✅ `evals/spider2.py` rebuilt through the product pipeline (guards + closed-loop + external-knowledge
+  docs + timestamped submission traces); the full 135 local SQLite ran **135/135 exec-success, official
+  evaluate.py 72/135 = 53.3%** (**glm-5.2:cloud** — same model as June; June ref 56.3% = glm-5.2 + a
+  tuned ANSWER_SHAPE config, so the ~3pt gap is prompt-config, not model). Data-Share request DRAFTED
+  (`docs/spider2-data-share-request-DRAFT.md`), **not sent**.
+  Remaining (Snowflake access ready — the June "dead credential" was a template + the 2025-11 MFA/PAT
+  policy change): the grounding-lift A/B that decides scale · substrate-on-benchmark · the budgeted
+  loop (ANSWER_SHAPE + `condition_cols` + superset-projection · SOMA-style disagreement probing on
+  `agent/complexity.py`) → climb + drafted submission. Key evidence: SOMA probing +9.0 over majority
+  vote, **+30.6 EX where zero candidates were right**; eval is column-CONTAINMENT (extra columns free);
+  ~66% of Snow open-gold has annotation errors (ceiling ~75–85 Lite).
+- ◑ **WS1 — fast deep path — SHIPPED + LIVE-MEASURED (honest: 1.23×, not 2×).** ✅ `ada.parallel_phases`
+  wave (`aughor/agent/phase_waves.py`): baseline∥decompose∥dimensional concurrent (in-process executor
+  NOT `Send`), serial tier-router early-stop semantics applied post-hoc, behavioral stays serial (hard
+  dep); 6 tests. Profiling **refuted** the metric-block/ontology caches (15ms/5ms warm — not built).
+  **Live A/B (real /investigate on luxexperience, n=1 each, isolated stores): serial 373s → wave 304s =
+  1.23×, both 14 LLM calls / same phases / same MEDIUM confidence (equal quality).** Below the aspirational
+  2× — the 3 wave phases are only part of the calls; intake + synthesis are serial-by-necessity and
+  dominate. Real free win, modest end-to-end. Bigger remaining levers (deferred): parallelize intake's
+  internal calls + the cross-section multilens + synthesis; per-role LLM concurrency cap; P-B pre-flight.
+- ✅ **WS2 — one SQL executor — SHIPPED (3 commits), with a scope judgement.** The three paths'
+  POST-execute repair loops are legitimately divergent (ADA id-arith+trust · explore R3+KB+triangulation ·
+  quick B-7+consistency) — force-merging would degrade them. What was genuinely duplicated AND
+  missing-in-parity is the PRE-execute deterministic hardening (de-fan → preflight-repair): extracted to
+  `aughor/sql/executor.py` (`execute_guarded` verbatim from ADA `_execute_safe` + shared `preflight_harden`),
+  wired into ALL THREE paths (explore + quick GAINED de-fan + preflight they never had), enforced by
+  `test_guard_parity_all_three_paths_share_the_hardening` + an import-boundary test. +16 tests.
 
 ### ▶ Report-quality wiring gaps — three deterministic fixes (next up; source: the GMV brand-tier case, 2026-07-05)
 *Diagnosed from a real "why did total GMV change across brand tiers?" report that led with a +€39.9M / +1,506% headline that its own trust advisory flagged as ungrounded. Root cause is NOT grounding maturity — the trust check fired correctly and the z-score normalization correctly debunked the artifact. These are three wiring gaps between subsystems that already compute the right signals but don't talk to each other. **Impact/dependency order: #1 (independent) → #3 → #2 (#2 depends on #3, else it amplifies #3's false positives).**

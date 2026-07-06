@@ -19,7 +19,11 @@ from pathlib import Path
 # tolerate() (AUDIT_2026-06-27.md #3), ratcheting 302 → 265.
 # 2026-07-03: fail-closed SQL safety gate (REC-01) converted the 2 security-path
 # `except: pass` in db/connection.py to tolerate(), ratcheting 265 → 263.
-SILENT_SWALLOW_BASELINE = 263
+# 2026-07-06 (WS4c): converted 47 swallows in the two hottest files —
+# routers/investigations.py (28) + agent/investigate.py (19) — leaving only the
+# 3 justified control-flow handlers (JSON-parse fallback, per-number float parse,
+# premise-check skip signal), ratcheting 263 → 214.
+SILENT_SWALLOW_BASELINE = 214
 PRIVATE_IMPORT_BASELINE = 22
 
 REPO = Path(__file__).parent.parent.parent
