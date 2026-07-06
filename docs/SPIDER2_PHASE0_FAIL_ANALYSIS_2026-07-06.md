@@ -103,6 +103,31 @@ affordable on the throttled endpoint). The per-question loop reconfirmed, case b
 misses are genuine reasoning / grain-of-intent ambiguity / annotation issues — NOT mechanically
 fixable by prompt/schema enrichment.
 
+## The deep recheck (2026-07-06, second pass) — three harness gaps + measured fixes
+
+A re-audit against "what else besides a better endpoint" found three VERIFIED gaps in the
+rebuilt harness itself: **(A1)** the June-built `recover_empty_fn` was never wired into the
+closed loop; **(A2)** the schema context carried NO PK/FK information (June's 56.3% context
+had "DDL + FK paths from PRAGMA" — the model was guessing join paths blind); **(A3)**
+generation reused the product's multi-field answer model + 6.6k-char chart rulebook
+(headline/chart output tax). All three fixed; plus two new levers built and unit-tested:
+**Lever 7** — a deterministic grain-of-intent check (`aughor/sql/grain_intent.py`: "top
+three X"/"which single Y"/"for each Z" vs the observed rowcount → one diagnosis-fed repair
+round); **Levers 4+5** — strategy-diverse candidates (direct · decompose · plan-first ·
+adversarial-self-check) + execution-signature plurality selection (`--candidates K`).
+
+**A1–A3 controlled verification (18 instances: 10 misses + 8 correct sentinels):**
+- **Sentinels 8/8 stayed correct — zero regressions** (the first monotonic lever measured;
+  contrast the projection directive's 7 regressions).
+- **Misses 1/10 recovered** (local354 — the empty-recovery loop fired end-to-end). Trace
+  detail: recovery also fired on local299 (0→3 rows, values still wrong), and A2/A3 alone
+  converted local018/344/360 from empty to row-returning (still wrong values) — the empty
+  bucket dissolves from two directions; local017 resisted (no row-returning rewrite found).
+
+Net: **+1 recovered, −0 regressed** — foundation restored (June-parity context), not a
+needle-mover; consistent with the diagnosis that the remaining misses are reasoning/
+ambiguity. The candidates lever (the oracle-gap play) is the next controlled measurement.
+
 ## Takeaways for the campaign
 
 1. **The cheap prompt/harness levers do NOT move the net score.** The one tested (projection) was
