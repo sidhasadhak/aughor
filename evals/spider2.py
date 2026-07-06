@@ -244,7 +244,8 @@ _BENCH_PROJECTION = (
 
 
 def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = True,
-                 bench_projection: bool = False, col_semantics: bool = False) -> dict:
+                 bench_projection: bool = False, col_semantics: bool = False,
+                 candidates: int = 1) -> dict:
     from aughor.connectors.file.sqlite import SQLiteConnection
     from aughor.sql.closed_loop import execute_with_repair, rows_to_csv
     from aughor.sql.safety import preflight_repair
@@ -279,7 +280,34 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
         if bench_projection:
             engine_note += _BENCH_PROJECTION
 
-        sql = generate_sql(record["question"], schema, ek + engine_note, temperature)
+        if candidates > 1:
+            # Levers 4+5 — strategy-diverse candidates + execution-signature selection
+            # (deterministic; no judge LLM). K calls per question — hard-subset use.
+            from aughor.sql.grain_intent import check_result_grain
+            from evals.spider2_candidates import STRATEGIES, run_candidates
+
+            def _exec_lite(s: str):
+                try:
+                    _c, rows, _t = conn.raw_execute(s.strip().rstrip(";"))
+                    return True, rows, ""
+                except Exception as e:
+                    return False, None, str(e)
+
+            cr = run_candidates(
+                record["question"], schema, ek + engine_note,
+                generate_fn=lambda q, s, d: generate_sql(q, s, d, temperature),
+                execute_fn=_exec_lite,
+                columns_fn=lambda s: [],
+                grain_check=lambda q, n: check_result_grain(q, n),
+                strategies=list(STRATEGIES)[:candidates],
+            )
+            step("candidates", n=len(cr.candidates), signatures=cr.n_signatures,
+                 agreed=cr.agreed, chosen=(cr.chosen.strategy if cr.chosen else None),
+                 detail=[{"strategy": c.strategy, "ok": c.ok, "sig": c.signature,
+                          "grain_ok": c.grain_ok, "err": c.error[:80]} for c in cr.candidates])
+            sql = cr.chosen.sql if cr.chosen else ""
+        else:
+            sql = generate_sql(record["question"], schema, ek + engine_note, temperature)
         step("generated", sql=sql)
         if not sql:
             return {"id": iid, "ok": False, "error": "empty-generation", "trace": trace}
@@ -438,6 +466,9 @@ def main() -> int:
                          "projection directive — keep intermediates/grouping keys, superset columns")
     ap.add_argument("--col-semantics", action="store_true",
                     help="enrich schema with categorical value sets + date-column tags (column-choice lever)")
+    ap.add_argument("--candidates", type=int, default=1,
+                    help="strategy-diverse candidates per question (K generations + execution-"
+                         "signature selection; default 1 = single-shot)")
     ap.add_argument("--score", action="store_true", help="run the official evaluator over outdir")
     args = ap.parse_args()
 
@@ -457,14 +488,15 @@ def main() -> int:
     print(f"[spider2] {len(records)} instances | model={p._model} backend={p.backend} "
           f"temp={args.temperature} ek={'off' if args.no_ek else 'on'} "
           f"proj={'on' if args.bench_projection else 'off'} "
-          f"colsem={'on' if args.col_semantics else 'off'} out={outdir}")
+          f"colsem={'on' if args.col_semantics else 'off'} cand={max(1, args.candidates)} out={outdir}")
 
     results = []
     for i, rec in enumerate(records, 1):
         print(f"  [{i}/{len(records)}] {rec['instance_id']} ...", flush=True)
         try:
             r = run_instance(rec, outdir, args.temperature, use_ek=not args.no_ek,
-                             bench_projection=args.bench_projection, col_semantics=args.col_semantics)
+                             bench_projection=args.bench_projection, col_semantics=args.col_semantics,
+                             candidates=max(1, args.candidates))
         except Exception as e:
             r = {"id": rec["instance_id"], "ok": False, "error": str(e)[:200]}
         print(f"      -> ok={r.get('ok')} rounds={r.get('rounds')} rows={r.get('rows')} "
