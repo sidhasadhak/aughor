@@ -41,6 +41,7 @@ User-confirmed 2026-07-06: glm-5.2 via Ollama Cloud is THE campaign model; Snowf
 - The silent-swallow ratchet counts ANY bare `except: pass` — including deliberately-trailless fail-safes like stats.bump(). Use `return` + a comment for those (the ratchet's AST check counts Pass/Continue bodies only).
 - tests/integration/test_golden_reference.py::sql048 flaked ONLY while the machine ran a heavy parallel LLM harness (load-sensitive, likely slow-exec). Passes 3× standalone + full suite when idle. If it flakes in CI (idle machines), investigate for real.
 - Ollama `/v1/models` does NOT list cloud models that still WORK (glm-5.2:cloud answered while absent from the list) — don't conclude a model is gone from the listing alone.
+- **MODEL RESOLUTION: don't read `.env` and assume.** `.env` says `AUGHOR_CODER_MODEL=qwen3-coder-next:cloud` but the runtime inference-plane config (`provider._cfg()['models']['coder']`) pins **glm-5.2:cloud**, which WINS (layer-1 runtime override > layer-2 env > layer-3 default). ALL WS5 runs + the ratchet baseline used glm-5.2:cloud (confirmed via `get_provider('coder')._model` AND the run banner). I mis-stated it as qwen3-coder-next early on — always verify with `get_provider('coder')._model`, never the env var alone.
 - evals scripts must load .env themselves (provider falls back to a hardcoded default model otherwise — spider2.py caught this; run_golden documents the same lesson).
 
 ## Repo conventions that matter

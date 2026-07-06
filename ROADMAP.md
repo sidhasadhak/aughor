@@ -460,13 +460,14 @@ API only · suite green every commit · no new runtime deps · flag-gated defaul
   `tests/integration/test_golden_reference.py` gate (53/53) — surfaced + fixed real scorer bugs
   (empty-result / unordered-row false docks) and 6 tie-nondeterministic golden records (one scored
   0.653 vs its OWN sql); guard fire/repair counters (`aughor.stats.bump`); **live ratchet baseline
-  pinned mean 0.6551 / exec 1.00 / 420.6k tok** (model `qwen3-coder-next:cloud`); protocol in
-  `evals/README.md`.
+  pinned mean 0.6551 / exec 1.00 / 420.6k tok** (model `glm-5.2:cloud` — runtime config pins
+  coder=glm-5.2 over the .env default); protocol in `evals/README.md`.
 - ◑ **WS5 — Spider 2.0 top-3 campaign — P0 harness done (deferred by the user: "spider later").**
   ✅ `evals/spider2.py` rebuilt through the product pipeline (guards + closed-loop + external-knowledge
   docs + timestamped submission traces); the full 135 local SQLite ran **135/135 exec-success, official
-  evaluate.py 72/135 = 53.3%** (product prompt on `qwen3-coder-next`; June ref 56.3% w/ glm-5.2 +
-  ANSWER_SHAPE). Data-Share request DRAFTED (`docs/spider2-data-share-request-DRAFT.md`), **not sent**.
+  evaluate.py 72/135 = 53.3%** (**glm-5.2:cloud** — same model as June; June ref 56.3% = glm-5.2 + a
+  tuned ANSWER_SHAPE config, so the ~3pt gap is prompt-config, not model). Data-Share request DRAFTED
+  (`docs/spider2-data-share-request-DRAFT.md`), **not sent**.
   Remaining (Snowflake access ready — the June "dead credential" was a template + the 2025-11 MFA/PAT
   policy change): the grounding-lift A/B that decides scale · substrate-on-benchmark · the budgeted
   loop (ANSWER_SHAPE + `condition_cols` + superset-projection · SOMA-style disagreement probing on

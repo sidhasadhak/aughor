@@ -1,7 +1,8 @@
 # Spider 2.0 campaign — Phase-0 fail-analysis + the first cheap lever
 
 *2026-07-06 (WS5, branch `2026-07-06-10x-program`). Offline analysis of the full 135-instance
-Spider2-Lite local run (`evals/spider2_out`, product prompt on `qwen3-coder-next:cloud`), plus
+Spider2-Lite local run (`evals/spider2_out`, product prompt on **`glm-5.2:cloud`** — the runtime
+inference-plane config pins coder=glm-5.2, overriding the `.env` default; same model class as June), plus
 the first measured campaign lever. Tooling: `scripts/spider2_fail_analysis.py` (pure CSV
 comparison against gold, no LLM). Companion: `docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md` §5.*
 
