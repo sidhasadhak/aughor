@@ -206,6 +206,75 @@ _EXTRACT_SYS = (
 )
 
 
+# ── Guarded extraction: deterministic value validation + gleaning re-extract ──────
+# Pulling a structured value out of free text is where data agents are most fragile: benchmarks show
+# frontier models fall back to regex and *never check the result*, so text-heavy extractions collapse
+# (DataAgentBench's patent-date tasks score 0% across every model). Aughor's answer is its usual one —
+# a deterministic guard over the LLM's output. When ``validate=True`` each extracted value is checked
+# against a type inferred from the field's name/description; cells that fail are RE-EXTRACTED with
+# targeted feedback in a bounded "gleaning" loop (à la DocETL). Values are only ever re-asked and kept,
+# never dropped or blanked, so the operator's never-silently-lose-data contract still holds.
+
+_TYPE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "year":   ("year",),
+    "date":   ("date", "when ", "timestamp", "datetime", "day "),
+    "email":  ("email", "e-mail"),
+    "number": ("number", "count", "quantity", "amount", "price", "cost", "total",
+               "rate", "percent", "percentage", "age ", "duration", "dollars",
+               " usd", "revenue", "salary", "how many"),
+}
+
+_TYPE_HINT: dict[str, str] = {
+    "year":   "a 4-digit year like 2024",
+    "date":   "a date like 2024-01-31",
+    "email":  "an email like name@example.com",
+    "number": "a plain number like 1234.5 (no words)",
+}
+
+_DATE_SHAPE = re.compile(
+    r"^(\d{4}[-/]\d{1,2}[-/]\d{1,2}"                                                    # 2024-01-31
+    r"|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}"                                                   # 31/01/2024
+    r"|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}"  # Jan 31, 2024
+    r"|\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4})$", # 31 Jan 2024
+    re.I,
+)
+_EMAIL_SHAPE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _infer_expected_type(name: str, description: str) -> str | None:
+    """Infer a value-validation type from a field's name + description, or None if untyped."""
+    hay = f" {name} {description} ".lower()
+    for typ, kws in _TYPE_KEYWORDS.items():
+        if any(kw in hay for kw in kws):
+            return typ
+    return None
+
+
+def _validate_value(value: str, typ: str) -> str | None:
+    """Return None if ``value`` is a valid ``typ``, else a short reason it's rejected.
+
+    An empty string is always valid — extraction legitimately returns "" for an absent field, and we
+    never want validation to pressure the model into inventing a value.
+    """
+    v = (value or "").strip()
+    if not v:
+        return None
+    if typ == "year":
+        return None if (v.isdigit() and len(v) == 4 and 1000 <= int(v) <= 2999) else "expected a 4-digit year"
+    if typ == "date":
+        return None if _DATE_SHAPE.match(v) else "expected a date (e.g. 2024-01-31)"
+    if typ == "email":
+        return None if _EMAIL_SHAPE.match(v) else "expected an email address"
+    if typ == "number":
+        cleaned = v.replace(",", "").replace("$", "").replace("%", "").replace("€", "").replace("£", "").strip()
+        try:
+            float(cleaned)
+        except ValueError:
+            return "expected a number"
+        return None
+    return None
+
+
 def semantic_extract(
     result: QueryResult,
     column: str,
@@ -215,8 +284,15 @@ def semantic_extract(
     max_rows: int = DEFAULT_MAX_ROWS,
     batch: int = DEFAULT_BATCH,
     override_cap: bool = False,
+    validate: bool = False,
+    max_rounds: int = 1,
 ) -> SemanticOpResult:
-    """Pull named ``fields`` (``[(name, description), ...]``) out of ``column``'s text into new columns."""
+    """Pull named ``fields`` (``[(name, description), ...]``) out of ``column``'s text into new columns.
+
+    With ``validate=True`` each extracted value is checked against a type inferred from the field's
+    name/description, and off-type cells are re-extracted with targeted feedback for up to
+    ``max_rounds`` rounds (guarded extraction — see the module note above).
+    """
     field_names = [n for n, _ in fields]
 
     if result.error:
@@ -266,6 +342,53 @@ def semantic_extract(
             logger.warning("semantic_extract: batch [%d:%d] failed: %s", start, start + len(chunk), e)
             notes.append(f"batch [{start}:{start + len(chunk)}] failed ({str(e)[:80]}) — fields left blank")
 
+    # ── Guarded validation + gleaning re-extract ──────────────────────────────
+    reextract_calls = 0
+    still_invalid = 0
+    typed = {n: t for (n, d) in fields if (t := _infer_expected_type(n, d))}
+    if validate and typed:
+        for _round in range(max(0, max_rounds)):
+            failing: dict[int, dict[str, str]] = {}
+            for gi in range(len(rows)):
+                vals = extracted.get(gi, {})
+                bad = {n: reason for n, t in typed.items()
+                       if (reason := _validate_value(str(vals.get(n, "")), t))}
+                if bad:
+                    failing[gi] = bad
+            if not failing:
+                break
+            fail_idx = sorted(failing)
+            listing = "\n".join(f"[{gi}] {str(rows[gi][ci])[:_MAX_CELL]}" for gi in fail_idx)
+            guidance = "; ".join(f"{n} → {_TYPE_HINT[typed[n]]}" for n in typed)
+            try:
+                resp = provider.complete(
+                    system=_EXTRACT_SYS,
+                    user=(
+                        f"Fields to extract: {fields_spec}\n\n"
+                        f"Some earlier values had the WRONG format. Re-extract carefully. "
+                        f"Type requirements: {guidance}. Use \"\" only if the field is truly absent.\n\n"
+                        f"Rows (index: text):\n{listing}\n\n"
+                        f"Return corrected values for every index above."
+                    ),
+                    response_model=_ExtractBatch,
+                )
+                reextract_calls += 1
+                for r in resp.rows:
+                    if r.index in failing:
+                        cur = dict(extracted.get(r.index, {}))
+                        for n in failing[r.index]:  # overwrite only the fields that failed
+                            if n in r.values:
+                                cur[n] = r.values[n]
+                        extracted[r.index] = cur
+            except Exception as e:  # noqa: BLE001 — operator must never raise into the query path
+                logger.warning("semantic_extract: re-extract round failed: %s", e)
+                notes.append(f"guarded re-extract failed ({str(e)[:80]}) — kept prior values")
+                break
+        for gi in range(len(rows)):
+            vals = extracted.get(gi, {})
+            still_invalid += sum(1 for n, t in typed.items() if _validate_value(str(vals.get(n, "")), t))
+        llm_calls += reextract_calls
+
     out_rows: list[list] = []
     for gi, row in enumerate(rows):
         vals = extracted.get(gi, {})
@@ -273,6 +396,12 @@ def semantic_extract(
 
     new_result = result.model_copy(update={"columns": list(result.columns) + new_cols, "rows": out_rows})
     notes.insert(0, f"extracted {', '.join(new_cols)} from {column} for {len(rows)} rows")
+    if validate and typed:
+        notes.append(
+            f"guarded extraction: validated {len(typed)} typed field(s) over {len(rows)} rows"
+            + (f", re-extracted in {reextract_calls} round(s)" if reextract_calls else "")
+            + (f", {still_invalid} value(s) still off-type (surfaced, kept)" if still_invalid else "")
+        )
     return SemanticOpResult(new_result, "extract", column, len(rows), len(rows), False, notes, llm_calls)
 
 
@@ -431,6 +560,8 @@ def apply_step(
     max_rows: int = DEFAULT_MAX_ROWS,
     batch: int = DEFAULT_BATCH,
     override_cap: bool = False,
+    validate: bool = False,
+    max_rounds: int = 1,
 ) -> SemanticOpResult:
     """Dispatch one semantic operator by name — the shared entry point for callers (API + agent)."""
     if operator == "filter":
@@ -438,7 +569,8 @@ def apply_step(
                                batch=batch, override_cap=override_cap)
     if operator == "extract":
         return semantic_extract(result, column, fields or [], role=role, max_rows=max_rows,
-                                batch=batch, override_cap=override_cap)
+                                batch=batch, override_cap=override_cap,
+                                validate=validate, max_rounds=max_rounds)
     if operator == "top_k":
         return semantic_top_k(result, column, criterion, k, role=role, max_rows=max_rows,
                               batch=batch, override_cap=override_cap)

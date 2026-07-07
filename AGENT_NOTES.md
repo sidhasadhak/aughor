@@ -8,6 +8,11 @@ with baseline, file:line anchors, the Spider2 runbook, gates, and a progress log
 ROADMAP §0 (top block) + §3 ("The 10x + Spider 2.0 program") mirror it at-a-glance.
 User-confirmed 2026-07-06: glm-5.2 via Ollama Cloud is THE campaign model; Snowflake access ready.
 
+## Baseline (main @ 879fbee, 2026-07-07 — session 2)
+- Full suite `uv run pytest -q -m "not e2e and not eval" -p no:cacheprovider`: **2663 passed, 1 skipped, 6 deselected in 89.2s** (green; grew +155 from the 2508 in the prior baseline).
+- Ruff (`uvx ruff@0.15.20 check .`): **0**. LOC: aughor/ 83,386 py · tests/ 31,002.
+- Note: `timeout` is not on this macOS — don't wrap pytest in it.
+
 ## Baseline (main @ 7d13abe, 2026-07-05)
 - Full suite `uv run pytest -q -m "not e2e and not eval"`: **2508 passed, 1 skipped, 6 deselected in 97s** (green — the memory claim "2 TestRatchets RED on main" is STALE).
 - Ruff: 0. Web `npx tsc --noEmit`: 3.1s.

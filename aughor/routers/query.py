@@ -193,6 +193,7 @@ async def query_semantic(body: _SemanticOpRequest):
                 tolerate(_e, "query/semantic: best-effort connection close", counter="query.semantic.close_failed")
         if base.error:
             return None, base
+        from aughor.kernel.flags import flag_enabled
         op = apply_step(
             base, body.operator, body.column,
             predicate=body.predicate or "",
@@ -203,6 +204,7 @@ async def query_semantic(body: _SemanticOpRequest):
             out_column=body.out_column,
             max_rows=body.max_rows,
             override_cap=body.override_cap,
+            validate=flag_enabled("semops.guarded_extract"),
         )
         return op, base
 

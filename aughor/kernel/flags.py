@@ -39,6 +39,7 @@ FLAG_ENV = {
     "ada.causal_drill": "AUGHOR_CAUSAL_DRILL",
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
+    "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -129,6 +130,10 @@ FLAG_META = {
     "closed_loop": {
         "label": "Closed-loop corrections",
         "description": "Read captured human corrections/verdicts and trusted queries back into the planner as priors, so a corrected mistake isn't repeated. Off by default until its delta is proven on your data.",
+    },
+    "semops.guarded_extract": {
+        "label": "Guarded extraction (validate + re-extract)",
+        "description": "When the semantic extract operator pulls a typed value (year/date/email/number) out of free text, validate each value against its type and re-extract the off-type cells with targeted feedback (a bounded gleaning loop). Off-type values are surfaced and kept, never dropped. Adds a re-extract LLM call only when a typed field fails validation. Off by default — turns text extraction from regex-fragile into a guarded, self-correcting step.",
     },
 }
 
