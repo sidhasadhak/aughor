@@ -79,7 +79,8 @@ export interface ChatTurn {
   clarify: {
     question: string;
     options: string[];
-    source: string;          // "underspecified" | "ambiguous_term"
+    previews: string[];      // parallel to options (soma): what each reading RETURNS ("= 68")
+    source: string;          // "underspecified" | "ambiguous_term" | "structural"
     reason: string;
   } | null;
 
@@ -379,6 +380,7 @@ export async function consumeStream(
               dispatch({ type: "CLARIFY", clarify: {
                 question: (p.question as string) ?? "",
                 options: (p.options as string[]) ?? [],
+                previews: (p.previews as string[]) ?? [],
                 source: (p.source as string) ?? "",
                 reason: (p.reason as string) ?? "",
               } });

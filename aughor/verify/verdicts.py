@@ -93,7 +93,7 @@ def record_verdict(
              sql_source or "", corrected_sql or "", now),
         )
         c.commit()
-        return {
+        result = {
             "id": cur.lastrowid, "org_id": org, "connection_id": connection_id or "",
             "investigation_id": investigation_id or "", "verdict": v,
             "note": note or "", "headline": headline or "",
@@ -102,6 +102,21 @@ def record_verdict(
         }
     finally:
         c.close()
+    # Verdict → Ambiguity Ledger bridge: a reviewer's reject/correct on a headlined finding
+    # crystallizes as the HIGHEST-authority resolution (overrides any probe/user reading on that
+    # question). Best-effort, gated with the ledger (closed_loop); never fails the verdict write.
+    if v in ("reject", "correct") and (headline or "").strip():
+        try:
+            from aughor.verify.priors import closed_loop_enabled
+            if closed_loop_enabled():
+                from aughor.semantic.ambiguity_ledger import crystallize_verdict
+                crystallize_verdict(connection_id or "", headline, org_id=org,
+                                    corrected_sql=corrected_sql or "", note=note or "")
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "verdict→ledger crystallization is best-effort",
+                     counter="verdicts.ledger_bridge")
+    return result
 
 
 def verdict_stats(connection_id: Optional[str] = None) -> dict:

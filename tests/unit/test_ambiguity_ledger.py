@@ -13,6 +13,7 @@ from aughor.semantic.ambiguity_ledger import (
     Reading,
     build_resolution_block,
     crystallize_user_choice,
+    crystallize_verdict,
     ledger_stats,
     list_resolutions,
     purge_connections,
@@ -134,6 +135,43 @@ def test_user_choice_outranks_a_probe_on_same_dimension():
     assert list_resolutions("uc_rank")[0].resolved_reading == "by revenue"
     assert list_resolutions("uc_rank")[0].resolution_source == "user"
     assert len(list_resolutions("uc_rank")) == 1  # same natural key → burn-down, one row
+
+
+def test_crystallize_verdict_is_highest_authority():
+    """A reviewer verdict overrides a user choice on the same question (verdict > user > probe)."""
+    crystallize_user_choice("vd_conn", "average total runs by strikers", "per-match totals")
+    crystallize_verdict("vd_conn", "average total runs by strikers",
+                        note="use per-career totals", corrected_sql="GROUP BY player")
+    rows = list_resolutions("vd_conn")
+    assert len(rows) == 1  # same dimension → burn-down, verdict replaces the user reading
+    assert rows[0].resolution_source == "verdict"
+    assert rows[0].resolved_reading == "use per-career totals"
+    assert rows[0].resolved_sql == "GROUP BY player"
+    # a later user choice can NOT downgrade the reviewer's verdict
+    crystallize_user_choice("vd_conn", "average total runs by strikers", "per-match again")
+    assert list_resolutions("vd_conn")[0].resolution_source == "verdict"
+    assert crystallize_verdict("vd_conn", "") is None  # empty subject → no-op
+
+
+def test_record_verdict_bridges_to_the_ledger(monkeypatch):
+    """The live hook: a reject/correct verdict on a headlined finding crystallizes a
+    verdict-source resolution; accept / no-headline / flag-off write nothing."""
+    from aughor.verify import verdicts
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    purge_connections(["vb_conn"])
+    verdicts.record_verdict("vb_conn", "inv1", "correct", note="use per-career totals",
+                            headline="average total runs by strikers", corrected_sql="GROUP BY player")
+    rows = list_resolutions("vb_conn")
+    assert len(rows) == 1 and rows[0].resolution_source == "verdict"
+    assert rows[0].resolved_sql == "GROUP BY player"
+    # an accept teaches no correction → no ledger write
+    verdicts.record_verdict("vb_conn", "inv2", "accept", headline="something fine")
+    assert len(list_resolutions("vb_conn")) == 1
+    # flag off → no write even for a correction
+    monkeypatch.delenv("AUGHOR_CLOSED_LOOP", raising=False)
+    purge_connections(["vb_off"])
+    verdicts.record_verdict("vb_off", "inv3", "reject", headline="a bad reading")
+    assert list_resolutions("vb_off") == []
 
 
 def test_compounding_loop_b1_settlement_then_read_back():

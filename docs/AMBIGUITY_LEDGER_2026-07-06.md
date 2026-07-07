@@ -98,12 +98,29 @@ The connection-delete cascade drops a connection's resolutions (`bootstrap._ambi
 hook + a case in `test_connection_purge.py`) — per-connection burn-down state dies with the
 connection.
 
-## 5 · Remaining follow-on
+## 5 · Follow-on — shipped
 
-- **Render the receipt field** — I6 writes `resolved_ambiguities` to the receipt payload; a UI
-  panel to *show* it on the Trust-Receipt surface is the natural frontend follow-on.
-- **Light up the soma path** (`AUGHOR_SOMA_CLARIFY`) so structural disagreement (candidate
-  readings with result previews) drives clarify chips in the product — then I4 captures those too,
-  and `n_signatures` + probe evidence join the receipt.
-- **Verdict → ledger bridge:** a `reject`/`correct` verdict that names a dimension crystallizes as
-  a `verdict`-source resolution (the highest authority).
+- **Receipt render (I6-UI):** `web/components/TrustReceipt.tsx` renders the `resolved_ambiguity`
+  lineage — a collapsed `◆ resolved reading` badge + an expanded "applied a previously-resolved
+  reading (settled by a probe / the user / a reviewer)" block. End-to-end tested (the receipt
+  endpoint serves the edge the component filters on).
+- **Soma structural clarify, enriched:** `assess_structural_ambiguity` now attaches a compact
+  **result preview** per reading (`= 68` vs `= 1131`), surfaced under each clarify chip
+  (`ChatPanel.tsx`) so the divergence is visible — the design's "options ARE the candidate readings
+  with their result previews." I4 already captures a soma choice (the chip text). The
+  `AUGHOR_SOMA_CLARIFY` flag stays **opt-in** (each structural-suspect deep turn costs one LLM
+  call — flipping it on is a deliberate cost decision, left to the operator).
+- **Verdict → ledger bridge:** `record_verdict` crystallizes a `reject`/`correct` on a headlined
+  finding as a **`verdict`-source** resolution (`crystallize_verdict`) — the highest authority,
+  overriding any probe/user reading on that question. Gated `closed_loop`; best-effort. To avoid
+  double-injection, `priors.retrieve_priors` **dedups** a correction whose headline is already an
+  authoritative ledger resolution.
+
+## 6 · Remaining follow-on
+
+- **`n_signatures` + probe evidence on the receipt** for soma turns: soma emits the clarify then
+  returns (no answer/receipt on that turn), so this needs the answering turn to re-surface the
+  signature count — deferred until the soma path is a first-class product mode.
+- **Consolidate corrections into the ledger:** the corrections prior and the ledger both surface
+  reviewer decisions (deduped today); folding the corrections store entirely into the ledger is
+  the clean long-term shape.

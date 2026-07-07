@@ -153,6 +153,13 @@ def retrieve_priors(question: str, connection_id: str, *, org_id: str = "", top_
         from aughor.kernel.errors import tolerate
         tolerate(exc, "verdict-correction retrieval for priors is best-effort", counter="priors.corrections")
 
+    # A verdict that crystallized into the Ambiguity Ledger (subject == the finding's headline)
+    # is already carried by the leading resolution block — drop it from the corrections block so
+    # the same reviewer decision isn't injected twice (the verdict→ledger bridge, deduped here).
+    if resolutions and corrections:
+        _resolved_subjects = {res.subject for res, _s in resolutions}
+        corrections = [c for c in corrections if (c.get("headline") or "") not in _resolved_subjects]
+
     from aughor.semantic.ambiguity_ledger import build_resolution_block
     parts = [p for p in (build_resolution_block(resolutions), build_trusted_block(trusted),
                          _build_corrections_block(corrections)) if p]

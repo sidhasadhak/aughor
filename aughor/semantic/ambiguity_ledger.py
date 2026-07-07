@@ -193,6 +193,20 @@ def crystallize_user_choice(connection_id: str, subject: str, reading: str, *,
         evidence="the user chose this reading when asked to clarify"))
 
 
+def crystallize_verdict(connection_id: str, subject: str, *, org_id: str = "",
+                        corrected_sql: str = "", note: str = "") -> Optional[AmbiguityResolution]:
+    """A reviewer's verdict is the HIGHEST authority — it overrides any probe/user resolution on
+    the same dimension (override-wins) and outsorts them in retrieval. Crystallizes the reviewer's
+    correction as the settled reading for the judged question. Returns None on empty input."""
+    if not (connection_id and (subject or "").strip()):
+        return None
+    return save_resolution(AmbiguityResolution(
+        connection_id=connection_id, org_id=org_id, dim_kind="AmbiIntent", dim_facet="grain",
+        subject=subject, resolved_reading=((note or "").strip() or "reviewer-corrected reading"),
+        resolved_sql=corrected_sql, resolution_source="verdict",
+        evidence=((note or "").strip() or "a reviewer corrected an earlier answer")))
+
+
 # ── read path (I1) ────────────────────────────────────────────────────────────
 def retrieve_resolutions(question: str, connection_id: str, *, org_id: str = "",
                          top_k: int = 2, min_score: float = 0.34

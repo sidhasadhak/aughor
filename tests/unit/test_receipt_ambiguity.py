@@ -72,3 +72,29 @@ def test_receipt_omits_field_when_flag_off(cap_ledger, monkeypatch):
         question="what are the top products?", sqls=["SELECT 1"], headline="",
         schema="", connection_id="rcpt_off")
     assert "resolved_ambiguities" not in cap_ledger.payloads[-1]
+
+
+def test_receipt_endpoint_serves_resolved_ambiguity_lineage(monkeypatch):
+    """The frontend chain: the /chat/{conn}/{turn}/receipt endpoint returns the
+    resolved_ambiguity lineage edge the TrustReceipt component filters on — so what the backend
+    writes is what the UI can render (uses the REAL Ledger so the endpoint reads it back)."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    purge_connections(["rcpt_api"])
+    crystallize_user_choice("rcpt_api", "top products", "by revenue")
+    # write a real receipt artifact under the chat natural key the endpoint reads
+    inv._write_answer_receipt(
+        kind="chat_answer", natural_key="chat:rcpt_api:turn9",
+        question="what are the top products?", sqls=["SELECT 1"], headline="",
+        schema="", connection_id="rcpt_api")
+    app = FastAPI()
+    app.include_router(inv.router)
+    r = TestClient(app).get("/chat/rcpt_api/turn9/receipt")
+    assert r.status_code == 200
+    lineage = r.json()["lineage"]
+    edges = [e for e in lineage if e["relation"] == "resolved_ambiguity"]
+    assert edges, "the receipt endpoint must expose the resolved_ambiguity edge to the UI"
+    assert "by revenue" in (edges[0]["detail"] or "")

@@ -61,13 +61,14 @@ class SomaVerdict:
     ambiguous: bool
     question: str = ""
     options: list = field(default_factory=list)   # distinct interpretation labels (grounded chips)
+    previews: list = field(default_factory=list)  # a compact result preview per option (parallel)
     source: str = "structural"
     n_groups: int = 0                              # how many distinct result-groups the candidates fell into
 
     def to_event(self) -> dict:
         return {"question": self.question, "options": list(self.options),
-                "source": self.source, "terms": [], "reason": "the question has multiple readings "
-                "that give different answers"}
+                "previews": list(self.previews), "source": self.source, "terms": [],
+                "reason": "the question has multiple readings that give different answers"}
 
 
 # ── result signatures (order-insensitive, float-tolerant ~ abs_tol 1e-2) ──────
@@ -86,6 +87,30 @@ def _signature(rows) -> tuple:
     return tuple(sorted(norm))
 
 
+def _fmt_cell(v) -> str:
+    """Render a cell for a preview chip — NULL as '∅', integral floats without a trailing '.0'."""
+    if v is None:
+        return "∅"
+    n = _norm_cell(v)
+    if isinstance(n, float) and n.is_integer():
+        return str(int(n))
+    return str(n)
+
+
+def _preview(rows) -> str:
+    """A compact human preview of what a reading RETURNS — the disambiguating evidence on the chip
+    ('= 1131' vs '= 68'). Single scalar → the value; one row → its first cells; else a row count."""
+    rows = list(rows or [])
+    if not rows:
+        return "no rows"
+    first = rows[0] or []
+    if len(rows) == 1 and len(first) == 1:
+        return f"= {_fmt_cell(first[0])}"
+    if len(rows) == 1:
+        return ", ".join(_fmt_cell(c) for c in first[:3])
+    return f"{len(rows)} rows"
+
+
 # execute_fn(sql) -> (ok, rows, error)
 ExecuteFn = Callable[[str], tuple]
 
@@ -96,7 +121,7 @@ def assess_structural_ambiguity(question: str, candidates, execute_fn: ExecuteFn
     Candidates whose SQL errors are dropped. The surviving candidates are grouped by result signature;
     when ≥2 distinct groups remain, the question is structurally ambiguous and each group's label
     becomes a grounded option chip. Pure: ``execute_fn`` is injected."""
-    groups: dict = {}   # signature -> the first CandidateReading that produced it
+    groups: dict = {}   # signature -> (the first CandidateReading that produced it, its preview)
     for c in candidates or []:
         if not getattr(c, "sql", "").strip():
             continue
@@ -107,15 +132,16 @@ def assess_structural_ambiguity(question: str, candidates, execute_fn: ExecuteFn
         if not ok:
             continue
         sig = _signature(rows)
-        groups.setdefault(sig, c)
+        groups.setdefault(sig, (c, _preview(rows)))
     distinct = list(groups.values())
     if len(distinct) < 2:
         return SomaVerdict(False, n_groups=len(distinct))
-    options = [c.label for c in distinct if c.label][:4]
+    labelled = [(c, p) for (c, p) in distinct if c.label][:4]
     return SomaVerdict(
         True,
         question="This could be read a few ways — which did you mean?",
-        options=options,
+        options=[c.label for c, _p in labelled],
+        previews=[p for _c, p in labelled],
         n_groups=len(distinct),
     )
 
