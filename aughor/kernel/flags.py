@@ -28,6 +28,7 @@ FLAG_ENV = {
     "ada.parallel_phases": "AUGHOR_ADA_PARALLEL_PHASES",
     "ada.why_where_interaction": "AUGHOR_ADA_WHY_WHERE_INTERACTION",
     "ada.why_deepen": "AUGHOR_ADA_WHY_DEEPEN",
+    "ada.parallel_why_lenses": "AUGHOR_ADA_PARALLEL_WHY_LENSES",
     "trust.verify_facade": "AUGHOR_TRUST_FACADE",
     "trust.verify_live": "AUGHOR_TRUST_VERIFY_LIVE",
     "semantic.resolve_live": "AUGHOR_SEMANTIC_RESOLVE_LIVE",
@@ -83,6 +84,10 @@ FLAG_META = {
     "ada.why_deepen": {
         "label": "Deepen the WHY (benchmark + drill)",
         "description": "After the WHY lens finds the leading return reason, forward-chain two more queries: a PEER BENCHMARK (is the reason's share abnormally high for the subject vs its peers, or a brand-wide baseline?) and a SECOND-LEVEL DRILL (which brands/products concentrate the leading reason — the fix target?). Establishes whether the cause is real and where to act. Adds two LLM-planned queries per qualifying run; requires 'Parallel Deep-Analysis lenses'. Off by default.",
+    },
+    "ada.parallel_why_lenses": {
+        "label": "Parallel WHY-deepening lenses",
+        "description": "Run the forward-chained WHY lenses (WHY×WHERE interaction ∥ peer benchmark ∥ reason drill) as one concurrent wave instead of a serial chain. Each depends ONLY on the already-computed WHERE/WHY summaries, never on each other, so the merge is byte-identical (fixed spec order, never completion order) — just faster wall-clock when two or more are enabled. Multiplies concurrent LLM calls (bounded by the P6 token budget); requires 'Parallel Deep-Analysis lenses' + the WHY lenses it parallelizes. Off by default.",
     },
     "trust.verify_facade": {
         "label": "Unified trust.verify façade",

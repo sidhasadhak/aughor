@@ -96,8 +96,12 @@ executor A/B (real executor, fixed leaf latency) — baseline serial+chains 12.0
 (**1.12×**, executor alone) → wave+wide **8.0s (1.50×)** — the prompt is what unlocks the executor.
 
 **⏭️ Immediate next — now sequenced inside the 10x + Spider 2.0 program (see the block at the top of §0):**
-1. **Continue P-A** — apply the wave pattern to ADA hypothesis-testing / per-dimension cross-section;
-   then **P-B** (parallelize the pre-flight retrievals — near-free, deterministic). *→ program WS1.*
+1. **Continue P-A** — ✅ the **ADA WHY-lens wave** shipped (2026-07-07, flag `ada.parallel_why_lenses`,
+   default off): the forward-chained WHY lenses (interaction ∥ benchmark ∥ drill) — independent, depend
+   only on the WHERE/WHY summaries — now run as one concurrent wave, byte-identical merge (endpoint-gated
+   A/B for the wall-clock win). Joins the shipped `ada.parallel_phases` + `explore.parallel_subq` wide-DAG
+   waves. Investigate-mode multi-hypothesis testing is dormant in the live graph (skip until reactivated).
+   Remaining: **P-B** (parallelize the pre-flight retrievals — near-free, deterministic). *→ program WS1.*
 2. **`web/lib/api.gen.ts` is stale** (12,929 lines — missing the `/rbac`, `/jobs`, `/packs`, `/verify`
    route families) — regen + add a codegen CI gate. *→ program WS4.*
 3. **Retire `CanonicalMetric`** — repoint the `semantic/compiler.py` structured consumer (U10 tail;

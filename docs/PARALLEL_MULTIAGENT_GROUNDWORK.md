@@ -205,8 +205,19 @@ is already deterministic, so an LLM supervisor would add latency + cost for a de
   depend only on the landscape, never each other; (2) `_normalize_depends_on` deterministically clears a
   `landscape`'s deps (it can't depend on a sibling) so a spurious link can't stall wave 1 — only drops
   provably-unreal deps; (3) `_wave_schedule` layers the DAG into waves and logs the widths, so realized
-  parallelism is measurable on the real path without an LLM-variance A/B. **Next within P-A:** apply the
-  wave pattern to hypothesis testing / per-dimension cross-section; live-A/B the new wave widths.
+  parallelism is measurable on the real path without an LLM-variance A/B.
+- **P-A (ADA WHY-lens wave) ✅ SHIPPED (2026-07-07, flag `ada.parallel_why_lenses`, default off).** The
+  forward-chained WHY lenses at the tail of `ada_cross_section_multilens` (WHY×WHERE interaction ∥ peer
+  benchmark ∥ reason drill) ran serially, yet each depends ONLY on the already-computed WHERE/WHY summaries,
+  never on each other. They now run as one concurrent wave (each on its own reader clone via
+  `ContextThreadPoolExecutor`), merged in FIXED spec order (never completion order) so the report is
+  byte-identical — just faster wall-clock when ≥2 are enabled. Fail-open per lens, budget-abort re-raises,
+  executor-failure → serial fallback. Off → the serial chain, byte-identical. Tests: byte-identical
+  serial-vs-wave merge, reader-per-lens isolation, serial-shares-conn, concurrency timing. **Live-A/B the
+  wall-clock win when endpoint time is available.** **Still within P-A:** the temporal/dimensional phase
+  wave already ships (`ada.parallel_phases`); investigate-mode multi-hypothesis testing is dormant in the
+  current graph (the live deep path routes through the ADA phase/lens branches, not the `plan_queries`
+  hypothesis loop) — revisit only if that loop is reactivated.
 - **P-B: parallelize the pre-flight retrievals** (KB / playbook / prior-analyses / scan) as concurrent
   nodes — near-free wall-clock (little/no extra LLM cost).
 - **P-C: refactor `run_analysis_phase` into a phase subgraph** so phases compose and can run concurrently.
