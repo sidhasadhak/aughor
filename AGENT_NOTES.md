@@ -8,6 +8,42 @@ with baseline, file:line anchors, the Spider2 runbook, gates, and a progress log
 ROADMAP §0 (top block) + §3 ("The 10x + Spider 2.0 program") mirror it at-a-glance.
 User-confirmed 2026-07-06: glm-5.2 via Ollama Cloud is THE campaign model; Snowflake access ready.
 
+## External-source study (2026-07-07) — DocETL · Palimpzest · Hasura/PromptQL · DAB
+User redirected mid-session: study Palimpzest, Hasura graphql-engine, PromptQL, + 2 papers
+(DocETL 2410.12189, DataAgentBench 2603.20576) and extract iterable features to improve Aughor.
+**The four sources CONVERGE on Aughor's own thesis** — a declarative plan separated from
+deterministic execution, LLM non-determinism confined to small bounded *validated* ops. So they
+validate the direction and hand Aughor specific unbuilt mechanisms. Full briefs captured in the
+session; key transfers, ranked:
+- **DocETL gleaning** (validate→refine loop, `num_rounds`, append-validator-to-thread) → the text
+  semops, which today do single-call fail-open with ZERO validation. ✅ SHIPPED (below).
+- **Palimpzest**: `convert(χ)` as a first-class optimizable operator; **champion-model reference-free
+  quality estimation** (rank cheap-op output vs a strong model on a sample, no labels); policy-driven
+  per-op physical choice (model/code-synth/token-reduction); MAB sentinel sampling → Pareto frontier.
+- **Hasura NDC**: capability-negotiated connector contract; **batched foreach remote joins** (dedup keys
+  → one keyed request per remote node, N+1-free); cross-source filter → OR-of-equalities pushed to one
+  WHERE; declarative row/col perms compiled INTO the predicate.
+- **PromptQL**: plan-as-Python-program (run_sql/search/classify/summarize/extract + store_artifact),
+  deterministic replay, **artifacts = structured working memory** (never re-feed raw rows to context).
+  100% on CRMArena-Pro DB-querying vs ~58% agent-loop; +7pt over ReAct on DAB via the context layer.
+- **DAB** (the frontier bench, Gemini-3-Pro 38% pass@1): 4 hard axes by query count — multi-DB 54/54 ·
+  **unstructured-text extraction 47/54 (0% on patents, the wedge)** · domain-knowledge 30/54 ·
+  ill-formatted join keys 26/54. Failures: plan+impl = 85% (FM2 40 + FM4 45), data-selection only 15%.
+  Aughor already owns axis-4 (ontology/metrics) + has the right shape for axis-3 (overlap-probe join
+  guards, single-DB today). Aughor already has a THIN `connectors/federated.py` (DuckDB ATTACH/Arrow).
+Decision (mine, pending user scope pick on the bigger bets): ship the no-regret wedge first
+(guarded extraction = DAB GAP-2), then present the ranked roadmap for the big directional bets
+(cross-DBMS federated planner / plan-as-program+artifacts / cross-source key reconciliation).
+
+## ✅ SHIPPED this session — Guarded extraction (branch `2026-07-07-guarded-extraction`, `c07c445`)
+DocETL-gleaning on `semops/operators.py::semantic_extract`: infer a type (year/date/email/number) from
+each field's name/desc, deterministically validate extracted values, re-extract off-type cells with
+targeted feedback for `max_rounds`, surface+keep residuals (never drop — fail-open contract holds).
+Flag `semops.guarded_extract` (`AUGHOR_GUARDED_EXTRACT`), default off = byte-identical; wired into both
+live callers (`routers/query.py::query_semantic` + `agent/investigate.py` ADA semantic step). 12 tests,
+full suite **2690 green**, ruff 0. This is the deterministic-guard-over-LLM answer to the axis where
+every frontier model scores 0%.
+
 ## Baseline (main @ 879fbee, 2026-07-07 — session 2)
 - Full suite `uv run pytest -q -m "not e2e and not eval" -p no:cacheprovider`: **2663 passed, 1 skipped, 6 deselected in 89.2s** (green; grew +155 from the 2508 in the prior baseline).
 - Ruff (`uvx ruff@0.15.20 check .`): **0**. LOC: aughor/ 83,386 py · tests/ 31,002.
