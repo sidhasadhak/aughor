@@ -12,8 +12,12 @@ import pytest
 
 @pytest.fixture
 def isolated_verdicts(tmp_path, monkeypatch):
+    from aughor.semantic import ambiguity_ledger
     from aughor.verify import verdicts
     monkeypatch.setattr(verdicts, "_DB_PATH", tmp_path / "verdicts.db")
+    # record_verdict now bridges into the Ambiguity Ledger (a session-shared store); isolate it
+    # per-test too so a verdict crystallized here can't leak into another test's connection.
+    monkeypatch.setattr(ambiguity_ledger, "_DB_PATH", tmp_path / "ambiguity.db")
     # priors.py imports list_corrections at module load; it resolves through the
     # verdicts module object, so patching _DB_PATH is sufficient.
     return verdicts
@@ -104,18 +108,29 @@ def test_ledger_prior_empty_on_irrelevant_question(monkeypatch):
     assert build_priors_section("how many suppliers are in France?", "led_conn3") == ""
 
 
-def test_verdict_in_ledger_is_not_double_injected(isolated_verdicts, monkeypatch):
-    # a reject/correct verdict crystallizes into the ledger AND lives in the verdicts store;
-    # retrieve_priors must surface it ONCE (as an authoritative resolution), not twice.
+def test_verdict_surfaces_via_corrections_not_double_injected(isolated_verdicts, monkeypatch):
+    # a reject/correct verdict lands in BOTH the ledger (bridge) and the verdicts store; the PROMPT
+    # must surface it ONCE — via the emphatic corrections voice — with the redundant ledger line
+    # deduped, while the ledger row survives for the burn-down metric + the Trust Receipt.
     monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
-    from aughor.semantic.ambiguity_ledger import purge_connections
+    from aughor.semantic.ambiguity_ledger import list_resolutions, purge_connections
     purge_connections(["ded_conn"])
     isolated_verdicts.record_verdict(
         connection_id="ded_conn", investigation_id="i", verdict="reject",
         headline="revenue by product category", note="use order_items.line_total",
         corrected_sql="SELECT category, SUM(line_total) FROM order_items GROUP BY 1")
+    assert list_resolutions("ded_conn") and list_resolutions("ded_conn")[0].resolution_source == "verdict"
     from aughor.verify.priors import retrieve_priors
     res = retrieve_priors("what is revenue by product category?", "ded_conn")
-    assert res.resolutions                    # the ledger carries it (leading, authoritative)
-    assert res.corrections == []              # deduped — the same verdict isn't injected again
-    assert "RESOLVED AMBIGUITIES" in res.section and "PAST CORRECTIONS" not in res.section
+    assert "PAST CORRECTIONS" in res.section and res.corrections
+    assert "RESOLVED AMBIGUITIES" not in res.section     # the redundant ledger line is deduped out
+
+
+def test_probe_resolution_reaches_the_live_corrections_section(monkeypatch):
+    # the LIVE answer path (chat + plan node) calls build_corrections_section — the Ambiguity-Ledger
+    # read path MUST fire there, or the whole compounding feature never reaches a real prompt.
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    _seed_resolution("led_live", "total runs by strikers", "career totals")   # probe-source
+    from aughor.verify.priors import build_corrections_section
+    section = build_corrections_section("what is the total runs by strikers?", "led_live")
+    assert "RESOLVED AMBIGUITIES" in section and "career totals" in section
