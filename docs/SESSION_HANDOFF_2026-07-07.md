@@ -1,11 +1,28 @@
 # Session handoff — 2026-07-07 (SOMA leverage shipped · the accuracy fork is next)
 
-*Read this first next session. Everything below is merged to `main` (PR
-[#112](https://github.com/sidhasadhak/aughor/pull/112) `1e1243b` + the live-wiring fix PR
-[#113](https://github.com/sidhasadhak/aughor/pull/113)). Suite 2333 unit green · ruff 0 · tsc + 3
-web gates green · codegen gate clean. Nothing is left uncommitted.*
+*Read this first next session. Everything below is merged to `main`. Latest merged main =
+`9d01de5`. Full unit suite **2336 green · ruff 0**; all new flags default-off. Nothing uncommitted.*
 
 Supersedes [`SESSION_HANDOFF_2026-07-06.md`](SESSION_HANDOFF_2026-07-06.md).
+
+---
+
+## 0 · UPDATE — later on 2026-07-07 (three more PRs merged; start-here for next session)
+
+Since the SOMA block below, **three more PRs merged to `main`** (carefully, in order, overlaps resolved locally):
+
+- **PR [#114](https://github.com/sidhasadhak/aughor/pull/114) `8c87312` — retire `CanonicalMetric` from the compiler.** The last structured consumer now resolves the one `SemanticContract` via `resolve_planning_metrics` (behind `semantic.contract_live`, byte-identical off). REC-U10 tail done.
+- **PR [#115](https://github.com/sidhasadhak/aughor/pull/115) `1275e94` — P-A + P-B parallel waves.** P-A = ADA WHY-lens wave (`ada.parallel_why_lenses`: interaction ∥ benchmark ∥ drill, byte-identical merge). P-B = `preflight.parallel` (plan_queries' 4 retrievals concurrent). Both default-off; wins are deterministic wall-clock (no endpoint A/B needed). **Live finding:** investigate-mode multi-hypothesis testing is DORMANT in the live graph — don't parallelize it.
+- **PR [#116](https://github.com/sidhasadhak/aughor/pull/116) `9d01de5` — two Deep-Analysis bug fixes** found in a live run: (1) `LocalUploadConnection.make_reader()` clone crashed on every seed attach (missing seed-tombstone attrs) — fixed + retires a long-standing latent bug; (2) `_normalize_pct_key_numbers` corrupted `0.36pp`→`36.0%pp` (≤1→fraction ×100 mis-fire) — fixed with a pp-unit guard.
+
+**Deeper WHY lenses — decision taken (with the user).** Live-verified on luxexperience: the deepen lenses add *genuine* value (the peer-benchmark busts the "size_fit is high for womenswear" premise → "it's high everywhere"; the drill proves it's systemic across 70 brands). **Kept default-OFF** (each adds an LLM query, ~2–3 min on a throttled endpoint; on converged data they just confirm "within noise"). New ROADMAP rework item: **confidence-triggered activation** — fire them only when the user needs more confident analysis (explicit "deepen" affordance / deterministic materiality trigger / [[reforce-agent]] confidence tiering); gate default-on-for-cross-sectional-why on that + the parallel-WHY wave capping latency.
+
+**Next session — pick up here (in priority order):**
+1. **The accuracy fork (§3 below) is still the headline** — a stronger inference endpoint is the one lever that moves Spider2. Needs the user's cost sign-off (parked, §4).
+2. **P-C — refactor `run_analysis_phase` into a phase subgraph** (next in the parallel-waves program; see `docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`). Deterministic, no endpoint needed.
+3. **Confidence-triggered deeper-WHY-lens activation** (the rework item above) — design + build the trigger.
+4. **Live wall-clock A/B** of the P-A/P-B/why-lens waves when endpoint time is available (correctness already proven; the wall-clock number isn't).
+- Unchanged parked decisions (do NOT act without explicit go): the stronger-endpoint cost decision, the unsent Secure-Data-Share email, no Spider2 leaderboard submission — see §4.
 
 ---
 
