@@ -93,3 +93,25 @@ def test_deleting_one_seed_table_sticks_and_keeps_siblings(seed_db):
     tbls = _tables(c2, "demo")
     assert "orders" not in tbls and "items" in tbls   # only the deleted table stays gone
     c2.close()
+
+
+def test_make_reader_clone_does_not_crash_and_materializes_seed(seed_db):
+    """The parallel-lens/wave paths call make_reader() per branch. The clone bypasses __init__, so it
+    must set the seed tombstones itself before seeding — otherwise _seed_from_duckdb raised
+    AttributeError('_removed_seed_schemas') on every attach (fail-open, but log-spamming)."""
+    c = _conn(seed_db)
+    reader = c.make_reader()                              # must NOT raise
+    assert hasattr(reader, "_removed_seed_schemas") and hasattr(reader, "_removed_seed_tables")
+    assert "demo" in _schemas(reader)                     # seed still materialized on the clone
+    reader.close(); c.close()
+
+
+def test_make_reader_clone_honours_the_seed_tombstone(seed_db):
+    """A user-removed seed schema must STAY removed on a reader clone (the tombstone is copied), not
+    silently re-materialize because the clone skipped the tombstone filter."""
+    c = _conn(seed_db)
+    c.drop_schema("demo")
+    reader = c.make_reader()
+    assert "demo" in reader._removed_seed_schemas         # tombstone carried onto the clone
+    assert "demo" not in _schemas(reader)                 # and honoured — not re-materialized
+    reader.close(); c.close()

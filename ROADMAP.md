@@ -169,6 +169,22 @@ problem → platform-wide fit initiative**, not brand/segment/category targeting
 "uniform/spread", never a fabricated concentration. Multilens forward-chain refactored to compute the
 WHY phase once and fan interaction+benchmark+drill off it (`_forward` helper, fail-open).*
 
+**⏭️ REWORK — confidence-triggered activation of the deeper WHY lenses (`ada.why_deepen` /
+`ada.why_where_interaction`).** Live-run assessment (2026-07-07, luxexperience) confirmed these lenses
+add *genuine, decision-changing* value — the peer benchmark actively busts the "size_fit is high for
+womenswear" premise ("it's high everywhere across all categories"), and the drill proves the fix is
+systemic (70 brands, top ~2%), not product-specific. **But they stay default-OFF** because each adds an
+LLM-planned query (~2–3 min extra on a throttled endpoint) and, on data where WHERE/WHY already converge,
+they mostly confirm "within noise." Decision (with the user): do **not** blanket-enable — instead build an
+**activation policy that fires them only when the user needs more confident analysis.** Design space to
+work through: (a) an explicit **"deepen / high-confidence" affordance** in the answer UI (opt-in per run);
+(b) a **deterministic trigger** — run the deepen lenses only when the WHY finding is strong enough to be
+worth pressure-testing (a leading-reason share above a materiality floor) AND the cheaper lenses left real
+ambiguity, so a clean converged answer skips them; (c) reuse the **ReFoRCE confidence-tiered triggering**
+idea ([[reforce-agent]]) — probe only the hard/ambiguous minority. Gate the rollout on the parallel-WHY
+wave (`ada.parallel_why_lenses`, PR #115) landing so the added latency is capped, and on the two 2026-07-07
+precision fixes below. Prereq for a default-on-for-cross-sectional-why decision.
+
 **Shipped 2026-07-03** (branch `2026-07-02-ada-temporal-intake-grain`, merged; deterministic, full suite
 green — the **Deep Analysis report-quality arc**, see the "What we've built" entry below):
 **(B)** event-rate-aware temporal-axis recovery wired into `ada_intake` itself so *every* path recovers

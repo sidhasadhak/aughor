@@ -632,6 +632,13 @@ class LocalUploadConnection(Connector):
         clone._duckdb = duckdb.connect(":memory:")
         clone._seed_path = self._seed_path
         clone._seeded = set()
+        # Carry the seed tombstones onto the clone BEFORE seeding — `_seed_from_duckdb` reads them to
+        # skip user-removed seed schemas/tables. `make_reader` bypasses `__init__` (which normally
+        # sets these via `_load_tombstone`), so without this the clone raised AttributeError on every
+        # seed attach (fail-open, but log-spamming — and it dropped the tombstone filter). Copy as new
+        # sets so the clone honours the same removals without sharing the parent's mutable state.
+        clone._removed_seed_schemas = set(self._removed_seed_schemas)
+        clone._removed_seed_tables = set(self._removed_seed_tables)
         clone._seed_from_duckdb()
         clone._reload_existing_files()
         clone._set_search_path()

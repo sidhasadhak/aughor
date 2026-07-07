@@ -1108,6 +1108,10 @@ def _apply_percent_formatting(finding: dict, is_pct: bool) -> None:
 
 # Leading number of a key-number value, tolerating an approx "~" and a wrapping "(".
 _PCT_KN_LEAD_RE = re.compile(r"^\s*(~\s*)?\(?\s*(-?\d+(?:\.\d+)?)\s*(%?)")
+# A percentage-POINTS value ("0.36pp", "1.5 pp") — a SPREAD/GAP between two percentages, already
+# absolute. It must NOT go through the ratio→percent ×100 path below (that turned a correct "0.36pp"
+# into "36.0%pp": the number is ≤1 so the fraction heuristic wrongly scaled it and injected a "%").
+_PP_UNIT_RE = re.compile(r"^\s*~?\s*-?\d+(?:\.\d+)?\s*pp\b", re.I)
 # A parenthetical that ONLY restates a number (± %) — the LLM's redundant "(32.8%)" duplicate. A
 # parenthetical with words ("(15,612 / 48,320 items)") or a dimension ("(Germany)") is NOT this.
 _PCT_KN_REDUNDANT_TAIL_RE = re.compile(r"^\s*\(\s*~?\s*-?\d+(?:\.\d+)?\s*%?\s*\)\s*$")
@@ -1126,6 +1130,8 @@ def _normalize_pct_key_numbers(finding: dict) -> None:
         label = (kn.get("label") or "").lower()
         if any(w in label for w in ("count", "record", "rows", "volume", "orders", "customers", "= n", " n ")):
             continue
+        if _PP_UNIT_RE.match(val):
+            continue  # percentage-POINTS values are already absolute — the %/ratio canonicalizer skips them
         m = _PCT_KN_LEAD_RE.match(val)
         if not m:
             continue

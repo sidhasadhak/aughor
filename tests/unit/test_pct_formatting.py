@@ -48,6 +48,23 @@ def test_normalize_pct_key_numbers_unifies_scale_and_precision():
                    "n": "5000", "AOV": "42.50", "Highest": "40.5%"}
 
 
+def test_normalize_pct_key_numbers_preserves_percentage_points():
+    """A percentage-POINTS value ("0.36pp") is a spread/gap between two shares — already absolute.
+    The ratio→percent ×100 heuristic (value ≤ 1 → fraction) wrongly turned "0.36pp" into "36.0%pp"
+    (the reason-drill '#1 vs #12 brand' spread bug). pp values must pass through untouched, while
+    ordinary fractions/percents still normalize."""
+    f = {"key_numbers": [
+        {"label": "Spread between #1 and #12 brand", "value": "0.36pp"},   # was corrupted → 36.0%pp
+        {"label": "Gap", "value": "1.5 pp"},                               # spaced pp → untouched
+        {"label": "Subject", "value": "0.4096"},                           # bare fraction → 41.0% (unaffected)
+        {"label": "Rate", "value": "0.41%"},                               # mis-scaled % → 41.0% (unaffected)
+    ]}
+    I._normalize_pct_key_numbers(f)
+    got = {k["label"]: k["value"] for k in f["key_numbers"]}
+    assert got == {"Spread between #1 and #12 brand": "0.36pp", "Gap": "1.5 pp",
+                   "Subject": "41.0%", "Rate": "41.0%"}
+
+
 def test_fix_xsec_extreme_key_numbers_is_scale_aware_when_pct():
     f = {"columns": ["brand", "metric_total"], "rows": [["a", 0.27], ["b", 0.405]],
          "key_numbers": [{"label": "Highest (top 1)", "value": "40.5%"},
