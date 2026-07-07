@@ -5080,6 +5080,21 @@ export interface components {
             /** Canvas Id */
             canvas_id?: string | null;
             /**
+             * Clarify Reading
+             * @default
+             */
+            clarify_reading: string;
+            /**
+             * Clarify Source
+             * @default
+             */
+            clarify_source: string;
+            /**
+             * Clarify Subject
+             * @default
+             */
+            clarify_subject: string;
+            /**
              * Connection Id
              * @default fixture
              */
