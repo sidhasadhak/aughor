@@ -205,10 +205,29 @@ is already deterministic, so an LLM supervisor would add latency + cost for a de
   depend only on the landscape, never each other; (2) `_normalize_depends_on` deterministically clears a
   `landscape`'s deps (it can't depend on a sibling) so a spurious link can't stall wave 1 — only drops
   provably-unreal deps; (3) `_wave_schedule` layers the DAG into waves and logs the widths, so realized
-  parallelism is measurable on the real path without an LLM-variance A/B. **Next within P-A:** apply the
-  wave pattern to hypothesis testing / per-dimension cross-section; live-A/B the new wave widths.
-- **P-B: parallelize the pre-flight retrievals** (KB / playbook / prior-analyses / scan) as concurrent
-  nodes — near-free wall-clock (little/no extra LLM cost).
+  parallelism is measurable on the real path without an LLM-variance A/B.
+- **P-A (ADA WHY-lens wave) ✅ SHIPPED (2026-07-07, flag `ada.parallel_why_lenses`, default off).** The
+  forward-chained WHY lenses at the tail of `ada_cross_section_multilens` (WHY×WHERE interaction ∥ peer
+  benchmark ∥ reason drill) ran serially, yet each depends ONLY on the already-computed WHERE/WHY summaries,
+  never on each other. They now run as one concurrent wave (each on its own reader clone via
+  `ContextThreadPoolExecutor`), merged in FIXED spec order (never completion order) so the report is
+  byte-identical — just faster wall-clock when ≥2 are enabled. Fail-open per lens, budget-abort re-raises,
+  executor-failure → serial fallback. Off → the serial chain, byte-identical. Tests: byte-identical
+  serial-vs-wave merge, reader-per-lens isolation, serial-shares-conn, concurrency timing. **Live-A/B the
+  wall-clock win when endpoint time is available.** **Still within P-A:** the temporal/dimensional phase
+  wave already ships (`ada.parallel_phases`); investigate-mode multi-hypothesis testing is dormant in the
+  current graph (the live deep path routes through the ADA phase/lens branches, not the `plan_queries`
+  hypothesis loop) — revisit only if that loop is reactivated.
+- **P-B ✅ SHIPPED (2026-07-07, flag `preflight.parallel`, default off): parallelize the plan-time
+  pre-flight retrievals.** `plan_queries` ran four independent, deterministic, non-LLM retrievals
+  serially — relevant-schema ∥ KB planning patterns ∥ causal context ∥ closed-loop corrections. They
+  share no inputs beyond the hypothesis/question and touch no DB connection, so they now run concurrently
+  on `ContextThreadPoolExecutor`; `.result()` re-raises exactly as the serial path did, so the assembled
+  planning prompt is **byte-identical**. Off → serial, byte-identical. Tests: prompt-identical serial-vs-
+  parallel + closed-loop liveness survives + concurrency timing + serial-when-off. The win is measurable
+  by wall-clock without an LLM-variance A/B (near-free, no extra model cost). **Follow-up:** the
+  node-level fan-out the doc originally sketched (KB/playbook/prior-analyses/**scan** as concurrent *graph
+  nodes*) remains for the scan phase specifically, which runs in its own node upstream.
 - **P-C: refactor `run_analysis_phase` into a phase subgraph** so phases compose and can run concurrently.
 - **P-D (bigger, later): supervisor + real specialist subgraphs** — only if A–C don't close the gap; keep
   the *router* deterministic and use LLM agents only for genuinely open sub-tasks.

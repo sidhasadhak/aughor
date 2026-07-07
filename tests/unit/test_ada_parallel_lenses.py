@@ -563,3 +563,98 @@ def test_multilens_forward_chains_drill_on_anomaly(monkeypatch):
     # the drill call carries a period_directive naming the flagged period.
     drill_calls = [pd for pid, pd in calls if pid.startswith("period_drill")]
     assert drill_calls and all("2023-Q3" in (pd or "") for pd in drill_calls)
+
+
+# ── forward-chained WHY lenses: serial chain vs parallel wave (ada.parallel_why_lenses) ────────
+
+def _install_forward_stub(monkeypatch, *, seen=None, sleep=0.0):
+    """Reach the forward-lens tail: a rate scan (with summary) + a WHY composition phase carrying
+    findings, then stub the three forward lenses to return tagged phases and record the conn each got."""
+    def rate(state, conn, *, dims_override=None, phase_meta=None, period_directive=None,
+             extra_dims=None, extra_schema=None, extra_directive=None, grain=None):
+        pid = (phase_meta or ("cross_section", "X", "🧭"))[0]
+        return {"investigation_phases": state.get("investigation_phases", []) + [{"phase_id": pid}],
+                "_cross_section_summary": "where-sum"}
+
+    def comp(state, conn, event_dims):
+        return {"phase_id": "cross_section_mechanism", "findings": [{"reason": "size"}], "summary": "why-sum"}
+
+    monkeypatch.setattr(inv, "ada_cross_section", rate)
+    monkeypatch.setattr(inv, "_run_composition_lens", comp)
+    monkeypatch.setattr(inv, "_resolve_temporal_axis", lambda s, c=None: None)
+
+    def _mk(pid):
+        def _fn(state, conn, *a, **k):
+            if sleep:
+                time.sleep(sleep)
+            if seen is not None:
+                seen.append((pid, id(conn)))
+            return {"phase_id": pid}
+        return _fn
+    monkeypatch.setattr(inv, "_run_interaction_lens", lambda s, c, a, b: _mk("why_interaction")(s, c))
+    monkeypatch.setattr(inv, "_run_reason_benchmark_lens", lambda s, c, b: _mk("why_benchmark")(s, c))
+    monkeypatch.setattr(inv, "_run_reason_drill_lens", lambda s, c, b: _mk("why_drill")(s, c))
+    # enable the two WHY-lens families whose lenses we parallelize
+    monkeypatch.setenv("AUGHOR_ADA_WHY_WHERE_INTERACTION", "1")
+    monkeypatch.setenv("AUGHOR_ADA_WHY_DEEPEN", "1")
+
+
+def test_forward_why_lenses_wave_is_byte_identical_to_serial(monkeypatch):
+    """Flipping ada.parallel_why_lenses must not change the report: same phases, same order (the
+    fixed spec order interaction→benchmark→drill), because the lenses are mutually independent."""
+    monkeypatch.setattr(inv, "_ADA_LENS_WIDTH", 4)
+    _install_forward_stub(monkeypatch)
+
+    monkeypatch.delenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", raising=False)
+    serial = [p["phase_id"] for p in inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())["investigation_phases"]]
+    monkeypatch.setenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", "1")
+    wave = [p["phase_id"] for p in inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())["investigation_phases"]]
+
+    assert serial == wave                                  # byte-identical merged phase order
+    assert wave[-3:] == ["why_interaction", "why_benchmark", "why_drill"]   # fixed spec order
+
+
+def test_forward_why_lenses_wave_uses_a_reader_per_lens(monkeypatch):
+    """Under the wave each forward lens runs on its OWN reader clone (never the shared top-level
+    conn) — the isolation every parallel path in this module holds. Measured by make_reader() count:
+    the wave adds exactly 3 clones (one per forward lens) over the serial baseline."""
+    seen: list = []
+    _install_forward_stub(monkeypatch, seen=seen)
+
+    monkeypatch.delenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", raising=False)
+    serial_top = _FakeConn()
+    inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), serial_top)
+
+    monkeypatch.setenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", "1")
+    wave_top = _FakeConn()
+    inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), wave_top)
+
+    assert wave_top.readers == serial_top.readers + 3      # one reader clone per forward lens
+    fwd_conns = [cid for (_pid, cid) in seen if _pid.startswith("why_")]
+    assert id(serial_top) in fwd_conns                      # serial run: lenses shared the top conn
+    assert id(wave_top) not in fwd_conns                    # wave run: never the shared top conn
+
+
+def test_forward_why_lenses_serial_when_flag_off_shares_conn(monkeypatch):
+    """Default (flag off) → the serial chain, each lens on the SAME top-level conn (no clones)."""
+    seen: list = []
+    _install_forward_stub(monkeypatch, seen=seen)
+    monkeypatch.delenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", raising=False)
+    top = _FakeConn()
+    inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), top)
+
+    fwd_conns = [cid for (_pid, cid) in seen]
+    assert fwd_conns == [id(top)] * 3                      # serial: all three on the shared conn
+
+
+def test_forward_why_lenses_wave_runs_concurrently(monkeypatch):
+    """The wall-clock win: three ~0.3s forward lenses finish in ~0.3s under the wave, not ~0.9s."""
+    monkeypatch.setattr(inv, "_ADA_LENS_WIDTH", 4)
+    _install_forward_stub(monkeypatch, sleep=0.3)
+    monkeypatch.setenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", "1")
+    t0 = time.time()
+    out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
+    dt = time.time() - t0
+    ids = [p["phase_id"] for p in out["investigation_phases"]]
+    assert ids[-3:] == ["why_interaction", "why_benchmark", "why_drill"]
+    assert dt < 0.75, f"expected concurrent (~0.3s + main wave), got {dt:.2f}s — forward lenses serialized"

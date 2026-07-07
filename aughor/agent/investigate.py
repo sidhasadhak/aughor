@@ -4387,6 +4387,18 @@ def _why_deepen_enabled() -> bool:
         return False
 
 
+def _parallel_why_lenses_enabled() -> bool:
+    """Flag `ada.parallel_why_lenses` — run the forward-chained WHY lenses (interaction ∥ benchmark ∥
+    drill) as one concurrent wave instead of serially. They depend only on the already-computed
+    WHERE/WHY summaries, never on each other, so the merge stays byte-identical (fixed spec order).
+    Off by default; fail-safe → 'off' on any error."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("ada.parallel_why_lenses")
+    except Exception:
+        return False
+
+
 def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", why_summary: str) -> Optional[dict]:
     """Peer benchmark for the leading reason: the WHY lens found the leading reason's share of the
     SUBJECT's returns (e.g. size/fit = 42% of womenswear returns), but is that ABNORMAL? This computes
@@ -4635,32 +4647,67 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     _why_summary = (_why_phase.get("summary") or "") if _why_phase else ""
     _extras: list = []
 
-    def _forward(label, fn, counter):
-        """Run a forward-chained lens fn()→phase|None, append it, record the label. Fail-open."""
+    def _run_forward(label, fn, counter, c):
+        """Run one forward-chained lens fn(conn)→phase|None on connection ``c``. Fail-open — a
+        BudgetExceeded aborts the run; any other error skips just this lens."""
         try:
-            _ph = fn()
-            if _ph:
-                merged.append(_ph)
-                _extras.append(label)
+            return fn(c)
         except BudgetExceeded:
             raise
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, f"{label} lens best-effort; skipped", counter=counter)
+            return None
 
-    # Forward-chain (flag `ada.why_where_interaction`): cross the leading reason (WHY) with the
-    # highest-impact segment (WHERE) — does the cause concentrate where the metric is worst? Needs
-    # both a WHERE (rate) summary AND a WHY (composition) finding.
+    # The forward-chained WHY lenses, gathered as (label, fn(conn), counter) specs in FIXED order.
+    # Each depends ONLY on the already-computed WHERE/WHY summaries (primary_summary / _why_summary),
+    # never on each other, so they can run as one concurrent wave.
+    #  • interaction (flag `ada.why_where_interaction`): cross the leading reason (WHY) with the
+    #    highest-impact segment (WHERE) — needs both a WHERE (rate) summary AND a WHY finding.
+    #  • benchmark + drill (flag `ada.why_deepen`): benchmark the leading reason vs peers (is it
+    #    abnormal?) and drill it by product (which products drive it?) — both need only the WHY finding.
+    forward_specs: list = []
     if _why_phase and primary_summary and _why_where_interaction_enabled():
-        _forward("interaction", lambda: _run_interaction_lens(state, conn, primary_summary, _why_summary),
-                 "ada.interaction_lens")
-    # Forward-chain (flag `ada.why_deepen`): benchmark the leading reason vs peers (is it abnormal?)
-    # + drill it by product (which products drive it?). Both need only the WHY finding.
+        forward_specs.append(("interaction",
+                              lambda c: _run_interaction_lens(state, c, primary_summary, _why_summary),
+                              "ada.interaction_lens"))
     if _why_phase and _why_deepen_enabled():
-        _forward("benchmark", lambda: _run_reason_benchmark_lens(state, conn, _why_summary),
-                 "ada.benchmark_lens")
-        _forward("drill", lambda: _run_reason_drill_lens(state, conn, _why_summary),
-                 "ada.reason_drill_lens")
+        forward_specs.append(("benchmark",
+                              lambda c: _run_reason_benchmark_lens(state, c, _why_summary),
+                              "ada.benchmark_lens"))
+        forward_specs.append(("drill",
+                              lambda c: _run_reason_drill_lens(state, c, _why_summary),
+                              "ada.reason_drill_lens"))
+
+    if len(forward_specs) >= 2 and _parallel_why_lenses_enabled():
+        # Parallel wave — each lens on its own reader clone; merge in FIXED spec order (never
+        # completion order), so the report is byte-identical to the serial chain, just faster.
+        _fwd: dict = {}
+        try:
+            with ContextThreadPoolExecutor(max_workers=len(forward_specs)) as pool:
+                _futs = {pool.submit(_run_forward, label, fn, counter, conn.make_reader()): label
+                         for (label, fn, counter) in forward_specs}
+                for fut in as_completed(_futs):
+                    _fwd[_futs[fut]] = fut.result()   # BudgetExceeded re-raises here → abort the run
+        except BudgetExceeded:
+            raise
+        except Exception as _exc:
+            # Executor-level failure must never break the investigation — serial fallback.
+            _lens_logger.warning("[ada] why-lens wave failed (%s) — serial fallback", _exc, exc_info=True)
+            for (label, fn, counter) in forward_specs:
+                if label not in _fwd:
+                    _fwd[label] = _run_forward(label, fn, counter, conn)
+        for label, _fn, _counter in forward_specs:
+            _ph = _fwd.get(label)
+            if _ph:
+                merged.append(_ph)
+                _extras.append(label)
+    else:
+        for (label, fn, counter) in forward_specs:
+            _ph = _run_forward(label, fn, counter, conn)
+            if _ph:
+                merged.append(_ph)
+                _extras.append(label)
 
     _lens_logger.info("[ada] multilens ran %d lens(es)%s%s → %d phase(s)",
                       len(specs), (" + period drill" if anomalous else ""),
