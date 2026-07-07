@@ -708,7 +708,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     {turn.clarify && (
                       <ClarifyCard
                         turn={turn}
-                        onClarify={(detail) => ask(`${turn.question} — ${detail}`, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true })}
+                        onClarify={(detail) => ask(`${turn.question} — ${detail}`, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true, clarifyReading: detail, clarifySubject: turn.question, clarifySource: turn.clarify?.source })}
                         onAnswerAnyway={() => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true })}
                       />
                     )}

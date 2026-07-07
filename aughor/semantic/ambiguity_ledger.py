@@ -174,6 +174,25 @@ def save_resolution(res: AmbiguityResolution) -> AmbiguityResolution:
     return res
 
 
+def crystallize_user_choice(connection_id: str, subject: str, reading: str, *,
+                            org_id: str = "", clarify_source: str = "", resolved_sql: str = "",
+                            readings: Optional[list] = None) -> Optional[AmbiguityResolution]:
+    """I4 — the user answered a clarify by choosing a reading; crystallize it (source=user, the
+    highest autonomous authority — only a reviewer verdict outranks it). The chosen reading is a
+    valuable authoritative prior even without SQL, so `resolved_sql` is optional. Returns None on
+    empty input (no-op). `clarify_source` maps the clarify kind to the taxonomy so a term choice
+    ('urgent' → a status) records as AmbiValue and an interpretation choice as AmbiIntent."""
+    if not (connection_id and (subject or "").strip() and (reading or "").strip()):
+        return None
+    kind, facet = (("AmbiValue", "literal") if clarify_source == "ambiguous_term"
+                   else ("AmbiIntent", "grain"))
+    return save_resolution(AmbiguityResolution(
+        connection_id=connection_id, org_id=org_id, dim_kind=kind, dim_facet=facet,
+        subject=subject, readings=readings or [], resolved_reading=reading,
+        resolved_sql=resolved_sql, resolution_source="user",
+        evidence="the user chose this reading when asked to clarify"))
+
+
 # ── read path (I1) ────────────────────────────────────────────────────────────
 def retrieve_resolutions(question: str, connection_id: str, *, org_id: str = "",
                          top_k: int = 2, min_score: float = 0.34

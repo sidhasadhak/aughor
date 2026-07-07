@@ -239,6 +239,33 @@ def test_ask_causal_question_routes_to_deep_body(ask_client, monkeypatch):
     assert any(e["type"] == "deep_marker" for e in evs)
 
 
+def test_ask_with_clarify_reading_crystallizes_to_the_ledger(ask_client, monkeypatch):
+    """I4 end-to-end through the real router: a turn that ANSWERS a clarify (carries the chosen
+    reading) writes a user-source resolution to the Ambiguity Ledger before answering."""
+    from aughor.semantic.ambiguity_ledger import list_resolutions, purge_connections
+    _set_cap(monkeypatch, True)
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")   # the ledger write is gated with the read
+    purge_connections(["i4_conn"])
+    r = ask_client.post("/ask", json={
+        "question": "top products — by revenue", "connection_id": "i4_conn",
+        "skip_clarify": True, "clarify_reading": "by revenue",
+        "clarify_subject": "top products", "clarify_source": "structural"})
+    assert r.status_code == 200
+    rows = list_resolutions("i4_conn")
+    assert len(rows) == 1
+    assert rows[0].resolution_source == "user" and rows[0].resolved_reading == "by revenue"
+    assert rows[0].subject == "top products"
+
+
+def test_ask_without_clarify_reading_writes_nothing(ask_client, monkeypatch):
+    from aughor.semantic.ambiguity_ledger import list_resolutions, purge_connections
+    _set_cap(monkeypatch, True)
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    purge_connections(["i4_none"])
+    ask_client.post("/ask", json={"question": "What is total revenue?", "connection_id": "i4_none"})
+    assert list_resolutions("i4_none") == []
+
+
 def test_ask_deep_route_degrades_to_quick_for_free_tier(ask_client, monkeypatch):
     _set_cap(monkeypatch, False)
     r = ask_client.post("/ask", json={"question": "Why did revenue drop last week?",

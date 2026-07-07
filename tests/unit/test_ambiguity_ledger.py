@@ -12,6 +12,7 @@ from aughor.semantic.ambiguity_ledger import (
     AmbiguityResolution,
     Reading,
     build_resolution_block,
+    crystallize_user_choice,
     ledger_stats,
     list_resolutions,
     purge_connections,
@@ -108,6 +109,31 @@ def test_purge_removes_only_named_connection():
     assert list_resolutions("t_purge_x") == []
     assert list_resolutions("t_purge_y")  # untouched
     assert purge_connections([]) == 0
+
+
+def test_crystallize_user_choice_is_a_user_source_prior():
+    """I4: a reading the user chose in a clarify becomes a user-source resolution that reads back,
+    and it OUTRANKS a probe on the same subject (a human decision wins)."""
+    res = crystallize_user_choice("uc_conn", "top products", "by revenue")
+    assert res and res.resolution_source == "user" and res.dim_kind == "AmbiIntent"
+    m = retrieve_resolutions("what are the top products?", "uc_conn")
+    assert m and m[0][0].resolved_reading == "by revenue"
+    # a term-clarify choice records as an AmbiValue (a value/status filter)
+    r2 = crystallize_user_choice("uc_conn", "urgent orders", "status = 'high_priority'",
+                                 clarify_source="ambiguous_term")
+    assert r2.dim_kind == "AmbiValue" and r2.dim_facet == "literal"
+    # empty input is a no-op (no row written)
+    assert crystallize_user_choice("uc_conn", "", "anything") is None
+
+
+def test_user_choice_outranks_a_probe_on_same_dimension():
+    save_resolution(AmbiguityResolution(
+        connection_id="uc_rank", dim_kind="AmbiIntent", dim_facet="grain",
+        subject="top products", resolved_reading="by units", resolution_source="probe"))
+    crystallize_user_choice("uc_rank", "top products", "by revenue")  # user > probe, same key
+    assert list_resolutions("uc_rank")[0].resolved_reading == "by revenue"
+    assert list_resolutions("uc_rank")[0].resolution_source == "user"
+    assert len(list_resolutions("uc_rank")) == 1  # same natural key → burn-down, one row
 
 
 def test_compounding_loop_b1_settlement_then_read_back():

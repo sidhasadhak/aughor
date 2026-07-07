@@ -146,6 +146,24 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
                      counter="chat.receipt_metrics")
         for e in (guard_edges or []):
             lineage.append(e)
+        # I6 — surface ambiguity handling on the Trust Receipt: any resolution THIS question
+        # matched in the Ambiguity Ledger (settled earlier by a probe / the user / a reviewer) is
+        # recorded, so "this answer followed a previously-resolved reading" is inspectable — the
+        # machinery made honest to the user. Best-effort; gated with the ledger (closed_loop).
+        _resolved_ambig: list = []
+        try:
+            from aughor.verify.priors import closed_loop_enabled
+            if closed_loop_enabled():
+                from aughor.semantic.ambiguity_ledger import retrieve_resolutions
+                for _r, _sc in retrieve_resolutions(question, connection_id, top_k=3):
+                    _resolved_ambig.append({"subject": _r.subject, "reading": _r.resolved_reading,
+                                            "source": _r.resolution_source})
+                    lineage.append(("resolved_ambiguity", f"reading:{_r.subject[:60]}",
+                                    f"{_r.resolved_reading} (resolved by {_r.resolution_source})"))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "ambiguity-ledger lineage on the Trust Receipt is best-effort; the receipt still writes without it",
+                     counter="chat.receipt_ambiguity")
         # Stamp per-run compute onto the artifact so the Trust Receipt shows what the
         # answer cost. For job-backed answers (ADA) the job row carries the full total
         # too; for the synchronous chat/insight path this is the only sink.
@@ -156,6 +174,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             {"question": question, "headline": headline or question,
              "sql": sqls[0] if sqls else "", "tables": sorted(seen),
              **({"cost": _cost} if _cost is not None else {}),
+             **({"resolved_ambiguities": _resolved_ambig} if _resolved_ambig else {}),
              **(payload_extra or {})},
             conn_id=connection_id, canvas_id=canvas_id or None, lineage=lineage,
         )
@@ -508,6 +527,14 @@ class AskRequest(BaseModel):
     # Set when the user answered (or dismissed) a clarifying question — bypass the
     # clarify gate so we don't ask again about the now-clarified request.
     skip_clarify: bool = False
+    # I4 — the reading the user chose when answering a clarify (the chip text / typed detail).
+    # When present, it crystallizes into the Ambiguity Ledger (source=user) so the class never
+    # re-ambiguates on this connection. `clarify_subject` is the original ambiguous question
+    # (defaults to `question`); `clarify_source` is the clarify kind ("ambiguous_term" → a value
+    # choice, else an interpretation choice).
+    clarify_reading: str = ""
+    clarify_subject: str = ""
+    clarify_source: str = ""
     # Pass-throughs preserved from the investigate path.
     deep: bool = False
     insight_id: Optional[str] = None
@@ -2655,6 +2682,24 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     """
     from aughor.agent.ask_router import decide_ask_route
     from aughor.licensing import has_capability
+
+    # I4 — if this turn is the user ANSWERING a clarify (a reading chosen from the chips),
+    # crystallize that choice into the Ambiguity Ledger (source=user) BEFORE we answer, so the
+    # resolution is an authoritative prior on this turn and every future one — the class never
+    # re-ambiguates on this connection. Gated with the ledger (closed_loop); best-effort.
+    if req.clarify_reading:
+        from aughor.verify.priors import closed_loop_enabled
+        if closed_loop_enabled():
+            try:
+                from aughor.org.context import current_org_id
+                from aughor.semantic.ambiguity_ledger import crystallize_user_choice
+                crystallize_user_choice(
+                    conn_id, req.clarify_subject or req.question, req.clarify_reading,
+                    org_id=current_org_id() or "", clarify_source=req.clarify_source)
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "clarify-choice crystallization is best-effort",
+                         counter="ask.clarify_crystallize")
 
     # Ask-vs-guess (Phase 3): when the question is materially ambiguous and this is a
     # fresh auto turn (not an explicit depth override, deep-drill, dossier, or a turn

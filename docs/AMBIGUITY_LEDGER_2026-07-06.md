@@ -68,16 +68,42 @@ auditability, **immune to the benchmark noise floor** that killed two inference-
 week. The `ledger_stats` chart — resolutions served from the ledger climbing while fresh
 probes/asks fall — is the moat demo.
 
-## 4 · Follow-on (I4 + I6, not yet built)
+## 4 · I4 (clarify write path) + I6 (receipt) — shipped
 
-- **I4 · clarify fusion (product write path):** when a disagreement maps to AmbiIntent in `/ask`,
-  surface ONE clarify chip whose options ARE the candidate readings with result previews; the
-  user's choice writes to the ledger (source `user`). Seams mapped: `agent/soma.py`
-  (`is_structural_suspect` / `generate_candidate_readings` / `assess_structural_ambiguity`, dark
-  behind `AUGHOR_SOMA_CLARIFY`) + `agent/clarify.py` (live in `/ask`). The missing piece is
-  capturing the user's *answer* to a clarify event and routing it to `save_resolution`.
-- **I6 · receipt surfacing:** put `n_signatures` + the resolved dimension + probe evidence on the
-  Trust Receipt ("this question admits 3 readings; this answer follows B because a live probe
-  showed X").
+### I4 · the user's clarify choice writes to the ledger
+The missing half of the loop: capturing the user's *answer* to a clarify. When a `/ask` turn
+answers a clarify, the chosen reading rides back on the request and crystallizes as a
+`user`-source resolution (the highest autonomous authority — only a reviewer verdict outranks it):
+- `aughor/semantic/ambiguity_ledger.py::crystallize_user_choice` — maps the clarify kind to the
+  taxonomy (a term choice → AmbiValue, an interpretation → AmbiIntent), writes source `user`.
+- `AskRequest` gains `clarify_reading` / `clarify_subject` / `clarify_source`; `_stream_ask`
+  crystallizes **before** answering (gated `closed_loop`), so the resolution is a prior on this
+  very turn and every future one.
+- Frontend: the clarify card's re-ask (`web/lib/useChat.ts` + `web/components/ChatPanel.tsx`)
+  carries the chosen chip text back.
+- This works on the **live deterministic clarify path** (`clarify.py`), not just the dark soma
+  path — so "urgent orders" → the user's status choice burns down that term ambiguity too.
+- Tests: unit (`crystallize_user_choice`, override-wins vs a probe) + **live through the real
+  router** (`test_ask_router.py` drives `/ask` with a clarify answer and asserts the ledger write).
+
+### I6 · the Trust Receipt surfaces ambiguity handling
+`_write_answer_receipt` now records, for every answer, any Ambiguity-Ledger resolution the
+question matched — a `resolved_ambiguities` payload field + a `resolved_ambiguity` lineage edge —
+so "this answer followed a previously-resolved reading (settled by a probe / the user / a
+reviewer)" is inspectable. One site covers chat + ADA + partial. Gated `closed_loop`; tested by
+capturing the receipt payload.
+
+### Lifecycle
+The connection-delete cascade drops a connection's resolutions (`bootstrap._ambiguity_conn` purge
+hook + a case in `test_connection_purge.py`) — per-connection burn-down state dies with the
+connection.
+
+## 5 · Remaining follow-on
+
+- **Render the receipt field** — I6 writes `resolved_ambiguities` to the receipt payload; a UI
+  panel to *show* it on the Trust-Receipt surface is the natural frontend follow-on.
+- **Light up the soma path** (`AUGHOR_SOMA_CLARIFY`) so structural disagreement (candidate
+  readings with result previews) drives clarify chips in the product — then I4 captures those too,
+  and `n_signatures` + probe evidence join the receipt.
 - **Verdict → ledger bridge:** a `reject`/`correct` verdict that names a dimension crystallizes as
   a `verdict`-source resolution (the highest authority).
