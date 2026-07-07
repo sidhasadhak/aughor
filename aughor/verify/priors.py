@@ -113,6 +113,18 @@ def _build_corrections_block(corrections: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _dedup_resolutions_covered_by_corrections(resolutions: list, corrections: list[dict]) -> list:
+    """A reject/correct verdict lands in BOTH the ledger (via the verdict→ledger bridge) and the
+    corrections store. Keep the emphatic corrections framing ("was WRONG, use this") as the prompt
+    voice for verdicts, and drop the redundant ledger line for the SAME subject — so the reviewer
+    decision is injected once. Probe/user resolutions (no matching correction) still lead the block;
+    the deduped ledger row survives untouched for the burn-down metric + the Trust Receipt."""
+    if not (resolutions and corrections):
+        return resolutions
+    covered = {(c.get("headline") or "") for c in corrections}
+    return [(res, s) for res, s in resolutions if res.subject not in covered]
+
+
 def _match_resolutions(question: str, connection_id: str, org_id: str, top_k: int) -> list:
     """Ambiguity Ledger read path (I1): resolutions settled earlier on this connection whose
     subject overlaps the question. Best-effort; counts each served resolution (burn-down metric)."""
@@ -153,12 +165,7 @@ def retrieve_priors(question: str, connection_id: str, *, org_id: str = "", top_
         from aughor.kernel.errors import tolerate
         tolerate(exc, "verdict-correction retrieval for priors is best-effort", counter="priors.corrections")
 
-    # A verdict that crystallized into the Ambiguity Ledger (subject == the finding's headline)
-    # is already carried by the leading resolution block — drop it from the corrections block so
-    # the same reviewer decision isn't injected twice (the verdict→ledger bridge, deduped here).
-    if resolutions and corrections:
-        _resolved_subjects = {res.subject for res, _s in resolutions}
-        corrections = [c for c in corrections if (c.get("headline") or "") not in _resolved_subjects]
+    resolutions = _dedup_resolutions_covered_by_corrections(resolutions, corrections)
 
     from aughor.semantic.ambiguity_ledger import build_resolution_block
     parts = [p for p in (build_resolution_block(resolutions), build_trusted_block(trusted),
@@ -173,18 +180,29 @@ def build_priors_section(question: str, connection_id: str, **kwargs) -> str:
     return retrieve_priors(question, connection_id, **kwargs).section
 
 
-def build_corrections_section(question: str, connection_id: str, max_corrections: int = 3) -> str:
-    """Corrections-only prompt text (past reject/correct verdicts). This is the piece
-    added to the direct SQL path, which ALREADY injects verified query patterns — so we
-    only add the new signal there rather than double-inject trusted queries. Empty string
-    when the flag is off or nothing relevant matches (zero-cost, no behaviour change)."""
+def build_corrections_section(question: str, connection_id: str, max_corrections: int = 3,
+                              *, org_id: str = "") -> str:
+    """Resolved-ambiguity + past-correction prompt text — the non-trusted priors. This is the
+    piece the LIVE answer paths inject (the chat/direct SQL path and the plan node), which ALREADY
+    inject verified query patterns separately, so this deliberately OMITS the trusted block to
+    avoid double-injecting it. The Ambiguity-Ledger resolution leads (an explicit settled reading
+    beats a past-mistake note); a verdict already crystallized into the ledger is deduped out of
+    the corrections block. Empty when the flag is off or nothing matches (zero-cost, no change)."""
     if not closed_loop_enabled():
         return ""
+    resolutions: list = []
+    corrections: list[dict] = []
+    try:
+        resolutions = _match_resolutions(question, connection_id, org_id, 2)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "ambiguity-ledger retrieval is best-effort", counter="priors.resolutions")
     try:
         corrections = _match_corrections(question, connection_id, max_corrections)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "verdict-correction retrieval is best-effort", counter="priors.corrections")
-        return ""
-    block = _build_corrections_block(corrections)
-    return (block + "\n") if block else ""
+    resolutions = _dedup_resolutions_covered_by_corrections(resolutions, corrections)
+    from aughor.semantic.ambiguity_ledger import build_resolution_block
+    parts = [p for p in (build_resolution_block(resolutions), _build_corrections_block(corrections)) if p]
+    return ("\n".join(parts) + "\n") if parts else ""

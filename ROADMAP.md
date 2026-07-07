@@ -14,34 +14,33 @@
 
 ## 0 · Immediate next action ⏭️
 
-**⏭️ NEXT SESSION — start here: the 10x + Spider 2.0 program (branch `2026-07-06-10x-program`, PR
-[#111](https://github.com/sidhasadhak/aughor/pull/111)).** Full handoff + decisions:
-[`docs/SESSION_HANDOFF_2026-07-06.md`](docs/SESSION_HANDOFF_2026-07-06.md). Spec:
-[`docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md); the next
-accuracy phase's design (probe-and-repair + the Ambiguity Ledger) is
-[`docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md).
+**⏭️ NEXT SESSION — start here:** [`docs/SESSION_HANDOFF_2026-07-07.md`](docs/SESSION_HANDOFF_2026-07-07.md)
+lays out the state, the decision, and the ready-to-build. Design specs remain
+[`docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md)
+(probe-and-repair + the ledger) and
+[`docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md) (the umbrella).
 
-**SHIPPED this session (all on the branch, suite 2606 green · ruff 0 · tsc + 3 web gates green):**
-- **WS4 hygiene** ✅ (api.gen.ts regen 12,929→16,128 + offline `dump_openapi.py` + CI codegen gate ·
-  4 bypass flags into FLAG_ENV · 47 swallows→`tolerate()`, baseline 263→214 · FEATURES.md drift).
-- **WS3 accuracy measurement** ✅ (hermetic golden-replay CI gate 53/53 — fixed 9 tie-nondeterministic
-  records + 2 scorer bugs · guard fire/repair counters · live ratchet baseline 0.6551 on glm-5.2).
-- **WS2 one SQL executor** ✅ (shared pre-execute hardening across all 3 answer paths + guard-parity
-  test; the post-execute repair loops left divergent by design — see spec §WS2).
-- **WS1 fast deep path** ◑ (`ada.parallel_phases` wave shipped + 6 tests; **live A/B measured 1.23×,
-  NOT 2×** — intake+synthesis dominate; recorded honestly, flag default-off).
-- **WS5-P0 Spider2** ◑ (harness rebuilt through the product pipeline · full 135 run = **72/135 =
-  53.3% on glm-5.2** · fail-analysis + per-question diagnostic tooling · the SOMA deep-read + design).
+**SHIPPED (2026-07-06/07) — the SOMA-leverage arc, merged to main (PR
+[#112](https://github.com/sidhasadhak/aughor/pull/112), `1e1243b`; live-wiring fix PR
+[#113](https://github.com/sidhasadhak/aughor/pull/113)):**
+- **B1 probe-and-repair** ✅ (eval) — deterministic AST-diff disagreement extraction + deterministic-first
+  probes + 4-gate evidence-typed repair, **monotonic by construction**. Finding: the residual Spider2
+  misses are AmbiIntent grain-of-intent that execution probing structurally can't resolve → the durable
+  answer is the ledger, not more inference machinery. Doc: `docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md`.
+- **The Ambiguity Ledger (I1/I4/I6)** ✅ (product) — resolutions crystallize per connection (idempotent
+  burn-down, override-wins verdict>user>probe), read back as the leading plan-time prior on the **live**
+  answer path (`build_corrections_section`), user clarify + reviewer verdict write sources, surfaced on the
+  Trust Receipt, soma clarify chips carry result previews. **Burn-down validated** (resolved-once →
+  served-N through the real seam). Doc: `docs/AMBIGUITY_LEDGER_2026-07-06.md`.
 
-**The hard-won conclusion (measured, not asserted):** on glm-5.2 @ temp-0 the endpoint has a
-**±7–10-instance noise floor per full run**, so every inference-time lever tried this session landed
-within noise — projection (net −2), col-semantics (no effect), candidates (full-135 net −1). The
-June meta-pattern is now confirmed a **4th time**: machinery perturbs a strong model's correct
-answers about as often as it fixes wrong ones. What the evidence still supports: **B1
-probe-and-repair with evidence-gates (monotonic by construction — the one untested SOMA component),
-the Ambiguity Ledger (amortization, not single-run EX), and a stronger inference option.** Nothing
-else on the cheap-lever menu deserves more endpoint-hours. **Never submit to the leaderboard, and
-never send the Secure-Data-Share email, without explicit user permission.**
+**The hard-won conclusion (measured, not asserted, still governing):** on glm-5.2 @ temp-0 the endpoint
+has a **±7–10-instance noise floor per full run**, so every cheap inference-time lever landed within
+noise (4th confirmation of the June meta-pattern). What the evidence supports is now BUILT: B1's
+monotonic evidence-gated repair, and the ledger's amortization (which converts scarce model capability
+into durable substrate). **The one remaining accuracy lever is a stronger inference endpoint** — a
+distribution-level change the ledger complements but cannot replace. Cheap-lever whack-a-mole is done.
+Remaining ledger polish (n_signatures-on-receipt, corrections→ledger consolidation) is low-priority.
+**Never submit to the leaderboard, and never send the Secure-Data-Share email, without explicit user permission.**
 
 **Part 2 of the architecture review — SHIPPED through Wave 3 (PRs #101 → #100 → #102 → the U9 PR).**
 - **Wave 1** four enforced web CI gates (design-token · formatting · raw-element · tsc) + one-palette.
@@ -191,6 +190,11 @@ An **autonomous data-analysis platform** that replaces the dashboard-and-analyst
 ## 2 · What we've built ✅
 
 Grouped by area; each ✅ is verified shipped (git + code). Representative commits/PRs in parentheses.
+
+### SOMA leverage — B1 probe-and-repair + the Ambiguity Ledger (2026-07-06/07, PRs #112 · #113)
+*The measured conclusion — cheap inference-time levers are exhausted on glm-5.2 (±7–10 noise floor, 4×) — pointed at two moves the evidence still supported: a monotonic evidence-gated repair, and amortization that converts scarce model capability into durable substrate. Both built. Specs: [`docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md), [`docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md`](docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md), [`docs/AMBIGUITY_LEDGER_2026-07-06.md`](docs/AMBIGUITY_LEDGER_2026-07-06.md).*
+- ✅ **B1 probe-and-repair (eval)** — SOMA's missing back half (I2+I3+I7): deterministic sqlglot AST-diff disagreement extraction → the paper's (dimension, options, evidence) triples with **zero model calls**; a deterministic-first probe battery reusing the owned value/grain guards; evidence-typed `resolve()` behind **four gates** (executes · clears-the-probe · no-regress at subject granularity · AST-faithful) — any fails ⇒ keep the seed. Monotonic by construction. `evals/spider2_probes.py`, `--probes`, 19 pure tests. **The finding** (5 live instances, zero regressions): every disagreeing miss is AmbiIntent grain-of-intent the deterministic probes can't resolve → the residual accuracy lives in *intent resolution*, not machinery.
+- ✅ **The Ambiguity Ledger (I1/I4/I6, product)** — resolutions crystallize per connection (`aughor/semantic/ambiguity_ledger.py`, house SQLite idiom, `AUGHOR_AMBIGUITY_LEDGER_DB`): idempotent natural key (one row per dimension = burn-down), **override-wins** authority (verdict > user > probe). **Read path** leads the plan-time prior block on the **live** answer path (`verify/priors.build_corrections_section`; the direct `retrieve_priors` was dead — fixed in #113). **Write sources**: the user's clarify choice (`crystallize_user_choice`, `_stream_ask`), a reviewer verdict (`crystallize_verdict`, `record_verdict` bridge), and B1 probes. **I6** surfaces the applied resolution on the Trust Receipt (`_write_answer_receipt` lineage + `TrustReceipt.tsx`). **soma** clarify chips now carry result previews (`= 68` vs `= 1131`). Gated `closed_loop`. **Burn-down validated** through the real seam: 2 classes resolved once → served 3× with zero further asks. Remaining: n_signatures-on-receipt for soma turns; consolidate corrections into the ledger.
 
 ### One metric contract + wider parallel investigation waves (2026-07-05, PRs #108 · #109)
 *Two flag-gated, default-byte-identical improvements to the answer engine — one to the metric type, one to investigation latency.*
