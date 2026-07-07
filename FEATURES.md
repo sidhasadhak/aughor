@@ -31,7 +31,16 @@ On top of the depths, the conversational agent (the unified-answer-path arc, PR 
 - **Ask-vs-guess clarification** — when a question is materially ambiguous it asks **one** targeted
   question instead of guessing: deterministic under-spec + value-term detection (`aughor/agent/clarify.py`)
   **plus SOMA candidate-disagreement** (`aughor/agent/soma.py`) — generate N candidate readings, execute
-  them, and ask **only when their results diverge**, with the readings' labels as grounded option chips.
+  them, and ask **only when their results diverge**, with each reading surfaced as a grounded option chip
+  **carrying its result preview** (`= 68` vs `= 1131`), so the divergence is visible before you choose.
+- **The Ambiguity Ledger — resolution that COMPOUNDS** (`aughor/semantic/ambiguity_ledger.py`) — when an
+  ambiguity is settled (by an execution probe, by the user's clarify choice, or by a reviewer verdict) the
+  resolution **crystallizes as a first-class, per-connection record** and is read back as an authoritative
+  plan-time prior (`verify/priors.py`, the leading block on the live answer paths). Idempotent burn-down
+  (one row per dimension), **override-wins** authority (verdict > user > probe — machinery never clobbers a
+  human decision). So the same question class never re-ambiguates: ambiguity **burns down per connection**
+  instead of re-paying a probe pipeline every question. Flag-gated (`closed_loop`); `ledger_stats` reports
+  the burn-down (served-from-ledger vs freshly asked).
 - **Conversational follow-ups** — "now break that down by region / just for the ultra tier" composes on the
   prior query (`aughor/agent/followup.py` + a result digest carried across turns), on **every** path: the
   quick Insight path, AND the deep/Direct-lookup path (a follow-up in a canvas anchors on the previous turn's
@@ -92,7 +101,9 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
 
 - **Statistical Evidence Engine** — significance, effect size, and direction behind every claim.
 - **Evidence Ledger / Trust Receipt** — per-answer lineage: executed SQLs, input tables, which guards fired,
-  earned confidence (`kernel/ledger.py`, `_write_answer_receipt`).
+  earned confidence (`kernel/ledger.py`, `_write_answer_receipt`) — **and any resolved ambiguity the answer
+  applied** ("followed a previously-resolved reading, settled by a probe / the user / a reviewer"), so the
+  compounding machinery is inspectable, not hidden (`web/components/TrustReceipt.tsx`).
 - **Finding Dossier** — drill-down is a *read* of captured derivation, not a second (re-)analysis.
 - **Outcome tracking & feedback loop** — close the loop on whether findings were acted on.
 
