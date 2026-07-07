@@ -259,3 +259,44 @@ def test_unified_grounding_flag_toggle_is_byte_identical(monkeypatch):
     on = C.unified_metric_grounding("conn", None, schema_text=schema)
     assert on == off
     assert "gross_margin" in on          # north-star renders via the (flag-gated) canonical half
+
+
+# ── resolve_planning_metrics — the STRUCTURED compiler resolver (REC-U10 tail) ──────────────
+
+def test_resolve_planning_metrics_flag_toggle_is_structurally_identical(monkeypatch):
+    """The semantic compiler reads `.name`/`.verified`/`.sql`/`.tables` off each metric to bind a
+    named metric to SQL. Flipping `semantic.contract_live` must leave every one of those fields
+    identical, so the SQL the compiler synthesizes is unchanged — and under the flag the objects
+    are contract-backed (CanonicalMetric retired from the compiler's live path)."""
+    from aughor.semantic.canonical import _ContractMetricView
+
+    C = _pin_three_sources(monkeypatch)
+    monkeypatch.delenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", raising=False)
+    off = C.resolve_planning_metrics("conn", None, schema_text="TABLE t")
+    monkeypatch.setenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", "1")
+    on = C.resolve_planning_metrics("conn", None, schema_text="TABLE t")
+
+    shape = lambda ms: [(m.name, m.verified, m.sql, list(m.tables or []), m.unit) for m in ms]
+    assert shape(on) == shape(off)                        # every field the compiler reads is equal
+    assert all(isinstance(m, _ContractMetricView) for m in on)   # ...via the one SemanticContract
+    assert [m.name for m in off] == ["aov", "churn", "gross_margin", "revenue"]   # all resolved, sorted
+    # the compiler's verified gate drops unverified churn downstream (render/bind time), not here
+    assert {m.name: m.verified for m in off}["churn"] is False
+
+
+def test_planning_view_verified_maps_to_injectable_not_raw_verified(monkeypatch):
+    """The subtle correctness point: the compiler's `verified` gate must map to the contract's
+    `injectable` (== legacy CanonicalMetric.verified), NOT the raw `SemanticContract.verified`
+    field. A DRAFT catalog metric is authoritative-by-provenance (injectable=True) yet
+    verified=False (never executed) — mapping to the wrong field would wrongly drop it."""
+    from aughor.semantic import canonical as C
+
+    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: None)
+    monkeypatch.setenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", "1")
+    catalog = [_real_md("revenue", "SUM(price*qty)")]     # status defaults to "draft"
+    view = C.resolve_planning_metrics("conn", None, catalog=catalog, ontology=None)[0]
+    assert view.name == "revenue" and view.sql == "SUM(price*qty)"
+    assert view.verified is True                          # injectable by provenance, though status=draft
+    # and it equals what the legacy resolver reports for the same source
+    legacy = C.resolve_canonical_metrics("conn", None, catalog=catalog, ontology=None)[0]
+    assert view.verified == legacy.verified

@@ -192,3 +192,24 @@ def test_query_intent_schema_is_structured_output_safe():
     props = schema["properties"]
     assert "window_start" in props and "window_end" in props
     assert "window" not in props
+
+
+def test_named_metric_binding_is_identical_under_contract_live_flag(monkeypatch):
+    """REC-U10 tail: the compiler resolves metrics internally (metrics=None) via
+    resolve_planning_metrics. Flipping semantic.contract_live must synthesize byte-identical SQL —
+    the flag swaps the source type (CanonicalMetric -> SemanticContract) but not the bound formula."""
+    from aughor.semantic.metrics import MetricDefinition
+
+    md = MetricDefinition(name="revenue", label="Revenue", sql="SUM(amount)", tables=["orders"])
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [md])
+    monkeypatch.setattr("aughor.semantic.metrics.filter_metrics_to_schema", lambda m, s: list(m))
+    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: None)
+
+    intent = QueryIntent(intent_type="scalar", table="orders", metric="revenue")
+    monkeypatch.delenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", raising=False)
+    off = synthesize_sql(intent, ONTO, metrics=None)
+    monkeypatch.setenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", "1")
+    on = synthesize_sql(intent, ONTO, metrics=None)
+
+    assert off is not None and "sum(amount)" in _l(off)   # the named metric actually bound
+    assert on == off                                      # flag flip is a no-op on the synthesized SQL

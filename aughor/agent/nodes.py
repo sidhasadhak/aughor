@@ -47,6 +47,18 @@ class _ConsistencyReport(_BaseModel):
     passed: bool
 
 _CONSISTENCY_ENABLED = __import__("os").getenv("AUGHOR_CONSISTENCY_CHECK", "true").lower() != "false"
+
+
+def _preflight_parallel_enabled() -> bool:
+    """Flag `preflight.parallel` (env AUGHOR_PREFLIGHT_PARALLEL or ledger override) — run the
+    independent plan-time retrievals concurrently. Off by default; fail-safe → 'off' on any error."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("preflight.parallel")
+    except Exception:
+        return False
+
+
 from aughor.llm.provider import get_provider
 from aughor.tools.executor import format_result_for_llm
 from aughor.tools.stats import analyze_query_result
@@ -506,10 +518,56 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
     prior_context = _format_prior_context(state.get("query_history", []), h.id)
     known_pitfalls = state.get("pitfalls", [])
 
-    from aughor.semantic.retriever import retrieve_relevant_schema
-    from aughor.semantic.kb_retriever import retrieve_for_planning
-    schema_for_hypothesis = retrieve_relevant_schema(h.description, state["schema_context"])
-    kb_patterns = retrieve_for_planning(h.description)
+    # ── Pre-flight retrievals (P-B) — four INDEPENDENT, deterministic, non-LLM lookups. They
+    #    share no inputs beyond the hypothesis/question and touch no DB connection, so under
+    #    `preflight.parallel` they run concurrently; the result is byte-identical either way. ──
+    def _get_schema() -> str:
+        from aughor.semantic.retriever import retrieve_relevant_schema
+        return retrieve_relevant_schema(h.description, state["schema_context"])
+
+    def _get_kb() -> str:
+        from aughor.semantic.kb_retriever import retrieve_for_planning
+        return retrieve_for_planning(h.description)
+
+    def _get_causal() -> str:
+        # Causal context from prior verified investigations. Best-effort (as before).
+        try:
+            from aughor.process.causal import build_causal_context_section
+            _cc = build_causal_context_section(h.description, conn_id=state.get("connection_id"))
+            return (_cc + "\n") if _cc else ""
+        except Exception:
+            return ""
+
+    def _get_priors() -> tuple[str, bool]:
+        # P1 close-the-loop: read past human corrections for this database BACK into planning,
+        # so a mistake a reviewer already flagged is not planned again. Empty (zero-cost) when
+        # nothing relevant is stored or the flag is off, so the default path is unchanged.
+        try:
+            from aughor.verify.priors import build_corrections_section
+            _p = build_corrections_section(state.get("question") or h.description,
+                                           state.get("connection_id") or "")
+            return _p, bool(_p)
+        except Exception:
+            return "", False
+
+    if _preflight_parallel_enabled():
+        from aughor.kernel.concurrency import ContextThreadPoolExecutor
+        with ContextThreadPoolExecutor(max_workers=4) as _pool:
+            _f_schema = _pool.submit(_get_schema)
+            _f_kb = _pool.submit(_get_kb)
+            _f_causal = _pool.submit(_get_causal)
+            _f_priors = _pool.submit(_get_priors)
+            # .result() re-raises a retrieval error exactly as the serial path would (schema/KB
+            # were unguarded before; causal/priors return their fallback), so behavior is identical.
+            schema_for_hypothesis = _f_schema.result()
+            kb_patterns = _f_kb.result()
+            causal_section = _f_causal.result()
+            priors_section, priors_fired = _f_priors.result()
+    else:
+        schema_for_hypothesis = _get_schema()
+        kb_patterns = _get_kb()
+        causal_section = _get_causal()
+        priors_section, priors_fired = _get_priors()
 
     prior_analyses = state.get("prior_analyses", [])
     prior_analyses_text = (
@@ -519,29 +577,6 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
 
     raw_events = state.get("events_context") or ""
     events_section = f"{raw_events}\n" if raw_events else ""
-
-    # Inject causal context from prior verified investigations
-    causal_section = ""
-    try:
-        from aughor.process.causal import build_causal_context_section
-        _cc = build_causal_context_section(h.description, conn_id=state.get("connection_id"))
-        if _cc:
-            causal_section = _cc + "\n"
-    except Exception:
-        pass
-
-    # P1 close-the-loop: read past human corrections for this database BACK into planning,
-    # so a mistake a reviewer already flagged is not planned again. Empty (zero-cost) when
-    # nothing relevant is stored or the flag is off, so the default path is unchanged.
-    priors_section = ""
-    priors_fired = False
-    try:
-        from aughor.verify.priors import build_corrections_section
-        priors_section = build_corrections_section(state.get("question") or h.description,
-                                                   state.get("connection_id") or "")
-        priors_fired = bool(priors_section)
-    except Exception:
-        pass
 
     rules_block = get_rules_block()
     llm = get_provider("coder")

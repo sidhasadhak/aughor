@@ -173,8 +173,8 @@ def synthesize_sql(intent: QueryIntent, ontology, *, metrics: Optional[list] = N
 
     if metrics is None:
         try:
-            from aughor.semantic.canonical import resolve_canonical_metrics
-            metrics = resolve_canonical_metrics(
+            from aughor.semantic.canonical import resolve_planning_metrics
+            metrics = resolve_planning_metrics(
                 getattr(ontology, "connection_id", "") or "",
                 getattr(ontology, "schema_name", "") or None,
                 ontology=ontology,
@@ -293,8 +293,8 @@ def parse_intent(question: str, ontology, metrics: Optional[list] = None,
     re-introspection (see resolve_canonical_metrics)."""
     try:
         if metrics is None:
-            from aughor.semantic.canonical import resolve_canonical_metrics
-            metrics = resolve_canonical_metrics(
+            from aughor.semantic.canonical import resolve_planning_metrics
+            metrics = resolve_planning_metrics(
                 getattr(ontology, "connection_id", "") or "",
                 getattr(ontology, "schema_name", "") or None, ontology=ontology,
                 schema_text=schema_text)
@@ -323,8 +323,8 @@ def compile_question(question: str, connection_id: str, *, schema_name: Optional
         ontology = load_latest_ontology(connection_id, schema_name)
         if not ontology or not getattr(ontology, "entities", None):
             return None
-        from aughor.semantic.canonical import resolve_canonical_metrics
-        metrics = resolve_canonical_metrics(
+        from aughor.semantic.canonical import resolve_planning_metrics
+        metrics = resolve_planning_metrics(
             connection_id, schema_name or (getattr(ontology, "schema_name", "") or None),
             ontology=ontology, schema_text=schema_text)
         intent = parse_intent(question, ontology, metrics, dialect=dialect, schema_text=schema_text)
