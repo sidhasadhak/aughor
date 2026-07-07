@@ -358,10 +358,11 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
       {c.reason && <p style={{ fontSize: 11.5, color: "var(--t3)", margin: "0 0 8px 23px" }}>{c.reason}</p>}
       {c.options.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-          {c.options.map(o => (
-            <button key={o} onClick={() => onClarify(o)}
-              style={{ fontSize: 12, fontWeight: 500, padding: "4px 10px", borderRadius: "var(--r1)", cursor: "pointer", background: "var(--bg-1)", border: "1px solid var(--blue2)", color: "var(--blue5)" }}>
-              {o}
+          {c.options.map((o, i) => (
+            <button key={`${i}:${o}`} onClick={() => onClarify(o)}
+              style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1, fontSize: 12, fontWeight: 500, padding: "4px 10px", borderRadius: "var(--r1)", cursor: "pointer", background: "var(--bg-1)", border: "1px solid var(--blue2)", color: "var(--blue5)" }}>
+              <span>{o}</span>
+              {c.previews?.[i] && <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--t3)" }}>{c.previews[i]}</span>}
             </button>
           ))}
         </div>
@@ -708,7 +709,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     {turn.clarify && (
                       <ClarifyCard
                         turn={turn}
-                        onClarify={(detail) => ask(`${turn.question} — ${detail}`, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true })}
+                        onClarify={(detail) => ask(`${turn.question} — ${detail}`, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true, clarifyReading: detail, clarifySubject: turn.question, clarifySource: turn.clarify?.source })}
                         onAnswerAnyway={() => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true })}
                       />
                     )}

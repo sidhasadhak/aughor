@@ -88,6 +88,7 @@ evals/spider2_cand/
 evals/spider2_cand_full/
 evals/spider2_proj/
 evals/spider2_misses_proj/
+evals/spider2_probes_smoke/
 evals/spider2_*_run.log
 evals/lsb_out/
 evals/llm_exp/

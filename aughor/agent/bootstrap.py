@@ -136,6 +136,7 @@ def _register_purge_hooks() -> None:
     ph.register_purge_hook("connection_kb", _connection_kb_conn)
     ph.register_purge_hook("packs", _packs_conn)
     ph.register_purge_hook("evidence", _evidence_conn)
+    ph.register_purge_hook("ambiguity_ledger", _ambiguity_conn)
     ph.register_purge_hook("qdrant", _qdrant_conn)
 
     # schema-keyed
@@ -206,6 +207,13 @@ def _evidence_conn(conn_id, org_id):
     from aughor.evidence import store as evidence_store
     inv_ids = history.list_investigation_ids(conn_id, limit=100000)
     return {"evidence_claims": evidence_store.purge_investigations(inv_ids)}
+
+
+def _ambiguity_conn(conn_id, org_id):
+    # Drop every crystallized ambiguity resolution for the deleted connection (I1 burn-down
+    # state is per-connection, so it dies with the connection).
+    from aughor.semantic import ambiguity_ledger
+    return {"ambiguity_resolutions": ambiguity_ledger.purge_connections([conn_id], org_id=org_id)}
 
 
 def _qdrant_conn(conn_id, org_id):

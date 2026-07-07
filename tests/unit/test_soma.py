@@ -77,4 +77,15 @@ def test_to_event_shape():
     ex = _exec({"su": [["a"]], "sr": [["b"]]})
     ev = assess_structural_ambiguity("q", cands, ex).to_event()
     assert ev["source"] == "structural" and set(ev["options"]) == {"u", "r"}
-    assert set(ev) >= {"question", "options", "source", "reason"}
+    assert set(ev) >= {"question", "options", "previews", "source", "reason"}
+
+
+def test_options_carry_result_previews():
+    # each reading's chip shows what it RETURNS, so the divergence is visible ('= 68' vs '= 1131')
+    cands = [CandidateReading("per-match", "sm"), CandidateReading("career", "sc")]
+    ex = _exec({"sm": [[68]], "sc": [[1131]]})
+    v = assess_structural_ambiguity("total runs by strikers", cands, ex)
+    assert v.ambiguous and len(v.previews) == len(v.options)
+    by_label = dict(zip(v.options, v.previews))
+    assert by_label["per-match"] == "= 68" and by_label["career"] == "= 1131"
+    assert v.to_event()["previews"] == list(v.previews)

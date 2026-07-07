@@ -112,6 +112,9 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
         investigation_id=inv9, claim_text="x", confidence=0.5))
     monitor_store.upsert_monitor(Monitor(conn_id=conn, name="rev drop"))
     bindings.save_binding("pack1", conn, {"role": {"table": "t"}})
+    from aughor.semantic import ambiguity_ledger
+    ambiguity_ledger.purge_connections([conn])  # start clean (session-shared ledger DB)
+    ambiguity_ledger.crystallize_user_choice(conn, "top products", "by revenue")
 
     import json
     from aughor.knowledge import briefing, patterns
@@ -152,6 +155,8 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     assert counts["type_overrides"] == 1
     assert counts["investigations"] == 1
     assert counts["evidence_claims"] == 1
+    assert counts["ambiguity_resolutions"] == 1
+    assert ambiguity_ledger.list_resolutions(conn) == []
     assert counts["monitors"] == 1
     assert counts["pack_bindings"] == 1
     assert counts["briefing_cache"] == 2  # conn-level + schema-scoped, other_conn kept

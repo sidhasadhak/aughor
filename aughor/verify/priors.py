@@ -1,14 +1,18 @@
 """Plan-time priors — read the captured feedback loop BACK into the planner (P1).
 
-Aughor already *captures* two feedback channels but never *reads them back* when
+Aughor already *captures* feedback channels but never *reads them back* when
 planning the next answer, so the loop is open: a mistake a human corrected last
 week gets made again this week. This module closes it. Given a question +
 connection it assembles a single prompt section from:
 
-1. **Verified query patterns** — data-team-reviewed known-correct SQL
+1. **Resolved ambiguities** — the Ambiguity Ledger (:mod:`aughor.semantic.ambiguity_ledger`,
+   SOMA improvisation I1): an ambiguity settled earlier on this connection (by a probe, a
+   user clarify choice, or a reviewer verdict) is injected as an authoritative prior FIRST,
+   so the same question class never re-ambiguates — ambiguity burns down per connection.
+2. **Verified query patterns** — data-team-reviewed known-correct SQL
    (:mod:`aughor.semantic.trusted_queries`), already injected in ``/chat`` but not
    in the investigate/explore graph.
-2. **Past corrections** — ``reject`` / ``correct`` human verdicts
+3. **Past corrections** — ``reject`` / ``correct`` human verdicts
    (:mod:`aughor.verify.verdicts`), which name a mistake not to repeat, plus any
    human-supplied fix SQL.
 
@@ -57,11 +61,12 @@ def _tokens(text: str) -> set[str]:
 class PriorsResult:
     trusted: list[tuple[TrustedQuery, float]] = field(default_factory=list)
     corrections: list[dict] = field(default_factory=list)
+    resolutions: list = field(default_factory=list)   # [(AmbiguityResolution, score)]
     section: str = ""
 
     @property
     def fired(self) -> bool:
-        return bool(self.trusted or self.corrections)
+        return bool(self.trusted or self.corrections or self.resolutions)
 
 
 def _match_corrections(question: str, connection_id: str, limit: int) -> list[dict]:
@@ -108,14 +113,35 @@ def _build_corrections_block(corrections: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def retrieve_priors(question: str, connection_id: str, *, top_k_trusted: int = 2,
-                    max_corrections: int = 3) -> PriorsResult:
+def _match_resolutions(question: str, connection_id: str, org_id: str, top_k: int) -> list:
+    """Ambiguity Ledger read path (I1): resolutions settled earlier on this connection whose
+    subject overlaps the question. Best-effort; counts each served resolution (burn-down metric)."""
+    from aughor.semantic.ambiguity_ledger import record_hit, retrieve_resolutions
+    matches = retrieve_resolutions(question, connection_id, org_id=org_id, top_k=top_k)
+    for res, _score in matches:
+        try:
+            record_hit(res.id)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "ledger served-count bump is best-effort", counter="priors.ledger_hit")
+    return matches
+
+
+def retrieve_priors(question: str, connection_id: str, *, org_id: str = "", top_k_trusted: int = 2,
+                    max_corrections: int = 3, top_k_resolutions: int = 2) -> PriorsResult:
     """Assemble plan-time priors for a question. Returns an empty result (no section)
-    when nothing relevant is stored, so callers can inject unconditionally."""
+    when nothing relevant is stored, so callers can inject unconditionally. The resolved-
+    ambiguity block leads (most authoritative — an explicit resolution beats an example)."""
     if not closed_loop_enabled():
         return PriorsResult()
     trusted: list[tuple[TrustedQuery, float]] = []
     corrections: list[dict] = []
+    resolutions: list = []
+    try:
+        resolutions = _match_resolutions(question, connection_id, org_id, top_k_resolutions)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "ambiguity-ledger retrieval for priors is best-effort", counter="priors.resolutions")
     try:
         trusted = retrieve_trusted(question, connection_id, top_k=top_k_trusted)
     except Exception as exc:
@@ -127,9 +153,19 @@ def retrieve_priors(question: str, connection_id: str, *, top_k_trusted: int = 2
         from aughor.kernel.errors import tolerate
         tolerate(exc, "verdict-correction retrieval for priors is best-effort", counter="priors.corrections")
 
-    parts = [p for p in (build_trusted_block(trusted), _build_corrections_block(corrections)) if p]
+    # A verdict that crystallized into the Ambiguity Ledger (subject == the finding's headline)
+    # is already carried by the leading resolution block — drop it from the corrections block so
+    # the same reviewer decision isn't injected twice (the verdict→ledger bridge, deduped here).
+    if resolutions and corrections:
+        _resolved_subjects = {res.subject for res, _s in resolutions}
+        corrections = [c for c in corrections if (c.get("headline") or "") not in _resolved_subjects]
+
+    from aughor.semantic.ambiguity_ledger import build_resolution_block
+    parts = [p for p in (build_resolution_block(resolutions), build_trusted_block(trusted),
+                         _build_corrections_block(corrections)) if p]
     section = ("\n".join(parts) + "\n") if parts else ""
-    return PriorsResult(trusted=trusted, corrections=corrections, section=section)
+    return PriorsResult(trusted=trusted, corrections=corrections, resolutions=resolutions,
+                        section=section)
 
 
 def build_priors_section(question: str, connection_id: str, **kwargs) -> str:

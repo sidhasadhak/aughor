@@ -68,3 +68,54 @@ def test_only_reject_and_correct_are_read_back(isolated_verdicts, monkeypatch):
         headline="revenue by product category is healthy")
     from aughor.verify.priors import build_corrections_section
     assert build_corrections_section("revenue by product category?", "samples") == ""
+
+
+# ── Ambiguity Ledger prior (I1) — the resolved-ambiguity block reads back too ──
+def _seed_resolution(conn_id, subject, reading, source="probe"):
+    from aughor.semantic.ambiguity_ledger import AmbiguityResolution, save_resolution
+    return save_resolution(AmbiguityResolution(
+        connection_id=conn_id, dim_kind="AmbiIntent", dim_facet="grain", subject=subject,
+        resolved_reading=reading, resolution_source=source,
+        resolved_sql="GROUP BY player", evidence="a live probe matched the asked grain"))
+
+
+def test_ledger_resolution_reads_back_into_priors(monkeypatch):
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    _seed_resolution("led_conn1", "total runs scored by strikers", "career totals")
+    from aughor.verify.priors import build_priors_section, retrieve_priors
+    section = build_priors_section("what is the average total runs by strikers?", "led_conn1")
+    assert "RESOLVED AMBIGUITIES" in section and "career totals" in section
+    # the served resolution is tracked in the result (the burn-down numerator)
+    res = retrieve_priors("total runs by strikers?", "led_conn1")
+    assert res.fired and res.resolutions
+
+
+def test_ledger_prior_off_when_flag_off(monkeypatch):
+    monkeypatch.delenv("AUGHOR_CLOSED_LOOP", raising=False)
+    _seed_resolution("led_conn2", "total runs by strikers", "career totals")
+    from aughor.verify.priors import build_priors_section
+    assert build_priors_section("total runs by strikers?", "led_conn2") == ""
+
+
+def test_ledger_prior_empty_on_irrelevant_question(monkeypatch):
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    _seed_resolution("led_conn3", "total runs by strikers", "career totals")
+    from aughor.verify.priors import build_priors_section
+    assert build_priors_section("how many suppliers are in France?", "led_conn3") == ""
+
+
+def test_verdict_in_ledger_is_not_double_injected(isolated_verdicts, monkeypatch):
+    # a reject/correct verdict crystallizes into the ledger AND lives in the verdicts store;
+    # retrieve_priors must surface it ONCE (as an authoritative resolution), not twice.
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    from aughor.semantic.ambiguity_ledger import purge_connections
+    purge_connections(["ded_conn"])
+    isolated_verdicts.record_verdict(
+        connection_id="ded_conn", investigation_id="i", verdict="reject",
+        headline="revenue by product category", note="use order_items.line_total",
+        corrected_sql="SELECT category, SUM(line_total) FROM order_items GROUP BY 1")
+    from aughor.verify.priors import retrieve_priors
+    res = retrieve_priors("what is revenue by product category?", "ded_conn")
+    assert res.resolutions                    # the ledger carries it (leading, authoritative)
+    assert res.corrections == []              # deduped — the same verdict isn't injected again
+    assert "RESOLVED AMBIGUITIES" in res.section and "PAST CORRECTIONS" not in res.section

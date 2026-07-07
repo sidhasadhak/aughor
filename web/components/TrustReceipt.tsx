@@ -42,6 +42,8 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
   const guards = rec.lineage.filter(l => l.relation === "validated_by");
   const inputs = rec.lineage.filter(l => l.relation === "input");
   const sqlEdge = rec.lineage.find(l => l.relation === "source_sql");
+  // I6 — a reading this connection settled earlier (Ambiguity Ledger) that this answer applied.
+  const resolved = rec.lineage.filter(l => l.relation === "resolved_ambiguity");
 
   const Badge = ({ tone, title, children }: { tone: "governed" | "drift" | "guard" | "propose" | "muted"; title?: string; children: React.ReactNode }) => {
     const c = {
@@ -74,7 +76,8 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
         {drift.map((m, i) => <Badge key={`drift:${i}:${m.ref}`} tone="drift" title={m.detail || ""}>⚠ {m.ref.replace("metric:", "")} · non-governed</Badge>)}
         {proposed.map((m, i) => <Badge key={`prop:${i}:${m.ref}`} tone="propose" title={m.detail || "Define this metric in the Semantic Layer to enforce it"}>✎ define {m.ref.replace("metric:", "")}</Badge>)}
         {guards.map((g, i) => <Badge key={`guard:${i}:${g.ref}`} tone="guard">✓ {g.ref.replace("guard:", "").replace(/_/g, " ")}</Badge>)}
-        {used.length === 0 && drift.length === 0 && proposed.length === 0 && guards.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
+        {resolved.length > 0 && <Badge tone="governed" title="This answer applied an ambiguity this connection resolved earlier">◆ {resolved.length === 1 ? "resolved reading" : `${resolved.length} resolved readings`}</Badge>}
+        {used.length === 0 && drift.length === 0 && proposed.length === 0 && guards.length === 0 && resolved.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
         <span style={{ fontSize: 10, color: "var(--t4)" }}>{open ? "▾" : "▸"}</span>
       </button>
 
@@ -98,6 +101,17 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
             <div style={{ fontSize: 11, color: "var(--t2)" }}>
               Governed metrics available: {metrics.map((m, i) => (
                 <span key={`avail:${i}:${m.ref}`} title={m.detail || ""} style={{ color: "var(--blue4)" }}>{m.ref.replace("metric:", "")} </span>
+              ))}
+            </div>
+          )}
+          {resolved.length > 0 && (
+            <div style={{ fontSize: 11, color: "var(--t2)" }}>
+              <span style={{ color: "var(--t3)" }}>Applied a previously-resolved reading (so this question doesn’t re-ask):</span>
+              {resolved.map((r, i) => (
+                <div key={`resolved:${i}:${r.ref}`} style={{ marginTop: 2 }}>
+                  <span style={{ color: "var(--blue4)" }}>◆ {r.ref.replace("reading:", "")}</span>
+                  {r.detail ? ` — ${r.detail}` : ""}
+                </div>
               ))}
             </div>
           )}
