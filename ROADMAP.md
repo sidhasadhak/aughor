@@ -104,11 +104,15 @@ executor A/B (real executor, fixed leaf latency) — baseline serial+chains 12.0
    ✅ **P-B** also shipped (2026-07-07, flag `preflight.parallel`, default off): `plan_queries`' four
    independent plan-time retrievals (schema ∥ KB ∥ causal ∥ corrections) now run concurrently,
    byte-identical prompt — a near-free deterministic wall-clock win (no endpoint A/B needed). *→ program WS1.*
-2. **`web/lib/api.gen.ts` is stale** (12,929 lines — missing the `/rbac`, `/jobs`, `/packs`, `/verify`
-   route families) — regen + add a codegen CI gate. *→ program WS4.*
-3. **Retire `CanonicalMetric`** — repoint the `semantic/compiler.py` structured consumer (U10 tail;
-   `build_metrics_block` text / `/health-scorecard` / `/metrics` CRUD still catalog-only). *(Standalone,
-   not part of the program.)*
+2. ~~**`web/lib/api.gen.ts` is stale** — regen + add a codegen CI gate.~~ **✅ DONE** (WS4, PR #111):
+   `api.gen.ts` regenerated (16,143 lines) + offline `scripts/dump_openapi.py` + the `codegen` CI gate
+   (`ci.yml` "API client · codegen drift").
+3. ~~**Retire `CanonicalMetric`** — repoint the `semantic/compiler.py` structured consumer (U10 tail).~~
+   **✅ DONE** (2026-07-07, PR #114): the compiler's 3 resolution sites now call `resolve_planning_metrics`,
+   which under `semantic.contract_live` resolves the one `SemanticContract` (via `_ContractMetricView`,
+   mapping the compiler's `verified` gate to the contract's `injectable` == legacy field), byte-identical
+   off. Proven at the resolver boundary AND the `synthesize_sql` binding path. Remaining catalog-only
+   consumers (`build_metrics_block` text / `/health-scorecard` / `/metrics` CRUD) are out of scope.
 *Deferred with reasons (see the log): `CanvasWorkspace` re-express (rich header + eager-mount don't fit
 the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment),
 NOM-07 (`PlaybookEntry` doesn't fit the scheduled-check mold; touches persisted models).*

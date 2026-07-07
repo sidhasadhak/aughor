@@ -277,6 +277,73 @@ def _contract_live() -> bool:
         return False
 
 
+class _ContractMetricView:
+    """Adapts a ``SemanticContract`` to the exact attribute shape the semantic compiler reads
+    (``name``/``verified``/``sql``/``tables``/``label``/``unit``/``source``). ``verified`` maps to
+    the contract's ``injectable`` property — which is DEFINED equal to the legacy
+    ``CanonicalMetric.verified`` trust/render policy byte-for-byte (catalog + profile authoritative
+    by provenance; ontology only once self-verified) — so repointing the compiler at the one
+    ``SemanticContract`` is a pure no-op on the SQL it synthesizes (REC-U10 tail)."""
+
+    __slots__ = ("_c",)
+
+    def __init__(self, contract) -> None:
+        self._c = contract
+
+    @property
+    def name(self) -> str:
+        return self._c.key
+
+    @property
+    def label(self) -> str:
+        return self._c.label
+
+    @property
+    def sql(self) -> str:
+        return self._c.sql
+
+    @property
+    def unit(self) -> str:
+        return self._c.unit or ""
+
+    @property
+    def tables(self) -> list:
+        return self._c.tables
+
+    @property
+    def source(self) -> str:
+        return self._c.source
+
+    @property
+    def verified(self) -> bool:
+        return self._c.injectable
+
+
+def resolve_planning_metrics(
+    connection_id: str = "",
+    schema_name: Optional[str] = None,
+    *,
+    catalog=None,
+    ontology=None,
+    schema_text: Optional[str] = None,
+) -> list:
+    """Flag-aware STRUCTURED metric resolver for the semantic compiler (REC-U10 tail — retires
+    ``CanonicalMetric`` from the compiler's live path). Off → the legacy ``CanonicalMetric`` list
+    (byte-identical default). On (``semantic.contract_live``) → the SAME three governed stores
+    resolved into ``SemanticContract``s and presented through ``_ContractMetricView``, so the
+    compiler consumes the one contract type without any shape churn. ``verified`` maps to the
+    contract's ``injectable`` (equal to the legacy field), so the synthesized SQL is unchanged."""
+    if _contract_live():
+        return [
+            _ContractMetricView(c)
+            for c in resolve_contracts(
+                connection_id, schema_name, catalog=catalog, ontology=ontology,
+                schema_text=schema_text)
+        ]
+    return resolve_canonical_metrics(
+        connection_id, schema_name, catalog=catalog, ontology=ontology, schema_text=schema_text)
+
+
 def canonical_metrics_block(connection_id: str = "", schema_name: Optional[str] = None,
                             schema_text: Optional[str] = None) -> str:
     """Convenience: resolve + render in one call (the form callers inject). No-op safe.
