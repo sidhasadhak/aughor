@@ -98,11 +98,17 @@ executor A/B (real executor, fixed leaf latency) — baseline serial+chains 12.0
 **⏭️ Immediate next — now sequenced inside the 10x + Spider 2.0 program (see the block at the top of §0):**
 1. **Continue P-A** — apply the wave pattern to ADA hypothesis-testing / per-dimension cross-section;
    then **P-B** (parallelize the pre-flight retrievals — near-free, deterministic). *→ program WS1.*
-2. **`web/lib/api.gen.ts` is stale** (12,929 lines — missing the `/rbac`, `/jobs`, `/packs`, `/verify`
-   route families) — regen + add a codegen CI gate. *→ program WS4.*
-3. **Retire `CanonicalMetric`** — repoint the `semantic/compiler.py` structured consumer (U10 tail;
-   `build_metrics_block` text / `/health-scorecard` / `/metrics` CRUD still catalog-only). *(Standalone,
-   not part of the program.)*
+   (Phase-level `ada.parallel_phases` + `explore.parallel_subq` wide-DAG waves already SHIPPED; remaining
+   = ADA cross-section wave (endpoint-gated A/B) + the deterministic P-B pre-flight parallelization.)
+2. ~~**`web/lib/api.gen.ts` is stale** — regen + add a codegen CI gate.~~ **✅ DONE** (WS4, PR #111):
+   `api.gen.ts` regenerated (16,143 lines) + offline `scripts/dump_openapi.py` + the `codegen` CI gate
+   (`ci.yml` "API client · codegen drift").
+3. ~~**Retire `CanonicalMetric`** — repoint the `semantic/compiler.py` structured consumer (U10 tail).~~
+   **✅ DONE** (2026-07-07): the compiler's 3 resolution sites now call `resolve_planning_metrics`, which
+   under `semantic.contract_live` resolves the one `SemanticContract` (via `_ContractMetricView`, mapping
+   the compiler's `verified` gate to the contract's `injectable` == legacy field), byte-identical off.
+   Proven at the resolver boundary AND the `synthesize_sql` binding path. Remaining catalog-only consumers
+   (`build_metrics_block` text / `/health-scorecard` / `/metrics` CRUD) are out of scope. *(Standalone.)*
 *Deferred with reasons (see the log): `CanvasWorkspace` re-express (rich header + eager-mount don't fit
 the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment),
 NOM-07 (`PlaybookEntry` doesn't fit the scheduled-check mold; touches persisted models).*
