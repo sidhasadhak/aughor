@@ -101,7 +101,9 @@ executor A/B (real executor, fixed leaf latency) — baseline serial+chains 12.0
    only on the WHERE/WHY summaries — now run as one concurrent wave, byte-identical merge (endpoint-gated
    A/B for the wall-clock win). Joins the shipped `ada.parallel_phases` + `explore.parallel_subq` wide-DAG
    waves. Investigate-mode multi-hypothesis testing is dormant in the live graph (skip until reactivated).
-   Remaining: **P-B** (parallelize the pre-flight retrievals — near-free, deterministic). *→ program WS1.*
+   ✅ **P-B** also shipped (2026-07-07, flag `preflight.parallel`, default off): `plan_queries`' four
+   independent plan-time retrievals (schema ∥ KB ∥ causal ∥ corrections) now run concurrently,
+   byte-identical prompt — a near-free deterministic wall-clock win (no endpoint A/B needed). *→ program WS1.*
 2. **`web/lib/api.gen.ts` is stale** (12,929 lines — missing the `/rbac`, `/jobs`, `/packs`, `/verify`
    route families) — regen + add a codegen CI gate. *→ program WS4.*
 3. **Retire `CanonicalMetric`** — repoint the `semantic/compiler.py` structured consumer (U10 tail;

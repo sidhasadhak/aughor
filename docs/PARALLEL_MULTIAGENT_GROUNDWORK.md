@@ -218,8 +218,16 @@ is already deterministic, so an LLM supervisor would add latency + cost for a de
   wave already ships (`ada.parallel_phases`); investigate-mode multi-hypothesis testing is dormant in the
   current graph (the live deep path routes through the ADA phase/lens branches, not the `plan_queries`
   hypothesis loop) — revisit only if that loop is reactivated.
-- **P-B: parallelize the pre-flight retrievals** (KB / playbook / prior-analyses / scan) as concurrent
-  nodes — near-free wall-clock (little/no extra LLM cost).
+- **P-B ✅ SHIPPED (2026-07-07, flag `preflight.parallel`, default off): parallelize the plan-time
+  pre-flight retrievals.** `plan_queries` ran four independent, deterministic, non-LLM retrievals
+  serially — relevant-schema ∥ KB planning patterns ∥ causal context ∥ closed-loop corrections. They
+  share no inputs beyond the hypothesis/question and touch no DB connection, so they now run concurrently
+  on `ContextThreadPoolExecutor`; `.result()` re-raises exactly as the serial path did, so the assembled
+  planning prompt is **byte-identical**. Off → serial, byte-identical. Tests: prompt-identical serial-vs-
+  parallel + closed-loop liveness survives + concurrency timing + serial-when-off. The win is measurable
+  by wall-clock without an LLM-variance A/B (near-free, no extra model cost). **Follow-up:** the
+  node-level fan-out the doc originally sketched (KB/playbook/prior-analyses/**scan** as concurrent *graph
+  nodes*) remains for the scan phase specifically, which runs in its own node upstream.
 - **P-C: refactor `run_analysis_phase` into a phase subgraph** so phases compose and can run concurrently.
 - **P-D (bigger, later): supervisor + real specialist subgraphs** — only if A–C don't close the gap; keep
   the *router* deterministic and use LLM agents only for genuinely open sub-tasks.

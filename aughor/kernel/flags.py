@@ -29,6 +29,7 @@ FLAG_ENV = {
     "ada.why_where_interaction": "AUGHOR_ADA_WHY_WHERE_INTERACTION",
     "ada.why_deepen": "AUGHOR_ADA_WHY_DEEPEN",
     "ada.parallel_why_lenses": "AUGHOR_ADA_PARALLEL_WHY_LENSES",
+    "preflight.parallel": "AUGHOR_PREFLIGHT_PARALLEL",
     "trust.verify_facade": "AUGHOR_TRUST_FACADE",
     "trust.verify_live": "AUGHOR_TRUST_VERIFY_LIVE",
     "semantic.resolve_live": "AUGHOR_SEMANTIC_RESOLVE_LIVE",
@@ -88,6 +89,10 @@ FLAG_META = {
     "ada.parallel_why_lenses": {
         "label": "Parallel WHY-deepening lenses",
         "description": "Run the forward-chained WHY lenses (WHY×WHERE interaction ∥ peer benchmark ∥ reason drill) as one concurrent wave instead of a serial chain. Each depends ONLY on the already-computed WHERE/WHY summaries, never on each other, so the merge is byte-identical (fixed spec order, never completion order) — just faster wall-clock when two or more are enabled. Multiplies concurrent LLM calls (bounded by the P6 token budget); requires 'Parallel Deep-Analysis lenses' + the WHY lenses it parallelizes. Off by default.",
+    },
+    "preflight.parallel": {
+        "label": "Parallel plan-time retrievals",
+        "description": "Run the plan_queries pre-flight retrievals (relevant-schema ∥ KB planning patterns ∥ causal context ∥ closed-loop corrections) concurrently instead of one-at-a-time. All four are independent, deterministic, non-LLM lookups, so the result is byte-identical — just less wall-clock (a near-free win, no extra model cost). Off by default.",
     },
     "trust.verify_facade": {
         "label": "Unified trust.verify façade",
