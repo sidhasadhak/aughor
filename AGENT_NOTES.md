@@ -95,9 +95,19 @@ right unit + 600-row end-to-end driver). Suite 2721 green. Core-layer change, wh
 `answer_federated(question, conn_ids: list)` folds the steps through `batched_foreach_join`; `validate_plan`
 tracks assembled columns (left_key must be present) + source-index range. Planner picks step order ⇒ driver
 auto-selection falls out. Endpoint `/query/federated-answer` now takes ≥2 conn_ids. 8 tests incl. a real
-3-source chain (orders→region→manager). Suite **2723 green**. **ANSWER-PATH INTEGRATION deferred BY DESIGN:**
-it needs cross-source connection SELECTION (which connections does an NL question span?) — a genuine new
-capability, not plumbing; that's the honest dependency. Rec 2 BACKEND is complete.
+3-source chain (orders→region→manager). Suite 2723 green.
+**✅ N-source REVIEW DONE** (fresh-eyes agent): root cause of #1/#2 (HIGH) — `validate_plan` predicted
+assembled columns with RAW names while the engine `_uniquify`s right-side collisions + `_idx` first-match,
+so validation ran against a phantom schema once a column name repeats across sources. FIXED: validate_plan
+now imports the engine's `_uniquify` and models the assembled schema EXACTLY (added a 3-source collision-chain
+test that validates faithfully AND joins correctly — note: a join-KEY collision is harmless anyway since the
+join makes those columns equal). #3 driver-dup-columns: non-issue on DuckDB (auto-renames k→k_1); kept a
+defensive `len!=len(set)` check for connectors that surface true dupes (Postgres). #4 (empty mid-fold drops
+downstream schema) + #5 (same-named table across sources not detected) documented as known v1 limits (neither
+returns wrong NON-empty data). Reviewer verified SOUND: forward-ref rejection, gating completeness, fail-safe
+degradation. Suite **2724 green**. **ANSWER-PATH INTEGRATION deferred BY DESIGN:** needs cross-source
+connection SELECTION (which connections does an NL question span?) — a genuine new capability, not plumbing.
+Rec 2 BACKEND COMPLETE (build-wire-test-review, twice).
 SIGNATURE NOTE: `batched_foreach_join` moved `right_table` to keyword-only (was positional) — all callers +
 the 11 unit-test calls updated.
 

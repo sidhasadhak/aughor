@@ -155,3 +155,33 @@ def test_validate_plan_passes_a_good_plan(tmp_path):
         FederatedStep(source=1, sql="SELECT cust, region FROM customers", join_key="cust", left_key="cust"),
     ])
     assert validate_plan(plan, cids) == []
+
+
+def test_collision_chain_validates_faithfully_and_joins_correctly(client: TestClient, monkeypatch, tmp_path):
+    """A shared NON-driver column name ('region') across a 3-source chain: validate mirrors the engine's
+    _uniquify so it passes truthfully, and — because 'region' is the join key — the fold is correct."""
+    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+    a = _duck_file(tmp_path / "o.duckdb", "CREATE TABLE orders (order_id INT, region VARCHAR)",
+                   "INSERT INTO orders VALUES (1,'EU'),(2,'US')")
+    b = _duck_file(tmp_path / "s.duckdb", "CREATE TABLE stores (store VARCHAR, region VARCHAR)",
+                   "INSERT INTO stores VALUES ('S1','EU'),('S2','US')")
+    c = _duck_file(tmp_path / "m.duckdb", "CREATE TABLE mgrs (region VARCHAR, manager VARCHAR)",
+                   "INSERT INTO mgrs VALUES ('EU','Alice'),('US','Bob')")
+    cids = [registry.add_connection("cc0", "duckdb", a),
+            registry.add_connection("cc1", "duckdb", b),
+            registry.add_connection("cc2", "duckdb", c)]
+    plan = FederatedPlan(steps=[
+        FederatedStep(source=0, sql="SELECT order_id, region FROM orders ORDER BY order_id", join_key="region"),
+        FederatedStep(source=1, sql="SELECT store, region FROM stores", join_key="region", left_key="region"),
+        FederatedStep(source=2, sql="SELECT region, manager FROM mgrs", join_key="region", left_key="region"),
+    ])
+    assert validate_plan(plan, cids) == []          # faithful: no phantom-schema false pass/fail
+    _fake_planner(monkeypatch, plan)
+
+    resp = client.post("/query/federated-answer", json={"question": "orders → store region → manager", "conn_ids": cids})
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["error"] is None and data["row_count"] == 2
+    managers = [r[data["columns"].index("manager")] for r in data["rows"]]
+    assert managers == ["Alice", "Bob"]

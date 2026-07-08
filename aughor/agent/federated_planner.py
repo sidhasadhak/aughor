@@ -10,6 +10,12 @@ Plan-then-execute (PromptQL), deterministic-first: the LLM only produces the *pl
 guards validate it and the engine does the joins. One LLM call, everything after is code — so the
 result is inspectable (the plan + per-source SQL are returned) and repeatable. The planner also chooses
 the step ORDER, so it picks which source drives (driver auto-selection) and how the sources chain.
+
+Known v1 limitations (documented, not silent): if a middle inner-join step matches zero rows the fold
+short-circuits to an empty result, so downstream sources' columns are absent from the (empty) output
+schema; and a step is validated by executing its sub-query on its declared source, so a sub-query that
+references a table that happens to exist under the same name on a *different* source is not detected as
+mis-targeted. Both are narrow and neither returns wrong non-empty data.
 """
 from __future__ import annotations
 
@@ -88,7 +94,12 @@ def _columns_of(conn, sql: str) -> Optional[list[str]]:
 
 def validate_plan(plan: FederatedPlan, conn_ids: list[str]) -> list[str]:
     """Deterministic pre-execution checks: sources in range, each sub-query outputs its join key, and
-    each non-driver step's left_key is a real column of the result assembled up to that point."""
+    each non-driver step's left_key is a real column of the result assembled up to that point.
+
+    The assembled-column model mirrors the engine EXACTLY (same ``_uniquify`` on right-side collisions),
+    so validation predicts the real merged schema — not a phantom one — even when column names repeat
+    across sources (a shared key like ``cust``/``region`` in a join chain is the common case)."""
+    from aughor.connectors.remote_join import _uniquify   # the engine's exact collision renamer
     from aughor.db.connection import open_connection_for
 
     issues: list[str] = []
@@ -110,6 +121,8 @@ def validate_plan(plan: FederatedPlan, conn_ids: list[str]) -> list[str]:
         if cols is None:
             issues.append(f"step {i}: sub-query did not execute (must target only source [{step.source}])")
             continue
+        if len(cols) != len(set(cols)):
+            issues.append(f"step {i}: sub-query outputs duplicate column names ({', '.join(cols)}) — alias them apart")
         if step.join_key not in cols:
             issues.append(f"step {i}: join key {step.join_key!r} is not an output column ({', '.join(cols) or 'none'})")
         if i == 0:
@@ -122,7 +135,7 @@ def validate_plan(plan: FederatedPlan, conn_ids: list[str]) -> list[str]:
             elif assembled is not None and step.left_key not in assembled:
                 issues.append(f"step {i}: left_key {step.left_key!r} is not in the assembled result so far ({', '.join(assembled) or 'none'})")
             if assembled is not None:
-                assembled = assembled + list(cols)   # the join appends this source's columns
+                assembled = assembled + _uniquify(assembled, cols)   # exactly what the engine appends
     return issues
 
 
