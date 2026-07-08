@@ -37,6 +37,8 @@ def test_greedy_respects_max_sources():
 
 def test_greedy_empty_when_nothing_matches():
     assert _greedy_select({}, 3) == []
+    # a candidate set where NO connection grounds any term → empty (not an arbitrary source)
+    assert _greedy_select({"a": set(), "b": set(), "c": set()}, 3) == []
 
 
 # ── select_connections (schema-relevance) ────────────────────────────────────

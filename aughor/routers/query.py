@@ -356,24 +356,37 @@ async def query_auto_federated_answer(body: _AutoFederatedRequest):
 
     def _work():
         sel = select_connections(body.question, body.conn_ids)
-        if not sel.conn_ids:
-            return None, sel
-        return answer_federated(body.question, sel.conn_ids, reconcile=reconcile), sel
+        # Only a genuinely cross-source question goes to the federated (multi-DB) planner. A single-source
+        # or zero-relevance question must NOT be handed to a planner prompted for cross-database joins.
+        if not sel.conn_ids or not sel.multi_source:
+            return sel, None
+        return sel, answer_federated(body.question, sel.conn_ids, reconcile=reconcile)
 
     loop = asyncio.get_running_loop()
     try:
-        ans, sel = await loop.run_in_executor(None, _work)
+        sel, ans = await loop.run_in_executor(None, _work)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    if ans is None:
+
+    selection = {"conn_ids": sel.conn_ids, "matched": sel.matched, "multi_source": sel.multi_source}
+    if not sel.conn_ids:
         raise HTTPException(status_code=422, detail="no candidate connection is relevant to the question")
+    if not sel.multi_source:
+        # Honest routing: the question sits in one source — the caller should answer it via the normal path.
+        return {
+            "single_source": True, "selection": selection,
+            "columns": [], "rows": [], "row_count": 0, "sql": "", "error": None,
+            "plan": None, "issues": [],
+            "message": f"single-source question — answer connection {sel.conn_ids[0]} via the normal query path",
+        }
 
     r = ans.result
     return {
+        "single_source": False,
         "columns": r.columns, "rows": r.rows, "row_count": r.row_count, "sql": r.sql, "error": r.error,
         "plan": ans.plan.model_dump() if ans.plan else None,
         "issues": ans.issues,
-        "selection": {"conn_ids": sel.conn_ids, "matched": sel.matched, "multi_source": sel.multi_source},
+        "selection": selection,
     }
 
 

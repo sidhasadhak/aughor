@@ -7,9 +7,18 @@ LLM: each candidate connection's schema is reduced to a bag of lexical terms, th
 are matched against each, and a greedy **set-cover** picks the smallest set of connections that together
 ground the question's terms. The LLM stays confined to the downstream plan.
 
-`select_connections(question, candidates)` returns the chosen connection ids (always ≥1 — the single best
-when the question sits in one source), the terms each contributed, and whether it went multi-source. A
-single-source result routes to the normal answer path; a multi-source result routes to the federated planner.
+`select_connections(question, candidates)` returns the chosen connection ids (empty when NO candidate grounds
+any question term; one when the question sits in a single source; several when it spans them), the terms each
+contributed, and whether it went multi-source. Empty → the caller reports nothing relevant; single-source →
+route to the normal answer path; multi-source → route to the federated planner.
+
+Known limitations of the lexical heuristic (documented, not silent): the crude singularizer only strips one
+trailing 's', so irregular/double-letter plurals (``addresses`` vs ``address``) can miss a match and drop a
+relevant source; a generic business noun (``name``/``value``/``code``) that is uniquely on an otherwise
+irrelevant source can pull it in as an extra source (the set-cover minimality avoids this whenever the term
+is already covered elsewhere); and schemas are fetched per candidate without the router layer's TTL cache, so
+a large candidate pool of wide warehouse schemas pays N introspections. All are selection-quality/perf, not
+correctness — none returns wrong data or crashes.
 """
 from __future__ import annotations
 
@@ -53,7 +62,7 @@ def _terms(text: str) -> set[str]:
 
 @dataclass
 class ConnectionSelection:
-    conn_ids: list[str]              # the chosen connections (driver first), always ≥1 when candidates exist
+    conn_ids: list[str]              # the chosen connections (driver first); empty when nothing is relevant
     matched: dict[str, list[str]]    # per chosen connection, the question terms it grounded
     multi_source: bool               # True when the question spans 2+ connections → route to the federated planner
 
@@ -65,9 +74,9 @@ def _greedy_select(matched: dict[str, set[str]], max_sources: int) -> list[str]:
         return []
     order = sorted(matched, key=lambda c: (-len(matched[c]), c))
     best = order[0]
-    selected = [best]
     if not matched[best]:
-        return selected                          # nothing matched anywhere → degenerate single source
+        return []                                # nothing grounds any question term → no relevant connection
+    selected = [best]
     covered = set(matched[best])
     while len(selected) < max_sources:
         gains = sorted(

@@ -181,8 +181,33 @@ def test_auto_federated_answer_selects_connections_then_joins(client: TestClient
     assert data["selection"]["multi_source"] is True
     assert set(data["selection"]["conn_ids"]) == {oid, cid}       # products dropped by the selector
     assert data["selection"]["conn_ids"][0] == oid                # orders drives (higher term coverage)
+    assert data["single_source"] is False
     assert data["error"] is None and data["row_count"] == 2
     assert "region" in data["columns"]
+
+
+def test_auto_federated_answer_single_source_is_not_federated(client: TestClient, monkeypatch, tmp_path):
+    """A question that sits in ONE source must NOT be handed to the cross-database planner — the endpoint
+    reports single_source routing instead (no federated LLM call)."""
+    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+    cids = _two_sources(tmp_path)   # orders(order_id,cust,amount) + customers(cust,region)
+    # provider NOT faked — if the planner were (wrongly) invoked, the test would hit the real LLM/fail
+    resp = client.post("/query/auto-federated-answer",
+                       json={"question": "total order amount", "conn_ids": cids})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["single_source"] is True
+    assert data["selection"]["multi_source"] is False
+    assert data["selection"]["conn_ids"] == [cids[0]]     # orders only
+    assert data["plan"] is None and data["row_count"] == 0
+
+
+def test_auto_federated_answer_422_when_no_connection_relevant(client: TestClient, monkeypatch, tmp_path):
+    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+    cids = _two_sources(tmp_path)
+    resp = client.post("/query/auto-federated-answer",
+                       json={"question": "the meaning of life", "conn_ids": cids})
+    assert resp.status_code == 422
 
 
 def test_validate_plan_passes_a_good_plan(tmp_path):

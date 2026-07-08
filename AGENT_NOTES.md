@@ -116,8 +116,16 @@ stopword filler ONLY (kept "order"/"count"/"total" — they're real entity names
 selector). `POST /query/auto-federated-answer` {question, conn_ids=candidate pool} → select → answer_federated
 over the subset; returns `selection{conn_ids, matched, multi_source}`. 9 tests (pure set-cover+tokenizer +
 schema-relevance dropping an irrelevant source + end-to-end select-then-join over 3 registered DuckDB sources).
-Suite **2733 green**. REVIEW pending. REMAINING: fold into `/ask` conversational router (auto-gather org conns
-+ branch on multi_source) — plumbing on this selector, not new capability.
+Suite 2733 green.
+**✅ SELECTOR REVIEW DONE** (fresh-eyes): 2 HIGH (same shape: `multi_source` computed but never routed on),
+both fixed — (#1) endpoint now branches on `multi_source`: single-source returns an honest routing response
+(`single_source:true`, no rows) instead of feeding a 1-source question to the cross-DB planner prompt; (#2)
+`_greedy_select` returns `[]` when NO candidate grounds any term (was an arbitrary source), so the 422 is now
+reachable. Added 2 endpoint tests (single-source-not-federated, 422-nothing-relevant) + greedy-all-empty
+assertion. #3 (uncached serial get_schema), #4 (irregular plurals miss), #5 (bridge nouns) documented as known
+selection-quality/perf limits (not correctness). Reviewer verified SOUND: dedup/subset-exclusion/minimality/
+determinism/fail-open. Suite **2735 green**. REMAINING: fold into `/ask` conversational router (auto-gather org
+conns + branch on multi_source) — plumbing on this selector.
 SIGNATURE NOTE: `batched_foreach_join` moved `right_table` to keyword-only (was positional) — all callers +
 the 11 unit-test calls updated.
 
