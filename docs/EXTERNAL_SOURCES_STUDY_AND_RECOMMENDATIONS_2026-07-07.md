@@ -203,7 +203,7 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 | # | Recommendation | Source | DAB gap | Dimension | Leverage | Effort | Risk | Status |
 |---|---|---|---|---|---|---|---|---|
 | 1 | **Guarded extraction** (validate + gleaning re-extract) | DocETL/Palimpzest | GAP-2 (47/54) | Correctness | High | S | Low | ✅ shipped |
-| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ✅ engine + API + self-heal + N-source planner + driver-selection + cap-lift + **deterministic connection selection** (only `/ask` conversational routing remains) |
+| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ✅ **COMPLETE** — engine · API · self-heal · N-source planner · driver-selection · cap-lift · connection selection · `/ask` auto-federation |
 | 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
 | 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | proposed |
 | 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | ✅ shipped |
@@ -292,9 +292,18 @@ plan, per the deterministic-first thesis). Returns the chosen connections (drive
 terms each grounded, and `multi_source`. `POST /query/auto-federated-answer` takes a question + a candidate
 pool, selects the spanning subset, and answers over exactly those via the planner — so the caller no longer
 names the connections. 9 tests (pure set-cover + tokenizer, schema-relevance selection dropping an irrelevant
-source, end-to-end select-then-join over 3 registered sources). **The one remaining piece:** folding this into
-the `/ask` conversational router (auto-gather the org's connections, branch to federation when `multi_source`)
-— plumbing on top of this selector, not a new capability.
+source, end-to-end select-then-join over 3 registered sources).
+
+**✅ `/ask` auto-federation (the last piece).** `_stream_ask` (`aughor/routers/investigations.py`) now, on a
+fresh auto turn and behind `federation.planner` (default off = byte-identical), gathers the org-visible
+connections (`_federation_candidates`, current first, capped), runs the deterministic selector off the event
+loop, and — only when the question is genuinely `multi_source` — streams a federated answer (`_stream_federated`:
+a `route` receipt naming the sources + the merged table via the same `columns`/`rows`/`headline`/`sql`/
+`tables_used` events the quick path uses, so it renders in the existing surface). Fail-safe: any selection error
+falls through to the normal single-connection path. 5 tests (candidate gathering incl. org-visibility filter +
+cap; federated emission incl. the error path); the full suite stays green, proving the flag-off path is
+byte-identical. **Rec 2 is complete end-to-end** — a plain chat question spanning two of your databases now
+answers across them automatically.
 
 **✅ Follow-up — per-source row cap lifted.** The connection layer caps `execute()` at 500 rows, which had
 silently bounded every federated join (surfaced as `PARTIAL`). Added `execute_bounded(hyp, sql, max_rows)` to

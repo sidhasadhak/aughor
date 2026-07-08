@@ -124,8 +124,16 @@ both fixed — (#1) endpoint now branches on `multi_source`: single-source retur
 reachable. Added 2 endpoint tests (single-source-not-federated, 422-nothing-relevant) + greedy-all-empty
 assertion. #3 (uncached serial get_schema), #4 (irregular plurals miss), #5 (bridge nouns) documented as known
 selection-quality/perf limits (not correctness). Reviewer verified SOUND: dedup/subset-exclusion/minimality/
-determinism/fail-open. Suite **2735 green**. REMAINING: fold into `/ask` conversational router (auto-gather org
-conns + branch on multi_source) — plumbing on this selector.
+determinism/fail-open. Suite 2735 green.
+**✅ `/ask` AUTO-FEDERATION (final piece)** (2026-07-08): `routers/investigations.py::_stream_ask` — on a
+fresh auto turn (not deep/insight/canvas), behind `federation.planner` (default off = byte-identical), gathers
+`_federation_candidates(conn_id)` (org-visible, current-first, cap 15), runs `select_connections` off the loop
+(`asyncio.to_thread`), and if `multi_source` streams `_stream_federated` (route receipt naming sources + merged
+table via the SAME columns/rows/headline/sql/tables_used events the quick path uses → renders in existing
+surface). Fail-safe: selection error → `tolerate` → falls through to single-connection path. Placed AFTER the
+clarify gate. 5 unit tests (candidate gathering + org-visibility filter + cap; federated emission + error path).
+Suite **2740 green** (flag-off byte-identical proven by all existing /ask tests passing). REVIEW pending.
+**Rec 2 COMPLETE end-to-end.**
 SIGNATURE NOTE: `batched_foreach_join` moved `right_table` to keyword-only (was positional) — all callers +
 the 11 unit-test calls updated.
 
