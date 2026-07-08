@@ -54,10 +54,13 @@ left_key, right_conn, right_table, right_key, how=inner|left)`: dedups left keys
 unchanged). `cross_source_join(...)` = by-connection-id wrapper the planner/API will call. Complements
 `federated.py` (DuckDB ATTACH when co-located; batched-foreach for true cross-engine). 7 tests (two real
 in-memory DuckDB conns + counting wrapper proving 1 query for 5 rows/2 keys, and 3 queries for 5 keys/chunk 2).
-NO live consumer yet → inherently non-breaking; full suite unaffected (new file). **Stage 2 NEXT:** flag-gated
-cross-source-join surface + cross-source value-overlap guard (reuse Rec 3 reconciliation on the key pair).
-**Stage 3:** the LLM planner (decompose cross-source question → per-source sub-queries + join keys) — the
-big/risky piece; checkpoint before it.
+**Stage 2 ✅ SHIPPED:** `POST /query/cross-source-join` (`routers/query.py`, flag `federation.remote_join` /
+`AUGHOR_FEDERATION_REMOTE_JOIN`, default off → 404) calls `cross_source_join`; left SQL runs through
+`gate_user_sql`. 3 integration tests (404-when-off, end-to-end join across two registered DuckDB files,
+field-validation 400). Suite **2708 green**. **Stage 2b:** cross-source value-overlap guard (reuse Rec 3
+reconciliation on the key pair — self-healing ill-formatted cross-source keys; needs a paired Python-fn+SQL-expr
+transform set since left keys are materialized). **Stage 3:** the LLM planner (decompose cross-source question →
+per-source sub-queries + join keys) — the big/risky piece; CHECKPOINT before it (fresh context).
 
 ## ✅ SHIPPED — Champion cascade on semantic_filter (Rec 5, branch `2026-07-07-guarded-extraction`)
 Palimpzest/LOTUS label-free quality estimator. `semops/operators.py`: extracted the filter batch loop into

@@ -42,6 +42,7 @@ FLAG_ENV = {
     "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
     "join.key_reconciliation": "AUGHOR_JOIN_KEY_RECONCILIATION",
     "semops.champion_validate": "AUGHOR_SEMOPS_CHAMPION_VALIDATE",
+    "federation.remote_join": "AUGHOR_FEDERATION_REMOTE_JOIN",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -144,6 +145,10 @@ FLAG_META = {
     "semops.champion_validate": {
         "label": "Champion cascade on semantic filter",
         "description": "The semantic filter operator runs on the cheap tier; with this on, a small spread sample of its verdicts is re-judged by the strong 'champion' model and the whole batch is escalated to the champion when they disagree beyond a bar — catching cheap-tier errors at the cost of one extra sample call per filter. Off by default = byte-identical (no validation sample). A label-free quality estimator in the Palimpzest/LOTUS lineage.",
+    },
+    "federation.remote_join": {
+        "label": "Cross-source batched-foreach join",
+        "description": "Enable POST /query/cross-source-join — join a result from one connection to a table on another, N+1-free (dedup the join keys, one keyed batch query per key-chunk to the right source, hash-join in memory). The correct-by-construction path for true cross-engine joins (Snowflake↔BigQuery↔Postgres) that DuckDB ATTACH can't reach. Off by default → the route 404s. Stage 1 of the cross-source federated planner.",
     },
 }
 

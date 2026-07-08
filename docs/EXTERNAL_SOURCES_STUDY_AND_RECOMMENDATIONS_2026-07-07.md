@@ -203,7 +203,7 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 | # | Recommendation | Source | DAB gap | Dimension | Leverage | Effort | Risk | Status |
 |---|---|---|---|---|---|---|---|---|
 | 1 | **Guarded extraction** (validate + gleaning re-extract) | DocETL/Palimpzest | GAP-2 (47/54) | Correctness | High | S | Low | ✅ shipped |
-| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ◑ Stage 1 (engine) |
+| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ◑ Stages 1–2 (engine+API) |
 | 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
 | 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | proposed |
 | 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | ✅ shipped |
@@ -261,9 +261,17 @@ validates (Palimpzest); a `validate`/`max_rounds` surface on the Query Builder "
 
 ### 7.1 Cross-source federated planner (Rec 2) — staged
 
-**Staging:** Stage 1 = the deterministic join engine (✅ shipped); Stage 2 = wiring (a flag-gated
-cross-source-join surface + the cross-source value-overlap/key-reconciliation guard); Stage 3 = the LLM
-planner that decomposes a cross-source question into per-source sub-queries and picks the join keys.
+**Staging:** Stage 1 = the deterministic join engine (✅ shipped); Stage 2 = wiring (✅ the flag-gated
+`POST /query/cross-source-join` API — the cross-source value-overlap/key-reconciliation guard is Stage 2b);
+Stage 3 = the LLM planner that decomposes a cross-source question into per-source sub-queries and picks the
+join keys (the big/risky piece — checkpoint before it).
+
+**✅ Stage 2 — the reachable API.** `POST /query/cross-source-join` (`aughor/routers/query.py`, flag
+`federation.remote_join` / `AUGHOR_FEDERATION_REMOTE_JOIN`, default off → 404) takes
+`{left_conn_id, left_sql, left_key, right_conn_id, right_table, right_key, how, right_cols}`, runs the left
+SQL through the standard safety gate, and calls `cross_source_join`. 3 integration tests (disabled-by-default
+404, end-to-end join across two registered DuckDB sources, field validation). The federated planner (Stage 3)
+will emit calls to this same engine.
 
 **✅ Stage 1 — batched-foreach remote-join engine** (`aughor/connectors/remote_join.py`). The correct-by-
 construction, N+1-free join across heterogeneous connections: `batched_foreach_join` executes the LEFT

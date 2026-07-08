@@ -236,6 +236,53 @@ async def query_semantic(body: _SemanticOpRequest):
     }
 
 
+class _CrossSourceJoinRequest(BaseModel):
+    left_conn_id: str
+    left_sql: str
+    left_key: str
+    right_conn_id: str
+    right_table: str
+    right_key: str
+    how: Literal["inner", "left"] = "inner"
+    right_cols: Optional[list[str]] = None
+
+
+@router.post("/query/cross-source-join")
+async def query_cross_source_join(body: _CrossSourceJoinRequest):
+    """Join a result from ONE connection to a table on ANOTHER, N+1-free (batched foreach).
+
+    The direct entry point for cross-source joins (the Rec 2 engine); the federated planner targets
+    the same `cross_source_join`. Flag-gated on `federation.remote_join` (default off → 404). The
+    left SQL goes through the same safety gate as the Query Builder."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("federation.remote_join"):
+        raise HTTPException(status_code=404, detail="cross-source join is not enabled")
+    for field in ("left_conn_id", "left_sql", "left_key", "right_conn_id", "right_table", "right_key"):
+        if not (getattr(body, field) or "").strip():
+            raise HTTPException(status_code=400, detail=f"{field} is required")
+
+    from aughor.db.connection import gate_user_sql
+    if (blocked := gate_user_sql(body.left_conn_id, "cross_source_join", body.left_sql)) is not None:
+        return {"columns": [], "rows": [], "row_count": 0, "sql": body.left_sql, "error": blocked.error}
+
+    from aughor.connectors.remote_join import cross_source_join
+
+    def _work():
+        return cross_source_join(
+            body.left_conn_id, body.left_sql, body.left_key,
+            body.right_conn_id, body.right_table, body.right_key,
+            how=body.how, right_cols=body.right_cols,
+        )
+
+    loop = asyncio.get_running_loop()
+    try:
+        res = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"columns": res.columns, "rows": res.rows, "row_count": res.row_count,
+            "sql": res.sql, "error": res.error}
+
+
 @router.post("/query/semantic/text-columns", dependencies=[gate(Capability.SEMANTIC_OPERATORS)])
 async def query_semantic_text_columns(body: _QueryRunRequest):
     """Detect which columns of a query's result read as free text — the operator candidates the UI
