@@ -244,6 +244,68 @@ def test_run_program_stops_on_failing_step(monkeypatch, tmp_path):
     assert "never" not in pr.artifacts                           # the downstream semop never ran
 
 
+# ── Stage A: DATA-reads-artifact dataflow ─────────────────────────────────────
+
+def test_run_program_data_reads_semop_output(monkeypatch, tmp_path):
+    """SEMOP filter → DATA GROUP BY over the filtered artifact: the SQL sees ONLY the surviving rows."""
+    cid = _tickets(tmp_path)
+    _patch_semop(monkeypatch, _FakeSemopProvider(filter_fn=lambda t: "urgent" in t))
+    program = Program(steps=[
+        ProgramStep(id="s0", kind="data", writes="rows",
+                    sql="SELECT ticket_id, description FROM tickets ORDER BY ticket_id"),
+        ProgramStep(id="s1", kind="semop", writes="urgent", reads=["rows"],
+                    operator="filter", column="description", predicate="is urgent"),
+        ProgramStep(id="s2", kind="data", writes="counted", reads=["urgent"],
+                    sql="SELECT count(*) AS n FROM urgent"),
+    ])
+    pr = run_program(program, cid, investigation_id="inv-dataflow")
+    assert pr.issues == []
+    assert pr.result.columns == ["n"]
+    assert pr.result.rows == [["2"]]                             # only the 2 urgent tickets flowed into SQL
+    assert set(pr.artifacts.keys()) == {"rows", "urgent", "counted"}
+
+
+def test_validate_program_data_reads_skips_static_parse(tmp_path):
+    """A DATA step that reads an artifact ('urgent' — not a real table) must PASS validation: its SQL is
+    checked at run, not statically parse-grounded (which would falsely reject it)."""
+    cid = _tickets(tmp_path)
+    program = Program(steps=[
+        ProgramStep(id="s0", kind="data", writes="rows", sql="SELECT ticket_id, description FROM tickets"),
+        ProgramStep(id="s1", kind="semop", writes="urgent", reads=["rows"],
+                    operator="filter", column="description", predicate="urgent"),
+        ProgramStep(id="s2", kind="data", writes="counted", reads=["urgent"],
+                    sql="SELECT count(*) AS n FROM urgent"),
+    ])
+    assert validate_program(program, cid) == []
+
+
+def test_register_unregister_roundtrip(tmp_path):
+    """The artifact relation is queryable after register and gone after teardown (no pooled-conn pollution)."""
+    from aughor.agent.program_planner import _register_artifact, _unregister_artifacts
+    from aughor.db.connection import open_connection_for
+    cid = _tickets(tmp_path)
+    db = open_connection_for(cid)
+    qr = QueryResult(hypothesis_id="t", sql="", columns=["a", "b"],
+                     rows=[["1", "x"], ["2", "y"]], row_count=2)
+    assert _register_artifact(db, "myart", qr) is None
+    res = db.execute("q", "SELECT count(*) AS n FROM myart")
+    assert res.error is None and res.rows == [["2"]]
+    _unregister_artifacts(db, ["myart"])
+    assert db.execute("q2", "SELECT * FROM myart").error is not None   # relation gone after teardown
+
+
+def test_register_artifact_empty_and_non_duckdb():
+    """An empty artifact registers as a 0-row typed view; a non-DuckDB connection is rejected cleanly."""
+    from aughor.agent.program_planner import _register_artifact
+
+    class _NoConn:
+        pass
+
+    err = _register_artifact(_NoConn(), "x",
+                             QueryResult(hypothesis_id="t", sql="", columns=["a"], rows=[["1"]], row_count=1))
+    assert err is not None and "DuckDB only" in err
+
+
 # ── answer_program (plan → validate → run) ────────────────────────────────────
 
 def test_answer_program_plan_validate_run(monkeypatch, tmp_path):
@@ -277,3 +339,73 @@ def test_answer_program_planning_failure_is_an_answer(monkeypatch, tmp_path):
     assert pr.program is None
     assert pr.issues == ["planning failed"]
     assert "planning failed" in (pr.result.error or "")
+
+
+# ── Stage C: trusted-plan replay (closed_loop-gated) ──────────────────────────
+
+def test_answer_program_replays_trusted_program(monkeypatch, tmp_path):
+    """With closed_loop on, a clean fresh run is crystallized; a near-identical question then REPLAYS it
+    deterministically — plan_program is NOT called a second time."""
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    cid = _tickets(tmp_path)
+    canned = Program(steps=[
+        ProgramStep(id="s0", kind="data", writes="rows",
+                    sql="SELECT ticket_id, description FROM tickets ORDER BY ticket_id"),
+        ProgramStep(id="s1", kind="semop", writes="urgent", reads=["rows"],
+                    operator="filter", column="description", predicate="is urgent"),
+    ])
+    calls = {"n": 0}
+
+    def _fake_plan(q, c):
+        calls["n"] += 1
+        return canned
+
+    monkeypatch.setattr(program_planner, "plan_program", _fake_plan)
+    _patch_semop(monkeypatch, _FakeSemopProvider(filter_fn=lambda t: "urgent" in t))
+
+    pr1 = program_planner.answer_program("which tickets are urgent", cid, org_id="o1")
+    assert pr1.issues == [] and pr1.result.row_count == 2 and calls["n"] == 1
+
+    pr2 = program_planner.answer_program("show the urgent tickets", cid, org_id="o1")
+    assert pr2.issues == [] and pr2.result.row_count == 2
+    assert calls["n"] == 1                          # REPLAYED — no second planning call
+
+
+def test_answer_program_no_replay_when_closed_loop_off(monkeypatch, tmp_path):
+    """Default (closed_loop off): nothing is saved or replayed — every turn re-plans (byte-identical)."""
+    monkeypatch.delenv("AUGHOR_CLOSED_LOOP", raising=False)
+    cid = _tickets(tmp_path)
+    canned = Program(steps=[ProgramStep(id="s0", kind="data", writes="rows",
+                                        sql="SELECT ticket_id FROM tickets")])
+    calls = {"n": 0}
+
+    def _fake_plan(q, c):
+        calls["n"] += 1
+        return canned
+
+    monkeypatch.setattr(program_planner, "plan_program", _fake_plan)
+    program_planner.answer_program("urgent tickets", cid, org_id="o1")
+    program_planner.answer_program("urgent tickets", cid, org_id="o1")
+    assert calls["n"] == 2                          # planned both times — no replay
+
+
+def test_answer_program_stale_cached_falls_through(monkeypatch, tmp_path):
+    """A cached program that no longer validates (schema drift) is rejected on replay → fresh planning."""
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    cid = _tickets(tmp_path)
+    from aughor.semantic.trusted_programs import TrustedProgram, save_trusted_program
+    save_trusted_program(TrustedProgram(
+        connection_id=cid, org_id="o1", question="count urgent tickets",
+        program={"steps": [{"id": "s0", "kind": "data", "writes": "r",
+                            "sql": "SELECT * FROM ghost_table"}], "rationale": ""}))
+    fresh = Program(steps=[ProgramStep(id="s0", kind="data", writes="r", sql="SELECT ticket_id FROM tickets")])
+    calls = {"n": 0}
+
+    def _fake_plan(q, c):
+        calls["n"] += 1
+        return fresh
+
+    monkeypatch.setattr(program_planner, "plan_program", _fake_plan)
+    pr = program_planner.answer_program("count urgent tickets", cid, org_id="o1")
+    assert calls["n"] == 1                          # stale plan rejected → planned fresh
+    assert pr.issues == []

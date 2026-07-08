@@ -205,7 +205,7 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 | 1 | **Guarded extraction** (validate + gleaning re-extract) | DocETL/Palimpzest | GAP-2 (47/54) | Correctness | High | S | Low | ✅ shipped |
 | 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ✅ **COMPLETE** — engine · API · self-heal · N-source planner · driver-selection · cap-lift · connection selection · `/ask` auto-federation |
 | 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
-| 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | ◑ **Stage 2–3 shipped** — IR · validator · deterministic executor · named-artifact ledger mirror · LLM planner · flag-gated API; graph-wiring / replay / HITL deferred |
+| 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | ✅ **COMPLETE** — IR · validator · deterministic executor · named-artifact ledger mirror · LLM planner · flag-gated API · **DATA-reads-artifact dataflow · live `/ask` wiring · trusted-plan replay**; HITL deferred (needs an action-op family) |
 | 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | ✅ shipped |
 | 6 | **Connector-capability contract** (deterministic pushdown decisions) | Hasura NDC | GAP-1 enabler | Maintainability | Med | M | Low | proposed |
 | 7 | **RBAC row-policy compiled into the WHERE** | Hasura perms | — | Security | Med | M | Low | proposed |
@@ -383,13 +383,32 @@ executor threads DATA→SEMOP→SEMOP, artifact written + read back via `receipt
 building:* the per-step guard battery **deterministically repaired** a wrong table name (`no_such_table` →
 the nearest real table) — the exact "guards validate each step" behavior Rec 4 wants, observed for free.
 
-**Deferred (sketched below, kept OUT of the first increment — respecting "not a big-bang change"):** graph-wiring
-into a live investigate mode behind the flag (the current LangGraph loop stays the byte-identical fallback);
-**DATA-step-reads-artifact** (register a prior artifact's rows as a temp view before a DATA step's SQL — the
-highest-value next enhancement, unlocking true SQL-over-semop-output dataflow); trusted-plan replay via
-`priors.py` (persist a validated `Program` as the compoundable unit); HITL confirmation via the existing
-`interrupt_before` seam. In v1, `reads` is meaningful only for SEMOP steps — DATA ops run SQL against the live
-connection, so realizable programs are one-or-more DATA ops each followed by SEMOP chains over their text residue.
+**✅ Finished — dataflow, live wiring, and replay** (branch `2026-07-08-plan-as-program`).
+- **DATA-reads-artifact (true dataflow).** A DATA step may now `reads` prior artifacts and query them by name
+  as tables — `run_program` registers each read artifact's `QueryResult` onto the (persistent, reused) DuckDB
+  session via `db._conn.register` (an all-VARCHAR Arrow table, the `federated.py` mechanism) and **unregisters
+  in a `finally`** so the pooled connection is never polluted; DuckDB-only (a reads step on another dialect
+  fails cleanly). `validate_program` skips static parse-grounding for a reads step (its relations aren't
+  materialized until run) — the guard battery + stop-on-error catch a bad query. This unlocks
+  SQL-over-semop-output (filter/extract in a semop, then `GROUP BY`/join over the result in SQL).
+- **Live `/ask` wiring.** `_program_eligible` + `_stream_program` in `routers/investigations.py` mirror the
+  federation seam: on a fresh single-connection auto turn (flag on), `answer_program` runs **once** and streams
+  a `route` receipt + the same `columns`/`rows`/`headline`/`sql`/`tables_used`/`done` vocabulary the quick path
+  uses; any failure or empty answer **falls through** to normal routing (a program that can't answer never
+  dead-ends the turn). Flag-off = byte-identical.
+- **Trusted-plan replay.** `semantic/trusted_programs.py` (a SQLite store mirroring the Ambiguity Ledger —
+  `resolve_db_path`, natural-key idempotence, org scoping, token-overlap match, conftest-isolated). Behind
+  `closed_loop`, `answer_program` **replays** a matching trusted program (re-validated against the current
+  schema; a stale plan falls through to fresh planning) and **crystallizes** a clean fresh run so the next
+  near-identical question skips the LLM. The plan-level twin of `trusted_queries`; the compoundable unit.
+- 23 new tests (dataflow · register/unregister roundtrip · non-DuckDB reject · `/ask` eligibility + streaming
+  + fall-through · store save/retrieve/idempotence/scoping · replay + no-replay-when-off + stale-fall-through).
+  **Full suite green.**
+
+**Deferred — HITL only.** HITL confirmation via the existing `interrupt_before` seam is meaningful only before
+an irreversible **action** step; the IR intentionally omits an action-op family ("no plan DSL beyond what a
+step needs"), so all ops are read-only SELECTs + semops. HITL is the natural follow-on **when** actions are
+introduced — not part of finishing the current read-only IR.
 
 - **Plan IR:** a typed list of steps, each either a **data op** (grounded SQL via the existing guard battery,
   or a search) or a **semantic primitive** (`classify`/`extract`/`summarize`/`filter` — the semops, already

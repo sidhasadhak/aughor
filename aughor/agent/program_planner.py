@@ -140,6 +140,52 @@ def _write_artifact(step: ProgramStep, result: QueryResult, *, conn_id: str,
         return ""
 
 
+# ── Artifact ⇄ connection materialization (Stage A: DATA-reads-artifact dataflow) ──
+
+def _register_artifact(db, name: str, qr: QueryResult) -> Optional[str]:
+    """Register a prior artifact's rows as a queryable relation ``name`` on the connection, so a later DATA
+    step can ``SELECT ... FROM name``. Returns the kind ("reg"|"view") on success via the out-list below, or
+    an error string. Only DuckDB-family connections (a ``_conn`` with ``register``) can hold artifact tables;
+    anything else returns an error the caller turns into a stop-on-error.
+
+    Rows arrive stringified from the connection layer (every value is ``str()``-rendered, NULL → "NULL"), so
+    the relation is all-VARCHAR — a numeric DATA step over an artifact should CAST. Returns (None, kind) on
+    success or (error, "") on failure."""
+    raw = getattr(db, "_conn", None)
+    if raw is None or not hasattr(raw, "register"):
+        return f"cannot read artifact {name!r}: connection does not support artifact tables (DuckDB only)"
+    try:
+        cols = list(qr.columns)
+        if qr.rows:
+            import pyarrow as pa               # the same Arrow path connectors/federated.py registers with
+            table = pa.table({
+                c: pa.array([row[j] if j < len(row) else None for row in qr.rows], type=pa.string())
+                for j, c in enumerate(cols)
+            })
+            raw.register(name, table)          # a temp view in the in-memory catalog (read-only-safe)
+            return None
+        # Empty artifact: a 0-row typed view so `FROM name` still resolves.
+        proj = ", ".join(f'CAST(NULL AS VARCHAR) AS "{c}"' for c in cols) or 'CAST(NULL AS VARCHAR) AS "_empty"'
+        raw.execute(f'CREATE OR REPLACE TEMP VIEW "{name}" AS SELECT {proj} WHERE 1=0')
+        return None
+    except Exception as exc:  # noqa: BLE001 — a registration failure is a step error, not a crash
+        return f"cannot materialize artifact {name!r}: {str(exc)[:100]}"
+
+
+def _unregister_artifacts(db, names: list[str]) -> None:
+    """Best-effort teardown of artifact relations so the pooled connection is never left polluted."""
+    raw = getattr(db, "_conn", None)
+    if raw is None:
+        return
+    for name in names:
+        for teardown in (lambda n=name: raw.unregister(n),
+                         lambda n=name: raw.execute(f'DROP VIEW IF EXISTS "{n}"')):
+            try:
+                teardown()
+            except Exception:  # noqa: BLE001 — teardown is best-effort
+                pass
+
+
 # ── The deterministic validator ───────────────────────────────────────────────
 
 def validate_program(program: Program, conn_id: str) -> list[str]:
@@ -179,10 +225,16 @@ def validate_program(program: Program, conn_id: str) -> list[str]:
                 issues.append(f"step {i} ({step.id}): data step has empty sql")
                 written[step.writes] = []
                 continue
-            cols = _columns_of(open_connection_for(conn_id), step.sql)
-            if cols is None:
-                issues.append(f"step {i} ({step.id}): sql did not parse/ground on the connection")
-            written[step.writes] = cols or []
+            if step.reads:
+                # A DATA step that reads prior artifacts queries relations registered only at run time, so
+                # its SQL cannot be parse-grounded statically (the relations don't exist yet). Structure is
+                # checked above; the guard battery + stop-on-error catch a bad query at run. Columns unknown.
+                written[step.writes] = []
+            else:
+                cols = _columns_of(open_connection_for(conn_id), step.sql)
+                if cols is None:
+                    issues.append(f"step {i} ({step.id}): sql did not parse/ground on the connection")
+                written[step.writes] = cols or []
         else:  # semop
             if len(step.reads) != 1:
                 issues.append(f"step {i} ({step.id}): a semop must read exactly one artifact (got {len(step.reads)})")
@@ -221,37 +273,61 @@ def run_program(program: Program, conn_id: str, *, investigation_id: str,
     by_name: dict[str, QueryResult] = {}
     artifacts: dict[str, str] = {}
     warnings: list[str] = []
+    registered: list[str] = []        # artifact relations put on the live connection; torn down in finally
     db = open_connection_for(conn_id)
     schema = db.get_schema()          # enables execute_guarded's deterministic preflight hardening
 
     result: QueryResult = _error_result("program has no steps")
-    for i, step in enumerate(program.steps):
-        if step.kind == "data":
-            result = execute_guarded(db, step.sql, query_id=f"__program__{step.id}", schema=schema)
-        else:
-            src = by_name.get(step.reads[0]) if step.reads else None
-            if src is None:
-                result = _error_result(f"semop step {step.id!r} reads {step.reads!r} which was not produced")
+    try:
+        for i, step in enumerate(program.steps):
+            if step.kind == "data":
+                # Stage A: a DATA step may read prior artifacts as input tables — register each on the
+                # (persistent, reused) connection under its name before the SQL runs. A reads step's SQL
+                # references run-time relations the schema can't see, so skip schema-based preflight
+                # (`schema=None`) to avoid identifier repair rewriting an artifact name; post-execute guards
+                # still run. A no-reads step keeps full preflight hardening.
+                reg_err = None
+                for name in step.reads:
+                    src = by_name.get(name)
+                    if src is None:
+                        reg_err = f"reads {name!r} which was not produced"
+                        break
+                    reg_err = _register_artifact(db, name, src)
+                    if reg_err is not None:
+                        break
+                    if name not in registered:
+                        registered.append(name)
+                if reg_err is not None:
+                    result = _error_result(f"data step {step.id!r} {reg_err}")
+                else:
+                    result = execute_guarded(db, step.sql, query_id=f"__program__{step.id}",
+                                             schema=(None if step.reads else schema))
             else:
-                op = apply_step(
-                    src, step.operator, step.column,
-                    predicate=step.predicate, fields=step.fields, criterion=step.criterion,
-                    k=step.k, instruction=step.instruction, out_column=step.out_column,
-                    max_rows=_SEMOP_MAX_ROWS,
-                )
-                warnings.extend(f"{step.id}: {n}" for n in op.notes)
-                result = op.result
+                src = by_name.get(step.reads[0]) if step.reads else None
+                if src is None:
+                    result = _error_result(f"semop step {step.id!r} reads {step.reads!r} which was not produced")
+                else:
+                    op = apply_step(
+                        src, step.operator, step.column,
+                        predicate=step.predicate, fields=step.fields, criterion=step.criterion,
+                        k=step.k, instruction=step.instruction, out_column=step.out_column,
+                        max_rows=_SEMOP_MAX_ROWS,
+                    )
+                    warnings.extend(f"{step.id}: {n}" for n in op.notes)
+                    result = op.result
 
-        artifacts[step.writes] = _write_artifact(
-            step, result, conn_id=conn_id, investigation_id=investigation_id, org_id=org_id)
-        if result.error:
-            return ProgramResult(result, program, artifacts, warnings,
-                                 [f"step {i} ({step.id}) failed: {result.error}"])
-        by_name[step.writes] = result
+            artifacts[step.writes] = _write_artifact(
+                step, result, conn_id=conn_id, investigation_id=investigation_id, org_id=org_id)
+            if result.error:
+                return ProgramResult(result, program, artifacts, warnings,
+                                     [f"step {i} ({step.id}) failed: {result.error}"])
+            by_name[step.writes] = result
 
-    from aughor.stats import bump
-    bump("plan.program.executed")
-    return ProgramResult(result, program, artifacts, warnings, [])
+        from aughor.stats import bump
+        bump("plan.program.executed")
+        return ProgramResult(result, program, artifacts, warnings, [])
+    finally:
+        _unregister_artifacts(db, registered)
 
 
 def run_checked_program(program: Program, conn_id: str, *, investigation_id: str,
@@ -275,10 +351,14 @@ _PLAN_SYS = (
     "`writes` a named artifact. The FIRST step is a DATA op and `reads` nothing.\n"
     "- a SEMOP (`kind`='semop'): one of `operator` = filter | extract | top_k | aggregate applied to ONE "
     "prior artifact (named in `reads`) over its free-text `column`, writing a new artifact.\n"
-    "Every step has a stable `id`, the artifact name it `writes`, and (for a semop) the one artifact it "
-    "`reads`. Push all structured work — filters, joins, aggregations — into the DATA op's SQL; use semops "
-    "ONLY for reasoning over free text that SQL cannot do (filter by meaning, extract fields from prose, "
-    "rank by a fuzzy criterion, summarize). Return only the program."
+    "A later DATA op may ALSO `reads` one or more prior artifacts and query them by name as tables — e.g. "
+    "run a semop over free text, then `SELECT ... GROUP BY` over the semop's output artifact. Use artifact "
+    "names DISTINCT from real table names (a collision shadows the real table); artifact columns are text, "
+    "so CAST when doing arithmetic.\n"
+    "Every step has a stable `id`, the artifact name it `writes`, and the artifact name(s) it `reads` (the "
+    "first step reads nothing). Push all structured work — filters, joins, aggregations — into DATA-op SQL; "
+    "use semops ONLY for reasoning over free text that SQL cannot do (filter by meaning, extract fields from "
+    "prose, rank by a fuzzy criterion, summarize). Return only the program."
 )
 
 
@@ -292,14 +372,62 @@ def plan_program(question: str, conn_id: str) -> Program:
     return get_provider("coder").complete(system=_PLAN_SYS, user=user, response_model=Program)
 
 
+def _gate_program_sql(program: Program, conn_id: str) -> Optional[str]:
+    """Gate every DATA step's SQL through the same safety checker the Query Builder uses; the first block
+    returns its message, else None. Applied to both freshly-planned and replayed programs."""
+    from aughor.db.connection import gate_user_sql
+    for i, step in enumerate(program.steps):
+        if step.kind == "data":
+            blocked = gate_user_sql(conn_id, "program_planner", step.sql)
+            if blocked is not None:
+                return f"step {i} sql blocked by safety gate: {blocked.error}"
+    return None
+
+
+def _replay_trusted_program(question: str, conn_id: str, *, investigation_id: str,
+                            org_id: str) -> Optional[ProgramResult]:
+    """If a trusted program matches this question, RE-VALIDATE it against the current schema and, if clean,
+    replay it deterministically (no LLM). Returns the result, or None to fall through to fresh planning — a
+    stale/invalid cached plan (schema drift, a newly-blocked query) never replays. Closed-loop-gated caller."""
+    try:
+        from aughor.semantic.trusted_programs import record_program_hit, retrieve_trusted_program
+        hit = retrieve_trusted_program(question, conn_id, org_id=org_id)
+    except Exception as exc:  # noqa: BLE001 — retrieval is best-effort; fall through to fresh planning
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "trusted-program retrieval is best-effort", counter="plan.program.replay_retrieve")
+        return None
+    if hit is None:
+        return None
+    tp, _score = hit
+    try:
+        cached = Program(**tp.program)
+    except Exception:  # noqa: BLE001 — a corrupt stored plan just falls through
+        return None
+    if not cached.steps or _gate_program_sql(cached, conn_id) or validate_program(cached, conn_id):
+        return None
+    record_program_hit(tp.id)
+    return run_program(cached, conn_id, investigation_id=investigation_id, org_id=org_id)
+
+
 def answer_program(question: str, conn_id: str, *, investigation_id: Optional[str] = None,
                    org_id: Optional[str] = None) -> ProgramResult:
     """Full plan-then-execute: plan (LLM) → gate + validate (deterministic) → run (engine). Mirrors
     ``answer_federated``: a planning failure is an answer, not a 500; every DATA sub-query is gated through
-    the same safety checker the Query Builder uses before anything runs."""
-    from aughor.db.connection import gate_user_sql
+    the same safety checker the Query Builder uses before anything runs.
+
+    Closed-loop replay (Stage C): when ``closed_loop`` is on, a matching trusted program is replayed
+    deterministically instead of re-planning, and a clean fresh run is crystallized so it replays next time.
+    Both are best-effort and default-off, so the base behaviour is unchanged."""
+    from aughor.verify.priors import closed_loop_enabled
 
     inv = investigation_id or hashlib.sha1(question.encode()).hexdigest()[:12]
+    oid = org_id or ""
+
+    if closed_loop_enabled():
+        replayed = _replay_trusted_program(question, conn_id, investigation_id=inv, org_id=oid)
+        if replayed is not None:
+            return replayed
+
     try:
         program = plan_program(question, conn_id)
     except Exception as exc:  # noqa: BLE001 — a planning failure is an answer, not a 500
@@ -309,18 +437,25 @@ def answer_program(question: str, conn_id: str, *, investigation_id: Optional[st
     if not program.steps:
         return ProgramResult(_error_result("program has no steps"), program, {}, [], ["program has no steps"])
 
-    # Gate every LLM-written DATA sub-query through the same safety checker the Query Builder uses.
-    for i, step in enumerate(program.steps):
-        if step.kind == "data":
-            blocked = gate_user_sql(conn_id, "program_planner", step.sql)
-            if blocked is not None:
-                return ProgramResult(
-                    _error_result(f"step {i} sql blocked by safety gate: {blocked.error}"),
-                    program, {}, [], [f"step {i} sql blocked by safety gate"])
+    blocked = _gate_program_sql(program, conn_id)
+    if blocked is not None:
+        return ProgramResult(_error_result(blocked), program, {}, [], [blocked])
 
     issues = validate_program(program, conn_id)
     if issues:
         return ProgramResult(_error_result("program failed validation: " + "; ".join(issues)),
                              program, {}, [], issues)
 
-    return run_program(program, conn_id, investigation_id=inv, org_id=org_id)
+    pr = run_program(program, conn_id, investigation_id=inv, org_id=oid)
+
+    # Crystallize a clean, freshly-planned program so the next near-identical question replays it (Stage C).
+    if closed_loop_enabled() and not pr.issues and not pr.result.error:
+        try:
+            from aughor.semantic.trusted_programs import TrustedProgram, save_trusted_program
+            save_trusted_program(TrustedProgram(
+                connection_id=conn_id, org_id=oid, question=question,
+                program=program.model_dump(), plan_source="auto"))
+        except Exception as exc:  # noqa: BLE001 — saving is best-effort; never fails the answer
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "trusted-program save is best-effort", counter="plan.program.save")
+    return pr
