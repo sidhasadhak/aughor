@@ -72,8 +72,17 @@ Engine extended: `batched_foreach_join`/`cross_source_join` now take `right_tabl
 `from_clause` = `(subquery) AS __rt` or quoted table) — the right side can be a grounded sub-query. Endpoint
 `POST /query/federated-answer` (flag `federation.planner` / `AUGHOR_FEDERATION_PLANNER`, default off → 404),
 returns merged result + the plan (inspectable) + issues. 6 tests (fake planner LLM + 2 real registered DuckDB
-sources). Suite **2718 green**. v1 = exactly 2 sources, conn_ids[0] drives. **REVIEW step pending** (per
-build-wire-test-review); N-source/driver-selection/answer-path integration are follow-ups.
+sources). Suite 2718 green. v1 = exactly 2 sources, conn_ids[0] drives. N-source/driver-selection/answer-path
+integration are follow-ups.
+**✅ REVIEW DONE** (fresh-eyes agent, build-wire-test-review): 6 findings, 5 fixed (suite **2719 green**):
+#3 numeric cross-type keys (`_canon_key` strips trailing fractional zeros → INT 101 joins DOUBLE 101.0);
+#6 right-query error now returns an honest error result, not silent left rows posing as a successful inner
+join; #5 `_qident` now escapes embedded quotes (was passthrough); #4 planner's LLM SQL now gated through
+`gate_user_sql`; #1/#2 the connector's 500-row `execute()` cap (a deliberate API bound) — surfaced as a
+`PARTIAL: left driver capped at N of M rows` note instead of silently truncating (not raised: the global cap
+is out of scope to change here). Verified the 5 reconcile Python/SQL transform pairs agree byte-for-byte
+(0/60 mismatches on edge keys). REMAINING (deferred, documented): raising the effective join size past the
+per-source cap; N-source joins; driver auto-selection; answer-path/render integration.
 SIGNATURE NOTE: `batched_foreach_join` moved `right_table` to keyword-only (was positional) — all callers +
 the 11 unit-test calls updated.
 

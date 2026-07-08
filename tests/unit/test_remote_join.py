@@ -135,7 +135,7 @@ def test_key_literal_with_quote_is_escaped():
 
 # ── fail-safe ────────────────────────────────────────────────────────────────
 
-def test_right_query_error_returns_left_unchanged():
+def test_right_query_error_returns_error_result_not_silent_left():
     left_conn = _duck(
         "CREATE TABLE orders (cust VARCHAR)",
         "INSERT INTO orders VALUES ('C1')",
@@ -147,7 +147,24 @@ def test_right_query_error_returns_left_unchanged():
             raise RuntimeError("connection down")
 
     out = batched_foreach_join(left, "cust", _Boom(), "cust", right_table="customers")
-    assert out.columns == left.columns and out.rows == left.rows   # left returned untouched
+    assert out.error is not None and out.row_count == 0    # honest failure, not left rows posing as success
+    assert "join failed" in out.error
+
+
+def test_numeric_keys_match_across_int_and_double_sources():
+    # the SAME entity is INT 101 on one source, DOUBLE 101.0 on the other — must still join
+    left_conn = _duck("CREATE TABLE a (cid INTEGER)", "INSERT INTO a VALUES (101),(102)")
+    right_conn = _duck(
+        "CREATE TABLE b (cid DOUBLE, v VARCHAR)",
+        "INSERT INTO b VALUES (101.0,'X'),(102.0,'Y')",
+    )
+    left = _left(left_conn, "SELECT cid FROM a ORDER BY cid")
+
+    out = batched_foreach_join(left, "cid", right_conn, "cid", right_table="b")
+
+    assert out.row_count == 2
+    vs = [r[out.columns.index("v")] for r in out.rows]
+    assert vs == ["X", "Y"]
 
 
 def test_missing_left_key_returns_left_unchanged():

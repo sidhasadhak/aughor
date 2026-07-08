@@ -121,6 +121,16 @@ def answer_federated(
         logger.warning("federated planner: planning failed: %s", exc)
         return FederatedAnswer(_error_result(f"planning failed: {str(exc)[:120]}"), None, ["planning failed"])
 
+    # Gate the LLM-generated sub-queries through the same safety checker the Query Builder uses —
+    # the plan is model-written SQL, so it must not skip the audit/injection/read-only gate.
+    from aughor.db.connection import gate_user_sql
+    for cid, side_sql, label in ((left_conn_id, plan.left.sql, "left"), (right_conn_id, plan.right.sql, "right")):
+        blocked = gate_user_sql(cid, "federated_planner", side_sql)
+        if blocked is not None:
+            return FederatedAnswer(
+                _error_result(f"{label} sub-query blocked by safety gate: {blocked.error}"),
+                plan, [f"{label} sub-query blocked by safety gate"])
+
     issues = validate_plan(plan, left_conn_id, right_conn_id)
     if issues:
         return FederatedAnswer(_error_result("plan failed validation: " + "; ".join(issues)), plan, issues)
