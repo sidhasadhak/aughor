@@ -683,6 +683,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                 {state.turns.map((turn, i) => (
                   <div
                     key={turn.id}
+                    className="aug-anim-up"
                     ref={el => {
                       if (el) turnTopRefs.current.set(turn.id, el);
                       else turnTopRefs.current.delete(turn.id);
