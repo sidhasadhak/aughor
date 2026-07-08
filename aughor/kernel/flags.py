@@ -44,6 +44,7 @@ FLAG_ENV = {
     "semops.champion_validate": "AUGHOR_SEMOPS_CHAMPION_VALIDATE",
     "federation.remote_join": "AUGHOR_FEDERATION_REMOTE_JOIN",
     "federation.planner": "AUGHOR_FEDERATION_PLANNER",
+    "plan.program": "AUGHOR_PLAN_PROGRAM",
     "capability.contract": "AUGHOR_CAPABILITY_CONTRACT",
     "rbac.row_policy": "AUGHOR_RBAC_ROW_POLICY",
 }
@@ -164,6 +165,10 @@ FLAG_META = {
     "rbac.row_policy": {
         "label": "RBAC row-level policy (row filters in the WHERE)",
         "description": "Compile per-role, per-table row-filters into executed SQL (a deterministic AST rewrite wrapping each policied table as a filtered subquery) so a role physically cannot read rows outside its filter. Double-gated like the rest of RBAC (no-op unless identity AND the org's RBAC_SSO capability are on) AND this flag; fails CLOSED (a policy that can't be applied blocks the query). Enforced at every connector's execution gate (DuckDB/Postgres/warehouse/file/API). Off by default. Rec 7 of the external-sources study.",
+    },
+    "plan.program": {
+        "label": "Plan-as-program executor",
+        "description": "Enable POST /query/plan-run + /query/plan-answer — turn a question into a deterministic typed PROGRAM over ONE database. One LLM call emits an ordered list of DATA (grounded SQL) + SEMOP (semantic-operator) steps over named artifacts; the program is validated deterministically and run step-by-step through the guard battery, threading each step's result as a named, versioned ledger artifact. Plan-then-execute, guarded, inspectable + replayable (the plan + artifacts are returned). Off by default → the routes 404. Rec 4 (plan-as-program), Stage 2–3.",
     },
 }
 

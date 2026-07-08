@@ -2758,6 +2758,46 @@ async def _stream_federated(question: str, sel) -> AsyncGenerator[str, None]:
     yield _sse("done", {})
 
 
+def _program_eligible(req) -> bool:
+    """Whether a ``/ask`` turn may answer via plan-as-program (Rec 4): only a truly FRESH auto turn — not a
+    depth override, deep-drill, dossier, canvas/conversational follow-up, or a clarify-answer. Mirrors
+    ``_federation_eligible``. Flag-gated on ``plan.program`` (default off), checked first for the short-circuit."""
+    from aughor.kernel.flags import flag_enabled
+    return bool(
+        flag_enabled("plan.program") and req.depth == "auto"
+        and not req.deep and not req.insight_id and not req.canvas_id
+        and not req.history and not req.skip_clarify
+    )
+
+
+async def _stream_program(pr, conn_id: str) -> AsyncGenerator[str, None]:
+    """Stream an already-computed plan-as-program ``ProgramResult`` as ``/ask`` events (Rec 4 answer-path).
+
+    Emits a program ``route`` receipt (step count + rationale) then the final table using the same primitives
+    the quick path uses (columns/rows/headline/sql/tables_used), so it renders in the existing answer surface.
+    The program was already run ONCE by the caller — this only serializes the result (never re-runs it)."""
+    n_steps = len(pr.program.steps) if pr.program else 0
+    why = (pr.program.rationale if (pr.program and pr.program.rationale)
+           else f"Answered via a deterministic {n_steps}-step program (plan→validate→run).")
+    yield _sse("route", {
+        "depth": "program", "mode": "program", "tier": "complex",
+        "score": 1.0, "confidence": 1.0, "ambiguous": False,
+        "why": why, "alternatives": ["quick", "deep"], "forced": None, "downgraded_from": None,
+        "steps": n_steps,
+    })
+    r = pr.result
+    streamed = r.rows[:10000]
+    more = f" (showing first {len(streamed):,})" if r.row_count > len(streamed) else ""
+    yield _sse("columns", {"columns": r.columns})
+    yield _sse("rows", {"rows": streamed})
+    yield _sse("headline", {"headline": f"Answered via a {n_steps}-step program — {r.row_count:,} rows{more}."})
+    yield _sse("sql", {"sql": r.sql})
+    yield _sse("tables_used", {"tables": _extract_tables(r.sql)})
+    if pr.warnings:
+        yield _sse("program_warnings", {"warnings": pr.warnings})
+    yield _sse("done", {})
+
+
 async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> AsyncGenerator[str, None]:
     """The unified door: decide depth, emit the `route` receipt, then delegate to the
     existing quick (Insight) or deep (ADA/explore) body unchanged.
@@ -2823,6 +2863,30 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             async for _ev in _stream_federated(req.question, sel):
                 yield _ev
             return
+
+    # Plan-as-program (Rec 4 answer-path): on a fresh single-connection auto turn, answer via a deterministic
+    # typed program (plan→validate→run over this connection) instead of the single-shot route. The program
+    # runs ONCE here; on any failure or empty answer we fall through to the normal routing below — a program
+    # that can't answer must never dead-end the turn. Flag-gated on `plan.program` → default off = byte-identical.
+    if _program_eligible(req):
+        from aughor.kernel.errors import tolerate
+        pr = None
+        try:
+            from aughor.agent.program_planner import answer_program
+            from aughor.org.context import current_org_id
+            pr = await asyncio.to_thread(answer_program, req.question, conn_id,
+                                         org_id=current_org_id() or "")
+        except Exception as exc:  # noqa: BLE001 — best-effort; fall through to normal routing
+            tolerate(exc, "plan-as-program is best-effort; fall through to normal routing",
+                     counter="ask.program_failed")
+        if pr is not None and not pr.result.error:
+            async for _ev in _stream_program(pr, conn_id):
+                yield _ev
+            return
+        if pr is not None:
+            tolerate(Exception(pr.result.error or "program produced no answer"),
+                     "plan-as-program returned no answer; fall through to normal routing",
+                     counter="ask.program_no_answer")
 
     has_deep = has_capability(Capability.DEEP_ANALYSIS, conn_id=conn_id)
     # decide_ask_route may consult the LLM intent classifier on borderline questions,
