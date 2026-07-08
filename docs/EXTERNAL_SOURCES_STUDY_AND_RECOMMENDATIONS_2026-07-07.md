@@ -205,7 +205,7 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 | 1 | **Guarded extraction** (validate + gleaning re-extract) | DocETL/Palimpzest | GAP-2 (47/54) | Correctness | High | S | Low | ✅ shipped |
 | 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ✅ **COMPLETE** — engine · API · self-heal · N-source planner · driver-selection · cap-lift · connection selection · `/ask` auto-federation |
 | 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
-| 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | proposed |
+| 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | ◑ **Stage 2–3 shipped** — IR · validator · deterministic executor · named-artifact ledger mirror · LLM planner · flag-gated API; graph-wiring / replay / HITL deferred |
 | 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | ✅ shipped |
 | 6 | **Connector-capability contract** (deterministic pushdown decisions) | Hasura NDC | GAP-1 enabler | Maintainability | Med | M | Low | proposed |
 | 7 | **RBAC row-policy compiled into the WHERE** | Hasura perms | — | Security | Med | M | Low | proposed |
@@ -251,8 +251,10 @@ validates (Palimpzest); a `validate`/`max_rounds` surface on the Query Builder "
    deterministic, monotonic, fail-open, no LLM. 6 tests (real-DuckDB skew fixture, off-by-default byte-identity,
    disjoint-negative, fail-open); suite 2695 green.
 3. **Cross-source federated planner (Rec 2)** — the master gap; §7.1.
-4. **Plan-as-program + artifacts (Rec 4)** — the deep bet; §7.2. Sequence it after federation so the plan
-   language already has cross-source data ops to schedule.
+4. **Plan-as-program + artifacts (Rec 4)** — the deep bet; §7.2. ✅ **Stage 2–3 shipped** (engine · validator ·
+   deterministic executor · named-artifact ledger mirror · LLM planner · flag-gated `/query/plan-run` +
+   `/query/plan-answer`, default off). Graph-wiring, DATA-reads-artifact dataflow, trusted-plan replay, and
+   HITL are the deferred follow-ons.
 5. **Champion-model cascade (Rec 5)** and **capability contract (Rec 6)** as they unblock 3–4.
 
 ---
@@ -357,6 +359,37 @@ DuckDB-ATTACH path: ATTACH when data co-locates, batched-foreach for true cross-
 
 **Goal:** make an investigation a deterministic, inspectable, replayable program — attacking the 85%
 plan/implementation failure.
+
+**✅ Stage 2–3 shipped — the engine, validator, API, and LLM planner** (`aughor/agent/program_planner.py`,
+flag `plan.program` / `AUGHOR_PLAN_PROGRAM`, default off → the routes 404). Mirrors the federated planner
+(§7.1) one-for-one, generalized from "per-source sub-queries folded by joins" to "DATA/SEMOP steps folded by
+**named artifacts**". A typed `Program` is an ordered list of `ProgramStep`s — each a **DATA** op (a grounded
+SELECT run through the shipped guard battery, `execute_guarded`) or a **SEMOP** (`filter`/`extract`/`top_k`/
+`aggregate` over ONE prior artifact's text column, via `apply_step`). `validate_program` runs the deterministic
+gate BEFORE anything executes (order-is-topology, so every `reads` must name an earlier `writes` — forward-refs
+and cycles are rejected with no sort; DATA steps must ground/parse at `LIMIT 0`; a SEMOP must target a column
+that exists in the read artifact where knowable). `run_program` executes step-by-step, threading each result
+through an in-run `by_name` dict (the source of truth for reads) and **mirroring it to the ledger as a named,
+versioned artifact** (`kind="program_step"`, `natural_key=artifact:{conn}:{inv}:{name}`) with `reads`/`program`
+lineage edges — so `Ledger.receipt(...)` answers "how was this produced" and raw rows never re-flood the LLM
+context. Fail-open + stop-on-error (a failing step records its artifact then returns, exactly like
+`answer_federated`). `plan_program` makes **one** structured LLM call for the typed program; `answer_program`
+is the full `plan → gate (every DATA sql through `gate_user_sql`) → validate → run` shape (a planning failure
+is an answer, not a 500). API: `POST /query/plan-run` (hand-authored program, no LLM) + `POST /query/plan-answer`
+(plan+run from NL), both 404 when off, returning `{columns, rows, …, program, artifacts, warnings, issues}`
+(inspectable). 14 hermetic tests (off-by-default 404s, validator good/bad-read/forward-ref/bad-column/bad-sql,
+executor threads DATA→SEMOP→SEMOP, artifact written + read back via `receipt`, stop-on-failing-step,
+`answer_program` plan→validate→run + planning-failure). **Full suite green.** *Live finding surfaced while
+building:* the per-step guard battery **deterministically repaired** a wrong table name (`no_such_table` →
+the nearest real table) — the exact "guards validate each step" behavior Rec 4 wants, observed for free.
+
+**Deferred (sketched below, kept OUT of the first increment — respecting "not a big-bang change"):** graph-wiring
+into a live investigate mode behind the flag (the current LangGraph loop stays the byte-identical fallback);
+**DATA-step-reads-artifact** (register a prior artifact's rows as a temp view before a DATA step's SQL — the
+highest-value next enhancement, unlocking true SQL-over-semop-output dataflow); trusted-plan replay via
+`priors.py` (persist a validated `Program` as the compoundable unit); HITL confirmation via the existing
+`interrupt_before` seam. In v1, `reads` is meaningful only for SEMOP steps — DATA ops run SQL against the live
+connection, so realizable programs are one-or-more DATA ops each followed by SEMOP chains over their text residue.
 
 - **Plan IR:** a typed list of steps, each either a **data op** (grounded SQL via the existing guard battery,
   or a search) or a **semantic primitive** (`classify`/`extract`/`summarize`/`filter` — the semops, already
