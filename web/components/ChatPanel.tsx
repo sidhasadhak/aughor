@@ -223,7 +223,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               onClick={() => onSend()}
               disabled={!input.trim()}
               title="Send"
-              className="rounded-[var(--r3)] text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
+              className="aug-pressable rounded-[var(--r3)] text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
               style={{ width: 30, height: 30 }}
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -628,7 +628,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     <button
                       key={s.text}
                       onClick={() => handleSend(s.text, s.mode)}
-                      className="flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all"
+                      className="aug-pressable flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all"
                       style={s.mode === "investigate" ? {
                         background: "var(--bg-1)",
                         border: "0.5px solid var(--grn1)",
@@ -765,7 +765,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                 <button
                   onClick={() => scrollToBottom()}
                   title="Jump to latest"
-                  className="aug-anim-fade flex items-center gap-1.5 rounded-[var(--r-pill)] transition-colors"
+                  className="aug-pressable aug-anim-fade flex items-center gap-1.5 rounded-[var(--r-pill)] transition"
                   style={{
                     pointerEvents: "all", padding: "5px 12px 5px 9px",
                     fontSize: 11.5, fontWeight: 500, fontFamily: "var(--font-ui)",

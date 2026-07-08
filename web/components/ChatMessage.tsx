@@ -939,7 +939,7 @@ function InsightBrief({
               <button
                 key={i}
                 onClick={() => onFollowUp?.(q)}
-                className="text-left flex items-start gap-1.5 aug-text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="aug-pressable text-left flex items-start gap-1.5 aug-text-sm text-zinc-500 hover:text-zinc-300 transition"
               >
                 <span className="shrink-0 text-zinc-500 mt-0.5"><ArrowRightIcon label="" size="small" /></span>
                 <span>{q}</span>
