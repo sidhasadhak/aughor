@@ -267,11 +267,13 @@ async def query_cross_source_join(body: _CrossSourceJoinRequest):
 
     from aughor.connectors.remote_join import cross_source_join
 
+    reconcile = flag_enabled("join.key_reconciliation")   # self-heal ill-formatted cross-source keys (Rec 3)
+
     def _work():
         return cross_source_join(
             body.left_conn_id, body.left_sql, body.left_key,
             body.right_conn_id, body.right_table, body.right_key,
-            how=body.how, right_cols=body.right_cols,
+            how=body.how, right_cols=body.right_cols, reconcile=reconcile,
         )
 
     loop = asyncio.get_running_loop()

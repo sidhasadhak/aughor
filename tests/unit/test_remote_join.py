@@ -160,3 +160,46 @@ def test_missing_left_key_returns_left_unchanged():
 
     out = batched_foreach_join(left, "not_a_column", right_conn, "customers", "cust")
     assert out.rows == left.rows
+
+
+# ── self-healing cross-source key reconciliation (Stage 2b) ───────────────────
+
+def _skew_sources():
+    """Same entities, different key FORMAT across the two sources: bid_N (left) vs bref_N (right)."""
+    left = _duck(
+        "CREATE TABLE orders (order_id INT, book VARCHAR)",
+        "INSERT INTO orders VALUES (1,'bid_1'),(2,'bid_2'),(3,'bid_3')",
+    )
+    right = _duck(
+        "CREATE TABLE reviews (book_ref VARCHAR, stars INT)",
+        "INSERT INTO reviews VALUES ('bref_1',5),('bref_2',4),('bref_3',3)",
+    )
+    return left, right
+
+
+def test_raw_join_misses_format_skewed_keys():
+    left_conn, right_conn = _skew_sources()
+    left = _left(left_conn, "SELECT order_id, book FROM orders ORDER BY order_id")
+    out = batched_foreach_join(left, "book", right_conn, "reviews", "book_ref")   # reconcile off
+    assert out.row_count == 0        # no raw overlap between bid_N and bref_N
+
+
+def test_reconcile_heals_format_skewed_cross_source_keys():
+    left_conn, right_conn = _skew_sources()
+    left = _left(left_conn, "SELECT order_id, book FROM orders ORDER BY order_id")
+    out = batched_foreach_join(left, "book", right_conn, "reviews", "book_ref", reconcile=True)
+    assert out.row_count == 3                       # digits/strip-prefix normalization reconciles them
+    assert "stars" in out.columns
+    assert "reconciled" in out.sql
+    stars = [r[out.columns.index("stars")] for r in out.rows]
+    assert stars == ["5", "4", "3"]
+
+
+def test_reconcile_absent_for_truly_disjoint_cross_source_keys():
+    left_conn = _duck("CREATE TABLE a (k VARCHAR)", "INSERT INTO a VALUES ('C001'),('C002')")
+    right_conn = _duck("CREATE TABLE b (k VARCHAR, v INT)", "INSERT INTO b VALUES ('CMP1',1),('CMP2',2)")
+    left = _left(left_conn, "SELECT k FROM a")
+    out = batched_foreach_join(left, "k", right_conn, "b", "k", reconcile=True, how="left")
+    assert out.row_count == 2                        # no transform reconciles → left join, nulls kept
+    vi = out.columns.index("v")
+    assert all(r[vi] is None for r in out.rows)

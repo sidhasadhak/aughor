@@ -57,10 +57,15 @@ in-memory DuckDB conns + counting wrapper proving 1 query for 5 rows/2 keys, and
 **Stage 2 ✅ SHIPPED:** `POST /query/cross-source-join` (`routers/query.py`, flag `federation.remote_join` /
 `AUGHOR_FEDERATION_REMOTE_JOIN`, default off → 404) calls `cross_source_join`; left SQL runs through
 `gate_user_sql`. 3 integration tests (404-when-off, end-to-end join across two registered DuckDB files,
-field-validation 400). Suite **2708 green**. **Stage 2b:** cross-source value-overlap guard (reuse Rec 3
-reconciliation on the key pair — self-healing ill-formatted cross-source keys; needs a paired Python-fn+SQL-expr
-transform set since left keys are materialized). **Stage 3:** the LLM planner (decompose cross-source question →
-per-source sub-queries + join keys) — the big/risky piece; CHECKPOINT before it (fresh context).
+field-validation 400). Suite 2708 green. **Stage 2b ✅ SHIPPED:** self-healing keys in `remote_join.py` —
+when raw match rate < 0.15 and `reconcile=True`, retry under PAIRED normalizations (Python fn on materialized
+left keys + equivalent SQL expr on the right key: digits/strip_prefix/trim_lower/strip_zeros/alnum_lower),
+adopt the first reaching ≥0.60 match AND ≥+0.30 gain. Refactored the primitive into `_fetch_right` (projects
+`{jk_expr} AS __jk`, one path for raw+normalized) + `_hash_join` + `_try_reconcile`. Endpoint passes
+`reconcile=flag_enabled("join.key_reconciliation")` (same flag as Rec 3 — the cross-source twin). 3 tests
+(raw misses bid_N↔bref_N, reconcile heals to 3 rows, disjoint C00x↔CMPx doesn't false-reconcile). Suite
+**2711 green**. **Stage 3 REMAINS:** the LLM planner (decompose cross-source question → per-source sub-queries
++ join keys) — the big/risky piece; CHECKPOINT before it (fresh context).
 
 ## ✅ SHIPPED — Champion cascade on semantic_filter (Rec 5, branch `2026-07-07-guarded-extraction`)
 Palimpzest/LOTUS label-free quality estimator. `semops/operators.py`: extracted the filter batch loop into

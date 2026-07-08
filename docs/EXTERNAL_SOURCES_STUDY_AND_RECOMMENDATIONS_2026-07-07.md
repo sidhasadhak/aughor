@@ -203,7 +203,7 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 | # | Recommendation | Source | DAB gap | Dimension | Leverage | Effort | Risk | Status |
 |---|---|---|---|---|---|---|---|---|
 | 1 | **Guarded extraction** (validate + gleaning re-extract) | DocETL/Palimpzest | GAP-2 (47/54) | Correctness | High | S | Low | ✅ shipped |
-| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ◑ Stages 1–2 (engine+API) |
+| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ◑ Stages 1–2b (engine+API+self-heal); Stage 3 planner remains |
 | 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
 | 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | proposed |
 | 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | ✅ shipped |
@@ -261,10 +261,18 @@ validates (Palimpzest); a `validate`/`max_rounds` surface on the Query Builder "
 
 ### 7.1 Cross-source federated planner (Rec 2) — staged
 
-**Staging:** Stage 1 = the deterministic join engine (✅ shipped); Stage 2 = wiring (✅ the flag-gated
-`POST /query/cross-source-join` API — the cross-source value-overlap/key-reconciliation guard is Stage 2b);
+**Staging:** Stage 1 = the deterministic join engine (✅ shipped); Stage 2 = the flag-gated
+`POST /query/cross-source-join` API (✅ shipped); Stage 2b = self-healing cross-source keys (✅ shipped);
 Stage 3 = the LLM planner that decomposes a cross-source question into per-source sub-queries and picks the
-join keys (the big/risky piece — checkpoint before it).
+join keys (the big/risky piece — **remaining; checkpoint before it**).
+
+**✅ Stage 2b — self-healing cross-source keys.** When a batched-foreach join's raw match rate is low and
+`reconcile=True`, `batched_foreach_join` retries under a set of **paired** normalizations — a Python function
+(applied to the materialized left keys) and the equivalent SQL expression (applied to the right key in the
+batch query), so both sides normalize identically (`bid_123` and `bref_123` both → `123`). It adopts the
+first transform that lifts the match rate to ≥60% and ≥+30pp over raw, else the raw result stands. Gated by
+the same `join.key_reconciliation` flag (the cross-source twin of Rec 3), passed through by the endpoint. 3
+tests (raw misses skewed keys, reconcile heals them, truly-disjoint keys don't false-reconcile).
 
 **✅ Stage 2 — the reachable API.** `POST /query/cross-source-join` (`aughor/routers/query.py`, flag
 `federation.remote_join` / `AUGHOR_FEDERATION_REMOTE_JOIN`, default off → 404) takes
