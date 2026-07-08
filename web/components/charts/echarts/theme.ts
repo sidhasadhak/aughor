@@ -114,6 +114,11 @@ export function buildAughorTheme(t: ChartTokens): Record<string, unknown> {
     pie: { itemStyle: { borderWidth: 1, borderColor: t.surface }, label: { ...dataLabel, textBorderWidth: 2 } },
     scatter: { symbolSize: 9 },
     legend: {
+      // Anchor to the top. Without an explicit position ECharts drops the legend to the
+      // bottom, where it collides with the x-axis time/category labels on multi-series
+      // charts (multi-line, grouped/stacked bar, combo) — the "legend on the x-axis" look.
+      top: 0,
+      left: "center",
       textStyle: { color: t.t1, fontSize: 11, fontFamily: FONT_STACK },
       icon: "circle",
       itemWidth: 8,
