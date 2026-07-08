@@ -4209,6 +4209,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/query/auto-federated-answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Auto Federated Answer
+         * @description Answer a question WITHOUT being told which connections it spans (Rec 2, answer-path).
+         *
+         *     A deterministic selector (lexical schema-relevance + greedy set-cover — no LLM) picks the subset of
+         *     the candidate connections the question touches, then the federated planner answers over exactly those.
+         *     Returns the answer plus the `selection` (which connections and the terms each grounded) so the routing
+         *     is inspectable. Flag-gated on `federation.planner` (default off → 404).
+         */
+        post: operations["query_auto_federated_answer_query_auto_federated_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/query/build-sql": {
         parameters: {
             query?: never;
@@ -4292,6 +4317,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/query/cross-source-join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Cross Source Join
+         * @description Join a result from ONE connection to a table on ANOTHER, N+1-free (batched foreach).
+         *
+         *     The direct entry point for cross-source joins (the Rec 2 engine); the federated planner targets
+         *     the same `cross_source_join`. Flag-gated on `federation.remote_join` (default off → 404). The
+         *     left SQL goes through the same safety gate as the Query Builder.
+         */
+        post: operations["query_cross_source_join_query_cross_source_join_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/query/decompile": {
         parameters: {
             query?: never;
@@ -4309,6 +4358,81 @@ export interface paths {
          *     source), so the UI can keep the raw SQL instead of importing it lossily.
          */
         post: operations["query_decompile_query_decompile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/query/federated-answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Federated Answer
+         * @description Answer a natural-language question that spans TWO OR MORE connections (Rec 2, Stage 3).
+         *
+         *     One LLM call grounds every schema and emits a structured plan (an ordered list of grounded
+         *     per-source sub-queries + link keys — the planner also picks the driver and chain order); the plan
+         *     is validated deterministically and folded through the batched-foreach engine. Returns the merged
+         *     result plus the plan and any validation issues (inspectable). Flag-gated on `federation.planner`
+         *     (default off → 404).
+         */
+        post: operations["query_federated_answer_query_federated_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/query/plan-answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Plan Answer
+         * @description Plan+run a program from a natural-language question (Rec 4, Stage 3).
+         *
+         *     One LLM call emits the typed program; deterministic `validate_program` → `run_program` after. A planning
+         *     or validation failure returns an error result (never a 500). Flag-gated on `plan.program` (default off →
+         *     404).
+         */
+        post: operations["query_plan_answer_query_plan_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/query/plan-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Plan Run
+         * @description Run a HAND-AUTHORED typed program over ONE connection (Rec 4, Stage 2).
+         *
+         *     Deterministic: `validate_program` → `run_program`, no LLM. Each DATA step runs through the guard battery
+         *     and each step's result is mirrored to the ledger as a named artifact; the final result plus the program,
+         *     the artifact ids, per-step warnings, and any validation issues are returned (inspectable). Flag-gated on
+         *     `plan.program` (default off → 404).
+         */
+        post: operations["query_plan_run_query_plan_run_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6054,6 +6178,15 @@ export interface components {
             /** New Type */
             new_type: string;
         };
+        /** _AutoFederatedRequest */
+        _AutoFederatedRequest: {
+            /** Conn Ids */
+            conn_ids: string[];
+            /** Question */
+            question: string;
+            /** Reconcile */
+            reconcile?: boolean | null;
+        };
         /** _BudgetUpdate */
         _BudgetUpdate: {
             /** Max Rows */
@@ -6127,6 +6260,29 @@ export interface components {
             /** Ontology Refresh Hours */
             ontology_refresh_hours?: number | null;
         };
+        /** _CrossSourceJoinRequest */
+        _CrossSourceJoinRequest: {
+            /**
+             * How
+             * @default inner
+             * @enum {string}
+             */
+            how: "inner" | "left";
+            /** Left Conn Id */
+            left_conn_id: string;
+            /** Left Key */
+            left_key: string;
+            /** Left Sql */
+            left_sql: string;
+            /** Right Cols */
+            right_cols?: string[] | null;
+            /** Right Conn Id */
+            right_conn_id: string;
+            /** Right Key */
+            right_key: string;
+            /** Right Table */
+            right_table: string;
+        };
         /** _DecompileRequest */
         _DecompileRequest: {
             /**
@@ -6168,6 +6324,15 @@ export interface components {
             connection_ids: string[];
             /** Name */
             name: string;
+        };
+        /** _FederatedAnswerRequest */
+        _FederatedAnswerRequest: {
+            /** Conn Ids */
+            conn_ids: string[];
+            /** Question */
+            question: string;
+            /** Reconcile */
+            reconcile?: boolean | null;
         };
         /** _FilterDef */
         _FilterDef: {
@@ -6228,6 +6393,24 @@ export interface components {
             filter_sql?: string | null;
             /** Is Default */
             is_default?: boolean | null;
+        };
+        /** _PlanAnswerRequest */
+        _PlanAnswerRequest: {
+            /** Conn Id */
+            conn_id: string;
+            /** Question */
+            question: string;
+        };
+        /** _PlanRunRequest */
+        _PlanRunRequest: {
+            /** Conn Id */
+            conn_id: string;
+            /** Investigation Id */
+            investigation_id?: string | null;
+            /** Program */
+            program: {
+                [key: string]: unknown;
+            };
         };
         /** _PostprocRequest */
         _PostprocRequest: {
@@ -14407,6 +14590,39 @@ export interface operations {
             };
         };
     };
+    query_auto_federated_answer_query_auto_federated_answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_AutoFederatedRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     query_build_sql_query_build_sql_post: {
         parameters: {
             query?: never;
@@ -14524,6 +14740,39 @@ export interface operations {
             };
         };
     };
+    query_cross_source_join_query_cross_source_join_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_CrossSourceJoinRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     query_decompile_query_decompile_post: {
         parameters: {
             query?: never;
@@ -14534,6 +14783,105 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["_DecompileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_federated_answer_query_federated_answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_FederatedAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_plan_answer_query_plan_answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_PlanAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_plan_run_query_plan_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_PlanRunRequest"];
             };
         };
         responses: {
