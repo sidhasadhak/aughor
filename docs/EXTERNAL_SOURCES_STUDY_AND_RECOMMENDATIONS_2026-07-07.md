@@ -203,7 +203,7 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 | # | Recommendation | Source | DAB gap | Dimension | Leverage | Effort | Risk | Status |
 |---|---|---|---|---|---|---|---|---|
 | 1 | **Guarded extraction** (validate + gleaning re-extract) | DocETL/Palimpzest | GAP-2 (47/54) | Correctness | High | S | Low | ✅ shipped |
-| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ✅ backend complete — engine + API + self-heal + N-source planner + driver-selection + cap-lift (answer-path integration deferred by design) |
+| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ✅ engine + API + self-heal + N-source planner + driver-selection + cap-lift + **deterministic connection selection** (only `/ask` conversational routing remains) |
 | 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
 | 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | proposed |
 | 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | ✅ shipped |
@@ -282,9 +282,19 @@ later step joins its source onto the assembled result on a key already present. 
 steps through the engine; `validate_plan` tracks the assembled columns so a `left_key` that isn't yet present
 is caught before execution. Because the planner chooses the step order, it also **picks which source drives
 (driver auto-selection)**. `/query/federated-answer` now accepts ≥2 `conn_ids`. Tests include a real 3-source
-chain (orders → customer region → region manager). **Deferred by design (a real dependency, not plumbing):**
-answer-path/render integration needs *cross-source connection selection* — deciding, from a natural-language
-question, which connections a query spans — which is a distinct new capability, not wiring.
+chain (orders → customer region → region manager).
+
+**✅ Answer-path — deterministic connection selection.** `aughor/agent/connection_selector.py`:
+`select_connections(question, candidates)` reduces each candidate connection's schema to a bag of lexical
+terms, matches the question's content terms against each, and runs a greedy **set-cover** to pick the
+smallest set of connections that ground the question — **no LLM** (the LLM stays confined to the downstream
+plan, per the deterministic-first thesis). Returns the chosen connections (driver = highest coverage), the
+terms each grounded, and `multi_source`. `POST /query/auto-federated-answer` takes a question + a candidate
+pool, selects the spanning subset, and answers over exactly those via the planner — so the caller no longer
+names the connections. 9 tests (pure set-cover + tokenizer, schema-relevance selection dropping an irrelevant
+source, end-to-end select-then-join over 3 registered sources). **The one remaining piece:** folding this into
+the `/ask` conversational router (auto-gather the org's connections, branch to federation when `multi_source`)
+— plumbing on top of this selector, not a new capability.
 
 **✅ Follow-up — per-source row cap lifted.** The connection layer caps `execute()` at 500 rows, which had
 silently bounded every federated join (surfaced as `PARTIAL`). Added `execute_bounded(hyp, sql, max_rows)` to

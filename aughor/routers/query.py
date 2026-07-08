@@ -328,6 +328,55 @@ async def query_federated_answer(body: _FederatedAnswerRequest):
     }
 
 
+class _AutoFederatedRequest(BaseModel):
+    question: str
+    conn_ids: list[str]                        # candidate pool — the selector picks the subset the question spans
+    reconcile: Optional[bool] = None
+
+
+@router.post("/query/auto-federated-answer")
+async def query_auto_federated_answer(body: _AutoFederatedRequest):
+    """Answer a question WITHOUT being told which connections it spans (Rec 2, answer-path).
+
+    A deterministic selector (lexical schema-relevance + greedy set-cover — no LLM) picks the subset of
+    the candidate connections the question touches, then the federated planner answers over exactly those.
+    Returns the answer plus the `selection` (which connections and the terms each grounded) so the routing
+    is inspectable. Flag-gated on `federation.planner` (default off → 404)."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("federation.planner"):
+        raise HTTPException(status_code=404, detail="federated planner is not enabled")
+    if not body.question.strip():
+        raise HTTPException(status_code=400, detail="question is required")
+    if len(body.conn_ids) < 2:
+        raise HTTPException(status_code=400, detail="at least two candidate conn_ids are required")
+
+    from aughor.agent.connection_selector import select_connections
+    from aughor.agent.federated_planner import answer_federated
+    reconcile = body.reconcile if body.reconcile is not None else flag_enabled("join.key_reconciliation")
+
+    def _work():
+        sel = select_connections(body.question, body.conn_ids)
+        if not sel.conn_ids:
+            return None, sel
+        return answer_federated(body.question, sel.conn_ids, reconcile=reconcile), sel
+
+    loop = asyncio.get_running_loop()
+    try:
+        ans, sel = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if ans is None:
+        raise HTTPException(status_code=422, detail="no candidate connection is relevant to the question")
+
+    r = ans.result
+    return {
+        "columns": r.columns, "rows": r.rows, "row_count": r.row_count, "sql": r.sql, "error": r.error,
+        "plan": ans.plan.model_dump() if ans.plan else None,
+        "issues": ans.issues,
+        "selection": {"conn_ids": sel.conn_ids, "matched": sel.matched, "multi_source": sel.multi_source},
+    }
+
+
 @router.post("/query/semantic/text-columns", dependencies=[gate(Capability.SEMANTIC_OPERATORS)])
 async def query_semantic_text_columns(body: _QueryRunRequest):
     """Detect which columns of a query's result read as free text — the operator candidates the UI

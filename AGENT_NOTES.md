@@ -108,6 +108,16 @@ returns wrong NON-empty data). Reviewer verified SOUND: forward-ref rejection, g
 degradation. Suite **2724 green**. **ANSWER-PATH INTEGRATION deferred BY DESIGN:** needs cross-source
 connection SELECTION (which connections does an NL question span?) — a genuine new capability, not plumbing.
 Rec 2 BACKEND COMPLETE (build-wire-test-review, twice).
+**✅ ANSWER-PATH — deterministic connection SELECTION** (2026-07-08): `agent/connection_selector.py` —
+`select_connections(question, candidates)` = lexical schema-term bag per connection ∩ question content terms
+→ greedy set-cover picks the smallest spanning set (driver = highest coverage). NO LLM (deterministic-first;
+LLM stays in the downstream plan). `_terms` tokenizer: ≥3-char letter-initial, crude singularize (orders↔order),
+stopword filler ONLY (kept "order"/"count"/"total" — they're real entity names; dropping them blinds the
+selector). `POST /query/auto-federated-answer` {question, conn_ids=candidate pool} → select → answer_federated
+over the subset; returns `selection{conn_ids, matched, multi_source}`. 9 tests (pure set-cover+tokenizer +
+schema-relevance dropping an irrelevant source + end-to-end select-then-join over 3 registered DuckDB sources).
+Suite **2733 green**. REVIEW pending. REMAINING: fold into `/ask` conversational router (auto-gather org conns
++ branch on multi_source) — plumbing on this selector, not new capability.
 SIGNATURE NOTE: `batched_foreach_join` moved `right_table` to keyword-only (was positional) — all callers +
 the 11 unit-test calls updated.
 

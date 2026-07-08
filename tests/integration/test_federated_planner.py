@@ -148,6 +148,43 @@ def test_validate_plan_flags_source_index_out_of_range(tmp_path):
     assert any("out of range" in i for i in validate_plan(plan, cids))
 
 
+def test_auto_federated_answer_disabled_by_default(client: TestClient, monkeypatch):
+    monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
+    resp = client.post("/query/auto-federated-answer", json={"question": "x", "conn_ids": ["a", "b"]})
+    assert resp.status_code == 404
+
+
+def test_auto_federated_answer_selects_connections_then_joins(client: TestClient, monkeypatch, tmp_path):
+    """The user names NO connections a question spans — the deterministic selector picks the relevant
+    subset (dropping the irrelevant products source), and the planner answers over exactly those."""
+    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+    a = _duck_file(tmp_path / "ao.duckdb", "CREATE TABLE orders (order_id INT, cust VARCHAR, amount INT)",
+                   "INSERT INTO orders VALUES (1,'C1',100),(2,'C2',50)")
+    b = _duck_file(tmp_path / "ac.duckdb", "CREATE TABLE customers (cust VARCHAR, region VARCHAR)",
+                   "INSERT INTO customers VALUES ('C1','EU'),('C2','US')")
+    c = _duck_file(tmp_path / "ap.duckdb", "CREATE TABLE products (product_id INT, price INT)",
+                   "INSERT INTO products VALUES (1,9)")
+    oid = registry.add_connection("auto-orders", "duckdb", a)
+    cid = registry.add_connection("auto-crm", "duckdb", b)
+    pid = registry.add_connection("auto-prod", "duckdb", c)
+    # orders grounds 3 question terms (orders/order/amount) vs customers' 2 → orders is the driver, source 0
+    _fake_planner(monkeypatch, FederatedPlan(steps=[
+        FederatedStep(source=0, sql="SELECT order_id, cust, amount FROM orders ORDER BY order_id", join_key="cust"),
+        FederatedStep(source=1, sql="SELECT cust, region FROM customers", join_key="cust", left_key="cust"),
+    ]))
+
+    resp = client.post("/query/auto-federated-answer",
+                       json={"question": "orders and their amounts by customer region", "conn_ids": [oid, cid, pid]})
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["selection"]["multi_source"] is True
+    assert set(data["selection"]["conn_ids"]) == {oid, cid}       # products dropped by the selector
+    assert data["selection"]["conn_ids"][0] == oid                # orders drives (higher term coverage)
+    assert data["error"] is None and data["row_count"] == 2
+    assert "region" in data["columns"]
+
+
 def test_validate_plan_passes_a_good_plan(tmp_path):
     cids = _two_sources(tmp_path)
     plan = FederatedPlan(steps=[
