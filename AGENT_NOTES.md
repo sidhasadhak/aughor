@@ -88,8 +88,16 @@ real overrides on DuckDB (`rows[:max_rows]`) and Postgres (`fetchmany(max_rows)`
 `execute` bodies into a shared `_run(hyp, sql, max_rows)`. The federation engine now reads the LEFT driver
 (≤`_MAX_OUT_ROWS` 50k) and each keyed right fetch (≤`_MAX_RIGHT_ROWS` 100k) via `execute_bounded`, so joins
 are no longer silently truncated at 500 (other connectors still cap → flagged PARTIAL). 2 tests (700-row
-right unit + 600-row end-to-end driver). Suite **2721 green**. Core-layer change, whole suite unaffected.
-REMAINING (deferred): N-source joins; driver auto-selection; answer-path/render integration.
+right unit + 600-row end-to-end driver). Suite 2721 green. Core-layer change, whole suite unaffected.
+**✅ FOLLOW-UP — N-source + driver auto-selection** (2026-07-08): `federated_planner.py` IR generalized to
+`FederatedPlan{steps: list[FederatedStep{source:int, sql, join_key, left_key, how}]}`; steps[0]=driver
+(no left_key), each later step joins its source onto the assembled result on a key already present.
+`answer_federated(question, conn_ids: list)` folds the steps through `batched_foreach_join`; `validate_plan`
+tracks assembled columns (left_key must be present) + source-index range. Planner picks step order ⇒ driver
+auto-selection falls out. Endpoint `/query/federated-answer` now takes ≥2 conn_ids. 8 tests incl. a real
+3-source chain (orders→region→manager). Suite **2723 green**. **ANSWER-PATH INTEGRATION deferred BY DESIGN:**
+it needs cross-source connection SELECTION (which connections does an NL question span?) — a genuine new
+capability, not plumbing; that's the honest dependency. Rec 2 BACKEND is complete.
 SIGNATURE NOTE: `batched_foreach_join` moved `right_table` to keyword-only (was positional) — all callers +
 the 11 unit-test calls updated.
 

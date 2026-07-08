@@ -203,7 +203,7 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 | # | Recommendation | Source | DAB gap | Dimension | Leverage | Effort | Risk | Status |
 |---|---|---|---|---|---|---|---|---|
 | 1 | **Guarded extraction** (validate + gleaning re-extract) | DocETL/Palimpzest | GAP-2 (47/54) | Correctness | High | S | Low | ✅ shipped |
-| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ✅ v1 — Stages 1–3 (engine + API + self-heal + LLM planner) |
+| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ✅ backend complete — engine + API + self-heal + N-source planner + driver-selection + cap-lift (answer-path integration deferred by design) |
 | 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
 | 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | proposed |
 | 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | ✅ shipped |
@@ -276,8 +276,15 @@ side is now a grounded sub-query via the engine's new `right_sql` path). Plan-th
 deterministic-first: the LLM only produces the plan; guards validate it and the engine joins. The plan +
 per-source SQL are returned for inspection. 6 tests (404-when-off, two-conn validation, end-to-end
 plan→validate→execute across two DuckDB sources, validation-failure surfacing, `validate_plan` good/bad).
-**v1 scope:** exactly two sources, `conn_ids[0]` drives; N-source / driver-selection / answer-path
-integration are the natural extensions.
+**✅ N-source + driver auto-selection.** The plan generalized from a fixed left/right pair to an ordered
+list of `FederatedStep`s (`{source index, sql, join_key, left_key, how}`); `steps[0]` is the driver and each
+later step joins its source onto the assembled result on a key already present. `answer_federated` folds the
+steps through the engine; `validate_plan` tracks the assembled columns so a `left_key` that isn't yet present
+is caught before execution. Because the planner chooses the step order, it also **picks which source drives
+(driver auto-selection)**. `/query/federated-answer` now accepts ≥2 `conn_ids`. Tests include a real 3-source
+chain (orders → customer region → region manager). **Deferred by design (a real dependency, not plumbing):**
+answer-path/render integration needs *cross-source connection selection* — deciding, from a natural-language
+question, which connections a query spans — which is a distinct new capability, not wiring.
 
 **✅ Follow-up — per-source row cap lifted.** The connection layer caps `execute()` at 500 rows, which had
 silently bounded every federated join (surfaced as `PARTIAL`). Added `execute_bounded(hyp, sql, max_rows)` to

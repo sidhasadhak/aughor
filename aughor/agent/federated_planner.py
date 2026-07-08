@@ -1,13 +1,15 @@
 """Cross-source federated planner (Rec 2, Stage 3): decompose → validate → execute.
 
-A question that spans two databases can't be one SQL. This grounds each connection's schema, asks the
-model ONCE for a structured plan — a grounded sub-query per source plus the join keys — validates the
-plan deterministically (each sub-query executes and outputs its declared join key), then executes it
-through the batched-foreach engine (Stages 1–2b).
+A question that spans two-or-more databases can't be one SQL. This grounds every connection's schema,
+asks the model ONCE for a structured plan — an ordered list of steps, each a grounded sub-query on one
+source plus the key that links it to the result assembled so far — validates the plan deterministically
+(each sub-query executes and outputs its key; each link key is a real column of the assembled result),
+then folds the steps through the batched-foreach engine (Stages 1–2b).
 
 Plan-then-execute (PromptQL), deterministic-first: the LLM only produces the *plan*; deterministic
-guards validate it and the engine does the join. One LLM call, everything after it is code — so the
-result is inspectable (the plan + per-source SQL are returned) and repeatable.
+guards validate it and the engine does the joins. One LLM call, everything after is code — so the
+result is inspectable (the plan + per-source SQL are returned) and repeatable. The planner also chooses
+the step ORDER, so it picks which source drives (driver auto-selection) and how the sources chain.
 """
 from __future__ import annotations
 
@@ -21,17 +23,20 @@ from aughor.platform.contracts.execution import QueryResult
 
 logger = logging.getLogger(__name__)
 
+_DRIVER_CAP = 50_000   # rows read from the driver sub-query (via execute_bounded)
 
-class FederatedSide(BaseModel):
-    sql: str = Field(description="A single SELECT grounded ONLY in this source's schema; it MUST output the join-key column.")
-    join_key: str = Field(description="The output column name of this sub-query to join on.")
+
+class FederatedStep(BaseModel):
+    source: int = Field(description="Index into the provided connection list of the source this sub-query runs on.")
+    sql: str = Field(description="A single SELECT grounded ONLY in this source's schema; it MUST output the join key.")
+    join_key: str = Field(description="This sub-query's OUTPUT column that links it to the assembled result.")
+    left_key: str = Field(default="", description="Column in the ALREADY-ASSEMBLED result to join on. Empty for the FIRST (driver) step.")
+    how: Literal["inner", "left"] = Field(default="inner", description="Join type onto the assembled result (ignored for the driver).")
 
 
 class FederatedPlan(BaseModel):
-    left: FederatedSide = Field(description="Sub-query for the FIRST (driver) source.")
-    right: FederatedSide = Field(description="Sub-query for the SECOND source.")
-    how: Literal["inner", "left"] = Field(default="inner", description="Join type from the driver's perspective.")
-    rationale: str = Field(default="", description="One sentence: what each side contributes and why the keys link.")
+    steps: list[FederatedStep] = Field(description="Ordered steps. steps[0] is the driver (no left_key); each later step joins its source onto the assembled result.")
+    rationale: str = Field(default="", description="One sentence: how the sources chain and why the keys link.")
 
 
 @dataclass
@@ -42,32 +47,32 @@ class FederatedAnswer:
 
 
 _PLAN_SYS = (
-    "You plan a query that spans TWO separate databases that CANNOT be joined in one SQL statement. "
-    "You are given the schema of a LEFT (driver) source and a RIGHT source. Produce a plan:\n"
-    "- left.sql: a single SELECT grounded ONLY in the LEFT schema, selecting the columns the user wants "
-    "from that side PLUS the join-key column.\n"
-    "- right.sql: a single SELECT grounded ONLY in the RIGHT schema, selecting the columns wanted from "
-    "that side PLUS its join-key column.\n"
-    "- left.join_key / right.join_key: the OUTPUT column name on each side that links the two (the same "
-    "real-world entity). They need not be identically named.\n"
-    "- how: 'inner' (only matched rows) or 'left' (keep all driver rows).\n"
-    "Rules: each sub-query references ONLY its own schema's tables (no cross-database references); each "
-    "MUST select its join key; push filters and aggregations into the sub-queries. Return only the plan."
+    "You plan a query that spans MULTIPLE separate databases that CANNOT be joined in one SQL statement. "
+    "You are given each source's schema, labelled by its index [0], [1], .... Produce an ordered list of "
+    "steps that assemble the answer:\n"
+    "- The FIRST step is the DRIVER: `source` (which database), `sql` (a single SELECT grounded ONLY in that "
+    "source, selecting the wanted columns PLUS any key needed to link further sources), `join_key` (an output "
+    "column later steps can link to), and leave `left_key` empty.\n"
+    "- Each LATER step joins one more source onto the result assembled so far: `source`, `sql` (grounded ONLY "
+    "in THAT source, selecting its wanted columns PLUS its link key), `join_key` (that sub-query's link column), "
+    "`left_key` (a column ALREADY present in the assembled result), and `how` ('inner' or 'left').\n"
+    "Rules: each sub-query references ONLY its own source's tables (no cross-database references); each MUST "
+    "select its join_key; choose the driver and order to keep intermediate results small; push filters and "
+    "aggregations into the sub-queries. Return only the plan."
 )
 
 
-def plan_federated(question: str, left_conn_id: str, right_conn_id: str) -> FederatedPlan:
-    """One LLM call: ground both schemas, return a structured two-source plan."""
+def plan_federated(question: str, conn_ids: list[str]) -> FederatedPlan:
+    """One LLM call: ground every source's schema, return an ordered multi-source plan."""
     from aughor.db.connection import open_connection_for
     from aughor.llm.provider import get_provider
 
-    left_schema = open_connection_for(left_conn_id).get_schema()
-    right_schema = open_connection_for(right_conn_id).get_schema()
+    schemas = []
+    for i, cid in enumerate(conn_ids):
+        schemas.append(f"=== source [{i}] schema ===\n{open_connection_for(cid).get_schema()}")
     user = (
-        f"Question: {question}\n\n"
-        f"=== LEFT (driver) source schema ===\n{left_schema}\n\n"
-        f"=== RIGHT source schema ===\n{right_schema}\n\n"
-        f"Produce the two-source plan."
+        f"Question: {question}\n\n" + "\n\n".join(schemas) +
+        f"\n\nProduce the multi-source plan over sources [0]..[{len(conn_ids) - 1}]."
     )
     return get_provider("coder").complete(system=_PLAN_SYS, user=user, response_model=FederatedPlan)
 
@@ -81,67 +86,88 @@ def _columns_of(conn, sql: str) -> Optional[list[str]]:
         return None
 
 
-def validate_plan(plan: FederatedPlan, left_conn_id: str, right_conn_id: str) -> list[str]:
-    """Deterministic pre-execution checks: each sub-query executes and outputs its declared join key."""
+def validate_plan(plan: FederatedPlan, conn_ids: list[str]) -> list[str]:
+    """Deterministic pre-execution checks: sources in range, each sub-query outputs its join key, and
+    each non-driver step's left_key is a real column of the result assembled up to that point."""
     from aughor.db.connection import open_connection_for
 
     issues: list[str] = []
-    for side, cid, label in ((plan.left, left_conn_id, "left"), (plan.right, right_conn_id, "right")):
-        if not (side.sql or "").strip():
-            issues.append(f"{label} sub-query is empty")
+    if not plan.steps:
+        return ["plan has no steps"]
+    n = len(conn_ids)
+    assembled: Optional[list[str]] = None
+    for i, step in enumerate(plan.steps):
+        if not (0 <= step.source < n):
+            issues.append(f"step {i}: source index {step.source} out of range (have {n})")
             continue
-        if not (side.join_key or "").strip():
-            issues.append(f"{label} join_key is empty")
+        if not (step.sql or "").strip():
+            issues.append(f"step {i}: sql is empty")
             continue
-        try:
-            conn = open_connection_for(cid)
-        except Exception as exc:
-            issues.append(f"{label} connection unavailable: {str(exc)[:80]}")
+        if not (step.join_key or "").strip():
+            issues.append(f"step {i}: join_key is empty")
             continue
-        cols = _columns_of(conn, side.sql)
+        cols = _columns_of(open_connection_for(conn_ids[step.source]), step.sql)
         if cols is None:
-            issues.append(f"{label} sub-query did not execute (must target only this source's tables)")
-        elif side.join_key not in cols:
-            issues.append(
-                f"{label} join key {side.join_key!r} is not an output column "
-                f"({', '.join(cols) or 'none'})"
-            )
+            issues.append(f"step {i}: sub-query did not execute (must target only source [{step.source}])")
+            continue
+        if step.join_key not in cols:
+            issues.append(f"step {i}: join key {step.join_key!r} is not an output column ({', '.join(cols) or 'none'})")
+        if i == 0:
+            if (step.left_key or "").strip():
+                issues.append("step 0 (driver) must not have a left_key")
+            assembled = list(cols)
+        else:
+            if not (step.left_key or "").strip():
+                issues.append(f"step {i}: left_key is empty (needed to join onto the assembled result)")
+            elif assembled is not None and step.left_key not in assembled:
+                issues.append(f"step {i}: left_key {step.left_key!r} is not in the assembled result so far ({', '.join(assembled) or 'none'})")
+            if assembled is not None:
+                assembled = assembled + list(cols)   # the join appends this source's columns
     return issues
 
 
-def answer_federated(
-    question: str, left_conn_id: str, right_conn_id: str, *, reconcile: bool = False,
-) -> FederatedAnswer:
-    """Full plan-then-execute: plan (LLM) → validate (deterministic) → execute (batched-foreach engine)."""
-    from aughor.connectors.remote_join import cross_source_join
+def answer_federated(question: str, conn_ids: list[str], *, reconcile: bool = False) -> FederatedAnswer:
+    """Full plan-then-execute: plan (LLM) → gate + validate (deterministic) → fold the steps (engine)."""
+    from aughor.connectors.remote_join import batched_foreach_join
+    from aughor.db.connection import gate_user_sql, open_connection_for
 
     try:
-        plan = plan_federated(question, left_conn_id, right_conn_id)
+        plan = plan_federated(question, conn_ids)
     except Exception as exc:  # noqa: BLE001 — a planning failure is an answer, not a 500
         logger.warning("federated planner: planning failed: %s", exc)
         return FederatedAnswer(_error_result(f"planning failed: {str(exc)[:120]}"), None, ["planning failed"])
 
-    # Gate the LLM-generated sub-queries through the same safety checker the Query Builder uses —
-    # the plan is model-written SQL, so it must not skip the audit/injection/read-only gate.
-    from aughor.db.connection import gate_user_sql
-    for cid, side_sql, label in ((left_conn_id, plan.left.sql, "left"), (right_conn_id, plan.right.sql, "right")):
-        blocked = gate_user_sql(cid, "federated_planner", side_sql)
-        if blocked is not None:
-            return FederatedAnswer(
-                _error_result(f"{label} sub-query blocked by safety gate: {blocked.error}"),
-                plan, [f"{label} sub-query blocked by safety gate"])
+    if not plan.steps:
+        return FederatedAnswer(_error_result("plan has no steps"), plan, ["plan has no steps"])
 
-    issues = validate_plan(plan, left_conn_id, right_conn_id)
+    # Gate every LLM-written sub-query through the same safety checker the Query Builder uses.
+    for i, step in enumerate(plan.steps):
+        if 0 <= step.source < len(conn_ids):
+            blocked = gate_user_sql(conn_ids[step.source], "federated_planner", step.sql)
+            if blocked is not None:
+                return FederatedAnswer(
+                    _error_result(f"step {i} sub-query blocked by safety gate: {blocked.error}"),
+                    plan, [f"step {i} sub-query blocked by safety gate"])
+
+    issues = validate_plan(plan, conn_ids)
     if issues:
         return FederatedAnswer(_error_result("plan failed validation: " + "; ".join(issues)), plan, issues)
 
+    # Fold the steps: execute the driver, then join each subsequent source onto the assembled result.
+    driver = plan.steps[0]
+    result = open_connection_for(conn_ids[driver.source]).execute_bounded("__fed_driver__", driver.sql, _DRIVER_CAP)
+    if result.error:
+        return FederatedAnswer(result, plan, [f"driver sub-query failed: {result.error}"])
+    for i, step in enumerate(plan.steps[1:], start=1):
+        conn = open_connection_for(conn_ids[step.source])
+        result = batched_foreach_join(
+            result, step.left_key, conn, step.join_key,
+            right_sql=step.sql, how=step.how, reconcile=reconcile)
+        if result.error:
+            return FederatedAnswer(result, plan, [f"step {i} join failed: {result.error}"])
+
     from aughor.stats import bump
     bump("federation.planner.executed")
-    result = cross_source_join(
-        left_conn_id, plan.left.sql, plan.left.join_key,
-        right_conn_id, plan.right.join_key,
-        right_sql=plan.right.sql, how=plan.how, reconcile=reconcile,
-    )
     return FederatedAnswer(result, plan, [])
 
 
