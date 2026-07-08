@@ -203,7 +203,7 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 | # | Recommendation | Source | DAB gap | Dimension | Leverage | Effort | Risk | Status |
 |---|---|---|---|---|---|---|---|---|
 | 1 | **Guarded extraction** (validate + gleaning re-extract) | DocETL/Palimpzest | GAP-2 (47/54) | Correctness | High | S | Low | ✅ shipped |
-| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | proposed |
+| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ◑ Stage 1 (engine) |
 | 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
 | 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | proposed |
 | 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | ✅ shipped |
@@ -259,9 +259,23 @@ validates (Palimpzest); a `validate`/`max_rounds` surface on the Query Builder "
 
 ## 7 · Design sketches for the big bets
 
-### 7.1 Cross-source federated planner (Rec 2)
+### 7.1 Cross-source federated planner (Rec 2) — staged
 
-**Goal:** answer a question that spans two+ connections, correctly and N+1-free.
+**Staging:** Stage 1 = the deterministic join engine (✅ shipped); Stage 2 = wiring (a flag-gated
+cross-source-join surface + the cross-source value-overlap/key-reconciliation guard); Stage 3 = the LLM
+planner that decomposes a cross-source question into per-source sub-queries and picks the join keys.
+
+**✅ Stage 1 — batched-foreach remote-join engine** (`aughor/connectors/remote_join.py`). The correct-by-
+construction, N+1-free join across heterogeneous connections: `batched_foreach_join` executes the LEFT
+sub-query, dedups the join keys, issues ONE keyed `WHERE right_key IN (...)` query per key-chunk to the
+RIGHT connection, and hash-joins in memory (inner/left). Bounded (key-chunk 1000, right-rows 100k, out-rows
+50k), injection-safe (escaped literals), and fail-safe (any error → the LEFT result unchanged, never a
+raise). `cross_source_join(left_conn_id, left_sql, left_key, right_conn_id, right_table, right_key)` is the
+by-id entry point the planner and API will call. 7 tests (two real in-memory DuckDB sources + a counting
+wrapper proving N+1-avoidance and key-chunking). This complements — does not replace — `federated.py`'s
+DuckDB-ATTACH path: ATTACH when data co-locates, batched-foreach for true cross-engine joins.
+
+**Goal (remaining stages):** answer a question that spans two+ connections, correctly and N+1-free.
 
 - **Planner:** decompose the question into per-source sub-queries (reuse the explore decompose machinery),
   each grounded against its own connection's schema/ontology, plus an **integration step** naming the join keys.

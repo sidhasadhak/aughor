@@ -46,6 +46,19 @@ Decision (mine, pending user scope pick on the bigger bets): ship the no-regret 
 (guarded extraction = DAB GAP-2), then present the ranked roadmap for the big directional bets
 (cross-DBMS federated planner / plan-as-program+artifacts / cross-source key reconciliation).
 
+## ◑ IN PROGRESS — Rec 2 cross-source federation (branch `2026-07-07-guarded-extraction`)
+Staged (XL). **Stage 1 ✅ SHIPPED:** `aughor/connectors/remote_join.py` — `batched_foreach_join(left,
+left_key, right_conn, right_table, right_key, how=inner|left)`: dedups left keys, one `WHERE right_key IN
+(...)` query PER KEY-CHUNK to the right conn (N+1-free, Hasura NDC pattern), hash-join in memory. Bounded
+(chunk 1000 / 100k right / 50k out), injection-safe (escaped literals), fail-safe (any error → left result
+unchanged). `cross_source_join(...)` = by-connection-id wrapper the planner/API will call. Complements
+`federated.py` (DuckDB ATTACH when co-located; batched-foreach for true cross-engine). 7 tests (two real
+in-memory DuckDB conns + counting wrapper proving 1 query for 5 rows/2 keys, and 3 queries for 5 keys/chunk 2).
+NO live consumer yet → inherently non-breaking; full suite unaffected (new file). **Stage 2 NEXT:** flag-gated
+cross-source-join surface + cross-source value-overlap guard (reuse Rec 3 reconciliation on the key pair).
+**Stage 3:** the LLM planner (decompose cross-source question → per-source sub-queries + join keys) — the
+big/risky piece; checkpoint before it.
+
 ## ✅ SHIPPED — Champion cascade on semantic_filter (Rec 5, branch `2026-07-07-guarded-extraction`)
 Palimpzest/LOTUS label-free quality estimator. `semops/operators.py`: extracted the filter batch loop into
 `_filter_verdicts(rows, ci, pred, provider, batch, indices)`; `semantic_filter` gains `validate_sample=`/
