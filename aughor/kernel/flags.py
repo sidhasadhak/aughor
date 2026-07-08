@@ -44,6 +44,8 @@ FLAG_ENV = {
     "semops.champion_validate": "AUGHOR_SEMOPS_CHAMPION_VALIDATE",
     "federation.remote_join": "AUGHOR_FEDERATION_REMOTE_JOIN",
     "federation.planner": "AUGHOR_FEDERATION_PLANNER",
+    "capability.contract": "AUGHOR_CAPABILITY_CONTRACT",
+    "rbac.row_policy": "AUGHOR_RBAC_ROW_POLICY",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -154,6 +156,14 @@ FLAG_META = {
     "federation.planner": {
         "label": "Cross-source federated planner",
         "description": "Enable POST /query/federated-answer — answer a natural-language question that spans TWO connections. One LLM call grounds both schemas and emits a structured plan (a grounded sub-query per source + the join keys); the plan is validated deterministically (each sub-query executes and outputs its key) and executed through the batched-foreach engine. Plan-then-execute, guarded, inspectable (the plan is returned). Off by default → the route 404s. Stage 3 of cross-source federation.",
+    },
+    "capability.contract": {
+        "label": "Connector-capability contract",
+        "description": "When a generated query FAILS on a native-SQL warehouse (BigQuery/Snowflake/MySQL), name the exact unsupported construct (QUALIFY/ILIKE/SAFE_DIVIDE/DATE_TRUNC/…) in the SQL-repair prompt so the regeneration fixes it precisely instead of another blind dry-run. A deterministic per-dialect capability descriptor + AST check; advisory (enriches the existing repair loop only), no LLM. Off by default = no extra hint. Rec 6 of the external-sources study.",
+    },
+    "rbac.row_policy": {
+        "label": "RBAC row-level policy (row filters in the WHERE)",
+        "description": "Compile per-role, per-table row-filters into executed SQL (a deterministic AST rewrite wrapping each policied table as a filtered subquery) so a role physically cannot read rows outside its filter. Double-gated like the rest of RBAC (no-op unless identity AND the org's RBAC_SSO capability are on) AND this flag; fails CLOSED (a policy that can't be applied blocks the query). Enforced on DuckDB + Postgres connections. Off by default. Rec 7 of the external-sources study.",
     },
 }
 

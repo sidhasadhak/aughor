@@ -200,6 +200,49 @@ def security_post(connection_id: str, hypothesis_id: str, sql: str,
     return _security_post(connection_id, hypothesis_id, sql, result, duration_ms)
 
 
+def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
+                       sql: str) -> "tuple[str, QueryResult | None]":
+    """RBAC row-level policy (Rec 7): AND the caller's per-role row filters into ``sql`` before execution.
+
+    Returns ``(sql, None)`` to proceed with the (possibly rewritten) SQL, or ``(sql, blocked_result)`` to
+    refuse. Triple-gated — no-op unless ``rbac.row_policy`` is on AND identity is required AND the org has the
+    RBAC_SSO capability — and applies ONLY to an identified caller's request (a set ``current_user_id``), so
+    internal/background/localhost queries (no user context) are never filtered. Fails CLOSED: if a policy
+    applies but can't be compiled in, the query is blocked rather than run unfiltered.
+
+    Injects on the DuckDB-form SQL these transpile-from-DuckDB engines receive (before translate/normalize),
+    so the wrapped subqueries transpile with the rest of the statement."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("rbac.row_policy"):
+        return sql, None
+    try:
+        from aughor.licensing import Capability, has_capability
+        from aughor.org.context import current_org_id, current_user_id
+        from aughor.security.authz import require_identity_enabled
+        if not require_identity_enabled() or not has_capability(Capability.RBAC_SSO):
+            return sql, None
+        user = current_user_id()
+        if not user:                          # not an identified user request → nothing to scope
+            return sql, None
+        org = current_org_id()
+        from aughor.rbac.resolver import resolve_roles
+        from aughor.rbac.row_policy import resolve_row_filters
+        from aughor.security.authz import Principal
+        filters = resolve_row_filters(resolve_roles(Principal(user_id=user, org_id=org)), org, user)
+        if not filters:
+            return sql, None
+        from aughor.sql.rls import inject_row_filters
+        dialect = conn.dialect if getattr(conn, "writes_native_sql", False) else "duckdb"
+        return inject_row_filters(sql, filters, dialect), None
+    except Exception as exc:  # noqa: BLE001 — fail CLOSED: an un-appliable policy blocks, never leaks
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "row-policy injection failed; blocking the query (fail-closed)",
+                 counter="rbac.row_policy.blocked")
+        return sql, QueryResult(
+            hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0,
+            error="[ROW POLICY] query blocked — the row-level access policy could not be safely applied")
+
+
 # ── Proactive PostgreSQL dialect transforms ───────────────────────────────────
 # Applied to every Postgres query *before* execution to prevent the most
 # common class of type errors without needing a retry round-trip.
@@ -643,6 +686,11 @@ class DuckDBConnection(DatabaseConnection):
         if (blocked := _security_pre(conn_id, hypothesis_id, sql)):
             return blocked
 
+        # RBAC row-level policy (Rec 7) — AND the caller's row filters in, or fail closed. No-op off.
+        sql, _rp_block = enforce_row_policy(self, hypothesis_id, sql)
+        if _rp_block is not None:
+            return _rp_block
+
         sql = self._normalize_to_duckdb(sql)
         _t0 = _time.monotonic()
         try:
@@ -810,6 +858,11 @@ class PostgresConnection(DatabaseConnection):
         conn_id = getattr(self, "_connection_id", "")
         if (blocked := _security_pre(conn_id, hypothesis_id, sql)):
             return blocked
+
+        # RBAC row-level policy (Rec 7) — injected on the DuckDB-form SQL, before translate. No-op off.
+        sql, _rp_block = enforce_row_policy(self, hypothesis_id, sql)
+        if _rp_block is not None:
+            return _rp_block
 
         # Translate DuckDB-flavoured SQL → Postgres, then apply proactive fixes
         sql = self.translate(sql)
