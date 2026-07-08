@@ -130,6 +130,45 @@ _FILTER_SYS = (
 )
 
 
+# ── Champion-model cost/quality cascade (Palimpzest/LOTUS-style) ──────────────────
+# The semops run on the cheap ``fast`` tier. When validation is on, a small spread sample of a
+# filter's verdicts is re-judged by the strong "champion" tier; if they disagree beyond a bar,
+# the cheap tier is untrusted on this batch and the WHOLE batch is re-run on the champion —
+# buying accuracy where the cheap model is wrong, at the cost of one extra sample call per op.
+# (This is the deterministic, label-free "champion" quality estimator; a full LOTUS calibrated-
+# threshold cascade with statistical guarantees is the future extension.)
+CHAMPION_ROLE: Role = "coder"        # the strong tier, vs DEFAULT_ROLE = "fast"
+_CHAMPION_ESCALATE = 0.20            # sample disagreement above this → re-run the batch on the champion
+
+
+def _filter_verdicts(
+    rows: list, ci: int, predicate: str, provider, batch: int, indices: list[int],
+) -> tuple[set[int], int, list[str]]:
+    """Which of ``indices`` the ``provider`` keeps for ``predicate``: (kept_set, llm_calls, notes).
+
+    Fail-open: a row the model omits, or a whole failed batch, is kept (never silently dropped)."""
+    kept: set[int] = set()
+    llm_calls = 0
+    notes: list[str] = []
+    for start in range(0, len(indices), max(1, batch)):
+        chunk_idx = indices[start:start + batch]
+        listing = "\n".join(f"[{gi}] {str(rows[gi][ci])[:_MAX_CELL]}" for gi in chunk_idx)
+        try:
+            resp = provider.complete(
+                system=_FILTER_SYS,
+                user=f"Predicate: {predicate}\n\nRows (index: text):\n{listing}\n\nReturn a verdict for every index above.",
+                response_model=_FilterBatch,
+            )
+            llm_calls += 1
+            decided = {v.index: v.keep for v in resp.verdicts}
+            kept.update(gi for gi in chunk_idx if decided.get(gi, True))
+        except Exception as e:  # noqa: BLE001 — operator must never raise into the query path
+            logger.warning("semantic_filter: batch failed: %s", e)
+            notes.append(f"batch failed ({str(e)[:80]}) — rows kept unchanged")
+            kept.update(chunk_idx)
+    return kept, llm_calls, notes
+
+
 def semantic_filter(
     result: QueryResult,
     column: str,
@@ -139,8 +178,13 @@ def semantic_filter(
     max_rows: int = DEFAULT_MAX_ROWS,
     batch: int = DEFAULT_BATCH,
     override_cap: bool = False,
+    validate_sample: int = 0,
+    champion_role: Role = CHAMPION_ROLE,
 ) -> SemanticOpResult:
-    """Keep only the rows whose ``column`` text satisfies the natural-language ``predicate``."""
+    """Keep only the rows whose ``column`` text satisfies the natural-language ``predicate``.
+
+    With ``validate_sample > 0`` a spread sample of the cheap tier's verdicts is checked against
+    the ``champion_role`` tier and the whole batch is escalated on disagreement (see the note above)."""
     if result.error:
         return SemanticOpResult(result, "filter", column, 0, 0, False, [f"upstream SQL error: {result.error}"])
 
@@ -157,34 +201,38 @@ def semantic_filter(
 
     rows = result.rows
     notes = _materialized_note(result)
-    keep_idx: list[int] = []
-    llm_calls = 0
-    provider = get_provider(role)
+    all_idx = list(range(len(rows)))
+    kept, llm_calls, fnotes = _filter_verdicts(rows, ci, predicate, get_provider(role), batch, all_idx)
+    notes.extend(fnotes)
 
-    for start in range(0, len(rows), max(1, batch)):
-        chunk = rows[start:start + batch]
-        listing = "\n".join(
-            f"[{start + i}] {str(chunk[i][ci])[:_MAX_CELL]}" for i in range(len(chunk))
-        )
-        try:
-            resp = provider.complete(
-                system=_FILTER_SYS,
-                user=f"Predicate: {predicate}\n\nRows (index: text):\n{listing}\n\nReturn a verdict for every index above.",
-                response_model=_FilterBatch,
+    if validate_sample > 0 and rows and role != champion_role:
+        k = min(validate_sample, len(rows))
+        step = max(1, len(rows) // k)
+        sample_idx = all_idx[::step][:k]            # evenly spread, deterministic
+        champ = get_provider(champion_role)
+        champ_kept, champ_calls, _ = _filter_verdicts(rows, ci, predicate, champ, batch, sample_idx)
+        llm_calls += champ_calls
+        disagree = sum(1 for gi in sample_idx if (gi in kept) != (gi in champ_kept))
+        rate = disagree / len(sample_idx)
+        if rate > _CHAMPION_ESCALATE:
+            kept, esc_calls, esc_notes = _filter_verdicts(rows, ci, predicate, champ, batch, all_idx)
+            llm_calls += esc_calls
+            notes.extend(esc_notes)
+            notes.append(
+                f"champion cascade: {rate:.0%} sample disagreement > {_CHAMPION_ESCALATE:.0%} — "
+                f"escalated all {len(rows)} rows to {champion_role}"
             )
-            llm_calls += 1
-            decided = {v.index: v.keep for v in resp.verdicts}
-            # fail-open on a row the model didn't return: keep it (never silently drop data)
-            keep_idx.extend(start + i for i in range(len(chunk)) if decided.get(start + i, True))
-        except Exception as e:  # noqa: BLE001 — operator must never raise into the query path
-            logger.warning("semantic_filter: batch [%d:%d] failed: %s", start, start + len(chunk), e)
-            notes.append(f"batch [{start}:{start + len(chunk)}] failed ({str(e)[:80]}) — rows kept unchanged")
-            keep_idx.extend(range(start, start + len(chunk)))
+        else:
+            notes.append(
+                f"champion cascade: validated {len(sample_idx)} rows, {rate:.0%} disagreement — "
+                f"cheap tier ({role}) trusted"
+            )
 
-    kept = [rows[i] for i in keep_idx]
-    new_result = result.model_copy(update={"rows": kept, "row_count": len(kept)})
-    notes.insert(0, f"kept {len(kept)} of {len(rows)} rows matching: {predicate}")
-    return SemanticOpResult(new_result, "filter", column, len(rows), len(kept), False, notes, llm_calls)
+    keep_idx = sorted(kept)
+    kept_rows = [rows[i] for i in keep_idx]
+    new_result = result.model_copy(update={"rows": kept_rows, "row_count": len(kept_rows)})
+    notes.insert(0, f"kept {len(kept_rows)} of {len(rows)} rows matching: {predicate}")
+    return SemanticOpResult(new_result, "filter", column, len(rows), len(kept_rows), False, notes, llm_calls)
 
 
 # ── Operator: semantic extract ────────────────────────────────────────────────
@@ -206,6 +254,75 @@ _EXTRACT_SYS = (
 )
 
 
+# ── Guarded extraction: deterministic value validation + gleaning re-extract ──────
+# Pulling a structured value out of free text is where data agents are most fragile: benchmarks show
+# frontier models fall back to regex and *never check the result*, so text-heavy extractions collapse
+# (DataAgentBench's patent-date tasks score 0% across every model). Aughor's answer is its usual one —
+# a deterministic guard over the LLM's output. When ``validate=True`` each extracted value is checked
+# against a type inferred from the field's name/description; cells that fail are RE-EXTRACTED with
+# targeted feedback in a bounded "gleaning" loop (à la DocETL). Values are only ever re-asked and kept,
+# never dropped or blanked, so the operator's never-silently-lose-data contract still holds.
+
+_TYPE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "year":   ("year",),
+    "date":   ("date", "when ", "timestamp", "datetime", "day "),
+    "email":  ("email", "e-mail"),
+    "number": ("number", "count", "quantity", "amount", "price", "cost", "total",
+               "rate", "percent", "percentage", "age ", "duration", "dollars",
+               " usd", "revenue", "salary", "how many"),
+}
+
+_TYPE_HINT: dict[str, str] = {
+    "year":   "a 4-digit year like 2024",
+    "date":   "a date like 2024-01-31",
+    "email":  "an email like name@example.com",
+    "number": "a plain number like 1234.5 (no words)",
+}
+
+_DATE_SHAPE = re.compile(
+    r"^(\d{4}[-/]\d{1,2}[-/]\d{1,2}"                                                    # 2024-01-31
+    r"|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}"                                                   # 31/01/2024
+    r"|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}"  # Jan 31, 2024
+    r"|\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4})$", # 31 Jan 2024
+    re.I,
+)
+_EMAIL_SHAPE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _infer_expected_type(name: str, description: str) -> str | None:
+    """Infer a value-validation type from a field's name + description, or None if untyped."""
+    hay = f" {name} {description} ".lower()
+    for typ, kws in _TYPE_KEYWORDS.items():
+        if any(kw in hay for kw in kws):
+            return typ
+    return None
+
+
+def _validate_value(value: str, typ: str) -> str | None:
+    """Return None if ``value`` is a valid ``typ``, else a short reason it's rejected.
+
+    An empty string is always valid — extraction legitimately returns "" for an absent field, and we
+    never want validation to pressure the model into inventing a value.
+    """
+    v = (value or "").strip()
+    if not v:
+        return None
+    if typ == "year":
+        return None if (v.isdigit() and len(v) == 4 and 1000 <= int(v) <= 2999) else "expected a 4-digit year"
+    if typ == "date":
+        return None if _DATE_SHAPE.match(v) else "expected a date (e.g. 2024-01-31)"
+    if typ == "email":
+        return None if _EMAIL_SHAPE.match(v) else "expected an email address"
+    if typ == "number":
+        cleaned = v.replace(",", "").replace("$", "").replace("%", "").replace("€", "").replace("£", "").strip()
+        try:
+            float(cleaned)
+        except ValueError:
+            return "expected a number"
+        return None
+    return None
+
+
 def semantic_extract(
     result: QueryResult,
     column: str,
@@ -215,8 +332,15 @@ def semantic_extract(
     max_rows: int = DEFAULT_MAX_ROWS,
     batch: int = DEFAULT_BATCH,
     override_cap: bool = False,
+    validate: bool = False,
+    max_rounds: int = 1,
 ) -> SemanticOpResult:
-    """Pull named ``fields`` (``[(name, description), ...]``) out of ``column``'s text into new columns."""
+    """Pull named ``fields`` (``[(name, description), ...]``) out of ``column``'s text into new columns.
+
+    With ``validate=True`` each extracted value is checked against a type inferred from the field's
+    name/description, and off-type cells are re-extracted with targeted feedback for up to
+    ``max_rounds`` rounds (guarded extraction — see the module note above).
+    """
     field_names = [n for n, _ in fields]
 
     if result.error:
@@ -266,6 +390,53 @@ def semantic_extract(
             logger.warning("semantic_extract: batch [%d:%d] failed: %s", start, start + len(chunk), e)
             notes.append(f"batch [{start}:{start + len(chunk)}] failed ({str(e)[:80]}) — fields left blank")
 
+    # ── Guarded validation + gleaning re-extract ──────────────────────────────
+    reextract_calls = 0
+    still_invalid = 0
+    typed = {n: t for (n, d) in fields if (t := _infer_expected_type(n, d))}
+    if validate and typed:
+        for _round in range(max(0, max_rounds)):
+            failing: dict[int, dict[str, str]] = {}
+            for gi in range(len(rows)):
+                vals = extracted.get(gi, {})
+                bad = {n: reason for n, t in typed.items()
+                       if (reason := _validate_value(str(vals.get(n, "")), t))}
+                if bad:
+                    failing[gi] = bad
+            if not failing:
+                break
+            fail_idx = sorted(failing)
+            listing = "\n".join(f"[{gi}] {str(rows[gi][ci])[:_MAX_CELL]}" for gi in fail_idx)
+            guidance = "; ".join(f"{n} → {_TYPE_HINT[typed[n]]}" for n in typed)
+            try:
+                resp = provider.complete(
+                    system=_EXTRACT_SYS,
+                    user=(
+                        f"Fields to extract: {fields_spec}\n\n"
+                        f"Some earlier values had the WRONG format. Re-extract carefully. "
+                        f"Type requirements: {guidance}. Use \"\" only if the field is truly absent.\n\n"
+                        f"Rows (index: text):\n{listing}\n\n"
+                        f"Return corrected values for every index above."
+                    ),
+                    response_model=_ExtractBatch,
+                )
+                reextract_calls += 1
+                for r in resp.rows:
+                    if r.index in failing:
+                        cur = dict(extracted.get(r.index, {}))
+                        for n in failing[r.index]:  # overwrite only the fields that failed
+                            if n in r.values:
+                                cur[n] = r.values[n]
+                        extracted[r.index] = cur
+            except Exception as e:  # noqa: BLE001 — operator must never raise into the query path
+                logger.warning("semantic_extract: re-extract round failed: %s", e)
+                notes.append(f"guarded re-extract failed ({str(e)[:80]}) — kept prior values")
+                break
+        for gi in range(len(rows)):
+            vals = extracted.get(gi, {})
+            still_invalid += sum(1 for n, t in typed.items() if _validate_value(str(vals.get(n, "")), t))
+        llm_calls += reextract_calls
+
     out_rows: list[list] = []
     for gi, row in enumerate(rows):
         vals = extracted.get(gi, {})
@@ -273,6 +444,12 @@ def semantic_extract(
 
     new_result = result.model_copy(update={"columns": list(result.columns) + new_cols, "rows": out_rows})
     notes.insert(0, f"extracted {', '.join(new_cols)} from {column} for {len(rows)} rows")
+    if validate and typed:
+        notes.append(
+            f"guarded extraction: validated {len(typed)} typed field(s) over {len(rows)} rows"
+            + (f", re-extracted in {reextract_calls} round(s)" if reextract_calls else "")
+            + (f", {still_invalid} value(s) still off-type (surfaced, kept)" if still_invalid else "")
+        )
     return SemanticOpResult(new_result, "extract", column, len(rows), len(rows), False, notes, llm_calls)
 
 
@@ -431,14 +608,18 @@ def apply_step(
     max_rows: int = DEFAULT_MAX_ROWS,
     batch: int = DEFAULT_BATCH,
     override_cap: bool = False,
+    validate: bool = False,
+    max_rounds: int = 1,
+    validate_sample: int = 0,
 ) -> SemanticOpResult:
     """Dispatch one semantic operator by name — the shared entry point for callers (API + agent)."""
     if operator == "filter":
         return semantic_filter(result, column, predicate, role=role, max_rows=max_rows,
-                               batch=batch, override_cap=override_cap)
+                               batch=batch, override_cap=override_cap, validate_sample=validate_sample)
     if operator == "extract":
         return semantic_extract(result, column, fields or [], role=role, max_rows=max_rows,
-                                batch=batch, override_cap=override_cap)
+                                batch=batch, override_cap=override_cap,
+                                validate=validate, max_rounds=max_rounds)
     if operator == "top_k":
         return semantic_top_k(result, column, criterion, k, role=role, max_rows=max_rows,
                               batch=batch, override_cap=override_cap)

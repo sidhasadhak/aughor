@@ -39,6 +39,11 @@ FLAG_ENV = {
     "ada.causal_drill": "AUGHOR_CAUSAL_DRILL",
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
+    "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
+    "join.key_reconciliation": "AUGHOR_JOIN_KEY_RECONCILIATION",
+    "semops.champion_validate": "AUGHOR_SEMOPS_CHAMPION_VALIDATE",
+    "federation.remote_join": "AUGHOR_FEDERATION_REMOTE_JOIN",
+    "federation.planner": "AUGHOR_FEDERATION_PLANNER",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -129,6 +134,26 @@ FLAG_META = {
     "closed_loop": {
         "label": "Closed-loop corrections",
         "description": "Read captured human corrections/verdicts and trusted queries back into the planner as priors, so a corrected mistake isn't repeated. Off by default until its delta is proven on your data.",
+    },
+    "semops.guarded_extract": {
+        "label": "Guarded extraction (validate + re-extract)",
+        "description": "When the semantic extract operator pulls a typed value (year/date/email/number) out of free text, validate each value against its type and re-extract the off-type cells with targeted feedback (a bounded gleaning loop). Off-type values are surfaced and kept, never dropped. Adds a re-extract LLM call only when a typed field fails validation. Off by default — turns text extraction from regex-fragile into a guarded, self-correcting step.",
+    },
+    "join.key_reconciliation": {
+        "label": "Ill-formatted join-key reconciliation",
+        "description": "When a join's two keys have low value overlap, try deterministic normalizations (trim/case, digits-only, strip prefix, strip leading zeros) and, if one lifts overlap over a bar, surface the exact expression to join on — distinguishing 'same entity, different format' (bid_123 vs bref_123) from genuinely different entities. Only runs when a value-domain mismatch already fired (rare); deterministic, fail-open, no LLM. Off by default = byte-identical (the mismatch warning is unchanged).",
+    },
+    "semops.champion_validate": {
+        "label": "Champion cascade on semantic filter",
+        "description": "The semantic filter operator runs on the cheap tier; with this on, a small spread sample of its verdicts is re-judged by the strong 'champion' model and the whole batch is escalated to the champion when they disagree beyond a bar — catching cheap-tier errors at the cost of one extra sample call per filter. Off by default = byte-identical (no validation sample). A label-free quality estimator in the Palimpzest/LOTUS lineage.",
+    },
+    "federation.remote_join": {
+        "label": "Cross-source batched-foreach join",
+        "description": "Enable POST /query/cross-source-join — join a result from one connection to a table on another, N+1-free (dedup the join keys, one keyed batch query per key-chunk to the right source, hash-join in memory). The correct-by-construction path for true cross-engine joins (Snowflake↔BigQuery↔Postgres) that DuckDB ATTACH can't reach. Off by default → the route 404s. Stage 1 of the cross-source federated planner.",
+    },
+    "federation.planner": {
+        "label": "Cross-source federated planner",
+        "description": "Enable POST /query/federated-answer — answer a natural-language question that spans TWO connections. One LLM call grounds both schemas and emits a structured plan (a grounded sub-query per source + the join keys); the plan is validated deterministically (each sub-query executes and outputs its key) and executed through the batched-foreach engine. Plan-then-execute, guarded, inspectable (the plan is returned). Off by default → the route 404s. Stage 3 of cross-source federation.",
     },
 }
 

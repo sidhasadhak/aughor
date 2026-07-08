@@ -228,3 +228,73 @@ def test_fabricated_join_flagged_both_directions_low():
     conn.execute.side_effect = [_qr(0, 100), _qr(0, 100)]
     sql = "SELECT * FROM refunds r JOIN orders o ON r.refund_reason = o.warehouse"
     assert len(check_join_value_domains(conn, sql)) == 1
+
+
+# ── Ill-formatted join-key reconciliation (Rec 3 / DAB GAP-3) ─────────────────
+
+from aughor.sql.join_guard import reconcile_join_keys  # noqa: E402
+
+
+def _real_conn_skew():
+    """Two tables whose keys refer to the SAME entities but with different key FORMATS:
+    books.bid = 'bid_1' vs reviews.book_ref = 'bref_1' — 0% raw overlap, 100% on digits."""
+    import duckdb
+    from pathlib import Path
+    from aughor.db.connection import DuckDBConnection
+
+    conn = DuckDBConnection.__new__(DuckDBConnection)
+    conn._path = Path(":memory:")
+    conn._conn = duckdb.connect(":memory:")
+    conn._connection_id = "test"
+    conn._schema_name = None
+    conn._conn.execute("CREATE TABLE books (bid VARCHAR)")
+    conn._conn.execute("INSERT INTO books VALUES ('bid_1'),('bid_2'),('bid_3'),('bid_4')")
+    conn._conn.execute("CREATE TABLE reviews (book_ref VARCHAR)")
+    conn._conn.execute("INSERT INTO reviews VALUES ('bref_1'),('bref_2'),('bref_3'),('bref_4')")
+    return conn
+
+
+def test_reconciliation_finds_prefix_skew(monkeypatch):
+    monkeypatch.setenv("AUGHOR_JOIN_KEY_RECONCILIATION", "1")
+    conn = _real_conn_skew()
+    sql = "SELECT * FROM books b JOIN reviews r ON b.bid = r.book_ref"
+    warnings = check_join_value_domains(conn, sql)
+    assert len(warnings) == 1
+    r = warnings[0].reconciliation
+    assert r is not None
+    assert r.overlap >= 0.9
+    assert r.transform in ("digits", "strip_prefix")
+    txt = warnings[0].to_prompt_text()
+    assert "reconcile" in txt.lower()
+    assert "regexp_replace" in txt      # the actionable normalized-join expression
+
+
+def test_reconciliation_off_by_default_is_byte_identical(monkeypatch):
+    monkeypatch.delenv("AUGHOR_JOIN_KEY_RECONCILIATION", raising=False)
+    conn = _real_conn_skew()
+    sql = "SELECT * FROM books b JOIN reviews r ON b.bid = r.book_ref"
+    warnings = check_join_value_domains(conn, sql)
+    assert len(warnings) == 1
+    assert warnings[0].reconciliation is None                      # flag off → no attempt
+    assert "different entities" in warnings[0].to_prompt_text()    # original message unchanged
+
+
+def test_reconciliation_absent_for_genuinely_disjoint_keys(monkeypatch):
+    monkeypatch.setenv("AUGHOR_JOIN_KEY_RECONCILIATION", "1")
+    conn = _real_conn()   # orders.cust ('C00x') vs campaigns.id ('CMPx') — truly different entities
+    sql = "SELECT * FROM orders o JOIN campaigns c ON o.cust = c.id"
+    warnings = check_join_value_domains(conn, sql)
+    assert len(warnings) == 1
+    assert warnings[0].reconciliation is None    # no normalization reconciles disjoint entities
+
+
+def test_reconcile_join_keys_direct_on_skew():
+    conn = _real_conn_skew()
+    recon = reconcile_join_keys(conn, "books", "bid", "reviews", "book_ref", raw_overlap=0.0)
+    assert recon is not None and recon.overlap >= 0.9
+
+
+def test_reconcile_fail_open_on_error():
+    conn = MagicMock()
+    conn.execute.side_effect = RuntimeError("boom")
+    assert reconcile_join_keys(conn, "a", "x", "b", "y", 0.0) is None

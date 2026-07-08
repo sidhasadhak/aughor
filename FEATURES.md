@@ -65,7 +65,10 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
 - **Error classification & SQL hardening** — classify a failure by root cause, inject the right fix hint.
 - **Fan-out / grain guards** — deterministic de-fan (parent + chasm), AVG-over-chasm linter, and a
   uniqueness-probe grain guard (`COUNT(*)` vs `COUNT(DISTINCT key)`) that flags over-counting on real data.
-- **Value-domain join guard** — refuse/repair joins whose key domains don't actually overlap ("fool-proof joins").
+- **Value-domain join guard** — refuse/repair joins whose key domains don't actually overlap ("fool-proof joins");
+  when a mismatch fires, **ill-formatted-key reconciliation** (`join.key_reconciliation`) tries deterministic
+  normalizations (digits-only, strip-prefix, trim/case) and surfaces the exact normalized join when the keys are
+  the same entity in a different format (`bid_123` ↔ `bref_123`) — in-source and across sources (DataAgentBench GAP-3).
 - **Filter-literal binding** — a guessed enum/literal that matches no row is bound to its confirmed stored
   value (`'cancelled' → 'canceled'`), including a CHESS-style trigram value index for high-cardinality columns.
 - **Measure-additivity layer** — per-unit vs per-line grain, ratio-of-sums (never AVG of per-row ratios).
@@ -184,6 +187,14 @@ Builder" from Insights/Deep. Schema-qualified correctness; user-typed SQL is **g
 LLM-grounded operators that compose with SQL: **filter · extract · top_k · aggregate**, hierarchical
 tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic step", and an AI-SQL operator.
 
+- **Guarded extraction** (`semops.guarded_extract`) — the extract operator infers a type (year/date/email/
+  number) from each field and re-extracts the off-type values with targeted feedback (a bounded gleaning loop),
+  surfacing and keeping residuals rather than dropping them. Turns text extraction from regex-fragile into a
+  self-correcting, type-checked step (DocETL gleaning; the DataAgentBench axis where frontier models score 0%).
+- **Champion cost/quality cascade** (`semops.champion_validate`) — the filter operator runs on the cheap tier,
+  re-judges an evenly-spread sample on the strong "champion" model, and escalates the whole batch only when they
+  disagree beyond a bar — a label-free quality estimator in the Palimpzest/LOTUS lineage.
+
 ## 11. RAG & knowledge
 
 - **Prior-investigations RAG** — reuse past analyses for similar questions.
@@ -207,6 +218,17 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   `SemanticContext.contracts()` (catalog wins on collision). **`answer_report`** — the deep-report SSE
   event/field renamed from the internal `ada_report` codename across every consumer (web + MCP), old name
   kept as a `@deprecated` wire alias one release; the web report type is now `AnswerReport`.
+- **Cross-source federation** (`federation.planner`) — answer a question that spans two-or-more databases
+  end-to-end, deterministic-first. A no-LLM **connection selector** (`aughor/agent/connection_selector.py`,
+  lexical schema-relevance + greedy set-cover) picks the sources the question touches; a one-call LLM
+  **federated planner** (`aughor/agent/federated_planner.py`) decomposes it into a grounded sub-query per
+  source + the join keys (it also picks the driver and chains 3+ sources), validated deterministically; the
+  **batched-foreach engine** (`aughor/connectors/remote_join.py`, `federation.remote_join`) joins them
+  **N+1-free** (one keyed batch per source, Hasura's NDC pattern in SQL), with **self-healing ill-formatted
+  keys**, cross-type numeric matching, and cap-lifted fetches (`execute_bounded`). Exposed as
+  `POST /query/cross-source-join` · `/query/federated-answer` · `/query/auto-federated-answer`, and folded into
+  the conversational `/ask` path (a plain chat question auto-federates when it spans sources). Complements the
+  `FederatedConnection` DuckDB-ATTACH path; all flag-gated, default-off byte-identical (DataAgentBench GAP-1).
 - **Job Kernel / event spine** — state machine + heartbeats + boot recovery + idempotency + scope
   cancellation; investigations, monitors & briefs run as first-class kernel jobs with crash-recovery (boot salvage).
 - **Real-time SSE streaming**, **resumable investigations**, **human-in-the-loop interrupt**.

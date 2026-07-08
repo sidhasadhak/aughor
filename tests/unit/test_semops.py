@@ -388,3 +388,155 @@ def test_semantic_aggregate_missing_column_is_noop(patch_provider):
 
     assert p.calls == 0
     assert "not in the result" in out.notes[0]
+
+
+# ── Guarded extraction: deterministic value validation + gleaning re-extract ──────
+
+@pytest.mark.parametrize("value,typ,valid", [
+    ("2024", "year", True), ("24", "year", False), ("two thousand", "year", False), ("", "year", True),
+    ("2024-01-31", "date", True), ("31/01/2024", "date", True), ("Jan 31, 2024", "date", True),
+    ("sometime in 2024", "date", False), ("", "date", True),
+    ("a@b.com", "email", True), ("not-an-email", "email", False),
+    ("1,234.5", "number", True), ("$99", "number", True), ("42%", "number", True),
+    ("a lot", "number", False), ("", "number", True),
+])
+def test_validate_value(value, typ, valid):
+    assert (ops._validate_value(value, typ) is None) == valid
+
+
+@pytest.mark.parametrize("name,desc,typ", [
+    ("pub_year", "publication year", "year"),
+    ("filed", "the date it was filed", "date"),
+    ("contact", "customer email address", "email"),
+    ("price", "listed price in dollars", "number"),
+    ("summary", "a one-line description", None),   # untyped free text
+])
+def test_infer_expected_type(name, desc, typ):
+    assert ops._infer_expected_type(name, desc) == typ
+
+
+def test_guarded_extract_off_by_default_no_extra_calls(patch_provider):
+    """validate=False (the default) is byte-identical to the un-guarded operator: one call, value kept."""
+    p = patch_provider(FakeProvider(extract_fn=lambda t: {"pub_year": "long ago"}))
+    qr = _qr(["blurb"], [["a classic novel"]])
+
+    out = semantic_extract(qr, "blurb", [("pub_year", "publication year")])
+
+    assert out.result.rows[0][-1] == "long ago"   # off-type value kept untouched
+    assert p.calls == 1
+    assert not any("guarded" in n for n in out.notes)
+
+
+class _BadThenGood:
+    """Returns an off-type value on the first extract, a corrected value on the re-extract round."""
+    def __init__(self, bad, good, field):
+        self.bad, self.good, self.field, self.calls = bad, good, field, 0
+
+    def complete(self, *, system, user, response_model):
+        self.calls += 1
+        items = [(int(i), t) for i, t in re.findall(r"^\[(\d+)\]\s?(.*)$", user, re.M)]
+        val = self.good if "WRONG format" in user else self.bad
+        return _ExtractBatch(rows=[_ExtractedRow(index=i, values={self.field: val}) for i, _ in items])
+
+
+def test_guarded_extract_reextracts_offtype_value(patch_provider):
+    patch_provider(_BadThenGood(bad="two thousand", good="2024", field="pub_year"))
+    qr = _qr(["blurb"], [["a classic novel"]])
+
+    out = semantic_extract(qr, "blurb", [("pub_year", "publication year")], validate=True)
+
+    assert out.result.rows[0][-1] == "2024"       # corrected by the gleaning round
+    assert out.llm_calls == 2                      # initial + one re-extract
+    assert any("re-extracted in 1 round" in n for n in out.notes)
+
+
+def test_guarded_extract_bounds_rounds_and_keeps_value(patch_provider):
+    """A value that never validates costs exactly max_rounds re-extracts and is surfaced, never dropped."""
+    patch_provider(_BadThenGood(bad="nope", good="still nope", field="pub_year"))
+    qr = _qr(["blurb"], [["x"]])
+
+    out = semantic_extract(qr, "blurb", [("pub_year", "year")], validate=True, max_rounds=1)
+
+    assert out.result.rows[0][-1] == "still nope"  # kept, not blanked
+    assert out.llm_calls == 2                       # initial + exactly one bounded round
+    assert any("still off-type" in n for n in out.notes)
+
+
+def test_guarded_extract_empty_value_is_valid_no_reextract(patch_provider):
+    """An absent (empty) field must never trigger a re-extract — we don't pressure invention."""
+    p = patch_provider(FakeProvider(extract_fn=lambda t: {"pub_year": ""}))
+    qr = _qr(["blurb"], [["no year here"]])
+
+    out = semantic_extract(qr, "blurb", [("pub_year", "year")], validate=True)
+
+    assert out.result.rows[0][-1] == ""
+    assert p.calls == 1                              # no corrective round
+    assert out.llm_calls == 1
+
+
+def test_guarded_extract_untyped_field_skips_validation(patch_provider):
+    """A purely textual field infers no type, so validate=True is a no-op (no extra calls)."""
+    p = patch_provider(FakeProvider(extract_fn=lambda t: {"summary": "whatever"}))
+    qr = _qr(["blurb"], [["some prose"]])
+
+    out = semantic_extract(qr, "blurb", [("summary", "a short description")], validate=True)
+
+    assert p.calls == 1
+    assert not any("guarded" in n for n in out.notes)
+
+
+def test_apply_step_threads_validate_flag(patch_provider):
+    patch_provider(_BadThenGood(bad="two thousand", good="2024", field="pub_year"))
+    qr = _qr(["blurb"], [["a novel"]])
+
+    out = apply_step(qr, "extract", "blurb", fields=[("pub_year", "publication year")], validate=True)
+
+    assert out.result.rows[0][-1] == "2024"
+    assert out.llm_calls == 2
+
+
+# ── Champion cascade on semantic_filter (Rec 5 / Palimpzest-LOTUS lineage) ─────────
+
+def _patch_by_role(monkeypatch, cheap, champion):
+    """get_provider('coder') -> champion, anything else -> cheap."""
+    monkeypatch.setattr(ops, "get_provider", lambda role="fast", **kw: champion if role == "coder" else cheap)
+
+
+def _alt_rows(n=10):
+    """Rows where even indices say 'keep', odd say 'drop'."""
+    return [[f"keep {i}"] if i % 2 == 0 else [f"drop {i}"] for i in range(n)]
+
+
+def test_champion_cascade_off_by_default_no_champion_calls(monkeypatch):
+    cheap = FakeProvider(filter_fn=lambda t: True)              # cheap keeps everything
+    champ = FakeProvider(filter_fn=lambda t: "keep" in t)
+    _patch_by_role(monkeypatch, cheap, champ)
+
+    out = semantic_filter(_qr(["note"], _alt_rows()), "note", "keepers")   # validate_sample=0 default
+
+    assert out.result.row_count == 10       # cheap verdict stands, byte-identical to before
+    assert champ.calls == 0                  # champion never consulted
+
+
+def test_champion_cascade_agreement_trusts_cheap(monkeypatch):
+    cheap = FakeProvider(filter_fn=lambda t: "keep" in t)
+    champ = FakeProvider(filter_fn=lambda t: "keep" in t)       # agrees with cheap on the sample
+    _patch_by_role(monkeypatch, cheap, champ)
+
+    out = semantic_filter(_qr(["note"], _alt_rows()), "note", "keepers", validate_sample=8)
+
+    assert out.result.row_count == 5         # the correct "keep" rows
+    assert champ.calls == 1                  # one sample-validation call, no escalation
+    assert any("trusted" in n for n in out.notes)
+
+
+def test_champion_cascade_disagreement_escalates(monkeypatch):
+    cheap = FakeProvider(filter_fn=lambda t: True)             # cheap is wrong: keeps all
+    champ = FakeProvider(filter_fn=lambda t: "keep" in t)      # champion is right
+    _patch_by_role(monkeypatch, cheap, champ)
+
+    out = semantic_filter(_qr(["note"], _alt_rows()), "note", "keepers", validate_sample=8)
+
+    assert out.result.row_count == 5         # escalation applied the champion's correct verdicts
+    assert champ.calls == 2                  # sample + full-batch escalation
+    assert any("escalated" in n for n in out.notes)

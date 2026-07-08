@@ -620,6 +620,7 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
             try:
                 from aughor.semops.operators import apply_step, detect_text_columns
                 if step.column in detect_text_columns(r):
+                    from aughor.kernel.flags import flag_enabled
                     op = apply_step(
                         r, step.operator, step.column,
                         predicate=(step.predicate or ""),
@@ -627,6 +628,7 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
                         criterion=(getattr(step, "criterion", "") or ""),
                         k=getattr(step, "k", 10),
                         instruction=(getattr(step, "instruction", "") or ""),
+                        validate=flag_enabled("semops.guarded_extract"),
                     )
                     r = op.result
                     _s.inc("ada.semantic_steps_applied")

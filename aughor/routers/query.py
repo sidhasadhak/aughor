@@ -193,6 +193,7 @@ async def query_semantic(body: _SemanticOpRequest):
                 tolerate(_e, "query/semantic: best-effort connection close", counter="query.semantic.close_failed")
         if base.error:
             return None, base
+        from aughor.kernel.flags import flag_enabled
         op = apply_step(
             base, body.operator, body.column,
             predicate=body.predicate or "",
@@ -203,6 +204,8 @@ async def query_semantic(body: _SemanticOpRequest):
             out_column=body.out_column,
             max_rows=body.max_rows,
             override_cap=body.override_cap,
+            validate=flag_enabled("semops.guarded_extract"),
+            validate_sample=8 if flag_enabled("semops.champion_validate") else 0,
         )
         return op, base
 
@@ -230,6 +233,160 @@ async def query_semantic(body: _SemanticOpRequest):
         "truncated": op.truncated,
         "notes": op.notes,
         "llm_calls": op.llm_calls,
+    }
+
+
+class _CrossSourceJoinRequest(BaseModel):
+    left_conn_id: str
+    left_sql: str
+    left_key: str
+    right_conn_id: str
+    right_table: str
+    right_key: str
+    how: Literal["inner", "left"] = "inner"
+    right_cols: Optional[list[str]] = None
+
+
+@router.post("/query/cross-source-join")
+async def query_cross_source_join(body: _CrossSourceJoinRequest):
+    """Join a result from ONE connection to a table on ANOTHER, N+1-free (batched foreach).
+
+    The direct entry point for cross-source joins (the Rec 2 engine); the federated planner targets
+    the same `cross_source_join`. Flag-gated on `federation.remote_join` (default off → 404). The
+    left SQL goes through the same safety gate as the Query Builder."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("federation.remote_join"):
+        raise HTTPException(status_code=404, detail="cross-source join is not enabled")
+    for field in ("left_conn_id", "left_sql", "left_key", "right_conn_id", "right_table", "right_key"):
+        if not (getattr(body, field) or "").strip():
+            raise HTTPException(status_code=400, detail=f"{field} is required")
+
+    from aughor.db.connection import gate_user_sql
+    if (blocked := gate_user_sql(body.left_conn_id, "cross_source_join", body.left_sql)) is not None:
+        return {"columns": [], "rows": [], "row_count": 0, "sql": body.left_sql, "error": blocked.error}
+
+    from aughor.connectors.remote_join import cross_source_join
+
+    reconcile = flag_enabled("join.key_reconciliation")   # self-heal ill-formatted cross-source keys (Rec 3)
+
+    def _work():
+        return cross_source_join(
+            body.left_conn_id, body.left_sql, body.left_key,
+            body.right_conn_id, body.right_key,
+            right_table=body.right_table, how=body.how,
+            right_cols=body.right_cols, reconcile=reconcile,
+        )
+
+    loop = asyncio.get_running_loop()
+    try:
+        res = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"columns": res.columns, "rows": res.rows, "row_count": res.row_count,
+            "sql": res.sql, "error": res.error}
+
+
+class _FederatedAnswerRequest(BaseModel):
+    question: str
+    conn_ids: list[str]                        # two or more sources; the planner picks the driver + order
+    reconcile: Optional[bool] = None           # None → follow the join.key_reconciliation flag
+
+
+@router.post("/query/federated-answer")
+async def query_federated_answer(body: _FederatedAnswerRequest):
+    """Answer a natural-language question that spans TWO OR MORE connections (Rec 2, Stage 3).
+
+    One LLM call grounds every schema and emits a structured plan (an ordered list of grounded
+    per-source sub-queries + link keys — the planner also picks the driver and chain order); the plan
+    is validated deterministically and folded through the batched-foreach engine. Returns the merged
+    result plus the plan and any validation issues (inspectable). Flag-gated on `federation.planner`
+    (default off → 404)."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("federation.planner"):
+        raise HTTPException(status_code=404, detail="federated planner is not enabled")
+    if not body.question.strip():
+        raise HTTPException(status_code=400, detail="question is required")
+    if len(body.conn_ids) < 2:
+        raise HTTPException(status_code=400, detail="at least two conn_ids are required")
+
+    from aughor.agent.federated_planner import answer_federated
+    reconcile = body.reconcile if body.reconcile is not None else flag_enabled("join.key_reconciliation")
+
+    def _work():
+        return answer_federated(body.question, body.conn_ids, reconcile=reconcile)
+
+    loop = asyncio.get_running_loop()
+    try:
+        ans = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    r = ans.result
+    return {
+        "columns": r.columns, "rows": r.rows, "row_count": r.row_count, "sql": r.sql, "error": r.error,
+        "plan": ans.plan.model_dump() if ans.plan else None,
+        "issues": ans.issues,
+    }
+
+
+class _AutoFederatedRequest(BaseModel):
+    question: str
+    conn_ids: list[str]                        # candidate pool — the selector picks the subset the question spans
+    reconcile: Optional[bool] = None
+
+
+@router.post("/query/auto-federated-answer")
+async def query_auto_federated_answer(body: _AutoFederatedRequest):
+    """Answer a question WITHOUT being told which connections it spans (Rec 2, answer-path).
+
+    A deterministic selector (lexical schema-relevance + greedy set-cover — no LLM) picks the subset of
+    the candidate connections the question touches, then the federated planner answers over exactly those.
+    Returns the answer plus the `selection` (which connections and the terms each grounded) so the routing
+    is inspectable. Flag-gated on `federation.planner` (default off → 404)."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("federation.planner"):
+        raise HTTPException(status_code=404, detail="federated planner is not enabled")
+    if not body.question.strip():
+        raise HTTPException(status_code=400, detail="question is required")
+    if len(body.conn_ids) < 2:
+        raise HTTPException(status_code=400, detail="at least two candidate conn_ids are required")
+
+    from aughor.agent.connection_selector import select_connections
+    from aughor.agent.federated_planner import answer_federated
+    reconcile = body.reconcile if body.reconcile is not None else flag_enabled("join.key_reconciliation")
+
+    def _work():
+        sel = select_connections(body.question, body.conn_ids)
+        # Only a genuinely cross-source question goes to the federated (multi-DB) planner. A single-source
+        # or zero-relevance question must NOT be handed to a planner prompted for cross-database joins.
+        if not sel.conn_ids or not sel.multi_source:
+            return sel, None
+        return sel, answer_federated(body.question, sel.conn_ids, reconcile=reconcile)
+
+    loop = asyncio.get_running_loop()
+    try:
+        sel, ans = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    selection = {"conn_ids": sel.conn_ids, "matched": sel.matched, "multi_source": sel.multi_source}
+    if not sel.conn_ids:
+        raise HTTPException(status_code=422, detail="no candidate connection is relevant to the question")
+    if not sel.multi_source:
+        # Honest routing: the question sits in one source — the caller should answer it via the normal path.
+        return {
+            "single_source": True, "selection": selection,
+            "columns": [], "rows": [], "row_count": 0, "sql": "", "error": None,
+            "plan": None, "issues": [],
+            "message": f"single-source question — answer connection {sel.conn_ids[0]} via the normal query path",
+        }
+
+    r = ans.result
+    return {
+        "single_source": False,
+        "columns": r.columns, "rows": r.rows, "row_count": r.row_count, "sql": r.sql, "error": r.error,
+        "plan": ans.plan.model_dump() if ans.plan else None,
+        "issues": ans.issues,
+        "selection": selection,
     }
 
 

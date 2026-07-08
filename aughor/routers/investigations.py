@@ -2672,6 +2672,92 @@ async def investigate(req: InvestigateRequest, request: Request):
     )
 
 
+def _federation_eligible(req) -> bool:
+    """Whether a ``/ask`` turn may auto-federate: only a truly FRESH auto turn qualifies — not a depth
+    override, deep-drill, dossier, canvas follow-up, conversational follow-up (``history``), or a
+    clarify-answer (``skip_clarify``). Follow-ups compose on the prior turn via the normal path, and a
+    clarify-answer carries a refinement the federated planner wouldn't see — so federation is first-turn
+    only. Flag-gated on ``federation.planner`` (default off), checked first for the short-circuit."""
+    from aughor.kernel.flags import flag_enabled
+    return bool(
+        flag_enabled("federation.planner") and req.depth == "auto"
+        and not req.deep and not req.insight_id and not req.canvas_id
+        and not req.history and not req.skip_clarify
+    )
+
+
+def _federation_candidates(conn_id: str, cap: int = 15) -> list[str]:
+    """Org-visible connection ids (the current one first) — the candidate pool for cross-source
+    selection on the ``/ask`` path. Bounded so a large connection roster can't blow up the selector."""
+    from aughor.db.registry import list_connections
+    try:
+        from aughor.security.authz import org_visible_conn_ids
+        visible = org_visible_conn_ids()
+    except Exception:
+        visible = None
+    ids: list[str] = [conn_id] if conn_id else []
+    for c in list_connections():
+        cid = c.get("id")
+        if not cid or cid in ids:
+            continue
+        if visible is not None and cid not in visible:
+            continue
+        ids.append(cid)
+    return ids[:cap]
+
+
+def _conn_names(conn_ids: list[str]) -> list[str]:
+    from aughor.db.registry import list_connections
+    by_id = {c.get("id"): (c.get("name") or c.get("id")) for c in list_connections()}
+    return [by_id.get(cid, cid) for cid in conn_ids]
+
+
+async def _stream_federated(question: str, sel) -> AsyncGenerator[str, None]:
+    """Answer a cross-source question via the federated planner and stream it as ``/ask`` events.
+
+    Emits a federated ``route`` receipt (transparency: which sources, and the terms each grounded),
+    then the merged table using the same primitives the quick path uses (columns/rows/headline/sql/
+    tables_used), so it renders in the existing answer surface."""
+    from aughor.agent.federated_planner import answer_federated
+    from aughor.kernel.flags import flag_enabled
+
+    names = _conn_names(sel.conn_ids)
+    yield _sse("route", {
+        "depth": "federated", "mode": "federated", "tier": "complex",
+        "score": 1.0, "confidence": 1.0, "ambiguous": False,
+        "why": f"Question spans {len(sel.conn_ids)} sources ({', '.join(names)}); answering across them.",
+        "alternatives": ["quick"], "forced": None, "downgraded_from": None,
+        "sources": sel.conn_ids, "matched": sel.matched,
+    })
+    # answer_federated catches planning errors and the engine is fail-safe, but a stale conn id (deleted
+    # between selection and execution) could still raise on open — never let that break the /ask stream.
+    try:
+        ans = await asyncio.to_thread(
+            answer_federated, question, sel.conn_ids, reconcile=flag_enabled("join.key_reconciliation"),
+        )
+        r = ans.result
+    except Exception as exc:  # noqa: BLE001 — the stream must always end cleanly
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "federated answer failed after routing; stream an honest error",
+                 counter="ask.federation_answer_failed")
+        yield _sse("headline", {"headline": f"Cross-source answer failed — {str(exc)[:120]}"})
+        yield _sse("done", {})
+        return
+    if r.error:
+        yield _sse("headline", {"headline": f"Cross-source answer unavailable — {r.error}"})
+        yield _sse("done", {})
+        return
+    streamed = r.rows[:10000]
+    more = f" (showing first {len(streamed):,})" if r.row_count > len(streamed) else ""
+    yield _sse("columns", {"columns": r.columns})
+    yield _sse("rows", {"rows": streamed})
+    yield _sse("headline",
+               {"headline": f"Answered across {len(names)} sources ({', '.join(names)}) — {r.row_count:,} rows{more}."})
+    yield _sse("sql", {"sql": r.sql})
+    yield _sse("tables_used", {"tables": names})
+    yield _sse("done", {})
+
+
 async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> AsyncGenerator[str, None]:
     """The unified door: decide depth, emit the `route` receipt, then delegate to the
     existing quick (Insight) or deep (ADA/explore) body unchanged.
@@ -2715,6 +2801,27 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         if decision.should_ask:
             yield _sse("clarify", decision.to_event())
             yield _sse("done", {})
+            return
+
+    # Cross-source federation (Rec 2 answer-path): on a fresh auto turn, if the question spans MULTIPLE of
+    # the org's connections, answer across them via the federated planner instead of the single-connection
+    # path. A deterministic selector (no LLM) decides; only a genuinely multi-source question federates.
+    # Flag-gated on `federation.planner` → default off = byte-identical. Fail-safe: any error falls through
+    # to the normal routing below.
+    if _federation_eligible(req):
+        try:
+            from aughor.agent.connection_selector import select_connections
+            candidates = _federation_candidates(conn_id)
+            sel = (await asyncio.to_thread(select_connections, req.question, candidates)
+                   if len(candidates) >= 2 else None)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "cross-source selection is best-effort; fall through to single-connection",
+                     counter="ask.federation_select_failed")
+            sel = None
+        if sel is not None and sel.multi_source:
+            async for _ev in _stream_federated(req.question, sel):
+                yield _ev
             return
 
     has_deep = has_capability(Capability.DEEP_ANALYSIS, conn_id=conn_id)

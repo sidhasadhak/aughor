@@ -8,6 +8,182 @@ with baseline, file:line anchors, the Spider2 runbook, gates, and a progress log
 ROADMAP §0 (top block) + §3 ("The 10x + Spider 2.0 program") mirror it at-a-glance.
 User-confirmed 2026-07-06: glm-5.2 via Ollama Cloud is THE campaign model; Snowflake access ready.
 
+## Compounding-substrate map (2026-07-07, for the paradigm-shift study)
+Aughor has FOUR partially-connected compounding stores, none executable/composable:
+- `playbook/models.py::PlaybookEntry` — trigger→recommendation TEXT + `historical_success_rate`
+  (updated by `outcomes.py::update_playbook_success_rates`) — a proto-skill, advisory only.
+- `semantic/trusted_queries.py::TrustedQuery` — flat trusted-SQL strings, token-overlap retrieval top-k 2.
+- `ontology/models.py` — the genuinely rich WORLD MODEL (verified ComputedProperty.formula_sql,
+  ObjectSet.filter_sql, grain_verified, null_meaning, measure_grain) — verified but declarative-only.
+- `semantic/ambiguity_ledger.py` — per-connection resolution priors.
+Gap a skill-library idea would fill: parameterized, EXECUTABLE, verified, composable analytical
+procedures that accumulate per warehouse — today's stores hold text + SQL strings, not procedures.
+
+## External-source study (2026-07-07) — DocETL · Palimpzest · Hasura/PromptQL · DAB
+User redirected mid-session: study Palimpzest, Hasura graphql-engine, PromptQL, + 2 papers
+(DocETL 2410.12189, DataAgentBench 2603.20576) and extract iterable features to improve Aughor.
+**The four sources CONVERGE on Aughor's own thesis** — a declarative plan separated from
+deterministic execution, LLM non-determinism confined to small bounded *validated* ops. So they
+validate the direction and hand Aughor specific unbuilt mechanisms. Full briefs captured in the
+session; key transfers, ranked:
+- **DocETL gleaning** (validate→refine loop, `num_rounds`, append-validator-to-thread) → the text
+  semops, which today do single-call fail-open with ZERO validation. ✅ SHIPPED (below).
+- **Palimpzest**: `convert(χ)` as a first-class optimizable operator; **champion-model reference-free
+  quality estimation** (rank cheap-op output vs a strong model on a sample, no labels); policy-driven
+  per-op physical choice (model/code-synth/token-reduction); MAB sentinel sampling → Pareto frontier.
+- **Hasura NDC**: capability-negotiated connector contract; **batched foreach remote joins** (dedup keys
+  → one keyed request per remote node, N+1-free); cross-source filter → OR-of-equalities pushed to one
+  WHERE; declarative row/col perms compiled INTO the predicate.
+- **PromptQL**: plan-as-Python-program (run_sql/search/classify/summarize/extract + store_artifact),
+  deterministic replay, **artifacts = structured working memory** (never re-feed raw rows to context).
+  100% on CRMArena-Pro DB-querying vs ~58% agent-loop; +7pt over ReAct on DAB via the context layer.
+- **DAB** (the frontier bench, Gemini-3-Pro 38% pass@1): 4 hard axes by query count — multi-DB 54/54 ·
+  **unstructured-text extraction 47/54 (0% on patents, the wedge)** · domain-knowledge 30/54 ·
+  ill-formatted join keys 26/54. Failures: plan+impl = 85% (FM2 40 + FM4 45), data-selection only 15%.
+  Aughor already owns axis-4 (ontology/metrics) + has the right shape for axis-3 (overlap-probe join
+  guards, single-DB today). Aughor already has a THIN `connectors/federated.py` (DuckDB ATTACH/Arrow).
+Decision (mine, pending user scope pick on the bigger bets): ship the no-regret wedge first
+(guarded extraction = DAB GAP-2), then present the ranked roadmap for the big directional bets
+(cross-DBMS federated planner / plan-as-program+artifacts / cross-source key reconciliation).
+
+## ◑ IN PROGRESS — Rec 2 cross-source federation (branch `2026-07-07-guarded-extraction`)
+Staged (XL). **Stage 1 ✅ SHIPPED:** `aughor/connectors/remote_join.py` — `batched_foreach_join(left,
+left_key, right_conn, right_table, right_key, how=inner|left)`: dedups left keys, one `WHERE right_key IN
+(...)` query PER KEY-CHUNK to the right conn (N+1-free, Hasura NDC pattern), hash-join in memory. Bounded
+(chunk 1000 / 100k right / 50k out), injection-safe (escaped literals), fail-safe (any error → left result
+unchanged). `cross_source_join(...)` = by-connection-id wrapper the planner/API will call. Complements
+`federated.py` (DuckDB ATTACH when co-located; batched-foreach for true cross-engine). 7 tests (two real
+in-memory DuckDB conns + counting wrapper proving 1 query for 5 rows/2 keys, and 3 queries for 5 keys/chunk 2).
+**Stage 2 ✅ SHIPPED:** `POST /query/cross-source-join` (`routers/query.py`, flag `federation.remote_join` /
+`AUGHOR_FEDERATION_REMOTE_JOIN`, default off → 404) calls `cross_source_join`; left SQL runs through
+`gate_user_sql`. 3 integration tests (404-when-off, end-to-end join across two registered DuckDB files,
+field-validation 400). Suite 2708 green. **Stage 2b ✅ SHIPPED:** self-healing keys in `remote_join.py` —
+when raw match rate < 0.15 and `reconcile=True`, retry under PAIRED normalizations (Python fn on materialized
+left keys + equivalent SQL expr on the right key: digits/strip_prefix/trim_lower/strip_zeros/alnum_lower),
+adopt the first reaching ≥0.60 match AND ≥+0.30 gain. Refactored the primitive into `_fetch_right` (projects
+`{jk_expr} AS __jk`, one path for raw+normalized) + `_hash_join` + `_try_reconcile`. Endpoint passes
+`reconcile=flag_enabled("join.key_reconciliation")` (same flag as Rec 3 — the cross-source twin). 3 tests
+(raw misses bid_N↔bref_N, reconcile heals to 3 rows, disjoint C00x↔CMPx doesn't false-reconcile). Suite
+**2711 green**. **Stage 3 ✅ SHIPPED:** `aughor/agent/federated_planner.py` — `answer_federated(question, left_id, right_id)`:
+ONE LLM call → `FederatedPlan{left/right FederatedSide(sql, join_key), how}` grounded on both `get_schema()`;
+`validate_plan` executes each sub-query as `SELECT * FROM (sql) AS _t LIMIT 0` and checks the join_key is an
+output column (bad plan → issues, NO execution); then `cross_source_join(..., right_sql=plan.right.sql)`.
+Engine extended: `batched_foreach_join`/`cross_source_join` now take `right_table` OR `right_sql` (keyword;
+`from_clause` = `(subquery) AS __rt` or quoted table) — the right side can be a grounded sub-query. Endpoint
+`POST /query/federated-answer` (flag `federation.planner` / `AUGHOR_FEDERATION_PLANNER`, default off → 404),
+returns merged result + the plan (inspectable) + issues. 6 tests (fake planner LLM + 2 real registered DuckDB
+sources). Suite 2718 green. v1 = exactly 2 sources, conn_ids[0] drives. N-source/driver-selection/answer-path
+integration are follow-ups.
+**✅ REVIEW DONE** (fresh-eyes agent, build-wire-test-review): 6 findings, 5 fixed (suite **2719 green**):
+#3 numeric cross-type keys (`_canon_key` strips trailing fractional zeros → INT 101 joins DOUBLE 101.0);
+#6 right-query error now returns an honest error result, not silent left rows posing as a successful inner
+join; #5 `_qident` now escapes embedded quotes (was passthrough); #4 planner's LLM SQL now gated through
+`gate_user_sql`; #1/#2 the connector's 500-row `execute()` cap (a deliberate API bound) — surfaced as a
+`PARTIAL: left driver capped at N of M rows` note instead of silently truncating (not raised: the global cap
+is out of scope to change here). Verified the 5 reconcile Python/SQL transform pairs agree byte-for-byte
+(0/60 mismatches on edge keys).
+**✅ FOLLOW-UP — per-source 500-row cap LIFTED** (2026-07-08): added `execute_bounded(hyp, sql, max_rows)`
+to the connection ABC (default → `execute`, i.e. unchanged/capped for connectors that don't override) with
+real overrides on DuckDB (`rows[:max_rows]`) and Postgres (`fetchmany(max_rows)`) — refactored both
+`execute` bodies into a shared `_run(hyp, sql, max_rows)`. The federation engine now reads the LEFT driver
+(≤`_MAX_OUT_ROWS` 50k) and each keyed right fetch (≤`_MAX_RIGHT_ROWS` 100k) via `execute_bounded`, so joins
+are no longer silently truncated at 500 (other connectors still cap → flagged PARTIAL). 2 tests (700-row
+right unit + 600-row end-to-end driver). Suite 2721 green. Core-layer change, whole suite unaffected.
+**✅ FOLLOW-UP — N-source + driver auto-selection** (2026-07-08): `federated_planner.py` IR generalized to
+`FederatedPlan{steps: list[FederatedStep{source:int, sql, join_key, left_key, how}]}`; steps[0]=driver
+(no left_key), each later step joins its source onto the assembled result on a key already present.
+`answer_federated(question, conn_ids: list)` folds the steps through `batched_foreach_join`; `validate_plan`
+tracks assembled columns (left_key must be present) + source-index range. Planner picks step order ⇒ driver
+auto-selection falls out. Endpoint `/query/federated-answer` now takes ≥2 conn_ids. 8 tests incl. a real
+3-source chain (orders→region→manager). Suite 2723 green.
+**✅ N-source REVIEW DONE** (fresh-eyes agent): root cause of #1/#2 (HIGH) — `validate_plan` predicted
+assembled columns with RAW names while the engine `_uniquify`s right-side collisions + `_idx` first-match,
+so validation ran against a phantom schema once a column name repeats across sources. FIXED: validate_plan
+now imports the engine's `_uniquify` and models the assembled schema EXACTLY (added a 3-source collision-chain
+test that validates faithfully AND joins correctly — note: a join-KEY collision is harmless anyway since the
+join makes those columns equal). #3 driver-dup-columns: non-issue on DuckDB (auto-renames k→k_1); kept a
+defensive `len!=len(set)` check for connectors that surface true dupes (Postgres). #4 (empty mid-fold drops
+downstream schema) + #5 (same-named table across sources not detected) documented as known v1 limits (neither
+returns wrong NON-empty data). Reviewer verified SOUND: forward-ref rejection, gating completeness, fail-safe
+degradation. Suite **2724 green**. **ANSWER-PATH INTEGRATION deferred BY DESIGN:** needs cross-source
+connection SELECTION (which connections does an NL question span?) — a genuine new capability, not plumbing.
+Rec 2 BACKEND COMPLETE (build-wire-test-review, twice).
+**✅ ANSWER-PATH — deterministic connection SELECTION** (2026-07-08): `agent/connection_selector.py` —
+`select_connections(question, candidates)` = lexical schema-term bag per connection ∩ question content terms
+→ greedy set-cover picks the smallest spanning set (driver = highest coverage). NO LLM (deterministic-first;
+LLM stays in the downstream plan). `_terms` tokenizer: ≥3-char letter-initial, crude singularize (orders↔order),
+stopword filler ONLY (kept "order"/"count"/"total" — they're real entity names; dropping them blinds the
+selector). `POST /query/auto-federated-answer` {question, conn_ids=candidate pool} → select → answer_federated
+over the subset; returns `selection{conn_ids, matched, multi_source}`. 9 tests (pure set-cover+tokenizer +
+schema-relevance dropping an irrelevant source + end-to-end select-then-join over 3 registered DuckDB sources).
+Suite 2733 green.
+**✅ SELECTOR REVIEW DONE** (fresh-eyes): 2 HIGH (same shape: `multi_source` computed but never routed on),
+both fixed — (#1) endpoint now branches on `multi_source`: single-source returns an honest routing response
+(`single_source:true`, no rows) instead of feeding a 1-source question to the cross-DB planner prompt; (#2)
+`_greedy_select` returns `[]` when NO candidate grounds any term (was an arbitrary source), so the 422 is now
+reachable. Added 2 endpoint tests (single-source-not-federated, 422-nothing-relevant) + greedy-all-empty
+assertion. #3 (uncached serial get_schema), #4 (irregular plurals miss), #5 (bridge nouns) documented as known
+selection-quality/perf limits (not correctness). Reviewer verified SOUND: dedup/subset-exclusion/minimality/
+determinism/fail-open. Suite 2735 green.
+**✅ `/ask` AUTO-FEDERATION (final piece)** (2026-07-08): `routers/investigations.py::_stream_ask` — on a
+fresh auto turn (not deep/insight/canvas), behind `federation.planner` (default off = byte-identical), gathers
+`_federation_candidates(conn_id)` (org-visible, current-first, cap 15), runs `select_connections` off the loop
+(`asyncio.to_thread`), and if `multi_source` streams `_stream_federated` (route receipt naming sources + merged
+table via the SAME columns/rows/headline/sql/tables_used events the quick path uses → renders in existing
+surface). Fail-safe: selection error → `tolerate` → falls through to single-connection path. Placed AFTER the
+clarify gate. 5 unit tests (candidate gathering + org-visibility filter + cap; federated emission + error path).
+Suite 2740 green (flag-off byte-identical proven by all existing /ask tests passing).
+**✅ /ask REVIEW DONE** (fresh-eyes): #1 (HIGH) answer_federated could raise mid-stream (stale conn TOCTOU) →
+FIXED (already had wrapped it proactively: try/except in `_stream_federated` → honest error headline + done,
+never breaks the stream). #2 (HIGH) follow-up turns hijacked + lose history → FIXED: extracted
+`_federation_eligible(req)` and tightened the guard with `not req.history and not req.skip_clarify` — federation
+is FIRST-TURN ONLY (follow-ups compose via the normal path; clarify-answers keep their refinement). #3 (MED
+clarify-answer) folded into the same guard fix. #5 (LOW) headline reported full row_count while streaming ≤10k →
+FIXED ("N rows (showing first 10,000)"). #4 (hot-path: N get_schema per fresh auto question when flag ON) —
+documented/acceptable (off-loaded via to_thread, default-off). #6 (may federate excluding current conn) —
+acceptable (route receipt names sources). Reviewer verified SOUND: byte-identical-off, selection fail-safe,
+single-source fall-through, done-termination, rows-capped. 4 new tests (guard predicate + answer-raise survival).
+Suite **2744 green**. **Rec 2 COMPLETE end-to-end (build-wire-test-review).**
+SIGNATURE NOTE: `batched_foreach_join` moved `right_table` to keyword-only (was positional) — all callers +
+the 11 unit-test calls updated.
+
+## ✅ SHIPPED — Champion cascade on semantic_filter (Rec 5, branch `2026-07-07-guarded-extraction`)
+Palimpzest/LOTUS label-free quality estimator. `semops/operators.py`: extracted the filter batch loop into
+`_filter_verdicts(rows, ci, pred, provider, batch, indices)`; `semantic_filter` gains `validate_sample=`/
+`champion_role=` — runs cheap `fast` tier, re-judges an evenly-spread sample on the strong `coder` champion,
+and if sample disagreement > 20% escalates the WHOLE batch to the champion (else trusts cheap). Flag
+`semops.champion_validate` / `AUGHOR_SEMOPS_CHAMPION_VALIDATE`, default off = byte-identical (champion branch
+skipped). Wired in `routers/query.py` (validate_sample=8 when on). NOTE: Role literal is coder/narrator/fast
+(NO "reasoner") — champion = "coder". 3 tests, suite **2698 green**, ruff 0. Follow-on: the full LOTUS
+calibrated-threshold cascade with (precision,recall,δ) GUARANTEES is the principled successor (see the deeper
+2026-07-08 research pass) — this ships the tractable estimator first.
+
+## ✅ SHIPPED — Ill-formatted key reconciliation (Rec 3, branch `2026-07-07-guarded-extraction`)
+DAB GAP-3 (26/54). `aughor/sql/join_guard.py`: when the value-domain guard flags a low-overlap join,
+`reconcile_join_keys` tries deterministic DuckDB normalizations (trim+lower/digits/strip-prefix/strip-zeros/
+alnum-lower) on both keys, re-probes overlap direction-aware, and if one lifts to ≥0.60 AND ≥+0.30 over raw,
+attaches a `KeyReconciliation` to the `JoinDomainWarning` — `to_prompt_text()` then surfaces the exact
+`ON regexp_replace(...) = regexp_replace(...)` to join on. Distinguishes bid_123↔bref_123 (reconciles) from
+truly disjoint entities (C00x↔CMPx, no transform helps). Flag `join.key_reconciliation` /
+`AUGHOR_JOIN_KEY_RECONCILIATION`, default off = byte-identical (recon=None → original message). Only runs when
+a mismatch already fired (rare), breaks on first strong hit, fail-open. 6 tests, suite **2695 green**, ruff 0.
+NOTE: probe is DuckDB-syntax (USING SAMPLE + regexp_replace) — works on DuckDB + the FederatedConnection
+(the cross-source surface), fails-open on other dialects exactly like the base probe.
+
+## ✅ SHIPPED this session — Guarded extraction (branch `2026-07-07-guarded-extraction`, `c07c445`)
+DocETL-gleaning on `semops/operators.py::semantic_extract`: infer a type (year/date/email/number) from
+each field's name/desc, deterministically validate extracted values, re-extract off-type cells with
+targeted feedback for `max_rounds`, surface+keep residuals (never drop — fail-open contract holds).
+Flag `semops.guarded_extract` (`AUGHOR_GUARDED_EXTRACT`), default off = byte-identical; wired into both
+live callers (`routers/query.py::query_semantic` + `agent/investigate.py` ADA semantic step). 12 tests,
+full suite **2690 green**, ruff 0. This is the deterministic-guard-over-LLM answer to the axis where
+every frontier model scores 0%.
+
+## Baseline (main @ 879fbee, 2026-07-07 — session 2)
+- Full suite `uv run pytest -q -m "not e2e and not eval" -p no:cacheprovider`: **2663 passed, 1 skipped, 6 deselected in 89.2s** (green; grew +155 from the 2508 in the prior baseline).
+- Ruff (`uvx ruff@0.15.20 check .`): **0**. LOC: aughor/ 83,386 py · tests/ 31,002.
+- Note: `timeout` is not on this macOS — don't wrap pytest in it.
+
 ## Baseline (main @ 7d13abe, 2026-07-05)
 - Full suite `uv run pytest -q -m "not e2e and not eval"`: **2508 passed, 1 skipped, 6 deselected in 97s** (green — the memory claim "2 TestRatchets RED on main" is STALE).
 - Ruff: 0. Web `npx tsc --noEmit`: 3.1s.
