@@ -210,6 +210,92 @@ def _probe_pair(conn, t1, c1, t2, c2, table_rows, hll_min_rows) -> float | None:
     return max(overlaps) if overlaps else None
 
 
+# ── Ill-formatted join-key reconciliation (DataAgentBench GAP-3) ─────────────────────
+# When two join keys have LOW raw value overlap they may still refer to the SAME entity
+# under a formatting skew — a differing prefix (bid_123 vs bref_123), whitespace, case, or
+# leading zeros — the #3 hard axis in DataAgentBench (26/54 queries). This tries a small,
+# fixed set of DETERMINISTIC normalizations on both keys, re-probes overlap under each, and
+# — if one lifts overlap over a "reconciled" bar — surfaces the exact normalization to join
+# on. It distinguishes "same entity, different format" (a transform reconciles → actionable
+# repair) from "genuinely different entities" (nothing reconciles → the mismatch stands).
+# Deterministic, monotonic (only ever ADDS a suggestion), fail-open, gated on
+# `join.key_reconciliation`. DuckDB expression syntax — matches the existing probe (which is
+# DuckDB-centric; both fail open on dialects that reject the sample/regexp syntax), which is
+# exactly the cross-source federation surface (a FederatedConnection is DuckDB).
+
+# name → (human label, DuckDB expression template over {col})
+_KEY_TRANSFORMS: list[tuple[str, str, str]] = [
+    ("trim_lower",   "trimmed + lowercased",                  "lower(trim(CAST({col} AS VARCHAR)))"),
+    ("digits",       "digits only",                           "regexp_replace(CAST({col} AS VARCHAR), '[^0-9]', '', 'g')"),
+    ("strip_prefix", "leading letters/underscores stripped",  "regexp_replace(CAST({col} AS VARCHAR), '^[A-Za-z_]+', '')"),
+    ("strip_zeros",  "leading zeros stripped",                "regexp_replace(trim(CAST({col} AS VARCHAR)), '^0+', '')"),
+    ("alnum_lower",  "alphanumerics only, lowercased",        "lower(regexp_replace(CAST({col} AS VARCHAR), '[^A-Za-z0-9]', '', 'g'))"),
+]
+
+# A transform must lift overlap to at least this, AND by at least _RECONCILE_MIN_GAIN over the
+# raw overlap, to count — so a marginal coincidence never masquerades as a reconciliation.
+_RECONCILE_MIN_OVERLAP = 0.60
+_RECONCILE_MIN_GAIN    = 0.30
+
+
+@dataclass
+class KeyReconciliation:
+    transform: str
+    label: str
+    expr_a: str     # DuckDB expression to normalize side A's key
+    expr_b: str     # ... and side B's key
+    overlap: float  # reconciled overlap under the transform
+
+
+def _probe_overlap_expr(conn, table_a: str, expr_a: str, table_b: str, expr_b: str) -> float | None:
+    """Containment of transformed A-values in transformed B-values (empty/NULL results ignored).
+
+    Returns None on any failure (fail-open)."""
+    try:
+        ta, tb = _quote_table(table_a), _quote_table(table_b)
+        probe_sql = f"""
+WITH s_a AS (
+    SELECT DISTINCT {expr_a} AS v FROM {ta} USING SAMPLE {_SAMPLE_A} ROWS
+)
+SELECT
+    (SELECT COUNT(*) FROM s_a WHERE v IS NOT NULL AND v <> '') AS total,
+    (SELECT COUNT(*) FROM s_a
+        WHERE v IS NOT NULL AND v <> '' AND v IN (SELECT {expr_b} FROM {tb})) AS matched
+""".strip()
+        result = conn.execute("__reconcile_probe__", probe_sql)
+        if result and result.rows:
+            total = int(result.rows[0][0])
+            matched = int(result.rows[0][1])
+            if total > 0:
+                return matched / total
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "join_guard: reconcile probe failed — no suggestion",
+                 counter="join_guard.reconcile_error")
+    return None
+
+
+def reconcile_join_keys(
+    conn, table_a: str, col_a: str, table_b: str, col_b: str, raw_overlap: float,
+) -> KeyReconciliation | None:
+    """Try deterministic normalizations to reconcile two low-overlap join keys.
+
+    Returns the first transform that materially lifts overlap (direction-aware, like the raw
+    probe), or None if the keys are genuinely disjoint. Fail-open throughout."""
+    for name, label, tmpl in _KEY_TRANSFORMS:
+        ea = tmpl.format(col=f'"{col_a}"')
+        eb = tmpl.format(col=f'"{col_b}"')
+        ov_ab = _probe_overlap_expr(conn, table_a, ea, table_b, eb)
+        ov_ba = _probe_overlap_expr(conn, table_b, eb, table_a, ea)
+        ovs = [o for o in (ov_ab, ov_ba) if o is not None]
+        if not ovs:
+            continue
+        ov = max(ovs)
+        if ov >= _RECONCILE_MIN_OVERLAP and ov - raw_overlap >= _RECONCILE_MIN_GAIN:
+            return KeyReconciliation(name, label, ea, eb, ov)
+    return None
+
+
 @dataclass
 class JoinDomainWarning:
     table_a: str
@@ -217,14 +303,26 @@ class JoinDomainWarning:
     table_b: str
     col_b: str
     overlap: float
+    reconciliation: KeyReconciliation | None = None
 
     def to_prompt_text(self) -> str:
         pct = f"{self.overlap:.0%}"
-        return (
+        base = (
             f"JOIN VALUE-DOMAIN MISMATCH: {self.table_a}.{self.col_a} ↔ "
             f"{self.table_b}.{self.col_b} — only {pct} of sampled values match. "
-            f"These columns likely belong to different entities. "
-            f"Verify you are joining on the correct column pair."
+        )
+        if self.reconciliation:
+            r = self.reconciliation
+            return (
+                base
+                + f"BUT they reconcile to {r.overlap:.0%} overlap after normalizing both keys "
+                f"({r.label}) — the keys refer to the same entity in different formats. Join on "
+                f"the normalized expressions instead: ON {r.expr_a} = {r.expr_b}."
+            )
+        return (
+            base
+            + "These columns likely belong to different entities. "
+            "Verify you are joining on the correct column pair."
         )
 
 
@@ -253,7 +351,17 @@ def check_join_value_domains(
             ov_ba = _probe_overlap(conn, t_b, c_b, t_a, c_a)
             overlaps = [o for o in (ov_ab, ov_ba) if o is not None]
             if overlaps and max(overlaps) < threshold:
-                warnings.append(JoinDomainWarning(t_a, c_a, t_b, c_b, max(overlaps)))
+                raw = max(overlaps)
+                recon = None
+                try:
+                    from aughor.kernel.flags import flag_enabled
+                    if flag_enabled("join.key_reconciliation"):
+                        recon = reconcile_join_keys(conn, t_a, c_a, t_b, c_b, raw)
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "join_guard: reconciliation skipped — mismatch still surfaced",
+                             counter="join_guard.reconcile_gate_error")
+                warnings.append(JoinDomainWarning(t_a, c_a, t_b, c_b, raw, reconciliation=recon))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "join_guard: domain check failed — no warnings emitted",
@@ -261,6 +369,9 @@ def check_join_value_domains(
     if warnings:
         from aughor.stats import bump
         bump("guard.join_domain.fired", len(warnings))
+        reconciled = sum(1 for w in warnings if w.reconciliation is not None)
+        if reconciled:
+            bump("guard.join_domain.reconciled", reconciled)
     return warnings
 
 

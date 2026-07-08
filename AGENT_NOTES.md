@@ -8,6 +8,17 @@ with baseline, file:line anchors, the Spider2 runbook, gates, and a progress log
 ROADMAP §0 (top block) + §3 ("The 10x + Spider 2.0 program") mirror it at-a-glance.
 User-confirmed 2026-07-06: glm-5.2 via Ollama Cloud is THE campaign model; Snowflake access ready.
 
+## Compounding-substrate map (2026-07-07, for the paradigm-shift study)
+Aughor has FOUR partially-connected compounding stores, none executable/composable:
+- `playbook/models.py::PlaybookEntry` — trigger→recommendation TEXT + `historical_success_rate`
+  (updated by `outcomes.py::update_playbook_success_rates`) — a proto-skill, advisory only.
+- `semantic/trusted_queries.py::TrustedQuery` — flat trusted-SQL strings, token-overlap retrieval top-k 2.
+- `ontology/models.py` — the genuinely rich WORLD MODEL (verified ComputedProperty.formula_sql,
+  ObjectSet.filter_sql, grain_verified, null_meaning, measure_grain) — verified but declarative-only.
+- `semantic/ambiguity_ledger.py` — per-connection resolution priors.
+Gap a skill-library idea would fill: parameterized, EXECUTABLE, verified, composable analytical
+procedures that accumulate per warehouse — today's stores hold text + SQL strings, not procedures.
+
 ## External-source study (2026-07-07) — DocETL · Palimpzest · Hasura/PromptQL · DAB
 User redirected mid-session: study Palimpzest, Hasura graphql-engine, PromptQL, + 2 papers
 (DocETL 2410.12189, DataAgentBench 2603.20576) and extract iterable features to improve Aughor.
@@ -34,6 +45,18 @@ session; key transfers, ranked:
 Decision (mine, pending user scope pick on the bigger bets): ship the no-regret wedge first
 (guarded extraction = DAB GAP-2), then present the ranked roadmap for the big directional bets
 (cross-DBMS federated planner / plan-as-program+artifacts / cross-source key reconciliation).
+
+## ✅ SHIPPED — Ill-formatted key reconciliation (Rec 3, branch `2026-07-07-guarded-extraction`)
+DAB GAP-3 (26/54). `aughor/sql/join_guard.py`: when the value-domain guard flags a low-overlap join,
+`reconcile_join_keys` tries deterministic DuckDB normalizations (trim+lower/digits/strip-prefix/strip-zeros/
+alnum-lower) on both keys, re-probes overlap direction-aware, and if one lifts to ≥0.60 AND ≥+0.30 over raw,
+attaches a `KeyReconciliation` to the `JoinDomainWarning` — `to_prompt_text()` then surfaces the exact
+`ON regexp_replace(...) = regexp_replace(...)` to join on. Distinguishes bid_123↔bref_123 (reconciles) from
+truly disjoint entities (C00x↔CMPx, no transform helps). Flag `join.key_reconciliation` /
+`AUGHOR_JOIN_KEY_RECONCILIATION`, default off = byte-identical (recon=None → original message). Only runs when
+a mismatch already fired (rare), breaks on first strong hit, fail-open. 6 tests, suite **2695 green**, ruff 0.
+NOTE: probe is DuckDB-syntax (USING SAMPLE + regexp_replace) — works on DuckDB + the FederatedConnection
+(the cross-source surface), fails-open on other dialects exactly like the base probe.
 
 ## ✅ SHIPPED this session — Guarded extraction (branch `2026-07-07-guarded-extraction`, `c07c445`)
 DocETL-gleaning on `semops/operators.py::semantic_extract`: infer a type (year/date/email/number) from

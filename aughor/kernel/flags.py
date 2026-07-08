@@ -40,6 +40,7 @@ FLAG_ENV = {
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
     "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
+    "join.key_reconciliation": "AUGHOR_JOIN_KEY_RECONCILIATION",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -134,6 +135,10 @@ FLAG_META = {
     "semops.guarded_extract": {
         "label": "Guarded extraction (validate + re-extract)",
         "description": "When the semantic extract operator pulls a typed value (year/date/email/number) out of free text, validate each value against its type and re-extract the off-type cells with targeted feedback (a bounded gleaning loop). Off-type values are surfaced and kept, never dropped. Adds a re-extract LLM call only when a typed field fails validation. Off by default — turns text extraction from regex-fragile into a guarded, self-correcting step.",
+    },
+    "join.key_reconciliation": {
+        "label": "Ill-formatted join-key reconciliation",
+        "description": "When a join's two keys have low value overlap, try deterministic normalizations (trim/case, digits-only, strip prefix, strip leading zeros) and, if one lifts overlap over a bar, surface the exact expression to join on — distinguishing 'same entity, different format' (bid_123 vs bref_123) from genuinely different entities. Only runs when a value-domain mismatch already fired (rare); deterministic, fail-open, no LLM. Off by default = byte-identical (the mismatch warning is unchanged).",
     },
 }
 

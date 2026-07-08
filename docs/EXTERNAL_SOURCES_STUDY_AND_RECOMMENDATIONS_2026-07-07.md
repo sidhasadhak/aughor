@@ -204,7 +204,7 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 |---|---|---|---|---|---|---|---|---|
 | 1 | **Guarded extraction** (validate + gleaning re-extract) | DocETL/Palimpzest | GAP-2 (47/54) | Correctness | High | S | Low | ✅ shipped |
 | 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | proposed |
-| 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | proposed |
+| 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
 | 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | proposed |
 | 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | proposed |
 | 6 | **Connector-capability contract** (deterministic pushdown decisions) | Hasura NDC | GAP-1 enabler | Maintainability | Med | M | Low | proposed |
@@ -241,10 +241,15 @@ validates (Palimpzest); a `validate`/`max_rounds` surface on the Query Builder "
 ## 6 · Recommended sequence
 
 1. **(done)** Guarded extraction — proves the pattern on the wedge axis.
-2. **Ill-formatted key reconciliation (Rec 3)** — smaller, leverages the existing overlap-probe guard, and is
-   the natural *first* step into multi-source. Detect prefix/format/whitespace skew between two key columns
-   whose value domains *almost* overlap, synthesize a deterministic normalization (strip prefix, trim, case),
-   dry-run-verify the improved overlap, and bind it into the join. Deterministic and monotonic by construction.
+2. **Ill-formatted key reconciliation (Rec 3)** — ✅ **SHIPPED** (`aughor/sql/join_guard.py`,
+   flag `join.key_reconciliation` / `AUGHOR_JOIN_KEY_RECONCILIATION`, default off). When a value-domain
+   mismatch fires, `reconcile_join_keys` tries a fixed set of deterministic DuckDB normalizations
+   (trim+lower, digits-only, strip-prefix, strip-leading-zeros, alnum-lower) on both keys, re-probes overlap,
+   and — if one lifts overlap to ≥60% and ≥+30pp over raw — attaches a `KeyReconciliation` to the warning
+   whose `to_prompt_text()` surfaces the exact normalized-join expression (`ON regexp_replace(...) = ...`).
+   Distinguishes "same entity, different format" (`bid_123` vs `bref_123`) from genuinely disjoint entities;
+   deterministic, monotonic, fail-open, no LLM. 6 tests (real-DuckDB skew fixture, off-by-default byte-identity,
+   disjoint-negative, fail-open); suite 2695 green.
 3. **Cross-source federated planner (Rec 2)** — the master gap; §7.1.
 4. **Plan-as-program + artifacts (Rec 4)** — the deep bet; §7.2. Sequence it after federation so the plan
    language already has cross-source data ops to schedule.
