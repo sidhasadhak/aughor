@@ -286,14 +286,40 @@ function computeSummary(columns: string[], rows: unknown[][], sql?: string | nul
 // ── Result figure — the framed block: inline metrics, a chart, or a table ─────
 // The ONLY framed object in an Insight brief. Single-row numbers render inline
 // (no frame); a chartable / tabular result renders inside one <BriefFigure>.
+// Shimmer placeholders for the scaffold-then-fill answer card (piece 4). Both
+// use the design-system `aug-shimmer` (its own gradient + animation, and it's
+// already covered by the prefers-reduced-motion block).
+function HeadlineSkeleton() {
+  return (
+    <div className="flex flex-col gap-2" aria-hidden>
+      <div className="aug-shimmer rounded-[var(--r2)]" style={{ height: 17, width: "70%" }} />
+      <div className="aug-shimmer rounded-[var(--r2)]" style={{ height: 17, width: "45%" }} />
+    </div>
+  );
+}
+
+function FigureSkeleton() {
+  return (
+    <div className="flex flex-col gap-2" aria-hidden>
+      <div className="aug-shimmer rounded-[var(--r2)]" style={{ height: 11, width: "38%" }} />
+      <div className="aug-shimmer rounded-[var(--r3)]" style={{ height: 176, width: "100%" }} />
+    </div>
+  );
+}
+
 function ResultFigure({
-  turn, onShowSource,
+  turn, onShowSource, streaming = false,
 }: {
   turn: ChatTurn;
   onShowSource?: (data: SourcePanelData) => void;
+  streaming?: boolean;
 }) {
   const { columns, rows, chartType } = turn;
-  if (!columns.length) return null;
+  if (!columns.length) return streaming ? <FigureSkeleton /> : null;
+  // Columns usually land a beat before rows — never flash an empty, headers-only
+  // table mid-stream; hold a shimmer until at least one row arrives. (A genuine
+  // zero-row result at done still renders its empty table, unchanged.)
+  if (rows.length === 0 && streaming) return <FigureSkeleton />;
 
   const source = deriveFigureSource(turn.sql, columns, rows);
   const isSingleRow = rows.length === 1;
@@ -301,10 +327,13 @@ function ResultFigure({
   const hasCat  = columns.some((c, i) => !isNumeric(rows[0]?.[i]));
   const hasNum  = columns.some((c, i) => isNumeric(rows[0]?.[i]) && !ORDINAL_COL.test(c));
 
+  // Only chart once every row is shaped to the column count — a half-streamed
+  // row would otherwise feed the chart malformed points.
+  const chartDataReady = rows.length > 0 && rows.every(r => Array.isArray(r) && r.length >= columns.length);
   const explicitChart = chartType && chartType !== "auto";
-  const showChart = explicitChart
+  const showChart = (explicitChart
     ? hasNum
-    : rows.length >= 3 && hasNum && (hasDate || hasCat);
+    : rows.length >= 3 && hasNum && (hasDate || hasCat)) && chartDataReady;
 
   const sourceTitle = inferSourceTitle(columns, rows);
 
@@ -844,6 +873,7 @@ function InsightBrief({
   onFollowUp?: (q: string) => void;
   onRunFresh?: (q: string) => void;
 }) {
+  const streaming = turn.status === "loading";
   const proseText = turn.insight?.narrative?.trim() || computeSummary(turn.columns, turn.rows, turn.sql) || "";
   const anomalies = (turn.insight?.anomalies ?? []).filter(Boolean);
   const inspect = turn.inspectWarning;
@@ -868,7 +898,9 @@ function InsightBrief({
         />
       )}
 
-      {turn.headline && <BriefHeadline animate={turn.startedAt > 0}>{turn.headline}</BriefHeadline>}
+      {turn.headline
+        ? <BriefHeadline animate={turn.startedAt > 0}>{turn.headline}</BriefHeadline>
+        : streaming ? <HeadlineSkeleton /> : null}
 
       {inspect && inspect.issues.length > 0 && (
         <p className="aug-text-sm text-amber-400/90 leading-relaxed flex items-start gap-1.5">
@@ -880,11 +912,11 @@ function InsightBrief({
         </p>
       )}
 
-      <ResultFigure turn={turn} onShowSource={onShowSource} />
+      <ResultFigure turn={turn} onShowSource={onShowSource} streaming={streaming} />
 
       {/* Explain the data — on-demand interpretation, so a direct lookup leads with
           the chart + numbers instead of unrequested narration. */}
-      {hasExplanation && !explained && (
+      {!streaming && hasExplanation && !explained && (
         <button
           onClick={() => setExplained(true)}
           className="self-start flex items-center gap-1.5 aug-text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
@@ -893,14 +925,14 @@ function InsightBrief({
           Explain the data
         </button>
       )}
-      {explained && (
+      {!streaming && explained && (
         <>
           {proseText && <BriefProse text={proseText} />}
           {anomalies.length > 0 && <BriefBullets items={anomalies} />}
         </>
       )}
 
-      {turn.followups.length > 0 && (
+      {!streaming && turn.followups.length > 0 && (
         <BriefSection label="Follow-ups">
           <div className="flex flex-col gap-1">
             {turn.followups.map((q, i) => (
@@ -917,7 +949,7 @@ function InsightBrief({
         </BriefSection>
       )}
 
-      <InsightDetails turn={turn} connectionId={connectionId} onShowSource={onShowSource} />
+      {!streaming && <InsightDetails turn={turn} connectionId={connectionId} onShowSource={onShowSource} />}
     </Brief>
   );
 }
@@ -1083,6 +1115,11 @@ export function ChatMessage({
     ? !!(turn.adaReport ?? turn.report ?? turn.exploreReport ?? turn.dossierReport)
     : turn.status === "done";
   const isDone = turn.status === "done" || hasResult;
+  // Quick-mode scaffold-then-fill: the backend delivers a quick answer's data at
+  // `done` (not incrementally), so instead of bare thinking-dots we mount the
+  // Brief as a shimmer scaffold for the whole wait — a preview of the answer's
+  // shape (headline + figure) that fills in place when the result lands.
+  const quickScaffold = !isInvestigate && turn.status === "loading";
   // Show streaming ADA phases even while still loading (not for direct/explore routes)
   const showStreamingBody = isInvestigate && turn.status === "loading" && turn.phases.length > 0
     && turn.queryMode !== "direct";
@@ -1143,7 +1180,8 @@ export function ChatMessage({
           {isInvestigate && turn.clarifyingQuestions.length > 0 && (
             <ClarifyingQuestionsBanner questions={turn.clarifyingQuestions} contextNote={turn.clarifyingContext} />
           )}
-          {/* Quick (ask) mode has no multi-step trace — show the simple thinking dots */}
+          {/* Quick (ask) mode has no multi-step trace — a compact thinking cue
+              sits above the shimmer scaffold (rendered below) during the wait */}
           {!isInvestigate && (
             <div className="flex items-center gap-3 py-2">
               <span className="flex gap-1">
@@ -1184,8 +1222,9 @@ export function ChatMessage({
         <p className="aug-fs-xs text-zinc-500 mb-3">Completed in {formatElapsed(turn.elapsedMs)}</p>
       )}
 
-      {/* ── Insight — the final answer as a clean Brief ── */}
-      {!collapsed && isDone && !isInvestigate && (
+      {/* ── Insight — the answer as a clean Brief; mounts as a shimmer scaffold
+           during the wait (fills in place) and completes at done. ── */}
+      {!collapsed && !isInvestigate && (isDone || quickScaffold) && (
         <InsightBrief
           turn={turn}
           connectionId={connectionId}
