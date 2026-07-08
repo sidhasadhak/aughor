@@ -258,6 +258,24 @@ def execute_guarded(
                     "by a row identifier. Aggregate the measure itself (e.g. SUM(unit_price), or "
                     "SUM(unit_price * quantity) only if a real quantity column is intended).\n")
 
+            # Rec 6 — capability contract: when a native-dialect query FAILED, name the exact construct the
+            # target dialect can't run (QUALIFY/ILIKE/SAFE_DIVIDE/…) so the regenerate targets it precisely,
+            # instead of another blind dry-run. Deterministic, flag-gated (default off = no extra hint), and
+            # only inside this already-failing repair path. Permissive for transpile-from-DuckDB dialects.
+            if flag_enabled("capability.contract"):
+                try:
+                    from aughor.sql.capability_check import capability_diagnostics
+                    _cap_dialect = conn.dialect if getattr(conn, "writes_native_sql", False) else "duckdb"
+                    _caps = capability_diagnostics(sql, _cap_dialect)
+                    if _caps:
+                        _cap_text = "\n".join(f"- {c}" for c in _caps)
+                        _diag = ((f"{_diag}\n" if _diag else "DIAGNOSIS:\n")
+                                 + f"UNSUPPORTED CONSTRUCTS (rewrite these for {_cap_dialect}):\n{_cap_text}\n")
+                except Exception as _cap_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_cap_exc, "capability diagnostics are advisory; the fix loop proceeds",
+                             counter="capability.contract")
+
             # Synthesise a fake "error" message so FIX_SQL_PROMPT has something
             # useful in the ERROR MESSAGE field when there was no hard error.
             if _err:

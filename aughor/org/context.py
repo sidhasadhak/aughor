@@ -50,3 +50,27 @@ def using_org(org_id: str) -> Iterator[str]:
         yield current_org_id()
     finally:
         reset_org_id(token)
+
+
+# ── Current user (for row-level policy — RBAC row filters keyed by the caller) ──
+# Set alongside the org by the per-request identity middleware; defaults to empty so
+# unscoped code and localhost behave identically.
+_current_user: contextvars.ContextVar[str] = contextvars.ContextVar("aughor_current_user", default="")
+
+
+def current_user_id() -> str:
+    """The identified caller's user id, or "" when unidentified (localhost / no identity)."""
+    return _current_user.get() or ""
+
+
+def set_user_id(user_id: str) -> "contextvars.Token[str]":
+    """Pin the current user id; returns a token for :func:`reset_user_id`."""
+    return _current_user.set(user_id or "")
+
+
+def reset_user_id(token: "contextvars.Token[str]") -> None:
+    try:
+        _current_user.reset(token)
+    except Exception as exc:  # best-effort, like reset_org_id
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "user context reset", counter="org")

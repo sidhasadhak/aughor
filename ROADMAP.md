@@ -33,6 +33,19 @@ through a fresh-eyes review. Full study + per-item detail:
   `aughor/agent/federated_planner.py`, `aughor/agent/connection_selector.py`; `POST /query/cross-source-join`,
   `/query/federated-answer`, `/query/auto-federated-answer`. Suite 2663 → **2744 green**.
 
+**✅ FOLLOW-ON RECS (2026-07-08, on open PRs) — Rec 4 + Rec 6 + Rec 7 complete the study (all 7 built).**
+- **Plan-as-program + artifacts** (`plan.program`) — an investigation as a deterministic, replayable typed
+  PROGRAM: the LLM emits the plan once; a runner executes DATA (grounded SQL) + SEMOP steps over named ledger
+  artifacts, validating each step. Includes DATA-reads-artifact dataflow, live `/ask` wiring, and
+  `closed_loop` trusted-plan replay. `aughor/agent/program_planner.py`, `semantic/trusted_programs.py`;
+  `POST /query/plan-run` · `/query/plan-answer` (PR #119, PromptQL transfer).
+- **Connector-capability contract** (`capability.contract`) — a per-dialect footgun descriptor
+  (`db/capabilities.py`) that seeds an "AVOID on {dialect}" line into the SQL-writer prompt and names the exact
+  unsupported construct in the repair prompt (fewer dry-run round trips; Hasura-NDC).
+- **RBAC row-level policy** (`rbac.row_policy`) — per-role row filters AST-compiled into the WHERE at **every**
+  connector's execution gate; triple-gated (identity + `RBAC_SSO` + flag) and **fail-closed**
+  (`rbac/row_policy.py`, `sql/rls.py`; Hasura permissions). Rec 6 + Rec 7 = PR #120, suite **2773 green**.
+
 **⏭️ NEXT SESSION — start here:** [`docs/SESSION_HANDOFF_2026-07-07.md`](docs/SESSION_HANDOFF_2026-07-07.md)
 lays out the state, the decision, and the ready-to-build. Design specs remain
 [`docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md)

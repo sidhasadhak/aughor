@@ -147,12 +147,14 @@ class _OrgContextMiddleware:
         principal = resolve_principal(_Req(scope))
         if principal is None:
             return await self.app(scope, receive, send)
-        from aughor.org.context import reset_org_id, set_org_id
+        from aughor.org.context import reset_org_id, reset_user_id, set_org_id, set_user_id
         token = set_org_id(principal.org_id)
+        user_token = set_user_id(principal.user_id)   # for the RBAC row-policy injector (Rec 7)
         try:
             await self.app(scope, receive, send)
         finally:
             try:
+                reset_user_id(user_token)
                 reset_org_id(token)
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate

@@ -156,6 +156,21 @@ remote joins** as the correct-by-construction cross-source path where DuckDB `AT
 (Snowflake↔BigQuery↔Postgres); (c) compile Aughor's RBAC row policy **into the WHERE** for data-level,
 cross-source-safe enforcement (rides `aughor/rbac/policy.py`).
 
+**✅ (a) + (c) shipped (Recs 6 + 7).** (a) `aughor/db/capabilities.py` — a machine-checkable per-dialect
+`DialectCapabilities` descriptor (the deterministic twin of `db/dialects.py`'s prose) + `sql/capability_check.py`
+walks the AST and, when a native-dialect query FAILS, names the exact unsupported construct
+(QUALIFY/ILIKE/SAFE_DIVIDE/DATE_TRUNC/…) — both in the SQL-repair prompt (flag `capability.contract`,
+advisory) AND, up front, as a machine-derived "AVOID on {dialect}" line appended to the native-dialect
+SQL-writer rules (`db/dialects.writer_rules` via `capabilities.avoid_line`, always-on guidance for native
+dialects) so the model pre-empts the footgun rather than only self-correcting. (c) `aughor/rbac/row_policy.py` (declarative `{role: {table: predicate}}`, `{org_id}`/`{user_id}`
+placeholders) + `aughor/sql/rls.py` (AST rewrite wrapping each policied base table as an alias-preserving
+filtered subquery) enforced at the DuckDB/Postgres `_run` chokepoint (`db/connection.enforce_row_policy`).
+Triple-gated (identity **and** RBAC_SSO **and** `rbac.row_policy`), scoped to identified user requests, and
+**fail-closed** (an un-appliable policy blocks the query, never runs it unfiltered). Enforced at **every
+connector's** execution gate — DuckDB/Postgres `_run` plus each warehouse (bigquery/snowflake/mysql/exasol/
+motherduck), file (sqlite/local_upload/s3), and API (`base_sync`/federated) connector's `execute` (the same
+one-line insertion after `security_pre`); a new connector must add it just as it must call `security_pre`.
+
 ### 2.4 PromptQL — plan-as-program + artifacts
 
 **Source:** promptql.io (Hasura). Inverts the standard pattern: instead of retrieving data into the LLM's
@@ -207,8 +222,8 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 | 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
 | 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | ✅ **COMPLETE** — IR · validator · deterministic executor · named-artifact ledger mirror · LLM planner · flag-gated API · **DATA-reads-artifact dataflow · live `/ask` wiring · trusted-plan replay**; HITL deferred (needs an action-op family) |
 | 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | ✅ shipped |
-| 6 | **Connector-capability contract** (deterministic pushdown decisions) | Hasura NDC | GAP-1 enabler | Maintainability | Med | M | Low | proposed |
-| 7 | **RBAC row-policy compiled into the WHERE** | Hasura perms | — | Security | Med | M | Low | proposed |
+| 6 | **Connector-capability contract** (deterministic pushdown decisions) | Hasura NDC | GAP-1 enabler | Maintainability | Med | M | Low | ✅ shipped — per-dialect `DialectCapabilities` + AST gate enriching the SQL-repair prompt (flag `capability.contract`) |
+| 7 | **RBAC row-policy compiled into the WHERE** | Hasura perms | — | Security | Med | M | Low | ✅ shipped — declarative per-role row filters, AST-injected at the DuckDB/Postgres chokepoint, fail-closed (flag `rbac.row_policy`) |
 
 ---
 

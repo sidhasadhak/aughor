@@ -63,6 +63,11 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
 - **SQL self-correction** — `SqlWriter` centralizes generation + deterministic bind-error repair (no-LLM
   candidate substitution first, typed LLM repair as fallback, every candidate dry-run-validated).
 - **Error classification & SQL hardening** — classify a failure by root cause, inject the right fix hint.
+- **Connector-capability contract** (`capability.contract`) — a machine-checkable per-dialect descriptor
+  (`db/capabilities.py`) of constructs that error on each native warehouse (QUALIFY/ILIKE/SAFE_DIVIDE/DATE_TRUNC/…).
+  It seeds an "avoid these" line into the SQL-writer prompt (pre-empting the footgun) and, when a native-dialect
+  query still fails, names the exact unsupported construct in the repair prompt (fewer dry-run round trips).
+  Deterministic; permissive for transpile-from-DuckDB dialects (Hasura-NDC-inspired, DataAgentBench).
 - **Fan-out / grain guards** — deterministic de-fan (parent + chasm), AVG-over-chasm linter, and a
   uniqueness-probe grain guard (`COUNT(*)` vs `COUNT(DISTINCT key)`) that flags over-counting on real data.
 - **Value-domain join guard** — refuse/repair joins whose key domains don't actually overlap ("fool-proof joins");
@@ -274,6 +279,14 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   **capability ceiling** (`tier_caps ∩ role_ceiling`), surfaced through `GET /capabilities` so the UI reflects
   role, not just plan. Managed from a **Settings → Access** roster (assign/revoke; `GET /rbac/me` gates the
   admin surface). Tier still gates 402; role gates 403.
+- **RBAC row-level policy** (`rbac.row_policy`) — per-role, per-table row filters compiled INTO the executed
+  SQL. A declarative `{role: {table: predicate}}` registry (`rbac/row_policy.py`, `{org_id}`/`{user_id}`
+  placeholders, quote-escaped) is AST-rewritten (`sql/rls.py`) so each policied base table becomes an
+  alias-preserving filtered subquery — `FROM orders o` → `FROM (SELECT * FROM orders WHERE org_id = '…') o` —
+  and a role physically cannot read rows outside its filter, regardless of query shape. Triple-gated (identity
+  **and** `RBAC_SSO` **and** the flag), scoped to identified requests, enforced at **every connector's**
+  execution gate (DuckDB/Postgres/warehouse/file/API), and **fail-closed** — an un-appliable policy (e.g. a
+  CTE shadowing a policied table) blocks the query rather than running it unfiltered (Hasura-permissions-inspired).
 - **Security perimeter** — a **fail-closed** SQL safety gate (an errored gate BLOCKS, never allows),
   Postgres opened session-read-only, an **SSRF allowlist** on outbound webhook URLs (create + send-time),
   **prompt-injection fencing** of untrusted DB content fed to the LLM, a global exception handler (no stack
