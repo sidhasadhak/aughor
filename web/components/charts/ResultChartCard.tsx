@@ -41,6 +41,11 @@ const TRANSFORM_OPTS: { v: PostprocOp | "none"; t: string }[] = [
 
 type Agg = "sum" | "avg" | "count" | "min" | "max";
 
+// "Auto" (untouched) option for the Metric/Dimension/Aggregation pickers. Selecting
+// it clears that override so the card returns to the original auto-derived chart —
+// without it there's no way back to a multi-series default once a control is touched.
+const AUTO_OPT = "__auto__";
+
 // ChartType (hyphenated) → the underscore "hint" the <Chart> engine speaks.
 const TYPE_TO_HINT: Record<ChartType, string> = {
   "line": "line", "area": "area", "multi-line": "multi_line", "small-multiples": "small_multiples", "bar": "bar",
@@ -212,13 +217,17 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
           {view !== "pivot" && (
             <>
               {metricCols.length >= 2 &&
-                Dropdown("Metric", metric, metricCols.map((c) => ({ v: c, t: cleanLabel(c) })), setMetricSel)}
+                Dropdown("Metric", metricSel ?? AUTO_OPT,
+                  [{ v: AUTO_OPT, t: "Auto" }, ...metricCols.map((c) => ({ v: c, t: cleanLabel(c) }))],
+                  (v) => setMetricSel(v === AUTO_OPT ? null : v))}
               {dimCols.length >= 2 &&
-                Dropdown("Dimension", dim, dimCols.map((c) => ({ v: c, t: cleanLabel(c) })), setDimSel)}
+                Dropdown("Dimension", dimSel ?? AUTO_OPT,
+                  [{ v: AUTO_OPT, t: "Auto" }, ...dimCols.map((c) => ({ v: c, t: cleanLabel(c) }))],
+                  (v) => setDimSel(v === AUTO_OPT ? null : v))}
               {dimHasDups &&
-                Dropdown("Aggregation", agg,
-                  (["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() })),
-                  (v) => setAggSel(v as Agg))}
+                Dropdown("Aggregation", aggSel ?? AUTO_OPT,
+                  [{ v: AUTO_OPT, t: "Auto" }, ...(["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() }))],
+                  (v) => setAggSel(v === AUTO_OPT ? null : (v as Agg)))}
               {rateSummed && (
                 <span className="aug-fs-xs" style={{ color: "var(--amber4, #B25D00)" }} title="Summing a rate/ratio is usually not meaningful — AVG is the grain-correct aggregate.">
                   ⚠ summing a rate
