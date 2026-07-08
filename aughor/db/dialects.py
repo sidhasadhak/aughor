@@ -105,5 +105,9 @@ def writer_rules(db: object) -> str:
     """
     dialect = getattr(db, "dialect", "duckdb")
     if getattr(db, "writes_native_sql", False):
-        return rules_for_dialect(dialect)
+        # Native execution runs the LLM's SQL verbatim, so append the machine-checked "don't use these"
+        # directive from the capability contract (Rec 6) — pre-empting the footgun at generation time.
+        from aughor.db.capabilities import avoid_line
+        avoid = avoid_line(dialect)
+        return rules_for_dialect(dialect) + (f"\n- {avoid}" if avoid else "")
     return DUCKDB_RULES if dialect == "duckdb" else DUCKDB_RULES + _TRANSPILE_NOTE

@@ -159,14 +159,17 @@ cross-source-safe enforcement (rides `aughor/rbac/policy.py`).
 **✅ (a) + (c) shipped (Recs 6 + 7).** (a) `aughor/db/capabilities.py` — a machine-checkable per-dialect
 `DialectCapabilities` descriptor (the deterministic twin of `db/dialects.py`'s prose) + `sql/capability_check.py`
 walks the AST and, when a native-dialect query FAILS, names the exact unsupported construct
-(QUALIFY/ILIKE/SAFE_DIVIDE/DATE_TRUNC/…) in the SQL-repair prompt so the regeneration fixes it precisely
-instead of another blind dry-run. Flag `capability.contract`, advisory (enriches the existing repair loop),
-default off. (c) `aughor/rbac/row_policy.py` (declarative `{role: {table: predicate}}`, `{org_id}`/`{user_id}`
+(QUALIFY/ILIKE/SAFE_DIVIDE/DATE_TRUNC/…) — both in the SQL-repair prompt (flag `capability.contract`,
+advisory) AND, up front, as a machine-derived "AVOID on {dialect}" line appended to the native-dialect
+SQL-writer rules (`db/dialects.writer_rules` via `capabilities.avoid_line`, always-on guidance for native
+dialects) so the model pre-empts the footgun rather than only self-correcting. (c) `aughor/rbac/row_policy.py` (declarative `{role: {table: predicate}}`, `{org_id}`/`{user_id}`
 placeholders) + `aughor/sql/rls.py` (AST rewrite wrapping each policied base table as an alias-preserving
 filtered subquery) enforced at the DuckDB/Postgres `_run` chokepoint (`db/connection.enforce_row_policy`).
 Triple-gated (identity **and** RBAC_SSO **and** `rbac.row_policy`), scoped to identified user requests, and
-**fail-closed** (an un-appliable policy blocks the query, never runs it unfiltered). Warehouse/file connectors
-are a documented fast-follow (their `execute` paths differ; the flag description names the enforced set).
+**fail-closed** (an un-appliable policy blocks the query, never runs it unfiltered). Enforced at **every
+connector's** execution gate — DuckDB/Postgres `_run` plus each warehouse (bigquery/snowflake/mysql/exasol/
+motherduck), file (sqlite/local_upload/s3), and API (`base_sync`/federated) connector's `execute` (the same
+one-line insertion after `security_pre`); a new connector must add it just as it must call `security_pre`.
 
 ### 2.4 PromptQL — plan-as-program + artifacts
 

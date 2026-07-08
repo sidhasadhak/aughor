@@ -27,6 +27,19 @@ def test_postgres_transpile_path_gets_duckdb_rules_plus_note():
     assert "automatically translated" in r
 
 
+def test_writer_rules_native_includes_capability_avoid_line():
+    # Rec 6: native dialects get the machine-checked "don't use these" directive appended.
+    r = writer_rules(_DB("snowflake", True))
+    assert "AVOID on snowflake" in r and "SAFE_DIVIDE" in r
+    assert "ILIKE" in writer_rules(_DB("bigquery", True))
+
+
+def test_writer_rules_transpile_path_has_no_avoid_line():
+    # Transpile connections write DuckDB (permissive) → no avoid line.
+    assert "AVOID on" not in writer_rules(_DB("duckdb", False))
+    assert "AVOID on" not in writer_rules(_DB("postgres", False))
+
+
 def test_bigquery_native_rules():
     r = writer_rules(_DB("bigquery", True))
     assert "DUCKDB DIALECT RULES" not in r

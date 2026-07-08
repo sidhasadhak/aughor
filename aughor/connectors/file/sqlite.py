@@ -109,12 +109,15 @@ class SQLiteConnection(Connector):
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         # Gate through the public security interface; the read-only connection
         # also blocks any write at the engine.
-        from aughor.db.connection import security_pre, security_post
+        from aughor.db.connection import enforce_row_policy, security_pre, security_post
 
         sql = sql.strip().rstrip(";")
         conn_id = getattr(self, "_connection_id", "")
         if (blocked := security_pre(conn_id, hypothesis_id, sql)):
             return blocked
+        sql, _rp = enforce_row_policy(self, hypothesis_id, sql)   # RBAC row-policy (Rec 7); no-op off
+        if _rp is not None:
+            return _rp
 
         sql = self.translate(sql)  # DuckDB-flavoured SQL → SQLite, best-effort
         t0 = time.monotonic()

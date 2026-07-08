@@ -163,7 +163,7 @@ FLAG_META = {
     },
     "rbac.row_policy": {
         "label": "RBAC row-level policy (row filters in the WHERE)",
-        "description": "Compile per-role, per-table row-filters into executed SQL (a deterministic AST rewrite wrapping each policied table as a filtered subquery) so a role physically cannot read rows outside its filter. Double-gated like the rest of RBAC (no-op unless identity AND the org's RBAC_SSO capability are on) AND this flag; fails CLOSED (a policy that can't be applied blocks the query). Enforced on DuckDB + Postgres connections. Off by default. Rec 7 of the external-sources study.",
+        "description": "Compile per-role, per-table row-filters into executed SQL (a deterministic AST rewrite wrapping each policied table as a filtered subquery) so a role physically cannot read rows outside its filter. Double-gated like the rest of RBAC (no-op unless identity AND the org's RBAC_SSO capability are on) AND this flag; fails CLOSED (a policy that can't be applied blocks the query). Enforced at every connector's execution gate (DuckDB/Postgres/warehouse/file/API). Off by default. Rec 7 of the external-sources study.",
     },
 }
 

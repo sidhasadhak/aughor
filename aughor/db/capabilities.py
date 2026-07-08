@@ -66,3 +66,20 @@ def for_dialect(dialect: str) -> DialectCapabilities:
     caps = _CAPS.get((dialect or "").lower(), _PERMISSIVE)
     # Keep the requested dialect name for messages even when permissive.
     return caps if caps is not _PERMISSIVE else DialectCapabilities(dialect or "")
+
+
+# Human names for the AST-detected features, for the writer-prompt avoid-line.
+_FEATURE_LABEL = {FEATURE_QUALIFY: "QUALIFY", FEATURE_ILIKE: "ILIKE"}
+
+
+def avoid_line(dialect: str) -> str:
+    """One deterministic "don't use these" directive for the SQL-writer prompt, derived from the capability
+    contract — the machine-checked complement to the prose dos in ``db/dialects.py``. Empty for a permissive
+    dialect (so transpile-from-DuckDB engines add nothing). Rec 6: pre-empt the footgun at generation time,
+    not only at repair time."""
+    caps = for_dialect(dialect)
+    bad = sorted(caps.unsupported_functions) + sorted(
+        _FEATURE_LABEL.get(f, f.upper()) for f in caps.unsupported_features)
+    if not bad:
+        return ""
+    return f"AVOID on {dialect} (these constructs error here): {', '.join(bad)}."

@@ -50,3 +50,12 @@ def test_transpile_dialect_is_permissive():
 def test_unparseable_sql_fails_open():
     assert capability_diagnostics("SELECT ((( FROM", "mysql") == []
     assert capability_diagnostics("", "mysql") == []
+
+
+def test_avoid_line_for_native_and_permissive_dialects():
+    from aughor.db.capabilities import avoid_line
+    sf = avoid_line("snowflake")
+    assert sf.startswith("AVOID on snowflake") and "SAFE_DIVIDE" in sf
+    assert "ILIKE" in avoid_line("bigquery")
+    assert "QUALIFY" in avoid_line("mysql")
+    assert avoid_line("duckdb") == "" and avoid_line("sqlite") == ""   # permissive → no directive

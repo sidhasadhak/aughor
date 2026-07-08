@@ -102,6 +102,31 @@ def test_internal_query_no_user_context_not_filtered(monkeypatch, tmp_path):
         reset_org_id(ot)
 
 
+def test_enforced_on_non_run_connector_path(monkeypatch, tmp_path):
+    """Coverage through a connector with its OWN execute() (not DuckDB/Postgres _run): SQLiteConnection
+    runs security_pre → enforce_row_policy → translate. Proves the same insertion the warehouse connectors
+    use works outside _run."""
+    import sqlite3
+
+    from aughor.connectors.file.sqlite import SQLiteConnection
+    _enable(monkeypatch, roles=["viewer"])
+    dbf = tmp_path / "rp.sqlite"
+    con = sqlite3.connect(str(dbf))
+    con.execute("CREATE TABLE orders (id INT, org_id TEXT, amount INT)")
+    con.executemany("INSERT INTO orders VALUES (?,?,?)", [(1, "o1", 100), (2, "o2", 50), (3, "o1", 30)])
+    con.commit(); con.close()
+
+    conn = SQLiteConnection(dsn=str(dbf), connection_id="rp-sqlite")
+    ot, ut = set_org_id("o1"), set_user_id("u1")
+    try:
+        res = conn.execute("q", "SELECT id FROM orders ORDER BY id")
+        assert res.error is None
+        assert sorted(str(r[0]) for r in res.rows) == ["1", "3"]   # only org o1's rows
+    finally:
+        reset_user_id(ut); reset_org_id(ot)
+        conn.close()
+
+
 def test_fails_closed_on_injection_error(monkeypatch, tmp_path):
     # A CTE that collides with a policied table name → the injector refuses → the query is BLOCKED.
     _enable(monkeypatch, roles=["viewer"])
