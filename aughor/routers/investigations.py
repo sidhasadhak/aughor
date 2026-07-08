@@ -2672,6 +2672,20 @@ async def investigate(req: InvestigateRequest, request: Request):
     )
 
 
+def _federation_eligible(req) -> bool:
+    """Whether a ``/ask`` turn may auto-federate: only a truly FRESH auto turn qualifies — not a depth
+    override, deep-drill, dossier, canvas follow-up, conversational follow-up (``history``), or a
+    clarify-answer (``skip_clarify``). Follow-ups compose on the prior turn via the normal path, and a
+    clarify-answer carries a refinement the federated planner wouldn't see — so federation is first-turn
+    only. Flag-gated on ``federation.planner`` (default off), checked first for the short-circuit."""
+    from aughor.kernel.flags import flag_enabled
+    return bool(
+        flag_enabled("federation.planner") and req.depth == "auto"
+        and not req.deep and not req.insight_id and not req.canvas_id
+        and not req.history and not req.skip_clarify
+    )
+
+
 def _federation_candidates(conn_id: str, cap: int = 15) -> list[str]:
     """Org-visible connection ids (the current one first) — the candidate pool for cross-source
     selection on the ``/ask`` path. Bounded so a large connection roster can't blow up the selector."""
@@ -2715,18 +2729,30 @@ async def _stream_federated(question: str, sel) -> AsyncGenerator[str, None]:
         "alternatives": ["quick"], "forced": None, "downgraded_from": None,
         "sources": sel.conn_ids, "matched": sel.matched,
     })
-    ans = await asyncio.to_thread(
-        answer_federated, question, sel.conn_ids, reconcile=flag_enabled("join.key_reconciliation"),
-    )
-    r = ans.result
+    # answer_federated catches planning errors and the engine is fail-safe, but a stale conn id (deleted
+    # between selection and execution) could still raise on open — never let that break the /ask stream.
+    try:
+        ans = await asyncio.to_thread(
+            answer_federated, question, sel.conn_ids, reconcile=flag_enabled("join.key_reconciliation"),
+        )
+        r = ans.result
+    except Exception as exc:  # noqa: BLE001 — the stream must always end cleanly
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "federated answer failed after routing; stream an honest error",
+                 counter="ask.federation_answer_failed")
+        yield _sse("headline", {"headline": f"Cross-source answer failed — {str(exc)[:120]}"})
+        yield _sse("done", {})
+        return
     if r.error:
         yield _sse("headline", {"headline": f"Cross-source answer unavailable — {r.error}"})
         yield _sse("done", {})
         return
+    streamed = r.rows[:10000]
+    more = f" (showing first {len(streamed):,})" if r.row_count > len(streamed) else ""
     yield _sse("columns", {"columns": r.columns})
-    yield _sse("rows", {"rows": r.rows[:10000]})
+    yield _sse("rows", {"rows": streamed})
     yield _sse("headline",
-               {"headline": f"Answered across {len(names)} sources ({', '.join(names)}) — {r.row_count} rows."})
+               {"headline": f"Answered across {len(names)} sources ({', '.join(names)}) — {r.row_count:,} rows{more}."})
     yield _sse("sql", {"sql": r.sql})
     yield _sse("tables_used", {"tables": names})
     yield _sse("done", {})
@@ -2782,8 +2808,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # path. A deterministic selector (no LLM) decides; only a genuinely multi-source question federates.
     # Flag-gated on `federation.planner` → default off = byte-identical. Fail-safe: any error falls through
     # to the normal routing below.
-    if (flag_enabled("federation.planner") and req.depth == "auto"
-            and not req.deep and not req.insight_id and not req.canvas_id):
+    if _federation_eligible(req):
         try:
             from aughor.agent.connection_selector import select_connections
             candidates = _federation_candidates(conn_id)

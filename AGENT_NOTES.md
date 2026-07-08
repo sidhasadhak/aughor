@@ -132,8 +132,18 @@ fresh auto turn (not deep/insight/canvas), behind `federation.planner` (default 
 table via the SAME columns/rows/headline/sql/tables_used events the quick path uses → renders in existing
 surface). Fail-safe: selection error → `tolerate` → falls through to single-connection path. Placed AFTER the
 clarify gate. 5 unit tests (candidate gathering + org-visibility filter + cap; federated emission + error path).
-Suite **2740 green** (flag-off byte-identical proven by all existing /ask tests passing). REVIEW pending.
-**Rec 2 COMPLETE end-to-end.**
+Suite 2740 green (flag-off byte-identical proven by all existing /ask tests passing).
+**✅ /ask REVIEW DONE** (fresh-eyes): #1 (HIGH) answer_federated could raise mid-stream (stale conn TOCTOU) →
+FIXED (already had wrapped it proactively: try/except in `_stream_federated` → honest error headline + done,
+never breaks the stream). #2 (HIGH) follow-up turns hijacked + lose history → FIXED: extracted
+`_federation_eligible(req)` and tightened the guard with `not req.history and not req.skip_clarify` — federation
+is FIRST-TURN ONLY (follow-ups compose via the normal path; clarify-answers keep their refinement). #3 (MED
+clarify-answer) folded into the same guard fix. #5 (LOW) headline reported full row_count while streaming ≤10k →
+FIXED ("N rows (showing first 10,000)"). #4 (hot-path: N get_schema per fresh auto question when flag ON) —
+documented/acceptable (off-loaded via to_thread, default-off). #6 (may federate excluding current conn) —
+acceptable (route receipt names sources). Reviewer verified SOUND: byte-identical-off, selection fail-safe,
+single-source fall-through, done-termination, rows-capped. 4 new tests (guard predicate + answer-raise survival).
+Suite **2744 green**. **Rec 2 COMPLETE end-to-end (build-wire-test-review).**
 SIGNATURE NOTE: `batched_foreach_join` moved `right_table` to keyword-only (was positional) — all callers +
 the 11 unit-test calls updated.
 

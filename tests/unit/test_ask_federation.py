@@ -19,6 +19,35 @@ def _collect(agen) -> list[str]:
     return asyncio.run(_run())
 
 
+def _req(**kw):
+    from types import SimpleNamespace
+    base = dict(depth="auto", deep=False, insight_id=None, canvas_id=None, history=[], skip_clarify=False)
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+# ── _federation_eligible (the guard) ─────────────────────────────────────────
+
+def test_federation_eligible_on_fresh_auto_turn(monkeypatch):
+    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+    assert inv._federation_eligible(_req()) is True
+
+
+def test_federation_not_eligible_when_flag_off(monkeypatch):
+    monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
+    assert inv._federation_eligible(_req()) is False
+
+
+def test_federation_not_eligible_on_followups_or_overrides(monkeypatch):
+    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+    assert inv._federation_eligible(_req(history=[{"role": "user", "content": "prev"}])) is False  # follow-up
+    assert inv._federation_eligible(_req(skip_clarify=True)) is False   # clarify-answer turn
+    assert inv._federation_eligible(_req(canvas_id="cv1")) is False     # canvas follow-up
+    assert inv._federation_eligible(_req(deep=True)) is False           # deep-drill
+    assert inv._federation_eligible(_req(insight_id="i1")) is False     # dossier drill
+    assert inv._federation_eligible(_req(depth="quick")) is False       # explicit depth override
+
+
 # ── _federation_candidates ───────────────────────────────────────────────────
 
 def test_candidates_put_current_first_and_include_visible(monkeypatch):
@@ -78,3 +107,19 @@ def test_stream_federated_surfaces_error_without_table(monkeypatch):
 
     assert "unavailable" in blob                          # honest error headline
     assert '"rows"' not in blob                            # no phantom table on failure
+
+
+def test_stream_federated_survives_answer_exception(monkeypatch):
+    """A raise from answer_federated (e.g. a conn deleted mid-flight) must not break the /ask stream."""
+    monkeypatch.setattr("aughor.db.registry.list_connections",
+                        lambda *a, **k: [{"id": "c1", "name": "O"}, {"id": "c2", "name": "C"}])
+
+    def _boom(q, cids, **kw):
+        raise RuntimeError("connection vanished")
+    monkeypatch.setattr("aughor.agent.federated_planner.answer_federated", _boom)
+    sel = ConnectionSelection(conn_ids=["c1", "c2"], matched={"c1": ["o"], "c2": ["c"]}, multi_source=True)
+
+    evs = _collect(inv._stream_federated("q", sel))     # must NOT raise
+    blob = "".join(evs)
+    assert "failed" in blob and '"rows"' not in blob
+    assert "done" in evs[-1]                              # stream still terminates cleanly
