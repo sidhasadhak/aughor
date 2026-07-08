@@ -868,7 +868,7 @@ function InsightBrief({
         />
       )}
 
-      {turn.headline && <BriefHeadline>{turn.headline}</BriefHeadline>}
+      {turn.headline && <BriefHeadline animate={turn.startedAt > 0}>{turn.headline}</BriefHeadline>}
 
       {inspect && inspect.issues.length > 0 && (
         <p className="aug-text-sm text-amber-400/90 leading-relaxed flex items-start gap-1.5">

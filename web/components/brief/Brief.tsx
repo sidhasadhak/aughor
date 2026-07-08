@@ -16,6 +16,7 @@
 
 import React, { useState } from "react";
 import { renderEmphasis } from "@/components/brief/BriefProse";
+import { useReveal, safePartial } from "@/lib/useReveal";
 import { deltaFavorable } from "@/lib/favorability";
 import { localizeCurrency } from "@/lib/orgSettings";
 import { formatCount } from "@/lib/format";
@@ -43,16 +44,39 @@ export function Brief({
 export function BriefHeadline({
   children,
   className = "",
+  animate = false,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Typewriter-reveal the headline as it lands (live turns only). */
+  animate?: boolean;
 }) {
   // Emphasize figures in the headline too (the conclusion line) — the reference's
   // "ranged from **11.33%** to **14.05%**" treatment. Prose already does this via
   // renderEmphasis; the headline was plain text until now.
+  const isString = typeof children === "string";
+  const { shown, revealing } = useReveal(isString ? (children as string) : "", {
+    enabled: animate && isString,
+  });
   return (
     <h2 className={`aug-text-h2 leading-snug ${className}`}>
-      {typeof children === "string" ? renderEmphasis(children) : children}
+      {isString ? (
+        <>
+          {renderEmphasis(safePartial(shown))}
+          {revealing && (
+            <span
+              aria-hidden
+              className="aug-anim-blink"
+              style={{
+                display: "inline-block", width: 2, height: "0.9em",
+                marginLeft: 3, verticalAlign: "text-bottom", background: "currentColor",
+              }}
+            />
+          )}
+        </>
+      ) : (
+        children
+      )}
     </h2>
   );
 }
