@@ -52,7 +52,7 @@ def test_inner_join_across_two_connections():
     )
     left = _left(left_conn, "SELECT order_id, cust FROM orders ORDER BY order_id")
 
-    out = batched_foreach_join(left, "cust", right_conn, "customers", "cust",
+    out = batched_foreach_join(left, "cust", right_conn, "cust", right_table="customers",
                                right_cols=["cust", "name"])
 
     assert out.row_count == 3
@@ -74,7 +74,7 @@ def test_join_is_n_plus_one_free_and_dedups_keys():
     ))
     left = _left(left_conn, "SELECT cust FROM orders")
 
-    out = batched_foreach_join(left, "cust", right_conn, "customers", "cust")
+    out = batched_foreach_join(left, "cust", right_conn, "cust", right_table="customers")
 
     assert right_conn.calls == 1        # ONE right query for all 5 left rows (2 distinct keys)
     assert out.row_count == 5
@@ -91,11 +91,11 @@ def test_left_join_keeps_unmatched_rows_inner_drops_them():
     )
     left = _left(left_conn, "SELECT order_id, cust FROM orders ORDER BY order_id")
 
-    inner = batched_foreach_join(left, "cust", right_conn, "customers", "cust", how="inner")
+    inner = batched_foreach_join(left, "cust", right_conn, "cust", right_table="customers", how="inner")
     assert inner.row_count == 1                          # order 2 dropped
 
     left2 = _left(left_conn, "SELECT order_id, cust FROM orders ORDER BY order_id")
-    outer = batched_foreach_join(left2, "cust", right_conn, "customers", "cust", how="left")
+    outer = batched_foreach_join(left2, "cust", right_conn, "cust", right_table="customers", how="left")
     assert outer.row_count == 2                          # order 2 kept
     name_i = outer.columns.index("name")
     assert outer.rows[1][name_i] is None                 # ... with a null right side
@@ -112,7 +112,7 @@ def test_key_chunking_issues_one_query_per_chunk():
     ))
     left = _left(left_conn, "SELECT cust FROM orders")
 
-    batched_foreach_join(left, "cust", right_conn, "customers", "cust", key_chunk=2)
+    batched_foreach_join(left, "cust", right_conn, "cust", right_table="customers", key_chunk=2)
 
     assert right_conn.calls == 3        # ceil(5 distinct keys / chunk 2)
 
@@ -128,7 +128,7 @@ def test_key_literal_with_quote_is_escaped():
     )
     left = _left(left_conn, "SELECT cust FROM orders")
 
-    out = batched_foreach_join(left, "cust", right_conn, "customers", "cust")
+    out = batched_foreach_join(left, "cust", right_conn, "cust", right_table="customers")
     assert out.row_count == 1
     assert out.rows[0][out.columns.index("name")] == "Bond"
 
@@ -146,7 +146,7 @@ def test_right_query_error_returns_left_unchanged():
         def execute(self, hyp, sql):
             raise RuntimeError("connection down")
 
-    out = batched_foreach_join(left, "cust", _Boom(), "customers", "cust")
+    out = batched_foreach_join(left, "cust", _Boom(), "cust", right_table="customers")
     assert out.columns == left.columns and out.rows == left.rows   # left returned untouched
 
 
@@ -158,7 +158,7 @@ def test_missing_left_key_returns_left_unchanged():
     right_conn = _duck("CREATE TABLE customers (cust VARCHAR)")
     left = _left(left_conn, "SELECT cust FROM orders")
 
-    out = batched_foreach_join(left, "not_a_column", right_conn, "customers", "cust")
+    out = batched_foreach_join(left, "not_a_column", right_conn, "cust", right_table="customers")
     assert out.rows == left.rows
 
 
@@ -180,14 +180,14 @@ def _skew_sources():
 def test_raw_join_misses_format_skewed_keys():
     left_conn, right_conn = _skew_sources()
     left = _left(left_conn, "SELECT order_id, book FROM orders ORDER BY order_id")
-    out = batched_foreach_join(left, "book", right_conn, "reviews", "book_ref")   # reconcile off
+    out = batched_foreach_join(left, "book", right_conn, "book_ref", right_table="reviews")   # reconcile off
     assert out.row_count == 0        # no raw overlap between bid_N and bref_N
 
 
 def test_reconcile_heals_format_skewed_cross_source_keys():
     left_conn, right_conn = _skew_sources()
     left = _left(left_conn, "SELECT order_id, book FROM orders ORDER BY order_id")
-    out = batched_foreach_join(left, "book", right_conn, "reviews", "book_ref", reconcile=True)
+    out = batched_foreach_join(left, "book", right_conn, "book_ref", right_table="reviews", reconcile=True)
     assert out.row_count == 3                       # digits/strip-prefix normalization reconciles them
     assert "stars" in out.columns
     assert "reconciled" in out.sql
@@ -195,11 +195,28 @@ def test_reconcile_heals_format_skewed_cross_source_keys():
     assert stars == ["5", "4", "3"]
 
 
+def test_right_side_can_be_a_grounded_subquery():
+    left_conn = _duck("CREATE TABLE orders (cust VARCHAR)", "INSERT INTO orders VALUES ('C1'),('C2')")
+    right_conn = _duck(
+        "CREATE TABLE customers (cust VARCHAR, region VARCHAR, active BOOLEAN)",
+        "INSERT INTO customers VALUES ('C1','EU',true),('C2','US',false),('C3','EU',true)",
+    )
+    left = _left(left_conn, "SELECT cust FROM orders")
+
+    out = batched_foreach_join(
+        left, "cust", right_conn, "cust",
+        right_sql="SELECT cust, region FROM customers WHERE active = true",
+    )
+
+    assert out.row_count == 1        # only C1 is active among the ordered custs (C2 filtered out)
+    assert out.rows[0][out.columns.index("region")] == "EU"
+
+
 def test_reconcile_absent_for_truly_disjoint_cross_source_keys():
     left_conn = _duck("CREATE TABLE a (k VARCHAR)", "INSERT INTO a VALUES ('C001'),('C002')")
     right_conn = _duck("CREATE TABLE b (k VARCHAR, v INT)", "INSERT INTO b VALUES ('CMP1',1),('CMP2',2)")
     left = _left(left_conn, "SELECT k FROM a")
-    out = batched_foreach_join(left, "k", right_conn, "b", "k", reconcile=True, how="left")
+    out = batched_foreach_join(left, "k", right_conn, "k", right_table="b", reconcile=True, how="left")
     assert out.row_count == 2                        # no transform reconciles → left join, nulls kept
     vi = out.columns.index("v")
     assert all(r[vi] is None for r in out.rows)

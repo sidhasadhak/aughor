@@ -272,8 +272,9 @@ async def query_cross_source_join(body: _CrossSourceJoinRequest):
     def _work():
         return cross_source_join(
             body.left_conn_id, body.left_sql, body.left_key,
-            body.right_conn_id, body.right_table, body.right_key,
-            how=body.how, right_cols=body.right_cols, reconcile=reconcile,
+            body.right_conn_id, body.right_key,
+            right_table=body.right_table, how=body.how,
+            right_cols=body.right_cols, reconcile=reconcile,
         )
 
     loop = asyncio.get_running_loop()
@@ -283,6 +284,47 @@ async def query_cross_source_join(body: _CrossSourceJoinRequest):
         raise HTTPException(status_code=500, detail=str(e))
     return {"columns": res.columns, "rows": res.rows, "row_count": res.row_count,
             "sql": res.sql, "error": res.error}
+
+
+class _FederatedAnswerRequest(BaseModel):
+    question: str
+    conn_ids: list[str]                        # exactly two: [left driver, right]
+    reconcile: Optional[bool] = None           # None → follow the join.key_reconciliation flag
+
+
+@router.post("/query/federated-answer")
+async def query_federated_answer(body: _FederatedAnswerRequest):
+    """Answer a natural-language question that spans TWO connections (Rec 2, Stage 3).
+
+    One LLM call grounds both schemas and emits a structured plan (a grounded sub-query per source +
+    the join keys); the plan is validated deterministically and executed through the batched-foreach
+    engine. Returns the merged result plus the plan and any validation issues (inspectable). Flag-gated
+    on `federation.planner` (default off → 404)."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("federation.planner"):
+        raise HTTPException(status_code=404, detail="federated planner is not enabled")
+    if not body.question.strip():
+        raise HTTPException(status_code=400, detail="question is required")
+    if len(body.conn_ids) != 2:
+        raise HTTPException(status_code=400, detail="exactly two conn_ids are required (left driver, right)")
+
+    from aughor.agent.federated_planner import answer_federated
+    reconcile = body.reconcile if body.reconcile is not None else flag_enabled("join.key_reconciliation")
+
+    def _work():
+        return answer_federated(body.question, body.conn_ids[0], body.conn_ids[1], reconcile=reconcile)
+
+    loop = asyncio.get_running_loop()
+    try:
+        ans = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    r = ans.result
+    return {
+        "columns": r.columns, "rows": r.rows, "row_count": r.row_count, "sql": r.sql, "error": r.error,
+        "plan": ans.plan.model_dump() if ans.plan else None,
+        "issues": ans.issues,
+    }
 
 
 @router.post("/query/semantic/text-columns", dependencies=[gate(Capability.SEMANTIC_OPERATORS)])

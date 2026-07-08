@@ -203,7 +203,7 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 | # | Recommendation | Source | DAB gap | Dimension | Leverage | Effort | Risk | Status |
 |---|---|---|---|---|---|---|---|---|
 | 1 | **Guarded extraction** (validate + gleaning re-extract) | DocETL/Palimpzest | GAP-2 (47/54) | Correctness | High | S | Low | ✅ shipped |
-| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ◑ Stages 1–2b (engine+API+self-heal); Stage 3 planner remains |
+| 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | ✅ v1 — Stages 1–3 (engine + API + self-heal + LLM planner) |
 | 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
 | 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | proposed |
 | 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | ✅ shipped |
@@ -264,7 +264,20 @@ validates (Palimpzest); a `validate`/`max_rounds` surface on the Query Builder "
 **Staging:** Stage 1 = the deterministic join engine (✅ shipped); Stage 2 = the flag-gated
 `POST /query/cross-source-join` API (✅ shipped); Stage 2b = self-healing cross-source keys (✅ shipped);
 Stage 3 = the LLM planner that decomposes a cross-source question into per-source sub-queries and picks the
-join keys (the big/risky piece — **remaining; checkpoint before it**).
+join keys (✅ shipped).
+
+**✅ Stage 3 — the LLM decompose-planner** (`aughor/agent/federated_planner.py`, flag `federation.planner`
+/ `AUGHOR_FEDERATION_PLANNER`, default off → 404). `POST /query/federated-answer` takes a question + two
+`conn_ids`; `answer_federated` grounds both schemas and makes **one** LLM call for a structured
+`FederatedPlan` (a grounded sub-query per source + the join keys + join type), **validates it
+deterministically** (`validate_plan`: each sub-query executes as a derived table and must output its declared
+join key — a bad plan returns issues, never executes), then runs it through `cross_source_join` (the right
+side is now a grounded sub-query via the engine's new `right_sql` path). Plan-then-execute (PromptQL),
+deterministic-first: the LLM only produces the plan; guards validate it and the engine joins. The plan +
+per-source SQL are returned for inspection. 6 tests (404-when-off, two-conn validation, end-to-end
+plan→validate→execute across two DuckDB sources, validation-failure surfacing, `validate_plan` good/bad).
+**v1 scope:** exactly two sources, `conn_ids[0]` drives; N-source / driver-selection / answer-path
+integration are the natural extensions.
 
 **✅ Stage 2b — self-healing cross-source keys.** When a batched-foreach join's raw match rate is low and
 `reconcile=True`, `batched_foreach_join` retries under a set of **paired** normalizations — a Python function

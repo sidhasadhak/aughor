@@ -64,8 +64,18 @@ adopt the first reaching ≥0.60 match AND ≥+0.30 gain. Refactored the primiti
 `{jk_expr} AS __jk`, one path for raw+normalized) + `_hash_join` + `_try_reconcile`. Endpoint passes
 `reconcile=flag_enabled("join.key_reconciliation")` (same flag as Rec 3 — the cross-source twin). 3 tests
 (raw misses bid_N↔bref_N, reconcile heals to 3 rows, disjoint C00x↔CMPx doesn't false-reconcile). Suite
-**2711 green**. **Stage 3 REMAINS:** the LLM planner (decompose cross-source question → per-source sub-queries
-+ join keys) — the big/risky piece; CHECKPOINT before it (fresh context).
+**2711 green**. **Stage 3 ✅ SHIPPED:** `aughor/agent/federated_planner.py` — `answer_federated(question, left_id, right_id)`:
+ONE LLM call → `FederatedPlan{left/right FederatedSide(sql, join_key), how}` grounded on both `get_schema()`;
+`validate_plan` executes each sub-query as `SELECT * FROM (sql) AS _t LIMIT 0` and checks the join_key is an
+output column (bad plan → issues, NO execution); then `cross_source_join(..., right_sql=plan.right.sql)`.
+Engine extended: `batched_foreach_join`/`cross_source_join` now take `right_table` OR `right_sql` (keyword;
+`from_clause` = `(subquery) AS __rt` or quoted table) — the right side can be a grounded sub-query. Endpoint
+`POST /query/federated-answer` (flag `federation.planner` / `AUGHOR_FEDERATION_PLANNER`, default off → 404),
+returns merged result + the plan (inspectable) + issues. 6 tests (fake planner LLM + 2 real registered DuckDB
+sources). Suite **2718 green**. v1 = exactly 2 sources, conn_ids[0] drives. **REVIEW step pending** (per
+build-wire-test-review); N-source/driver-selection/answer-path integration are follow-ups.
+SIGNATURE NOTE: `batched_foreach_join` moved `right_table` to keyword-only (was positional) — all callers +
+the 11 unit-test calls updated.
 
 ## ✅ SHIPPED — Champion cascade on semantic_filter (Rec 5, branch `2026-07-07-guarded-extraction`)
 Palimpzest/LOTUS label-free quality estimator. `semops/operators.py`: extracted the filter batch loop into

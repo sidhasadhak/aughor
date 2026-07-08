@@ -115,22 +115,23 @@ def _distinct_keys(rows: list, li: int, keyfn: Callable[[str], str] | None = Non
 
 
 def _fetch_right(
-    right_conn: "DatabaseConnection", right_table: str, right_cols: list[str] | None,
+    right_conn: "DatabaseConnection", from_clause: str, right_cols: list[str] | None,
     jk_expr: str, in_values: list[str], key_chunk: int, max_rows: int,
 ) -> tuple[list[str], dict[str, list[list]], int, str | None]:
     """Fetch right rows whose join-key expression ``jk_expr`` is IN ``in_values`` (batched).
 
-    Returns (right_columns, rows_by_join_key, fetched, error). The join key is projected as ``__jk``
-    and keyed on — so raw (``jk_expr`` = the column) and normalized (``jk_expr`` = a transform) share
-    one path. ``__jk`` is stripped from the returned columns/rows."""
+    ``from_clause`` is either a quoted table or a derived sub-query (``(SELECT ...) AS __rt``), so the
+    right side can be a grounded sub-query, not just a whole table. Returns (right_columns,
+    rows_by_join_key, fetched, error). The join key is projected as ``__jk`` and keyed on — so raw
+    (``jk_expr`` = the column) and normalized (``jk_expr`` = a transform) share one path; ``__jk`` is
+    stripped from the returned columns/rows."""
     sel = ", ".join(_qident(c) for c in right_cols) if right_cols else "*"
-    rt = _qident(right_table)
     right_columns: list[str] = []
     by_key: dict[str, list[list]] = {}
     fetched = 0
     for chunk in _chunks(in_values, key_chunk):
         in_list = ", ".join(_sql_literal(v) for v in chunk)
-        sql = f"SELECT {sel}, {jk_expr} AS __jk FROM {rt} WHERE {jk_expr} IN ({in_list})"
+        sql = f"SELECT {sel}, {jk_expr} AS __jk FROM {from_clause} WHERE {jk_expr} IN ({in_list})"
         try:
             res = right_conn.execute("__remote_join__", sql)
         except Exception as exc:  # noqa: BLE001 — fail-safe: never raise into the query path
@@ -182,9 +183,10 @@ def batched_foreach_join(
     left: QueryResult,
     left_key: str,
     right_conn: "DatabaseConnection",
-    right_table: str,
     right_key: str,
     *,
+    right_table: str | None = None,
+    right_sql: str | None = None,
     right_cols: list[str] | None = None,
     how: str = "inner",                      # "inner" | "left"
     reconcile: bool = False,
@@ -192,15 +194,18 @@ def batched_foreach_join(
     max_right_rows: int = _MAX_RIGHT_ROWS,
     max_out_rows: int = _MAX_OUT_ROWS,
 ) -> QueryResult:
-    """Join an already-executed LEFT result to ``right_table`` on a DIFFERENT connection, N+1-free.
+    """Join an already-executed LEFT result to a RIGHT source on a DIFFERENT connection, N+1-free.
 
-    Returns a merged :class:`QueryResult` (left columns + right columns, right names disambiguated).
-    With ``reconcile=True``, a low raw match rate triggers a self-healing retry under key
-    normalizations (see the module note). Fail-safe: on a bad/empty left key or any right-query
-    error, the LEFT result is returned unchanged rather than raising."""
+    The right side is either ``right_table`` (a whole table) or ``right_sql`` (a grounded sub-query);
+    exactly one is required. Returns a merged :class:`QueryResult` (left columns + right columns, right
+    names disambiguated). With ``reconcile=True``, a low raw match rate triggers a self-healing retry
+    under key normalizations (see the module note). Fail-safe: on a bad/empty left key, a missing right
+    source, or any right-query error, the LEFT result is returned unchanged rather than raising."""
     li = _idx(left.columns, left_key)
-    if left.error or li < 0 or not left.rows:
+    if left.error or li < 0 or not left.rows or not (right_table or right_sql):
         return left
+
+    from_clause = f"({right_sql.rstrip().rstrip(';')}) AS __rt" if right_sql else _qident(right_table)
 
     keys = _distinct_keys(left.rows, li)
     if not keys:
@@ -208,7 +213,7 @@ def batched_foreach_join(
 
     rk = _qident(right_key)
     right_columns, by_key, fetched, err = _fetch_right(
-        right_conn, right_table, right_cols, rk, keys, key_chunk, max_right_rows)
+        right_conn, from_clause, right_cols, rk, keys, key_chunk, max_right_rows)
     if err:
         logger.warning("remote_join: right query failed — returning left unchanged: %s", err)
         return left
@@ -218,7 +223,7 @@ def batched_foreach_join(
     chosen_note = f"{len(keys)} keys, raw match {raw_rate:.0%}"
 
     if reconcile and raw_rate < _RECON_LOW:
-        healed = _try_reconcile(right_conn, right_table, right_cols, right_key,
+        healed = _try_reconcile(right_conn, from_clause, right_cols, right_key,
                                 keys, raw_rate, key_chunk, max_right_rows)
         if healed:
             name, pyfn, right_columns, by_key = healed
@@ -231,16 +236,17 @@ def batched_foreach_join(
 
     from aughor.stats import bump
     bump("federation.remote_join.executed")
+    right_label = right_table or "(subquery)"
     return QueryResult(
         hypothesis_id="__remote_join__",
-        sql=(f"-- batched foreach join: left.{left_key} = {right_table}.{right_key} ({how}); "
+        sql=(f"-- batched foreach join: left.{left_key} = {right_label}.{right_key} ({how}); "
              f"{chosen_note}, {fetched} right rows, {len(out_rows)} joined"),
         columns=out_cols, rows=out_rows, row_count=len(out_rows),
     )
 
 
 def _try_reconcile(
-    right_conn: "DatabaseConnection", right_table: str, right_cols: list[str] | None,
+    right_conn: "DatabaseConnection", from_clause: str, right_cols: list[str] | None,
     right_key: str, left_keys: list[str], raw_rate: float, key_chunk: int, max_rows: int,
 ) -> tuple[str, Callable[[str], str], list[str], dict[str, list[list]]] | None:
     """Try each paired normalization; return the first that materially lifts the match rate."""
@@ -256,7 +262,7 @@ def _try_reconcile(
         if not norm_keys:
             continue
         right_columns, by_key, _fetched, err = _fetch_right(
-            right_conn, right_table, right_cols, tmpl.format(col=rk), norm_keys, key_chunk, max_rows)
+            right_conn, from_clause, right_cols, tmpl.format(col=rk), norm_keys, key_chunk, max_rows)
         if err:
             continue
         rate = _match_rate(norm_keys, by_key)
@@ -278,21 +284,24 @@ def cross_source_join(
     left_sql: str,
     left_key: str,
     right_conn_id: str,
-    right_table: str,
     right_key: str,
     *,
+    right_table: str | None = None,
+    right_sql: str | None = None,
     how: str = "inner",
     right_cols: list[str] | None = None,
     reconcile: bool = False,
 ) -> QueryResult:
-    """Run ``left_sql`` on one connection and batched-foreach-join it to a table on another (by id).
+    """Run ``left_sql`` on one connection and batched-foreach-join it to a table/sub-query on another.
 
-    The by-connection-id entry point the planner and API surface call. Fail-safe throughout."""
+    The by-connection-id entry point the planner and API surface call — the right side is either
+    ``right_table`` or ``right_sql`` (a grounded sub-query). Fail-safe throughout."""
     from aughor.db.connection import open_connection_for
     left_conn = open_connection_for(left_conn_id)
     left = left_conn.execute("__remote_join_left__", left_sql)
     right_conn = open_connection_for(right_conn_id)
     return batched_foreach_join(
-        left, left_key, right_conn, right_table, right_key,
+        left, left_key, right_conn, right_key,
+        right_table=right_table, right_sql=right_sql,
         right_cols=right_cols, how=how, reconcile=reconcile,
     )

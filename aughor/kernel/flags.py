@@ -43,6 +43,7 @@ FLAG_ENV = {
     "join.key_reconciliation": "AUGHOR_JOIN_KEY_RECONCILIATION",
     "semops.champion_validate": "AUGHOR_SEMOPS_CHAMPION_VALIDATE",
     "federation.remote_join": "AUGHOR_FEDERATION_REMOTE_JOIN",
+    "federation.planner": "AUGHOR_FEDERATION_PLANNER",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -149,6 +150,10 @@ FLAG_META = {
     "federation.remote_join": {
         "label": "Cross-source batched-foreach join",
         "description": "Enable POST /query/cross-source-join — join a result from one connection to a table on another, N+1-free (dedup the join keys, one keyed batch query per key-chunk to the right source, hash-join in memory). The correct-by-construction path for true cross-engine joins (Snowflake↔BigQuery↔Postgres) that DuckDB ATTACH can't reach. Off by default → the route 404s. Stage 1 of the cross-source federated planner.",
+    },
+    "federation.planner": {
+        "label": "Cross-source federated planner",
+        "description": "Enable POST /query/federated-answer — answer a natural-language question that spans TWO connections. One LLM call grounds both schemas and emits a structured plan (a grounded sub-query per source + the join keys); the plan is validated deterministically (each sub-query executes and outputs its key) and executed through the batched-foreach engine. Plan-then-execute, guarded, inspectable (the plan is returned). Off by default → the route 404s. Stage 3 of cross-source federation.",
     },
 }
 
