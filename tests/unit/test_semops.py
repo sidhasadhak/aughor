@@ -493,3 +493,50 @@ def test_apply_step_threads_validate_flag(patch_provider):
 
     assert out.result.rows[0][-1] == "2024"
     assert out.llm_calls == 2
+
+
+# ── Champion cascade on semantic_filter (Rec 5 / Palimpzest-LOTUS lineage) ─────────
+
+def _patch_by_role(monkeypatch, cheap, champion):
+    """get_provider('coder') -> champion, anything else -> cheap."""
+    monkeypatch.setattr(ops, "get_provider", lambda role="fast", **kw: champion if role == "coder" else cheap)
+
+
+def _alt_rows(n=10):
+    """Rows where even indices say 'keep', odd say 'drop'."""
+    return [[f"keep {i}"] if i % 2 == 0 else [f"drop {i}"] for i in range(n)]
+
+
+def test_champion_cascade_off_by_default_no_champion_calls(monkeypatch):
+    cheap = FakeProvider(filter_fn=lambda t: True)              # cheap keeps everything
+    champ = FakeProvider(filter_fn=lambda t: "keep" in t)
+    _patch_by_role(monkeypatch, cheap, champ)
+
+    out = semantic_filter(_qr(["note"], _alt_rows()), "note", "keepers")   # validate_sample=0 default
+
+    assert out.result.row_count == 10       # cheap verdict stands, byte-identical to before
+    assert champ.calls == 0                  # champion never consulted
+
+
+def test_champion_cascade_agreement_trusts_cheap(monkeypatch):
+    cheap = FakeProvider(filter_fn=lambda t: "keep" in t)
+    champ = FakeProvider(filter_fn=lambda t: "keep" in t)       # agrees with cheap on the sample
+    _patch_by_role(monkeypatch, cheap, champ)
+
+    out = semantic_filter(_qr(["note"], _alt_rows()), "note", "keepers", validate_sample=8)
+
+    assert out.result.row_count == 5         # the correct "keep" rows
+    assert champ.calls == 1                  # one sample-validation call, no escalation
+    assert any("trusted" in n for n in out.notes)
+
+
+def test_champion_cascade_disagreement_escalates(monkeypatch):
+    cheap = FakeProvider(filter_fn=lambda t: True)             # cheap is wrong: keeps all
+    champ = FakeProvider(filter_fn=lambda t: "keep" in t)      # champion is right
+    _patch_by_role(monkeypatch, cheap, champ)
+
+    out = semantic_filter(_qr(["note"], _alt_rows()), "note", "keepers", validate_sample=8)
+
+    assert out.result.row_count == 5         # escalation applied the champion's correct verdicts
+    assert champ.calls == 2                  # sample + full-batch escalation
+    assert any("escalated" in n for n in out.notes)

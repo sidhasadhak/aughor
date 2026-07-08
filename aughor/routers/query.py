@@ -205,6 +205,7 @@ async def query_semantic(body: _SemanticOpRequest):
             max_rows=body.max_rows,
             override_cap=body.override_cap,
             validate=flag_enabled("semops.guarded_extract"),
+            validate_sample=8 if flag_enabled("semops.champion_validate") else 0,
         )
         return op, base
 

@@ -46,6 +46,17 @@ Decision (mine, pending user scope pick on the bigger bets): ship the no-regret 
 (guarded extraction = DAB GAP-2), then present the ranked roadmap for the big directional bets
 (cross-DBMS federated planner / plan-as-program+artifacts / cross-source key reconciliation).
 
+## ✅ SHIPPED — Champion cascade on semantic_filter (Rec 5, branch `2026-07-07-guarded-extraction`)
+Palimpzest/LOTUS label-free quality estimator. `semops/operators.py`: extracted the filter batch loop into
+`_filter_verdicts(rows, ci, pred, provider, batch, indices)`; `semantic_filter` gains `validate_sample=`/
+`champion_role=` — runs cheap `fast` tier, re-judges an evenly-spread sample on the strong `coder` champion,
+and if sample disagreement > 20% escalates the WHOLE batch to the champion (else trusts cheap). Flag
+`semops.champion_validate` / `AUGHOR_SEMOPS_CHAMPION_VALIDATE`, default off = byte-identical (champion branch
+skipped). Wired in `routers/query.py` (validate_sample=8 when on). NOTE: Role literal is coder/narrator/fast
+(NO "reasoner") — champion = "coder". 3 tests, suite **2698 green**, ruff 0. Follow-on: the full LOTUS
+calibrated-threshold cascade with (precision,recall,δ) GUARANTEES is the principled successor (see the deeper
+2026-07-08 research pass) — this ships the tractable estimator first.
+
 ## ✅ SHIPPED — Ill-formatted key reconciliation (Rec 3, branch `2026-07-07-guarded-extraction`)
 DAB GAP-3 (26/54). `aughor/sql/join_guard.py`: when the value-domain guard flags a low-overlap join,
 `reconcile_join_keys` tries deterministic DuckDB normalizations (trim+lower/digits/strip-prefix/strip-zeros/

@@ -206,7 +206,7 @@ confirmation step, and `trusted_queries` is the save-and-replay sink.
 | 2 | **Cross-source federated planner** (decompose→per-source→batched-foreach integrate + cross-source guards) | Hasura/DAB | GAP-1 (54/54) | Robustness/breadth | Very high | L | Med | proposed |
 | 3 | **Ill-formatted key reconciliation** (extend overlap probe: detect prefix/format skew, synthesize normalizer) | DocETL resolve / DAB | GAP-3 (26/54) | Correctness | High | M | Low | ✅ shipped |
 | 4 | **Plan-as-program + artifacts** (deterministic replayable investigation programs) | PromptQL | FM2+FM4 (85%) | Correctness/maintainability | Very high | XL | High | proposed |
-| 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | proposed |
+| 5 | **Champion-model cost/quality cascade** on semops | Palimpzest/Abacus | GAP-2 | Performance/cost | Med | M | Low | ✅ shipped |
 | 6 | **Connector-capability contract** (deterministic pushdown decisions) | Hasura NDC | GAP-1 enabler | Maintainability | Med | M | Low | proposed |
 | 7 | **RBAC row-policy compiled into the WHERE** | Hasura perms | — | Security | Med | M | Low | proposed |
 
@@ -299,9 +299,15 @@ plan/implementation failure.
 - **Rec 3:** DocETL-resolve's *blocking then match*, but deterministic-first — value-overlap probe detects the
   near-miss, a small set of candidate transforms (strip `^[a-z]+_`, trim, upper/lower, zero-pad) are tried,
   the one that maximizes verified overlap on a sample is bound. LLM only as a last-resort tie-break.
-- **Rec 5:** run the `fast` role over the semop batch, sample K rows, re-run those K on the `reasoner`
-  "champion", and if disagreement on the sample exceeds a threshold, escalate the whole batch — Palimpzest's
-  reference-free estimation applied to bound cost without labels.
+- **Rec 5:** ✅ **SHIPPED** (`aughor/semops/operators.py`, flag `semops.champion_validate` /
+  `AUGHOR_SEMOPS_CHAMPION_VALIDATE`, default off). `semantic_filter` runs the cheap `fast` tier, then (when
+  on) re-judges an evenly-spread sample with the strong `coder` "champion"; if sample disagreement exceeds
+  20% the whole batch is escalated to the champion, else the cheap tier is trusted — Palimpzest's
+  reference-free (label-free) quality estimation applied to bound cost. Refactored the batch loop into a
+  reusable `_filter_verdicts` helper; byte-identical when off. 3 tests (off-by-default, agreement-trusts-cheap,
+  disagreement-escalates); suite 2698 green. *Follow-on:* the full LOTUS calibrated-threshold cascade with
+  statistical (precision, recall, δ) guarantees — the strongest idea from the deeper research pass — is the
+  principled successor; this ships the tractable estimator first.
 
 ---
 

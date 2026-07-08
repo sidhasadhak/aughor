@@ -41,6 +41,7 @@ FLAG_ENV = {
     "closed_loop": "AUGHOR_CLOSED_LOOP",
     "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
     "join.key_reconciliation": "AUGHOR_JOIN_KEY_RECONCILIATION",
+    "semops.champion_validate": "AUGHOR_SEMOPS_CHAMPION_VALIDATE",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -139,6 +140,10 @@ FLAG_META = {
     "join.key_reconciliation": {
         "label": "Ill-formatted join-key reconciliation",
         "description": "When a join's two keys have low value overlap, try deterministic normalizations (trim/case, digits-only, strip prefix, strip leading zeros) and, if one lifts overlap over a bar, surface the exact expression to join on — distinguishing 'same entity, different format' (bid_123 vs bref_123) from genuinely different entities. Only runs when a value-domain mismatch already fired (rare); deterministic, fail-open, no LLM. Off by default = byte-identical (the mismatch warning is unchanged).",
+    },
+    "semops.champion_validate": {
+        "label": "Champion cascade on semantic filter",
+        "description": "The semantic filter operator runs on the cheap tier; with this on, a small spread sample of its verdicts is re-judged by the strong 'champion' model and the whole batch is escalated to the champion when they disagree beyond a bar — catching cheap-tier errors at the cost of one extra sample call per filter. Off by default = byte-identical (no validation sample). A label-free quality estimator in the Palimpzest/LOTUS lineage.",
     },
 }
 

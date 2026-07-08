@@ -130,6 +130,45 @@ _FILTER_SYS = (
 )
 
 
+# ── Champion-model cost/quality cascade (Palimpzest/LOTUS-style) ──────────────────
+# The semops run on the cheap ``fast`` tier. When validation is on, a small spread sample of a
+# filter's verdicts is re-judged by the strong "champion" tier; if they disagree beyond a bar,
+# the cheap tier is untrusted on this batch and the WHOLE batch is re-run on the champion —
+# buying accuracy where the cheap model is wrong, at the cost of one extra sample call per op.
+# (This is the deterministic, label-free "champion" quality estimator; a full LOTUS calibrated-
+# threshold cascade with statistical guarantees is the future extension.)
+CHAMPION_ROLE: Role = "coder"        # the strong tier, vs DEFAULT_ROLE = "fast"
+_CHAMPION_ESCALATE = 0.20            # sample disagreement above this → re-run the batch on the champion
+
+
+def _filter_verdicts(
+    rows: list, ci: int, predicate: str, provider, batch: int, indices: list[int],
+) -> tuple[set[int], int, list[str]]:
+    """Which of ``indices`` the ``provider`` keeps for ``predicate``: (kept_set, llm_calls, notes).
+
+    Fail-open: a row the model omits, or a whole failed batch, is kept (never silently dropped)."""
+    kept: set[int] = set()
+    llm_calls = 0
+    notes: list[str] = []
+    for start in range(0, len(indices), max(1, batch)):
+        chunk_idx = indices[start:start + batch]
+        listing = "\n".join(f"[{gi}] {str(rows[gi][ci])[:_MAX_CELL]}" for gi in chunk_idx)
+        try:
+            resp = provider.complete(
+                system=_FILTER_SYS,
+                user=f"Predicate: {predicate}\n\nRows (index: text):\n{listing}\n\nReturn a verdict for every index above.",
+                response_model=_FilterBatch,
+            )
+            llm_calls += 1
+            decided = {v.index: v.keep for v in resp.verdicts}
+            kept.update(gi for gi in chunk_idx if decided.get(gi, True))
+        except Exception as e:  # noqa: BLE001 — operator must never raise into the query path
+            logger.warning("semantic_filter: batch failed: %s", e)
+            notes.append(f"batch failed ({str(e)[:80]}) — rows kept unchanged")
+            kept.update(chunk_idx)
+    return kept, llm_calls, notes
+
+
 def semantic_filter(
     result: QueryResult,
     column: str,
@@ -139,8 +178,13 @@ def semantic_filter(
     max_rows: int = DEFAULT_MAX_ROWS,
     batch: int = DEFAULT_BATCH,
     override_cap: bool = False,
+    validate_sample: int = 0,
+    champion_role: Role = CHAMPION_ROLE,
 ) -> SemanticOpResult:
-    """Keep only the rows whose ``column`` text satisfies the natural-language ``predicate``."""
+    """Keep only the rows whose ``column`` text satisfies the natural-language ``predicate``.
+
+    With ``validate_sample > 0`` a spread sample of the cheap tier's verdicts is checked against
+    the ``champion_role`` tier and the whole batch is escalated on disagreement (see the note above)."""
     if result.error:
         return SemanticOpResult(result, "filter", column, 0, 0, False, [f"upstream SQL error: {result.error}"])
 
@@ -157,34 +201,38 @@ def semantic_filter(
 
     rows = result.rows
     notes = _materialized_note(result)
-    keep_idx: list[int] = []
-    llm_calls = 0
-    provider = get_provider(role)
+    all_idx = list(range(len(rows)))
+    kept, llm_calls, fnotes = _filter_verdicts(rows, ci, predicate, get_provider(role), batch, all_idx)
+    notes.extend(fnotes)
 
-    for start in range(0, len(rows), max(1, batch)):
-        chunk = rows[start:start + batch]
-        listing = "\n".join(
-            f"[{start + i}] {str(chunk[i][ci])[:_MAX_CELL]}" for i in range(len(chunk))
-        )
-        try:
-            resp = provider.complete(
-                system=_FILTER_SYS,
-                user=f"Predicate: {predicate}\n\nRows (index: text):\n{listing}\n\nReturn a verdict for every index above.",
-                response_model=_FilterBatch,
+    if validate_sample > 0 and rows and role != champion_role:
+        k = min(validate_sample, len(rows))
+        step = max(1, len(rows) // k)
+        sample_idx = all_idx[::step][:k]            # evenly spread, deterministic
+        champ = get_provider(champion_role)
+        champ_kept, champ_calls, _ = _filter_verdicts(rows, ci, predicate, champ, batch, sample_idx)
+        llm_calls += champ_calls
+        disagree = sum(1 for gi in sample_idx if (gi in kept) != (gi in champ_kept))
+        rate = disagree / len(sample_idx)
+        if rate > _CHAMPION_ESCALATE:
+            kept, esc_calls, esc_notes = _filter_verdicts(rows, ci, predicate, champ, batch, all_idx)
+            llm_calls += esc_calls
+            notes.extend(esc_notes)
+            notes.append(
+                f"champion cascade: {rate:.0%} sample disagreement > {_CHAMPION_ESCALATE:.0%} — "
+                f"escalated all {len(rows)} rows to {champion_role}"
             )
-            llm_calls += 1
-            decided = {v.index: v.keep for v in resp.verdicts}
-            # fail-open on a row the model didn't return: keep it (never silently drop data)
-            keep_idx.extend(start + i for i in range(len(chunk)) if decided.get(start + i, True))
-        except Exception as e:  # noqa: BLE001 — operator must never raise into the query path
-            logger.warning("semantic_filter: batch [%d:%d] failed: %s", start, start + len(chunk), e)
-            notes.append(f"batch [{start}:{start + len(chunk)}] failed ({str(e)[:80]}) — rows kept unchanged")
-            keep_idx.extend(range(start, start + len(chunk)))
+        else:
+            notes.append(
+                f"champion cascade: validated {len(sample_idx)} rows, {rate:.0%} disagreement — "
+                f"cheap tier ({role}) trusted"
+            )
 
-    kept = [rows[i] for i in keep_idx]
-    new_result = result.model_copy(update={"rows": kept, "row_count": len(kept)})
-    notes.insert(0, f"kept {len(kept)} of {len(rows)} rows matching: {predicate}")
-    return SemanticOpResult(new_result, "filter", column, len(rows), len(kept), False, notes, llm_calls)
+    keep_idx = sorted(kept)
+    kept_rows = [rows[i] for i in keep_idx]
+    new_result = result.model_copy(update={"rows": kept_rows, "row_count": len(kept_rows)})
+    notes.insert(0, f"kept {len(kept_rows)} of {len(rows)} rows matching: {predicate}")
+    return SemanticOpResult(new_result, "filter", column, len(rows), len(kept_rows), False, notes, llm_calls)
 
 
 # ── Operator: semantic extract ────────────────────────────────────────────────
@@ -562,11 +610,12 @@ def apply_step(
     override_cap: bool = False,
     validate: bool = False,
     max_rounds: int = 1,
+    validate_sample: int = 0,
 ) -> SemanticOpResult:
     """Dispatch one semantic operator by name — the shared entry point for callers (API + agent)."""
     if operator == "filter":
         return semantic_filter(result, column, predicate, role=role, max_rows=max_rows,
-                               batch=batch, override_cap=override_cap)
+                               batch=batch, override_cap=override_cap, validate_sample=validate_sample)
     if operator == "extract":
         return semantic_extract(result, column, fields or [], role=role, max_rows=max_rows,
                                 batch=batch, override_cap=override_cap,
