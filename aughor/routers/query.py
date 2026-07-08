@@ -390,6 +390,86 @@ async def query_auto_federated_answer(body: _AutoFederatedRequest):
     }
 
 
+class _PlanRunRequest(BaseModel):
+    conn_id: str
+    program: dict                              # a hand-authored Program (validated by Program(**program))
+    investigation_id: Optional[str] = None     # ledger scope for the artifacts; defaults to "plan-run"
+
+
+def _program_response(pr) -> dict:
+    r = pr.result
+    return {
+        "columns": r.columns, "rows": r.rows, "row_count": r.row_count, "sql": r.sql, "error": r.error,
+        "program": pr.program.model_dump() if pr.program else None,
+        "artifacts": pr.artifacts, "warnings": pr.warnings, "issues": pr.issues,
+    }
+
+
+@router.post("/query/plan-run")
+async def query_plan_run(body: _PlanRunRequest):
+    """Run a HAND-AUTHORED typed program over ONE connection (Rec 4, Stage 2).
+
+    Deterministic: `validate_program` → `run_program`, no LLM. Each DATA step runs through the guard battery
+    and each step's result is mirrored to the ledger as a named artifact; the final result plus the program,
+    the artifact ids, per-step warnings, and any validation issues are returned (inspectable). Flag-gated on
+    `plan.program` (default off → 404)."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("plan.program"):
+        raise HTTPException(status_code=404, detail="plan-as-program is not enabled")
+    if not (body.conn_id or "").strip():
+        raise HTTPException(status_code=400, detail="conn_id is required")
+
+    from aughor.agent.program_planner import Program, run_checked_program
+    try:
+        program = Program(**body.program)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"invalid program: {str(e)[:200]}")
+    inv = body.investigation_id or "plan-run"
+
+    def _work():
+        return run_checked_program(program, body.conn_id, investigation_id=inv)
+
+    loop = asyncio.get_running_loop()
+    try:
+        pr = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return _program_response(pr)
+
+
+class _PlanAnswerRequest(BaseModel):
+    conn_id: str
+    question: str
+
+
+@router.post("/query/plan-answer")
+async def query_plan_answer(body: _PlanAnswerRequest):
+    """Plan+run a program from a natural-language question (Rec 4, Stage 3).
+
+    One LLM call emits the typed program; deterministic `validate_program` → `run_program` after. A planning
+    or validation failure returns an error result (never a 500). Flag-gated on `plan.program` (default off →
+    404)."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("plan.program"):
+        raise HTTPException(status_code=404, detail="plan-as-program is not enabled")
+    if not body.question.strip():
+        raise HTTPException(status_code=400, detail="question is required")
+    if not (body.conn_id or "").strip():
+        raise HTTPException(status_code=400, detail="conn_id is required")
+
+    from aughor.agent.program_planner import answer_program
+
+    def _work():
+        return answer_program(body.question, body.conn_id)
+
+    loop = asyncio.get_running_loop()
+    try:
+        pr = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return _program_response(pr)
+
+
 @router.post("/query/semantic/text-columns", dependencies=[gate(Capability.SEMANTIC_OPERATORS)])
 async def query_semantic_text_columns(body: _QueryRunRequest):
     """Detect which columns of a query's result read as free text — the operator candidates the UI

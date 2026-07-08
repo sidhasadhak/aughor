@@ -44,6 +44,7 @@ FLAG_ENV = {
     "semops.champion_validate": "AUGHOR_SEMOPS_CHAMPION_VALIDATE",
     "federation.remote_join": "AUGHOR_FEDERATION_REMOTE_JOIN",
     "federation.planner": "AUGHOR_FEDERATION_PLANNER",
+    "plan.program": "AUGHOR_PLAN_PROGRAM",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -154,6 +155,10 @@ FLAG_META = {
     "federation.planner": {
         "label": "Cross-source federated planner",
         "description": "Enable POST /query/federated-answer — answer a natural-language question that spans TWO connections. One LLM call grounds both schemas and emits a structured plan (a grounded sub-query per source + the join keys); the plan is validated deterministically (each sub-query executes and outputs its key) and executed through the batched-foreach engine. Plan-then-execute, guarded, inspectable (the plan is returned). Off by default → the route 404s. Stage 3 of cross-source federation.",
+    },
+    "plan.program": {
+        "label": "Plan-as-program executor",
+        "description": "Enable POST /query/plan-run + /query/plan-answer — turn a question into a deterministic typed PROGRAM over ONE database. One LLM call emits an ordered list of DATA (grounded SQL) + SEMOP (semantic-operator) steps over named artifacts; the program is validated deterministically and run step-by-step through the guard battery, threading each step's result as a named, versioned ledger artifact. Plan-then-execute, guarded, inspectable + replayable (the plan + artifacts are returned). Off by default → the routes 404. Rec 4 (plan-as-program), Stage 2–3.",
     },
 }
 
