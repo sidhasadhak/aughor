@@ -14,6 +14,25 @@
 
 ## 0 · Immediate next action ⏭️
 
+**✅ SHIPPED (2026-07-08) — external-sources study → four features, merged to main.** Studied the SOTA
+data-agent research (DocETL · Palimpzest · Hasura/PromptQL · the DataAgentBench benchmark) and translated
+it into concrete capability. All flag-gated, **default-off byte-identical**, each built-wired-tested and put
+through a fresh-eyes review. Full study + per-item detail:
+[`docs/EXTERNAL_SOURCES_STUDY_AND_RECOMMENDATIONS_2026-07-07.md`](docs/EXTERNAL_SOURCES_STUDY_AND_RECOMMENDATIONS_2026-07-07.md).
+- **Guarded extraction** (`semops.guarded_extract`) — the semantic extract operator validates each pulled
+  value against an inferred type and re-extracts off-type cells (DocETL gleaning) — the DAB axis where every
+  frontier model scores 0%.
+- **Ill-formatted join-key reconciliation** (`join.key_reconciliation`) — when a value-domain mismatch fires,
+  deterministic normalizations (`bid_123`↔`bref_123`) reconcile same-entity keys, in-source and cross-source.
+- **Champion cost/quality cascade** (`semops.champion_validate`) — re-judge a sample of the cheap tier's
+  filter verdicts on the strong model, escalate only on disagreement (Palimpzest/LOTUS, label-free).
+- **Cross-source federation** (`federation.remote_join` · `federation.planner`) — answer a question spanning
+  2+ databases end-to-end: a deterministic selector picks the sources → an LLM plans per-source sub-queries →
+  the batched-foreach engine joins them N+1-free (self-healing keys, cap-lifted fetches, N-source chains,
+  driver auto-selection) → `/ask` auto-federates a plain chat question. New: `aughor/connectors/remote_join.py`,
+  `aughor/agent/federated_planner.py`, `aughor/agent/connection_selector.py`; `POST /query/cross-source-join`,
+  `/query/federated-answer`, `/query/auto-federated-answer`. Suite 2663 → **2744 green**.
+
 **⏭️ NEXT SESSION — start here:** [`docs/SESSION_HANDOFF_2026-07-07.md`](docs/SESSION_HANDOFF_2026-07-07.md)
 lays out the state, the decision, and the ready-to-build. Design specs remain
 [`docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md)
