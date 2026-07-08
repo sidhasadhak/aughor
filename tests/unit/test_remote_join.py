@@ -25,7 +25,7 @@ def _duck(*stmts: str) -> DuckDBConnection:
 
 
 class _Counting:
-    """Wraps a connection and counts execute() calls — to assert the join is N+1-free."""
+    """Wraps a connection and counts right-fetch calls — to assert the join is N+1-free."""
     def __init__(self, conn):
         self.conn = conn
         self.calls = 0
@@ -33,6 +33,10 @@ class _Counting:
     def execute(self, hyp, sql):
         self.calls += 1
         return self.conn.execute(hyp, sql)
+
+    def execute_bounded(self, hyp, sql, max_rows):
+        self.calls += 1
+        return self.conn.execute_bounded(hyp, sql, max_rows)
 
 
 def _left(conn: DuckDBConnection, sql: str):
@@ -146,6 +150,9 @@ def test_right_query_error_returns_error_result_not_silent_left():
         def execute(self, hyp, sql):
             raise RuntimeError("connection down")
 
+        def execute_bounded(self, hyp, sql, max_rows):
+            raise RuntimeError("connection down")
+
     out = batched_foreach_join(left, "cust", _Boom(), "cust", right_table="customers")
     assert out.error is not None and out.row_count == 0    # honest failure, not left rows posing as success
     assert "join failed" in out.error
@@ -227,6 +234,19 @@ def test_right_side_can_be_a_grounded_subquery():
 
     assert out.row_count == 1        # only C1 is active among the ordered custs (C2 filtered out)
     assert out.rows[0][out.columns.index("region")] == "EU"
+
+
+def test_join_exceeds_the_500_row_execute_cap():
+    from aughor.agent.state import QueryResult
+    # a LEFT driver with 700 distinct keys, built directly (a capped execute() would truncate to 500)
+    left = QueryResult(hypothesis_id="t", sql="", columns=["k"],
+                       rows=[[str(i)] for i in range(700)], row_count=700)
+    right_conn = _duck("CREATE TABLE b (k VARCHAR, v VARCHAR)")
+    right_conn._conn.executemany("INSERT INTO b VALUES (?, ?)", [[str(i), f"v{i}"] for i in range(700)])
+
+    out = batched_foreach_join(left, "k", right_conn, "k", right_table="b")
+
+    assert out.row_count == 700     # execute_bounded fetched all 700 right rows, not capped at 500
 
 
 def test_reconcile_absent_for_truly_disjoint_cross_source_keys():

@@ -81,8 +81,15 @@ join; #5 `_qident` now escapes embedded quotes (was passthrough); #4 planner's L
 `gate_user_sql`; #1/#2 the connector's 500-row `execute()` cap (a deliberate API bound) — surfaced as a
 `PARTIAL: left driver capped at N of M rows` note instead of silently truncating (not raised: the global cap
 is out of scope to change here). Verified the 5 reconcile Python/SQL transform pairs agree byte-for-byte
-(0/60 mismatches on edge keys). REMAINING (deferred, documented): raising the effective join size past the
-per-source cap; N-source joins; driver auto-selection; answer-path/render integration.
+(0/60 mismatches on edge keys).
+**✅ FOLLOW-UP — per-source 500-row cap LIFTED** (2026-07-08): added `execute_bounded(hyp, sql, max_rows)`
+to the connection ABC (default → `execute`, i.e. unchanged/capped for connectors that don't override) with
+real overrides on DuckDB (`rows[:max_rows]`) and Postgres (`fetchmany(max_rows)`) — refactored both
+`execute` bodies into a shared `_run(hyp, sql, max_rows)`. The federation engine now reads the LEFT driver
+(≤`_MAX_OUT_ROWS` 50k) and each keyed right fetch (≤`_MAX_RIGHT_ROWS` 100k) via `execute_bounded`, so joins
+are no longer silently truncated at 500 (other connectors still cap → flagged PARTIAL). 2 tests (700-row
+right unit + 600-row end-to-end driver). Suite **2721 green**. Core-layer change, whole suite unaffected.
+REMAINING (deferred): N-source joins; driver auto-selection; answer-path/render integration.
 SIGNATURE NOTE: `batched_foreach_join` moved `right_table` to keyword-only (was positional) — all callers +
 the 11 unit-test calls updated.
 

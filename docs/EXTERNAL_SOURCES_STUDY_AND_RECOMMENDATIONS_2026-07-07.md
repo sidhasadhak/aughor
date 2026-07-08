@@ -279,6 +279,14 @@ plan→validate→execute across two DuckDB sources, validation-failure surfacin
 **v1 scope:** exactly two sources, `conn_ids[0]` drives; N-source / driver-selection / answer-path
 integration are the natural extensions.
 
+**✅ Follow-up — per-source row cap lifted.** The connection layer caps `execute()` at 500 rows, which had
+silently bounded every federated join (surfaced as `PARTIAL`). Added `execute_bounded(hyp, sql, max_rows)` to
+the connection contract — the base default delegates to `execute` (so non-overriding connectors are
+unchanged), and DuckDB/Postgres override it to actually return more rows (their `execute` bodies refactored
+into a shared `_run`). The engine reads the driver (≤50k) and each keyed right fetch (≤100k) through it, so
+joins scale past 500 rows; connectors without the override still cap and flag `PARTIAL`. 2 tests (700-row
+right fetch + 600-row end-to-end driver); suite 2721 green.
+
 **✅ Stage 2b — self-healing cross-source keys.** When a batched-foreach join's raw match rate is low and
 `reconcile=True`, `batched_foreach_join` retries under a set of **paired** normalizations — a Python function
 (applied to the materialized left keys) and the equivalent SQL expression (applied to the right key in the

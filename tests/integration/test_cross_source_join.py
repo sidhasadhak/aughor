@@ -60,6 +60,34 @@ def test_cross_source_join_end_to_end(client: TestClient, monkeypatch, tmp_path)
     assert names == ["Alice", "Bob", "Alice"]
 
 
+def test_cross_source_join_driver_exceeds_500_row_cap(client: TestClient, monkeypatch, tmp_path):
+    """The LEFT driver is read via execute_bounded, so a >500-row join isn't silently truncated."""
+    from aughor.db import registry
+    monkeypatch.setenv("AUGHOR_FEDERATION_REMOTE_JOIN", "1")
+
+    lpath = tmp_path / "big_left.duckdb"
+    lcon = duckdb.connect(str(lpath))
+    lcon.execute("CREATE TABLE orders (cust VARCHAR)")
+    lcon.executemany("INSERT INTO orders VALUES (?)", [[str(i)] for i in range(600)])
+    lcon.close()
+    rpath = tmp_path / "big_right.duckdb"
+    rcon = duckdb.connect(str(rpath))
+    rcon.execute("CREATE TABLE customers (cust VARCHAR, name VARCHAR)")
+    rcon.executemany("INSERT INTO customers VALUES (?, ?)", [[str(i), f"n{i}"] for i in range(600)])
+    rcon.close()
+    lid = registry.add_connection("xj-l600", "duckdb", str(lpath))
+    rid = registry.add_connection("xj-r600", "duckdb", str(rpath))
+
+    resp = client.post("/query/cross-source-join", json={
+        "left_conn_id": lid, "left_sql": "SELECT cust FROM orders",
+        "left_key": "cust", "right_conn_id": rid, "right_table": "customers", "right_key": "cust",
+        "right_cols": ["cust", "name"],
+    })
+
+    assert resp.status_code == 200
+    assert resp.json()["row_count"] == 600     # driver + right both read past the old 500 cap
+
+
 def test_cross_source_join_validates_required_fields(client: TestClient, monkeypatch):
     monkeypatch.setenv("AUGHOR_FEDERATION_REMOTE_JOIN", "1")
     resp = client.post("/query/cross-source-join", json={

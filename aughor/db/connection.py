@@ -443,6 +443,17 @@ class DatabaseConnection(ABC):
         bounded = f"SELECT * FROM ({sql.strip().rstrip(';')}) __q LIMIT {limit}" if limit > 0 else sql
         return self.execute("__bulk__", bounded)
 
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> "QueryResult":
+        """Like :meth:`execute` but may return up to ``max_rows`` rows.
+
+        For internal high-volume reads — notably the cross-source join engine, which must read more
+        than the per-call ``MAX_ROWS`` cap on both the driver and the keyed right fetches. The base
+        implementation delegates to :meth:`execute` and inherits its default cap (so a connector that
+        doesn't override this simply reads ≤ MAX_ROWS, which the join surfaces as PARTIAL);
+        DuckDB/Postgres override it to actually return more rows.
+        """
+        return self.execute(hypothesis_id, sql)
+
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Validate SQL without returning rows. Returns (ok, error_message).
 
@@ -614,6 +625,13 @@ class DuckDBConnection(DatabaseConnection):
             return sql
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
+        return self._run(hypothesis_id, sql, MAX_ROWS)
+
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        """Return up to ``max_rows`` rows (the cross-source join engine reads more than MAX_ROWS)."""
+        return self._run(hypothesis_id, sql, max(1, max_rows))
+
+    def _run(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
         ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
@@ -635,7 +653,7 @@ class DuckDBConnection(DatabaseConnection):
                 hypothesis_id=hypothesis_id,
                 sql=sql,
                 columns=columns,
-                rows=[[str(v) if v is not None else "NULL" for v in row] for row in rows[:MAX_ROWS]],
+                rows=[[str(v) if v is not None else "NULL" for v in row] for row in rows[:max_rows]],
                 row_count=len(rows),
             )
         except Exception as e:
@@ -775,6 +793,13 @@ class PostgresConnection(DatabaseConnection):
         return sql
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
+        return self._run(hypothesis_id, sql, MAX_ROWS)
+
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        """Return up to ``max_rows`` rows (the cross-source join engine reads more than MAX_ROWS)."""
+        return self._run(hypothesis_id, sql, max(1, max_rows))
+
+    def _run(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
         ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
@@ -794,7 +819,7 @@ class PostgresConnection(DatabaseConnection):
         try:
             with self._conn.cursor() as cur:
                 cur.execute(sql)
-                rows = cur.fetchmany(MAX_ROWS)
+                rows = cur.fetchmany(max_rows)
                 columns = [desc[0] for desc in cur.description] if cur.description else []
                 # row_count from cursor (may be -1 for some queries)
                 total = cur.rowcount if cur.rowcount >= 0 else len(rows)

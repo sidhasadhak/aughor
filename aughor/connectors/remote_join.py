@@ -144,7 +144,7 @@ def _fetch_right(
         in_list = ", ".join(_sql_literal(v) for v in chunk)
         sql = f"SELECT {sel}, {jk_expr} AS __jk FROM {from_clause} WHERE {jk_expr} IN ({in_list})"
         try:
-            res = right_conn.execute("__remote_join__", sql)
+            res = right_conn.execute_bounded("__remote_join__", sql, max_rows)
         except Exception as exc:  # noqa: BLE001 — fail-safe: never raise into the query path
             return [], {}, 0, str(exc)
         if res.error:
@@ -318,7 +318,7 @@ def cross_source_join(
     ``right_table`` or ``right_sql`` (a grounded sub-query). Fail-safe throughout."""
     from aughor.db.connection import open_connection_for
     left_conn = open_connection_for(left_conn_id)
-    left = left_conn.execute("__remote_join_left__", left_sql)
+    left = left_conn.execute_bounded("__remote_join_left__", left_sql, _MAX_OUT_ROWS)
     right_conn = open_connection_for(right_conn_id)
     return batched_foreach_join(
         left, left_key, right_conn, right_key,
