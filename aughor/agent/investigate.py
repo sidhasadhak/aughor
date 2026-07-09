@@ -2342,6 +2342,15 @@ def _match_canonical_metric(metric_label: str, metric_sql: str, metrics: list):
     return best
 
 
+def _strip_metric_alias(sql: str) -> str:
+    """Drop a trailing output alias (``… AS foo``) from a metric aggregate expression. The intake LLM
+    sometimes emits ``metric_sql`` carrying its SELECT-list alias (``SUM(…)/COUNT(*) AS item_return_rate``);
+    an aggregate EXPRESSION has no alias of its own, and leaving it breaks a probe that wraps it as
+    ``SELECT {expr} AS v FROM …`` (a live pass caught the clarify silently no-firing because of this).
+    Only removes a trailing ``AS <identifier>``; the expression is otherwise untouched."""
+    return re.sub(r"\s+AS\s+\w+\s*$", "", (sql or "").strip(), flags=re.I)
+
+
 def _pinned_metric_runs(conn, connection_id: str, metric_table: str, sql: str) -> bool:
     """One cheap dry-run probe: does ``sql`` execute as an aggregate over ``metric_table``? Guards the
     pin so a governed formula referencing a column absent from the metric table can never replace a
@@ -2350,7 +2359,7 @@ def _pinned_metric_runs(conn, connection_id: str, metric_table: str, sql: str) -
     if not metric_table or not sql:
         return False
     ref = str(metric_table).replace(";", "").strip()
-    probe = f"SELECT {sql} AS _pin_probe FROM {ref}"
+    probe = f"SELECT {_strip_metric_alias(sql)} AS _pin_probe FROM {ref}"
     db = conn
     opened = False
     try:
@@ -2469,7 +2478,7 @@ def _probe_metric_scalar(conn, connection_id: str, metric_table: str, sql: str) 
     if not metric_table or not sql:
         return None
     ref = str(metric_table).replace(";", "").strip()
-    probe = f"SELECT {sql} AS v FROM {ref}"
+    probe = f"SELECT {_strip_metric_alias(sql)} AS v FROM {ref}"
     db = conn
     opened = False
     try:
