@@ -13,24 +13,35 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: nothing here writes to the repo. A compromised action in the
+# dependency chain gets a read-only token.
+permissions:
+  contents: read
+
 jobs:
   backend:
-    name: Backend · pytest
+    name: Backend · pytest (py${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pyproject declares requires-python = ">=3.11". Test what we claim:
+        # the full suite is green on all three (verified locally, 2947 passed each).
+        python: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - name: Sync dependencies (all extras, from the committed lock; pinned to 3.11)
-        # --python 3.11 pins the interpreter deterministically without a committed
+      - name: Sync dependencies (all extras, from the committed lock)
+        # --python pins the interpreter deterministically without a committed
         # .python-version (that file is gitignored so devs can pick their own).
-        run: uv sync --all-extras --frozen --python 3.11
+        run: uv sync --all-extras --frozen --python ${{ matrix.python }}
       - name: Run tests
         # Exclude the live-LLM suites (e2e ~100s/test, eval = accuracy ratchet).
         # Both need a real model + network and would hang/flake in CI.
-        run: uv run pytest -q -m "not e2e and not eval"
+        run: uv run --python ${{ matrix.python }} pytest -q -m "not e2e and not eval"
 
   frontend:
     name: Frontend · typecheck
@@ -69,6 +80,11 @@ jobs:
         # buttons use <Button> (components/ui/button); lower the baseline as the
         # existing ones are converted.
         run: npm run lint:elements
+      - name: Production build
+        # tsc --noEmit does not catch everything `next build` does (RSC boundary
+        # violations, bad dynamic imports, prerender failures). A stranger's first
+        # command after `npm install` is often `npm run build` — it must work.
+        run: npm run build
 
   lint:
     name: Backend · ruff
