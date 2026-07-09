@@ -24,10 +24,19 @@ except ImportError:
 _DEFAULT_PATH = Path(__file__).parent.parent.parent / "data" / "glossary.yaml"
 
 
+def _default_path() -> Path:
+    """The glossary file, honouring the ``AUGHOR_GLOSSARY_PATH`` override. The suite points it at a
+    throwaway temp copy (conftest) so the autoseed / knowledge-sync WRITES can never mutate the live
+    ``data/glossary.yaml`` — the non-hermeticity that leaked a glossary edit into two commits
+    (task_213affac). Resolved per call so it always reflects the current env."""
+    from aughor.db.sqlite_util import resolve_db_path
+    return resolve_db_path("AUGHOR_GLOSSARY_PATH", _DEFAULT_PATH)
+
+
 # ── Load / Save ───────────────────────────────────────────────────────────────
 
 def _load_raw(path: Path | None = None) -> dict:
-    p = Path(path) if path else _DEFAULT_PATH
+    p = Path(path) if path else _default_path()
     if not p.exists() or yaml is None:
         return {}
     with open(p) as f:
@@ -97,7 +106,7 @@ def load_merged_glossary(path: Path | None = None) -> dict:
 def save_glossary(data: dict, path: Path | None = None) -> None:
     if yaml is None:
         raise RuntimeError("PyYAML is required: uv add pyyaml")
-    p = Path(path) if path else _DEFAULT_PATH
+    p = Path(path) if path else _default_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
