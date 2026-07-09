@@ -529,6 +529,16 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 
 Verified pending against code/git. `⬜` not started · `◑` partial.
 
+### ▶ Deep-Analysis quality — remaining backlog (2026-07-09 audit; full detail: [`docs/DEEP_ANALYSIS_QUALITY_2026-07-09.md`](docs/DEEP_ANALYSIS_QUALITY_2026-07-09.md))
+*Tiers 1–4 from the audit are SHIPPED (see §2). Everything **demonstrated** is fixed; the below is adjacent polish, the deeper grounding direction scoped down during Tier 4, and one meta gap. Ranked by value.*
+- ⬜ **P1 — canonical-metric pinning at ADA intake (highest value; a real quality bug).** A live run's intake picked `COUNT(DISTINCT refund_id)/COUNT(DISTINCT order_id)*100` and the scan returned no dimensional breakdown → "cause remains unidentified". Pin the governed/canonical metric (`resolve_canonical_metrics`/`unified_metric_grounding` exist, used on chat but not pinning ADA intake `metric_sql`) so the scan is decomposable + stable. Closes the loop between T4-1's *disclosure* and *accuracy*.
+- ⬜ **P2 — internal ADA progress events.** T3-3 fixed the explore wave's silent gap; the ADA cross-section/decompose phases still run ~5 min silently between `phase_complete` events. Emit per-query/per-dimension progress (template: `_explore_subq_event`).
+- ⬜ **P3 — fraction↔percent unit consistency in prose.** T3-2 killed 17-digit floats but "0.208" can still sit next to "20.8%"; thread the percent signal (`column_units`/`_metric_is_percent`) to a render-boundary normalizer.
+- ⬜ **P4 — metric-ambiguity RESOLUTION (deeper SOMA loop).** T4-1 discloses the chosen reading; when count-vs-value diverge materially, probe both + clarify + write to the Ambiguity Ledger (built, `semantic/ambiguity_ledger.py`; override-wins → never auto-write an unconfirmed guess). See [[ambiguity-ledger]], [[soma-sql-ambiguity]].
+- ◑ **P5 — T4-3 confidence-floor path + earning-its-keep.** The refuter fires (opt-in `ada.adversarial_verify`, default-off) and records objections, but the HIGH→MEDIUM cap path is unexercised live; add a deterministic materiality trigger so it can earn a place on the default path for the high-stakes minority.
+- ⬜ **P6 — ground-truth regression harness (highest-leverage meta).** Guards are unit-tested; end-to-end answer quality on the 4 archetypes isn't gated. A hermetic harness (mirror `tests/integration/test_golden_reference.py`) asserting direction/magnitude/named-drivers/premise-correctness would lock every gain.
+- ⬜ **P7 — model budget (non-code, #1 real-quality lever).** The local `qwen3-coder-next` produced the degenerate metric (P1) + several degraded runs; pin a stronger `coder` model for real investigations (as WS3's live ratchet already does).
+
 ### ▶ The 10x + Spider 2.0 program (2026-07-06 — the active umbrella; spec: [`docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md))
 *Order: WS4 → WS3 → WS5-P0 (gated) → WS1 ∥ WS5-P1–3 → WS2. Baseline to beat is the doc's §0
 (2,508 tests/97s · ruff 0 · deep path ~8.4 min · Lite-local 56.30% w/ glm-5.2). Constraints: additive
