@@ -71,6 +71,16 @@ def test_detects_governed_vs_parsed_divergence(monkeypatch):
     assert any("18.8%" in p or "18.8" in p for p in payload["previews"])
 
 
+def test_strip_metric_alias():
+    # The intake LLM sometimes emits metric_sql with its SELECT-list alias; the probe must strip it
+    # (a live pass caught the clarify silently no-firing because `SELECT {sql} AS v` double-aliased).
+    assert I._strip_metric_alias("SUM(x)/COUNT(*) AS item_return_rate") == "SUM(x)/COUNT(*)"
+    assert I._strip_metric_alias("SUM(CASE WHEN r THEN 1 END)/NULLIF(COUNT(*),0) as rate") \
+        == "SUM(CASE WHEN r THEN 1 END)/NULLIF(COUNT(*),0)"
+    assert I._strip_metric_alias("SUM(x)") == "SUM(x)"          # no alias → unchanged
+    assert I._strip_metric_alias("  SUM(x) AS v  ") == "SUM(x)"
+
+
 # ── no-fire conditions (proceed silently) ──────────────────────────────────────────
 
 def test_no_fire_when_flag_off(monkeypatch):
