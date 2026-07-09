@@ -225,8 +225,8 @@ tables:
         caveats: May be NULL if no response has been provided; stored as character
           varying (string)
   orders:
-    description: Contains records of customer orders, including the order identifier,
-      the customer who placed the order, and the monetary amount of the order.
+    description: Contains records of customer orders, including the order amount and
+      the customer who placed it.
     grain: one row per order
     auto_generated: true
     columns:
@@ -235,7 +235,7 @@ tables:
       customer_id:
         description: Identifier of the customer who placed the order.
       amount:
-        description: Monetary value of the order.
+        description: Total monetary value of the order.
   product_category_name_translation:
     description: Maps product category names from Portuguese to English, used to standardize
       or translate category labels across datasets.

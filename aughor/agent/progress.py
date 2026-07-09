@@ -34,8 +34,10 @@ def set_progress_sink(loop, queue) -> "contextvars.Token":
 def clear_progress_sink(token) -> None:
     try:
         _PROGRESS_SINK.reset(token)
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "clearing the progress sink is best-effort teardown; a stale token is harmless",
+                 counter="ada.progress_clear")
 
 
 def emit_phase_progress(phase_id: str, done: int, total: int, current: str = "") -> None:
@@ -49,6 +51,8 @@ def emit_phase_progress(phase_id: str, done: int, total: int, current: str = "")
     payload = {"phase_id": phase_id, "done": int(done), "total": int(total), "current": current or ""}
     try:
         loop.call_soon_threadsafe(queue.put_nowait, payload)
-    except Exception:
+    except Exception as exc:
         # Loop closed, queue full, or any teardown race — progress is disposable telemetry.
-        pass
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "progress emit is disposable telemetry; a closed loop / full queue is fine",
+                 counter="ada.progress_emit")

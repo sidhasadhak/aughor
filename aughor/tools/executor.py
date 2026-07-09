@@ -103,21 +103,16 @@ def unify_percent_fractions(text: str) -> str:
     idempotent; safe on None/empty."""
     if not text or "%" not in text:
         return text
+    # Both regexes capture only well-formed decimal literals, so float() can't raise here.
     pct_str: dict[float, str] = {}
     for m in _EXPLICIT_PCT_RE.finditer(text):
-        try:
-            pct_str.setdefault(round(float(m.group(1)), 1), m.group(1))
-        except ValueError:
-            continue
+        pct_str.setdefault(round(float(m.group(1)), 1), m.group(1))
     if not pct_str:
         return text
 
     def _sub(m):
         frac = m.group(1)
-        try:
-            v = float(frac)
-        except ValueError:
-            return frac
+        v = float(frac)
         if 0 < v < 1:
             twin = pct_str.get(round(v * 100, 1))
             if twin is not None:
