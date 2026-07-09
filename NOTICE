@@ -1,0 +1,53 @@
+Aughor
+Copyright 2026 Sidha Sadhak
+
+This product includes software developed by Sidha Sadhak.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not
+use this file except in compliance with the License. You may obtain a copy of
+the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations under
+the License.
+
+--------------------------------------------------------------------------------
+THIRD-PARTY COMPONENTS REDISTRIBUTED IN THIS REPOSITORY
+--------------------------------------------------------------------------------
+
+The following third-party assets are checked into this repository and
+redistributed under their own licenses.
+
+1. DM Sans (font files)
+   web/public/fonts/DMSans-VariableFont_opsz,wght.ttf
+   web/public/fonts/DMSans-Italic-VariableFont_opsz,wght.ttf
+
+   Copyright 2014 The DM Sans Project Authors
+   (https://github.com/googlefonts/dm-fonts)
+
+   Licensed under the SIL Open Font License, Version 1.1.
+   Full license text: web/public/fonts/OFL.txt
+
+--------------------------------------------------------------------------------
+THIRD-PARTY DEPENDENCIES (not redistributed; resolved at install time)
+--------------------------------------------------------------------------------
+
+Aughor depends on packages fetched from PyPI and the npm registry at install
+time. They are not included in this repository. Their licenses are recorded in
+`uv.lock` and `web/package-lock.json`.
+
+Two dependency licenses are worth calling out for redistributors:
+
+  * psycopg2-binary / psycopg  — LGPL-3.0. Imported as a library; not modified
+    and not statically linked into Aughor. Aughor's own Apache-2.0 terms are
+    unaffected. If you redistribute a bundled artifact, preserve the users'
+    ability to relink against a modified psycopg.
+
+  * text-unidecode — Artistic-1.0 / GPL. Reached only through the optional
+    `evals` extra (via python-slugify). It is NOT installed by a default
+    `uv sync`. Avoid the `evals` extra if GPL-adjacent code in your dependency
+    closure is a problem for you.

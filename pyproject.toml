@@ -2,7 +2,21 @@
 name = "aughor"
 version = "0.1.0"
 description = "Autonomous Data Analyst — investigative agent over your warehouse"
+readme = "README.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Sidha Sadhak" }]
+keywords = ["sql", "llm", "agent", "data-analysis", "nl2sql", "duckdb", "langgraph"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
 dependencies = [
     "langgraph>=0.2.0",
     "langchain-core>=0.3.0",
@@ -72,6 +86,11 @@ evals = [
     "braintrust>=0.0.150",
     "autoevals>=0.0.70",
 ]
+
+[project.urls]
+Homepage = "https://github.com/sidhasadhak/aughor"
+Repository = "https://github.com/sidhasadhak/aughor"
+Issues = "https://github.com/sidhasadhak/aughor/issues"
 
 [project.scripts]
 aughor = "aughor.cli:cli"

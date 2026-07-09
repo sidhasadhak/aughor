@@ -5,10 +5,10 @@
   <p><em>Your warehouse, always thinking.</em></p>
 
   <p>
-    <img src="https://img.shields.io/badge/license-MIT-black" alt="License: MIT" />
+    <a href="https://github.com/sidhasadhak/aughor/actions/workflows/ci.yml"><img src="https://github.com/sidhasadhak/aughor/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-black" alt="License: Apache-2.0" /></a>
     <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status: alpha" />
     <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+" />
-    <img src="https://img.shields.io/badge/runs-fully%20local-success" alt="Runs fully local" />
   </p>
 
   <p>
@@ -259,4 +259,7 @@ Aughor is in active alpha. Issues, ideas, and PRs are welcome.
 
 ## License
 
-MIT
+Licensed under the [Apache License 2.0](LICENSE).
+
+Third-party assets redistributed here (the DM Sans font files) are covered by their
+own licenses — see [NOTICE](NOTICE).
