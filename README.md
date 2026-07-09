@@ -58,15 +58,29 @@ No dashboards to maintain. No SQL to write. No analyst backlog.
 
 ## Quick start
 
+**You need:** [uv](https://docs.astral.sh/uv/), **Python 3.11+**, **Node 20+**, and an
+LLM backend — either [Ollama](https://ollama.com) running locally, or an API key for
+Groq / Together / Anthropic.
+
 ```bash
 git clone https://github.com/sidhasadhak/aughor.git && cd aughor
 uv sync                                          # 1. Python deps (DuckDB is built in)
 cd web && npm install && cd ..                   # 2. frontend deps
-cp .env.example .env                             # 3. then edit: set your LLM backend + models
+cp .env.example .env                             # 3. then edit: set your LLM backend + key
 ./start.sh                                       # 4. API :8000 + web → http://localhost:3000
 ```
 
-Then click **+ Add** in the sidebar → paste a DuckDB path or PostgreSQL DSN → Aughor starts exploring immediately.
+On first boot Aughor seeds a **synthetic DuckDB fixture** and registers it as a
+connection, so there is something to explore before you connect anything real.
+
+To use your own data: click **+ Add** in the sidebar → paste a DuckDB path or a
+PostgreSQL DSN → Aughor starts exploring immediately.
+
+> Step 3 is not optional. The API will start and serve without an LLM key, but
+> every question you ask will fail until a backend is configured.
+
+> `./start.sh` frees port 8000 before starting, which will kill any unrelated
+> process listening there.
 
 <details>
 <summary><strong>Minimal local <code>.env</code> (Ollama)</strong></summary>
@@ -75,8 +89,8 @@ Then click **+ Add** in the sidebar → paste a DuckDB path or PostgreSQL DSN �
 AUGHOR_BACKEND=ollama
 AUGHOR_CODER_MODEL=qwen2.5-coder:14b
 AUGHOR_NARRATOR_MODEL=qwen2.5-coder:14b
-EMBEDDER_BASE_URL=http://localhost:11434/v1
-EMBEDDER_MODEL=nomic-embed-text
+OLLAMA_BASE_URL=http://localhost:11434/v1
+AUGHOR_EMBED_MODEL=nomic-embed-text
 ```
 
 > **Tip — models are pluggable per role.** SQL generation (`coder`), report synthesis (`narrator`), and the per-phase interpret sub-tier (`fast`) each resolve independently, so you can run a fast structured model for SQL and a stronger model for prose. Set them in `.env`, in `data/llm_config.json` (`models: {coder, narrator, fast}`), or per-agent. Backends: Ollama (local + cloud), Groq, Together, Anthropic, or any private endpoint.
@@ -238,8 +252,47 @@ aughor/
 ├── evals/            # run_tpch / run_tpcds / run_clickbench / run_golden / run_realdb
 ├── web/              # Next.js App Router — components, lib (api.ts), design tokens
 ├── docs/             # architecture, adaptive-temporal-scope, mode cross-pollination, audits
-└── tests/            # pytest suite (1,500+ unit + integration; failure-path / fault-injection / chaos)
+└── tests/            # pytest suite (2,900+ unit + integration; failure-path / fault-injection / chaos)
 ```
+
+## Configuration
+
+Aughor reads `.env` at the repository root. [`.env.example`](.env.example) is the
+full reference; the essentials:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `AUGHOR_BACKEND` | `ollama` | `ollama` \| `groq` \| `anthropic` \| `together` |
+| `AUGHOR_CODER_MODEL` | per backend | Model used to generate SQL |
+| `AUGHOR_NARRATOR_MODEL` | per backend | Model used to write the report |
+| `AUGHOR_MAX_ITER` | `6` | Investigative iterations before synthesis is forced |
+| `AUGHOR_DEFAULT_POSTGRES_DSN` | — | Pre-loads a Postgres connection on startup |
+| `AUGHOR_QDRANT_URL` | `http://localhost:6333` | Vector store for the knowledge base |
+
+**Before you expose Aughor beyond `localhost`,** read [SECURITY.md](SECURITY.md).
+The defaults assume a trusted single-user machine:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `AUGHOR_API_KEY` | *unset — API is open* | When set, every request must send `X-Api-Key` |
+| `AUGHOR_CORS_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Allowed browser origins |
+| `AUGHOR_SECRET_KEY` | auto-generated to `data/.aughor_key` (mode `0600`) | Fernet key encrypting stored connection credentials |
+
+## Project status
+
+**Alpha.** No tagged release yet; `main` is the only supported branch.
+
+What is real today: the backend suite is **2,947 tests**, green on Python 3.11,
+3.12 and 3.13, and runs fully offline. `ruff` is at a zero baseline. The frontend
+typechecks under `strict` and builds.
+
+What is not: there are **no frontend tests** — the frontend is guarded by
+`tsc --noEmit` plus three lint gates. There is **no container image**; the only
+Docker asset is a `docker-compose.yml` that brings up Qdrant. `eslint` currently
+reports pre-existing errors and is therefore not a CI gate. Deployment beyond a
+local machine is untested.
+
+See [ROADMAP.md](ROADMAP.md) for what is planned.
 
 ## Roadmap & features
 
@@ -250,12 +303,32 @@ aughor/
 
 ## Contributing
 
-Aughor is in active alpha. Issues, ideas, and PRs are welcome.
+Issues, ideas, and pull requests are welcome. Start with
+**[CONTRIBUTING.md](CONTRIBUTING.md)** — it covers the dev setup, the four checks
+CI runs, and the conventions that are load-bearing here (default-off flags, guards
+that ship with a test proving they fire, never raising a ratchet baseline).
 
-1. Fork and branch off `main`.
-2. `uv sync && cd web && npm install` — then `./start.sh`.
-3. Run the suite: `uv run pytest` (backend) and `npx tsc --noEmit` in `web/` (frontend).
-4. Keep changes **build → wire → test → leverage on the real path** — every guard ships with a test that proves it fires, and no change should raise the test-ratchet baseline.
+By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Please report vulnerabilities **privately**, never as a public issue. See
+[SECURITY.md](SECURITY.md) for the threat model, what is in scope, and how to
+harden a non-local deployment.
+
+## Acknowledgements
+
+Aughor stands on:
+
+- [LangGraph](https://github.com/langchain-ai/langgraph) — the agent state machine
+- [DuckDB](https://duckdb.org) — the embedded analytical engine and the demo fixture
+- [SQLGlot](https://github.com/tobymao/sqlglot) — SQL parsing, dialect translation, and the AST the trust guards inspect
+- [FastAPI](https://fastapi.tiangolo.com) · [Next.js](https://nextjs.org) · [ECharts](https://echarts.apache.org)
+- [DM Sans](https://github.com/googlefonts/dm-fonts) by the DM Sans Project Authors (SIL OFL 1.1)
+
+The human-command surface is shaped by ideas from Palantir Foundry's AI FDE work;
+the trust-and-verification framing owes a debt to the MotherDuck writing on
+governed semantic layers.
 
 ## License
 
