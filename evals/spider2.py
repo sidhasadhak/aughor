@@ -51,7 +51,8 @@ try:
 except Exception:
     pass
 
-SPIDER2_ROOT = Path(os.environ.get("SPIDER2_ROOT", "/Users/amitkamlapure/dev/Spider2"))
+# Point SPIDER2_ROOT at your local clone of https://github.com/xlang-ai/Spider2
+SPIDER2_ROOT = Path(os.environ.get("SPIDER2_ROOT", _REPO_ROOT.parent / "Spider2"))
 LITE = SPIDER2_ROOT / "spider2-lite"
 
 MAX_SCHEMA_CHARS = 24_000

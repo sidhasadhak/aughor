@@ -77,7 +77,7 @@ stateless and light (httpx only), so it starts fast under a stdio launcher.
   "mcpServers": {
     "aughor": {
       "command": "uv",
-      "args": ["--directory", "/Users/amitkamlapure/dev/aughor", "run", "python", "-m", "aughor.mcp"],
+      "args": ["--directory", "/absolute/path/to/aughor", "run", "python", "-m", "aughor.mcp"],
       "env": { "AUGHOR_API_URL": "http://127.0.0.1:8000" }
     }
   }
@@ -87,7 +87,7 @@ stateless and light (httpx only), so it starts fast under a stdio launcher.
 **Claude Code**:
 ```bash
 claude mcp add aughor --env AUGHOR_API_URL=http://127.0.0.1:8000 \
-  -- uv --directory /Users/amitkamlapure/dev/aughor run python -m aughor.mcp
+  -- uv --directory /absolute/path/to/aughor run python -m aughor.mcp
 ```
 
 **Cursor** — `.cursor/mcp.json` (same shape as Claude Desktop's `mcpServers` entry).
