@@ -76,6 +76,16 @@ def test_parser_rejects_non_ratio_and_ambiguous():
     assert _parse_ratio_sources("SUM(a.x)/SUM(b.y)/SUM(c.z)") is None   # >1 division
 
 
+def test_parser_accepts_unqualified_columns():
+    """LLM non-determinism: the metric formula is sometimes written with BARE columns (no table
+    prefix). The parser must still capture them (tables resolved later via information_schema)."""
+    s = _parse_ratio_sources("SUM(refund_amount_usd) / NULLIF(SUM(line_revenue_usd), 0) * 100")
+    assert s is not None
+    assert s["num_table"] is None and s["num_col"] == "refund_amount_usd"
+    assert s["den_table"] is None and s["den_col"] == "line_revenue_usd"
+    assert s["scale"] == 100.0
+
+
 # ── independent global ─────────────────────────────────────────────────────────
 
 def test_independent_global_is_population_level(conn):
@@ -102,6 +112,16 @@ def test_guard_fires_on_conditioned_denominator(conn):
     assert cav is not None
     assert "10.0%" in cav                       # states the TRUE global
     assert "conditioned denominator" in cav.lower()
+
+
+def test_guard_fires_with_unqualified_metric_sql(conn):
+    """The catch must also work when the metric formula names columns UNQUALIFIED (the live inv1
+    re-run shape) — the tables are resolved from information_schema."""
+    unqualified = "SUM(refund_amount_usd) / NULLIF(SUM(line_revenue_usd), 0) * 100"
+    findings = _findings([73.0, 79.0, 85.0])
+    cav = _global_ratio_plausibility_guard(findings, conn, unqualified, "refund rate")
+    assert cav is not None
+    assert "10.0%" in cav
 
 
 def test_guard_silent_on_plausible_spread(conn):

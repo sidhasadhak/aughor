@@ -1049,33 +1049,39 @@ def _suppress_fanned_ratio(findings: list, metric_label: str, eff_caveat: str) -
 # computes the metric's TRUE global level independently — each aggregate over its OWN full table,
 # the population a rate must span — and flags when every scanned segment is implausibly far above it
 # (the systematic-inflation signature of a conditioned denominator or a broken ratio computation).
-_AGG_QUALIFIED_RE = re.compile(
-    r'\b(?:SUM|COUNT|AVG)\s*\(\s*(?:DISTINCT\s+)?((?:"?[\w]+"?\.){1,2}"?[\w]+"?)\s*\)', re.I)
+_AGG_ANY_RE = re.compile(
+    r'\b(?:SUM|COUNT|AVG)\s*\(\s*(?:DISTINCT\s+)?("?[\w.]+"?)\s*\)', re.I)
 
 
 def _parse_ratio_sources(metric_sql: str) -> Optional[dict]:
-    """Parse a composite-ratio formula ``AGG(table.col) / AGG(table.col)`` into its numerator and
-    denominator SOURCES, so the true global ratio can be recomputed with each side aggregated over
-    its OWN full table. Conservative — returns None unless BOTH sides carry a qualified
-    ``table.col`` (or ``schema.table.col``) reference AND the two tables DIFFER (the cross-table
-    population-rate shape where a conditioned denominator is possible). Handles a ``*100`` percent
-    scale and a ``NULLIF`` denominator wrapper. Fail-open: any parse ambiguity → None."""
+    """Parse a composite-ratio formula ``AGG(col) / AGG(col)`` into its numerator and denominator
+    SOURCES, so the true global ratio can be recomputed with each side aggregated over its OWN full
+    table. Columns may be qualified (``table.col`` / ``schema.table.col``) or bare (``col``); a bare
+    column is resolved to its table later via ``information_schema``. Returns None unless there are
+    exactly one division and a distinct numerator/denominator column (the cross-measure rate shape
+    where a conditioned denominator is possible). Handles a ``*100`` percent scale and a ``NULLIF``
+    denominator wrapper. Fail-open: any parse ambiguity → None."""
     s = metric_sql or ""
     if s.count("/") != 1:          # exactly one division — skip nested/ambiguous ratios
         return None
     left, right = s.split("/", 1)
-    lm = _AGG_QUALIFIED_RE.search(left)
-    rm = _AGG_QUALIFIED_RE.search(right)
+    lm = _AGG_ANY_RE.search(left)
+    rm = _AGG_ANY_RE.search(right)
     if not lm or not rm:
         return None
 
-    def _split_ref(ref: str) -> "tuple[str, str]":
+    def _split_ref(ref: str) -> "tuple[Optional[str], str]":
         parts = [p.strip('"') for p in ref.split(".")]
-        return ".".join(parts[:-1]), parts[-1]
+        if len(parts) >= 2:
+            return ".".join(parts[:-1]), parts[-1]
+        return None, parts[-1]   # bare column — resolve its table later
 
     num_table, num_col = _split_ref(lm.group(1))
     den_table, den_col = _split_ref(rm.group(1))
-    if not num_table or not den_table or num_table == den_table:
+    # distinct measures on the two sides; a same-table qualified ratio has no conditioned-denom risk
+    if not num_col or not den_col or num_col == den_col:
+        return None
+    if num_table and den_table and num_table == den_table:
         return None
     _agg = lambda side: (re.search(r"\b(SUM|COUNT|AVG)\b", side, re.I) or [None, "SUM"])[1].upper()
     return {
@@ -1083,6 +1089,26 @@ def _parse_ratio_sources(metric_sql: str) -> Optional[dict]:
         "den_table": den_table, "den_col": den_col, "den_agg": _agg(right),
         "scale": 100.0 if "*100" in s.replace(" ", "") else 1.0,
     }
+
+
+def _resolve_table_for_column(conn, col: str) -> Optional[str]:
+    """Resolve a bare column to its owning ``schema.table`` via information_schema — needed when the
+    metric formula names columns unqualified (a common LLM shape). Returns None when the column is
+    absent or lives in MORE THAN ONE table (ambiguous → fail-open, don't guess). ``col`` is a
+    regex-captured identifier (``\\w+``), so the literal is safe to inline."""
+    if not col or not re.fullmatch(r"\w+", col):
+        return None
+    try:
+        r = conn.execute(
+            "__col_table_probe__",
+            "SELECT table_schema, table_name FROM information_schema.columns "
+            f"WHERE column_name = '{col}' GROUP BY 1, 2")
+        if r and not getattr(r, "error", None) and r.rows and len(r.rows) == 1:
+            sch, tbl = r.rows[0][0], r.rows[0][1]
+            return f"{sch}.{tbl}" if sch else tbl
+    except Exception:
+        return None
+    return None
 
 
 def _independent_global_ratio(conn, sources: dict) -> Optional[float]:
@@ -1137,6 +1163,15 @@ def _global_ratio_plausibility_guard(findings: list, conn, metric_sql: str,
     global, or the segments are plausibly distributed around it. Deterministic; never raises."""
     sources = _parse_ratio_sources(metric_sql)
     if not sources:
+        return None
+    # Resolve any bare (unqualified) column to its owning table — the LLM writes the metric formula
+    # qualified on some runs and bare on others, and we need both tables to aggregate each side over
+    # its OWN full population.
+    if not sources["num_table"]:
+        sources["num_table"] = _resolve_table_for_column(conn, sources["num_col"])
+    if not sources["den_table"]:
+        sources["den_table"] = _resolve_table_for_column(conn, sources["den_col"])
+    if not sources["num_table"] or not sources["den_table"] or sources["num_table"] == sources["den_table"]:
         return None
     global_ratio = _independent_global_ratio(conn, sources)
     if global_ratio is None or global_ratio <= 0:

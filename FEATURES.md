@@ -104,6 +104,22 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   **trailing-partial** guard (an incomplete final period that reads as a false drop). When one fires it is
   **enforced**, not merely advised: the absolute-change waterfall is neutralised and the summary reframed to
   average per-period run-rate, so the report can't headline a duration artifact the narrator was told to avoid.
+- **Global-ratio plausibility guard** — for a cross-table rate (`SUM(event)/SUM(population)`), a per-segment
+  scan that inner-joins the denominator *through* the numerator's event table silently counts only the
+  population that already had the event — inflating every segment (a refund rate of ~73% when the truth is
+  ~10%) with no row fan-out to trip the other guards. The metric's **true global level is recomputed
+  independently** (each aggregate over its own full table), and when every scanned segment sits ≥2.5× above it —
+  the systematic-inflation signature of a conditioned denominator — the corrupted numbers are **suppressed** and
+  the caveat **states the true global**, so a broken ratio can't be headlined as a business finding.
+- **Sustained level-shift detection** — a "why did X change?" investigation no longer relies on single-point
+  anomaly detection alone (which is blind to a gradual multi-period shift where no single point is an outlier —
+  a real −6.4% year-over-year decline dismissed as "within normal variance" because the mean gap was divided by
+  a single-period σ, wrong by √n). A **Welch two-sample test** on the series' earlier-vs-later halves
+  (SE = √(s₁²/n₁+s₂²/n₂)) runs alongside, and a material, statistically-real shift **proceeds to dimensional
+  decomposition** instead of a Tier-0 "it's just noise" abstention that lists the dimensions it never queried.
+- **Structural trust caveat** — a computation-error trust check (conditioned denominator, fan-out, formula
+  drift) now **leads the executive summary with an honest reframe and floors confidence to LOW**, rather than
+  only capping HIGH→MEDIUM while the flagged figures still ride into the headline.
 
 ## 3. Evidence, trust receipts & statistical rigor
 
