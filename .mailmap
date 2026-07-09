@@ -1,0 +1,3 @@
+# Canonicalise the author identity across the history.
+# `git shortlog -sne` showed the same person under two spellings.
+Sidha Sadhak <sidhasadhak@outlook.com> sidhasadhak <sidhasadhak@outlook.com>

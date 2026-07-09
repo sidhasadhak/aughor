@@ -1,0 +1,81 @@
+name: Bug report
+description: Something behaves incorrectly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug.
+
+        **If this is a security vulnerability, stop** and report it privately
+        instead: https://github.com/sidhasadhak/aughor/security/advisories/new
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Connect to '...'
+        2. Ask '...'
+        3. See '...'
+    validations:
+      required: true
+
+  - type: textarea
+    id: wrong-number
+    attributes:
+      label: If Aughor reported a wrong number
+      description: >
+        Paste the question you asked and the SQL Aughor generated. Both appear
+        in the Trust Receipt on the answer. This is the single most useful thing
+        you can include.
+      render: sql
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did you hit this?
+      options:
+        - Web UI
+        - HTTP API
+        - CLI (`aughor investigate`)
+        - MCP server
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: connection
+    attributes:
+      label: Warehouse
+      placeholder: "DuckDB / PostgreSQL / BigQuery / Snowflake / the built-in fixture DB"
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: LLM backend and model
+      placeholder: "e.g. ollama + qwen2.5-coder:32b, or groq + llama-3.3-70b"
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: "Output of `uv run python -c 'import sys,platform;print(sys.version, platform.platform())'` and the commit you are on."
+      render: shell
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: "From /tmp/aughor-api.log or the console. Please redact credentials."
+      render: shell
