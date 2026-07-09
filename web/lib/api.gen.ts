@@ -5590,6 +5590,8 @@ export interface components {
         };
         /** FeedbackRequest */
         FeedbackRequest: {
+            /** Clarify Choice */
+            clarify_choice?: string | null;
             /** Feedback */
             feedback: string;
             /** Keep Subquestions */

@@ -216,6 +216,7 @@ export type InvestigationEvent =
   | { type: "paused"; investigation_id: string; hypotheses: Hypothesis[]; scores: EvidenceScore[] }
   | { type: "phase_complete"; phase: InvestigationPhase; all_phases: InvestigationPhase[] }
   | { type: "phase_progress"; phase_id: string; done: number; total: number; current?: string }
+  | { type: "clarify_pending"; investigation_id: string; subject: string; metric_label: string; question: string; options: string[]; previews: string[] }
   | { type: "answer_report"; answer_report: AnswerReport; investigation_id: string; query_mode: "investigate"; mode?: "investigate" }
   /** @deprecated wire alias for `answer_report`, kept one release (REC-U9). */
   | { type: "ada_report"; ada_report: AnswerReport; investigation_id: string; query_mode: "investigate" }

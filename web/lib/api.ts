@@ -171,6 +171,15 @@ export function resumeInvestigationPlan(invId: string, keepSubquestions: number[
   });
 }
 
+/** Resume a clarify_pending pause with the metric reading the user chose (P4). */
+export function resumeInvestigationClarify(invId: string, clarifyChoice: string): Promise<Response> {
+  return fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ feedback: "clarify answered", clarify_choice: clarifyChoice }),
+  });
+}
+
 /** Reject a pending plan — cancel the paused investigation outright. */
 export async function cancelInvestigation(invId: string): Promise<void> {
   await fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/cancel`, { method: "POST" });

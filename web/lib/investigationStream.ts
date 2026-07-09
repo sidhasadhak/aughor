@@ -46,6 +46,16 @@ export interface PlanPending {
   estimatedTokens: number;
 }
 
+// P4 clarify gate: a material metric-reading ambiguity awaiting the user's choice.
+export interface ClarifyPending {
+  investigationId: string | null;
+  subject: string;
+  metricLabel: string;
+  question: string;
+  options: string[];
+  previews: string[];
+}
+
 export interface ChatTurn {
   id: string;
   question: string;
@@ -123,6 +133,8 @@ export interface ChatTurn {
   // Editable plan gate (P3): set when the run paused for the user to review the
   // sub-question plan before the fan-out; cleared on resume.
   planPending: PlanPending | null;
+  // Clarify gate (P4): set when the run paused on a material metric-reading ambiguity; cleared on resume.
+  clarifyPending: ClarifyPending | null;
   followups: string[];
   analysis: { intent: string; steps: string[] } | null;
   error: string | null;
@@ -183,6 +195,8 @@ export type ChatAction =
   | { type: "CONTEXT_ASSEMBLED"; manifest: ContextManifest }
   | { type: "PLAN_PENDING"; plan: PlanPending }
   | { type: "PLAN_RESUME" }
+  | { type: "CLARIFY_PENDING"; clarify: ClarifyPending }
+  | { type: "CLARIFY_RESUME" }
   | { type: "FOLLOWUPS";    questions: string[] }
   | { type: "ANALYSIS";     intent: string; steps: string[] }
   | { type: "CACHE_META";   fromCache: boolean; cachedQuestion: string | null }
@@ -217,7 +231,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   dossierReport: null, dossierInsightId: null,
   queriesExecuted: [], latestScore: null,
   hypotheses: [], investigationId: null, receiptId: null,
-  tablesUsed: [], contextManifest: null, planPending: null, followups: [], analysis: null, error: null,
+  tablesUsed: [], contextManifest: null, planPending: null, clarifyPending: null, followups: [], analysis: null, error: null,
   startedAt: 0, elapsedMs: null,
   fromCache: false, cachedQuestion: null,
   inspectWarning: null,
@@ -262,6 +276,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "CONTEXT_ASSEMBLED": return updateLast(state, t => ({ ...t, contextManifest: action.manifest }));
     case "PLAN_PENDING": return updateLast(state, t => ({ ...t, planPending: action.plan, status: "done" }));
     case "PLAN_RESUME": return { ...updateLast(state, t => ({ ...t, planPending: null, status: "loading" })), streaming: true };
+    case "CLARIFY_PENDING": return updateLast(state, t => ({ ...t, clarifyPending: action.clarify, status: "done" }));
+    case "CLARIFY_RESUME": return { ...updateLast(state, t => ({ ...t, clarifyPending: null, status: "loading" })), streaming: true };
     case "FOLLOWUPS":  return updateLast(state, t => ({ ...t, followups: action.questions }));
     case "ANALYSIS":   return updateLast(state, t => ({ ...t, analysis: { intent: action.intent, steps: action.steps } }));
     case "QUERY_MODE": return updateLast(state, t => ({ ...t, queryMode: action.queryMode }));
@@ -405,6 +421,14 @@ export async function consumeStream(
               subQuestions: (p.sub_questions as PlanSubQuestion[]) ?? [],
               chainLength: (p.chain_length as number) ?? 0,
               estimatedTokens: (p.estimated_tokens as number) ?? 0,
+            } }); break;
+            case "clarify_pending": dispatch({ type: "CLARIFY_PENDING", clarify: {
+              investigationId: (p.investigation_id as string) ?? null,
+              subject: (p.subject as string) ?? "",
+              metricLabel: (p.metric_label as string) ?? "",
+              question: (p.question as string) ?? "",
+              options: (p.options as string[]) ?? [],
+              previews: (p.previews as string[]) ?? [],
             } }); break;
             case "followups":    dispatch({ type: "FOLLOWUPS",  questions: p.questions as string[] }); break;
             case "analysis":     dispatch({ type: "ANALYSIS",   intent:    p.intent as string, steps: p.steps as string[] }); break;
