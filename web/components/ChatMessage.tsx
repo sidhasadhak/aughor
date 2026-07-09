@@ -814,20 +814,29 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-// ── Clarifying questions surfaced before deep analysis ───────────────────────
+// ── Assumptions the deep run is making (P4 — de-trapped) ──────────────────────
+// Deep analysis does NOT pause on these — the run proceeds on its own interpretation (see
+// docs/DEEP_ANALYSIS_QUALITY: the graph arms no clarify interrupt). The old "Clarifying questions"
+// label + clickable-looking pill chips read as a stuck human-in-the-loop prompt with no way to
+// answer. Reframed as honest, non-actionable disclosure: what the run is interpreting for you.
 function ClarifyingQuestionsBanner({ questions, contextNote }: { questions: string[]; contextNote: string }) {
   if (!questions || questions.length === 0) return null;
   return (
     <div className="mt-3 mb-3 rounded-[var(--r3)] border border-blue-700/30 p-3" style={{ background: 'color-mix(in srgb, #3b82f6 6%, transparent)' }}>
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="aug-fs-xs font-medium uppercase tracking-wide text-blue-400">Clarifying questions</span>
+        <span className="aug-fs-xs font-medium uppercase tracking-wide text-blue-400">Interpreting automatically</span>
       </div>
-      {contextNote && <p className="aug-fs-xs text-blue-300/70 mb-2">{contextNote}</p>}
-      <div className="flex flex-wrap gap-1.5">
+      <p className="aug-fs-xs text-blue-300/70 mb-2">
+        {contextNote ? `${contextNote} ` : ""}The analysis is resolving these itself and continuing — no action needed.
+      </p>
+      <ul className="flex flex-col gap-1">
         {questions.map((q, i) => (
-          <span key={i} className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-pill)] border border-blue-700/40 text-blue-300">{q}</span>
+          <li key={i} className="aug-fs-xs text-blue-300/90 flex gap-1.5">
+            <span className="text-blue-500/60" aria-hidden>·</span>
+            <span>{q}</span>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   );
 }

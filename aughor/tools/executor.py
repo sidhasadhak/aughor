@@ -85,6 +85,43 @@ def round_long_decimals(text: str) -> str:
     return _LONG_DECIMAL_RE.sub(_sub, text)
 
 
+# An explicit percent in prose — the NUMBER before a "%" ("20.8%", "5 %"). The lookbehind keeps it
+# from matching a digit inside a larger token.
+_EXPLICIT_PCT_RE = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)\s*%")
+# A bare decimal fraction ("0.208", ".208") NOT already a percent, currency, or percentage-points, and
+# not a fragment of a larger number (the lookbehind excludes a preceding word char / dot / $).
+_BARE_FRACTION_RE = re.compile(r"(?<![\w.$])(0?\.\d+)(?!\s*%)(?!\s*pp\b)")
+
+
+def unify_percent_fractions(text: str) -> str:
+    """Normalize a percentage written BOTH ways in the same prose — an explicit "20.8%" AND its bare
+    fraction "0.208" — to the percent form, so one value never reads as two (the "0.208 next to 20.8%"
+    render miss T3-2 didn't cover). SELF-GROUNDED: a fraction is rewritten only when its ×100 value is
+    ALSO present in the text as an explicit percent, reusing that twin's exact number string — so an
+    unrelated sub-1 number (a correlation 0.82, a p-value 0.05, a $0.50 price) is never touched. The
+    caller gates on the metric being a percentage; this adds a second, textual guard. Deterministic;
+    idempotent; safe on None/empty."""
+    if not text or "%" not in text:
+        return text
+    # Both regexes capture only well-formed decimal literals, so float() can't raise here.
+    pct_str: dict[float, str] = {}
+    for m in _EXPLICIT_PCT_RE.finditer(text):
+        pct_str.setdefault(round(float(m.group(1)), 1), m.group(1))
+    if not pct_str:
+        return text
+
+    def _sub(m):
+        frac = m.group(1)
+        v = float(frac)
+        if 0 < v < 1:
+            twin = pct_str.get(round(v * 100, 1))
+            if twin is not None:
+                return f"{twin}%"
+        return frac
+
+    return _BARE_FRACTION_RE.sub(_sub, text)
+
+
 def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
     """Render a QueryResult as a compact text table for LLM context."""
     if result.error:
