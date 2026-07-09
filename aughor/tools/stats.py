@@ -75,6 +75,68 @@ def detect_anomaly(
     )
 
 
+@dataclass
+class LevelShiftResult:
+    prior_mean: float
+    recent_mean: float
+    rel_change: float          # (recent - prior) / prior
+    t_stat: float              # Welch two-sample t (signed)
+    p_value: float
+    is_significant: bool       # p < alpha AND |rel_change| ≥ min_effect
+    interpretation: str
+
+
+def mean_shift_significance(
+    values: list[float],
+    min_per_group: int = 3,
+    alpha: float = 0.05,
+    min_effect: float = 0.03,
+) -> Optional[LevelShiftResult]:
+    """Two-sample (Welch) test for a SUSTAINED level shift between the earlier and later
+    halves of an ordered series.
+
+    This is the complement to single-point ``detect_anomaly``: point-anomaly detection asks
+    "is the LAST observation an outlier vs history?" and is structurally BLIND to a gradual or
+    sustained shift where no individual point is an outlier — e.g. a full-year revenue decline
+    of −6% across 12 months, where every single month sits within the prior year's range but the
+    two years' MEANS differ significantly. The prior code divided the mean gap by a single-period
+    σ (wrong by √n); the correct test uses the standard error of the mean difference
+    (SE = √(s₁²/n₁ + s₂²/n₂)), which is exactly Welch's two-sample t.
+
+    Returns None when the series is too short to split into two groups of ``min_per_group``.
+    ``is_significant`` requires BOTH statistical significance (p < alpha) AND a material effect
+    (|rel_change| ≥ min_effect) so a trivially-small-but-significant wobble on a long, tight
+    series does not force expensive downstream work."""
+    arr = [float(v) for v in values if v is not None]
+    n = len(arr)
+    if n < 2 * min_per_group:
+        return None
+    mid = n // 2
+    prior, recent = arr[:mid], arr[mid:]
+    pm = float(np.mean(prior))
+    rm = float(np.mean(recent))
+    rel = (rm - pm) / pm if pm != 0 else 0.0
+    try:
+        t_stat, p_value = scipy_stats.ttest_ind(recent, prior, equal_var=False)
+        t_stat = float(t_stat)
+        p_value = float(p_value)
+    except Exception:
+        return None
+    if not np.isfinite(t_stat) or not np.isfinite(p_value):
+        return None
+    is_sig = bool(p_value < alpha and abs(rel) >= min_effect)
+    direction = "lower" if rel < 0 else "higher"
+    interp = (
+        f"Sustained level shift: recent-half mean ({rm:,.1f}) is {abs(rel) * 100:.1f}% {direction} "
+        f"than prior-half mean ({pm:,.1f}) — Welch t={t_stat:.2f}, p={p_value:.3f} "
+        f"[{'SIGNIFICANT shift' if is_sig else 'within noise'}]."
+    )
+    return LevelShiftResult(
+        prior_mean=pm, recent_mean=rm, rel_change=rel, t_stat=t_stat,
+        p_value=p_value, is_significant=is_sig, interpretation=interp,
+    )
+
+
 # ── Core: trend ───────────────────────────────────────────────────────────────
 
 def detect_trend(values: list[float]) -> TrendResult:
@@ -386,11 +448,20 @@ def analyze_query_result(columns: list[str], rows: list[list], sql: Optional[str
 
 def _analyze_time_series(col_name: str, values: list[float]) -> Optional[StatResult]:
     """
-    Try STL decomposition (statsmodels) for seasonality-aware anomaly detection.
-    Falls back to plain z-score if STL fails or series is too short.
+    Detect whether a metric series deviated from its own history. Two complementary tests are
+    combined so neither blind spot silently passes:
+      • single-point anomaly (STL-deseasonalised, or plain z-score) — "is the LAST point an outlier?"
+      • sustained level shift (Welch two-sample) — "did the series MEAN move?" — which point-anomaly
+        detection misses (a gradual multi-period decline where no single point is an outlier).
+    The reported sigma/is_significant is the STRONGER of the two, so the downstream Tier-0 gate
+    proceeds to dimensional analysis on a real level shift instead of dismissing it as "noise".
     """
     last = values[-1]
     baseline = values[:-1]
+
+    point_sig = False
+    point_sigma = 0.0
+    point_interp = ""
 
     # Attempt STL with weekly period (7) if we have at least 2 full periods
     if len(values) >= 14:
@@ -407,25 +478,37 @@ def _analyze_time_series(col_name: str, values: list[float]) -> Optional[StatRes
             res_last = residuals[-1]
             anomaly = detect_anomaly(res_baseline, res_last)
             label = "STL-decomposed residual" if anomaly.is_anomaly else "STL residual"
-            return StatResult(
-                type="anomaly",
-                interpretation=(
-                    f"[{col_name}] After removing seasonality ({label}): "
-                    f"{anomaly.interpretation}"
-                ),
-                is_significant=anomaly.is_anomaly,
-                sigma=round(abs(anomaly.z_score), 2),
-            )
+            point_sig = anomaly.is_anomaly
+            point_sigma = abs(anomaly.z_score)
+            point_interp = f"[{col_name}] After removing seasonality ({label}): {anomaly.interpretation}"
         except Exception:
-            pass  # fall through to z-score
+            pass  # fall through to plain z-score
 
-    # Fallback: plain z-score on raw values
-    anomaly = detect_anomaly(baseline, last)
+    if not point_interp:
+        # Fallback: plain z-score on raw values
+        anomaly = detect_anomaly(baseline, last)
+        point_sig = anomaly.is_anomaly
+        point_sigma = abs(anomaly.z_score)
+        point_interp = f"[{col_name}] {anomaly.interpretation}"
+
+    # Sustained level-shift test — the point-anomaly blind spot. Reported as significant when a
+    # material, statistically-real shift exists even though no single point is an outlier.
+    shift = mean_shift_significance(values)
+    if shift is not None and shift.is_significant and abs(shift.t_stat) > point_sigma:
+        return StatResult(
+            type="anomaly",
+            interpretation=f"{point_interp} {shift.interpretation}",
+            is_significant=True,
+            sigma=round(abs(float(shift.t_stat)), 2),
+        )
+
+    # Coerce numpy scalars → plain Python (the STL/z-score paths yield numpy bool/float, which the
+    # LangGraph msgpack checkpointer downstream cannot serialize).
     return StatResult(
         type="anomaly",
-        interpretation=f"[{col_name}] {anomaly.interpretation}",
-        is_significant=anomaly.is_anomaly,
-        sigma=round(abs(anomaly.z_score), 2),
+        interpretation=point_interp,
+        is_significant=bool(point_sig),
+        sigma=round(float(point_sigma), 2),
     )
 
 

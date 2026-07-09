@@ -140,6 +140,19 @@ def route_after_baseline(state: AgentState) -> str:
     sigma = state.get("_baseline_sigma")
     code_sig = state.get("_baseline_significant")
 
+    # Decompose-under-abstention (fix 5): a "why did X change/decline/rise?" question presupposes a
+    # real movement and asks for its CAUSE. If the aggregate moved materially (≥5% between the
+    # series' earlier and later halves), run ONE dimensional pass even when the single-point anomaly
+    # test is sub-threshold — offsetting or gradual segment moves are invisible in the aggregate, and
+    # answering "it's just noise, here's everything I didn't look at" is the failure we're fixing.
+    # A genuinely-flat series (immaterial move, e.g. the "did refunds spike?" false premise) still
+    # stops cleanly below. route_after_decompose caps the cost at Tier 1 for non-dimensional questions.
+    rel_change = state.get("_baseline_rel_change")
+    if (_is_temporal_change_question(question) and rel_change is not None
+            and abs(rel_change) >= 0.05 and not code_sig):
+        from aughor.stats import stats as _s; _s.inc("tier0_decompose_on_why")
+        return "ada_decompose"
+
     # Code-level signal: stats.py ran and says "not significant"
     if code_sig is False and (sigma is None or sigma < 1.5):
         from aughor.stats import stats as _s; _s.inc("tier0_skips")
@@ -1027,6 +1040,127 @@ def _suppress_fanned_ratio(findings: list, metric_label: str, eff_caveat: str) -
             "grain-correct recompute is needed).")
 
 
+# ── Global-ratio plausibility guard (conditioned-denominator / implausible-magnitude) ─────────
+# The catastrophic inv1 failure: a "why is the Fragrance refund RATE so high?" scan generated
+# per-dimension SQL that used the EVENT table (refunds) as the JOIN BASE and INNER-joined the
+# population (revenue) onto it — so every segment's denominator counted only orders that HAD a
+# refund. Result: a refund rate of ~73% (true ≈ 10.4%), and the report told the user their premise
+# was INVERTED. No existing guard caught it (values sit inside [0,100], no row fan-out). This guard
+# computes the metric's TRUE global level independently — each aggregate over its OWN full table,
+# the population a rate must span — and flags when every scanned segment is implausibly far above it
+# (the systematic-inflation signature of a conditioned denominator or a broken ratio computation).
+_AGG_QUALIFIED_RE = re.compile(
+    r'\b(?:SUM|COUNT|AVG)\s*\(\s*(?:DISTINCT\s+)?((?:"?[\w]+"?\.){1,2}"?[\w]+"?)\s*\)', re.I)
+
+
+def _parse_ratio_sources(metric_sql: str) -> Optional[dict]:
+    """Parse a composite-ratio formula ``AGG(table.col) / AGG(table.col)`` into its numerator and
+    denominator SOURCES, so the true global ratio can be recomputed with each side aggregated over
+    its OWN full table. Conservative — returns None unless BOTH sides carry a qualified
+    ``table.col`` (or ``schema.table.col``) reference AND the two tables DIFFER (the cross-table
+    population-rate shape where a conditioned denominator is possible). Handles a ``*100`` percent
+    scale and a ``NULLIF`` denominator wrapper. Fail-open: any parse ambiguity → None."""
+    s = metric_sql or ""
+    if s.count("/") != 1:          # exactly one division — skip nested/ambiguous ratios
+        return None
+    left, right = s.split("/", 1)
+    lm = _AGG_QUALIFIED_RE.search(left)
+    rm = _AGG_QUALIFIED_RE.search(right)
+    if not lm or not rm:
+        return None
+
+    def _split_ref(ref: str) -> "tuple[str, str]":
+        parts = [p.strip('"') for p in ref.split(".")]
+        return ".".join(parts[:-1]), parts[-1]
+
+    num_table, num_col = _split_ref(lm.group(1))
+    den_table, den_col = _split_ref(rm.group(1))
+    if not num_table or not den_table or num_table == den_table:
+        return None
+    _agg = lambda side: (re.search(r"\b(SUM|COUNT|AVG)\b", side, re.I) or [None, "SUM"])[1].upper()
+    return {
+        "num_table": num_table, "num_col": num_col, "num_agg": _agg(left),
+        "den_table": den_table, "den_col": den_col, "den_agg": _agg(right),
+        "scale": 100.0 if "*100" in s.replace(" ", "") else 1.0,
+    }
+
+
+def _independent_global_ratio(conn, sources: dict) -> Optional[float]:
+    """The metric's TRUE whole-population value: numerator aggregated over its full table divided by
+    the denominator aggregated over ITS full table — no conditioning join, so the denominator spans
+    the entire population the rate is defined over. One cheap deterministic query. None on any error."""
+    try:
+        num = f'{sources["num_agg"]}("{sources["num_col"]}")'
+        den = f'{sources["den_agg"]}("{sources["den_col"]}")'
+        sql = (f'SELECT (SELECT {num} FROM {sources["num_table"]}) * {sources["scale"]} '
+               f'/ NULLIF((SELECT {den} FROM {sources["den_table"]}), 0) AS global_ratio')
+        r = conn.execute("__global_ratio_probe__", sql)
+        if r and not getattr(r, "error", None) and r.rows and r.rows[0] and r.rows[0][0] is not None:
+            return float(r.rows[0][0])
+    except Exception:
+        return None
+    return None
+
+
+def _ratio_metric_values(findings: list) -> list:
+    """Pull the per-segment ratio values from the scan's findings — the metric column
+    (`metric_total`/`metric_value`/`*rate*`) across every row of every finding."""
+    def _f(v):
+        try:
+            return float(str(v).replace(",", "").replace("%", ""))
+        except (TypeError, ValueError):
+            return None
+    vals: list[float] = []
+    for f in (findings or []):
+        cols = [str(c).lower() for c in (f.get("columns") or [])]
+        m_idx = next((i for i, c in enumerate(cols) if _RATIO_METRIC_COL_RE.search(c)), None)
+        if m_idx is None:
+            continue
+        for row in (f.get("rows") or []):
+            if m_idx < len(row):
+                v = _f(row[m_idx])
+                if v is not None:
+                    vals.append(v)
+    return vals
+
+
+_GLOBAL_RATIO_INFLATION = 2.5   # every segment ≥ this × the true global ⇒ systematic inflation
+
+
+def _global_ratio_plausibility_guard(findings: list, conn, metric_sql: str,
+                                     metric_label: str) -> Optional[str]:
+    """Fix 1+2 — detect a conditioned-denominator / broken ratio by magnitude. Compute the metric's
+    true global level independently; if EVERY scanned segment is ≥ 2.5× that global (systematic
+    inflation the eye reads as 'every segment is an outlier'), the per-segment ratio is a computation
+    artifact, not a business signal. Suppress the corrupted numbers and return an honest caveat that
+    STATES the true global. Returns None (no-op) when it can't parse the metric, can't compute the
+    global, or the segments are plausibly distributed around it. Deterministic; never raises."""
+    sources = _parse_ratio_sources(metric_sql)
+    if not sources:
+        return None
+    global_ratio = _independent_global_ratio(conn, sources)
+    if global_ratio is None or global_ratio <= 0:
+        return None
+    seg_vals = [v for v in _ratio_metric_values(findings) if v is not None and v > 0]
+    if len(seg_vals) < 2:
+        return None
+    # Systematic inflation: even the SMALLEST segment sits far above the true global — the signature
+    # of a denominator that lost most of its population (not a real spread with a few high segments).
+    if min(seg_vals) < _GLOBAL_RATIO_INFLATION * global_ratio:
+        return None
+    _fmt = _fmt_pct if sources["scale"] == 100.0 or max(seg_vals) <= 100.0 else (lambda v: f"{v:,.2f}")
+    caveat = (
+        f"metric-computation error: every scanned segment of {metric_label} ({_fmt(min(seg_vals))}–"
+        f"{_fmt(max(seg_vals))}) sits far above the metric's TRUE whole-population level of "
+        f"{_fmt(global_ratio)} (numerator over {sources['num_table']} ÷ denominator over "
+        f"{sources['den_table']}, each on its full population). This is the signature of a conditioned "
+        "denominator — the per-segment query joined the denominator through the numerator's event "
+        f"table, so it counted only the population that already had the event. The true global "
+        f"{metric_label} is {_fmt(global_ratio)}; the per-segment ranking is not trustworthy until the "
+        "denominator is computed over the full population per segment.")
+    return caveat
+
+
 def _chart_ratio_primary(finding) -> None:
     """For a RATIO metric, plot metric_total (the ratio itself), not the large numerator/
     denominator dollar aggregates it was built from. Keep the dimension column + the ratio
@@ -1785,6 +1919,48 @@ def _cap_confidence_on_trust_advisory(synth, phases) -> bool:
         + (f" (+{len(caveats) - 1} more)" if len(caveats) > 1 else "")
         + ". " + (getattr(synth, "confidence_justification", "") or "")
     ).strip()
+    return True
+
+
+# A trust caveat that says the NUMBER IS WRONG (a computation artifact) — as opposed to merely
+# uncertain. These must not just cap confidence; the flagged figures must be visibly reframed so the
+# headline/summary can't present an artifact as fact (the inv1 "73% refund rate, premise inverted" miss).
+_COMPUTATION_ERROR_CAVEAT_RE = re.compile(
+    r"computation error|conditioned denominator|fan-?out|corrupt\w*|not trustworthy|"
+    r"could not be computed|formula drift|grain-correct recompute|artifact", re.I)
+
+
+def _reframe_on_trust_caveat(synth, phases) -> bool:
+    """Report-quality fix 4 — make a trust advisory STRUCTURAL, not just a confidence label. The
+    prior wiring only demoted HIGH→MEDIUM (``_cap_confidence_on_trust_advisory``); the corrupted
+    numbers still rode into the LLM-written headline/executive_summary (inv1 headlined a 73% refund
+    rate the guard had already flagged as a conditioned-denominator artifact). For a computation-ERROR
+    caveat — the number is WRONG, not merely uncertain — deterministically LEAD the executive summary
+    with the honest reframe (so the caveat sits next to any figure a reader sees) and floor confidence
+    to LOW. Mild advisories are left to the MEDIUM cap. Mirrors ``_reframe_on_pop_duration_mismatch``;
+    returns True when it acted. Never raises on a missing field."""
+    if not synth:
+        return False
+    caveats = [f.get("trust_caveat") for p in (phases or []) for f in (p.get("findings") or [])
+               if f.get("trust_caveat")]
+    err_caveats = [c for c in caveats if _COMPUTATION_ERROR_CAVEAT_RE.search(str(c))]
+    if not err_caveats:
+        return False
+    lead = err_caveats[0]
+    _es = synth.executive_summary or ""
+    if str(lead)[:48].lower() not in _es.lower():
+        reframe = (
+            f"⚠ A trust check flagged the evidence and the figures below are NOT reliable: {lead} "
+            "Do not read the numbers or ranking as fact until they are recomputed. "
+        )
+        synth.executive_summary = (reframe + _es).strip()[:900]
+    # A wrong number can't underwrite a confident verdict.
+    if getattr(synth, "confidence", "") != "LOW":
+        synth.confidence = "LOW"
+        synth.confidence_justification = (
+            "Floored to LOW — a computation-error trust check fired: " + str(lead) + " "
+            + (getattr(synth, "confidence_justification", "") or "")
+        ).strip()
     return True
 
 
@@ -2687,6 +2863,44 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
             code_significant = bool(code_sigma >= 2.0)
             break  # first successful result is enough
 
+    # Decompose-under-abstention (fix 5): capture the sustained level-shift magnitude of the primary
+    # metric series so the router can still run ONE dimensional pass for a "why did X change?"
+    # question whose aggregate moved materially — never answer a WHY with "it's just noise" and a
+    # list of dimensions it never queried (the inv3 failure). Best-effort; router falls back to sigma.
+    code_rel_change: Optional[float] = None
+    try:
+        from aughor.tools.stats import mean_shift_significance
+
+        def _col_floats(rows, idx):
+            out = []
+            for row in rows:
+                if idx < len(row):
+                    try:
+                        out.append(float(str(row[idx]).replace(",", "").replace("%", "")))
+                    except (TypeError, ValueError):
+                        pass
+            return out
+
+        for _, r in results:
+            if r.error or not r.rows or not r.columns:
+                continue
+            # The primary metric series is the first non-leading column that reads as a run of
+            # numbers (leading column is the period/label); good enough to gauge the aggregate move.
+            for _ci in range(1, len(r.columns)):
+                _series = _col_floats(r.rows, _ci)
+                if len(_series) < 6:
+                    continue
+                _shift = mean_shift_significance(_series)
+                if _shift is not None:
+                    code_rel_change = float(_shift.rel_change)
+                    break
+            if code_rel_change is not None:
+                break
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "level-shift magnitude is best-effort; router falls back to sigma",
+                 counter="ada.level_shift_probe")
+
     if interpretation and interpretation.findings:
         findings = _assemble_phase_findings(results, interpretation.findings, "baseline")
         summary = interpretation.phase_summary
@@ -2853,6 +3067,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         "_baseline_passes": passes_to_next,
         "_baseline_significant": code_significant,
         "_baseline_sigma": code_sigma,
+        "_baseline_rel_change": code_rel_change,
     }
     if updated_intake is not None:
         ret["_ada_intake"] = updated_intake
@@ -3544,6 +3759,19 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                 summary = _suppress_fanned_ratio(_fanned, metric_label, _eff_caveat)
             else:
                 summary = f"⚠ {_eff_caveat} " + (summary or "")
+
+    # Global-ratio plausibility guard (fix 1+2): for a composite-ratio metric, a conditioned
+    # denominator (denominator inner-joined through the numerator's event table) or any broken ratio
+    # inflates EVERY segment far above the metric's true global level — a class no fan-out/saturation
+    # guard catches. Compute the true global independently and, if every segment is implausibly high,
+    # suppress the corrupted numbers + state the true global so synthesis can't headline the artifact.
+    if is_ratio and _metric_is_composite_ratio(metric_sql):
+        _plausibility = _global_ratio_plausibility_guard(findings, conn, metric_sql, metric_label)
+        if _plausibility:
+            for f in findings:
+                f["trust_caveat"] = f.get("trust_caveat") or _plausibility
+                f["is_significant"] = False
+            summary = _suppress_fanned_ratio(findings, metric_label, _plausibility)
 
     phase = _phase_result(
         _phase_id, _phase_title, _phase_emoji,
@@ -4992,6 +5220,9 @@ def ada_synthesize(state: AgentState) -> dict:
 
     # Trust-advisory floor (report-quality wiring gap #2) — cap HIGH → MEDIUM when an advisory fired.
     _cap_confidence_on_trust_advisory(synth, phases)
+    # Fix 4: a computation-ERROR caveat is structural, not advisory — lead the summary with the honest
+    # reframe and floor confidence to LOW so a flagged-artifact number can't be headlined as fact.
+    _reframe_on_trust_caveat(synth, phases)
 
     # F3/F2 — a CROSS-SECTIONAL scan ranks the metric ACROSS dimensions at a point in time; it
     # measures no temporal change, so:
