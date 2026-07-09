@@ -41,6 +41,14 @@ On top of the depths, the conversational agent (the unified-answer-path arc, PR 
   human decision). So the same question class never re-ambiguates: ambiguity **burns down per connection**
   instead of re-paying a probe pipeline every question. Flag-gated (`closed_loop`); `ledger_stats` reports
   the burn-down (served-from-ledger vs freshly asked).
+- **Interactive metric clarify — pause, ask, remember** (`ada.clarify_gate`) — when a metric's GOVERNED reading and
+  the LLM's parsed reading both run over the metric table but give **materially different numbers** (the count-vs-value
+  split — e.g. a value-weighted 27.8% vs a count-based 26.2% return rate), a deep run **pauses before the scan** and
+  asks which reading you meant, showing **each reading's probed value**. It is a real interrupt/resume gate — a faithful
+  sibling of the editable plan gate — so the run genuinely halts and continues on your answer (not an ignorable banner).
+  Your choice binds the metric for the run and crystallizes to the Ambiguity Ledger (source=user, override-wins), so a
+  subsequent run **hard-binds it and never re-asks** (precedence: resolution > clarify > canonical pin). Off by default;
+  fires only on a genuine divergence, at most once per run.
 - **Conversational follow-ups** — "now break that down by region / just for the ultra tier" composes on the
   prior query (`aughor/agent/followup.py` + a result digest carried across turns), on **every** path: the
   quick Insight path, AND the deep/Direct-lookup path (a follow-up in a canvas anchors on the previous turn's
@@ -125,23 +133,42 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
 - **Render-boundary number hygiene** — a report never ships a raw 17-significant-digit float in prose: any
   over-long decimal run in a headline/summary/narrative is deterministically rounded to display precision (the
   "0.20829576194770064" miss), on both the investigate and explore paths.
+- **Fraction↔percent prose consistency** — when the metric is a percentage, a value written BOTH ways in the same
+  prose ("0.208" next to "20.8%") is normalized to the percent form. Self-grounded: a fraction is rewritten only
+  when its ×100 value is literally present as an explicit percent in the same text, so an unrelated sub-1 number —
+  a correlation `0.82`, a p-value `0.05`, a `$0.50` price, a `0.36 pp` spread — is never rescaled.
 - **Inspectable exploration traces** — a "what's driving X?" exploration forwards **every** sub-question's SQL,
   rows, and result (not just the final one), emits a **per-step progress event** as each sub-question completes
   (no multi-minute silent gap on the parallel-wave path), and — because each step now carries its own result —
   **charts every step** through the existing per-result renderer.
+- **Live per-dimension scan progress** (`ada.progress_events`) — a Deep-Analysis cross-section / decompose scan
+  streams a progress event as **each dimension query completes** ("scanning brand · 3/6…"), so a multi-minute
+  phase reports what it's doing DURING execution instead of a silent spinner between phase-complete events. It is
+  a genuine mid-node → SSE channel: a best-effort in-process sink bound inside the scan's execution context and
+  carried through its worker threads into the response stream (no extra model cost). Off by default = byte-identical stream.
 - **Data-coverage transparency** — intake runs one deterministic `MIN/MAX(date)` probe and the report states the
   **real coverage window** it analyzed (populated even for a cross-sectional scan, which used to blank it), and a
   sample-inferred observation window that falls outside the real data span is replaced with the probed one.
 - **Metric-definition receipt** — every report states **how the metric was computed** in plain language (formula,
   and for a ratio whether it's a value-weighted `SUM/SUM` or a count-based rate — the two can differ and the
   reading was chosen automatically), so a silently-picked definition is visible and challengeable, not buried.
+- **Canonical-metric pinning at intake** (`ada.pin_canonical_metric`) — when a deep investigation parses a metric
+  the connection already GOVERNS (curated catalog · connection north-star · verified ontology), the intake's
+  formula is **pinned to the governed one** so the cross-section scan decomposes on a stable, canonical definition
+  instead of a run-varying LLM guess (the count-vs-value "refund rate" that left the breakdown un-decomposable →
+  "cause remains unidentified"). Fail-open: it only replaces the LLM formula when a governed metric matches the
+  label on its distinctive tokens, its SQL is a bare substitutable aggregate, AND a dry-run confirms it runs over
+  the metric table. Deterministic; the resolution also **crystallizes to the Ambiguity Ledger** (source=probe) so
+  it compounds per connection to every path.
 - **Verdict↔recommendation coherence** — the cross-phase contradiction detector now also checks the **headline
   against the recommendations**: a verdict that rejects the premise ("X is not the problem") or reports no
   material issue while still shipping actionable recommendations is flagged, instead of reading as "no contradiction".
 - **Tiered adversarial verification** (opt-in, `ada.adversarial_verify`) — a ReFoRCE-style skeptic pass that fires
   **only** on a decision-changing verdict (a premise rejection or an abstention) to try to refute it before
-  shipping; a surviving refutation caps confidence and records the objection. Off by default (one extra LLM call
-  on those runs); the deterministic default path is unchanged.
+  shipping; a surviving refutation records the objection and caps confidence **HIGH→MEDIUM**. Off by default (one
+  extra LLM call on those runs); the deterministic default path is unchanged. A cheaper **materiality-gated tier**
+  (`ada.adversarial_high_stakes`) spends the skeptic call **only on a HIGH-confidence** decision-changing verdict —
+  the costly-if-wrong minority, and the only case where the cap can bite (confidence-triggered activation).
 
 ## 3. Evidence, trust receipts & statistical rigor
 
@@ -343,6 +370,12 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   from the June benchmark arc was deliberately removed with the arc's conclusion — see
   `docs/SPIDER2_PROGRESS_AND_CHALLENGES_2026-06-28.md` §14; a fresh campaign harness is scoped in
   `docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md` WS5.)*
+- **End-to-end answer-quality gate** (`tests/integration/test_ada_ground_truth.py`) — the deep-analysis guards are
+  unit-tested, but *answer quality* on the audit archetypes was not gated. A hermetic harness (temp DuckDB with
+  **closed-form ground truth**, no live LLM) now asserts the deterministic gains directly: the global-ratio guard
+  recomputes the true global (and stays silent on a plausible spread), a sustained decline is Welch-significant and
+  decomposes to the named driver, a genuinely flat series abstains, and the canonical pin binds a runnable formula /
+  fails closed on a missing column — so a future change can't silently regress the answer while the unit tests stay green.
 - **Fail-graceful-by-contract** — never a 500 / hang / silent-wrong-success.
 - **No silent failures** — the only legal way to swallow an exception is `tolerate()` (logged + counted +
   journaled), enforced by a test ratchet that can only go down.
@@ -350,7 +383,10 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   plus **ruff at zero and blocking** (pinned; a sane ruleset that surfaced + fixed several real latent
   `NameError`s), plus a **codegen-drift gate** (the typed TS client `web/lib/api.gen.ts` is regenerated
   from the route surface via a hermetic offline OpenAPI dump — `scripts/dump_openapi.py` — and CI fails
-  if it's stale). ~2,500 tests; the suite is fully store-isolated so it can never mutate live data.
+  if it's stale). ~2,900 tests; the suite is **fully store-isolated so it can never mutate live data** — every SQLite
+  store honours an `AUGHOR_*_DB` override, and the glossary + metrics-catalog **file** stores (`AUGHOR_GLOSSARY_PATH` /
+  `AUGHOR_METRICS_PATH`) point at a throwaway temp copy in tests, so the autoseed / knowledge-sync write path can never
+  touch `data/`.
 - **Enforced frontend design layer** (Part 2 of the 2026-07-03 review) — three baseline-zero, *blocking*
   web gates, the ruff discipline applied to the UI: a **design-token gate** (`lint:tokens` — no raw radius or
   `text-[Npx]`; the scale is the source of truth), a **formatting gate** (`lint:format` — all number/date

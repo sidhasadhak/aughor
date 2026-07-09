@@ -14,6 +14,30 @@
 
 ## 0 · Immediate next action ⏭️
 
+**✅ SHIPPED (2026-07-09) — Deep-Analysis quality backlog COMPLETE (P1–P6) + interactive clarify + store hermeticity.**
+The 2026-07-09 audit's remaining backlog is fully built (all flag-gated, **default-off byte-identical**;
+full study + per-item detail in [`docs/DEEP_ANALYSIS_QUALITY_2026-07-09.md`](docs/DEEP_ANALYSIS_QUALITY_2026-07-09.md)).
+Three PRs (review + merge pending): **[#123](https://github.com/sidhasadhak/aughor/pull/123)** P1–P6 ·
+**[#124](https://github.com/sidhasadhak/aughor/pull/124)** interactive clarify (stacked on #123) ·
+**[#125](https://github.com/sidhasadhak/aughor/pull/125)** store hermeticity (off main).
+- **P1** canonical-metric pinning at ADA intake (`ada.pin_canonical_metric`) — a governed metric supersedes a
+  run-varying LLM formula (fail-open: distinctive-token match + bare-substitutable-aggregate + dry-run), and
+  crystallizes to the Ambiguity Ledger. **P6** hermetic **end-to-end answer-quality gate** locking every
+  deterministic gain (`tests/integration/test_ada_ground_truth.py`, no live LLM).
+- **P2** live per-dimension scan progress (`ada.progress_events`) — a NEW mid-node→SSE channel so a long scan
+  reports "scanning brand · 3/6…" instead of a silent spinner. **P3** fraction↔percent prose consistency
+  (self-grounded). **P5** adversarial HIGH→MEDIUM cap exercised + a materiality-gated tier (`ada.adversarial_high_stakes`).
+- **P4** metric-ambiguity RESOLUTION + the deep-mode clarify UX: ledger crystallization on the pin, the de-trapped
+  banner, AND the **full interactive clarify** (`ada.clarify_gate`) — a real interrupt/resume gate (sibling of the
+  plan gate) that pauses on a governed-vs-parsed metric divergence, asks with probed previews, binds + remembers the
+  choice (source=user, hard-bound on later runs). **A live pass** on the luxexperience dataset verified P2 end-to-end
+  and surfaced + fixed a real probe bug (metric-alias stripping).
+- **Store hermeticity (`task_213affac`)** — the glossary + metrics **file** stores now honour
+  `AUGHOR_GLOSSARY_PATH`/`AUGHOR_METRICS_PATH` (conftest → temp copy), so the test suite can no longer mutate the live
+  `data/` files; the full suite leaves them byte-identical.
+- **Remaining from the audit:** only **P7** (pin a stronger `coder` model for real investigations — an ops/config
+  decision, non-code).
+
 **✅ SHIPPED (2026-07-08) — external-sources study → four features, merged to main.** Studied the SOTA
 data-agent research (DocETL · Palimpzest · Hasura/PromptQL · the DataAgentBench benchmark) and translated
 it into concrete capability. All flag-gated, **default-off byte-identical**, each built-wired-tested and put
