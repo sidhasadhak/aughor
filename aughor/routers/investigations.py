@@ -68,6 +68,30 @@ def _sse(event_type: str, data: dict) -> str:
     return f"data: {json.dumps({'type': event_type, **data})}\n\n"
 
 
+def _explore_subq_event(a) -> dict:
+    """The `subq_answer` progress-event payload for one completed sub-question (T3-3: per-subq
+    evidence + progress, so the wave path isn't a multi-minute silent gap). Carries the sub-question's
+    own columns+rows, which the frontend's per-step ``ResultChartCard`` renders as a chart — so once
+    every sub-question's evidence is forwarded (not just the last), each step charts itself."""
+    d = a.model_dump()
+    d["rows"] = (getattr(a, "rows", None) or [])[:30]
+    return d
+
+
+async def _reduced_subq_answers(agent, inv_id, fallback):
+    """The authoritative, reducer-accumulated `subq_answers` from graph state — the streaming router's
+    manual dict-merge clobbers the `operator.add` channel (each node delta overwrites it), so the final
+    `explore_report` used to forward only the LAST sub-question's SQL+rows. Re-read the checkpoint so
+    ALL sub-questions' evidence is forwarded; fall back to the clobbered list on any read error."""
+    try:
+        import asyncio as _a
+        st = await _a.to_thread(lambda: agent.get_state({"configurable": {"thread_id": inv_id}}))
+        vals = getattr(st, "values", None) or {}
+        return vals.get("subq_answers") or fallback
+    except Exception:
+        return fallback
+
+
 def _ada_sqls(ada) -> list[str]:
     """Every executed SQL in an ADA report — walks the report dict collecting
     string values under 'sql' keys. More reliable than query_history, which can
@@ -2336,11 +2360,18 @@ async def _stream_investigation(
             elif node_name == "reason_over_result":
                 answers = merged.get("subq_answers", [])
                 if answers:
-                    latest = answers[-1]
-                    yield _sse("subq_answer", {"subq_id": latest.subq_id, "question": latest.question, "purpose": latest.purpose, "answer": latest.answer, "insight": latest.insight, "refinement": latest.refinement, "sql": latest.sql, "columns": latest.columns, "rows": latest.rows[:30], "row_count": latest.row_count, "error": latest.error})
+                    yield _sse("subq_answer", _explore_subq_event(answers[-1]))
+            elif node_name == "plan_and_execute_wave":
+                # T3-3(b): the parallel-wave path had NO stream branch — a multi-minute silent gap
+                # between the plan and the report. Emit one progress event per sub-question the wave
+                # just finished (each already carries its own SQL + rows + chart).
+                for _a in (partial.get("subq_answers") or []):
+                    yield _sse("subq_answer", _explore_subq_event(_a))
             elif node_name == "synthesize_exploration" and merged.get("explore_report"):
                 er = merged["explore_report"]
-                answers = merged.get("subq_answers", [])
+                # T3-3(a): forward EVERY sub-question's evidence (re-read the reduced state, not the
+                # clobbered merge). T3-4: attach a shape-verified chart to each.
+                answers = await _reduced_subq_answers(agent, inv_id, merged.get("subq_answers", []))
                 qh = merged.get("query_history", [])
                 sq_raw = [sq.model_dump() for sq in merged.get("sub_questions", [])]
                 sa_raw = [a.model_dump() for a in answers]
@@ -2508,13 +2539,16 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
                 # sub-question answer as it lands (this loop only handled the ADA path before).
                 answers = merged.get("subq_answers", [])
                 if answers:
-                    latest = answers[-1]
-                    yield _sse("subq_answer", {"subq_id": latest.subq_id, "question": latest.question, "purpose": latest.purpose, "answer": latest.answer, "insight": latest.insight, "refinement": latest.refinement, "sql": latest.sql, "columns": latest.columns, "rows": latest.rows[:30], "row_count": latest.row_count, "error": latest.error})
+                    yield _sse("subq_answer", _explore_subq_event(answers[-1]))
+            elif node_name == "plan_and_execute_wave":
+                for _a in (event[node_name] or {}).get("subq_answers", []) or []:
+                    yield _sse("subq_answer", _explore_subq_event(_a))
             elif node_name == "synthesize_exploration" and merged.get("explore_report"):
                 er = merged["explore_report"]
+                answers = await _reduced_subq_answers(agent, inv_id, merged.get("subq_answers", []))
                 qh = merged.get("query_history", [])
                 sq_raw = [sq.model_dump() for sq in merged.get("sub_questions", [])]
-                sa_raw = [a.model_dump() for a in merged.get("subq_answers", [])]
+                sa_raw = [a.model_dump() for a in answers]
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
                 yield _sse("explore_report", {"explore_report": er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw, "query_count": len(qh), "investigation_id": inv_id, "query_mode": "explore"})
                 explore_save = {"_report_type": "explore", **er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw}

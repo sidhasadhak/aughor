@@ -1672,4 +1672,20 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
     conn_id = state.get("connection_id", "")
     _learn_from_exploration(report, chain_summary, conn_id)
 
+    # T3-2: render-boundary number hygiene — the explore narrator copied raw 17-digit floats into the
+    # headline/conclusion/narrative ("0.20829576194770064"). Collapse any over-long decimal run in the
+    # prose fields deterministically before the report leaves the graph.
+    try:
+        from aughor.tools.executor import round_long_decimals
+        report = ExplorationReport(**{**report.model_dump(),
+            "headline": round_long_decimals(report.headline or ""),
+            "conclusion": round_long_decimals(report.conclusion or ""),
+            "narrative": round_long_decimals(report.narrative or ""),
+            "recommended_actions": [round_long_decimals(a) for a in (report.recommended_actions or [])],
+        })
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "prose number-hygiene is best-effort; report unaffected",
+                 counter="explore.number_hygiene")
+
     return {"explore_report": report}

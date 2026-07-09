@@ -118,8 +118,17 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   (SE = √(s₁²/n₁+s₂²/n₂)) runs alongside, and a material, statistically-real shift **proceeds to dimensional
   decomposition** instead of a Tier-0 "it's just noise" abstention that lists the dimensions it never queried.
 - **Structural trust caveat** — a computation-error trust check (conditioned denominator, fan-out, formula
-  drift) now **leads the executive summary with an honest reframe and floors confidence to LOW**, rather than
-  only capping HIGH→MEDIUM while the flagged figures still ride into the headline.
+  drift) now **leads the executive summary with an honest reframe and floors confidence to LOW** *when a flagged
+  finding's numbers are actually headlined* (its figures appear in the conclusion, checked by numeric grounding);
+  a peripheral flagged finding whose numbers don't reach the conclusion is surfaced in the data-gaps instead of
+  nuking a grounded answer — rather than only capping HIGH→MEDIUM while the flagged figures ride into the headline.
+- **Render-boundary number hygiene** — a report never ships a raw 17-significant-digit float in prose: any
+  over-long decimal run in a headline/summary/narrative is deterministically rounded to display precision (the
+  "0.20829576194770064" miss), on both the investigate and explore paths.
+- **Inspectable exploration traces** — a "what's driving X?" exploration forwards **every** sub-question's SQL,
+  rows, and result (not just the final one), emits a **per-step progress event** as each sub-question completes
+  (no multi-minute silent gap on the parallel-wave path), and — because each step now carries its own result —
+  **charts every step** through the existing per-result renderer.
 
 ## 3. Evidence, trust receipts & statistical rigor
 

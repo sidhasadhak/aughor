@@ -1969,33 +1969,58 @@ def _reframe_on_trust_caveat(synth, phases) -> bool:
     """Report-quality fix 4 — make a trust advisory STRUCTURAL, not just a confidence label. The
     prior wiring only demoted HIGH→MEDIUM (``_cap_confidence_on_trust_advisory``); the corrupted
     numbers still rode into the LLM-written headline/executive_summary (inv1 headlined a 73% refund
-    rate the guard had already flagged as a conditioned-denominator artifact). For a computation-ERROR
-    caveat — the number is WRONG, not merely uncertain — deterministically LEAD the executive summary
-    with the honest reframe (so the caveat sits next to any figure a reader sees) and floor confidence
-    to LOW. Mild advisories are left to the MEDIUM cap. Mirrors ``_reframe_on_pop_duration_mismatch``;
-    returns True when it acted. Never raises on a missing field."""
+    rate the guard had already flagged as a conditioned-denominator artifact).
+
+    SCOPED (T3-1): a computation-ERROR caveat is only allowed to floor the WHOLE report when a flagged
+    finding's numbers actually appear in the headline/summary — i.e. the conclusion is built on a wrong
+    number. When the flagged finding is peripheral (its numbers are NOT headlined — the inv3 case, where
+    3 clean channel drivers carried the conclusion and only one internal decomposition finding tripped),
+    the report is NOT floored to LOW: the caveat is surfaced in ``data_gaps`` and the existing MEDIUM cap
+    stands, so a supporting-evidence hiccup doesn't nuke a grounded answer. Mirrors
+    ``_reframe_on_pop_duration_mismatch``; returns True when it acted. Never raises on a missing field."""
     if not synth:
         return False
-    caveats = [f.get("trust_caveat") for p in (phases or []) for f in (p.get("findings") or [])
-               if f.get("trust_caveat")]
-    err_caveats = [c for c in caveats if _COMPUTATION_ERROR_CAVEAT_RE.search(str(c))]
-    if not err_caveats:
+    err_findings = [(f.get("trust_caveat"), f.get("rows"))
+                    for p in (phases or []) for f in (p.get("findings") or [])
+                    if f.get("trust_caveat") and _COMPUTATION_ERROR_CAVEAT_RE.search(str(f.get("trust_caveat")))]
+    if not err_findings:
         return False
-    lead = err_caveats[0]
-    _es = synth.executive_summary or ""
-    if str(lead)[:48].lower() not in _es.lower():
-        reframe = (
-            f"⚠ A trust check flagged the evidence and the figures below are NOT reliable: {lead} "
-            "Do not read the numbers or ranking as fact until they are recomputed. "
-        )
-        synth.executive_summary = (reframe + _es).strip()[:900]
-    # A wrong number can't underwrite a confident verdict.
-    if getattr(synth, "confidence", "") != "LOW":
-        synth.confidence = "LOW"
-        synth.confidence_justification = (
-            "Floored to LOW — a computation-error trust check fired: " + str(lead) + " "
-            + (getattr(synth, "confidence_justification", "") or "")
-        ).strip()
+
+    # Which flagged findings are actually HEADLINED — i.e. a number from the flagged finding appears in
+    # the conclusion prose (reuse the numeric-grounding core from the report-quality binding fix)?
+    _headline_text = (getattr(synth, "headline", "") or "") + " " + (getattr(synth, "executive_summary", "") or "")
+    try:
+        from aughor.explorer.verify import grounded_fraction
+        headlined = [cav for cav, rows in err_findings if rows and grounded_fraction(_headline_text, rows) > 0.0]
+    except Exception:
+        headlined = [cav for cav, _ in err_findings]   # fail-safe: treat as headlined (be cautious)
+
+    if headlined:
+        lead = headlined[0]
+        _es = synth.executive_summary or ""
+        if str(lead)[:48].lower() not in _es.lower():
+            reframe = (
+                f"⚠ A trust check flagged the evidence and the figures below are NOT reliable: {lead} "
+                "Do not read the numbers or ranking as fact until they are recomputed. "
+            )
+            synth.executive_summary = (reframe + _es).strip()[:900]
+        # A wrong number carried into the conclusion can't underwrite a confident verdict.
+        if getattr(synth, "confidence", "") != "LOW":
+            synth.confidence = "LOW"
+            synth.confidence_justification = (
+                "Floored to LOW — a computation-error trust check fired on a headlined figure: "
+                + str(lead) + " " + (getattr(synth, "confidence_justification", "") or "")
+            ).strip()
+        return True
+
+    # Flagged findings exist but none is headlined — surface honestly without nuking a grounded answer.
+    lead = err_findings[0][0]
+    _gaps = list(getattr(synth, "data_gaps", None) or [])
+    _note = ("A supporting finding was excluded from the conclusion after a trust check flagged it: "
+             + str(lead))
+    if not any("trust check flagged" in g.lower() for g in _gaps):
+        _gaps.insert(0, _note)
+    synth.data_gaps = _gaps
     return True
 
 
@@ -5287,6 +5312,20 @@ def ada_synthesize(state: AgentState) -> dict:
     # Enforcing half of report-quality fix #1: if the coverage clamp flagged a duration mismatch,
     # deterministically reframe to run-rate — don't rely on the narrator heeding the advisory note.
     _reframe_on_pop_duration_mismatch(synth, intake_data, question)
+
+    # T3-2: render-boundary number hygiene — the narrator occasionally copies a raw multi-digit float
+    # into prose ("0.20829576194770064"); collapse any over-long decimal run in the prose fields so a
+    # report never ships a 17-significant-digit number. Deterministic, no unit inference.
+    if synth:
+        from aughor.tools.executor import round_long_decimals
+        synth.headline = round_long_decimals(getattr(synth, "headline", "") or "")
+        synth.executive_summary = round_long_decimals(getattr(synth, "executive_summary", "") or "")
+        synth.confidence_justification = round_long_decimals(getattr(synth, "confidence_justification", "") or "")
+        synth.data_gaps = [round_long_decimals(g) for g in (getattr(synth, "data_gaps", None) or [])]
+        for _rec in (getattr(synth, "recommendations", None) or []):
+            for _fld in ("action", "expected_impact"):
+                if hasattr(_rec, _fld):
+                    setattr(_rec, _fld, round_long_decimals(getattr(_rec, _fld) or ""))
 
     def _coerce_amount_sign(label: str, pct: float) -> str:
         """Keep a waterfall amount_label's leading sign in agreement with its
