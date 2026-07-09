@@ -337,6 +337,63 @@ async def _aiter_sync(sync_iter):
         yield item
 
 
+async def _aiter_sync_with_progress(sync_iter, progress_q, ctx):
+    """`_aiter_sync` + a concurrent drain of the per-dimension progress queue (P2,
+    `ada.progress_events`).
+
+    Each graph node's ``next()`` runs inside ``ctx`` — the copied context that carries the progress
+    sink — so a scan's worker threads (a ``ContextThreadPoolExecutor``, which copies ``ctx`` again)
+    can push progress DURING the node instead of only when it returns as ``phase_complete``. Note that
+    ``run_in_executor`` does NOT propagate contextvars on its own, which is exactly why the node is run
+    via ``ctx.run`` rather than bare ``next``.
+
+    Progress items are yielded wrapped as ``{"__ada_progress__": payload}`` (the router turns them into
+    a ``phase_progress`` SSE event); graph node events pass through unchanged. Fail-safe: graph events
+    are never dropped, and any progress still queued after the graph finishes is discarded (stale)."""
+    loop = asyncio.get_running_loop()
+    it = iter(sync_iter)
+    next_graph = asyncio.ensure_future(loop.run_in_executor(None, ctx.run, next, it, _AITER_DONE))
+    next_prog = asyncio.ensure_future(progress_q.get())
+    try:
+        while True:
+            done, _pending = await asyncio.wait(
+                {next_graph, next_prog}, return_when=asyncio.FIRST_COMPLETED)
+            if next_prog in done:
+                yield {"__ada_progress__": next_prog.result()}
+                next_prog = asyncio.ensure_future(progress_q.get())
+            if next_graph in done:
+                item = next_graph.result()
+                if item is _AITER_DONE:
+                    break
+                yield item
+                next_graph = asyncio.ensure_future(
+                    loop.run_in_executor(None, ctx.run, next, it, _AITER_DONE))
+    finally:
+        next_prog.cancel()
+        next_graph.cancel()
+
+
+def _investigation_stream(graph_stream):
+    """The deep-run event iterator. With ``ada.progress_events`` on, interleaves per-dimension
+    ``phase_progress`` markers into the stream (a scan node reports progress DURING execution, not only
+    at ``phase_complete``); off → plain ``_aiter_sync`` (byte-identical, no sink, no extra tasks)."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        on = flag_enabled("ada.progress_events")
+    except Exception:
+        on = False
+    if not on:
+        return _aiter_sync(graph_stream)
+    import contextvars
+
+    from aughor.agent.progress import set_progress_sink
+    loop = asyncio.get_running_loop()
+    q: asyncio.Queue = asyncio.Queue(maxsize=2000)
+    ctx = contextvars.copy_context()
+    ctx.run(set_progress_sink, loop, q)   # bind the sink INSIDE ctx so nodes run with it visible
+    return _aiter_sync_with_progress(graph_stream, q, ctx)
+
+
 def _stall_summary(merged: dict) -> str:
     """Build a human-readable terminal message when an investigation ends without
     a report.  Prefers the agent's own last verdict/finding, then falls back to a
@@ -2238,13 +2295,16 @@ async def _stream_investigation(
         timed_out = False
         report_emitted = False  # did the graph reach a terminal synthesis node?
 
-        async for event in _aiter_sync(agent.stream(initial_state, config={"configurable": {"thread_id": inv_id}})):
+        async for event in _investigation_stream(agent.stream(initial_state, config={"configurable": {"thread_id": inv_id}})):
             if await request.is_disconnected():
                 fail_investigation(inv_id, status="timed_out")
                 return
             if time.monotonic() > deadline:
                 timed_out = True
                 break
+            if "__ada_progress__" in event:            # P2 live per-dimension progress (flag-gated)
+                yield _sse("phase_progress", event["__ada_progress__"])
+                continue
             if "__interrupt__" in event:
                 # Distinguish a plan-gate pause (P3 — before the explore fan-out) from the
                 # ada_synthesize HITL pause by checking which node the graph is about to run.
@@ -2515,7 +2575,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
         _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
         deadline = time.monotonic() + _TIMEOUT
 
-        async for event in _aiter_sync(agent.stream(None, config=config)):
+        async for event in _investigation_stream(agent.stream(None, config=config)):
             if await request.is_disconnected():
                 fail_investigation(inv_id, status="timed_out")
                 return
@@ -2523,6 +2583,9 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
                 yield _sse("error", {"message": "Timed out waiting for synthesis."})
                 fail_investigation(inv_id, status="timed_out")
                 return
+            if "__ada_progress__" in event:            # P2 live per-dimension progress (flag-gated)
+                yield _sse("phase_progress", event["__ada_progress__"])
+                continue
             if "__interrupt__" in event:
                 continue
             node_name = next(iter(event))

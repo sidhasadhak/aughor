@@ -38,6 +38,8 @@ FLAG_ENV = {
     "ada.premise_check": "AUGHOR_PREMISE_CHECK",
     "ada.causal_drill": "AUGHOR_CAUSAL_DRILL",
     "ada.adversarial_verify": "AUGHOR_ADA_ADVERSARIAL",
+    "ada.pin_canonical_metric": "AUGHOR_ADA_PIN_CANONICAL_METRIC",
+    "ada.progress_events": "AUGHOR_ADA_PROGRESS_EVENTS",
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
     "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
@@ -134,6 +136,14 @@ FLAG_META = {
     "ada.adversarial_verify": {
         "label": "Adversarial verify decision-changing verdicts",
         "description": "ReFoRCE-style confidence-tiered verification: when a deep analysis lands a DECISION-CHANGING verdict (a premise rejection — 'X is not the problem' — or an abstention — 'within normal variance'), spend ONE extra skeptic LLM call to try to REFUTE it before shipping; a survived refutation caps confidence and records the objection. Fires only on the few high-stakes conclusions, never per finding. Off by default (adds an LLM call to those runs).",
+    },
+    "ada.pin_canonical_metric": {
+        "label": "Pin governed metric at Deep-Analysis intake",
+        "description": "When a deep investigation parses a metric the connection already GOVERNS (curated catalog / north-star / verified ontology), pin the intake's formula to the governed one so the cross-section scan decomposes on a stable, canonical definition instead of a run-varying LLM guess (the count-vs-value 'refund rate' class that left the breakdown un-decomposable → 'cause remains unidentified'). Deterministic, fail-open: only replaces the LLM formula when a governed metric matches the label, its SQL is a bare substitutable aggregate, and a dry-run confirms it runs over the metric table. Off by default = byte-identical.",
+    },
+    "ada.progress_events": {
+        "label": "Live per-dimension Deep-Analysis progress",
+        "description": "Stream a per-dimension progress event as each query of a Deep-Analysis scan completes, so a long cross-section/decompose phase reports 'scanning brand (3/6)…' DURING execution instead of a multi-minute silent spinner between phase_complete events. Interleaves a lightweight progress marker into the SSE stream via a best-effort in-process sink (no extra model cost, graph events never dropped). Off by default = byte-identical stream.",
     },
     "ask.clarify": {
         "label": "Ask-vs-guess clarification",

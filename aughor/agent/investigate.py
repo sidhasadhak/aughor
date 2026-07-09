@@ -20,6 +20,7 @@ from aughor.agent.state import (
     PhaseKeyNumber,
 )
 from aughor.tools.executor import format_result_for_llm
+from aughor.agent.progress import emit_phase_progress
 from aughor.tools.stats import analyze_query_result
 from aughor.tools.table_names import bare as _bare  # aliased — local vars named `bare` shadow it
 from aughor import telemetry as _telemetry
@@ -599,20 +600,28 @@ def _parallel_execute_safe(
         r.hypothesis_id = phase_id
         return (q, r)
 
+    # P2 — per-dimension progress: emit as each query completes so a long scan reports progress
+    # DURING the node (`ada.progress_events`); no-op when no SSE sink is bound (the default).
+    total_n = len(valid)
     try:
         with ContextThreadPoolExecutor(max_workers=len(valid)) as pool:
             futures = {pool.submit(_run, item): i for i, item in enumerate(valid)}
             ordered: list[tuple | None] = [None] * len(valid)
+            done_n = 0
             for fut in as_completed(futures):
-                ordered[futures[fut]] = fut.result()
+                res = fut.result()
+                ordered[futures[fut]] = res
+                done_n += 1
+                emit_phase_progress(phase_id, done_n, total_n, getattr(res[0], "title", "") or "")
             return [r for r in ordered if r is not None]
     except Exception:
         # Serial fallback — never let parallelization break the investigation
         results = []
-        for q, sql in valid:
+        for i, (q, sql) in enumerate(valid, 1):
             r = _execute_safe(conn, phase_id, sql, schema=schema)
             r.hypothesis_id = phase_id
             results.append((q, r))
+            emit_phase_progress(phase_id, i, total_n, getattr(q, "title", "") or "")
         return results
 
 
@@ -2271,6 +2280,130 @@ def _render_origin_finding_section(origin: Optional[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# ── P1: canonical-metric pinning at intake ─────────────────────────────────────────────
+# A live audit run parsed the "Fragrance refund rate" question into a count-based rate
+# (COUNT(DISTINCT refund_id) / COUNT(DISTINCT order_id) * 100) that the cross-section scan could
+# not decompose → the report degraded to "the cause remains unidentified", and the count-vs-value
+# reading varied run-to-run. When the connection GOVERNS the same metric (curated catalog /
+# north-star / verified ontology), pin the intake's formula to the governed one so the breakdown
+# computes on a stable, decomposable definition — closing the loop between T4-1's *disclosure* of
+# the reading and actual accuracy. Deterministic, flag-gated (`ada.pin_canonical_metric`), and
+# conservative: the LLM's formula is only replaced when a governed metric matches the label on its
+# distinctive tokens, its SQL is a bare substitutable aggregate, and a dry-run confirms it runs over
+# the metric table — so pinning can never make a run worse (fail-open on every uncertainty).
+
+def _is_substitutable_metric_sql(sql: str) -> bool:
+    """True when ``sql`` is a bare aggregate EXPRESSION (no SELECT / FROM / ;), so it can be inlined
+    into the phase templates the scan builds (``CASE WHEN <dim> THEN {metric_sql} END``, additive and
+    ratio SUM scans). Excludes a governed north-star ``value_sql`` (a full query with FROM/WHERE) and
+    any statement terminator, either of which would break substitution."""
+    s = (sql or "").strip()
+    if not s or ";" in s:
+        return False
+    up = f" {s.upper()} "
+    if "SELECT" in up or " FROM " in up:
+        return False
+    return bool(re.search(r"\b(SUM|COUNT|AVG|MIN|MAX)\s*\(", up))
+
+
+def _match_canonical_metric(metric_label: str, metric_sql: str, metrics: list):
+    """Deterministically match the intake's metric to a governed ``CanonicalMetric`` on DISTINCTIVE
+    tokens. ``_label_tokens`` drops structural/measure words, so 'Fragrance refund rate' → {fragrance,
+    refund} and a governed 'refund_rate' → {refund}; requiring the governed tokens ⊆ the label tokens
+    is a strong, conservative match (a bare generic name like 'total revenue' → {} never matches).
+    Returns the best substitutable candidate or None. Tie-break: prefer a candidate whose ratio-ness
+    matches the intake's, then higher provenance rank, then more distinctive tokens (more specific)."""
+    label_toks = _label_tokens(metric_label)
+    if not label_toks:
+        return None
+    intake_ratio = _metric_is_ratio(metric_sql, metric_label)
+    best = None
+    best_key = None
+    for m in metrics:
+        if not _is_substitutable_metric_sql(getattr(m, "sql", "")):
+            continue
+        canon_toks = _label_tokens(f"{getattr(m, 'name', '')} {getattr(m, 'label', '')}")
+        if not canon_toks or not canon_toks <= label_toks:
+            continue
+        ratio_align = int(_metric_is_ratio(m.sql, getattr(m, "label", "")) == intake_ratio)
+        key = (ratio_align, int(getattr(m, "rank", 0)), len(canon_toks))
+        if best_key is None or key > best_key:
+            best, best_key = m, key
+    return best
+
+
+def _pinned_metric_runs(conn, connection_id: str, metric_table: str, sql: str) -> bool:
+    """One cheap dry-run probe: does ``sql`` execute as an aggregate over ``metric_table``? Guards the
+    pin so a governed formula referencing a column absent from the metric table can never replace a
+    working LLM formula. Prefers the bound connection; else a pooled checkout. Fail-CLOSED (any error /
+    no connection → False → keep the LLM formula)."""
+    if not metric_table or not sql:
+        return False
+    ref = str(metric_table).replace(";", "").strip()
+    probe = f"SELECT {sql} AS _pin_probe FROM {ref}"
+    db = conn
+    opened = False
+    try:
+        if db is None:
+            if not connection_id:
+                return False
+            from aughor.db.connection import open_connection_for
+            db = open_connection_for(connection_id)
+            opened = True
+        res = db.execute("intake_metric_pin_probe", probe)
+        return not getattr(res, "error", None)
+    except Exception:
+        return False
+    finally:
+        if opened and db is not None:
+            try:
+                db.close()
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "intake pin-probe connection close failed; probe result already "
+                               "returned", counter="ada.intake_probe_close")
+
+
+def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) -> Optional[str]:
+    """Pin the intake's ``metric_sql`` to the connection's GOVERNED definition when one matches, so the
+    scan decomposes on a stable formula. Mutates ``intake`` in place (metric_sql + metric_is_ratio);
+    returns a transparency note (or None when nothing was pinned). Flag-gated
+    (``ada.pin_canonical_metric``); deterministic; fail-open on every uncertainty."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        if not flag_enabled("ada.pin_canonical_metric"):
+            return None
+    except Exception:
+        return None
+    llm_sql = (getattr(intake, "metric_sql", "") or "").strip()
+    if not llm_sql:
+        return None
+    try:
+        from aughor.semantic.canonical import resolve_canonical_metrics
+        metrics = resolve_canonical_metrics(connection_id, schema_text=schema_text or "")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "canonical-metric resolve for intake pin is best-effort; keeping the LLM "
+                      "metric formula", counter="ada.metric_pin")
+        return None
+    cand = _match_canonical_metric(intake.metric_label, llm_sql, metrics or [])
+    if cand is None:
+        return None
+    canon_sql = (cand.sql or "").strip()
+    # No-op when the governed formula already matches (whitespace/case-insensitive) — nothing to pin.
+    if re.sub(r"\s+", "", canon_sql.lower()) == re.sub(r"\s+", "", llm_sql.lower()):
+        return None
+    if not _pinned_metric_runs(conn, connection_id, getattr(intake, "metric_table", "") or "", canon_sql):
+        return None
+    intake.metric_sql = canon_sql
+    intake.metric_is_ratio = _metric_is_ratio(canon_sql, intake.metric_label)
+    return (
+        f"Metric pinned to the governed definition of {cand.name}: {canon_sql} "
+        f"(the parsed formula was {llm_sql}) — so the breakdown computes on the same decomposable "
+        f"definition every run."
+    )
+
+
 @_telemetry.node_span("ada_intake")
 def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     """
@@ -2458,6 +2591,17 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 f"ranking instead by {_safe} for a trustworthy magnitude."
             )
             intake.metric_sql = _safe
+
+    # P1 — canonical-metric pinning: prefer the connection's GOVERNED definition of this metric over
+    # the LLM's (possibly non-decomposable / run-varying) formula, when one matches the label and
+    # actually runs. Runs AFTER the safety fallback so a governed formula supersedes a degenerate one.
+    # Flag-gated (`ada.pin_canonical_metric`) + fail-open. Uses the FULL schema so the catalog
+    # schema-filter sees every table (a trimmed schema could hide a metric's table and over-filter).
+    if intake is not None:
+        _pin_note = _pin_canonical_metric(
+            intake, state.get("connection_id") or "", state.get("schema_context") or schema, conn)
+        if _pin_note:
+            _metric_note = f"{_metric_note} {_pin_note}".strip() if _metric_note else _pin_note
 
     # Resolve a hallucinated / non-date `date_column` to a REAL date/timestamp column —
     # often on a joinable table (orders.order_ts) rather than the metric table (invoices).

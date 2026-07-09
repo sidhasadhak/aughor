@@ -80,27 +80,51 @@ ruff, ratchets, web `tsc`, and the design-token gate all clean.
 Everything **demonstrated** in the audit is fixed. What follows is adjacent polish, the deeper grounding
 direction deliberately scoped down during Tier 4, and one meta gap. Ranked by value.
 
-### P1 — Canonical-metric pinning at ADA intake (highest-value; a real quality bug)
+### P1 — Canonical-metric pinning at ADA intake (highest-value; a real quality bug) — ✅ SHIPPED (2026-07-09, flag `ada.pin_canonical_metric`, default-off)
 **Evidence.** In one live cross-sectional run the intake picked
 `COUNT(DISTINCT refund_id) / COUNT(DISTINCT order_id) * 100` and the cross-section scan returned no
 usable dimensional breakdown → the report degraded to *"the cause remains unidentified."* The
 count-vs-value metric ambiguity that T4-1 now *discloses* actually *hurt the answer*.
-**Fix.** Pin the governed/canonical metric definition at ADA intake so the scan is decomposable and
-stable across runs. `resolve_canonical_metrics` / `unified_metric_grounding` (`agent/canonical.py`)
-already exist and are used on the chat path (`routers/investigations.py`) but do not authoritatively
-pin the ADA intake's `metric_sql`. Prefer the governed definition when the label resolves to one;
-fall back to the LLM's form only when none exists. Deterministic. Closes the loop between T4-1's
-disclosure and actual accuracy.
-**Anchors.** `agent/investigate.py:ada_intake` (metric_sql/metric_label set from `IntakeOutput`);
-`agent/canonical.py:resolve_canonical_metrics`; `explorer/metric_coherence.py:drifted_registered_metric`.
+**Fix (shipped).** `ada_intake` now pins the intake's `metric_sql` to the connection's GOVERNED
+definition when one matches, so the scan decomposes on a stable, canonical formula every run.
+`_pin_canonical_metric` (`agent/investigate.py`) resolves `resolve_canonical_metrics`
+(`semantic/canonical.py`, the same three governed stores the chat path unifies) and pins **only** when
+it is safe to do so — three fail-open guards: (1) a governed metric matches the intake label on its
+**distinctive tokens** (reusing `_label_tokens`, which drops "rate"/"revenue"/etc, so "Fragrance
+refund rate" → `{fragrance, refund}` and governed `refund_rate` → `{refund}` ⊆ it), (2) the governed
+SQL is a **bare substitutable aggregate** (no SELECT/FROM/`;` — excludes a north-star full `value_sql`
+that would break the `CASE WHEN … THEN {metric_sql}` templates), and (3) a **dry-run probe** confirms
+it runs over the metric table (so a governed formula referencing an absent column can never replace a
+working LLM one). Runs *after* the safety fallback so a governed formula supersedes a degenerate one;
+updates `metric_is_ratio`; emits a transparency note into the intake spec + metric-definition receipt.
+Flag-gated default-off (byte-identical default; measurable A/B), deterministic. **+14 tests**
+(`tests/unit/test_canonical_metric_pin.py`, incl. two that drive `ada_intake` end-to-end). *Remaining:
+live A/B on the beautycommerce fixture to measure the lift, then consider promoting to the default path.*
+**Anchors.** `agent/investigate.py:_pin_canonical_metric` / `ada_intake` (pin call after the unsafe-metric
+fallback); `semantic/canonical.py:resolve_canonical_metrics`; `explorer/metric_coherence.py:drifted_registered_metric`.
 
-### P2 — Internal ADA progress events
+### P2 — Internal ADA progress events — ✅ SHIPPED (2026-07-09, flag `ada.progress_events`, default-off)
 **Evidence.** T3-3 fixed the *explore* wave's silent gap, but the ADA cross-section and decompose phases
 still run ~5 minutes silently between `phase_complete` events — the 8-dimension scan emits nothing
 per-query. The user sees a long spinner.
-**Fix.** Emit a per-query / per-dimension progress SSE event from the ADA scan the same way the explore
-wave now does (`_explore_subq_event` is the template). Wire in `routers/investigations.py` around the
-`ada_cross_section` / `ada_decompose` node handling.
+**Correction to the original plan (found while building).** The cited template `_explore_subq_event` is a
+**post-node drain**, not live streaming — `agent.stream(...)` runs `stream_mode="updates"` (one event per
+node *completion*), and `_aiter_sync` blocks in a worker thread until a node returns. `ada_cross_section`
+runs the *entire* scan as ONE node, so copying that template would emit everything at `phase_complete` and
+NOT fill the gap. There was no mid-node → SSE channel in the codebase; filling the gap required adding one.
+**Fix (shipped).** A best-effort in-process progress sink (`agent/progress.py`): `_parallel_execute_safe`
+emits `emit_phase_progress(phase_id, done, total, current)` as **each per-dimension query completes**;
+`routers/investigations.py` binds the sink `(loop, asyncio.Queue)` inside the copied `Context` each graph
+node runs in (so it propagates through `ContextThreadPoolExecutor`'s per-submit context copy into the scan's
+threads — `run_in_executor` alone does NOT propagate contextvars, hence `ctx.run`), and `_aiter_sync_with_progress`
+races the graph `next()` against the queue, interleaving `{"__ada_progress__": …}` markers → a `phase_progress`
+SSE event. Frontend (`web/lib/investigationStream.ts`) turns it into a live status line ("Scanning brand · 3/6…")
+via the existing `STATUS_TEXT`/`statusText` (rendered `ChatMessage.tsx:1155`) — one `case`, no new turn state.
+Flag-gated default-off = **byte-identical stream** (plain `_aiter_sync`, no sink, no extra tasks); graph events
+are never dropped; a progress emit is pure telemetry (fail-safe on a full queue / dead loop). Wired on **both**
+the main and HITL-resume stream paths. **+9 tests** (`tests/unit/test_ada_progress_events.py`). *Remaining:
+live-verify the status line during a real multi-minute scan (needs a live endpoint); consider a coarser phase-plan
+upfront (all phases pending→running→done) as a complementary structure cue.*
 
 ### P3 — Fraction↔percent unit consistency in prose
 **Evidence.** T3-2 killed 17-digit floats, but a report can still show "0.208" next to "20.8%" in the
@@ -110,15 +134,27 @@ when a metric/column is known to be a percentage, normalize its prose occurrence
 percent signal (`column_units` / `_metric_is_percent`) threaded to the render step — a bounded extension,
 not full NLP.
 
-### P4 — Metric-ambiguity *resolution*, not just disclosure (the deeper SOMA loop)
+### P4 — Metric-ambiguity *resolution*, not just disclosure (the deeper SOMA loop) — **now also owns the deep-mode clarify UX**
 **Evidence.** T4-1 surfaces the chosen reading; the false-premise adversarial run showed the count-vs-value
-ambiguity is real and decision-relevant.
+ambiguity is real and decision-relevant. **Additional (2026-07-09):** the deep-mode "CLARIFYING QUESTIONS"
+banner is a **UX trap** — it is *informational-only* stream enrichment (`routers/investigations.py:2276`,
+best-effort `narrator.complete`, no interrupt/`return`), yet the run continues guessing while the trace
+freezes at "Designing investigative chain…" and the chips are non-interactive `<span>`s with **no click
+handler and no resume path** (`web/components/ChatMessage.tsx:817`). So a slow decompose reads as a stuck
+human-in-the-loop wait with no way to proceed. (P1's two example chips — "net sales / units / gross margin?"
+— are exactly the count-vs-value metric ambiguity this item resolves.)
 **Fix.** When two plausible readings diverge **materially** (probe both; e.g. count-based vs value-based
 rate), trigger a clarify and write the resolution to the **Ambiguity Ledger** (built:
 `semantic/ambiguity_ledger.py`) so it burns down per connection. Deliberately *not* auto-writing an
 unconfirmed guess (the ledger is override-wins: verdict > user > probe). This is the genuine SOMA
 candidate-disagreement → execution-grounded probe → minimal-resolution loop, scoped to metric definition.
-Complements [`docs/AMBIGUITY_LEDGER_2026-07-06.md`] and [`docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md`].
+**Make the deep-mode banner real as part of this:** on a *material* metric ambiguity, actually **pause**
+the run (arm a clarify interrupt in `agent/graph.py`, alongside `plan_gate`/`ada_synthesize`) and wire the
+chips to the existing resume machinery (`POST /investigations/{id}/feedback` → `_stream_resume`, which
+already gates on a `paused` run) so an answer feeds back and the resolution lands in the ledger. Until
+then, the honest-relabel interim (rename to "Assumptions being made", drop the clickable-looking pill
+styling, move the blocking enrichment off the critical path) removes the trap. Complements
+[`docs/AMBIGUITY_LEDGER_2026-07-06.md`] and [`docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md`].
 
 ### P5 — T4-3 confidence-floor path + earning-its-keep
 **Evidence.** The refuter fired live and recorded its objection, but the HIGH→MEDIUM cap only triggers
@@ -129,13 +165,32 @@ trigger (per the roadmapped WHY-lens "confidence-triggered activation") so the r
 the default path for the genuinely high-stakes minority of runs, without imposing an LLM call on every
 run.
 
-### P6 — Ground-truth regression harness (highest-leverage *meta* move)
+### P6 — Ground-truth regression harness (highest-leverage *meta* move) — ✅ SHIPPED (2026-07-09)
 **Evidence.** The guards are unit-tested, but end-to-end **answer quality** on these four archetype
-questions is not gated — this audit was manual. Nothing prevents a future change from silently
+questions was not gated — this audit was manual. Nothing prevented a future change from silently
 regressing the answer while keeping the unit tests green.
-**Fix.** A small hermetic harness that runs the four archetypes against the computed ground truth
-(direction, magnitude, named drivers, premise-rejection correctness) and asserts on the structured
-report fields. Mirrors `tests/integration/test_golden_reference.py`. Locks every gain in this arc.
+**Fix (shipped).** `tests/integration/test_ada_ground_truth.py` — a **hermetic** harness (temp DuckDB
+seeded with closed-form ground truth + the test-isolated registry, **no live LLM**), mirroring
+`test_golden_reference.py`. The answer-quality gains being locked are all deterministic, so each is
+driven directly against the fixture and asserted on ground truth (**11 tests, ~1.5s**):
+- **A1 (global-ratio guard, Tier 1):** a conditioned-denominator refund rate — `_independent_global_ratio`
+  recomputes the **true 10.0% global** (not the inflated ~73%), `_global_ratio_plausibility_guard` **fires**
+  on inflated per-segment findings and **states the true global**, and is **silent on a plausible spread**
+  (negative control).
+- **A2 (Welch + decompose + drivers, Tier 1+2):** a sustained −15% decline is **significant** and directional
+  (`mean_shift_significance`), `route_after_baseline` **decomposes under abstention** (material move + sub-threshold
+  anomaly → `ada_decompose`), and the real decomposition SQL names the worst channel (**Meta −1800**).
+- **A3 (abstention correctness):** a genuinely flat series is **not significant**, has **no anomalous period**,
+  and a flat "did refunds spike?" premise **stops cleanly** at `ada_synthesize` (no false decomposition).
+- **P1 (canonical pin):** the pin's **dry-run probe runs the governed formula against the real fixture** — a
+  runnable single-table rate is pinned; a formula referencing a **missing column fails closed** (keeps the LLM form).
+
+*Why deterministic-seam driving, not a full-graph replay:* synthesis text is LLM-authored (not
+ground-truthable), but every gain in this arc is a deterministic guard/router/stat — so the harness
+gates exactly those, which is what a regression would break. Adding a new archetype = seed rows + one
+assertion. **Anchors.** `tests/integration/test_ada_ground_truth.py`; drives `_global_ratio_plausibility_guard`
+/ `_independent_global_ratio` / `_parse_ratio_sources` / `route_after_baseline` / `_detect_anomalous_period`
+(`agent/investigate.py`) and `mean_shift_significance` (`tools/stats.py`).
 
 ### P7 — Model budget (non-code, but the #1 real-quality lever)
 **Evidence.** The local `qwen3-coder-next` produced the degenerate count-based metric (P1) and several

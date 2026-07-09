@@ -412,6 +412,16 @@ export async function consumeStream(
             case "phase_complete":
               dispatch({ type: "PHASE", phase: p.phase as InvestigationPhase });
               break;
+            case "phase_progress": {
+              // P2 live per-dimension progress — fills the silent gap DURING a long scan phase by
+              // driving the running-status line (reuses STATUS_TEXT; no new turn state).
+              const done = p.done as number, total = p.total as number;
+              const current = (p.current as string) || "";
+              dispatch({ type: "STATUS_TEXT", text: current
+                ? `Scanning ${current} · ${done}/${total}…`
+                : `Scanning dimensions · ${done}/${total}…` });
+              break;
+            }
             case "hypotheses":
               dispatch({ type: "HYPOTHESES", hypotheses: (p.hypotheses as Hypothesis[]) ?? [] });
               break;
