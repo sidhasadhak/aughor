@@ -149,18 +149,27 @@ freezes at "Designing investigative chain…" and the chips are non-interactive 
 handler and no resume path** (`web/components/ChatMessage.tsx:817`). So a slow decompose reads as a stuck
 human-in-the-loop wait with no way to proceed. (P1's two example chips — "net sales / units / gross margin?"
 — are exactly the count-vs-value metric ambiguity this item resolves.)
-**Fix.** When two plausible readings diverge **materially** (probe both; e.g. count-based vs value-based
-rate), trigger a clarify and write the resolution to the **Ambiguity Ledger** (built:
-`semantic/ambiguity_ledger.py`) so it burns down per connection. Deliberately *not* auto-writing an
-unconfirmed guess (the ledger is override-wins: verdict > user > probe). This is the genuine SOMA
-candidate-disagreement → execution-grounded probe → minimal-resolution loop, scoped to metric definition.
-**Make the deep-mode banner real as part of this:** on a *material* metric ambiguity, actually **pause**
-the run (arm a clarify interrupt in `agent/graph.py`, alongside `plan_gate`/`ada_synthesize`) and wire the
-chips to the existing resume machinery (`POST /investigations/{id}/feedback` → `_stream_resume`, which
-already gates on a `paused` run) so an answer feeds back and the resolution lands in the ledger. Until
-then, the honest-relabel interim (rename to "Assumptions being made", drop the clickable-looking pill
-styling, move the blocking enrichment off the critical path) removes the trap. Complements
-[`docs/AMBIGUITY_LEDGER_2026-07-06.md`] and [`docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md`].
+**Shipped (2026-07-09) — the two safe, self-contained halves; the interactive pause+resume deferred.**
+- ✅ **Ledger crystallization (the "resolution that compounds").** When P1 pins a metric to its GOVERNED
+  definition over a materially-different parsed reading, `_crystallize_metric_resolution` (`agent/investigate.py`)
+  records it in the **Ambiguity Ledger** (`semantic/ambiguity_ledger.py`, **source=probe**, the two candidate
+  readings + the resolved governed formula), so the definition **burns down per connection** and is read back
+  as a plan-time prior on every path (chat + future ADA), not just this run. Execution-grounded (P1 dry-ran the
+  governed formula); **override-wins** preserved (probe is the lowest authority → never clobbers a user clarify
+  or a reviewer verdict — tested). Fail-safe (a ledger error never perturbs the pin). +5 tests.
+- ✅ **De-trapped the deep-mode banner (the UX half).** `ClarifyingQuestionsBanner` (`web/components/ChatMessage.tsx`)
+  read as a stuck human-in-the-loop prompt — "Clarifying questions" + clickable-looking pill chips — but the run
+  never pauses on it (the graph arms no clarify interrupt; it's informational enrichment). Reframed honestly:
+  "**Interpreting automatically**" + "the analysis is resolving these itself and continuing — no action needed"
+  + a muted non-actionable list (no pill chips). Removes the "am I supposed to answer this?" trap.
+- ⬜ **DEFERRED — the full interactive clarify (source=user).** Actually **pausing** on a material ambiguity
+  (arm a clarify interrupt in `agent/graph.py` beside `plan_gate`/`ada_synthesize`, emit a paused event, make
+  the chips clickable → `POST /investigations/{id}/feedback` → `_stream_resume` → `crystallize_user_choice`)
+  is a large graph + streaming + frontend change (high blast radius on the shared deep-run path) — its own
+  careful arc. The two shipped halves deliver the compounding + the honesty now; this adds the human loop.
+  Also deferred: moving the best-effort clarify-generation LLM call off the critical path (a seconds-long freeze,
+  now mitigated by the honest label + P2's live progress). Complements
+  [`docs/AMBIGUITY_LEDGER_2026-07-06.md`] and [`docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md`].
 
 ### P5 — T4-3 confidence-floor path + earning-its-keep
 **Evidence.** The refuter fired live and recorded its objection, but the HIGH→MEDIUM cap only triggers

@@ -2364,10 +2364,49 @@ def _pinned_metric_runs(conn, connection_id: str, metric_table: str, sql: str) -
                                "returned", counter="ada.intake_probe_close")
 
 
+def _crystallize_metric_resolution(connection_id: str, metric_label: str, metric_table: str,
+                                   llm_sql: str, governed_name: str, governed_sql: str) -> None:
+    """P4 — when intake resolved a metric to its GOVERNED definition over a materially-different parsed
+    reading, crystallize that as an Ambiguity-Ledger resolution so the definition BURNS DOWN per
+    connection and is read back as a plan-time prior on EVERY path (chat + future ADA), not just this
+    run. The two candidate readings are the LLM's parsed formula and the governed one; the resolution
+    is execution-grounded (P1 dry-ran the governed formula before pinning). Source=``probe`` — the
+    lowest ledger authority, so it never clobbers a user clarify or a reviewer verdict (override-wins).
+    Fail-safe: a ledger error must never perturb the investigation."""
+    try:
+        from aughor.org.context import current_org_id
+        from aughor.semantic.ambiguity_ledger import (
+            AmbiguityResolution,
+            Reading,
+            save_resolution,
+        )
+        governed_label = f"governed: {governed_name}"
+        save_resolution(AmbiguityResolution(
+            connection_id=connection_id, org_id=current_org_id() or "",
+            schema_scope=metric_table or "",
+            dim_kind="AmbiIntent", dim_facet="aggregation",
+            subject=f"definition of {metric_label}",
+            readings=[
+                Reading(label="parsed reading", sql_evidence=llm_sql),
+                Reading(label=governed_label, sql_evidence=governed_sql),
+            ],
+            resolved_reading=governed_label,
+            resolved_sql=governed_sql,
+            resolution_source="probe",
+            evidence=(f"intake pinned the governed definition of {governed_name} over the parsed "
+                      f"formula `{llm_sql}` (dry-run-validated)"),
+        ))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "ledger crystallization of the metric pin is best-effort; the pin itself is "
+                      "unaffected", counter="ada.metric_pin_ledger")
+
+
 def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) -> Optional[str]:
     """Pin the intake's ``metric_sql`` to the connection's GOVERNED definition when one matches, so the
-    scan decomposes on a stable formula. Mutates ``intake`` in place (metric_sql + metric_is_ratio);
-    returns a transparency note (or None when nothing was pinned). Flag-gated
+    scan decomposes on a stable formula. Mutates ``intake`` in place (metric_sql + metric_is_ratio),
+    and crystallizes the definition resolution to the Ambiguity Ledger so it compounds per connection
+    (P4). Returns a transparency note (or None when nothing was pinned). Flag-gated
     (``ada.pin_canonical_metric``); deterministic; fail-open on every uncertainty."""
     try:
         from aughor.kernel.flags import flag_enabled
@@ -2397,6 +2436,11 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
         return None
     intake.metric_sql = canon_sql
     intake.metric_is_ratio = _metric_is_ratio(canon_sql, intake.metric_label)
+    # P4 — the resolution compounds: record it in the Ambiguity Ledger (source=probe) so the same
+    # definition burns down per connection and feeds the plan-time prior on every path.
+    _crystallize_metric_resolution(
+        connection_id, intake.metric_label or "", getattr(intake, "metric_table", "") or "",
+        llm_sql, cand.name, canon_sql)
     return (
         f"Metric pinned to the governed definition of {cand.name}: {canon_sql} "
         f"(the parsed formula was {llm_sql}) — so the breakdown computes on the same decomposable "
