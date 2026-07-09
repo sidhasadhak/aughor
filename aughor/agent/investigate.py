@@ -5585,15 +5585,22 @@ def ada_synthesize(state: AgentState) -> dict:
     # into prose ("0.20829576194770064"); collapse any over-long decimal run in the prose fields so a
     # report never ships a 17-significant-digit number. Deterministic, no unit inference.
     if synth:
-        from aughor.tools.executor import round_long_decimals
-        synth.headline = round_long_decimals(getattr(synth, "headline", "") or "")
-        synth.executive_summary = round_long_decimals(getattr(synth, "executive_summary", "") or "")
-        synth.confidence_justification = round_long_decimals(getattr(synth, "confidence_justification", "") or "")
-        synth.data_gaps = [round_long_decimals(g) for g in (getattr(synth, "data_gaps", None) or [])]
+        from aughor.tools.executor import round_long_decimals, unify_percent_fractions
+        # P3: when the metric is a PERCENTAGE, also unify a value written both as a fraction and a
+        # percent in the same prose ("0.208" next to "20.8%") — self-grounded, so it can't rescale an
+        # unrelated sub-1 number. Composed after the long-decimal collapse. No-op for a non-percent
+        # metric (byte-identical), so a plain-total / average report is untouched.
+        _is_pct_metric = _metric_is_percent(
+            intake_data.get("metric_sql", "") or "", intake_data.get("metric_label", "") or "")
+        _hygiene = (lambda s: unify_percent_fractions(round_long_decimals(s))) if _is_pct_metric else round_long_decimals
+        synth.headline = _hygiene(getattr(synth, "headline", "") or "")
+        synth.executive_summary = _hygiene(getattr(synth, "executive_summary", "") or "")
+        synth.confidence_justification = _hygiene(getattr(synth, "confidence_justification", "") or "")
+        synth.data_gaps = [_hygiene(g) for g in (getattr(synth, "data_gaps", None) or [])]
         for _rec in (getattr(synth, "recommendations", None) or []):
             for _fld in ("action", "expected_impact"):
                 if hasattr(_rec, _fld):
-                    setattr(_rec, _fld, round_long_decimals(getattr(_rec, _fld) or ""))
+                    setattr(_rec, _fld, _hygiene(getattr(_rec, _fld) or ""))
 
     def _coerce_amount_sign(label: str, pct: float) -> str:
         """Keep a waterfall amount_label's leading sign in agreement with its

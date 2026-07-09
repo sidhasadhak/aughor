@@ -126,13 +126,19 @@ the main and HITL-resume stream paths. **+9 tests** (`tests/unit/test_ada_progre
 live-verify the status line during a real multi-minute scan (needs a live endpoint); consider a coarser phase-plan
 upfront (all phases pending→running→done) as a complementary structure cue.*
 
-### P3 — Fraction↔percent unit consistency in prose
+### P3 — Fraction↔percent unit consistency in prose — ✅ SHIPPED (2026-07-09)
 **Evidence.** T3-2 killed 17-digit floats, but a report can still show "0.208" next to "20.8%" in the
 same prose (a percentage written as a fraction in one place, scaled in another).
-**Fix.** Light unit inference at the render boundary (extend `round_long_decimals` or add a sibling):
-when a metric/column is known to be a percentage, normalize its prose occurrences to one form. Needs the
-percent signal (`column_units` / `_metric_is_percent`) threaded to the render step — a bounded extension,
-not full NLP.
+**Fix (shipped).** `unify_percent_fractions` (`tools/executor.py`), a sibling of `round_long_decimals`,
+composed after it at the synth render boundary and **gated on `_metric_is_percent`** (so a plain-total /
+average report is byte-identical). It is **self-grounded**: a bare fraction is rewritten to the percent
+form only when its ×100 value ALSO appears in the same prose as an explicit percent, reusing that twin's
+exact number string — so it fixes the "0.208 next to 20.8%" inconsistency precisely and can NEVER rescale
+an unrelated sub-1 number (a correlation `0.82`, a p-value `0.05`, a `$0.50` price, a `0.36 pp` spread,
+any `v ≥ 1`). Deterministic, idempotent. **+10 tests** (`tests/unit/test_percent_prose_unify.py`).
+Applied on the investigate synth path; the explore path stays on `round_long_decimals` (no single governed
+percent metric there). **Anchors.** `tools/executor.py:unify_percent_fractions`; wired at the synth hygiene
+block in `agent/investigate.py` (the `_hygiene` composition).
 
 ### P4 — Metric-ambiguity *resolution*, not just disclosure (the deeper SOMA loop) — **now also owns the deep-mode clarify UX**
 **Evidence.** T4-1 surfaces the chosen reading; the false-premise adversarial run showed the count-vs-value
