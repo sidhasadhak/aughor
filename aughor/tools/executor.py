@@ -65,6 +65,26 @@ def _round_cell(v) -> str:
     return str(v)
 
 
+_LONG_DECIMAL_RE = re.compile(r'-?\d+\.\d{4,}')
+
+
+def round_long_decimals(text: str) -> str:
+    """Collapse over-long decimal runs (4+ fractional digits) embedded in PROSE, so a report never
+    ships a raw 17-significant-digit float in a headline/narrative (the '0.20829576194770064'
+    render-boundary miss). Applies the same precision rule as ``_round_cell`` (|v|>=1 → 2dp, else
+    6dp) to each match; all surrounding text, already-short numbers, and $/%/comma grouping are
+    untouched. Deterministic; safe on None/empty."""
+    if not text:
+        return text
+
+    def _sub(m):
+        v = float(m.group(0))
+        r = round(v, 2) if abs(v) >= 1 else round(v, 6)
+        return str(int(r) if r == int(r) else r)
+
+    return _LONG_DECIMAL_RE.sub(_sub, text)
+
+
 def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
     """Render a QueryResult as a compact text table for LLM context."""
     if result.error:

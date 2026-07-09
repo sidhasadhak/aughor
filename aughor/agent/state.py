@@ -372,6 +372,9 @@ class AnswerReport(TypedDict):
     contradiction_report: Optional[dict]   # typed cross-phase ContradictionReport.to_dict()
     orchestration_plan: Optional[dict]     # the Analyst's declared phase plan (plan of record)
     plan_reconciliation: Optional[dict]    # planned-vs-actual phases at the synthesis seam
+    # T4-1 — a plain-language receipt of HOW the metric was computed (formula + ratio interpretation
+    # + coverage), so a silently-chosen definition is visible and challengeable. "" when none.
+    metric_definition: Optional[str]
 
 
 class AgentState(TypedDict):

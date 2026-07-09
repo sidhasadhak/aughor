@@ -37,6 +37,7 @@ FLAG_ENV = {
     "capability.pipeline_live": "AUGHOR_CAPABILITY_PIPELINE_LIVE",
     "ada.premise_check": "AUGHOR_PREMISE_CHECK",
     "ada.causal_drill": "AUGHOR_CAUSAL_DRILL",
+    "ada.adversarial_verify": "AUGHOR_ADA_ADVERSARIAL",
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
     "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
@@ -129,6 +130,10 @@ FLAG_META = {
     "ada.causal_drill": {
         "label": "Causal-dimension priority + WHERE→WHY drill",
         "description": "The cross-section scan floats diagnostic dimensions (reason/condition/defect) ahead of the descriptive taxonomy so they survive the query cap, and after localising WHERE it auto-drills event-only dims into the WHY composition lens instead of stopping. Only affects the serial scan path (inert when 'Parallel Deep-Analysis lenses' is on, which lands the same idea in-lens). Off by default.",
+    },
+    "ada.adversarial_verify": {
+        "label": "Adversarial verify decision-changing verdicts",
+        "description": "ReFoRCE-style confidence-tiered verification: when a deep analysis lands a DECISION-CHANGING verdict (a premise rejection — 'X is not the problem' — or an abstention — 'within normal variance'), spend ONE extra skeptic LLM call to try to REFUTE it before shipping; a survived refutation caps confidence and records the objection. Fires only on the few high-stakes conclusions, never per finding. Off by default (adds an LLM call to those runs).",
     },
     "ask.clarify": {
         "label": "Ask-vs-guess clarification",

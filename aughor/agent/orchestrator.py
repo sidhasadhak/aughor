@@ -276,3 +276,64 @@ def detect_contradictions(phases: Any) -> ContradictionReport:
         return report
     except Exception:
         return ContradictionReport()
+
+
+# A verdict that REJECTS the question's premise or reports no material issue — the decision-level
+# conclusions that must not sit beside a list of actions (the inv1 "premise inverted, X is not the
+# problem" headline shipped with recommendations all targeting X).
+_VERDICT_REJECTION_RE = re.compile(
+    r"\bnot the\s+(?:main|primary|real|worst|biggest)?\s*(?:problem|worst|issue|cause|driver|concern)\b"
+    r"|premise\s+(?:is\s+|appears\s+|should\s+be\s+)?(?:invert\w*|wrong|false|revisit\w*|reconsider\w*)"
+    r"|is\s+actually\s+(?:lower|higher|better|the\s+more\s+favorable)"
+    r"|within\s+normal\s+(?:variance|range|historical)"
+    r"|no\s+anomaly\s+(?:was\s+)?(?:detected|found)"
+    r"|not\s+a\s+structural\s+(?:break|change|shift)"
+    r"|no\s+(?:material|clear|significant)\s+(?:cause|change|driver|decline|difference)",
+    re.I,
+)
+
+# A recommendation that is itself passive/advisory — listing these beside a rejection verdict is
+# coherent (it agrees with "no action"); only an ACTIONABLE recommendation contradicts the verdict.
+_NONACTIONABLE_REC_RE = re.compile(
+    r"\b(no\s+action|no\s+change|monitor|continue|maintain|advisory\s+only|keep\s+"
+    r"(?:monitoring|watching)|no\s+intervention|watch|track\s+over\s+time|re-?examine|verify|confirm)\b",
+    re.I,
+)
+
+
+def is_decision_changing_verdict(headline, executive_summary) -> bool:
+    """T4-3 — does the report's verdict REJECT the question's premise or report no material issue?
+    These are the high-stakes conclusions worth an adversarial second look (ReFoRCE-style tiering:
+    verify the few decision-changing verdicts, not every finding). Reuses the same rejection lexicon
+    the coherence check keys on. Deterministic."""
+    return bool(_VERDICT_REJECTION_RE.search(f"{headline or ''} {executive_summary or ''}"))
+
+
+def detect_verdict_recommendation_incoherence(headline, executive_summary, recommendations):
+    """A report is self-INCOHERENT when its verdict REJECTS the premise / reports no material issue,
+    yet it still ships ACTIONABLE recommendations a reader could act on — the inv1 shape (headline
+    "the premise is inverted, X is not the problem" while every recommendation prescribes action on X;
+    or an abstention "within normal variance" carrying a full action list). The cross-phase check sees
+    only phase summaries and misses this, so it's a deterministic post-synthesis backstop. Returns a
+    ``Contradiction`` or None. Conservative: fires only on a strong verdict-rejection phrase AND ≥1
+    genuinely actionable recommendation."""
+    verdict = f"{headline or ''} {executive_summary or ''}"
+    if not _VERDICT_REJECTION_RE.search(verdict):
+        return None
+    actionable = [
+        r for r in (recommendations or [])
+        if (getattr(r, "action", "") or (r.get("action", "") if isinstance(r, dict) else "") or "").strip()
+        and not _NONACTIONABLE_REC_RE.search(
+            getattr(r, "action", "") or (r.get("action", "") if isinstance(r, dict) else "") or "")
+    ]
+    if not actionable:
+        return None
+    return Contradiction(
+        kind="verdict_recommendation_incoherence",
+        detail=("The verdict rejects the question's premise or reports no material issue, yet "
+                f"{len(actionable)} actionable recommendation(s) are listed — reconcile the headline "
+                "with the recommendations so a reader cannot act on a conclusion the analysis did "
+                "not actually support."),
+        phases=["synthesis"],
+        severity="high",
+    )

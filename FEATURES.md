@@ -104,6 +104,44 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   **trailing-partial** guard (an incomplete final period that reads as a false drop). When one fires it is
   **enforced**, not merely advised: the absolute-change waterfall is neutralised and the summary reframed to
   average per-period run-rate, so the report can't headline a duration artifact the narrator was told to avoid.
+- **Global-ratio plausibility guard** — for a cross-table rate (`SUM(event)/SUM(population)`), a per-segment
+  scan that inner-joins the denominator *through* the numerator's event table silently counts only the
+  population that already had the event — inflating every segment (a refund rate of ~73% when the truth is
+  ~10%) with no row fan-out to trip the other guards. The metric's **true global level is recomputed
+  independently** (each aggregate over its own full table), and when every scanned segment sits ≥2.5× above it —
+  the systematic-inflation signature of a conditioned denominator — the corrupted numbers are **suppressed** and
+  the caveat **states the true global**, so a broken ratio can't be headlined as a business finding.
+- **Sustained level-shift detection** — a "why did X change?" investigation no longer relies on single-point
+  anomaly detection alone (which is blind to a gradual multi-period shift where no single point is an outlier —
+  a real −6.4% year-over-year decline dismissed as "within normal variance" because the mean gap was divided by
+  a single-period σ, wrong by √n). A **Welch two-sample test** on the series' earlier-vs-later halves
+  (SE = √(s₁²/n₁+s₂²/n₂)) runs alongside, and a material, statistically-real shift **proceeds to dimensional
+  decomposition** instead of a Tier-0 "it's just noise" abstention that lists the dimensions it never queried.
+- **Structural trust caveat** — a computation-error trust check (conditioned denominator, fan-out, formula
+  drift) now **leads the executive summary with an honest reframe and floors confidence to LOW** *when a flagged
+  finding's numbers are actually headlined* (its figures appear in the conclusion, checked by numeric grounding);
+  a peripheral flagged finding whose numbers don't reach the conclusion is surfaced in the data-gaps instead of
+  nuking a grounded answer — rather than only capping HIGH→MEDIUM while the flagged figures ride into the headline.
+- **Render-boundary number hygiene** — a report never ships a raw 17-significant-digit float in prose: any
+  over-long decimal run in a headline/summary/narrative is deterministically rounded to display precision (the
+  "0.20829576194770064" miss), on both the investigate and explore paths.
+- **Inspectable exploration traces** — a "what's driving X?" exploration forwards **every** sub-question's SQL,
+  rows, and result (not just the final one), emits a **per-step progress event** as each sub-question completes
+  (no multi-minute silent gap on the parallel-wave path), and — because each step now carries its own result —
+  **charts every step** through the existing per-result renderer.
+- **Data-coverage transparency** — intake runs one deterministic `MIN/MAX(date)` probe and the report states the
+  **real coverage window** it analyzed (populated even for a cross-sectional scan, which used to blank it), and a
+  sample-inferred observation window that falls outside the real data span is replaced with the probed one.
+- **Metric-definition receipt** — every report states **how the metric was computed** in plain language (formula,
+  and for a ratio whether it's a value-weighted `SUM/SUM` or a count-based rate — the two can differ and the
+  reading was chosen automatically), so a silently-picked definition is visible and challengeable, not buried.
+- **Verdict↔recommendation coherence** — the cross-phase contradiction detector now also checks the **headline
+  against the recommendations**: a verdict that rejects the premise ("X is not the problem") or reports no
+  material issue while still shipping actionable recommendations is flagged, instead of reading as "no contradiction".
+- **Tiered adversarial verification** (opt-in, `ada.adversarial_verify`) — a ReFoRCE-style skeptic pass that fires
+  **only** on a decision-changing verdict (a premise rejection or an abstention) to try to refute it before
+  shipping; a surviving refutation caps confidence and records the objection. Off by default (one extra LLM call
+  on those runs); the deterministic default path is unchanged.
 
 ## 3. Evidence, trust receipts & statistical rigor
 

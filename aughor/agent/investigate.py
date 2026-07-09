@@ -140,6 +140,19 @@ def route_after_baseline(state: AgentState) -> str:
     sigma = state.get("_baseline_sigma")
     code_sig = state.get("_baseline_significant")
 
+    # Decompose-under-abstention (fix 5): a "why did X change/decline/rise?" question presupposes a
+    # real movement and asks for its CAUSE. If the aggregate moved materially (≥5% between the
+    # series' earlier and later halves), run ONE dimensional pass even when the single-point anomaly
+    # test is sub-threshold — offsetting or gradual segment moves are invisible in the aggregate, and
+    # answering "it's just noise, here's everything I didn't look at" is the failure we're fixing.
+    # A genuinely-flat series (immaterial move, e.g. the "did refunds spike?" false premise) still
+    # stops cleanly below. route_after_decompose caps the cost at Tier 1 for non-dimensional questions.
+    rel_change = state.get("_baseline_rel_change")
+    if (_is_temporal_change_question(question) and rel_change is not None
+            and abs(rel_change) >= 0.05 and not code_sig):
+        from aughor.stats import stats as _s; _s.inc("tier0_decompose_on_why")
+        return "ada_decompose"
+
     # Code-level signal: stats.py ran and says "not significant"
     if code_sig is False and (sigma is None or sigma < 1.5):
         from aughor.stats import stats as _s; _s.inc("tier0_skips")
@@ -1027,6 +1040,162 @@ def _suppress_fanned_ratio(findings: list, metric_label: str, eff_caveat: str) -
             "grain-correct recompute is needed).")
 
 
+# ── Global-ratio plausibility guard (conditioned-denominator / implausible-magnitude) ─────────
+# The catastrophic inv1 failure: a "why is the Fragrance refund RATE so high?" scan generated
+# per-dimension SQL that used the EVENT table (refunds) as the JOIN BASE and INNER-joined the
+# population (revenue) onto it — so every segment's denominator counted only orders that HAD a
+# refund. Result: a refund rate of ~73% (true ≈ 10.4%), and the report told the user their premise
+# was INVERTED. No existing guard caught it (values sit inside [0,100], no row fan-out). This guard
+# computes the metric's TRUE global level independently — each aggregate over its OWN full table,
+# the population a rate must span — and flags when every scanned segment is implausibly far above it
+# (the systematic-inflation signature of a conditioned denominator or a broken ratio computation).
+_AGG_ANY_RE = re.compile(
+    r'\b(?:SUM|COUNT|AVG)\s*\(\s*(?:DISTINCT\s+)?("?[\w.]+"?)\s*\)', re.I)
+
+
+def _parse_ratio_sources(metric_sql: str) -> Optional[dict]:
+    """Parse a composite-ratio formula ``AGG(col) / AGG(col)`` into its numerator and denominator
+    SOURCES, so the true global ratio can be recomputed with each side aggregated over its OWN full
+    table. Columns may be qualified (``table.col`` / ``schema.table.col``) or bare (``col``); a bare
+    column is resolved to its table later via ``information_schema``. Returns None unless there are
+    exactly one division and a distinct numerator/denominator column (the cross-measure rate shape
+    where a conditioned denominator is possible). Handles a ``*100`` percent scale and a ``NULLIF``
+    denominator wrapper. Fail-open: any parse ambiguity → None."""
+    s = metric_sql or ""
+    if s.count("/") != 1:          # exactly one division — skip nested/ambiguous ratios
+        return None
+    left, right = s.split("/", 1)
+    lm = _AGG_ANY_RE.search(left)
+    rm = _AGG_ANY_RE.search(right)
+    if not lm or not rm:
+        return None
+
+    def _split_ref(ref: str) -> "tuple[Optional[str], str]":
+        parts = [p.strip('"') for p in ref.split(".")]
+        if len(parts) >= 2:
+            return ".".join(parts[:-1]), parts[-1]
+        return None, parts[-1]   # bare column — resolve its table later
+
+    num_table, num_col = _split_ref(lm.group(1))
+    den_table, den_col = _split_ref(rm.group(1))
+    # distinct measures on the two sides; a same-table qualified ratio has no conditioned-denom risk
+    if not num_col or not den_col or num_col == den_col:
+        return None
+    if num_table and den_table and num_table == den_table:
+        return None
+    _agg = lambda side: (re.search(r"\b(SUM|COUNT|AVG)\b", side, re.I) or [None, "SUM"])[1].upper()
+    return {
+        "num_table": num_table, "num_col": num_col, "num_agg": _agg(left),
+        "den_table": den_table, "den_col": den_col, "den_agg": _agg(right),
+        "scale": 100.0 if "*100" in s.replace(" ", "") else 1.0,
+    }
+
+
+def _resolve_table_for_column(conn, col: str) -> Optional[str]:
+    """Resolve a bare column to its owning ``schema.table`` via information_schema — needed when the
+    metric formula names columns unqualified (a common LLM shape). Returns None when the column is
+    absent or lives in MORE THAN ONE table (ambiguous → fail-open, don't guess). ``col`` is a
+    regex-captured identifier (``\\w+``), so the literal is safe to inline."""
+    if not col or not re.fullmatch(r"\w+", col):
+        return None
+    try:
+        r = conn.execute(
+            "__col_table_probe__",
+            "SELECT table_schema, table_name FROM information_schema.columns "
+            f"WHERE column_name = '{col}' GROUP BY 1, 2")
+        if r and not getattr(r, "error", None) and r.rows and len(r.rows) == 1:
+            sch, tbl = r.rows[0][0], r.rows[0][1]
+            return f"{sch}.{tbl}" if sch else tbl
+    except Exception:
+        return None
+    return None
+
+
+def _independent_global_ratio(conn, sources: dict) -> Optional[float]:
+    """The metric's TRUE whole-population value: numerator aggregated over its full table divided by
+    the denominator aggregated over ITS full table — no conditioning join, so the denominator spans
+    the entire population the rate is defined over. One cheap deterministic query. None on any error."""
+    try:
+        num = f'{sources["num_agg"]}("{sources["num_col"]}")'
+        den = f'{sources["den_agg"]}("{sources["den_col"]}")'
+        sql = (f'SELECT (SELECT {num} FROM {sources["num_table"]}) * {sources["scale"]} '
+               f'/ NULLIF((SELECT {den} FROM {sources["den_table"]}), 0) AS global_ratio')
+        r = conn.execute("__global_ratio_probe__", sql)
+        if r and not getattr(r, "error", None) and r.rows and r.rows[0] and r.rows[0][0] is not None:
+            return float(r.rows[0][0])
+    except Exception:
+        return None
+    return None
+
+
+def _ratio_metric_values(findings: list) -> list:
+    """Pull the per-segment ratio values from the scan's findings — the metric column
+    (`metric_total`/`metric_value`/`*rate*`) across every row of every finding."""
+    def _f(v):
+        try:
+            return float(str(v).replace(",", "").replace("%", ""))
+        except (TypeError, ValueError):
+            return None
+    vals: list[float] = []
+    for f in (findings or []):
+        cols = [str(c).lower() for c in (f.get("columns") or [])]
+        m_idx = next((i for i, c in enumerate(cols) if _RATIO_METRIC_COL_RE.search(c)), None)
+        if m_idx is None:
+            continue
+        for row in (f.get("rows") or []):
+            if m_idx < len(row):
+                v = _f(row[m_idx])
+                if v is not None:
+                    vals.append(v)
+    return vals
+
+
+_GLOBAL_RATIO_INFLATION = 2.5   # every segment ≥ this × the true global ⇒ systematic inflation
+
+
+def _global_ratio_plausibility_guard(findings: list, conn, metric_sql: str,
+                                     metric_label: str) -> Optional[str]:
+    """Fix 1+2 — detect a conditioned-denominator / broken ratio by magnitude. Compute the metric's
+    true global level independently; if EVERY scanned segment is ≥ 2.5× that global (systematic
+    inflation the eye reads as 'every segment is an outlier'), the per-segment ratio is a computation
+    artifact, not a business signal. Suppress the corrupted numbers and return an honest caveat that
+    STATES the true global. Returns None (no-op) when it can't parse the metric, can't compute the
+    global, or the segments are plausibly distributed around it. Deterministic; never raises."""
+    sources = _parse_ratio_sources(metric_sql)
+    if not sources:
+        return None
+    # Resolve any bare (unqualified) column to its owning table — the LLM writes the metric formula
+    # qualified on some runs and bare on others, and we need both tables to aggregate each side over
+    # its OWN full population.
+    if not sources["num_table"]:
+        sources["num_table"] = _resolve_table_for_column(conn, sources["num_col"])
+    if not sources["den_table"]:
+        sources["den_table"] = _resolve_table_for_column(conn, sources["den_col"])
+    if not sources["num_table"] or not sources["den_table"] or sources["num_table"] == sources["den_table"]:
+        return None
+    global_ratio = _independent_global_ratio(conn, sources)
+    if global_ratio is None or global_ratio <= 0:
+        return None
+    seg_vals = [v for v in _ratio_metric_values(findings) if v is not None and v > 0]
+    if len(seg_vals) < 2:
+        return None
+    # Systematic inflation: even the SMALLEST segment sits far above the true global — the signature
+    # of a denominator that lost most of its population (not a real spread with a few high segments).
+    if min(seg_vals) < _GLOBAL_RATIO_INFLATION * global_ratio:
+        return None
+    _fmt = _fmt_pct if sources["scale"] == 100.0 or max(seg_vals) <= 100.0 else (lambda v: f"{v:,.2f}")
+    caveat = (
+        f"metric-computation error: every scanned segment of {metric_label} ({_fmt(min(seg_vals))}–"
+        f"{_fmt(max(seg_vals))}) sits far above the metric's TRUE whole-population level of "
+        f"{_fmt(global_ratio)} (numerator over {sources['num_table']} ÷ denominator over "
+        f"{sources['den_table']}, each on its full population). This is the signature of a conditioned "
+        "denominator — the per-segment query joined the denominator through the numerator's event "
+        f"table, so it counted only the population that already had the event. The true global "
+        f"{metric_label} is {_fmt(global_ratio)}; the per-segment ranking is not trustworthy until the "
+        "denominator is computed over the full population per segment.")
+    return caveat
+
+
 def _chart_ratio_primary(finding) -> None:
     """For a RATIO metric, plot metric_total (the ratio itself), not the large numerator/
     denominator dollar aggregates it was built from. Keep the dimension column + the ratio
@@ -1401,6 +1570,61 @@ def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "intake probe connection close failed; probe result already "
                                "returned", counter="ada.intake_probe_close")
+
+
+def _metric_definition_receipt(intake_data: dict) -> str:
+    """T4-1 — a plain-language receipt of HOW the metric was computed, so a silently-chosen definition
+    is visible to the reader and can be challenged. Every deep run picks ONE reading of an ambiguous
+    metric (a "refund rate" as value-weighted refund$/revenue$ vs a count-based orders-with-refund/
+    orders; "revenue" off invoices vs line items) with no disclosure. Surfaces: the formula, the ratio
+    interpretation (value-weighted vs a plain average), the observation grain, and the data-coverage
+    window. Deterministic; "" when no metric is set. Never raises."""
+    try:
+        label = (intake_data.get("metric_label") or "").strip()
+        sql = (intake_data.get("metric_sql") or "").strip()
+        if not label and not sql:
+            return ""
+        parts: list[str] = []
+        if sql:
+            parts.append(f"computed as `{sql}`")
+        if _metric_is_composite_ratio(sql):
+            # Describe the ACTUAL aggregates (a composite ratio can be value-weighted SUM/SUM OR a
+            # count-based COUNT/COUNT — the two can diverge, and which was chosen is the silent call
+            # this receipt exists to disclose; don't assume SUM).
+            _src = _parse_ratio_sources(sql)
+            _na = (_src or {}).get("num_agg", "")
+            _da = (_src or {}).get("den_agg", "")
+            if _na == "SUM" and _da == "SUM":
+                parts.append("a value-weighted ratio — SUM(numerator) ÷ SUM(denominator), not a "
+                             "count-based rate")
+            elif _na == "COUNT" and _da == "COUNT":
+                parts.append("a count-based rate — COUNT(events) ÷ COUNT(population), not value-weighted")
+            else:
+                parts.append("a ratio of two aggregates")
+            parts.append("(a value-weighted and a count-based reading can differ materially; this "
+                         "reading was chosen automatically)")
+        elif re.search(r"\b(avg|mean|median)\s*\(", sql, re.I):
+            parts.append("a per-record average (non-additive — not summed across groups)")
+        _table = (intake_data.get("metric_table") or "").strip()
+        if _table:
+            parts.append(f"on {_table}")
+        coverage = (intake_data.get("data_coverage_label") or "").strip()
+        if coverage:
+            parts.append(f"over data spanning {coverage}")
+        body = "; ".join(parts)
+        return f"{label or 'Metric'} — {body}." if body else ""
+    except Exception:
+        return ""
+
+
+def _observation_window_is_wrong(obs_start, obs_end, cov_min: str, cov_max: str) -> bool:
+    """T4-2 — should the intake's observation window be replaced by the probed data-coverage window?
+    True when the LLM left it empty, or it falls (partly) OUTSIDE the real data span — the sample-
+    inferred-guess case (intake said "2023-01 to 2023-03" on data spanning 2023-01 → 2025-01). ISO
+    dates compare lexically. Conservative: a window fully inside the real span is left untouched."""
+    s = (obs_start or "")[:10]
+    e = (obs_end or "")[:10]
+    return not s or not e or e < cov_min or s > cov_max
 
 
 def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, end: str) -> "int | None":
@@ -1785,6 +2009,73 @@ def _cap_confidence_on_trust_advisory(synth, phases) -> bool:
         + (f" (+{len(caveats) - 1} more)" if len(caveats) > 1 else "")
         + ". " + (getattr(synth, "confidence_justification", "") or "")
     ).strip()
+    return True
+
+
+# A trust caveat that says the NUMBER IS WRONG (a computation artifact) — as opposed to merely
+# uncertain. These must not just cap confidence; the flagged figures must be visibly reframed so the
+# headline/summary can't present an artifact as fact (the inv1 "73% refund rate, premise inverted" miss).
+_COMPUTATION_ERROR_CAVEAT_RE = re.compile(
+    r"computation error|conditioned denominator|fan-?out|corrupt\w*|not trustworthy|"
+    r"could not be computed|formula drift|grain-correct recompute|artifact", re.I)
+
+
+def _reframe_on_trust_caveat(synth, phases) -> bool:
+    """Report-quality fix 4 — make a trust advisory STRUCTURAL, not just a confidence label. The
+    prior wiring only demoted HIGH→MEDIUM (``_cap_confidence_on_trust_advisory``); the corrupted
+    numbers still rode into the LLM-written headline/executive_summary (inv1 headlined a 73% refund
+    rate the guard had already flagged as a conditioned-denominator artifact).
+
+    SCOPED (T3-1): a computation-ERROR caveat is only allowed to floor the WHOLE report when a flagged
+    finding's numbers actually appear in the headline/summary — i.e. the conclusion is built on a wrong
+    number. When the flagged finding is peripheral (its numbers are NOT headlined — the inv3 case, where
+    3 clean channel drivers carried the conclusion and only one internal decomposition finding tripped),
+    the report is NOT floored to LOW: the caveat is surfaced in ``data_gaps`` and the existing MEDIUM cap
+    stands, so a supporting-evidence hiccup doesn't nuke a grounded answer. Mirrors
+    ``_reframe_on_pop_duration_mismatch``; returns True when it acted. Never raises on a missing field."""
+    if not synth:
+        return False
+    err_findings = [(f.get("trust_caveat"), f.get("rows"))
+                    for p in (phases or []) for f in (p.get("findings") or [])
+                    if f.get("trust_caveat") and _COMPUTATION_ERROR_CAVEAT_RE.search(str(f.get("trust_caveat")))]
+    if not err_findings:
+        return False
+
+    # Which flagged findings are actually HEADLINED — i.e. a number from the flagged finding appears in
+    # the conclusion prose (reuse the numeric-grounding core from the report-quality binding fix)?
+    _headline_text = (getattr(synth, "headline", "") or "") + " " + (getattr(synth, "executive_summary", "") or "")
+    try:
+        from aughor.explorer.verify import grounded_fraction
+        headlined = [cav for cav, rows in err_findings if rows and grounded_fraction(_headline_text, rows) > 0.0]
+    except Exception:
+        headlined = [cav for cav, _ in err_findings]   # fail-safe: treat as headlined (be cautious)
+
+    if headlined:
+        lead = headlined[0]
+        _es = synth.executive_summary or ""
+        if str(lead)[:48].lower() not in _es.lower():
+            reframe = (
+                f"⚠ A trust check flagged the evidence and the figures below are NOT reliable: {lead} "
+                "Do not read the numbers or ranking as fact until they are recomputed. "
+            )
+            synth.executive_summary = (reframe + _es).strip()[:900]
+        # A wrong number carried into the conclusion can't underwrite a confident verdict.
+        if getattr(synth, "confidence", "") != "LOW":
+            synth.confidence = "LOW"
+            synth.confidence_justification = (
+                "Floored to LOW — a computation-error trust check fired on a headlined figure: "
+                + str(lead) + " " + (getattr(synth, "confidence_justification", "") or "")
+            ).strip()
+        return True
+
+    # Flagged findings exist but none is headlined — surface honestly without nuking a grounded answer.
+    lead = err_findings[0][0]
+    _gaps = list(getattr(synth, "data_gaps", None) or [])
+    _note = ("A supporting finding was excluded from the conclusion after a trust check flagged it: "
+             + str(lead))
+    if not any("trust check flagged" in g.lower() for g in _gaps):
+        _gaps.insert(0, _note)
+    synth.data_gaps = _gaps
     return True
 
 
@@ -2182,6 +2473,16 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # range mixes datasets and masks an empty window). The LLM retry above only asks;
     # this enforces. The portrait parse is the cheap path, but scan_context is empty
     # on the ADA entry points — the DB probe is the authoritative fallback.
+    # Deterministic DATA COVERAGE span — one MIN/MAX probe of the metric's date column, run
+    # UNCONDITIONALLY (T4-2): it drives the temporal window clamp below AND lets the report state the
+    # real coverage window (even a cross-sectional scan spans a real range the reader should see),
+    # instead of the intake LLM's sample-inferred guess. Fail-open (no date column / probe error → "").
+    _cov_min = _cov_max = ""
+    if intake is not None and (intake.date_column or ""):
+        _pmn, _pmx = _measure_date_span(
+            state.get("connection_id") or "", intake.metric_table or "", intake.date_column or "")
+        _cov_min, _cov_max = (_pmn or ""), (_pmx or "")
+
     if intake is not None and not intake.cross_sectional:
         # The data's true date span drives temporal windowing (esp. the re-anchor of a
         # 'last-N' window to the most recent data). The scan PORTRAIT undercounts the max
@@ -2189,11 +2490,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # 12 months"); the DB MIN/MAX probe is authoritative. UNION both so neither a short
         # portrait nor a failed probe can shrink the range. ISO date strings → lexical min/max.
         _smin, _smax = _extract_data_date_range(scan, intake.metric_table or "")
-        _pmin, _pmax = _measure_date_span(
-            state.get("connection_id") or "", intake.metric_table or "", intake.date_column or ""
-        )
-        _cmin = min([d for d in (_smin, _pmin) if d], default="")
-        _cmax = max([d for d in (_smax, _pmax) if d], default="")
+        _cmin = min([d for d in (_smin, _cov_min) if d], default="")
+        _cmax = max([d for d in (_smax, _cov_max) if d], default="")
         _cov_note = _clamp_intake_to_coverage(intake, _cmin, _cmax, question=state.get("question", ""))
         # Density guard: a comparison window whose date-SPAN survived the clamp but is sparsely
         # populated (internal gap / slow ramp) is still a thin PoP baseline — probe it. Skipped when
@@ -2281,6 +2579,20 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     intake_dict["filtered_schema"] = filtered_schema
     if _metric_note:
         intake_dict["metric_safety_note"] = _metric_note
+
+    # T4-2: record the real DATA COVERAGE window (from the MIN/MAX probe above) so the report states
+    # the period it actually covers, and correct a sample-inferred observation window that lies
+    # outside the real data span (inv1's intake guessed "2023-01 to 2023-03" on data spanning
+    # 2023-01 → 2025-01, and the report's observation_period came out empty).
+    if _cov_min and _cov_max:
+        intake_dict["data_coverage_start"] = _cov_min
+        intake_dict["data_coverage_end"] = _cov_max
+        intake_dict["data_coverage_label"] = f"{_cov_min} → {_cov_max}"
+        if _observation_window_is_wrong(intake.observation_start, intake.observation_end, _cov_min, _cov_max):
+            intake_dict["observation_start"] = _cov_min
+            intake_dict["observation_end"] = _cov_max
+            if intake.cross_sectional or not (intake.observation_label or "").strip():
+                intake_dict["observation_label"] = f"{_cov_min} → {_cov_max}"
 
     # Enrich with ontology entity context (best-effort — never crash ada_intake)
     try:
@@ -2687,6 +2999,44 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
             code_significant = bool(code_sigma >= 2.0)
             break  # first successful result is enough
 
+    # Decompose-under-abstention (fix 5): capture the sustained level-shift magnitude of the primary
+    # metric series so the router can still run ONE dimensional pass for a "why did X change?"
+    # question whose aggregate moved materially — never answer a WHY with "it's just noise" and a
+    # list of dimensions it never queried (the inv3 failure). Best-effort; router falls back to sigma.
+    code_rel_change: Optional[float] = None
+    try:
+        from aughor.tools.stats import mean_shift_significance
+
+        def _col_floats(rows, idx):
+            out = []
+            for row in rows:
+                if idx < len(row):
+                    try:
+                        out.append(float(str(row[idx]).replace(",", "").replace("%", "")))
+                    except (TypeError, ValueError):
+                        pass
+            return out
+
+        for _, r in results:
+            if r.error or not r.rows or not r.columns:
+                continue
+            # The primary metric series is the first non-leading column that reads as a run of
+            # numbers (leading column is the period/label); good enough to gauge the aggregate move.
+            for _ci in range(1, len(r.columns)):
+                _series = _col_floats(r.rows, _ci)
+                if len(_series) < 6:
+                    continue
+                _shift = mean_shift_significance(_series)
+                if _shift is not None:
+                    code_rel_change = float(_shift.rel_change)
+                    break
+            if code_rel_change is not None:
+                break
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "level-shift magnitude is best-effort; router falls back to sigma",
+                 counter="ada.level_shift_probe")
+
     if interpretation and interpretation.findings:
         findings = _assemble_phase_findings(results, interpretation.findings, "baseline")
         summary = interpretation.phase_summary
@@ -2853,6 +3203,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         "_baseline_passes": passes_to_next,
         "_baseline_significant": code_significant,
         "_baseline_sigma": code_sigma,
+        "_baseline_rel_change": code_rel_change,
     }
     if updated_intake is not None:
         ret["_ada_intake"] = updated_intake
@@ -3544,6 +3895,19 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                 summary = _suppress_fanned_ratio(_fanned, metric_label, _eff_caveat)
             else:
                 summary = f"⚠ {_eff_caveat} " + (summary or "")
+
+    # Global-ratio plausibility guard (fix 1+2): for a composite-ratio metric, a conditioned
+    # denominator (denominator inner-joined through the numerator's event table) or any broken ratio
+    # inflates EVERY segment far above the metric's true global level — a class no fan-out/saturation
+    # guard catches. Compute the true global independently and, if every segment is implausibly high,
+    # suppress the corrupted numbers + state the true global so synthesis can't headline the artifact.
+    if is_ratio and _metric_is_composite_ratio(metric_sql):
+        _plausibility = _global_ratio_plausibility_guard(findings, conn, metric_sql, metric_label)
+        if _plausibility:
+            for f in findings:
+                f["trust_caveat"] = f.get("trust_caveat") or _plausibility
+                f["is_significant"] = False
+            summary = _suppress_fanned_ratio(findings, metric_label, _plausibility)
 
     phase = _phase_result(
         _phase_id, _phase_title, _phase_emoji,
@@ -4992,6 +5356,57 @@ def ada_synthesize(state: AgentState) -> dict:
 
     # Trust-advisory floor (report-quality wiring gap #2) — cap HIGH → MEDIUM when an advisory fired.
     _cap_confidence_on_trust_advisory(synth, phases)
+    # Fix 4: a computation-ERROR caveat is structural, not advisory — lead the summary with the honest
+    # reframe and floor confidence to LOW so a flagged-artifact number can't be headlined as fact.
+    _reframe_on_trust_caveat(synth, phases)
+
+    # T4-4: self-coherence — the cross-phase contradiction detector sees only phase summaries, so a
+    # report whose VERDICT rejects the premise ("X is not the problem" / "within normal variance")
+    # while still shipping actionable recommendations reads as coherent (severity "none"). Add that
+    # headline↔recommendations check to the contradiction report so the incoherence is surfaced.
+    if synth:
+        try:
+            from aughor.agent.orchestrator import detect_verdict_recommendation_incoherence
+            _incoh = detect_verdict_recommendation_incoherence(
+                synth.headline, synth.executive_summary, getattr(synth, "recommendations", None))
+            if _incoh is not None:
+                contradiction_report.items.append(_incoh)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "verdict-recommendation coherence check is best-effort; report proceeds",
+                     counter="ada.coherence_check")
+
+    # T4-3: confidence-tiered adversarial verification (ReFoRCE-style). Spend ONE skeptic LLM call to
+    # try to REFUTE a DECISION-CHANGING verdict (a premise rejection or an abstention) before shipping
+    # — the few high-stakes conclusions, never per finding. A surviving refutation caps confidence and
+    # records the objection. Flag-gated default-off (adds an LLM call to those runs); the deterministic
+    # default path is unchanged.
+    from aughor.kernel.flags import flag_enabled as _flag_enabled
+    if synth and _flag_enabled("ada.adversarial_verify"):
+        try:
+            from aughor.agent.orchestrator import is_decision_changing_verdict
+            if is_decision_changing_verdict(synth.headline, synth.executive_summary):
+                from aughor.agent.explore import run_refutation
+                _verdict = run_refutation(question, synth.headline or "", _phases_summary(phases))
+                if _verdict is not None and _verdict.refuted:
+                    _obj = (_verdict.reason or "").strip()
+                    _alt = (getattr(_verdict, "alternative", None) or "").strip()
+                    _note = ("An adversarial verification challenged this conclusion: " + _obj
+                             + (f" Alternative reading: {_alt}." if _alt else ""))
+                    _gaps = list(getattr(synth, "data_gaps", None) or [])
+                    if not any("adversarial verification" in g.lower() for g in _gaps):
+                        _gaps.insert(0, _note)
+                    synth.data_gaps = _gaps
+                    if getattr(synth, "confidence", "") == "HIGH":
+                        synth.confidence = "MEDIUM"
+                        synth.confidence_justification = (
+                            "Capped below HIGH — a decision-changing verdict did not survive an "
+                            "adversarial refutation: " + _obj + " "
+                            + (getattr(synth, "confidence_justification", "") or "")).strip()
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "adversarial verification is best-effort; report proceeds",
+                     counter="ada.adversarial_verify")
 
     # F3/F2 — a CROSS-SECTIONAL scan ranks the metric ACROSS dimensions at a point in time; it
     # measures no temporal change, so:
@@ -5021,6 +5436,20 @@ def ada_synthesize(state: AgentState) -> dict:
     # Enforcing half of report-quality fix #1: if the coverage clamp flagged a duration mismatch,
     # deterministically reframe to run-rate — don't rely on the narrator heeding the advisory note.
     _reframe_on_pop_duration_mismatch(synth, intake_data, question)
+
+    # T3-2: render-boundary number hygiene — the narrator occasionally copies a raw multi-digit float
+    # into prose ("0.20829576194770064"); collapse any over-long decimal run in the prose fields so a
+    # report never ships a 17-significant-digit number. Deterministic, no unit inference.
+    if synth:
+        from aughor.tools.executor import round_long_decimals
+        synth.headline = round_long_decimals(getattr(synth, "headline", "") or "")
+        synth.executive_summary = round_long_decimals(getattr(synth, "executive_summary", "") or "")
+        synth.confidence_justification = round_long_decimals(getattr(synth, "confidence_justification", "") or "")
+        synth.data_gaps = [round_long_decimals(g) for g in (getattr(synth, "data_gaps", None) or [])]
+        for _rec in (getattr(synth, "recommendations", None) or []):
+            for _fld in ("action", "expected_impact"):
+                if hasattr(_rec, _fld):
+                    setattr(_rec, _fld, round_long_decimals(getattr(_rec, _fld) or ""))
 
     def _coerce_amount_sign(label: str, pct: float) -> str:
         """Keep a waterfall amount_label's leading sign in agreement with its
@@ -5059,7 +5488,8 @@ def ada_synthesize(state: AgentState) -> dict:
             headline=synth.headline,
             executive_summary=synth.executive_summary,
             metric=intake_data.get("metric_label", ""),
-            observation_period="" if _xsec else intake_data.get("observation_label", ""),
+            observation_period=(intake_data.get("data_coverage_label", "") if _xsec else intake_data.get("observation_label", "")),
+            metric_definition=_metric_definition_receipt(intake_data),
             comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
             total_change_label="" if _xsec else synth.total_change_label,
             phases=phases,
@@ -5090,7 +5520,8 @@ def ada_synthesize(state: AgentState) -> dict:
             headline=_headline,
             executive_summary=_exec,
             metric=intake_data.get("metric_label", ""),
-            observation_period="" if _xsec else intake_data.get("observation_label", ""),
+            observation_period=(intake_data.get("data_coverage_label", "") if _xsec else intake_data.get("observation_label", "")),
+            metric_definition=_metric_definition_receipt(intake_data),
             comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
             total_change_label="",
             phases=phases,
