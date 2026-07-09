@@ -5278,6 +5278,44 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     return out
 
 
+# ── T4-3 / P5: tiered adversarial verification ─────────────────────────────────────────
+def _adversarial_should_run(synth, *, full: bool, high_stakes: bool) -> bool:
+    """Whether the ReFoRCE-style refuter should spend its ONE skeptic LLM call on this verdict. The
+    caller has already confirmed the verdict is DECISION-CHANGING (a premise rejection / abstention).
+      • ``full`` (``ada.adversarial_verify``) — challenge EVERY decision-changing verdict.
+      • ``high_stakes`` (``ada.adversarial_high_stakes``) — the deterministic materiality gate: fire
+        ONLY when the verdict is asserted with **HIGH** confidence. That's the costly-if-wrong minority
+        AND the only case where the HIGH→MEDIUM cap can bite — so the refuter earns a default-path place
+        without paying an LLM call on the many MEDIUM/LOW verdicts. Confidence-triggered activation."""
+    if full:
+        return True
+    if high_stakes:
+        return (getattr(synth, "confidence", "") or "").upper() == "HIGH"
+    return False
+
+
+def _apply_adversarial_refutation(synth, verdict) -> None:
+    """Apply a SURVIVING refutation to the synthesis (deterministic; the LLM call is upstream): record
+    the objection in ``data_gaps`` and cap a **HIGH** confidence to **MEDIUM** — a decision-changing
+    verdict that didn't survive a skeptic pass can't ship as HIGH. No-op unless the verdict refutes;
+    idempotent on the note; leaves MEDIUM/LOW confidence untouched (the cap only lowers HIGH)."""
+    if verdict is None or not getattr(verdict, "refuted", False):
+        return
+    obj = (getattr(verdict, "reason", "") or "").strip()
+    alt = (getattr(verdict, "alternative", None) or "").strip()
+    note = ("An adversarial verification challenged this conclusion: " + obj
+            + (f" Alternative reading: {alt}." if alt else ""))
+    gaps = list(getattr(synth, "data_gaps", None) or [])
+    if not any("adversarial verification" in g.lower() for g in gaps):
+        gaps.insert(0, note)
+    synth.data_gaps = gaps
+    if (getattr(synth, "confidence", "") or "").upper() == "HIGH":
+        synth.confidence = "MEDIUM"
+        synth.confidence_justification = (
+            "Capped below HIGH — a decision-changing verdict did not survive an adversarial "
+            "refutation: " + obj + " " + (getattr(synth, "confidence_justification", "") or "")).strip()
+
+
 @_telemetry.node_span("ada_synthesize")
 def ada_synthesize(state: AgentState) -> dict:
     """
@@ -5564,33 +5602,24 @@ def ada_synthesize(state: AgentState) -> dict:
             tolerate(_exc, "verdict-recommendation coherence check is best-effort; report proceeds",
                      counter="ada.coherence_check")
 
-    # T4-3: confidence-tiered adversarial verification (ReFoRCE-style). Spend ONE skeptic LLM call to
-    # try to REFUTE a DECISION-CHANGING verdict (a premise rejection or an abstention) before shipping
-    # — the few high-stakes conclusions, never per finding. A surviving refutation caps confidence and
-    # records the objection. Flag-gated default-off (adds an LLM call to those runs); the deterministic
-    # default path is unchanged.
+    # T4-3 / P5: confidence-tiered adversarial verification (ReFoRCE-style). Spend ONE skeptic LLM call
+    # to try to REFUTE a DECISION-CHANGING verdict (a premise rejection or an abstention) before
+    # shipping — the few high-stakes conclusions, never per finding. A surviving refutation records the
+    # objection and caps a HIGH confidence to MEDIUM. Two opt-in tiers, both default-off (the
+    # deterministic default path is byte-identical): `ada.adversarial_verify` challenges EVERY
+    # decision-changing verdict; `ada.adversarial_high_stakes` is the cheaper materiality-gated tier —
+    # only a HIGH-confidence decision-changing verdict (where being wrong is costly and the cap bites).
     from aughor.kernel.flags import flag_enabled as _flag_enabled
-    if synth and _flag_enabled("ada.adversarial_verify"):
+    _adv_full = _flag_enabled("ada.adversarial_verify")
+    _adv_high_stakes = _flag_enabled("ada.adversarial_high_stakes")
+    if synth and (_adv_full or _adv_high_stakes):
         try:
             from aughor.agent.orchestrator import is_decision_changing_verdict
-            if is_decision_changing_verdict(synth.headline, synth.executive_summary):
+            if is_decision_changing_verdict(synth.headline, synth.executive_summary) \
+                    and _adversarial_should_run(synth, full=_adv_full, high_stakes=_adv_high_stakes):
                 from aughor.agent.explore import run_refutation
                 _verdict = run_refutation(question, synth.headline or "", _phases_summary(phases))
-                if _verdict is not None and _verdict.refuted:
-                    _obj = (_verdict.reason or "").strip()
-                    _alt = (getattr(_verdict, "alternative", None) or "").strip()
-                    _note = ("An adversarial verification challenged this conclusion: " + _obj
-                             + (f" Alternative reading: {_alt}." if _alt else ""))
-                    _gaps = list(getattr(synth, "data_gaps", None) or [])
-                    if not any("adversarial verification" in g.lower() for g in _gaps):
-                        _gaps.insert(0, _note)
-                    synth.data_gaps = _gaps
-                    if getattr(synth, "confidence", "") == "HIGH":
-                        synth.confidence = "MEDIUM"
-                        synth.confidence_justification = (
-                            "Capped below HIGH — a decision-changing verdict did not survive an "
-                            "adversarial refutation: " + _obj + " "
-                            + (getattr(synth, "confidence_justification", "") or "")).strip()
+                _apply_adversarial_refutation(synth, _verdict)
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "adversarial verification is best-effort; report proceeds",

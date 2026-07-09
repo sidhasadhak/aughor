@@ -171,14 +171,23 @@ human-in-the-loop wait with no way to proceed. (P1's two example chips — "net 
   now mitigated by the honest label + P2's live progress). Complements
   [`docs/AMBIGUITY_LEDGER_2026-07-06.md`] and [`docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md`].
 
-### P5 — T4-3 confidence-floor path + earning-its-keep
+### P5 — T4-3 confidence-floor path + earning-its-keep — ✅ SHIPPED (2026-07-09)
 **Evidence.** The refuter fired live and recorded its objection, but the HIGH→MEDIUM cap only triggers
 when a HIGH-confidence *decision-changing* verdict is refuted — that path wasn't hit live yet, and the
 capability is opt-in default-off.
-**Fix.** Add a targeted test/live case that exercises the cap; consider a deterministic materiality
-trigger (per the roadmapped WHY-lens "confidence-triggered activation") so the refuter earns a place on
-the default path for the genuinely high-stakes minority of runs, without imposing an LLM call on every
-run.
+**Fix (shipped).** Two moves:
+- **Exercised the cap deterministically.** The apply logic is extracted to a pure function
+  `_apply_adversarial_refutation(synth, verdict)` (`agent/investigate.py`) — records the objection in
+  `data_gaps` and caps **HIGH→MEDIUM** (leaving MEDIUM/LOW untouched, idempotent on the note). The
+  previously-unexercised cap is now unit-tested with a fabricated surviving verdict, no LLM.
+- **Deterministic materiality trigger.** `_adversarial_should_run(synth, full, high_stakes)` + a new
+  flag **`ada.adversarial_high_stakes`** (default-off): the cheaper tier fires the one skeptic call
+  **only when the decision-changing verdict is asserted with HIGH confidence** — the costly-if-wrong
+  minority and the only case the cap can bite (confidence-triggered activation, per the WHY-lens
+  rework). The full tier (`ada.adversarial_verify`) is unchanged (challenge every decision-changing
+  verdict); default (both off) is **byte-identical**. **+10 tests** (`tests/unit/test_adversarial_cap.py`).
+  *Remaining: live-verify a HIGH→MEDIUM cap on a real run (needs a live endpoint + a HIGH-confidence
+  premise rejection that a refuter overturns); then consider promoting the high-stakes tier to default-on.*
 
 ### P6 — Ground-truth regression harness (highest-leverage *meta* move) — ✅ SHIPPED (2026-07-09)
 **Evidence.** The guards are unit-tested, but end-to-end **answer quality** on these four archetype

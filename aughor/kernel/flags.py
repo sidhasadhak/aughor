@@ -38,6 +38,7 @@ FLAG_ENV = {
     "ada.premise_check": "AUGHOR_PREMISE_CHECK",
     "ada.causal_drill": "AUGHOR_CAUSAL_DRILL",
     "ada.adversarial_verify": "AUGHOR_ADA_ADVERSARIAL",
+    "ada.adversarial_high_stakes": "AUGHOR_ADA_ADVERSARIAL_HIGH_STAKES",
     "ada.pin_canonical_metric": "AUGHOR_ADA_PIN_CANONICAL_METRIC",
     "ada.progress_events": "AUGHOR_ADA_PROGRESS_EVENTS",
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
@@ -136,6 +137,10 @@ FLAG_META = {
     "ada.adversarial_verify": {
         "label": "Adversarial verify decision-changing verdicts",
         "description": "ReFoRCE-style confidence-tiered verification: when a deep analysis lands a DECISION-CHANGING verdict (a premise rejection — 'X is not the problem' — or an abstention — 'within normal variance'), spend ONE extra skeptic LLM call to try to REFUTE it before shipping; a survived refutation caps confidence and records the objection. Fires only on the few high-stakes conclusions, never per finding. Off by default (adds an LLM call to those runs).",
+    },
+    "ada.adversarial_high_stakes": {
+        "label": "Adversarial verify — high-stakes only",
+        "description": "The cheaper, materiality-gated tier of adversarial verification: challenge a decision-changing verdict (premise rejection / abstention) with one skeptic LLM call ONLY when it is asserted with HIGH confidence — the costly-if-wrong minority, and the only case where the HIGH→MEDIUM confidence cap can bite. Lets the refuter earn a place on the default path without paying an LLM call on the many MEDIUM/LOW verdicts. Off by default; supersedes 'Adversarial verify decision-changing verdicts' (the full tier) for cost.",
     },
     "ada.pin_canonical_metric": {
         "label": "Pin governed metric at Deep-Analysis intake",
