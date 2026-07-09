@@ -119,6 +119,16 @@ def route_after_intake(state: AgentState) -> str:
     return "ada_cross_section" if intake.get("cross_sectional") else "ada_baseline"
 
 
+def route_after_intake_clarify(state: AgentState) -> str:
+    """P4 clarify_gate: route intake through the clarify gate ONLY when ada_intake stashed a material
+    metric ambiguity (`_clarify_pending`); otherwise the normal intake routing. The gate is a
+    passthrough armed with `interrupt_before`, so reaching it pauses the run for the user's choice.
+    With no pending clarify this is byte-identical to `route_after_intake`."""
+    if state.get("_clarify_pending"):
+        return "clarify_gate"
+    return route_after_intake(state)
+
+
 def route_after_baseline(state: AgentState) -> str:
     """
     Tier 0 gate: if the decline is within normal variance, skip straight to
@@ -2448,6 +2458,165 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
     )
 
 
+# ── P4 clarify_gate: detect a MATERIAL metric-reading divergence and ask, not guess ────
+_METRIC_DIVERGENCE_REL = 0.05   # readings must differ ≥5% (relative) to be worth interrupting for
+
+
+def _probe_metric_scalar(conn, connection_id: str, metric_table: str, sql: str) -> Optional[float]:
+    """Evaluate a metric aggregate to its single global scalar over ``metric_table``. Returns None on
+    any error (a reading that doesn't run isn't a plausible alternative worth asking about). Prefers
+    the bound connection; else a pooled checkout. Mirrors ``_pinned_metric_runs``."""
+    if not metric_table or not sql:
+        return None
+    ref = str(metric_table).replace(";", "").strip()
+    probe = f"SELECT {sql} AS v FROM {ref}"
+    db = conn
+    opened = False
+    try:
+        if db is None:
+            if not connection_id:
+                return None
+            from aughor.db.connection import open_connection_for
+            db = open_connection_for(connection_id)
+            opened = True
+        res = db.execute("clarify_metric_probe", probe)
+        if getattr(res, "error", None) or not res.rows or res.rows[0][0] is None:
+            return None
+        return float(res.rows[0][0])
+    except Exception:
+        return None
+    finally:
+        if opened and db is not None:
+            try:
+                db.close()
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "clarify metric-probe connection close failed; probe result already "
+                               "returned", counter="ada.clarify_probe_close")
+
+
+def _metrics_materially_diverge(a: float, b: float) -> bool:
+    """Two metric readings are materially different when their relative gap clears the bar (so a
+    rounding-level difference never interrupts). Symmetric; guards a zero denominator."""
+    denom = max(abs(a), abs(b), 1e-9)
+    return abs(a - b) / denom >= _METRIC_DIVERGENCE_REL
+
+
+def _lookup_metric_resolution(connection_id: str, metric_label: str):
+    """The crystallized resolution of this metric's definition on this connection, or None. Matches on
+    the ``definition of {label}`` subject. Fail-open (a lookup error → None → the caller asks/pins)."""
+    if not (connection_id and metric_label):
+        return None
+    try:
+        from aughor.semantic.ambiguity_ledger import retrieve_resolutions
+        for res, _score in retrieve_resolutions(f"definition of {metric_label}", connection_id):
+            if metric_label.lower() in (res.subject or "").lower():
+                return res
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "clarify ledger lookup is best-effort; a miss just means we ask/pin",
+                 counter="ada.clarify_ledger")
+    return None
+
+
+def _metric_reading_already_resolved(question: str, connection_id: str, metric_label: str) -> bool:
+    """Ledger burn-down: don't re-ask a metric-definition ambiguity already resolved on this connection."""
+    return _lookup_metric_resolution(connection_id, metric_label) is not None
+
+
+def _apply_resolved_metric_reading(intake, connection_id: str, conn) -> Optional[str]:
+    """P4 burn-down: when this metric's definition was already resolved (by a user clarify) on this
+    connection, HARD-BIND the resolved reading's SQL — so the user's choice is honored on EVERY
+    subsequent run (never re-asked, and P1's silent pin can't override a 'use the parsed reading'
+    choice). Returns a transparency note when it binds, else None. Flag-gated (`ada.clarify_gate`);
+    fail-open: only binds a substitutable formula that actually runs over the metric table."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        if not flag_enabled("ada.clarify_gate"):
+            return None
+    except Exception:
+        return None
+    label = (getattr(intake, "metric_label", "") or "").strip()
+    metric_table = (getattr(intake, "metric_table", "") or "").strip()
+    if not (label and metric_table):
+        return None
+    res = _lookup_metric_resolution(connection_id, label)
+    sql = (getattr(res, "resolved_sql", "") or "").strip() if res is not None else ""
+    if not sql or not _is_substitutable_metric_sql(sql):
+        return None
+    if re.sub(r"\s+", "", sql.lower()) == re.sub(r"\s+", "", (getattr(intake, "metric_sql", "") or "").lower()):
+        return None   # already bound to the resolved reading — nothing to do
+    if _probe_metric_scalar(conn, connection_id, metric_table, sql) is None:
+        return None
+    intake.metric_sql = sql
+    intake.metric_is_ratio = _metric_is_ratio(sql, label)
+    return (f"Using your previously-chosen reading of {label} ({getattr(res, 'resolved_reading', '')}): "
+            f"{sql}.")
+
+
+def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, question: str) -> Optional[dict]:
+    """P4 — when a RATIO metric's GOVERNED reading and the LLM's parsed reading BOTH run over the
+    metric table but give materially different numbers, this is a genuine two-plausible-readings
+    ambiguity (the count-vs-value 'refund rate' class). Return a clarify payload (the two readings +
+    their probed previews) so the run can PAUSE and ask, instead of silently choosing one. Returns None
+    (proceed silently) when: the flag is off, the metric isn't a ratio, no governed reading matches,
+    the readings agree / one doesn't run, or the ambiguity was already resolved on this connection.
+    Deterministic; fail-open on every uncertainty."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        if not flag_enabled("ada.clarify_gate"):
+            return None
+    except Exception:
+        return None
+    parsed_sql = (getattr(intake, "metric_sql", "") or "").strip()
+    label = (getattr(intake, "metric_label", "") or "").strip()
+    metric_table = (getattr(intake, "metric_table", "") or "").strip()
+    if not (parsed_sql and label and metric_table):
+        return None
+    if not _metric_is_ratio(parsed_sql, label):
+        return None   # only a ratio has a count-vs-value split worth interrupting for
+    try:
+        from aughor.semantic.canonical import resolve_canonical_metrics
+        cand = _match_canonical_metric(label, parsed_sql, resolve_canonical_metrics(
+            connection_id, schema_text=schema_text or "") or [])
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "clarify governed-metric resolve is best-effort; proceed without a clarify",
+                 counter="ada.clarify_resolve")
+        return None
+    if cand is None:
+        return None
+    governed_sql = (cand.sql or "").strip()
+    if not _is_substitutable_metric_sql(governed_sql):
+        return None
+    if re.sub(r"\s+", "", governed_sql.lower()) == re.sub(r"\s+", "", parsed_sql.lower()):
+        return None   # same formula → no ambiguity
+    if _metric_reading_already_resolved(question, connection_id, label):
+        return None   # burned down already — don't re-ask
+    parsed_v = _probe_metric_scalar(conn, connection_id, metric_table, parsed_sql)
+    governed_v = _probe_metric_scalar(conn, connection_id, metric_table, governed_sql)
+    if parsed_v is None or governed_v is None:
+        return None   # a reading that doesn't run isn't a plausible alternative
+    if not _metrics_materially_diverge(parsed_v, governed_v):
+        return None
+    _is_pct = _metric_is_percent(parsed_sql, label)
+    _fmt = (lambda v: _fmt_pct(v)) if _is_pct else (lambda v: f"{v:,.2f}")
+    gov_label = f"Governed: {cand.name}"
+    parsed_label = "As I read the question"
+    return {
+        "subject": f"definition of {label}",
+        "metric_label": label,
+        "question": (f"“{label}” can be computed two ways that give different answers "
+                     f"({_fmt(governed_v)} vs {_fmt(parsed_v)}) — which did you mean?"),
+        "options": [gov_label, parsed_label],
+        "previews": [f"= {_fmt(governed_v)}", f"= {_fmt(parsed_v)}"],
+        "readings": [
+            {"label": gov_label, "sql": governed_sql, "is_ratio": _metric_is_ratio(governed_sql, label)},
+            {"label": parsed_label, "sql": parsed_sql, "is_ratio": _metric_is_ratio(parsed_sql, label)},
+        ],
+    }
+
+
 @_telemetry.node_span("ada_intake")
 def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     """
@@ -2636,14 +2805,29 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             )
             intake.metric_sql = _safe
 
+    # P4 metric-definition resolution precedence: a previously-resolved reading (burn-down) > a pending
+    # clarify > P1's silent pin. (1) If the user already answered this ambiguity on this connection,
+    # HARD-BIND their choice. (2) Else, if the governed and parsed readings both run but disagree
+    # materially, stash a clarify so the run PAUSES to ask. (3) Else fall through to the silent pin.
+    # All flag-gated + fail-open (byte-identical when the flags are off).
+    _conn_id = state.get("connection_id") or ""
+    _full_schema = state.get("schema_context") or schema
+    _resolved_note = None
+    _clarify_pending = None
+    if intake is not None:
+        _resolved_note = _apply_resolved_metric_reading(intake, _conn_id, conn)
+        if _resolved_note:
+            _metric_note = f"{_metric_note} {_resolved_note}".strip() if _metric_note else _resolved_note
+        else:
+            _clarify_pending = _detect_metric_clarify(intake, _conn_id, _full_schema, conn, question)
+
     # P1 — canonical-metric pinning: prefer the connection's GOVERNED definition of this metric over
     # the LLM's (possibly non-decomposable / run-varying) formula, when one matches the label and
-    # actually runs. Runs AFTER the safety fallback so a governed formula supersedes a degenerate one.
-    # Flag-gated (`ada.pin_canonical_metric`) + fail-open. Uses the FULL schema so the catalog
-    # schema-filter sees every table (a trimmed schema could hide a metric's table and over-filter).
-    if intake is not None:
-        _pin_note = _pin_canonical_metric(
-            intake, state.get("connection_id") or "", state.get("schema_context") or schema, conn)
+    # actually runs. Runs AFTER the safety fallback so a governed formula supersedes a degenerate one;
+    # SKIPPED when the reading was already resolved (1) or a clarify is pending (2) — the user's choice
+    # binds the metric, not a silent pin. Flag-gated (`ada.pin_canonical_metric`) + fail-open.
+    if intake is not None and _clarify_pending is None and _resolved_note is None:
+        _pin_note = _pin_canonical_metric(intake, _conn_id, _full_schema, conn)
         if _pin_note:
             _metric_note = f"{_metric_note} {_pin_note}".strip() if _metric_note else _pin_note
 
@@ -2840,6 +3024,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     }
     if plan_dict is not None:
         out["_orchestration_plan"] = plan_dict
+    # P4 clarify_gate: signal a pending metric-reading clarify so route_after_intake_clarify sends the
+    # run through the interrupt gate. Only ever set when the flag is on and the readings materially diverge.
+    if _clarify_pending is not None:
+        out["_clarify_pending"] = _clarify_pending
     return out
 
 

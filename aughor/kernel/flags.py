@@ -41,6 +41,7 @@ FLAG_ENV = {
     "ada.adversarial_high_stakes": "AUGHOR_ADA_ADVERSARIAL_HIGH_STAKES",
     "ada.pin_canonical_metric": "AUGHOR_ADA_PIN_CANONICAL_METRIC",
     "ada.progress_events": "AUGHOR_ADA_PROGRESS_EVENTS",
+    "ada.clarify_gate": "AUGHOR_CLARIFY_GATE",
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
     "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
@@ -145,6 +146,10 @@ FLAG_META = {
     "ada.pin_canonical_metric": {
         "label": "Pin governed metric at Deep-Analysis intake",
         "description": "When a deep investigation parses a metric the connection already GOVERNS (curated catalog / north-star / verified ontology), pin the intake's formula to the governed one so the cross-section scan decomposes on a stable, canonical definition instead of a run-varying LLM guess (the count-vs-value 'refund rate' class that left the breakdown un-decomposable → 'cause remains unidentified'). Deterministic, fail-open: only replaces the LLM formula when a governed metric matches the label, its SQL is a bare substitutable aggregate, and a dry-run confirms it runs over the metric table. Off by default = byte-identical.",
+    },
+    "ada.clarify_gate": {
+        "label": "Interactive metric-ambiguity clarify (Deep-Analysis)",
+        "description": "When a deep investigation finds that a metric's GOVERNED reading and the LLM's parsed reading both run but give materially different numbers (the count-vs-value 'refund rate' class), PAUSE before the scan and ask the user which reading they meant — instead of silently choosing one. The choice binds the metric for the run and is crystallized to the Ambiguity Ledger (source=user), so the same question never re-asks on that connection. Mirrors the plan-gate interrupt/resume. Off by default; asks at most once per run, only on a real divergence.",
     },
     "ada.progress_events": {
         "label": "Live per-dimension Deep-Analysis progress",
