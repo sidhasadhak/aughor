@@ -80,7 +80,7 @@ of benchmark). Avoid more cheap-lever whack-a-mole — 4 confirmations is enough
 1. **Merge PR #111?** — or split the WS5 accuracy commits (13 of them) into a follow-up PR to keep
    #111 scoped to the 4 improvement workstreams. My rec: merge #111 as-is (WS5 is additive
    eval-only tooling, all flag-gated/opt-in), OR split if you want cleaner review boundaries.
-2. **Send the Secure-Data-Share email?** — DRAFTED at `docs/spider2-data-share-request-DRAFT.md`,
+2. **Send the Secure-Data-Share email?** — drafted locally (not in the repo),
    never sent. Needs your Snowflake account id (us-west-2) filled in + explicit approval.
 3. **Never** submit to the Spider2 leaderboard without explicit hard permission (memory:
    `never-send-without-permission`).

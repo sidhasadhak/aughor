@@ -98,7 +98,7 @@ first; C is deferrable indefinitely.
 
 1. **A stronger endpoint needs a cost decision** — a frontier API key (billed) or a faster
    self-hosted model. Do not wire a paid provider without explicit approval.
-2. **The Secure-Data-Share email** — DRAFTED at `docs/spider2-data-share-request-DRAFT.md`, never
+2. **The Secure-Data-Share email** — drafted locally (not in the repo), never
    sent. Needs the Snowflake account id + explicit approval.
 3. **Never** submit to the Spider2 leaderboard without explicit hard permission (memory:
    `never-send-without-permission`).
