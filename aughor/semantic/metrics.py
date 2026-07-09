@@ -28,6 +28,14 @@ logger = logging.getLogger(__name__)
 _DEFAULT_PATH = Path(__file__).parent.parent.parent / "data" / "metrics.json"
 
 
+def _default_path() -> Path:
+    """The metrics catalog file, honouring ``AUGHOR_METRICS_PATH`` (test-isolated in conftest so the
+    suite can't mutate the live ``data/metrics.json`` — same non-hermeticity class as the glossary,
+    task_213affac). Resolved per call so it always reflects the current env."""
+    from aughor.db.sqlite_util import resolve_db_path
+    return resolve_db_path("AUGHOR_METRICS_PATH", _DEFAULT_PATH)
+
+
 class MetricDefinition(BaseModel):
     name: str = Field(description="Unique snake_case identifier, e.g. 'mrr'")
     label: str = Field(description="Human-readable display name, e.g. 'Monthly Recurring Revenue'")
@@ -83,7 +91,7 @@ class MetricDefinition(BaseModel):
 # ── Persistence ───────────────────────────────────────────────────────────────
 
 def _load_raw(path: Path | None = None) -> list[dict]:
-    p = path or _DEFAULT_PATH
+    p = path or _default_path()
     if not p.exists():
         return []
     with open(p) as f:
@@ -92,7 +100,7 @@ def _load_raw(path: Path | None = None) -> list[dict]:
 
 
 def _save_raw(metrics: list[dict], path: Path | None = None) -> None:
-    p = path or _DEFAULT_PATH
+    p = path or _default_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
         json.dump(metrics, f, indent=2)

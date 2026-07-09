@@ -50,6 +50,21 @@ for _env, _file in (
 ):
     os.environ.setdefault(_env, os.path.join(_test_stores_dir, _file))
 
+# The glossary + metrics catalog are file stores (YAML/JSON, not SQLite) with real content — and the
+# autoseed / knowledge-sync path WRITES them with no path, so the suite mutated the live
+# data/glossary.yaml (task_213affac: it leaked into two commits). Point each at a throwaway temp
+# COPY of the real file: tests read identical content, but every write lands in the temp dir and can
+# never touch data/. MUST run before any app import so the module-level resolvers see the override.
+import shutil as _shutil  # noqa: E402
+
+_repo_data = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+for _env, _file in (("AUGHOR_GLOSSARY_PATH", "glossary.yaml"), ("AUGHOR_METRICS_PATH", "metrics.json")):
+    _dst = os.path.join(_test_stores_dir, _file)
+    _src = os.path.join(_repo_data, _file)
+    if os.path.exists(_src) and not os.path.exists(_dst):
+        _shutil.copyfile(_src, _dst)
+    os.environ.setdefault(_env, _dst)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _seed_builtin_dbs():
