@@ -569,6 +569,9 @@ class FeedbackRequest(BaseModel):
     # sub-questions the user chose to keep (drop the rest before the fan-out runs).
     # None = no plan edit (ordinary HITL resume).
     keep_subquestions: Optional[list[int]] = None
+    # P4 clarify gate: when resuming from a clarify_pending pause, the LABEL of the metric
+    # reading the user chose (matches one of the offered `options`). None = no clarify choice.
+    clarify_choice: Optional[str] = None
 
 
 class ChatHistoryTurn(BaseModel):
@@ -2241,7 +2244,9 @@ async def _stream_investigation(
         # (before the expensive fan-out) so the user can review/edit the sub-question
         # plan. Opt-in via AUGHOR_PLAN_GATE; off by default so the path is unchanged.
         _plan_gate = os.getenv("AUGHOR_PLAN_GATE", "").strip().lower() in ("1", "true", "yes", "on")
-        agent = build_graph_generic(db, hitl=hitl, plan_gate=_plan_gate)
+        from aughor.kernel.flags import flag_enabled as _flag_enabled
+        _clarify_gate = _flag_enabled("ada.clarify_gate")
+        agent = build_graph_generic(db, hitl=hitl, plan_gate=_plan_gate, clarify_gate=_clarify_gate)
 
         # ONE structured origin finding — the single source of truth for "what known
         # result is this investigation drilling" (insight_id dossier, or an inline
@@ -2312,7 +2317,19 @@ async def _stream_investigation(
                     _next = agent.get_state({"configurable": {"thread_id": inv_id}}).next or ()
                 except Exception:
                     _next = ()
-                if "plan_gate" in _next:
+                if "clarify_gate" in _next:
+                    # P4: a material metric-reading ambiguity — surface the two readings (with their
+                    # probed previews) for the user to choose; the run resumes via /feedback.
+                    _cp = merged.get("_clarify_pending") or {}
+                    yield _sse("clarify_pending", {
+                        "investigation_id": inv_id,
+                        "subject": _cp.get("subject", ""),
+                        "metric_label": _cp.get("metric_label", ""),
+                        "question": _cp.get("question", ""),
+                        "options": _cp.get("options", []),
+                        "previews": _cp.get("previews", []),
+                    })
+                elif "plan_gate" in _next:
                     _subqs = merged.get("sub_questions", [])
                     _n = len(_subqs)
                     yield _sse("plan_pending", {
@@ -2534,8 +2551,40 @@ def _filter_kept_subquestions(subqs: list, keep_idx: list[int]) -> list:
     return [sq for i, sq in enumerate(subqs) if i in keep]
 
 
+def _apply_clarify_choice(merged: dict, clarify_choice: Optional[str], connection_id: str) -> dict:
+    """P4 clarify resume: bind the metric to the reading the user chose and crystallize the choice.
+    Returns a state patch — the updated `_ada_intake` (metric_sql/metric_is_ratio bound to the chosen
+    reading) and a cleared `_clarify_pending` (so the passthrough gate falls through to the real branch
+    on resume). Returns {} when nothing is pending. An unmatched/absent choice defaults to the FIRST
+    reading (the governed one). Fail-open — the ledger write never blocks the resume."""
+    pending = merged.get("_clarify_pending") or {}
+    readings = pending.get("readings") or []
+    if not readings:
+        return {}
+    chosen = next((r for r in readings if r.get("label") == clarify_choice), readings[0])
+    patch: dict = {"_clarify_pending": None}
+    if chosen.get("sql"):
+        intake = dict(merged.get("_ada_intake") or {})
+        intake["metric_sql"] = chosen["sql"]
+        intake["metric_is_ratio"] = bool(chosen.get("is_ratio"))
+        patch["_ada_intake"] = intake
+    try:
+        from aughor.org.context import current_org_id
+        from aughor.semantic.ambiguity_ledger import Reading, crystallize_user_choice
+        crystallize_user_choice(
+            connection_id, pending.get("subject") or "", chosen.get("label") or "",
+            org_id=current_org_id() or "", resolved_sql=chosen.get("sql") or "",
+            readings=[Reading(label=r.get("label", ""), sql_evidence=r.get("sql", "")) for r in readings])
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "crystallizing the clarify choice is best-effort; the run still binds the reading",
+                 counter="ada.clarify_crystallize")
+    return patch
+
+
 async def _stream_resume(inv_id: str, feedback: str, request: Request,
-                         keep_subquestions: Optional[list[int]] = None) -> AsyncGenerator[str, None]:
+                         keep_subquestions: Optional[list[int]] = None,
+                         clarify_choice: Optional[str] = None) -> AsyncGenerator[str, None]:
     inv = get_investigation(inv_id)
     if not inv:
         yield _sse("error", {"message": "Investigation not found"})
@@ -2569,6 +2618,13 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
             if _kept:
                 _patch["sub_questions"] = _kept
                 _patch["current_subq_idx"] = 0
+        # P4 clarify gate: bind the metric to the reading the user chose, clear the pending clarify (so
+        # the passthrough gate falls through to the real branch), and crystallize the choice to the
+        # Ambiguity Ledger (source=user) so this connection never re-asks. Fail-open: an unmatched choice
+        # just resumes on the parsed reading.
+        _clar_patch = _apply_clarify_choice(merged, clarify_choice, inv.get("connection_id") or "")
+        if _clar_patch:
+            _patch.update(_clar_patch)
         agent.update_state(config, _patch)
 
         import time
@@ -3058,7 +3114,8 @@ def cancel_investigation_route(inv_id: str):
 @router.post("/investigations/{inv_id}/feedback")
 async def submit_feedback(inv_id: str, req: FeedbackRequest, request: Request):
     return StreamingResponse(
-        _stream_resume(inv_id, req.feedback, request, keep_subquestions=req.keep_subquestions),
+        _stream_resume(inv_id, req.feedback, request, keep_subquestions=req.keep_subquestions,
+                       clarify_choice=req.clarify_choice),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

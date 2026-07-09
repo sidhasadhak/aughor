@@ -31,6 +31,7 @@ from aughor.agent.investigate import (
     ada_behavioral,
     ada_synthesize,
     route_after_intake,
+    route_after_intake_clarify,
     route_after_baseline,
     route_after_decompose,
     route_after_dimensional,
@@ -89,7 +90,8 @@ def _ada_parallel_phases_enabled() -> bool:
 
 
 def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_node=None,
-             explore_wave_node=None, ada_nodes: dict = None, hitl: bool = False, plan_gate: bool = False):
+             explore_wave_node=None, ada_nodes: dict = None, hitl: bool = False, plan_gate: bool = False,
+             clarify_gate: bool = False):
     graph = StateGraph(AgentState)
 
     # ── Shared entry ──────────────────────────────────────────────────────────
@@ -136,8 +138,22 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
         _baseline_target = "ada_phase_wave"
 
     graph.add_edge("exploratory_scan",  "ada_intake")
+    # P4 clarify_gate: a single-fire pause AFTER intake, BEFORE the scan fan-out — reached ONLY when
+    # ada_intake stashed a material metric-reading ambiguity (`_clarify_pending`). A no-op passthrough
+    # (mirrors plan_gate): the NODE is added unconditionally so a paused run can reconnect its checkpoint
+    # on resume, but the INTERRUPT is armed only when `clarify_gate` is on (below). `route_after_intake_clarify`
+    # is byte-identical to `route_after_intake` when nothing is pending, so with the flag off the run never
+    # touches the gate and behaviour is unchanged. On resume the passthrough runs once and route_after_intake
+    # picks the real branch from the (now user-bound) intake.
+    graph.add_node("clarify_gate", lambda s: {})
     graph.add_conditional_edges(
         "ada_intake",
+        route_after_intake_clarify,
+        {"clarify_gate": "clarify_gate", "ada_cross_section": _xsec_target,
+         "ada_baseline": _baseline_target},
+    )
+    graph.add_conditional_edges(
+        "clarify_gate",
         route_after_intake,
         {"ada_cross_section": _xsec_target, "ada_baseline": _baseline_target},
     )
@@ -240,7 +256,8 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
         },
     )
 
-    interrupt_before = (["ada_synthesize"] if hitl else []) + (["plan_gate"] if plan_gate else [])
+    interrupt_before = (["ada_synthesize"] if hitl else []) + (["plan_gate"] if plan_gate else []) \
+        + (["clarify_gate"] if clarify_gate else [])
     return graph.compile(checkpointer=_checkpointer(), interrupt_before=interrupt_before)
 
 
@@ -271,7 +288,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
     )
 
 
-def build_graph_generic(db, hitl: bool = False, plan_gate: bool = False):
+def build_graph_generic(db, hitl: bool = False, plan_gate: bool = False, clarify_gate: bool = False):
     """Build the graph bound to any DatabaseConnection instance."""
     ada_nodes = {
         "intake":      partial(ada_intake,      conn=db),
@@ -292,6 +309,7 @@ def build_graph_generic(db, hitl: bool = False, plan_gate: bool = False):
         ada_nodes=ada_nodes,
         hitl=hitl,
         plan_gate=plan_gate,
+        clarify_gate=clarify_gate,
     )
 
 

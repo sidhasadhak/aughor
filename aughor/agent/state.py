@@ -484,6 +484,7 @@ class AgentState(TypedDict):
     investigation_phases: list[InvestigationPhaseResult]
     answer_report: Optional[AnswerReport]
     _ada_intake: Optional[dict]      # intake spec passed between ADA phase nodes
+    _clarify_pending: Optional[dict]  # P4 clarify_gate: a material metric ambiguity awaiting the user's choice
 
     # Plan-then-SQL: set by plan_queries, consumed by execute_planned_queries
     current_plan: Optional[dict]

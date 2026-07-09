@@ -410,7 +410,7 @@ function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => v
 }
 
 export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, initialInsightId, capabilities }: Props) {
-  const { state, ask, stop, clear, restore, resumePlan, rejectPlan, eventLogRef } = useChat();
+  const { state, ask, stop, clear, restore, resumePlan, rejectPlan, resumeClarify, eventLogRef } = useChat();
   const [input, setInput]           = useState("");
   const [mode, setMode]             = useState<"auto" | "ask" | "investigate">("auto");
   const [starters, setStarters]     = useState<Starter[]>(FALLBACK_STARTERS);
@@ -492,6 +492,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           tablesUsed: t.tables_used || [],
           contextManifest: null,
           planPending: null,
+          clarifyPending: null,
           analysis: (t.intent || t.approach?.length) ? { intent: t.intent || "", steps: t.approach || [] } : null,
           followups: [],
           error: null,
@@ -705,6 +706,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                       onDeeper={(q, insightId) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, insightId: insightId ?? undefined, deep: true })}
                       onApprovePlan={(invId, keep) => resumePlan(invId, keep)}
                       onRejectPlan={(invId) => rejectPlan(invId)}
+                      onChooseClarify={(invId, opt) => resumeClarify(invId, opt)}
                     />
                     {turn.clarify && (
                       <ClarifyCard

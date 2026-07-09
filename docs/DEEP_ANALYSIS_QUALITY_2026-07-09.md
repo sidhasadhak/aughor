@@ -162,13 +162,27 @@ human-in-the-loop wait with no way to proceed. (P1's two example chips — "net 
   never pauses on it (the graph arms no clarify interrupt; it's informational enrichment). Reframed honestly:
   "**Interpreting automatically**" + "the analysis is resolving these itself and continuing — no action needed"
   + a muted non-actionable list (no pill chips). Removes the "am I supposed to answer this?" trap.
-- ⬜ **DEFERRED — the full interactive clarify (source=user).** Actually **pausing** on a material ambiguity
-  (arm a clarify interrupt in `agent/graph.py` beside `plan_gate`/`ada_synthesize`, emit a paused event, make
-  the chips clickable → `POST /investigations/{id}/feedback` → `_stream_resume` → `crystallize_user_choice`)
-  is a large graph + streaming + frontend change (high blast radius on the shared deep-run path) — its own
-  careful arc. The two shipped halves deliver the compounding + the honesty now; this adds the human loop.
-  Also deferred: moving the best-effort clarify-generation LLM call off the critical path (a seconds-long freeze,
-  now mitigated by the honest label + P2's live progress). Complements
+- ✅ **The full interactive clarify (source=user) — SHIPPED (2026-07-09, flag `ada.clarify_gate`, default-off).**
+  A real interrupt/resume `clarify_gate`, a faithful sibling of `plan_gate`:
+  - **Detect** (`_detect_metric_clarify`, `agent/investigate.py`): at intake, when a RATIO metric's governed
+    reading and the LLM's parsed reading BOTH run over the metric table but give materially different scalars
+    (≥5% relative), stash a `_clarify_pending` payload (the two readings + their probed previews). The
+    cleanly-bindable subset — both candidates are valid aggregates. Skips silently when a reading doesn't run,
+    they agree, or the ambiguity was already resolved (burn-down).
+  - **Pause** (`agent/graph.py`): a passthrough `clarify_gate` node (added unconditionally so a paused run can
+    reconnect on resume) between `ada_intake` and the fan-out, reached only via `route_after_intake_clarify` when
+    `_clarify_pending` is set, armed with `interrupt_before` only when the flag is on. Router emits a
+    `clarify_pending` SSE (`routers/investigations.py`) and pauses.
+  - **Resume** (`_apply_clarify_choice`): `FeedbackRequest.clarify_choice` → binds the chosen reading into
+    `_ada_intake.metric_sql`, clears `_clarify_pending`, and `crystallize_user_choice` (source=user,
+    override-wins). **Burn-down** (`_apply_resolved_metric_reading`): a subsequent run HARD-BINDS the resolved
+    reading (so P1's silent pin can't override a "use the parsed reading" choice) and never re-asks. Precedence:
+    resolution > clarify > P1 pin.
+  - **Frontend**: `ClarifyGateCard` (sibling of `PlanGateCard`) — clickable readings with probed previews →
+    `resumeClarify` → `POST /feedback {clarify_choice}`; `CLARIFY_PENDING`/`CLARIFY_RESUME` reducer actions.
+  - **+19 tests** (`tests/unit/test_clarify_gate.py`), incl. a real LangGraph interrupt→pause→resume round-trip.
+    Full suite 2942 green; ruff / web tsc / 3 gates / ratchet / codegen all clean; byte-identical when off.
+    *Remaining: live-verify the pause→click→resume round-trip on a real run.* Complements
   [`docs/AMBIGUITY_LEDGER_2026-07-06.md`] and [`docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md`].
 
 ### P5 — T4-3 confidence-floor path + earning-its-keep — ✅ SHIPPED (2026-07-09)

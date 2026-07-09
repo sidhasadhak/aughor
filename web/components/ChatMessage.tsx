@@ -36,6 +36,7 @@ import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
 import { ContextRibbon } from "@/components/ContextRibbon";
 import { PlanGateCard } from "@/components/PlanGateCard";
+import { ClarifyGateCard } from "@/components/ClarifyGateCard";
 import { deletePlaybookEntry, editPlaybookRecommendation, type PlaybookRef } from "@/lib/api";
 import {
   type Gran,
@@ -1076,6 +1077,7 @@ export function ChatMessage({
   onDeeper,
   onApprovePlan,
   onRejectPlan,
+  onChooseClarify,
 }: {
   turn: ChatTurn;
   connectionId?: string;
@@ -1085,6 +1087,7 @@ export function ChatMessage({
   onDeeper?: (question: string, insightId: string | null) => void;
   onApprovePlan?: (invId: string, keepIndices: number[]) => void;
   onRejectPlan?: (invId: string) => void;
+  onChooseClarify?: (invId: string, option: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const isInvestigate = turn.mode === "investigate";
@@ -1142,6 +1145,14 @@ export function ChatMessage({
           plan={turn.planPending}
           onApprove={(keep) => onApprovePlan(turn.planPending!.investigationId ?? turn.investigationId ?? "", keep)}
           onReject={() => onRejectPlan(turn.planPending!.investigationId ?? turn.investigationId ?? "")}
+        />
+      )}
+
+      {/* ── Clarify gate (P4): choose the metric reading before the scan ── */}
+      {turn.clarifyPending && onChooseClarify && (
+        <ClarifyGateCard
+          clarify={turn.clarifyPending}
+          onChoose={(opt) => onChooseClarify(turn.clarifyPending!.investigationId ?? turn.investigationId ?? "", opt)}
         />
       )}
 
