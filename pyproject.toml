@@ -50,7 +50,7 @@ dependencies = [
 
 [project.optional-dependencies]
 docs = [
-    "PyPDF2>=3.0.0",
+    "pypdf>=6.4.0",
     "python-docx>=1.0.0",
 ]
 warehouse = [

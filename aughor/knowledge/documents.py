@@ -57,8 +57,8 @@ def extract_text(path: Path) -> str:
 
 def _extract_pdf(path: Path) -> str:
     try:
-        import PyPDF2
-        reader = PyPDF2.PdfReader(str(path))
+        import pypdf
+        reader = pypdf.PdfReader(str(path))
         pages = []
         for page in reader.pages:
             text = page.extract_text() or ""
@@ -66,7 +66,7 @@ def _extract_pdf(path: Path) -> str:
         return "\n\n".join(pages)
     except ImportError:
         raise RuntimeError(
-            "PyPDF2 is required for PDF ingestion. "
+            "pypdf is required for PDF ingestion. "
             "Install with: uv pip install -e '.[docs]'"
         )
 
