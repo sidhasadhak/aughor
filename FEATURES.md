@@ -129,6 +129,19 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   rows, and result (not just the final one), emits a **per-step progress event** as each sub-question completes
   (no multi-minute silent gap on the parallel-wave path), and — because each step now carries its own result —
   **charts every step** through the existing per-result renderer.
+- **Data-coverage transparency** — intake runs one deterministic `MIN/MAX(date)` probe and the report states the
+  **real coverage window** it analyzed (populated even for a cross-sectional scan, which used to blank it), and a
+  sample-inferred observation window that falls outside the real data span is replaced with the probed one.
+- **Metric-definition receipt** — every report states **how the metric was computed** in plain language (formula,
+  and for a ratio whether it's a value-weighted `SUM/SUM` or a count-based rate — the two can differ and the
+  reading was chosen automatically), so a silently-picked definition is visible and challengeable, not buried.
+- **Verdict↔recommendation coherence** — the cross-phase contradiction detector now also checks the **headline
+  against the recommendations**: a verdict that rejects the premise ("X is not the problem") or reports no
+  material issue while still shipping actionable recommendations is flagged, instead of reading as "no contradiction".
+- **Tiered adversarial verification** (opt-in, `ada.adversarial_verify`) — a ReFoRCE-style skeptic pass that fires
+  **only** on a decision-changing verdict (a premise rejection or an abstention) to try to refute it before
+  shipping; a surviving refutation caps confidence and records the objection. Off by default (one extra LLM call
+  on those runs); the deterministic default path is unchanged.
 
 ## 3. Evidence, trust receipts & statistical rigor
 

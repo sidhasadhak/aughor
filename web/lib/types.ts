@@ -195,6 +195,8 @@ export interface AnswerReport {
     steps: { phase_id: string; phase_name: string; icon: string; disposition: string; reason: string }[];
   } | null;
   plan_reconciliation?: { planned: string[]; actual: string[]; skipped: string[]; unplanned: string[] } | null;
+  // T4-1 — plain-language receipt of how the metric was computed (formula + interpretation).
+  metric_definition?: string | null;
 }
 
 /** @deprecated Use {@link AnswerReport}. Kept one release for the `ADA`→answer rename (REC-U9). */

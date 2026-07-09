@@ -1374,6 +1374,11 @@ def _run_refutation(question: str, conclusion: str, chain_summary: str) -> Optio
         return None
 
 
+# Public alias — the ADA/investigate path (T4-3) reuses this skeptic pass to adversarially verify a
+# decision-changing verdict, so a public name is exported instead of reaching into the private one.
+run_refutation = _run_refutation
+
+
 def _build_verification_manifest(state: AgentState, extra_checks: Optional[list[str]] = None) -> VerificationManifest:
     """Prove which guards actually ran on this investigation (Bet 0, increments 0-I…0-IV).
 

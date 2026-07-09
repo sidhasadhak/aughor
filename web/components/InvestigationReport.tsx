@@ -112,6 +112,8 @@ export interface AnswerReport {
     steps: { phase_id: string; phase_name: string; icon: string; disposition: string; reason: string }[];
   } | null;
   plan_reconciliation?: { planned: string[]; actual: string[]; skipped: string[]; unplanned: string[] } | null;
+  // T4-1 — plain-language receipt of how the metric was computed (formula + interpretation).
+  metric_definition?: string | null;
 }
 
 const CONF_TXT: Record<AnswerReport["confidence"], string> = {
@@ -584,6 +586,12 @@ export function InvestigationReportView({
             : null,
         ]}
       />
+
+      {report.metric_definition && (
+        <p className="aug-text-xs text-zinc-500 mt-1">
+          <span className="text-zinc-400">How this was measured — </span>{report.metric_definition}
+        </p>
+      )}
 
       {analysisPhases.map(phase => <PhaseSection key={phase.phase_id} phase={phase} onShowSource={onShowSource} />)}
 

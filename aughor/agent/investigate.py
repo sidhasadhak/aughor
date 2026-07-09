@@ -1572,6 +1572,48 @@ def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
                                "returned", counter="ada.intake_probe_close")
 
 
+def _metric_definition_receipt(intake_data: dict) -> str:
+    """T4-1 — a plain-language receipt of HOW the metric was computed, so a silently-chosen definition
+    is visible to the reader and can be challenged. Every deep run picks ONE reading of an ambiguous
+    metric (a "refund rate" as value-weighted refund$/revenue$ vs a count-based orders-with-refund/
+    orders; "revenue" off invoices vs line items) with no disclosure. Surfaces: the formula, the ratio
+    interpretation (value-weighted vs a plain average), the observation grain, and the data-coverage
+    window. Deterministic; "" when no metric is set. Never raises."""
+    try:
+        label = (intake_data.get("metric_label") or "").strip()
+        sql = (intake_data.get("metric_sql") or "").strip()
+        if not label and not sql:
+            return ""
+        parts: list[str] = []
+        if sql:
+            parts.append(f"computed as `{sql}`")
+        if _metric_is_composite_ratio(sql):
+            parts.append("a value-weighted ratio — SUM(numerator) ÷ SUM(denominator), not a "
+                         "count-based rate (the two can differ; this reading was chosen automatically)")
+        elif re.search(r"\b(avg|mean|median)\s*\(", sql, re.I):
+            parts.append("a per-record average (non-additive — not summed across groups)")
+        _table = (intake_data.get("metric_table") or "").strip()
+        if _table:
+            parts.append(f"on {_table}")
+        coverage = (intake_data.get("data_coverage_label") or "").strip()
+        if coverage:
+            parts.append(f"over data spanning {coverage}")
+        body = "; ".join(parts)
+        return f"{label or 'Metric'} — {body}." if body else ""
+    except Exception:
+        return ""
+
+
+def _observation_window_is_wrong(obs_start, obs_end, cov_min: str, cov_max: str) -> bool:
+    """T4-2 — should the intake's observation window be replaced by the probed data-coverage window?
+    True when the LLM left it empty, or it falls (partly) OUTSIDE the real data span — the sample-
+    inferred-guess case (intake said "2023-01 to 2023-03" on data spanning 2023-01 → 2025-01). ISO
+    dates compare lexically. Conservative: a window fully inside the real span is left untouched."""
+    s = (obs_start or "")[:10]
+    e = (obs_end or "")[:10]
+    return not s or not e or e < cov_min or s > cov_max
+
+
 def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, end: str) -> "int | None":
     """Count of distinct POPULATED months of the metric's date column within [start, end]. A
     cheap, dialect-robust probe (COUNT DISTINCT of the 'YYYY-MM' text prefix). Returns None on any
@@ -2418,6 +2460,16 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # range mixes datasets and masks an empty window). The LLM retry above only asks;
     # this enforces. The portrait parse is the cheap path, but scan_context is empty
     # on the ADA entry points — the DB probe is the authoritative fallback.
+    # Deterministic DATA COVERAGE span — one MIN/MAX probe of the metric's date column, run
+    # UNCONDITIONALLY (T4-2): it drives the temporal window clamp below AND lets the report state the
+    # real coverage window (even a cross-sectional scan spans a real range the reader should see),
+    # instead of the intake LLM's sample-inferred guess. Fail-open (no date column / probe error → "").
+    _cov_min = _cov_max = ""
+    if intake is not None and (intake.date_column or ""):
+        _pmn, _pmx = _measure_date_span(
+            state.get("connection_id") or "", intake.metric_table or "", intake.date_column or "")
+        _cov_min, _cov_max = (_pmn or ""), (_pmx or "")
+
     if intake is not None and not intake.cross_sectional:
         # The data's true date span drives temporal windowing (esp. the re-anchor of a
         # 'last-N' window to the most recent data). The scan PORTRAIT undercounts the max
@@ -2425,11 +2477,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # 12 months"); the DB MIN/MAX probe is authoritative. UNION both so neither a short
         # portrait nor a failed probe can shrink the range. ISO date strings → lexical min/max.
         _smin, _smax = _extract_data_date_range(scan, intake.metric_table or "")
-        _pmin, _pmax = _measure_date_span(
-            state.get("connection_id") or "", intake.metric_table or "", intake.date_column or ""
-        )
-        _cmin = min([d for d in (_smin, _pmin) if d], default="")
-        _cmax = max([d for d in (_smax, _pmax) if d], default="")
+        _cmin = min([d for d in (_smin, _cov_min) if d], default="")
+        _cmax = max([d for d in (_smax, _cov_max) if d], default="")
         _cov_note = _clamp_intake_to_coverage(intake, _cmin, _cmax, question=state.get("question", ""))
         # Density guard: a comparison window whose date-SPAN survived the clamp but is sparsely
         # populated (internal gap / slow ramp) is still a thin PoP baseline — probe it. Skipped when
@@ -2517,6 +2566,20 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     intake_dict["filtered_schema"] = filtered_schema
     if _metric_note:
         intake_dict["metric_safety_note"] = _metric_note
+
+    # T4-2: record the real DATA COVERAGE window (from the MIN/MAX probe above) so the report states
+    # the period it actually covers, and correct a sample-inferred observation window that lies
+    # outside the real data span (inv1's intake guessed "2023-01 to 2023-03" on data spanning
+    # 2023-01 → 2025-01, and the report's observation_period came out empty).
+    if _cov_min and _cov_max:
+        intake_dict["data_coverage_start"] = _cov_min
+        intake_dict["data_coverage_end"] = _cov_max
+        intake_dict["data_coverage_label"] = f"{_cov_min} → {_cov_max}"
+        if _observation_window_is_wrong(intake.observation_start, intake.observation_end, _cov_min, _cov_max):
+            intake_dict["observation_start"] = _cov_min
+            intake_dict["observation_end"] = _cov_max
+            if intake.cross_sectional or not (intake.observation_label or "").strip():
+                intake_dict["observation_label"] = f"{_cov_min} → {_cov_max}"
 
     # Enrich with ontology entity context (best-effort — never crash ada_intake)
     try:
@@ -5284,6 +5347,54 @@ def ada_synthesize(state: AgentState) -> dict:
     # reframe and floor confidence to LOW so a flagged-artifact number can't be headlined as fact.
     _reframe_on_trust_caveat(synth, phases)
 
+    # T4-4: self-coherence — the cross-phase contradiction detector sees only phase summaries, so a
+    # report whose VERDICT rejects the premise ("X is not the problem" / "within normal variance")
+    # while still shipping actionable recommendations reads as coherent (severity "none"). Add that
+    # headline↔recommendations check to the contradiction report so the incoherence is surfaced.
+    if synth:
+        try:
+            from aughor.agent.orchestrator import detect_verdict_recommendation_incoherence
+            _incoh = detect_verdict_recommendation_incoherence(
+                synth.headline, synth.executive_summary, getattr(synth, "recommendations", None))
+            if _incoh is not None:
+                contradiction_report.items.append(_incoh)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "verdict-recommendation coherence check is best-effort; report proceeds",
+                     counter="ada.coherence_check")
+
+    # T4-3: confidence-tiered adversarial verification (ReFoRCE-style). Spend ONE skeptic LLM call to
+    # try to REFUTE a DECISION-CHANGING verdict (a premise rejection or an abstention) before shipping
+    # — the few high-stakes conclusions, never per finding. A surviving refutation caps confidence and
+    # records the objection. Flag-gated default-off (adds an LLM call to those runs); the deterministic
+    # default path is unchanged.
+    from aughor.kernel.flags import flag_enabled as _flag_enabled
+    if synth and _flag_enabled("ada.adversarial_verify"):
+        try:
+            from aughor.agent.orchestrator import is_decision_changing_verdict
+            if is_decision_changing_verdict(synth.headline, synth.executive_summary):
+                from aughor.agent.explore import run_refutation
+                _verdict = run_refutation(question, synth.headline or "", _phases_summary(phases))
+                if _verdict is not None and _verdict.refuted:
+                    _obj = (_verdict.reason or "").strip()
+                    _alt = (getattr(_verdict, "alternative", None) or "").strip()
+                    _note = ("An adversarial verification challenged this conclusion: " + _obj
+                             + (f" Alternative reading: {_alt}." if _alt else ""))
+                    _gaps = list(getattr(synth, "data_gaps", None) or [])
+                    if not any("adversarial verification" in g.lower() for g in _gaps):
+                        _gaps.insert(0, _note)
+                    synth.data_gaps = _gaps
+                    if getattr(synth, "confidence", "") == "HIGH":
+                        synth.confidence = "MEDIUM"
+                        synth.confidence_justification = (
+                            "Capped below HIGH — a decision-changing verdict did not survive an "
+                            "adversarial refutation: " + _obj + " "
+                            + (getattr(synth, "confidence_justification", "") or "")).strip()
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "adversarial verification is best-effort; report proceeds",
+                     counter="ada.adversarial_verify")
+
     # F3/F2 — a CROSS-SECTIONAL scan ranks the metric ACROSS dimensions at a point in time; it
     # measures no temporal change, so:
     #   F3: never emit a "share of total CHANGE" attribution waterfall — there is nothing to
@@ -5364,7 +5475,8 @@ def ada_synthesize(state: AgentState) -> dict:
             headline=synth.headline,
             executive_summary=synth.executive_summary,
             metric=intake_data.get("metric_label", ""),
-            observation_period="" if _xsec else intake_data.get("observation_label", ""),
+            observation_period=(intake_data.get("data_coverage_label", "") if _xsec else intake_data.get("observation_label", "")),
+            metric_definition=_metric_definition_receipt(intake_data),
             comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
             total_change_label="" if _xsec else synth.total_change_label,
             phases=phases,
@@ -5395,7 +5507,8 @@ def ada_synthesize(state: AgentState) -> dict:
             headline=_headline,
             executive_summary=_exec,
             metric=intake_data.get("metric_label", ""),
-            observation_period="" if _xsec else intake_data.get("observation_label", ""),
+            observation_period=(intake_data.get("data_coverage_label", "") if _xsec else intake_data.get("observation_label", "")),
+            metric_definition=_metric_definition_receipt(intake_data),
             comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
             total_change_label="",
             phases=phases,
