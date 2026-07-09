@@ -1588,8 +1588,21 @@ def _metric_definition_receipt(intake_data: dict) -> str:
         if sql:
             parts.append(f"computed as `{sql}`")
         if _metric_is_composite_ratio(sql):
-            parts.append("a value-weighted ratio — SUM(numerator) ÷ SUM(denominator), not a "
-                         "count-based rate (the two can differ; this reading was chosen automatically)")
+            # Describe the ACTUAL aggregates (a composite ratio can be value-weighted SUM/SUM OR a
+            # count-based COUNT/COUNT — the two can diverge, and which was chosen is the silent call
+            # this receipt exists to disclose; don't assume SUM).
+            _src = _parse_ratio_sources(sql)
+            _na = (_src or {}).get("num_agg", "")
+            _da = (_src or {}).get("den_agg", "")
+            if _na == "SUM" and _da == "SUM":
+                parts.append("a value-weighted ratio — SUM(numerator) ÷ SUM(denominator), not a "
+                             "count-based rate")
+            elif _na == "COUNT" and _da == "COUNT":
+                parts.append("a count-based rate — COUNT(events) ÷ COUNT(population), not value-weighted")
+            else:
+                parts.append("a ratio of two aggregates")
+            parts.append("(a value-weighted and a count-based reading can differ materially; this "
+                         "reading was chosen automatically)")
         elif re.search(r"\b(avg|mean|median)\s*\(", sql, re.I):
             parts.append("a per-record average (non-additive — not summed across groups)")
         _table = (intake_data.get("metric_table") or "").strip()

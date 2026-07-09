@@ -22,6 +22,19 @@ def test_ratio_receipt_names_the_value_weighted_reading():
     assert "2023-01-01 → 2025-01-09" in r
 
 
+def test_count_based_ratio_is_not_mislabeled_value_weighted():
+    """Live-run bug: a COUNT/COUNT rate was described as 'a value-weighted ratio — SUM/SUM'. The
+    receipt must describe the ACTUAL aggregates so it doesn't misstate the very choice it discloses."""
+    r = _metric_definition_receipt({
+        "metric_label": "refund rate",
+        "metric_sql": "COUNT(DISTINCT analytics.refunds.refund_id) * 100.0 / COUNT(DISTINCT analytics.order_items.order_id)",
+        "metric_table": "analytics.refunds",
+    })
+    assert "count-based rate" in r
+    assert "COUNT(events)" in r
+    assert "value-weighted ratio — SUM" not in r     # must NOT claim SUM/SUM
+
+
 def test_average_metric_flagged_non_additive():
     r = _metric_definition_receipt({"metric_label": "avg order value", "metric_sql": "AVG(order_total)"})
     assert "per-record average" in r
