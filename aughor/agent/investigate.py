@@ -2894,6 +2894,40 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             )
             intake.metric_sql = _safe
 
+    # Metric↔question coherence: a money question answered with a COUNT of entities is a
+    # premise mismatch (live recurrence: "Where are we losing money?" ran with metric =
+    # franchise COUNT(*), so the report concluded "no revenue data exists"). Deterministic
+    # detection, one LLM retry with an explicit correction; fail-open if the retry is no better.
+    if intake is not None and re.search(
+            r"\b(money|revenue|sales|cost|price|profit|margin|spend|losing|loss|earn)\w*\b",
+            question or "", re.IGNORECASE):
+        _msql = intake.metric_sql or ""
+        _has_money_col = re.search(
+            r"(price|amount|revenue|cost|total|spend|value|sales|mrr|gmv|fee|charge)", _msql, re.IGNORECASE)
+        if not _has_money_col and re.search(r"\bCOUNT\s*\(", _msql, re.IGNORECASE):
+            try:
+                _retry2 = _provider("coder").complete(
+                    system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
+                    user=prompt + (
+                        "\n\nCORRECTION REQUIRED: the question is about MONEY, but the previous "
+                        "metric_sql counted rows instead of aggregating a monetary column. "
+                        "Re-express metric_sql as an aggregate over an actual money column "
+                        "(price/amount/revenue/total) from the schema. Return the fixed spec."),
+                    response_model=IntakeOutput,
+                )
+                if _retry2 is not None and re.search(
+                        r"(price|amount|revenue|cost|total|spend|value|sales)",
+                        _retry2.metric_sql or "", re.IGNORECASE):
+                    intake = _retry2
+                    _qualify_intake_table_names(intake, schema)
+                    _note2 = ("Metric corrected: the question asks about money, so the metric was "
+                              "re-parsed to a monetary aggregate instead of an entity count.")
+                    _metric_note = f"{_metric_note} {_note2}".strip() if _metric_note else _note2
+            except Exception as _exc2:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc2, "money-coherence retry is best-effort; the parsed metric stands",
+                         counter="ada.intake_money_retry")
+
     # Unit-conversion guard: a planner sometimes invents a unit story for an integer
     # money column ("stored in cents") and bakes /100.0 into the metric — every number
     # downstream is then 100x off (live incident: SUM(totalPrice)/100.0 turned a $66,471
@@ -3362,6 +3396,29 @@ def run_analysis_phase(
         _fanout_caveat = None
 
     # Step 2 — execute (parallel — each query gets its own reader connection)
+    # Phase-level unit-conversion strip: the intake guard cleans intake.metric_sql, but
+    # each phase's coder writes FRESH SQL and can re-invent the '/100 cents' story there
+    # (live recurrence: the temporal phase emitted SUM(totalPrice)/100.0 on its own,
+    # resurfacing the $13.85 phantom). Same detection + same one-probe disproof, cached
+    # per column so a phase costs at most one extra probe.
+    try:
+        _conv_cache: dict = {}
+        for _pq in plan.queries:
+            _ccol = _detect_unit_conversion(getattr(_pq, "sql", "") or "")
+            if not _ccol:
+                continue
+            _m = re.search(r"\bFROM\s+([A-Za-z_][\w.]*)", _pq.sql, re.IGNORECASE)
+            _tbl = _m.group(1) if _m else ""
+            _key = (_tbl.rsplit(".", 1)[-1].lower(), _ccol.lower())
+            if _key not in _conv_cache:
+                _conv_cache[_key] = _unit_conversion_disproved(conn, "", _tbl, _ccol)
+            if _conv_cache[_key]:
+                _pq.sql = _STRIP_CONVERSION_RE.sub("", _pq.sql)
+    except Exception as _uc_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_uc_exc, "phase-level unit-conversion strip is best-effort",
+                 counter="ada.unit_probe_phase")
+
     results = _parallel_execute_safe(conn, phase_id, plan.queries, cap=cap, schema=schema)
     if not results:
         return _PhaseRun(ok=False, error_phase=_phase_result(
