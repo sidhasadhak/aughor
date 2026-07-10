@@ -144,14 +144,16 @@ export function BriefMetrics({
         const deltaCls = fav === false ? "text-red-400" : fav === true ? "text-emerald-400" : "text-zinc-400";
         return (
           <div key={i} className="flex flex-col gap-0.5 min-w-0">
-            {m.label && <span className="aug-text-xs text-zinc-500">{m.label.replace(/\*+/g, "")}</span>}
+            {m.label && <span className="aug-text-xs text-zinc-500">{localizeCurrency(m.label).replace(/\*+/g, "")}</span>}
             <span className="font-mono tabular-nums text-zinc-100 aug-fs-h2 leading-none">
               {/* The value is already styled here, so render plain — strip any **markdown** the
                   model wrapped a figure in (else "**57.8%**" leaks literal asterisks). */}
               {localizeCurrency(m.value).replace(/\*+/g, "")}
               {m.delta && <span className={`aug-fs-sm ml-1.5 ${deltaCls}`}>{localizeCurrency(m.delta).replace(/\*+/g, "")}</span>}
             </span>
-            {m.context && <span className="aug-text-xs text-zinc-500">{m.context.replace(/\*+/g, "")}</span>}
+            {/* Localize the context line too — value said "€177" while context said
+                "$3.00 avg/record" (live mixed-currency card). One text, one currency. */}
+            {m.context && <span className="aug-text-xs text-zinc-500">{localizeCurrency(m.context).replace(/\*+/g, "")}</span>}
           </div>
         );
       })}

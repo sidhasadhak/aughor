@@ -824,6 +824,11 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
                   fontSize: 12, fontWeight: 500, color: "var(--t2)",
                 }}>
                   Recent investigations
+                  {/* Scope label — this list is canvas-scoped by design; without saying so,
+                      runs launched elsewhere look like they vanished (live confusion). */}
+                  <span style={{ fontWeight: 400, color: "var(--t4)", marginLeft: 8, fontSize: 11 }}>
+                    on this canvas · all runs live under Investigations in the sidebar
+                  </span>
                 </div>
                 <CanvasHistory canvasId={canvas.id} onOpen={handleHistoryOpen} />
               </div>

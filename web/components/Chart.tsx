@@ -357,10 +357,19 @@ export function Chart({
         </div>
       )}
 
-      {/* Chart viewport — caps at 350px with internal scroll; the chart renders at its natural height. */}
-      <div ref={outerRef} style={{ maxHeight: 350, overflowY: "auto", overflowX: "hidden", width: "100%" }}>
+      {/* Chart viewport — caps at 350px with internal scroll; the chart renders at its natural height.
+          A vertical bar chart with only a few categories no longer stretches across the full panel
+          (3 skinny bars adrift in empty space) — width scales with the category count instead. */}
+      {(() => {
+        const _xd = (built.option as { xAxis?: { data?: unknown[] } })?.xAxis?.data;
+        const _catN = Array.isArray(_xd) ? _xd.length : 0;
+        const _maxW = _catN > 0 && _catN <= 6 ? Math.max(340, _catN * 130 + 150) : undefined;
+        return (
+      <div ref={outerRef} style={{ maxHeight: 350, overflowY: "auto", overflowX: "hidden", width: "100%", maxWidth: _maxW }}>
         <EChart option={built.option} height={chartH} onSelect={onSelect} onReady={(inst) => { instRef.current = inst; }} />
       </div>
+        );
+      })()}
 
       {chrome && (
         <div onMouseDown={startDrag} className="flex items-center justify-center h-3 cursor-ns-resize group/drag">

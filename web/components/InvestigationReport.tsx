@@ -218,7 +218,10 @@ function PhaseSection({ phase, onShowSource, sourceNos }: { phase: Investigation
   if (!phase.summary && findings.length === 0) return null;
 
   return (
-    <BriefSection label={phase.phase_name}>
+    // Clean-output policy (Genie-style): no phase-machinery header ("CROSS-SECTIONAL
+    // SCAN", "TEMPORAL TREND — WHEN") — the reader gets a continuous, confident
+    // narrative; which internal phase produced a finding is process, not insight.
+    <BriefSection>
       {phase.summary && <BriefProse text={phase.summary} />}
       {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} sourceNo={sourceNos?.get(f.finding_id)} />)}
     </BriefSection>
@@ -407,6 +410,11 @@ function InvestigationDetails({ report, intakePhase }: { report: AnswerReport; i
 
   return (
     <BriefDetails>
+      {report.metric_definition && (
+        <BriefDetailBlock label="How this was measured">
+          <p className="aug-text-xs text-zinc-400">{report.metric_definition}</p>
+        </BriefDetailBlock>
+      )}
       {hasRecs && (
         <BriefDetailBlock label="Recommended actions">
           <RecommendationsList recs={report.recommendations} />
@@ -590,11 +598,8 @@ export function InvestigationReportView({
         ]}
       />
 
-      {report.metric_definition && (
-        <p className="aug-text-xs text-zinc-500 mt-1">
-          <span className="text-zinc-400">How this was measured — </span>{report.metric_definition}
-        </p>
-      )}
+      {/* "How this was measured" moved into the Details disclosure — clean-output
+          policy: the main flow states conclusions; method lives one click away. */}
 
       {(() => {
         // One numbering shared by the per-finding "Source n" refs and the Sources list
