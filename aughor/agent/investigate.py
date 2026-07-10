@@ -3463,6 +3463,32 @@ def run_analysis_phase(
         tolerate(_uc_exc, "phase-level unit-conversion strip is best-effort",
                  counter="ada.unit_probe_phase")
 
+    # Adaptive temporal grain: a coder defaulting to DATE_TRUNC('month') over a
+    # 17-day window produces ONE bucket ("single data point — cannot establish a
+    # trend") when a daily series was sitting right there. When the query's own
+    # literal date range spans ≤35 days, truncate by day; ≤120 days, by week.
+    try:
+        for _pq in plan.queries:
+            _sql = getattr(_pq, "sql", "") or ""
+            if not re.search(r"DATE_TRUNC\s*\(\s*'(month|quarter|year)'", _sql, re.IGNORECASE):
+                continue
+            _dates = re.findall(r"DATE\s+'(\d{4}-\d{2}-\d{2})'", _sql) or \
+                     re.findall(r"'(\d{4}-\d{2}-\d{2})'", _sql)
+            if len(_dates) < 2:
+                continue
+            from datetime import date as _date
+            _ds = sorted(_date.fromisoformat(d) for d in _dates[:4])
+            _span = (_ds[-1] - _ds[0]).days
+            if _span <= 0:
+                continue
+            _grain = "day" if _span <= 35 else ("week" if _span <= 120 else None)
+            if _grain:
+                _pq.sql = re.sub(r"(DATE_TRUNC\s*\(\s*)'(?:month|quarter|year)'",
+                                 rf"\g<1>'{_grain}'", _sql, flags=re.IGNORECASE)
+    except Exception as _tg_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_tg_exc, "adaptive temporal grain is best-effort", counter="ada.temporal_grain")
+
     results = _parallel_execute_safe(conn, phase_id, plan.queries, cap=cap, schema=schema)
     if not results:
         return _PhaseRun(ok=False, error_phase=_phase_result(
@@ -6108,6 +6134,29 @@ def ada_synthesize(state: AgentState) -> dict:
             return s
         core = re.sub(r"^[+\-]\s*", "", s)
         return ("-" + core) if pct < 0 else core
+
+    # Humanize the scan template's internal SQL aliases at the LAST touch before the
+    # report ships — charts/tooltips were labelling series "Metric Total" and "Avg Per
+    # Record" (live screenshot). Terminal on purpose: the chart-shaping helpers above
+    # pattern-match on the raw alias names. column_units keys are renamed in sync.
+    _mlabel = (intake_data.get("metric_label") or "").strip()
+    if _mlabel:
+        _alias_map = {
+            "metric_total": _mlabel,
+            "metric_value": _mlabel,
+            "avg_per_record": f"{_mlabel} per record",
+            "n": "records",
+            "pct_of_total": "% of total",
+        }
+        for _p in phases:
+            for _f in (_p.get("findings") or []):
+                _cols = _f.get("columns") or []
+                if not any(c in _alias_map for c in _cols):
+                    continue
+                _f["columns"] = [_alias_map.get(c, c) for c in _cols]
+                _units = _f.get("column_units") or {}
+                if _units:
+                    _f["column_units"] = {_alias_map.get(k, k): v for k, v in _units.items()}
 
     if synth:
         waterfall = [

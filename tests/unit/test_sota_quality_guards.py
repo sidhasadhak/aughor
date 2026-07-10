@@ -169,3 +169,23 @@ def test_extreme_tie_note_silent_without_a_real_cluster():
     # ties not separated from the rest (everything ~equal) → silent
     rows2 = [["a", 3.0], ["b", 3.0], ["c", 3.05], ["d", 3.1]]
     assert _extreme_tie_note(["seg", "v"], rows2) is None
+
+
+# ── Adaptive temporal grain ────────────────────────────────────────────────────
+
+def test_temporal_grain_rewrite_short_window():
+    """A 17-day window truncated by month = one bucket ('single data point');
+    the pre-execution rewrite must drop to daily grain."""
+    import re
+    from datetime import date
+
+    sql = ("SELECT DATE_TRUNC('month', dateTime) AS period, SUM(totalPrice) AS v "
+           "FROM sales_transactions WHERE dateTime >= DATE '2024-05-01' "
+           "AND dateTime < DATE '2024-05-17' GROUP BY 1")
+    dates = re.findall(r"DATE\s+'(\d{4}-\d{2}-\d{2})'", sql)
+    ds = sorted(date.fromisoformat(d) for d in dates)
+    span = (ds[-1] - ds[0]).days
+    assert span == 16
+    grain = "day" if span <= 35 else ("week" if span <= 120 else None)
+    out = re.sub(r"(DATE_TRUNC\s*\(\s*)'(?:month|quarter|year)'", rf"\g<1>'{grain}'", sql, flags=re.IGNORECASE)
+    assert "DATE_TRUNC('day'" in out and "month" not in out
