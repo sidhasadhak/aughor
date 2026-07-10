@@ -157,11 +157,17 @@ async def query_semantic(body: _SemanticOpRequest):
 
     Re-runs the SQL server-side (authoritative — never trusts client-sent rows), then applies the
     operator to the text residue. Returns the transformed result plus surfaced operator metadata."""
-    from aughor.db.connection import open_connection_for
+    from aughor.db.connection import gate_user_sql, open_connection_for
     from aughor.semops.operators import apply_step
 
     if not body.sql.strip():
         raise HTTPException(status_code=400, detail="sql is required")
+    # Safety gate on the RAW user SQL — same contract as /query/run: the runner
+    # wraps it in `SELECT * FROM (…) __q LIMIT n`, which demotes a first-token
+    # DELETE/DROP to a body token, so the inner gate can't be trusted alone.
+    # This path was previously ungated AND unaudited (label `__semantic__`).
+    if (blocked := gate_user_sql(body.conn_id, "semantic_operator", body.sql)) is not None:
+        raise HTTPException(status_code=403, detail=blocked.error)
     if not body.column.strip():
         raise HTTPException(status_code=400, detail="column is required")
     if body.operator == "filter" and not (body.predicate or "").strip():
@@ -184,7 +190,7 @@ async def query_semantic(body: _SemanticOpRequest):
 
     def _work():
         try:
-            base = db.execute("__semantic__", wrapped)
+            base = db.execute("semantic_operator", wrapped)
         finally:
             try:
                 db.close()

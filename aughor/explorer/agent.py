@@ -885,7 +885,7 @@ class SchemaExplorer:
             else:
                 schema_filter = f"= '{schema or 'public'}'"
             r = self._conn.execute(
-                "__explorer__",
+                "__explorer_catalog__",  # catalog probe, not a data query — stays out of the audit trail
                 f"SELECT table_schema, table_name FROM information_schema.tables "
                 f"WHERE table_schema {schema_filter} "
                 f"AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name",
