@@ -23,7 +23,7 @@
  */
 
 import {
-  SKIP_ID, INSTRUMENTATION_COL as INSTRUMENTATION,
+  isIdLike, INSTRUMENTATION_COL as INSTRUMENTATION,
   SHARE_COL, CHANGE_METRIC_COL as CHANGE_METRIC, ADDITIVE_COL,
   countUnique, classifyColumns,
 } from "./columnRoles";
@@ -82,8 +82,8 @@ export function scoreDualAxis(
   // Real measures only: not an id/key, not audit-only instrumentation, and has at least one
   // non-null numeric value (an all-null column carries nothing and must never reach a chart).
   // Fall back to the unfiltered set only if excluding instrumentation would leave nothing.
-  const _real = numericIdxs.filter((i) => !SKIP_ID.test(columns[i]) && !INSTRUMENTATION.test(columns[i]) && nums(i).length > 0);
-  const measures = _real.length ? _real : numericIdxs.filter((i) => !SKIP_ID.test(columns[i]) && nums(i).length > 0);
+  const _real = numericIdxs.filter((i) => !isIdLike(columns[i]) && !INSTRUMENTATION.test(columns[i]) && nums(i).length > 0);
+  const measures = _real.length ? _real : numericIdxs.filter((i) => !isIdLike(columns[i]) && nums(i).length > 0);
   const rates     = measures.filter(isShare).sort((a, b) => maxAbs(b) - maxAbs(a));
   const absolutes = measures.filter((i) => !isShare(i)).sort((a, b) => maxAbs(b) - maxAbs(a));
   const primary   = absolutes[0] ?? rates[0] ?? measures[0] ?? numericIdxs[0];

@@ -30,6 +30,7 @@ import {
 } from "@/components/charts/echarts/builders";
 import {
   SHARE_COL, CHANGE_METRIC_COL, TIME_LABEL_COL, INSTRUMENTATION_COL, PREFER_COL, classifyColumns,
+  isIdLike,
 } from "@/components/charts/columnRoles";
 import { scoreDualAxis } from "@/components/charts/chartTypeInference";
 
@@ -188,7 +189,7 @@ export function Chart({
     const _filteredNum = numericCols.filter((c) => !INSTRUMENTATION_COL.test(c));
     const chartNumericCols = _filteredNum.length ? _filteredNum : numericCols;
     const _isChangeMetric = numericCols.some((c) => CHANGE_METRIC_COL.test(c));
-    const ID_COL = /(^|_)(id|key|sk|pk|code|uuid|guid|hash)$/i;
+    const ID_COL = { test: (c: string) => /(^|_)(id|key|sk|pk|code|uuid|guid|hash)$/i.test(c) || isIdLike(c) };
     const NAME_COL = /(name|title|label|desc|description|channel|category|region|country|city|state|store|product|customer|item|page|segment|brand|merchant|franchise|email|url)/i;
     const catCol = catCols.find((c) => NAME_COL.test(c) && !ID_COL.test(c)) ?? catCols.find((c) => !ID_COL.test(c)) ?? catCols[0];
     const catCol2 = catCols.find((c) => c !== catCol) ?? catCols[1];

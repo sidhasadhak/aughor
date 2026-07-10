@@ -1199,21 +1199,15 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
                 corrected_findings.append(f)
         report = AnalysisReport(**{**report.model_dump(), "key_findings": corrected_findings})
         if unmatched_ids:
-            # Surface the mismatch as a data quality note so analysts see it
-            id_note = DataQualityNote(
-                table="Report Structure",
-                column=None,
-                issue=(
-                    f"Finding(s) referenced unrecognised hypothesis IDs: "
-                    f"{', '.join(unmatched_ids)}. "
-                    f"Expected: {', '.join(scored_conf.keys())}. "
-                    f"Confidence floored to {min_scored_conf:.0%} for affected findings."
-                ),
-                impact="Confidence scores for these findings may be unreliable.",
-                recommended_fix="Re-run the investigation to regenerate findings with correct hypothesis IDs.",
-            )
-            report = AnalysisReport(
-                **{**report.model_dump(), "data_quality_notes": list(report.data_quality_notes) + [id_note]}
+            # Internal QA diagnostic — goes to the log/journal, NOT the user report.
+            # ("Finding(s) referenced unrecognised hypothesis IDs: H1…" in a business
+            # report reads as gibberish and erodes trust in the real data-quality notes;
+            # the confidence flooring above already contains the damage.)
+            import logging
+            logging.getLogger(__name__).warning(
+                "synthesize_report: findings referenced unrecognised hypothesis IDs %s "
+                "(expected %s); confidence floored to %.0f%%",
+                unmatched_ids, list(scored_conf.keys()), min_scored_conf * 100,
             )
 
     # ── Post-synthesis verifiers (numeric grounding + narration inversion) ────
@@ -1222,19 +1216,12 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
         _qh = state.get("query_history", [])
         unverified = verify_numeric_claims(report, _qh)
         if unverified:
-            note = DataQualityNote(
-                table="Report Narrative",
-                column=None,
-                issue=(
-                    f"The following numbers in the report could not be verified against "
-                    f"executed queries or stats: {', '.join(unverified)}. "
-                    f"Treat these claims with caution."
-                ),
-                impact="Numeric claims without traceable sources reduce report reliability.",
-                recommended_fix="Re-run the investigation or verify the numbers manually against the raw data.",
-            )
-            report = AnalysisReport(
-                **{**report.model_dump(), "data_quality_notes": list(report.data_quality_notes) + [note]}
+            # Internal QA diagnostic — log it; don't print a list of bare numbers
+            # ("could not be verified: 0.34, 39.06") into the user-facing report.
+            import logging
+            logging.getLogger(__name__).warning(
+                "synthesize_report: %d numeric claim(s) not traceable to executed "
+                "queries/stats: %s", len(unverified), ", ".join(unverified),
             )
         # A finding that asserts a per-group value as UNIVERSAL ("all orders have 3
         # items") while the result is a varying distribution — caveat, never drop a

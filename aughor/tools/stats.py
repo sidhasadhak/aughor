@@ -272,7 +272,11 @@ def assess_rate_uniformity(
     return UniformityResult(baseline, k, n_sig, all_uniform, interp, seg_results)
 
 
-_RATE_KEYWORDS = ("rate", "ratio", "pct", "percent", "proportion", "share", "conversion", "frac")
+# NOTE: "share" is deliberately NOT a rate keyword — a share-of-total column (each
+# segment's slice of one whole, summing to 1) is a COMPOSITION, not a per-segment
+# proportion; pushing revenue shares through a two-proportion z-test produced the
+# meaningless "45 of 48 segments differ from the pooled 2.08% rate (Bonferroni)".
+_RATE_KEYWORDS = ("rate", "ratio", "pct", "percent", "proportion", "conversion", "frac")
 _DENOM_KEYWORDS = ("total", "count", "tickets", "orders", "n_", "volume", "rows", "customers", "users", "_n")
 
 
@@ -300,7 +304,12 @@ def _analyze_rate_segments(columns: list[str], rows: list[list]) -> Optional[Sta
             rate_idx = i
             break
         if rate_idx is None and in_unit and len(vals) >= 3 and max(vals) <= 1.0001 and min(vals) < 1.0:
-            rate_idx = i  # fallback: a [0,1] column with no obvious count name
+            # Fallback: a [0,1] column with no obvious name — but NOT a composition.
+            # Shares of one whole sum to ≈1 across segments (revenue_share, mix); a
+            # genuine per-segment rate does not. A composition through a proportion
+            # test yields nonsense significance on ordinary magnitude differences.
+            if not (0.98 <= sum(vals) <= 1.02):
+                rate_idx = i
     if rate_idx is None:
         return None
 
