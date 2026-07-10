@@ -40,10 +40,26 @@ def cli():
 # ── Seed ─────────────────────────────────────────────────────────────────────
 
 @cli.command()
-def seed():
-    """Seed the fixture DuckDB database with synthetic SaaS data."""
-    from data.seed import main as seed_main  # type: ignore
-    seed_main()
+@click.option("--db", "db", default=str(DEFAULT_DB), show_default=True, help="Path to the DuckDB file to (re)create")
+def seed(db: str):
+    """Seed the demo DuckDB database (the one `aughor investigate` reads).
+
+    Writes the bundled outage scenario — 90 days of SaaS revenue for ~800
+    customers with a discoverable APAC payment-gateway outage — replacing any
+    existing file at the target path.
+    """
+    from aughor.samples.scenario import seed_scenario_db
+
+    summary = seed_scenario_db(Path(db), overwrite=True)
+    console.print(f"Database seeded at: [bold]{db}[/bold]")
+    console.print(f"  Customers:         {summary['customers']:,}")
+    console.print(f"  Revenue rows:      {summary['revenue_rows']:,}")
+    console.print(f"  Total revenue:     ${summary['total_revenue']:,.0f}")
+    console.print(f"  Outage date:       {summary['outage_date']}")
+    console.print(f"  APAC SMB revenue on outage day: ${summary['outage_apac_smb_revenue']:,.0f}")
+    console.print(f"  APAC SMB baseline (7-day avg):  ${summary['baseline_apac_smb_revenue']:,.0f}")
+    console.print(f"  Revenue drop in APAC SMB:       {summary['apac_smb_drop_pct']}%")
+    console.print(f"  Failure rate APAC SMB on outage: {summary['apac_smb_outage_failure_rate_pct']}%")
 
 
 # ── Investigate ──────────────────────────────────────────────────────────────

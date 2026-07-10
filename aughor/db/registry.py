@@ -121,7 +121,8 @@ def list_connections(org_id: str | None = None) -> list[dict]:
 
     # Include built-in fixture unless user has removed it
     if BUILTIN_ID not in hidden:
-        fixture_path = Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
+        from aughor.samples.setup import fixture_db_path
+        fixture_path = fixture_db_path()
         rows.append({
             "id": BUILTIN_ID,
             "name": "Fixture DB (demo)",
@@ -202,7 +203,8 @@ def get_meta(conn_id: str) -> dict:
     if conn_id == SAMPLES_ID:
         return {"builtin_samples": True, "schema_name": "ecommerce"}
     if conn_id == WORKSPACE_ID:
-        samples_path = Path(__file__).parent.parent.parent / "data" / "samples.duckdb"
+        from aughor.samples.setup import samples_db_path
+        samples_path = samples_db_path()
         meta = {"builtin_workspace": True}
         if samples_path.exists():
             # Fold the sample ecommerce tables into the Workspace (read-only).
@@ -288,13 +290,13 @@ def update_connection_settings(conn_id: str, updates: dict) -> dict:
 def get_dsn(conn_id: str) -> tuple[str, str]:
     """Return (conn_type, plain_dsn) for the given connection ID."""
     if conn_id == SAMPLES_ID:
-        samples_path = Path(__file__).parent.parent.parent / "data" / "samples.duckdb"
-        return "duckdb", str(samples_path)
+        from aughor.samples.setup import samples_db_path
+        return "duckdb", str(samples_db_path())
     if conn_id == WORKSPACE_ID:
         return "local_upload", "local://"
     if conn_id == BUILTIN_ID:
-        fixture_path = Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
-        return "duckdb", str(fixture_path)
+        from aughor.samples.setup import fixture_db_path
+        return "duckdb", str(fixture_db_path())
     if conn_id == POSTGRES_BUILTIN_ID:
         if not _postgres_builtin_dsn():
             raise KeyError("Default Postgres connection is not configured (set AUGHOR_DEFAULT_POSTGRES_DSN)")
