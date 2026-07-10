@@ -710,6 +710,10 @@ function EdgeSqlPanel({
 interface Props {
   connectionId: string;
   onInvestigate?: (q: string) => void;
+  /** Schema scope from the workspace's shared selector. The ontology store is
+   *  keyed per {connection, schema}; without this the backend falls back to an
+   *  ARBITRARY cached schema on multi-schema connections. */
+  schema?: string;
 }
 
 const REFRESH_OPTIONS: { label: string; value: number | null }[] = [
@@ -721,11 +725,13 @@ const REFRESH_OPTIONS: { label: string; value: number | null }[] = [
 
 function OntologySettings({
   connectionId,
+  schema,
   graph,
   onClose,
   onRebuilt,
 }: {
   connectionId: string;
+  schema?: string;
   graph: OntologyGraph | null;
   onClose: () => void;
   onRebuilt: (g: OntologyGraph) => void;
@@ -751,9 +757,9 @@ function OntologySettings({
     setRebuilding(true);
     setRebuildMsg(null);
     try {
-      const result = await rebuildOntology(connectionId);
+      const result = await rebuildOntology(connectionId, schema);
       setRebuildMsg(`Rebuilt — ${result.entities} entities`);
-      const fresh = await import("@/lib/api").then(m => m.getOntology(connectionId));
+      const fresh = await import("@/lib/api").then(m => m.getOntology(connectionId, schema));
       onRebuilt(fresh);
     } catch (e: unknown) {
       setRebuildMsg((e as Error).message ?? "Rebuild failed");
@@ -1024,7 +1030,7 @@ function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void
 }
 
 
-export function OntologyPanel({ connectionId, onInvestigate }: Props) {
+export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   const [graph,             setGraph]            = useState<OntologyGraph | null>(null);
   const [loading,           setLoading]          = useState(false);
   const [error,             setError]            = useState<string | null>(null);
@@ -1046,7 +1052,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
     setSelectedEntityId(null);
     setShowSettings(false);
     setShowDuplicates(false);
-    getOntology(selectedConnId)
+    getOntology(selectedConnId, schema)
       .then(setGraph)
       .catch(() =>
         setError(
@@ -1054,7 +1060,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
         ),
       )
       .finally(() => setLoading(false));
-  }, [selectedConnId]);
+  }, [selectedConnId, schema]);
 
   const handleEntityUpdated = (updated: OntologyEntity) => {
     if (!graph) return;
@@ -1237,6 +1243,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
         {showSettings && (
           <OntologySettings
             connectionId={selectedConnId}
+            schema={schema}
             graph={graph}
             onClose={() => setShowSettings(false)}
             onRebuilt={(g) => setGraph(g)}
@@ -1248,7 +1255,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
           <DuplicatesDrawer
             connId={selectedConnId}
             onClose={() => setShowDuplicates(false)}
-            onMerged={() => { getOntology(selectedConnId).then(setGraph).catch(() => {}); }}
+            onMerged={() => { getOntology(selectedConnId, schema).then(setGraph).catch(() => {}); }}
           />
         )}
 

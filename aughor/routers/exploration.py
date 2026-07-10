@@ -1009,6 +1009,7 @@ def promote_canvas_insight(canvas_id: str, insight_id: str):
             None,
         )
         if insight:
+            from aughor.canvas.store import resolve_connection_id
             from aughor.knowledge.org_intelligence import promote_to_org
             promote_to_org(
                 insight_id=insight_id,
@@ -1017,6 +1018,8 @@ def promote_canvas_insight(canvas_id: str, insight_id: str):
                 novelty=insight.get("novelty", 3),
                 canvas_id=canvas_id,
                 angle=insight.get("angle", ""),
+                connection_id=resolve_connection_id(canvas_id) or "",
+                schema=insight.get("source_schema", "") or "",
             )
     except Exception:
         pass  # Qdrant unavailable — metadata flag is already set; non-critical
@@ -1046,6 +1049,8 @@ def promote_connection_insight(connection_id: str, insight_id: str):
             novelty=insight.get("novelty", 3),
             canvas_id=f"conn:{connection_id}",
             angle=insight.get("angle", ""),
+            connection_id=connection_id,
+            schema=insight.get("source_schema", "") or "",
         )
     except Exception:
         pass  # Qdrant unavailable — metadata flag is already set; non-critical

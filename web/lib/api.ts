@@ -965,8 +965,10 @@ export async function updateConnectionSettings(
   return res.json();
 }
 
-export async function rebuildOntology(connectionId: string): Promise<{ ok: boolean; generated_at: string; entities: number }> {
-  const res = await fetch(`${BASE}/ontology/rebuild?connection_id=${encodeURIComponent(connectionId)}`, { method: "POST" });
+export async function rebuildOntology(connectionId: string, schemaName?: string): Promise<{ ok: boolean; generated_at: string; entities: number }> {
+  const qs = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) qs.set("schema_name", schemaName);
+  const res = await fetch(`${BASE}/ontology/rebuild?${qs}`, { method: "POST" });
   if (!res.ok) throw new Error("Ontology rebuild failed");
   return res.json();
 }
@@ -2500,8 +2502,11 @@ export interface OrgInsight {
   promoted_at: string;
 }
 
-export async function getOrgIntelligence(): Promise<OrgInsight[]> {
-  const res = await fetch(`${BASE}/org-intelligence`);
+export async function getOrgIntelligence(connectionId?: string, schema?: string): Promise<OrgInsight[]> {
+  const qs = new URLSearchParams();
+  if (connectionId) qs.set("connection_id", connectionId);
+  if (schema) qs.set("schema", schema);
+  const res = await fetch(`${BASE}/org-intelligence${qs.size ? `?${qs}` : ""}`);
   if (!res.ok) throw new Error("Failed to fetch org intelligence");
   return res.json();
 }

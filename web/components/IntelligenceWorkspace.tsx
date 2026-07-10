@@ -157,7 +157,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       headerControls={headerControls}
       renderLayer={id => {
         if (id === "briefing") return <BriefingPanel connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} workspaceId={workspaceId} />;
-        if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} />;
+        if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
         if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
         return <OrgIntelPanel />; // "org"

@@ -321,22 +321,38 @@ def promote_insight(canvas_id: str, insight_id: str) -> bool:
     return False
 
 
+def _find_insight_state(connection_id: str, insight_id: str):
+    """Locate the store key + state + insight for an id, searching the bare
+    connection state AND every per-schema run ({conn}__{schema}).
+
+    Multi-schema connections store insights per schema, but the promote/dismiss
+    endpoints receive only the connection id — looking in the bare file alone
+    made those buttons 404 on every per-schema finding (a dead button)."""
+    for key in [connection_id, *schema_run_keys(connection_id)]:
+        state = load(key)
+        for ins in state.get("insights", []):
+            if ins.get("id") == insight_id:
+                if "__" in key:
+                    ins.setdefault("source_schema", key.split("__", 1)[1])
+                return key, state, ins
+    return None, None, None
+
+
 def promote_insight_conn(connection_id: str, insight_id: str) -> Optional[dict]:
     """Mark a connection-scoped insight as promoted to Org intelligence.
 
     Returns the promoted insight dict on success, None if the insight is not found.
     Mirrors promote_insight() but operates on connection-scoped exploration state
-    (data/exploration_{connection_id}.json) so Briefing/Hub findings that live at
-    the connection level — not just canvas insights — can be promoted org-wide.
+    (bare or per-schema) so Briefing/Hub findings that live at the connection
+    level — not just canvas insights — can be promoted org-wide.
     """
-    state = load(connection_id)
-    for ins in state.get("insights", []):
-        if ins.get("id") == insight_id:
-            ins["promoted_to_org"] = True
-            ins["promotion_confidence"] = ins.get("confidence", 0.0)
-            save(connection_id, state)
-            return ins
-    return None
+    key, state, ins = _find_insight_state(connection_id, insight_id)
+    if ins is None:
+        return None
+    ins["promoted_to_org"] = True
+    ins["promotion_confidence"] = ins.get("confidence", 0.0)
+    save(key, state)
+    return ins
 
 
 def _log_dismissal(scope: str, insight: dict, reason: str) -> None:
@@ -368,11 +384,15 @@ def _dismiss(state: dict, insight_id: str, reason: str, scope: str) -> Optional[
 
 
 def dismiss_insight_conn(connection_id: str, insight_id: str, reason: str = "") -> Optional[dict]:
-    """User-dismiss a connection insight with a reason. Returns the insight or None."""
-    state = load(connection_id)
-    ins = _dismiss(state, insight_id, reason, connection_id)
+    """User-dismiss a connection insight with a reason. Returns the insight or None.
+    Searches per-schema runs too — same lookup as promote (the dismiss button was
+    equally dead on multi-schema findings)."""
+    key, state, found = _find_insight_state(connection_id, insight_id)
+    if found is None:
+        return None
+    ins = _dismiss(state, insight_id, reason, key)
     if ins is not None:
-        save(connection_id, state)
+        save(key, state)
     return ins
 
 
