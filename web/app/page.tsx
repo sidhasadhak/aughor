@@ -855,13 +855,22 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
   const [filter, setFilter] = useState<"all" | "investigation" | "chat">("all");
 
   useEffect(() => {
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), 8_000);
-    fetch(`${API_BASE}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`, { signal: ctrl.signal })
-      .then(r => r.json())
-      .then(d => setActivities(Array.isArray(d) ? d : []))
-      .catch(() => {})
-      .finally(() => clearTimeout(to));
+    let alive = true;
+    const load = () => {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 8_000);
+      fetch(`${API_BASE}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`, { signal: ctrl.signal })
+        .then(r => r.json())
+        .then(d => { if (alive) setActivities(Array.isArray(d) ? d : []); })
+        .catch(() => {})
+        .finally(() => clearTimeout(to));
+    };
+    load();
+    // Live refresh on investigation lifecycle events — this screen previously
+    // fetched ONCE on mount, so runs started elsewhere (another tab, the API)
+    // never appeared until a full page reload. Mirrors HistoryPanel's wiring.
+    const unsub = subscribeKernelEvents(() => load(), { kinds: ["investigation."] });
+    return () => { alive = false; unsub(); };
   }, [workspaceId]);
 
   const shown = filter === "all" ? activities : activities.filter(a => (filter === "chat" ? a.kind === "chat" : a.kind !== "chat"));
