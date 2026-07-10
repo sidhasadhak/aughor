@@ -78,11 +78,13 @@ export function PlaybookPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updated),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setEntries(prev => prev.map(e => e.id === id ? data : e));
-      }
-    } catch {}
+      if (!res.ok) throw new Error(`status change failed (${res.status})`);
+      const data = await res.json();
+      setEntries(prev => prev.map(e => e.id === id ? data : e));
+    } catch (e) {
+      // A swallowed failure made the status chip silently snap back.
+      window.alert(e instanceof Error ? e.message : "Status change failed");
+    }
   };
 
   const handleReseed = async () => {

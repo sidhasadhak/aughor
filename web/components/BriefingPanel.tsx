@@ -1700,6 +1700,7 @@ export function BriefingPanel({
   const fetchedScope = useRef<string | null>(null);
   const [explorerStatus, setExplorerStatus]   = useState<ExplorerStatus | null>(null);
   const [explorerBusy, setExplorerBusy]       = useState(false);
+  const [explorerError, setExplorerError]     = useState<string | null>(null);
   const [triggers, setTriggers]               = useState<ActionTrigger[]>([]);
   const [evidenceInsight, setEvidenceInsight] = useState<ExplorationInsight | null>(null);
   const [evidenceDomain, setEvidenceDomain]   = useState<string>("");
@@ -1767,20 +1768,22 @@ export function BriefingPanel({
   const runExplorer = useCallback(async () => {
     if (!canvasId && !connectionId) return;
     setExplorerBusy(true);
+    setExplorerError(null);
     try {
       if (canvasId) await resumeCanvasExploration(canvasId);
       else          await startExplorer(connectionId, schema);
-    } catch {}
+    } catch (e) { setExplorerError(e instanceof Error ? e.message : "Could not start the explorer"); }
     setExplorerBusy(false);
   }, [connectionId, canvasId, schema]);
 
   const runTriggerIntel = useCallback(async () => {
     if (!canvasId && !connectionId) return;
     setExplorerBusy(true);
+    setExplorerError(null);
     try {
       if (canvasId) await triggerCanvasDomainIntelligence(canvasId);
       else          await triggerDomainIntelligence(connectionId);
-    } catch {}
+    } catch (e) { setExplorerError(e instanceof Error ? e.message : "Could not trigger intelligence"); }
     setExplorerBusy(false);
   }, [connectionId, canvasId]);
 
@@ -1790,20 +1793,22 @@ export function BriefingPanel({
   const runRefresh = useCallback(async () => {
     if (!canvasId && !connectionId) return;
     setExplorerBusy(true);
+    setExplorerError(null);
     try {
       if (canvasId) await restartCanvasExploration(canvasId);
       else          await restartExplorer(connectionId);
-    } catch {}
+    } catch (e) { setExplorerError(e instanceof Error ? e.message : "Refresh failed"); }
     setExplorerBusy(false);
   }, [connectionId, canvasId]);
 
   const runStop = useCallback(async () => {
     if (!canvasId && !connectionId) return;
     setExplorerBusy(true);
+    setExplorerError(null);
     try {
       if (canvasId) await stopCanvasExploration(canvasId);
       else          await stopExplorer(connectionId);
-    } catch {}
+    } catch (e) { setExplorerError(e instanceof Error ? e.message : "Stop failed"); }
     setExplorerBusy(false);
   }, [connectionId, canvasId]);
 
@@ -1909,6 +1914,11 @@ export function BriefingPanel({
           </>
         ) : (
           <span style={{ fontSize: 11, color: "var(--t4)" }}>unknown</span>
+        )}
+        {explorerError && (
+          <span style={{ fontSize: 11, color: "var(--red5, #f87171)" }} title={explorerError}>
+            ✗ {explorerError.length > 60 ? explorerError.slice(0, 60) + "…" : explorerError}
+          </span>
         )}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           {(!explorerStatus || explorerStatus.phase === "complete" || explorerStatus.phase === "pending" || explorerStatus.phase === "failed") ? (

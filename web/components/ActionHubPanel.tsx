@@ -172,29 +172,48 @@ export function ActionHubPanel() {
   };
 
   const handleDelete = async (id: string) => {
-    await fetch(`${BASE}/actions/triggers/${id}`, { method: "DELETE" });
-    reload();
+    if (!window.confirm("Delete this trigger? This cannot be undone.")) return;
+    try {
+      const resp = await fetch(`${BASE}/actions/triggers/${id}`, { method: "DELETE" });
+      if (!resp.ok) throw new Error(`delete failed (${resp.status})`);
+    } catch (e) {
+      setTestResult(prev => ({ ...prev, [id]: `✗ ${e instanceof Error ? e.message : "delete failed"}` }));
+    } finally {
+      reload();
+    }
   };
 
   const handleToggle = async (t: Trigger) => {
-    await fetch(`${BASE}/actions/triggers/${t.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...t, enabled: !t.enabled }),
-    });
-    reload();
+    try {
+      const resp = await fetch(`${BASE}/actions/triggers/${t.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...t, enabled: !t.enabled }),
+      });
+      if (!resp.ok) throw new Error(`update failed (${resp.status})`);
+    } catch (e) {
+      setTestResult(prev => ({ ...prev, [t.id]: `✗ ${e instanceof Error ? e.message : "update failed"}` }));
+    } finally {
+      reload();
+    }
   };
 
   const handleTest = async (id: string) => {
     setTesting(id);
     setTestResult(prev => ({ ...prev, [id]: "…" }));
-    const resp = await fetch(`${BASE}/actions/triggers/${id}/test`, { method: "POST" });
-    const data = await resp.json();
-    setTestResult(prev => ({
-      ...prev,
-      [id]: data.status === "ok" ? `✓ ${data.http_status}` : `✗ ${data.error || data.http_status}`,
-    }));
-    setTesting(null);
+    try {
+      const resp = await fetch(`${BASE}/actions/triggers/${id}/test`, { method: "POST" });
+      const data = await resp.json();
+      setTestResult(prev => ({
+        ...prev,
+        [id]: data.status === "ok" ? `✓ ${data.http_status}` : `✗ ${data.error || data.http_status}`,
+      }));
+    } catch (e) {
+      // Without this, a network error left the button wedged on "…" forever.
+      setTestResult(prev => ({ ...prev, [id]: `✗ ${e instanceof Error ? e.message : "unreachable"}` }));
+    } finally {
+      setTesting(null);
+    }
   };
 
   return (

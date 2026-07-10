@@ -427,8 +427,18 @@ function ActionApprovalsSection() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const [revokeError, setRevokeError] = useState<string | null>(null);
   async function handleRevoke(e: AllowlistEntry) {
-    try { await revokeApproval(e.action, e.scope); load(); } catch { /* surfaced on next load */ }
+    setRevokeError(null);
+    try {
+      await revokeApproval(e.action, e.scope);
+    } catch (err) {
+      // No auto-poll on this panel — a swallowed failure left the entry
+      // looking allowlisted with zero feedback.
+      setRevokeError(err instanceof Error ? err.message : "Revoke failed");
+    } finally {
+      load();
+    }
   }
 
   return (
@@ -442,6 +452,12 @@ function ActionApprovalsSection() {
           {loading ? "…" : "Refresh"}
         </button>
       </div>
+
+      {revokeError && (
+        <div style={{ fontSize: 11, color: "var(--r2, #f87171)", marginBottom: 8 }}>
+          Revoke failed: {revokeError}
+        </div>
+      )}
 
       {/* Allowlist — pre-approved high-risk actions (revocable) */}
       <div style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>

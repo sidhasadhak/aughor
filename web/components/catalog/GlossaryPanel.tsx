@@ -48,6 +48,10 @@ function EditableField({ value, placeholder, multiline = true, onSave }: {
   const save = async () => {
     setBusy(true);
     try { await onSave(draft.trim()); setEditing(false); }
+    catch (e) {
+      // Editor stays open; without this the failure was invisible.
+      window.alert(e instanceof Error ? e.message : "Save failed");
+    }
     finally { setBusy(false); }
   };
   return (
