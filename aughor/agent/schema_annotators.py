@@ -157,7 +157,10 @@ def _apply_explorer_to_ontology(graph, connection_id: str) -> None:
         the orphan-count check in Phase 4.
     """
     try:
-        from aughor.explorer.store import load as _load_exploration
+        # Aggregate across per-schema runs — the bare state is empty on
+        # multi-schema connections, which silently withheld the explorer's
+        # verified lifecycle/join upgrades from the ontology.
+        from aughor.explorer.store import load_aggregate as _load_exploration
         state = _load_exploration(connection_id)
         phase = state.get("phase", "pending")
         if phase in ("pending", "failed"):

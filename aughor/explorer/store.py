@@ -105,7 +105,11 @@ def _agg_phase(phases: list[str]) -> str:
 
 def load_aggregate(connection_id: str) -> dict:
     """Merge every per-schema run into one connection-level state. Falls back to the bare
-    connection state when there are no per-schema runs."""
+    connection state when there are no per-schema runs.
+
+    The bare state's CONTENT is merged in too (fix-saved findings and pre-schema-era
+    data land there), but its phase is ignored — an empty bare file must not report
+    a completed multi-schema exploration as 'pending'."""
     keys = schema_run_keys(connection_id)
     if not keys:
         return load(connection_id)
@@ -113,15 +117,17 @@ def load_aggregate(connection_id: str) -> dict:
     phases: list[str] = []
     per_schema: dict[str, str] = {}
     q = tt = 0
-    for k in keys:
+    for k in [connection_id, *keys]:
         st = load(k)
-        schema = k.split("__", 1)[1] if "__" in k else k
-        per_schema[schema] = st.get("phase", "pending")
         agg["insights"].extend(st.get("insights", []) or [])
         agg["join_verifications"].extend(st.get("join_verifications", []) or [])
         for sect in ("null_meanings", "distributions", "lifecycle_maps",
                      "domain_budgets", "domain_coverage"):
             agg[sect].update(st.get(sect, {}) or {})
+        if k == connection_id:
+            continue  # content only — the bare state carries no run phase/counters
+        schema = k.split("__", 1)[1] if "__" in k else k
+        per_schema[schema] = st.get("phase", "pending")
         phases.append(st.get("phase", "pending"))
         q += int(st.get("queries_executed", 0) or 0)
         tt += int(st.get("tables_total", 0) or 0)
@@ -183,7 +189,10 @@ def render_exploration_annotations(connection_id: str) -> str:
     Only includes sections that have data.  Returns "" when exploration has not
     yet produced any findings (pending / failed phase, or no data written yet).
     """
-    state = load(connection_id)
+    # Aggregate across per-schema runs — reading only the bare state silently
+    # returned "" for every multi-schema connection, starving the ADA planner
+    # and the ontology overlay of the explorer's verified intelligence.
+    state = load_aggregate(connection_id)
     phase = state.get("phase", "pending")
     if phase in ("pending", "failed"):
         return ""

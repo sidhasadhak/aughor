@@ -570,17 +570,24 @@ async def extend_domain_budget(conn_id: str, domain: str):
 
 @router.get("/exploration/{conn_id}/episodes")
 def get_exploration_episodes(conn_id: str, phase: str = "", limit: int = 300):
-    p = Path("data") / f"episodes_{conn_id}.jsonl"
-    if not p.exists():
-        return []
+    # Per-schema runs write episodes under {conn}__{schema} (the explorer's store
+    # key); reading only the bare file left the Activity feed EMPTY on every
+    # multi-schema connection. Merge all of this connection's episode files,
+    # ordered by timestamp. (Mirrors the purge path's key resolution.)
+    paths = [Path("data") / f"episodes_{conn_id}.jsonl",
+             *sorted(Path("data").glob(f"episodes_{conn_id}__*.jsonl"))]
     entries = []
-    for line in p.read_text().strip().splitlines():
-        try:
-            e = json.loads(line)
-            if not phase or e.get("phase") == phase:
-                entries.append(e)
-        except Exception:
-            pass
+    for p in paths:
+        if not p.exists():
+            continue
+        for line in p.read_text().strip().splitlines():
+            try:
+                e = json.loads(line)
+                if not phase or e.get("phase") == phase:
+                    entries.append(e)
+            except Exception:
+                pass
+    entries.sort(key=lambda e: e.get("ts") or 0)
     return entries[-limit:]
 
 
