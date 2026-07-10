@@ -33,7 +33,9 @@ export function Brief({
   className?: string;
 }) {
   return (
-    <div className={`flex flex-col gap-5 ${className}`} style={{ maxWidth: 760 }}>
+    // Near-full panel width (was a 760px cap that left Insight/Deep answers in a
+    // narrow column with a sea of empty space beside every chart and table).
+    <div className={`flex flex-col gap-5 ${className}`} style={{ maxWidth: "100%" }}>
       {children}
     </div>
   );
