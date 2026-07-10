@@ -2337,7 +2337,7 @@ def _unit_conversion_disproved(conn, connection_id: str, metric_table: str, col:
     if conn is None or not metric_table or not col:
         return False
     try:
-        from aughor.tools.profiler import _KEY_PATTERN, _KEY_PATTERN_CAMEL
+        from aughor.tools.profiler import is_key_like
         bare = str(metric_table).replace(";", "").strip().rsplit(".", 1)[-1]
         tres = conn.execute(
             "intake_unit_probe",
@@ -2350,7 +2350,7 @@ def _unit_conversion_disproved(conn, connection_id: str, metric_table: str, col:
             str(c) for c, t in tres.rows
             if any(k in str(t or "").upper() for k in ("INT", "DECIMAL", "DOUBLE", "FLOAT", "NUMERIC", "REAL"))
             and str(c).lower() != col.lower()
-            and not _KEY_PATTERN.search(str(c)) and not _KEY_PATTERN_CAMEL.search(str(c))
+            and not is_key_like(str(c))
         ][:6]
         if len(numeric) < 2:
             return False
@@ -2368,14 +2368,14 @@ def _unit_conversion_disproved(conn, connection_id: str, metric_table: str, col:
         if getattr(res, "error", None) or not res.rows:
             return False
         row = res.rows[0]
-        for v in row:
-            try:
-                if v is not None and float(v) >= 0.999:
-                    return True  # col == a*b for (nearly) every row — same unit as its factors
-            except (TypeError, ValueError):
-                continue
-        return False
-    except Exception:
+        vals = [float(v) for v in row
+                if isinstance(v, (int, float)) or (isinstance(v, str) and v.replace(".", "", 1).isdigit())]
+        # col == a*b for (nearly) every row — same unit as its factors
+        return any(v >= 0.999 for v in vals)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "unit-conversion probe is best-effort (unproven conversion is "
+                      "caveated, never rewritten)", counter="ada.unit_probe")
         return False
 
 

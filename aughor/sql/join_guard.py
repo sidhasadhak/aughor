@@ -836,5 +836,7 @@ def check_join_coverage(conn, sql: str) -> "str | None":
             f"so these totals understate the true figure. Re-run with LEFT JOINs (or treat "
             f"this as the matched subset only) before acting on absolute values."
         )
-    except Exception:
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "join-coverage probe is best-effort", counter="join_guard.coverage")
         return None

@@ -163,6 +163,13 @@ _KEY_PATTERN = re.compile(
 # numeric branch and is mis-typed as a "measure" (then needlessly distribution-profiled).
 # The lookbehind requires a lowercase letter before the uppercase suffix, so plain words
 # (valid, void, grid, solid, humid, rapid) never match. Checked against ORIGINAL case.
+def is_key_like(name: str) -> bool:
+    """Public: does this column name look like an identifier/key (snake_case OR
+    camelCase)? The canonical id-detection — chart/guard code imports this instead
+    of the private patterns."""
+    return bool(_KEY_PATTERN.search(name or "") or _KEY_PATTERN_CAMEL.search(name or ""))
+
+
 _KEY_PATTERN_CAMEL = re.compile(
     r"(?<=[a-z])(ID|Id|Key|Code|Num|Number|Identifier|UUID|Uuid|GUID|Guid|Pk|PK)$"
 )
