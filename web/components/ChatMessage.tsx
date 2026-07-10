@@ -59,6 +59,7 @@ import {
   DATE_VALUE_RE,
   isNumeric,
   firstNonNull,
+  isIdLike,
 } from "@/components/charts/columnRoles";
 import { isAdditiveMeasure } from "@/lib/measureKind";
 
@@ -94,7 +95,9 @@ function inferSourceTitle(columns: string[], rows: unknown[][]): string {
     const v = rows[0]?.[i];
     return DATE_COL.test(c) || (typeof v === "string" && DATE_VALUE_RE.test(v as string));
   });
-  const numColNames = columns.filter((c, i) =>  isNumeric(firstNonNull(rows, i)) && !ORDINAL_COL.test(c));
+  // isIdLike: camelCase ids (franchiseID) pass ORDINAL_COL and became the "measure"
+  // in captions — "Franchiseid by Branch Name" over a chart actually plotting counts.
+  const numColNames = columns.filter((c, i) =>  isNumeric(firstNonNull(rows, i)) && !ORDINAL_COL.test(c) && !isIdLike(c));
   const catColNames = columns.filter((c, i) => !isNumeric(firstNonNull(rows, i)) && i !== dateColIdx && !DATE_COL.test(c));
 
   const measure = numColNames[0] ? cleanLabel(numColNames[0]) : "";
