@@ -822,6 +822,43 @@ def _has_usable_data(results) -> bool:
     return any((not r.error and (r.row_count or 0) > 0) for _, r in (results or []))
 
 
+def _extreme_tie_note(columns, rows) -> Optional[str]:
+    """When several entities share the extreme value of a ranked scan, name ALL of them.
+
+    The narrator tends to headline the top 1–2 outliers and drop ties (live incident:
+    three franchises all at $3.00/txn; only two were named, the third vanished from the
+    report). Deterministic: find the first label column + the last numeric column of a
+    ranked result, cluster rows within 1.5% of the extreme (min), and if the cluster has
+    ≥2 members return a note enumerating every member — criterion-complete by construction."""
+    try:
+        if not columns or not rows or len(rows) < 2:
+            return None
+        def _num(v):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+        label_idx = next((i for i, _ in enumerate(columns) if _num(rows[0][i]) is None), None)
+        num_idx = next((i for i in range(len(columns) - 1, -1, -1)
+                        if i != label_idx and _num(rows[0][i]) is not None), None)
+        if label_idx is None or num_idx is None:
+            return None
+        vals = [(str(r[label_idx]), _num(r[num_idx])) for r in rows if _num(r[num_idx]) is not None]
+        if len(vals) < 3:
+            return None
+        worst = min(v for _, v in vals)
+        cluster = [n for n, v in vals if abs(v - worst) <= 0.015 * max(abs(worst), 1e-9)]
+        rest = [v for _, v in vals if abs(v - worst) > 0.015 * max(abs(worst), 1e-9)]
+        # Only a real anomaly cluster: ≥2 tied members, clearly separated from the rest.
+        if len(cluster) < 2 or not rest or min(rest) < worst * 1.5:
+            return None
+        col = str(columns[num_idx]).replace("_", " ")
+        return (f"{len(cluster)} entities share the extreme {col} of {worst:g}: "
+                f"{', '.join(cluster[:6])}" + (" …" if len(cluster) > 6 else ""))
+    except Exception:
+        return None
+
+
 def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label=""):
     """Build phase findings by binding each (query, result) to the narrator finding for
     its OWN dimension — never by list position. The displayed title is grounded in the
@@ -861,6 +898,13 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
             except Exception as _e:
                 from aughor.kernel.errors import tolerate
                 tolerate(_e, "ada: advisory trust check", counter="ada.trust_advisory_failed")
+        # Criterion-complete enumeration: when several entities TIE at the extreme of a
+        # ranked scan, stamp the full list into stat_note — the narrator drops ties
+        # (live: 3 franchises at $3.00/txn, only 2 named), the stamp can't.
+        if not r.error and r.rows and not f.get("stat_note"):
+            _tie = _extreme_tie_note(r.columns, r.rows)
+            if _tie:
+                f["stat_note"] = _tie
         out.append(f)
     return out
 
