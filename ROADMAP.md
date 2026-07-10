@@ -14,6 +14,23 @@
 
 ## 0 · Immediate next action ⏭️
 
+**NEXT (queued 2026-07-11) — the post-head-to-head backlog.** The Databricks Genie head-to-head
+(same question, same bakehouse data) drove two shipped arcs (see §2); what remains, in leverage order:
+1. **P7 — pin a frontier `coder` model** (ops/config, non-code). Every remaining rough edge —
+   intake variance, flat narrative prose, missed enumerations, run-to-run drift — is the
+   current glm-5.2 planner. Groq + Together keys are configured; one model id away.
+2. **Flip the repo public** (owner, one click) + the §6 post-flip checklist (most importantly
+   enable private vulnerability reporting — SECURITY.md promises it). OSS-readiness is merged.
+3. **Narrative beat generation in the thinking trace** — first-person beats ("I found a
+   critical issue!") between the nested query steps. Deliberately deferred until after P7
+   (it's LLM prose quality; the structure is already shipped).
+4. **Glossary + document stores per-connection/schema scoping** — the last global stores
+   (same-named tables across connections share one glossary entry). Deep migration touching
+   the NL2SQL read paths; queued as its own task.
+5. **Live verification pass** on the repaired canvas: criterion-complete tie note (all three
+   \$3.00/txn franchises), daily temporal grain, humanized chart labels — all shipped, each
+   needs one fresh Deep run to confirm visually.
+
 **✅ SHIPPED (2026-07-09) — Deep-Analysis quality backlog COMPLETE (P1–P6) + interactive clarify + store hermeticity.**
 The 2026-07-09 audit's remaining backlog is fully built (all flag-gated, **default-off byte-identical**;
 full study + per-item detail in [`docs/DEEP_ANALYSIS_QUALITY_2026-07-09.md`](docs/DEEP_ANALYSIS_QUALITY_2026-07-09.md)).
@@ -272,6 +289,15 @@ An **autonomous data-analysis platform** that replaces the dashboard-and-analyst
 ## 2 · What we've built ✅
 
 Grouped by area; each ✅ is verified shipped (git + code). Representative commits/PRs in parentheses.
+
+### SOTA answer quality — the Databricks Genie head-to-head (2026-07-10, PR #136 + branch `2026-07-10-genie-parity-presentation`)
+*Same question ("Where are we losing money?"), same data, Aughor vs Genie. Every gap traced to a deterministically checkable defect; fixes live-A/B'd (two post-fix runs converge on ground-truth-exact dollars).*
+- ✅ **Unit-conversion guard** — the planner's invented "stored in cents" ÷100 (every number 100× off) is detected at intake AND at every phase's fresh SQL; one probe (multiplicative sibling relation) proves the unit, strips the conversion or caveats it. **Money-coherence retry** re-parses a COUNT-only metric on a money question.
+- ✅ **Explicit Deep Analysis binds** — `/investigate` stamps `requested_mode`; the LLM route classifier can never downgrade a deliberate deep run to a `direct` lookup (the fake-H1 / `phases: NONE` incident).
+- ✅ **Charts never plot identifiers** — shared camelCase-aware `isIdLike()` across classifier, inference, LLM-config validation, captions, and the PDF export renderer (which also gained scale-gap series filtering and name-over-id axes). **Join-coverage guard** (deflation — a missing guard class) caveats INNER JOINs that drop base rows. **Stats**: shares are compositions, not rates; internal QA diagnostics go to the journal, not the report.
+- ✅ **Genie-parity presentation** — nested named query steps in the collapsible trace; numbered per-finding Sources; criterion-complete extreme-tie enumeration; clean-output policy (no phase-machinery headers); full-panel-width answers; adaptive temporal grain (17-day window → daily buckets, not one monthly point); humanized scan aliases ("revenue", never "Metric Total"); one-currency metric cards; canvas-scope label; live-refreshing Recents.
+- ✅ **Insight/Deep schema parity** — the quick path filtered a stale conn-keyed schema snapshot (upload never invalidated it), silently dropping new tables; it now builds the canvas schema fresh like Deep, and uploads invalidate the cache (the canvas-creation picker had offered a partial table list for the same reason).
+- Suite 2,590 green · +16 tests incl. a miniature-bakehouse guard battery (`test_sota_quality_guards.py`).
 
 ### First-run honesty + audit coherence + multi-schema wiring (2026-07-10, branch `2026-07-10-first-run-and-ui-coherence`)
 *One arc, one root-cause pattern: subsystems already computed the right signals; readers and writers weren't wired to the same key.*
