@@ -400,7 +400,10 @@ async def _kernel_boot_recovery() -> None:
                 res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables)
             else:
                 from aughor.explorer import store as _expl_store
-                phase = (_expl_store.load(conn_id) or {}).get("phase", "pending")
+                # Aggregate phase — the bare state reads 'pending' forever on a
+                # multi-schema connection, so recovery kept re-spawning explorers
+                # for explorations that had already completed per schema.
+                phase = (_expl_store.load_aggregate(conn_id) or {}).get("phase", "pending")
                 if phase in ("complete", "failed"):
                     continue
                 res = await spawn_explorer(

@@ -39,11 +39,17 @@ def promote_to_org(
     canvas_id: str,
     angle: str = "",
     promoted_by: str = "user",
+    connection_id: str = "",
+    schema: str = "",
 ) -> dict:
     """
     Embed insight text and upsert into the org_intelligence Qdrant collection.
     Idempotent: re-promoting the same (canvas_id, insight_id) overwrites the point.
     Returns the stored insight dict.
+
+    ``connection_id``/``schema`` record WHERE the insight came from, so scoped
+    surfaces (the Hub) can show only their own scope's promotions — without them
+    every promoted insight blended into every connection's Hub.
     """
     from aughor.semantic.embedder import embed_one
     from aughor.semantic.vector_store import upsert
@@ -62,6 +68,8 @@ def promote_to_org(
         "novelty": novelty,
         "promoted_by": promoted_by,
         "promoted_at": promoted_at,
+        "connection_id": connection_id,
+        "schema": schema,
     }
     upsert(ORG_INTEL_COLLECTION, [{"id": str(point_id), "vector": vector, "payload": payload}])
     return {"id": str(point_id), **payload}
@@ -100,8 +108,17 @@ def build_org_intelligence_section(question: str, top_k: int = 5) -> str:
     return "\n".join(lines) + "\n"
 
 
-def list_org_intelligence() -> list[dict]:
-    """Scroll the entire org_intelligence collection and return all insights."""
+def list_org_intelligence(
+    connection_id: str | None = None,
+    schema: str | None = None,
+) -> list[dict]:
+    """Scroll the org_intelligence collection, optionally scoped.
+
+    Unscoped (both None) returns everything — the org-wide view. With a scope,
+    only insights promoted FROM that connection (and schema, when given) are
+    returned; insights recorded before scoping existed carry no connection_id
+    and appear only in the unscoped view.
+    """
     try:
         from qdrant_client import QdrantClient
 
@@ -121,6 +138,10 @@ def list_org_intelligence() -> list[dict]:
             if next_offset is None:
                 break
             offset = next_offset
+        if connection_id:
+            results = [r for r in results if r.get("connection_id") == connection_id]
+        if schema:
+            results = [r for r in results if r.get("schema") == schema]
         return sorted(results, key=lambda x: x.get("promoted_at", ""), reverse=True)
     except Exception:
         return []

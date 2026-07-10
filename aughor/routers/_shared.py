@@ -157,7 +157,14 @@ def schemas_of_connection(conn_id: str) -> list[str]:
     """The non-system schemas a connection exposes. Used to fan exploration out per schema
     so a multi-schema connection (e.g. a workspace folding ecommerce + missimi + …) gives
     EACH schema its own intelligence instead of one run that starves the smaller schemas.
-    Best-effort: returns [] on any failure (caller falls back to a connection-level run)."""
+    Best-effort: returns [] on any failure (caller falls back to a connection-level run).
+
+    ``main`` counts as a REAL schema whenever it holds tables. It used to be excluded
+    wholesale (treating it as DuckDB's default namespace), which made a connection with
+    data in BOTH main and other schemas look single-schema: canonical_schema() collapsed
+    an explicit "explore schema main" to the bare key, silently resuming whatever old
+    run lived there and never exploring the main-schema data at all. A DB whose only
+    schema is main still resolves to the bare key via the callers' len<=1 rule."""
     try:
         from aughor.db.connection import open_connection_for
         db = open_connection_for(conn_id)
@@ -165,7 +172,7 @@ def schemas_of_connection(conn_id: str) -> list[str]:
             "__schemas__",
             "SELECT DISTINCT table_schema FROM information_schema.tables "
             "WHERE table_type = 'BASE TABLE' AND table_schema NOT IN "
-            "('information_schema', 'pg_catalog', 'temp', 'main') ORDER BY 1",
+            "('information_schema', 'pg_catalog', 'temp') ORDER BY 1",
         )
         return [str(r[0]) for r in (getattr(res, "rows", None) or []) if r and r[0]]
     except Exception:

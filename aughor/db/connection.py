@@ -31,13 +31,33 @@ _INTERNAL_HYPO_IDS = frozenset({
     "lifecycle_counts", "list_schemas",
 })
 
+# Background/system agents whose queries read REAL user data (not the platform's
+# own plumbing): the Scout's exploration scans, the Watcher's monitor evaluations,
+# finding re-validation, and the cross-source federation paths. These carry dunder
+# labels for historical reasons, but they are genuine data activity and MUST flow
+# through the full gate + audit — the "any dunder is internal" rule silently
+# exempted every fleet agent from the Security & Audit trail.
+_AUDITED_AGENT_LABELS = frozenset({
+    "__explorer__",        # Scout — background exploration data queries
+    "__monitor__",         # Watcher — monitor metric evaluation
+    "__monitor_window__",  # Watcher — monitor window anchoring (MAX(ts) probe)
+    "__revalidate__",      # finding re-validation re-runs stored finding SQL
+    "__fix_save__",        # persisting a repaired finding re-runs its SQL
+    "__fed_driver__",      # federated planner driver query (user question)
+    "__remote_join__",     # cross-source remote join (user question)
+})
+
 
 def _is_internal_query(hypothesis_id: str | None) -> bool:
     """True for platform-internal/metadata queries that should bypass the
-    security audit (dunder labels like ``__catalog__`` or a known metadata id)."""
+    security audit (dunder labels like ``__catalog__`` or a known metadata id).
+    Agent DATA queries (``_AUDITED_AGENT_LABELS``) are never internal — every
+    query against user data appears in the audit trail, whichever agent ran it."""
     if not hypothesis_id:
         return False
     h = hypothesis_id.strip()
+    if h in _AUDITED_AGENT_LABELS:
+        return False
     if len(h) >= 4 and h.startswith("__") and h.endswith("__"):
         return True
     return h in _INTERNAL_HYPO_IDS

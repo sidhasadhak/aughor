@@ -51,6 +51,30 @@ def test_promote_insight_conn_missing_confidence_defaults_zero(tmp_path):
     assert out["promotion_confidence"] == 0.0
 
 
+def test_promote_finds_per_schema_insight(tmp_path):
+    """Multi-schema connections store insights under {conn}__{schema}; the
+    promote endpoint only knows the connection id. Looking in the bare file
+    alone made Promote-to-Org a dead button (404) on every per-schema finding."""
+    _seed_conn(tmp_path, "c1", [])  # bare state exists but holds nothing
+    _seed_conn(tmp_path, "c1__sales", [
+        {"id": "s1", "finding": "APAC drop", "domain": "Sales", "confidence": 0.9},
+    ])
+    out = store.promote_insight_conn("c1", "s1")
+    assert out is not None and out["promoted_to_org"] is True
+    assert out["source_schema"] == "sales"  # scope recorded for org-intel attribution
+    # persisted in the per-schema store, not the bare one
+    assert store.load("c1__sales")["insights"][0]["promoted_to_org"] is True
+    assert store.load("c1")["insights"] == []
+
+
+def test_dismiss_finds_per_schema_insight(tmp_path):
+    _seed_conn(tmp_path, "c1", [])
+    _seed_conn(tmp_path, "c1__ops", [{"id": "o1", "finding": "noise", "domain": "Ops"}])
+    out = store.dismiss_insight_conn("c1", "o1", reason="not actionable")
+    assert out is not None and out["invalid"] is True
+    assert store.load("c1__ops")["insights"][0]["invalid"] is True
+
+
 def test_promote_endpoint_found(tmp_path, monkeypatch):
     # store layer returns an insight → endpoint reports promoted; Qdrant push is
     # best-effort and must not raise even when unavailable.

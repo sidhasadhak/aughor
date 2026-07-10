@@ -141,9 +141,11 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       .then(d => setInvestigations(Array.isArray(d) ? d.slice(0, 20) : []))
       .catch(() => {});
 
-    // Fetch schema tables for the selected connection
+    // Fetch schema tables for the selected connection. Must be /schema/rich —
+    // plain /schema returns {schema: <string>} with no tables key, which left
+    // the palette's table quick-jump permanently empty.
     if (selectedConn) {
-      fetch(`${API_BASE}/connections/${selectedConn}/schema`)
+      fetch(`${API_BASE}/connections/${selectedConn}/schema/rich`)
         .then(r => r.json())
         .then(d => setTables(d?.tables ?? []))
         .catch(() => {});

@@ -1080,7 +1080,12 @@ function FleetScreen({ onNavigate, workspaceId, workspaceName }: { onNavigate: (
   const ok = jobs.filter(j => j.state === "SUCCEEDED").length;
   const bad = jobs.filter(j => j.state === "FAILED" || j.state === "CANCELLED").length;
 
-  const cancel = (id: string) => { cancelJob(id).then(() => getJobs({ limit: 100 }).then(setJobs)); };
+  const cancel = (id: string) => {
+    cancelJob(id)
+      .catch(err => console.error("[Aughor] job cancel failed:", err))
+      // Refetch either way — if the cancel did land server-side, show it.
+      .then(() => getJobs({ limit: 100 }).then(setJobs).catch(() => {}));
+  };
 
   return (
     <div className="aug-screen">
@@ -1593,7 +1598,7 @@ export default function Home() {
   const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
   const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
   const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
-  const [secLens, setSecLens] = useState<"security" | "activity">("security");
+  const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
   const [showHistory, setShowHistory] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showAddConn, setShowAddConn] = useState(false);

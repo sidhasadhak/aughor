@@ -149,6 +149,9 @@ export function PermissionsPanel({ catalogId }: { catalogId: string }) {
       if (granted) await revokeWorkspaceCatalog(wsId, catalogId);
       else await grantWorkspaceCatalog(wsId, catalogId);
       await load();
+    } catch (e) {
+      // A silent failure skipped load() and the grant appeared unchanged.
+      window.alert(e instanceof Error ? e.message : "Grant change failed");
     } finally { setBusy(""); }
   };
 

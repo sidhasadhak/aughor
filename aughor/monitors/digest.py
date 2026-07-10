@@ -98,22 +98,29 @@ def build_digest(conn_id: str, period: str = "week") -> DigestResult:
 
     # ── 2. New exploration insights ─────────────────────────────────────────
     try:
-        from aughor.explorer.store import load_exploration_state
-        state = load_exploration_state(conn_id)
-        if state:
-            raw_insights = []
-            # Phase 7 (anomalies) and phase 4 (distributions) findings
-            for phase_key in ("phase_7", "phase_4", "data_quality_notes"):
-                phase = state.get(phase_key) or {}
-                for finding in (phase.get("findings") or []):
-                    text = finding.get("interpretation") or finding.get("description") or ""
-                    if text and len(text) > 20:
-                        raw_insights.append(text.split(".")[0].strip() + ".")
-            if raw_insights:
-                sections.append(DigestSection(
-                    title="Exploration Insights",
-                    items=raw_insights[:8],
-                ))
+        # This section was dead for EVERY connection: it imported a function that
+        # never existed (load_exploration_state) and read store keys from an old
+        # shape (phase_7/phase_4) — both silently swallowed. Read the real store:
+        # aggregated insights across per-schema runs.
+        import re as _re
+
+        from aughor.explorer.store import load_aggregate
+        state = load_aggregate(conn_id)
+        raw_insights = []
+        for ins in state.get("insights", []) or []:
+            if ins.get("invalid"):
+                continue
+            text = (ins.get("finding") or "").strip()
+            if text and len(text) > 20:
+                # First sentence — split on sentence boundary, not every '.',
+                # or "dropped 38.8%" truncates to "dropped 38."
+                first = _re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0].strip()
+                raw_insights.append(first if first.endswith((".", "!", "?")) else first + ".")
+        if raw_insights:
+            sections.append(DigestSection(
+                title="Exploration Insights",
+                items=raw_insights[:8],
+            ))
     except Exception as exc:
         logger.debug("Digest: exploration section failed: %s", exc)
 
@@ -157,7 +164,9 @@ def build_digest(conn_id: str, period: str = "week") -> DigestResult:
         # Count claims needing review
         import sqlite3 as _sq
         from pathlib import Path as _P
-        _ev_path = _P("data") / "evidence_ledger.db"
+
+        from aughor.db.sqlite_util import resolve_db_path
+        _ev_path = resolve_db_path("AUGHOR_EVIDENCE_DB", _P("data") / "evidence_ledger.db")
         if _ev_path.exists():
             with _sq.connect(str(_ev_path)) as _c:
                 _c.row_factory = _sq.Row

@@ -864,7 +864,9 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
       // keeping the Hub consistent with the canvas-scoped Briefing + Domains.
       const [domains, org, pat] = await Promise.all([
         canvasId ? getCanvasDomainInsights(canvasId) : getDomainInsights(connectionId, schema),
-        getOrgIntelligence(),
+        // Scope org intel to this connection+schema — the Hub is a scoped surface;
+        // the unscoped org-wide view lives on the Org layer.
+        getOrgIntelligence(connectionId, schema),
         (canvasId ? getCanvasPatterns(canvasId) : getPatterns(connectionId, false, schema))
           .then(r => r.patterns ?? []).catch(() => [] as Pattern[]),
       ]);

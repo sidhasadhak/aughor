@@ -142,3 +142,42 @@ def test_security_pre_skips_internal_query() -> None:
     from aughor.db.connection import security_pre
     # A DROP would normally be BLOCKED; under an internal label it's not even scored.
     assert security_pre("c1", "__catalog__", "DROP TABLE x") is None
+
+
+def test_fleet_agent_data_queries_are_audited() -> None:
+    """Every agent that reads USER data appears in the audit trail — the
+    'any dunder is internal' rule silently exempted Scout/Watcher (and the
+    revalidate/federation paths) from Security & Audit."""
+    from aughor.db.connection import _AUDITED_AGENT_LABELS, _is_internal_query
+
+    for h in _AUDITED_AGENT_LABELS:
+        assert _is_internal_query(h) is False, f"{h} must be audited"
+    # the explorer's information_schema catalog probe stays plumbing —
+    # otherwise the trail floods with 'system catalog access' suspicion noise
+    assert _is_internal_query("__explorer_catalog__") is True
+
+
+def test_explorer_query_lands_in_audit_log(tmp_path) -> None:
+    """Live path: a Scout-labelled query through DuckDBConnection.execute is
+    recorded in the audit store (AUGHOR_AUDIT_DB is a temp dir via conftest)."""
+    import duckdb
+
+    from aughor.db.connection import DuckDBConnection
+    from aughor.security.audit import AuditLogger
+
+    db_file = tmp_path / "t.duckdb"
+    seed = duckdb.connect(str(db_file))
+    seed.execute("CREATE TABLE t AS SELECT 1 AS a")
+    seed.close()
+
+    conn = DuckDBConnection(db_file, connection_id="audit-live-test")
+    try:
+        res = conn.execute("__explorer__", "SELECT a FROM t")
+        assert not res.error and res.row_count == 1
+    finally:
+        conn.close()
+
+    records = [r for r in AuditLogger.recent(200) if r["connection_id"] == "audit-live-test"]
+    assert records, "explorer query did not reach the audit log"
+    assert records[0]["hypothesis_id"] == "__explorer__"
+    assert records[0]["verdict"] == "safe"

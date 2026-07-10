@@ -885,7 +885,7 @@ class SchemaExplorer:
             else:
                 schema_filter = f"= '{schema or 'public'}'"
             r = self._conn.execute(
-                "__explorer__",
+                "__explorer_catalog__",  # catalog probe, not a data query — stays out of the audit trail
                 f"SELECT table_schema, table_name FROM information_schema.tables "
                 f"WHERE table_schema {schema_filter} "
                 f"AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name",
@@ -1944,7 +1944,10 @@ class SchemaExplorer:
             """Read the observation from the most recent episode — used to get SQL errors."""
             try:
                 import json as _j
-                ep_path = Path("data") / f"episodes_{self.connection_id}.jsonl"
+                # The collector writes under the run's STORE KEY ({conn}__{schema}
+                # for a per-schema run) — reading the bare conn file returned the
+                # generic fallback on every multi-schema run.
+                ep_path = Path("data") / f"episodes_{self._store_key}.jsonl"
                 if ep_path.exists():
                     last = ep_path.read_text().strip().split("\n")[-1]
                     return _j.loads(last).get("observation", "SQL execution failed")

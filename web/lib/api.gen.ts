@@ -3882,7 +3882,11 @@ export interface paths {
         };
         /**
          * List Org Intelligence Endpoint
-         * @description List all insights promoted to the org-wide intelligence collection.
+         * @description List insights promoted to the org-wide intelligence collection.
+         *
+         *     Unscoped → the whole collection (the Org panel). With ``connection_id`` (and
+         *     optionally ``schema``) → only that scope's promotions, so scoped surfaces
+         *     (the Hub) don't blend every connection's insights together.
          */
         get: operations["list_org_intelligence_endpoint_org_intelligence_get"];
         put?: never;
@@ -13996,7 +14000,10 @@ export interface operations {
     };
     list_org_intelligence_endpoint_org_intelligence_get: {
         parameters: {
-            query?: never;
+            query?: {
+                connection_id?: string | null;
+                schema?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -14010,6 +14017,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

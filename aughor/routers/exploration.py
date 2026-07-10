@@ -570,17 +570,24 @@ async def extend_domain_budget(conn_id: str, domain: str):
 
 @router.get("/exploration/{conn_id}/episodes")
 def get_exploration_episodes(conn_id: str, phase: str = "", limit: int = 300):
-    p = Path("data") / f"episodes_{conn_id}.jsonl"
-    if not p.exists():
-        return []
+    # Per-schema runs write episodes under {conn}__{schema} (the explorer's store
+    # key); reading only the bare file left the Activity feed EMPTY on every
+    # multi-schema connection. Merge all of this connection's episode files,
+    # ordered by timestamp. (Mirrors the purge path's key resolution.)
+    paths = [Path("data") / f"episodes_{conn_id}.jsonl",
+             *sorted(Path("data").glob(f"episodes_{conn_id}__*.jsonl"))]
     entries = []
-    for line in p.read_text().strip().splitlines():
-        try:
-            e = json.loads(line)
-            if not phase or e.get("phase") == phase:
-                entries.append(e)
-        except Exception:
-            pass
+    for p in paths:
+        if not p.exists():
+            continue
+        for line in p.read_text().strip().splitlines():
+            try:
+                e = json.loads(line)
+                if not phase or e.get("phase") == phase:
+                    entries.append(e)
+            except Exception:
+                pass
+    entries.sort(key=lambda e: e.get("ts") or 0)
     return entries[-limit:]
 
 
@@ -1009,6 +1016,7 @@ def promote_canvas_insight(canvas_id: str, insight_id: str):
             None,
         )
         if insight:
+            from aughor.canvas.store import resolve_connection_id
             from aughor.knowledge.org_intelligence import promote_to_org
             promote_to_org(
                 insight_id=insight_id,
@@ -1017,6 +1025,8 @@ def promote_canvas_insight(canvas_id: str, insight_id: str):
                 novelty=insight.get("novelty", 3),
                 canvas_id=canvas_id,
                 angle=insight.get("angle", ""),
+                connection_id=resolve_connection_id(canvas_id) or "",
+                schema=insight.get("source_schema", "") or "",
             )
     except Exception:
         pass  # Qdrant unavailable — metadata flag is already set; non-critical
@@ -1046,6 +1056,8 @@ def promote_connection_insight(connection_id: str, insight_id: str):
             novelty=insight.get("novelty", 3),
             canvas_id=f"conn:{connection_id}",
             angle=insight.get("angle", ""),
+            connection_id=connection_id,
+            schema=insight.get("source_schema", "") or "",
         )
     except Exception:
         pass  # Qdrant unavailable — metadata flag is already set; non-critical

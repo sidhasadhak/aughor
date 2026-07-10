@@ -22,7 +22,6 @@ async def run_eval_endpoint(
     """Run the golden dataset SQL accuracy evaluator (reference replay mode)."""
     import asyncio
     import json
-    from pathlib import Path
 
     from aughor.db.connection import open_connection_for
 
@@ -101,8 +100,8 @@ async def run_eval_endpoint(
 
 @router.get("/health")
 def health():
-    fixture = Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
-    return {"status": "ok", "fixture_db": fixture.exists()}
+    from aughor.samples.setup import fixture_db_path
+    return {"status": "ok", "fixture_db": fixture_db_path().exists()}
 
 
 @router.get("/capabilities")

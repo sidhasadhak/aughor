@@ -22,14 +22,36 @@ ecommerce
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SAMPLES_PATH = Path("data") / "samples.duckdb"
+# Both paths honour an env override so the test suite can redirect them to a temp
+# dir (the same hermeticity contract as every AUGHOR_*_DB store — without it the
+# suite created/opened files in the developer's live data/).
+SAMPLES_PATH = Path(
+    os.environ.get("AUGHOR_SAMPLES_DB")
+    or Path(__file__).parent.parent.parent / "data" / "samples.duckdb"
+)
 SAMPLES_ID   = "samples"
 # The builtin "Fixture DB (demo)" connection (registry.BUILTIN_ID) points here.
-FIXTURE_PATH = Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
+FIXTURE_PATH = Path(
+    os.environ.get("AUGHOR_FIXTURE_DB")
+    or Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
+)
+
+
+def fixture_db_path() -> Path:
+    """The builtin fixture connection's DB file. Single source of truth — the
+    registry and health endpoints resolve through here so an env override (tests)
+    and the seeder can never point at different files."""
+    return FIXTURE_PATH
+
+
+def samples_db_path() -> Path:
+    """The builtin samples connection's DB file (see fixture_db_path)."""
+    return SAMPLES_PATH
 
 
 def ensure_fixture_db() -> Path:
@@ -46,56 +68,20 @@ def ensure_fixture_db() -> Path:
         return FIXTURE_PATH  # present (local dev) — never mutate the user's DB
     try:
         import duckdb
+
+        from aughor.samples.scenario import seed_scenario
         conn = duckdb.connect(str(FIXTURE_PATH))
         try:
-            logger.info("Seeding fixture DB (aughor.duckdb) — SaaS revenue demo…")
-            _seed_fixture(conn)
+            logger.info("Seeding fixture DB (aughor.duckdb) — SaaS outage-scenario demo…")
+            # The real demo scenario (APAC payment-gateway outage, NA-promo red
+            # herring) — NOT uniform noise. The old noise seed made the first-run
+            # Briefing narrate a non-finding (W14).
+            seed_scenario(conn)
         finally:
             conn.close()
     except Exception as exc:
         logger.warning("Failed to seed fixture DB: %s", exc)
     return FIXTURE_PATH
-
-
-def _seed_fixture(conn) -> None:  # noqa: ANN001
-    """Small SaaS-revenue analytics fixture (``main`` schema) backing the builtin
-    ``fixture`` connection: customers · daily_revenue · events · kpi_daily. Kept in
-    the ``main`` schema so unqualified table names resolve, matching the original
-    hand-built demo DB."""
-    conn.execute("""
-    CREATE TABLE main.customers AS
-    SELECT printf('U%04d', i) AS customer_id, 'Customer ' || i AS name,
-           (['SMB','Mid','Enterprise'])[i % 3 + 1] AS segment,
-           (['NA','EMEA','APAC'])[i % 3 + 1] AS region,
-           (['free','pro','enterprise'])[i % 3 + 1] AS plan,
-           round(50 + (i % 50) * 10.0, 2) AS mrr,
-           (DATE '2024-01-01' + ((i % 300) || ' days')::INTERVAL)::DATE AS acquired_at
-    FROM range(1, 201) t(i)""")
-    conn.execute("""
-    CREATE TABLE main.daily_revenue AS
-    SELECT (DATE '2024-01-01' + ((i % 90) || ' days')::INTERVAL)::DATE AS date,
-           printf('U%04d', (i % 200) + 1) AS customer_id,
-           round((i % 100) * 3.5 + 10, 2) AS amount,
-           (['paid','paid','paid','failed','refunded'])[i % 5 + 1] AS status
-    FROM range(1, 1001) t(i)""")
-    conn.execute("""
-    CREATE TABLE main.events AS
-    SELECT * FROM (VALUES
-      ('E1','outage','API outage','Regional API outage', DATE '2024-02-10', DATE '2024-02-11','EMEA','Enterprise'),
-      ('E2','promo','Spring promo','Discount campaign',  DATE '2024-03-01', DATE '2024-03-15','NA','SMB'),
-      ('E3','release','v2 launch','Major release',       DATE '2024-04-01', DATE '2024-04-01','APAC','Mid'))
-      t(event_id,event_type,title,description,start_date,end_date,affected_region,affected_segment)""")
-    conn.execute("""
-    CREATE TABLE main.kpi_daily AS
-    SELECT (DATE '2024-01-01' + ((i % 60) || ' days')::INTERVAL)::DATE AS date,
-           (['NA','EMEA','APAC'])[i % 3 + 1] AS region,
-           (['SMB','Mid','Enterprise'])[i % 3 + 1] AS segment,
-           (['revenue','signups','churn'])[i % 3 + 1] AS metric,
-           round((i % 100) * 12.5, 2) AS value,
-           ((i % 500) + 50)::BIGINT AS transaction_count,
-           (i % 20)::HUGEINT AS failure_count,
-           round((i % 20) * 0.5, 2) AS failure_rate_pct
-    FROM range(1, 301) t(i)""")
 
 
 # ── Public entry point ────────────────────────────────────────────────────────

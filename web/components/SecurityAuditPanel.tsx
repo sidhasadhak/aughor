@@ -98,6 +98,42 @@ const VERDICT_COLOR: Record<string, string> = {
   blocked:    "var(--r2, #f87171)",
 };
 
+// ── Agent attribution ─────────────────────────────────────────────────────────
+// Map audit labels to the Fleet roster so the trail reads coherently: every
+// query names the agent that ran it, whichever surface issued the SQL.
+
+function agentLabel(hypothesisId: string): { agent: string; detail?: string } {
+  const h = (hypothesisId || "").trim();
+  switch (h) {
+    case "__explorer__":       return { agent: "Scout", detail: "exploration" };
+    case "__monitor__":        return { agent: "Watcher", detail: "monitor" };
+    case "__monitor_window__": return { agent: "Watcher", detail: "window probe" };
+    case "__revalidate__":     return { agent: "Curator", detail: "revalidation" };
+    case "__fix_save__":       return { agent: "Curator", detail: "fix save" };
+    case "__fed_driver__":     return { agent: "Analyst", detail: "federation" };
+    case "__remote_join__":    return { agent: "Analyst", detail: "remote join" };
+    case "query_builder":      return { agent: "You", detail: "Query Builder" };
+    case "cross_source_join":  return { agent: "You", detail: "cross-source" };
+    case "semantic_operator":  return { agent: "You", detail: "semantic op" };
+    case "profile-calibrate":  return { agent: "Curator", detail: "profile" };
+  }
+  // Investigation hypotheses / subquestions (h1, inv2, subq_3, …) are the Analyst.
+  if (/^(h|inv|subq|hypothesis)[\d_]/i.test(h) || h.startsWith("intake") || h.startsWith("clarify")) {
+    return { agent: "Analyst", detail: h };
+  }
+  return { agent: h || "—" };
+}
+
+function AgentCell({ hypothesisId }: { hypothesisId: string }) {
+  const { agent, detail } = agentLabel(hypothesisId);
+  return (
+    <span title={hypothesisId} style={{ whiteSpace: "nowrap" }}>
+      <span style={{ color: "var(--t2)", fontWeight: 500 }}>{agent}</span>
+      {detail && <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: 5 }}>{detail}</span>}
+    </span>
+  );
+}
+
 function VerdictBadge({ verdict }: { verdict: string }) {
   const color = VERDICT_COLOR[verdict] ?? "var(--t3)";
   return (
@@ -347,12 +383,13 @@ function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
 
 // ── Lens toggle ───────────────────────────────────────────────────────────────
 
-type Lens = "security" | "activity";
+type Lens = "security" | "activity" | "approvals";
 
 function LensToggle({ value, onChange }: { value: Lens; onChange: (v: Lens) => void }) {
   const opts: { v: Lens; label: string }[] = [
     { v: "security", label: "Security" },
     { v: "activity", label: "Activity" },
+    { v: "approvals", label: "Approvals" },
   ];
   return (
     <div style={{ display: "flex", gap: 1, padding: 2, background: "var(--bg-1)", borderRadius: 6, border: "0.5px solid var(--b1)" }}>
@@ -390,8 +427,18 @@ function ActionApprovalsSection() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const [revokeError, setRevokeError] = useState<string | null>(null);
   async function handleRevoke(e: AllowlistEntry) {
-    try { await revokeApproval(e.action, e.scope); load(); } catch { /* surfaced on next load */ }
+    setRevokeError(null);
+    try {
+      await revokeApproval(e.action, e.scope);
+    } catch (err) {
+      // No auto-poll on this panel — a swallowed failure left the entry
+      // looking allowlisted with zero feedback.
+      setRevokeError(err instanceof Error ? err.message : "Revoke failed");
+    } finally {
+      load();
+    }
   }
 
   return (
@@ -405,6 +452,12 @@ function ActionApprovalsSection() {
           {loading ? "…" : "Refresh"}
         </button>
       </div>
+
+      {revokeError && (
+        <div style={{ fontSize: 11, color: "var(--r2, #f87171)", marginBottom: 8 }}>
+          Revoke failed: {revokeError}
+        </div>
+      )}
 
       {/* Allowlist — pre-approved high-risk actions (revocable) */}
       <div style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
@@ -587,6 +640,13 @@ export function SecurityAuditPanel({
         <ActivityLog connectionId={connId ?? ""} isActive />
       )}
 
+      {/* Approvals lens — graduated-approval allowlist + audit trail, on its own tab */}
+      {lens === "approvals" && (
+        <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
+          <ActionApprovalsSection />
+        </div>
+      )}
+
       {lens === "security" && (
       <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
 
@@ -604,9 +664,6 @@ export function SecurityAuditPanel({
             <BudgetEditor connId={connId} />
           </div>
         )}
-
-        {/* Action approvals (P4) — graduated-approval audit trail + allowlist */}
-        <ActionApprovalsSection />
 
         {/* Error state */}
         {error && (
@@ -703,6 +760,7 @@ export function SecurityAuditPanel({
                   {([
                     { label: "Time",       col: "ts"         as const, align: "left"  },
                     { label: "Connection", col: "connection" as const, align: "left"  },
+                    { label: "Agent",      col: null,                   align: "left"  },
                     { label: "Verdict",    col: "verdict"    as const, align: "left"  },
                     { label: "SQL",        col: null,                   align: "left"  },
                     { label: "Rows",       col: "rows"       as const, align: "right" },
@@ -752,11 +810,9 @@ export function SecurityAuditPanel({
                     <td style={{ padding: "8px 12px", color: "var(--t2)", whiteSpace: "nowrap" }}>
                       <span style={{ fontFamily: "monospace" }}>{rec.connection_id.slice(0, 8)}</span>
                       <span style={{ fontSize: 10, color: "var(--t3)", marginLeft: 4 }}>{connections.find(c => c.id === rec.connection_id)?.name || rec.connection_id}</span>
-                      {rec.hypothesis_id && (
-                        <span style={{ marginLeft: 4, fontSize: 10, color: "var(--t3)" }}>
-                          {rec.hypothesis_id}
-                        </span>
-                      )}
+                    </td>
+                    <td style={{ padding: "8px 12px" }}>
+                      <AgentCell hypothesisId={rec.hypothesis_id} />
                     </td>
                     <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
                       <VerdictBadge verdict={rec.verdict} />

@@ -71,10 +71,14 @@ def search_documents_endpoint(body: dict):
 # ── Org Intelligence ──────────────────────────────────────────────────────────
 
 @router.get("/org-intelligence")
-def list_org_intelligence_endpoint():
-    """List all insights promoted to the org-wide intelligence collection."""
+def list_org_intelligence_endpoint(connection_id: str | None = None, schema: str | None = None):
+    """List insights promoted to the org-wide intelligence collection.
+
+    Unscoped → the whole collection (the Org panel). With ``connection_id`` (and
+    optionally ``schema``) → only that scope's promotions, so scoped surfaces
+    (the Hub) don't blend every connection's insights together."""
     from aughor.knowledge.org_intelligence import list_org_intelligence
-    return list_org_intelligence()
+    return list_org_intelligence(connection_id=connection_id, schema=schema)
 
 
 @router.delete("/org-intelligence/{point_id}")

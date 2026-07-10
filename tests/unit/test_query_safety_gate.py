@@ -59,3 +59,23 @@ def test_gate_uses_non_internal_label():
 def test_read_only_sql_passes_the_gate():
     """A plain SELECT is allowed through (returns None → falls to dispatch)."""
     assert gate_user_sql("any-conn", "query_builder", "SELECT 1") is None
+
+
+@pytest.mark.parametrize("sql", ["DELETE FROM orders", "DROP TABLE customers"])
+def test_query_semantic_blocks_mutating_sql(sql):
+    """/query/semantic re-runs user SQL server-side. It previously dispatched it
+    under the ``__semantic__`` dunder id — ungated AND unaudited (the same class
+    of bug as the original Query Builder bypass). The raw SQL must be gated at
+    the endpoint, before the LIMIT wrapper demotes the first token."""
+    r = client.post(
+        "/query/semantic",
+        json={
+            "conn_id": "any-conn",
+            "sql": sql,
+            "column": "notes",
+            "operator": "filter",
+            "predicate": "mentions a refund",
+        },
+    )
+    assert r.status_code == 403
+    assert "[BLOCKED]" in r.json()["detail"]

@@ -159,7 +159,11 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
 
   async function remove(id: string) {
     if (!confirm("Delete this monitor?")) return;
-    await deleteMonitor(id).catch(() => {});
+    try {
+      await deleteMonitor(id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    }
     await load();
   }
 
@@ -178,13 +182,22 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
   }
 
   async function toggle(m: MonitorDef) {
-    await updateMonitor(m.id, { enabled: !m.enabled }).catch(() => {});
+    try {
+      await updateMonitor(m.id, { enabled: !m.enabled });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Update failed");
+    }
     await load();
   }
 
   async function ack(alertId: string) {
-    await acknowledgeAlert(alertId).catch(() => {});
-    setAlerts(as => as.map(a => a.id === alertId ? { ...a, acknowledged: true } : a));
+    try {
+      await acknowledgeAlert(alertId);
+      setAlerts(as => as.map(a => a.id === alertId ? { ...a, acknowledged: true } : a));
+    } catch (e) {
+      // Optimistic flip on a failed ack left the UI lying until the next load.
+      setError(e instanceof Error ? e.message : "Acknowledge failed");
+    }
   }
 
   // ── Cron picker ───────────────────────────────────────────────────────────────

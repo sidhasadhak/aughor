@@ -151,13 +151,36 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
   const isRunning = !stopped && !["complete", "failed", "pending"].includes(status.phase);
   const isStopped = stopped || status.paused || status.phase === "pending";
   const meta = phaseMeta(status.phase);
+  // Per-schema runs: one labelled chip per run, so a dead OLD run's "failed"
+  // can never masquerade as the run the user just started on another schema.
+  const perSchema = Object.entries(status.per_schema ?? {});
   return (
-    <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "var(--b2)", background: "var(--bg-0)" }}>
-      <span className="flex items-center gap-1.5 aug-fs-xs px-2 py-0.5 rounded font-medium"
-        style={isStopped && !isRunning ? { background: "var(--bg-3)", color: "var(--t3)" } : { background: meta.bg, color: meta.color }}>
-        {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] animate-pulse" style={{ background: meta.color }} />}
-        {isStopped && !isRunning ? "stopped" : status.phase === "complete" ? "complete" : status.phase === "pending" ? "idle" : meta.label}
-      </span>
+    <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0 flex-wrap" style={{ borderColor: "var(--b2)", background: "var(--bg-0)" }}>
+      {perSchema.length > 0 ? (
+        perSchema.map(([sch, ph]) => {
+          const m = phaseMeta(ph);
+          const running = !stopped && !["complete", "failed", "pending"].includes(ph);
+          const stoppedChip = !running && (ph === "pending" || ph === "failed" || ph === "complete");
+          return (
+            <span key={sch} className="flex items-center gap-1.5 aug-fs-xs px-2 py-0.5 rounded font-medium"
+              title={`Exploration run for schema "${sch}" — ${ph}`}
+              style={ph === "failed" ? { background: "var(--red1)", color: "var(--red4)" }
+                   : stoppedChip && ph !== "complete" ? { background: "var(--bg-3)", color: "var(--t3)" }
+                   : { background: m.bg, color: m.color }}>
+              {running && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] animate-pulse" style={{ background: m.color }} />}
+              <span style={{ opacity: 0.75 }}>{sch}</span>
+              {" · "}
+              {ph === "complete" ? "complete" : ph === "pending" ? "idle" : ph === "failed" ? "failed" : m.label}
+            </span>
+          );
+        })
+      ) : (
+        <span className="flex items-center gap-1.5 aug-fs-xs px-2 py-0.5 rounded font-medium"
+          style={isStopped && !isRunning ? { background: "var(--bg-3)", color: "var(--t3)" } : { background: meta.bg, color: meta.color }}>
+          {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] animate-pulse" style={{ background: meta.color }} />}
+          {isStopped && !isRunning ? "stopped" : status.phase === "complete" ? "complete" : status.phase === "pending" ? "idle" : meta.label}
+        </span>
+      )}
       <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
         {status.queries_executed > 0 && `${status.queries_executed} queries`}
         {status.facts_discovered > 0 && ` · ${status.facts_discovered} facts`}
