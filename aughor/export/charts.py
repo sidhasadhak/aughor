@@ -31,7 +31,16 @@ _MUTED = "#71717a"
 
 _DATE_NAME = re.compile(r"(_date|_at|_time|^date$|^month$|^week$|^period$|^quarter$|^day$|^year$|date|month|quarter)", re.I)
 _DATE_VAL = re.compile(r"^\d{4}-\d{2}")
-_SKIP_ID = re.compile(r"(_id$|^id$)", re.I)
+# Identifiers must never be charted as measures. Covers snake_case (case-insensitive)
+# AND camelCase (case-sensitive suffix after a lowercase letter — franchiseID slips
+# past `_id$` because lowercasing erases the boundary; live incident: the PDF plotted
+# SUM(franchiseID) as 3M-tall bars). Mirrors aughor/tools/profiler._KEY_PATTERN(_CAMEL).
+_SKIP_ID = re.compile(r"(_id|_key|_code|_pk|_uuid|_guid|_sk|_hash)$|^id$", re.I)
+_SKIP_ID_CAMEL = re.compile(r"[a-z](ID|Id|Key|Code|Num|Number|Identifier|UUID|Uuid|GUID|Guid|PK|Pk)$")
+
+
+def _id_like(name: str) -> bool:
+    return bool(_SKIP_ID.search(name or "") or _SKIP_ID_CAMEL.search(name or ""))
 
 
 def _to_num(v) -> Optional[float]:
@@ -65,10 +74,12 @@ def _classify(columns, rows):
         is_date = bool(_DATE_NAME.search(c or "")) or (isinstance(fv, str) and bool(_DATE_VAL.match(fv)))
         if is_date:
             date_idx.append(i)
-        elif not _SKIP_ID.search(c or "") and _to_num(fv) is not None:
+        elif not _id_like(c or "") and _to_num(fv) is not None:
             num_idx.append(i)
         else:
             cat_idx.append(i)
+    # Prefer a non-identifier label column (name over franchiseID) for the category axis.
+    cat_idx.sort(key=lambda i: _id_like(columns[i] or ""))
     return date_idx, num_idx, cat_idx
 
 
@@ -210,6 +221,19 @@ def _render_bar(columns, rows, cx, num_idx, ct, title, w, h):
         return None
     data.sort(key=lambda d: d[1][0], reverse=True)
     data = data[:20]
+    # Scale-sanity for multi-series: only series within 25x of the primary share an
+    # axis honestly (a 3M series next to a 0.02 share flattens everything else), and
+    # cap at 4 for readability — mirrors the frontend's scoreDualAxis rules.
+    if len(num_idx) >= 2:
+        def _series_max(s: int) -> float:
+            return max((abs(d[1][s]) for d in data), default=0.0)
+        p_max = _series_max(0) or 1.0
+        keep = [s for s in range(len(num_idx))
+                if s == 0 or (0 < _series_max(s) and p_max / max(_series_max(s), 1e-12) < 25
+                              and _series_max(s) / p_max < 25)][:4]
+        if len(keep) < len(num_idx):
+            num_idx = [num_idx[s] for s in keep]
+            data = [(d[0], [d[1][s] for s in keep]) for d in data]
     labels = [d[0] for d in data]
     fig, ax = plt.subplots(figsize=(w, max(h, 0.32 * len(labels) + 1.0)))
     _style(ax)

@@ -32,6 +32,17 @@ export const ORDINAL_COL = /(year|month|day|week|rank|_id$|^id$)/i;
 /** Pure identifier columns — excluded from measure selection. */
 export const SKIP_ID = /(_id$|^id$)/i;
 
+/** Identifier detection covering BOTH snake_case (_id, case-insensitive) and camelCase
+ *  (franchiseID, supplierId, eventGUID — case-SENSITIVE suffix after a lowercase letter,
+ *  so plain words like "valid"/"grid" never match). SKIP_ID alone missed camelCase, which
+ *  let `franchiseID` be charted as a measure (bars of summed IDs). Mirrors the backend
+ *  profiler's _KEY_PATTERN + _KEY_PATTERN_CAMEL. */
+const _CAMEL_ID = /[a-z](ID|Id|Key|Code|Num|Number|Identifier|UUID|Uuid|GUID|Guid|PK|Pk)$/;
+const _SNAKE_ID = /(_id|_key|_code|_pk|_uuid|_guid|_sk|_hash)$|^id$/i;
+export function isIdLike(name: string): boolean {
+  return _SNAKE_ID.test(name) || _CAMEL_ID.test(name);
+}
+
 /** Audit-only instrumentation: the numerator/denominator a ratio is built from, or a bare row-count
  *  `n`. These exist so a ratio is checkable, never as a measure to plot — charting them buries the
  *  real metric (an AOV finding rendered as a giant SUM bar). Excluded from chart measure selection. */
@@ -97,7 +108,7 @@ export function classifyColumns(
     if (isDeadColumn(rows, i)) return;
     const firstVal = firstNonNull(rows, i);
     const isDate = DATE_NAME.test(col) || (typeof firstVal === "string" && DATE_VALUE_RE.test(firstVal));
-    const numeric = !isDate && !SKIP_ID.test(col) && isNumeric(firstVal);
+    const numeric = !isDate && !isIdLike(col) && isNumeric(firstVal);
     if (isDate) dateIdxs.push(i);
     else if (numeric) numericIdxs.push(i);
     else catIdxs.push(i);

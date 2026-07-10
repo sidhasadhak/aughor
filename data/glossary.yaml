@@ -5314,3 +5314,167 @@ tables:
         description: Number of times other users marked this review as helpful
       review_date:
         description: Date the review was submitted
+  main.media_customer_reviews:
+    description: Stores customer reviews submitted for various media franchises.
+    grain: One row per customer review.
+    auto_generated: true
+    columns:
+      review:
+        description: The text content of the customer review.
+      franchiseID:
+        description: The identifier of the media franchise being reviewed.
+      review_date:
+        description: The timestamp when the review was submitted.
+      new_id:
+        description: A unique identifier for the review record.
+  main.media_gold_reviews_chunked:
+    description: Stores customer reviews for franchises where long review text has
+      been split into chunks, with each chunk stored as a separate row and an S3 URI
+      referencing the source data.
+    grain: One row per chunk of a franchise review, identified by the combination
+      of franchiseID, review_date, and chunk_id.
+    auto_generated: true
+    columns:
+      franchiseID:
+        description: Unique identifier for the franchise being reviewed.
+      review_date:
+        description: Timestamp of when the review was submitted.
+      chunked_text:
+        description: A portion of the full review text, split into manageable chunks.
+        caveats: Chunk boundaries are arbitrary; full review text must be reconstructed
+          by concatenating all chunks for a given review.
+      chunk_id:
+        description: Identifier for this specific chunk within a review, used to order
+          or distinguish chunks.
+      review_uri:
+        description: S3 URI pointing to the source location of the review data in
+          an external staging bucket.
+        caveats: URI points to a test/staging bucket, suggesting this may be non-production
+          data.
+  main.sales_customers:
+    description: Contains demographic and contact information for sales customers.
+    grain: One row per customer.
+    auto_generated: true
+    columns:
+      customerID:
+        description: Unique identifier for the customer.
+      first_name:
+        description: Customer's first name.
+      last_name:
+        description: Customer's last name.
+      email_address:
+        description: Customer's email address.
+      phone_number:
+        description: Customer's phone number.
+      address:
+        description: Customer's street address.
+      city:
+        description: City where the customer resides.
+      state:
+        description: State or province where the customer resides.
+      country:
+        description: Country where the customer resides.
+        values: Australia, USA, Japan
+      continent:
+        description: Continent where the customer resides.
+        values: Oceania, North America, Asia
+      postal_zip_code:
+        description: Postal or ZIP code of the customer's address.
+      gender:
+        description: Customer's gender.
+        values: female, male
+  main.sales_franchises:
+    description: Directory of sales franchises including their geographic location,
+      size category, and associated supplier.
+    grain: One row per franchise
+    auto_generated: true
+    columns:
+      franchiseID:
+        description: Unique identifier for the franchise.
+      name:
+        description: Business name of the franchise.
+      city:
+        description: City where the franchise is located.
+      district:
+        description: Specific district or neighborhood within the city where the franchise
+          operates.
+      zipcode:
+        description: Postal code for the franchise's location.
+      country:
+        description: Country where the franchise is located.
+        values: Japan, US, Australia, Canada, France, Germany, Italy, Netherlands,
+          Sweden
+      size:
+        description: Categorical size of the franchise location.
+        values: S, M, L, XL, XXL
+      longitude:
+        description: Longitude coordinate of the franchise location.
+      latitude:
+        description: Latitude coordinate of the franchise location.
+      supplierID:
+        description: Identifier linking the franchise to its assigned supplier.
+  main.sales_suppliers:
+    description: This table contains information about suppliers, including their
+      location, size, primary ingredient, and approval status.
+    grain: One row per supplier (supplierID).
+    auto_generated: true
+    columns:
+      supplierID:
+        description: Unique identifier for the supplier.
+      name:
+        description: The name of the supplier.
+      ingredient:
+        description: The primary ingredient provided by the supplier.
+        values: pecans, ginger, honey, nutmeg, sesame seeds, cocoa butter, mace, cacao,
+          pistachios, almonds, cane sugar, coffee, anise, maple syrup, fennel seeds,
+          hazelnuts, poppy seeds, coconut, cinnamon, peanuts, cloves, vanilla, oats,
+          raisins, cardamom, cashews, molasses
+      continent:
+        description: The continent where the supplier is located.
+        values: Asia, Europe, South America, Africa, North America, Central America
+      city:
+        description: The city where the supplier is located.
+      district:
+        description: The specific district or local area where the supplier is located.
+      size:
+        description: The size category of the supplier.
+        values: M, S, XL, L, XXL
+      longitude:
+        description: The longitude coordinate of the supplier's location.
+      latitude:
+        description: The latitude coordinate of the supplier's location.
+      approved:
+        description: Indicates whether the supplier is approved.
+        values: Y
+  main.sales_transactions:
+    description: Records of individual sales transactions, capturing customer, franchise,
+      product, and payment details.
+    grain: One row per sales transaction.
+    auto_generated: true
+    columns:
+      transactionID:
+        description: Unique identifier for each sales transaction.
+      customerID:
+        description: Identifier of the customer who made the purchase.
+      franchiseID:
+        description: Identifier of the franchise location where the transaction occurred.
+      dateTime:
+        description: Timestamp of when the transaction took place.
+      product:
+        description: The name of the product purchased in the transaction.
+        values: Golden Gate Ginger, Tokyo Tidbits, Outback Oatmeal, Pearly Pies, Austin
+          Almond Biscotti, Orchard Oasis
+      quantity:
+        description: The number of units of the product purchased.
+      unitPrice:
+        description: The price per unit of the product.
+      totalPrice:
+        description: The total cost of the transaction, typically calculated as quantity
+          multiplied by unitPrice.
+      paymentMethod:
+        description: The method of payment used for the transaction.
+        values: mastercard, amex, visa
+      cardNumber:
+        description: The credit card number used for the payment.
+        caveats: Sensitive PII stored in plaintext; storing as BIGINT may truncate
+          leading zeros and poses a security risk.

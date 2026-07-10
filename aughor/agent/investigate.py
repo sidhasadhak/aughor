@@ -2302,6 +2302,86 @@ def _render_origin_finding_section(origin: Optional[dict]) -> str:
 # distinctive tokens, its SQL is a bare substitutable aggregate, and a dry-run confirms it runs over
 # the metric table — so pinning can never make a run worse (fail-open on every uncertainty).
 
+_UNIT_CONVERSION_RE = re.compile(
+    r"(?:SUM|AVG|MIN|MAX)\s*\(\s*([A-Za-z_][\w.]*)\s*\)\s*(?:/\s*(100|1000)(?:\.0+)?|\*\s*0?\.0*1)\b"
+    r"|([A-Za-z_][\w.]*)\s*(?:/\s*(100|1000)(?:\.0+)?|\*\s*0?\.0*1)\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_unit_conversion(sql: str) -> Optional[str]:
+    """The column an LLM-planned metric divides by a 100/1000 constant, or None.
+
+    A planner sometimes invents a unit story for an integer money column ("totalPrice
+    is stored in cents") and bakes ``SUM(totalPrice)/100.0`` into the metric — every
+    downstream number is then 100x off. The conversion is detectable syntactically;
+    whether it's RIGHT is decidable from data (see _unit_conversion_disproved)."""
+    if not sql:
+        return None
+    m = _UNIT_CONVERSION_RE.search(sql)
+    if not m:
+        return None
+    col = (m.group(1) or m.group(3) or "").split(".")[-1].strip()
+    return col or None
+
+
+def _unit_conversion_disproved(conn, connection_id: str, metric_table: str, col: str) -> bool:
+    """True when the data PROVES the converted column is already in base units.
+
+    Deterministic probe: if the table has a multiplicative sibling relation
+    ``col ≈ other × qty`` holding on (a sample of) rows, then ``col`` shares
+    ``other``'s unit — dividing only ``col`` by 100 is provably inconsistent.
+    Candidate pairs come from the table's other numeric, non-identifier columns
+    (≤6 → ≤15 pairs, one probe query total). False on any doubt (fail-open:
+    an unproven conversion is caveated, never rewritten)."""
+    if conn is None or not metric_table or not col:
+        return False
+    try:
+        from aughor.tools.profiler import is_key_like
+        bare = str(metric_table).replace(";", "").strip().rsplit(".", 1)[-1]
+        tres = conn.execute(
+            "intake_unit_probe",
+            "SELECT column_name, data_type FROM information_schema.columns "
+            f"WHERE table_name = '{bare}'",
+        )
+        if getattr(tres, "error", None) or not getattr(tres, "rows", None):
+            return False
+        numeric = [
+            str(c) for c, t in tres.rows
+            if any(k in str(t or "").upper() for k in ("INT", "DECIMAL", "DOUBLE", "FLOAT", "NUMERIC", "REAL"))
+            and str(c).lower() != col.lower()
+            and not is_key_like(str(c))
+        ][:6]
+        if len(numeric) < 2:
+            return False
+        ref = str(metric_table).replace(";", "").strip()
+        checks, labels = [], []
+        for i, a in enumerate(numeric):
+            for b in numeric[i + 1:]:
+                labels.append((a, b))
+                checks.append(
+                    f"AVG(CASE WHEN ABS({col} - ({a} * {b})) <= 0.01 * GREATEST(ABS({col}), 1) "
+                    f"THEN 1.0 ELSE 0.0 END)"
+                )
+        probe = f"SELECT {', '.join(checks)} FROM {ref}"
+        res = conn.execute("intake_unit_probe", probe)
+        if getattr(res, "error", None) or not res.rows:
+            return False
+        row = res.rows[0]
+        vals = [float(v) for v in row
+                if isinstance(v, (int, float)) or (isinstance(v, str) and v.replace(".", "", 1).isdigit())]
+        # col == a*b for (nearly) every row — same unit as its factors
+        return any(v >= 0.999 for v in vals)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "unit-conversion probe is best-effort (unproven conversion is "
+                      "caveated, never rewritten)", counter="ada.unit_probe")
+        return False
+
+
+_STRIP_CONVERSION_RE = re.compile(r"\s*(?:/\s*(?:100|1000)(?:\.0+)?|\*\s*0?\.0*1)\b")
+
+
 def _is_substitutable_metric_sql(sql: str) -> bool:
     """True when ``sql`` is a bare aggregate EXPRESSION (no SELECT / FROM / ;), so it can be inlined
     into the phase templates the scan builds (``CASE WHEN <dim> THEN {metric_sql} END``, additive and
@@ -2814,6 +2894,68 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             )
             intake.metric_sql = _safe
 
+    # Metric↔question coherence: a money question answered with a COUNT of entities is a
+    # premise mismatch (live recurrence: "Where are we losing money?" ran with metric =
+    # franchise COUNT(*), so the report concluded "no revenue data exists"). Deterministic
+    # detection, one LLM retry with an explicit correction; fail-open if the retry is no better.
+    if intake is not None and re.search(
+            r"\b(money|revenue|sales|cost|price|profit|margin|spend|losing|loss|earn)\w*\b",
+            question or "", re.IGNORECASE):
+        _msql = intake.metric_sql or ""
+        _has_money_col = re.search(
+            r"(price|amount|revenue|cost|total|spend|value|sales|mrr|gmv|fee|charge)", _msql, re.IGNORECASE)
+        if not _has_money_col and re.search(r"\bCOUNT\s*\(", _msql, re.IGNORECASE):
+            try:
+                _retry2 = _provider("coder").complete(
+                    system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
+                    user=prompt + (
+                        "\n\nCORRECTION REQUIRED: the question is about MONEY, but the previous "
+                        "metric_sql counted rows instead of aggregating a monetary column. "
+                        "Re-express metric_sql as an aggregate over an actual money column "
+                        "(price/amount/revenue/total) from the schema. Return the fixed spec."),
+                    response_model=IntakeOutput,
+                )
+                if _retry2 is not None and re.search(
+                        r"(price|amount|revenue|cost|total|spend|value|sales)",
+                        _retry2.metric_sql or "", re.IGNORECASE):
+                    intake = _retry2
+                    _qualify_intake_table_names(intake, schema)
+                    _note2 = ("Metric corrected: the question asks about money, so the metric was "
+                              "re-parsed to a monetary aggregate instead of an entity count.")
+                    _metric_note = f"{_metric_note} {_note2}".strip() if _metric_note else _note2
+            except Exception as _exc2:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc2, "money-coherence retry is best-effort; the parsed metric stands",
+                         counter="ada.intake_money_retry")
+
+    # Unit-conversion guard: a planner sometimes invents a unit story for an integer
+    # money column ("stored in cents") and bakes /100.0 into the metric — every number
+    # downstream is then 100x off (live incident: SUM(totalPrice)/100.0 turned a $66,471
+    # network into €664.71). When the data PROVES the column is already in base units
+    # (a multiplicative sibling relation like totalPrice == unitPrice*quantity holds),
+    # strip the conversion; otherwise keep it but caveat it as unverified. Deterministic,
+    # one probe query, fail-open.
+    if intake is not None:
+        _conv_col = _detect_unit_conversion(intake.metric_sql)
+        if _conv_col:
+            if _unit_conversion_disproved(conn, state.get("connection_id") or "",
+                                          intake.metric_table, _conv_col):
+                intake.metric_sql = _STRIP_CONVERSION_RE.sub("", intake.metric_sql)
+                _unit_note = (
+                    f"Unit correction: the plan divided {_conv_col} by a constant (a 'stored in "
+                    f"cents' assumption), but the data proves {_conv_col} is already in base units "
+                    f"(it equals the product of two sibling columns row-for-row). The conversion "
+                    f"was removed; absolute values are reported as stored."
+                )
+            else:
+                _unit_note = (
+                    f"Unverified unit conversion: the plan divides {_conv_col} by a constant "
+                    f"(an assumed minor-unit encoding) that could not be verified against the "
+                    f"data. Absolute magnitudes may be off by that factor; ratios and rankings "
+                    f"are unaffected."
+                )
+            _metric_note = f"{_metric_note} {_unit_note}".strip() if _metric_note else _unit_note
+
     # P4 metric-definition resolution precedence: a previously-resolved reading (burn-down) > a pending
     # clarify > P1's silent pin. (1) If the user already answered this ambiguity on this connection,
     # HARD-BIND their choice. (2) Else, if the governed and parsed readings both run but disagree
@@ -3254,6 +3396,29 @@ def run_analysis_phase(
         _fanout_caveat = None
 
     # Step 2 — execute (parallel — each query gets its own reader connection)
+    # Phase-level unit-conversion strip: the intake guard cleans intake.metric_sql, but
+    # each phase's coder writes FRESH SQL and can re-invent the '/100 cents' story there
+    # (live recurrence: the temporal phase emitted SUM(totalPrice)/100.0 on its own,
+    # resurfacing the $13.85 phantom). Same detection + same one-probe disproof, cached
+    # per column so a phase costs at most one extra probe.
+    try:
+        _conv_cache: dict = {}
+        for _pq in plan.queries:
+            _ccol = _detect_unit_conversion(getattr(_pq, "sql", "") or "")
+            if not _ccol:
+                continue
+            _m = re.search(r"\bFROM\s+([A-Za-z_][\w.]*)", _pq.sql, re.IGNORECASE)
+            _tbl = _m.group(1) if _m else ""
+            _key = (_tbl.rsplit(".", 1)[-1].lower(), _ccol.lower())
+            if _key not in _conv_cache:
+                _conv_cache[_key] = _unit_conversion_disproved(conn, "", _tbl, _ccol)
+            if _conv_cache[_key]:
+                _pq.sql = _STRIP_CONVERSION_RE.sub("", _pq.sql)
+    except Exception as _uc_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_uc_exc, "phase-level unit-conversion strip is best-effort",
+                 counter="ada.unit_probe_phase")
+
     results = _parallel_execute_safe(conn, phase_id, plan.queries, cap=cap, schema=schema)
     if not results:
         return _PhaseRun(ok=False, error_phase=_phase_result(
@@ -3263,6 +3428,25 @@ def run_analysis_phase(
     # Step 2b — semantic operators (opt-in per query): turn text-column results into evidence the
     # interpreter can reason over. No-op unless the planner attached a step; fail-open and guarded.
     results = _apply_semantic_steps(results)
+
+    # Join-coverage guard: an INNER JOIN that drops base rows without a match silently
+    # DEFLATES every total (live incident: a franchise×supplier query captured half the
+    # network's revenue and shipped at High confidence). Probe each executed query's
+    # joined SUM against the base table's SUM; a material shortfall becomes a caveat on
+    # the same channel the fan-out guard uses (rendered inline + caps report confidence).
+    if _fanout_caveat is None:
+        try:
+            from aughor.sql.join_guard import check_join_coverage
+            for _q, _r in results:
+                if getattr(_r, "error", None):
+                    continue
+                _cov = check_join_coverage(conn, getattr(_q, "sql", "") or "")
+                if _cov:
+                    _fanout_caveat = _cov
+                    break
+        except Exception as _cov_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_cov_exc, "join-coverage probe is best-effort", counter="ada.coverage_probe")
 
     # Step 3 — interpret
     results_text = _results_to_text([r for _, r in results], max_rows=interpret_max_rows)

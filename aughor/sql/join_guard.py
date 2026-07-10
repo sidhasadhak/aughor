@@ -768,3 +768,75 @@ def bind_filter_literals(conn: "DatabaseConnection", sql: str,
         from aughor.kernel.errors import tolerate
         tolerate(exc, "filter_guard: active binding skipped", counter="filter_guard.bind_error")
     return sql, []
+
+
+# ── Join-coverage (sum-preservation) guard ─────────────────────────────────────
+# The guard battery above detects over-count (fan-out) and disjoint keys — never
+# UNDER-count. An INNER JOIN that drops base rows without a match silently deflates
+# every total (live incident: a franchise×supplier query captured half the network's
+# revenue because franchises without supplier rows vanished), and the finding shipped
+# at High confidence. This probe compares the joined SUM against the same SUM over
+# the base fact table alone and returns a caveat when coverage is materially short.
+
+import re
+
+_COVERAGE_SUM_RE = re.compile(
+    r"SUM\s*\(\s*(?:[A-Za-z_]\w*\.)?([A-Za-z_]\w*)\s*\)", re.IGNORECASE)
+_COVERAGE_FROM_RE = re.compile(
+    r"\bFROM\s+([A-Za-z_][\w.]*)", re.IGNORECASE)
+_COVERAGE_WHERE_OK_RE = re.compile(
+    r"\bWHERE\s+(?:[A-Za-z_]\w*\.)?[A-Za-z_]\w*\s+IS\s+NOT\s+NULL\s*(?:GROUP|ORDER|LIMIT|$)",
+    re.IGNORECASE)
+
+COVERAGE_THRESHOLD = 0.90  # joined total below 90% of base → material row loss
+
+
+def check_join_coverage(conn, sql: str) -> "str | None":
+    """Caveat string when an INNER-JOINed SUM covers materially less than the base table.
+
+    Deliberately conservative (fail-open, two cheap probes, no LLM): fires only for a
+    query with a JOIN and a plain SUM(column), whose WHERE clause (if any) is a bare
+    IS NOT NULL — a genuine filter legitimately shrinks the total and must not be
+    mistaken for join loss."""
+    try:
+        if not sql or not re.search(r"\bJOIN\b", sql, re.IGNORECASE):
+            return None
+        if re.search(r"\b(LEFT|RIGHT|FULL|OUTER)\s+JOIN\b", sql, re.IGNORECASE):
+            return None  # outer joins preserve the base side by construction
+        if " WHERE " in sql.upper() and not _COVERAGE_WHERE_OK_RE.search(sql):
+            return None
+        m_sum = _COVERAGE_SUM_RE.search(sql)
+        m_from = _COVERAGE_FROM_RE.search(sql)
+        if not m_sum or not m_from:
+            return None
+        col, base = m_sum.group(1), m_from.group(1)
+        base_res = conn.execute("__coverage_probe__", f"SELECT SUM({col}) FROM {base}")
+        if getattr(base_res, "error", None) or not base_res.rows or base_res.rows[0][0] is None:
+            return None
+        base_total = float(base_res.rows[0][0])
+        if base_total == 0:
+            return None
+        # Probe the join frame directly: the query's FROM..JOIN..(WHERE) clause
+        # with the same SUM, so the comparison shares every join condition.
+        frame = sql[m_from.start():]
+        for stop in (r"\bGROUP\s+BY\b", r"\bORDER\s+BY\b", r"\bLIMIT\b", r"\bHAVING\b"):
+            s = re.search(stop, frame, re.IGNORECASE)
+            if s:
+                frame = frame[: s.start()]
+        joined_res = conn.execute("__coverage_probe__", f"SELECT SUM({col}) {frame}")
+        if getattr(joined_res, "error", None) or not joined_res.rows or joined_res.rows[0][0] is None:
+            return None
+        joined_total = float(joined_res.rows[0][0])
+        ratio = joined_total / base_total
+        if ratio >= COVERAGE_THRESHOLD:
+            return None
+        return (
+            f"Join coverage: the INNER JOIN in this query captures only {ratio:.0%} of "
+            f"{col} in {base} — rows without a match in the joined table(s) are excluded, "
+            f"so these totals understate the true figure. Re-run with LEFT JOINs (or treat "
+            f"this as the matched subset only) before acting on absolute values."
+        )
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "join-coverage probe is best-effort", counter="join_guard.coverage")
+        return None
