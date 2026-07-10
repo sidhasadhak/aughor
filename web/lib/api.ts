@@ -1197,6 +1197,9 @@ export interface ExplorationStatus {
   first_insight_seconds: number | null;   // elapsed start→first insight, the KPI
   completed_at: string | null;
   error: string | null;
+  /** {schema: phase} for the aggregate of a multi-schema connection — lets the
+   *  Activity strip say WHICH run each phase belongs to. */
+  per_schema?: Record<string, string> | null;
 }
 
 export async function getExplorationStatus(connectionId: string): Promise<ExplorationStatus> {
