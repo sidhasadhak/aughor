@@ -1593,7 +1593,7 @@ export default function Home() {
   const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
   const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
   const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
-  const [secLens, setSecLens] = useState<"security" | "activity">("security");
+  const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
   const [showHistory, setShowHistory] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showAddConn, setShowAddConn] = useState(false);
