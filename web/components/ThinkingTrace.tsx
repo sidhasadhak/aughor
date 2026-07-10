@@ -43,6 +43,9 @@ interface Step {
   sublabel?: string;
   status: StepStatus;
   verdict?: Verdict;
+  /** Named query steps nested under this beat (Genie-style): the human titles of
+   *  the queries this phase ran — "Bottom 20 franchises by revenue", never SQL. */
+  substeps?: string[];
 }
 
 const VERDICT_COLOR: Record<Verdict, string> = {
@@ -170,6 +173,13 @@ function deriveSteps(state: InvestigationState): Step[] {
       // The trace renders plain text (no markdown), so strip **bold** (else "**gift_sets**"
       // leaks literal asterisks) and honour the configured currency.
       const summary = localizeCurrency((p.summary || "").trim()).replace(/\*+/g, "");
+      // Nested named query steps (Genie-style): each finding's human title is one
+      // sub-row under the phase beat — the reader sees WHAT was asked of the data,
+      // never SQL. Errored/blank titles are dropped; capped for readability.
+      const substeps = (p.findings ?? [])
+        .filter(f => !f.error && (f.title || "").trim())
+        .map(f => localizeCurrency(f.title).replace(/\*+/g, ""))
+        .slice(0, 8);
       steps.push({
         id: `ph-${p.phase_id}`,
         label: PHASE_ACTION[p.phase_id] ?? p.phase_name,
@@ -179,6 +189,7 @@ function deriveSteps(state: InvestigationState): Step[] {
             ? (summary ? (summary.length > 64 ? summary.slice(0, 64) + "…" : summary) : undefined)
             : running ? "working…" : undefined,
         status: errored ? "error" : done ? "done" : running ? "running" : "pending",
+        substeps: substeps.length ? substeps : undefined,
       });
     }
     // Trailing report step — the synthesis node isn't streamed as a phase, so show
@@ -323,6 +334,17 @@ export function ThinkingTrace({ state }: Props) {
                   }`}>
                     {step.sublabel}
                   </p>
+                )}
+                {/* Nested named query steps — indented rail of what was asked of the data */}
+                {step.substeps && (
+                  <div className="mt-1.5 ml-0.5 border-l border-violet-500/15 pl-2.5 space-y-1">
+                    {step.substeps.map((s, j) => (
+                      <p key={j} className="aug-fs-xs leading-snug text-zinc-400 flex items-start gap-1.5 aug-anim-fade">
+                        <span className="text-violet-400/60 shrink-0 mt-px">▤</span>
+                        <span className="min-w-0">{s.length > 76 ? s.slice(0, 76) + "…" : s}</span>
+                      </p>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>

@@ -147,7 +147,7 @@ function FindingTable({ columns, rows, label }: { columns: string[]; rows: (stri
 
 // ── Single finding — evidence block (flows inside a phase section) ─────────────
 
-function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFinding; onShowSource?: ShowSource }) {
+function EvidenceBlock({ finding, onShowSource, sourceNo }: { finding: InvestigationFinding; onShowSource?: ShowSource; sourceNo?: number }) {
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
 
@@ -167,7 +167,8 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
           className="self-end flex items-center gap-1.5 aug-text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
         >
           <TableIcon label="Table" size="small" />
-          Source data
+          {/* Numbered ref (Genie-style): matches this finding's entry in the Sources list */}
+          {sourceNo ? `Source ${sourceNo}` : "Source data"}
         </button>
       )}
 
@@ -211,15 +212,18 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
 
 // ── Phase — a flat narrative section (no accordion, no chevron, no indent) ─────
 
-function PhaseSection({ phase, onShowSource }: { phase: InvestigationPhase; onShowSource?: ShowSource }) {
+function PhaseSection({ phase, onShowSource, sourceNos }: { phase: InvestigationPhase; onShowSource?: ShowSource; sourceNos?: Map<string, number> }) {
   if (phase.status === "skipped") return null;
   const findings = phase.findings.filter(f => f.interpretation || f.columns.length > 0 || f.error);
   if (!phase.summary && findings.length === 0) return null;
 
   return (
-    <BriefSection label={phase.phase_name}>
+    // Clean-output policy (Genie-style): no phase-machinery header ("CROSS-SECTIONAL
+    // SCAN", "TEMPORAL TREND — WHEN") — the reader gets a continuous, confident
+    // narrative; which internal phase produced a finding is process, not insight.
+    <BriefSection>
       {phase.summary && <BriefProse text={phase.summary} />}
-      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} />)}
+      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} sourceNo={sourceNos?.get(f.finding_id)} />)}
     </BriefSection>
   );
 }
@@ -406,6 +410,11 @@ function InvestigationDetails({ report, intakePhase }: { report: AnswerReport; i
 
   return (
     <BriefDetails>
+      {report.metric_definition && (
+        <BriefDetailBlock label="How this was measured">
+          <p className="aug-text-xs text-zinc-400">{report.metric_definition}</p>
+        </BriefDetailBlock>
+      )}
       {hasRecs && (
         <BriefDetailBlock label="Recommended actions">
           <RecommendationsList recs={report.recommendations} />
@@ -459,12 +468,14 @@ function InvestigationDetails({ report, intakePhase }: { report: AnswerReport; i
       )}
 
       {queries.length > 0 && (
-        <BriefDetailBlock label="Queries">
+        <BriefDetailBlock label={`Sources (${queries.length})`}>
           <div className="flex flex-col gap-3">
-            {queries.map(q => (
+            {queries.map((q, i) => (
               <div key={q.id} className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-3">
-                  <span className="aug-text-xs text-zinc-400 min-w-0 truncate">{q.title}</span>
+                  <span className="aug-text-xs text-zinc-400 min-w-0 truncate">
+                    <span className="text-zinc-500 font-mono">{i + 1}.</span> {q.title}
+                  </span>
                   {openInBuilder && (
                     <button
                       onClick={() => openInBuilder(q.sql)}
@@ -587,13 +598,21 @@ export function InvestigationReportView({
         ]}
       />
 
-      {report.metric_definition && (
-        <p className="aug-text-xs text-zinc-500 mt-1">
-          <span className="text-zinc-400">How this was measured — </span>{report.metric_definition}
-        </p>
-      )}
+      {/* "How this was measured" moved into the Details disclosure — clean-output
+          policy: the main flow states conclusions; method lives one click away. */}
 
-      {analysisPhases.map(phase => <PhaseSection key={phase.phase_id} phase={phase} onShowSource={onShowSource} />)}
+      {(() => {
+        // One numbering shared by the per-finding "Source n" refs and the Sources list
+        // in Details — same flattening order as InvestigationDetails' queries.
+        const sourceNos = new Map(
+          report.phases.flatMap(p => p.findings)
+            .filter(f => f.sql && f.sql.trim())
+            .map((f, i) => [f.finding_id, i + 1] as const),
+        );
+        return analysisPhases.map(phase => (
+          <PhaseSection key={phase.phase_id} phase={phase} onShowSource={onShowSource} sourceNos={sourceNos} />
+        ));
+      })()}
 
       <InvestigationDetails report={report} intakePhase={intakePhase} />
     </Brief>

@@ -209,8 +209,19 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
                 </div>
               )}
             </div>
-            <p style={{ fontSize: 15, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5 }}>{localizeCurrency(inv.question)}</p>
-            <p style={{ marginTop: 4, fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)" }}>{inv.connection_id}</p>
+            {/* The user's input, AS THEY TYPED IT — the same right-aligned bubble the live
+                chat shows, so a restored run still reads as the conversation it was. */}
+            <div className="flex justify-end">
+              <div style={{
+                maxWidth: "75%", background: "var(--vio2, rgba(139,92,246,0.25))",
+                border: "1px solid var(--vio3, rgba(139,92,246,0.4))",
+                borderRadius: 12, padding: "8px 14px",
+                fontSize: 14, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
+              }}>
+                {localizeCurrency(inv.question)}
+              </div>
+            </div>
+            <p style={{ marginTop: 4, fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)", textAlign: "right" }}>{inv.connection_id}</p>
           </div>
 
           {/* Report */}

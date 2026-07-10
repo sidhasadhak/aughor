@@ -68,6 +68,16 @@ data-understanding context**, so quick and deep stay at parity (mode cross-polli
 
 Deterministic, execution-grounded guards over LLM-generated SQL — each ships with a test that proves it fires.
 
+- **Unit-conversion guard** — a planner-invented "stored in cents" ÷100 on a money column is detected at
+  intake **and at every phase's fresh SQL**; one data probe (a multiplicative sibling relation like
+  `totalPrice = unitPrice × quantity`) proves the true unit — proven wrong → stripped with a structured
+  note, unproven → kept but explicitly caveated. Paired with a **money-coherence retry** (a money question
+  with a COUNT-only metric is re-parsed once).
+- **Join-coverage guard** — the deflation counterpart to the fan-out battery: an INNER JOIN that drops
+  base rows (a dimension map covering half the fact table) is probed (joined SUM vs base SUM) and the
+  finding caveated + confidence-capped instead of shipping an understated total at High confidence.
+- **Explicit depth binds** — `/investigate` stamps the user's Deep Analysis choice into the run; the LLM
+  route classifier can never silently downgrade it to a direct lookup.
 - **SQL self-correction** — `SqlWriter` centralizes generation + deterministic bind-error repair (no-LLM
   candidate substitution first, typed LLM repair as fallback, every candidate dry-run-validated).
 - **Error classification & SQL hardening** — classify a failure by root cause, inject the right fix hint.
@@ -228,6 +238,15 @@ Builder" from Insights/Deep. Schema-qualified correctness; user-typed SQL is **g
 
 ## 9. Charts & the answer surface
 
+- **Identifiers are never measures** — one camelCase-aware `isIdLike()` shared by the column classifier,
+  chart inference, LLM chart-config validation, captions, and the PDF export renderer, so `franchiseID`
+  can't be plotted (or captioned) as a quantity on any surface; export grouped bars also drop >25×
+  scale-gap series and prefer name columns over ids on the category axis.
+- **Genie-grade report presentation** — a collapsible thinking trace with nested, named query steps;
+  clean-output policy (no internal phase headers — method lives in a Details disclosure); per-finding
+  numbered **Sources** (claim → numbered query → SQL); criterion-complete extreme-tie enumeration;
+  adaptive temporal grain (a 17-day window charts daily, never one monthly point); humanized scan labels
+  ("revenue", never "metric_total"); full-panel-width answers; one currency per metric card.
 - **Auto-charting** on one **Apache ECharts** engine (chat + report + explorer + query builder share it),
   with **intent-driven chart selection** — the chart follows the finding's *narrative*, not a data-shape
   guess: composition → **donut** (parts-of-a-whole) / ranked bar, trend → **line**, ranking → **sorted

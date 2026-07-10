@@ -140,3 +140,52 @@ def test_export_chart_never_plots_id_columns():
     date_idx, num_idx, cat_idx = _classify(columns, rows)
     assert num_idx == [2], "revenue is the only measure — the ID must not be charted"
     assert cat_idx[0] == 1, "the name column outranks the ID for the category axis"
+
+
+# ── Criterion-complete enumeration ─────────────────────────────────────────────
+
+def test_extreme_tie_note_names_all_cluster_members():
+    """Three franchises tie at $3.00/txn; the note must name all three — the
+    narrator dropped the third in the live report."""
+    from aughor.agent.investigate import _extreme_tie_note
+
+    cols = ["franchise", "total_revenue", "per_txn"]
+    rows = [["Sapporo Sweets", 177, 3.00], ["Naha Nibbles", 195, 3.00],
+            ["Sweet Temptations", 225, 3.00], ["Hiroshima Delicacies", 834, 15.44],
+            ["Crust Couture", 840, 17.50]]
+    note = _extreme_tie_note(cols, rows)
+    assert note is not None
+    for name in ("Sapporo Sweets", "Naha Nibbles", "Sweet Temptations"):
+        assert name in note
+    assert "3 entities" in note
+
+
+def test_extreme_tie_note_silent_without_a_real_cluster():
+    from aughor.agent.investigate import _extreme_tie_note
+
+    # smooth ranking, no tie cluster → silent
+    rows = [["a", 3.0], ["b", 4.1], ["c", 5.9], ["d", 9.4]]
+    assert _extreme_tie_note(["seg", "v"], rows) is None
+    # ties not separated from the rest (everything ~equal) → silent
+    rows2 = [["a", 3.0], ["b", 3.0], ["c", 3.05], ["d", 3.1]]
+    assert _extreme_tie_note(["seg", "v"], rows2) is None
+
+
+# ── Adaptive temporal grain ────────────────────────────────────────────────────
+
+def test_temporal_grain_rewrite_short_window():
+    """A 17-day window truncated by month = one bucket ('single data point');
+    the pre-execution rewrite must drop to daily grain."""
+    import re
+    from datetime import date
+
+    sql = ("SELECT DATE_TRUNC('month', dateTime) AS period, SUM(totalPrice) AS v "
+           "FROM sales_transactions WHERE dateTime >= DATE '2024-05-01' "
+           "AND dateTime < DATE '2024-05-17' GROUP BY 1")
+    dates = re.findall(r"DATE\s+'(\d{4}-\d{2}-\d{2})'", sql)
+    ds = sorted(date.fromisoformat(d) for d in dates)
+    span = (ds[-1] - ds[0]).days
+    assert span == 16
+    grain = "day" if span <= 35 else ("week" if span <= 120 else None)
+    out = re.sub(r"(DATE_TRUNC\s*\(\s*)'(?:month|quarter|year)'", rf"\g<1>'{grain}'", sql, flags=re.IGNORECASE)
+    assert "DATE_TRUNC('day'" in out and "month" not in out

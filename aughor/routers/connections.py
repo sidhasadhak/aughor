@@ -768,6 +768,10 @@ async def upload_file_to_connection(
                 column_types=types,
             ),
         )
+        # New table on this connection → the conn-keyed schema cache is stale NOW,
+        # not at TTL expiry. Without this, the quick /ask path answered from a
+        # snapshot that predated the upload and silently dropped the new tables.
+        _invalidate_schema_cache(conn_id)
         return {
             "table_name": tname,
             "schema": schema_name or "main",
@@ -779,6 +783,7 @@ async def upload_file_to_connection(
         tname = await asyncio.get_running_loop().run_in_executor(
             None, lambda: db.ingest_file(tmp_path, table_name=(table_name or None))
         )
+        _invalidate_schema_cache(conn_id)
         return {"table_name": tname, "filename": tmp_path.name, "message": "File ingested"}
     except Exception:
         logger.exception("file ingestion failed")
@@ -824,6 +829,10 @@ async def bulk_upload_files_to_connection(
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     added = sum(1 for r in results if r["status"] == "ok")
+    if added:
+        # New tables landed → drop the conn-keyed schema snapshot immediately
+        # (same staleness class as the single-file upload above).
+        _invalidate_schema_cache(conn_id)
     return {
         "schema": target,
         "results": results,
