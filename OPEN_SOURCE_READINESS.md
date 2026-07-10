@@ -90,6 +90,8 @@ fix was verified.
 | W11 | **Two gitleaks findings are false positives** and will stay noisy. | `docs/PLATFORM_ARCHITECTURE.md:37` matches on the prose *"grant/policy enforcement"*. `tests/unit/test_secretvault.py:108` contains the obviously-fake literal `sk_live_supersecret`, in a test that asserts the value gets encrypted. | Harmless. If you ever add gitleaks to CI, add a `.gitleaks.toml` allowlist for these two paths. |
 | W12 | **Odd root filename with spaces:** `Data Context Creator Skill.md`. Directory `design-mockups/palantir-inspired/` names a competitor. | `git ls-files \| grep ' '` | Cosmetic; both read as internal artifacts to an outsider. |
 | W13 | **No container image.** `docker-compose.yml` starts only Qdrant. Deployment beyond a local machine is untested. | Read `docker-compose.yml`; no Dockerfile in the tree. | Now disclosed honestly in README "Project status". |
+| **W14** | **The built-in demo dataset has no signal in it — and it is the first thing every new user explores.** `aughor/samples/setup.py::ensure_fixture_db()` auto-creates `data/aughor.duckdb` on first boot. Its data is uniform noise: payment-failure rates of 20.9% / 19.7% / 19.4% across EMEA/NA/APAC (no real difference), daily revenue with mean 1,997 and sd 140 (flat). Worse, `plan` is a **perfect alias of `region`** (every `pro` customer is EMEA, every `free` is NA, every `enterprise` is APAC), and `free`-plan customers carry $19,630 of MRR. | Queried the auto-seeded fixture directly. Cross-tab: `('pro','EMEA',67) ('free','NA',66) ('enterprise','APAC',67)` — three cells, perfectly collinear. Then ran a real exploration against it: the Briefing produced the verdict *"Plan Mix Masks Revenue Risk"* and narrated a 20.9% vs 19.7% failure-rate gap as *"a systemic issue affecting high-value segments."* Aughor was **not** mislabelling — the numbers were correct; the dataset is degenerate. | **This makes the product look bad on first run, through no fault of the engine.** `data/seed.py` already builds a genuinely good scenario (800 customers, a dated APAC payment-gateway outage, a −38.8% APAC/SMB drop, and an NA promo as a deliberate red herring — all verified). Make `ensure_fixture_db()` seed *that* instead of the noise table. This is the single highest-leverage change for a new visitor's impression. |
+| **W15** | **The two packaged CLI commands do not compose.** `aughor seed` writes `data/hermes.duckdb`; `aughor investigate` reads `data/aughor.duckdb`. So the documented "seed then investigate" flow silently investigates a different database. The `seed` help text — *"Seed the fixture DuckDB database"* — is simply false, and `hermes` is the project's old name. | `data/seed.py:31` → `DB_PATH = Path(__file__).parent / "hermes.duckdb"`. `aughor/cli.py:30` → `DEFAULT_DB = .../data/aughor.duckdb`. `.gitignore:16` still lists `data/hermes.duckdb`. | Point `data/seed.py` at `data/aughor.duckdb` (what its own help text claims), or give `seed` a `--db` flag. Product code, so not patched here. Fixing this plus W14 is the same one-line change. |
 
 ### Passes — verified, not assumed
 
@@ -141,8 +143,8 @@ Eight commits on `chore/oss-readiness`, **not pushed**. `34 files changed, 1300 
 
 ## 4. Decisions needed from you
 
-**D1 — Copyright holder name.** `LICENSE`/`NOTICE` say `Copyright 2026 Sidha Sadhak`, taken
-from your git author name. Change it if you want a different legal name or an entity.
+**D1 — Copyright holder name.** ✅ **RESOLVED (2026-07-10).** Confirmed as `Sidha Sadhak`;
+`LICENSE` and `NOTICE` already carry `Copyright 2026 Sidha Sadhak`. No change needed.
 
 **D2 — Trim the internal docs (you chose "trim to a public subset"; only partially done).**
 I removed the draft email. I did **not** delete the bulk, because they cross-link densely
@@ -175,16 +177,27 @@ git gc --prune=now --aggressive
 This **permanently discards all 5 stashes.** I have not run it. Also: never
 `git push --mirror` from this clone — that would push `refs/stash` and its 2.6 GB.
 
-**D4 — The README hero image is a mockup, not the product.** `README.md:21` shows
-`design-mockups/01-intelligence-overview.svg` — a design mockup presented as
-"Aughor intelligence overview". Meanwhile
+**D4 — The README hero image is a mockup, not the product. (Decided: retake. Blocked on W14.)**
+`README.md:21` shows `design-mockups/01-intelligence-overview.svg` — a design mockup presented
+as "Aughor intelligence overview". Meanwhile
 `design-mockups/palantir-inspired/Screenshot 2026-06-26 at 10.22.05.png` is a **real
-screenshot of Aughor's own UI** (I opened it — it contains no third-party product imagery,
-so there is no Palantir IP issue). It would be a far stronger and more honest hero. The
-catch: it displays concrete business figures (223,142 customers via Google Shopping,
-gross margin 50%→35%, AOV €73→€56). If that is your own data you may not want it public.
-Options: (a) use it as-is, (b) retake the screenshot against the built-in synthetic fixture
-DB and use that, (c) keep the mockup but label it "design mockup". I recommend **(b)**.
+screenshot of Aughor's own UI** (I opened it — no third-party product imagery, so there is no
+Palantir IP issue), but it displays real business figures.
+
+You chose to retake it against the synthetic fixture. I built an isolated instance (fresh
+clone, its own `data/`, ports 8010/3010, no API keys, no Postgres DSN, fixture as the only
+connection), ran a real exploration, and captured a clean 3200×2000 production-build
+screenshot with no dev-tools chrome. **The capture worked; the picture is not usable.**
+The Briefing it produced is a faithful rendering of noise — *"Plan Mix Masks Revenue Risk"*,
+built on a 20.9% vs 19.7% failure-rate difference and on `pro`-plan MRR that is numerically
+identical to EMEA MRR because **W14**: the auto-seeded fixture is degenerate.
+
+So the hero is blocked on the fixture, not on the screenshot. **Fix W14 first** (make
+`ensure_fixture_db()` use `data/seed.py`'s outage scenario), then re-capture. The scripts and
+the isolated-instance recipe are reproducible; the teardown left your live app, your `data/`,
+and `.claude/launch.json` untouched. Until then, options are (a) keep the mockup but label it
+"design mockup", or (b) ship without a hero image. Do **not** ship the noise Briefing — it
+advertises the engine narrating a non-finding.
 
 **D5 — Rename the competitor-named directory.** `design-mockups/palantir-inspired/` →
 something like `design-mockups/explorations/`. Cosmetic, but it is the kind of thing a
@@ -279,14 +292,20 @@ already above the bar; it was let down entirely by its paperwork.
 **The ordered path to public:**
 
 1. Merge `chore/oss-readiness` into `main`. *(Clears B1, B2, H1, H2, H3.)*
-2. Answer **D1** (copyright name) — one-line change.
-3. Answer **D4** (hero image) — a mockup presented as the product is the one remaining
-   honesty problem on the landing page, and it is the first thing a visitor sees.
-4. Flip to public, then immediately do the §6 checklist — most importantly **enable private
+2. ~~**D1** (copyright name)~~ — ✅ resolved: Sidha Sadhak.
+3. Fix **W14 + W15** — one change to `ensure_fixture_db()` and `data/seed.py`. This is not
+   cosmetic. The bundled demo dataset is the first thing every visitor runs, and today it
+   feeds the engine pure noise, which the Briefing then narrates as *"systemic risk."* A
+   reader who checks the numbers concludes the product hallucinates. It doesn't — the data
+   is degenerate. Fix the data, and the flagship demo tells a true story (an APAC payment
+   outage, −38.8%, with an NA promo as a red herring) that `data/seed.py` already builds.
+4. Then **D4** (hero image): re-capture against the fixed fixture. A mockup presented as the
+   product is the last honesty problem on the landing page.
+5. Flip to public, then immediately do the §6 checklist — most importantly **enable private
    vulnerability reporting**, because `SECURITY.md` promises it.
 
-Everything else — D2, D3, D5, D6, and every `W` finding — is polish that can land after the
-repo is public, in the open, as normal issues. None of it should hold the launch.
+Everything else — D2, D3, D5, D6, and every other `W` finding — is polish that can land after
+the repo is public, in the open, as normal issues. None of it should hold the launch.
 
 > Would a senior engineer at a respected open-source org be comfortable putting their name
 > on this? **After step 1, yes.** After steps 1–3, comfortably. The engineering here is
