@@ -2284,6 +2284,12 @@ async def _stream_investigation(
             "max_iterations": int(os.getenv("AUGHOR_MAX_ITER", "6")),
             "report": None, "hitl_enabled": hitl, "human_feedback": None,
             "query_mode": None, "route_reasoning": None, "route_confidence": None, "replan_decision": None,
+            # /investigate IS the explicit Deep Analysis surface — the user chose depth.
+            # route_question honors this and never lets the LLM classifier downgrade the
+            # run to a 'direct' lookup (live incident: "Where are we losing money?" ran as
+            # 3 flat queries with a fake 'direct' hypothesis, zero decomposition). The /ask
+            # auto-router doesn't set it, so auto-depth behavior is unchanged.
+            "requested_mode": "investigate",
             "sub_questions": [], "current_subq_idx": 0, "subq_answers": [], "explore_report": None,
             "investigation_phases": [], "answer_report": None, "_ada_intake": None,
             "canvas_id": canvas_id, "canvas_schema_context": canvas_schema_context,

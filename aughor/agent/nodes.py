@@ -161,7 +161,17 @@ def classify_question(question: str) -> tuple[str, RouteDecision]:
 
 @_telemetry.node_span("route_question")
 def route_question(state: AgentState) -> dict[str, Any]:
-    effective_mode, decision = classify_question(state["question"])
+    # An EXPLICIT user mode choice binds — never re-classify it away. When the caller
+    # set requested_mode (the /investigate deep surface), skip the LLM classifier:
+    # a user who chose Deep Analysis must get decomposition, not a 'direct' lookup.
+    _requested = (state.get("requested_mode") or "").strip().lower()
+    if _requested in ("investigate", "explore"):
+        from aughor.agent.state import RouteDecision as _RD
+        effective_mode = _requested
+        decision = _RD(mode=_requested, confidence=1.0,
+                       reasoning="explicit user selection (Deep Analysis) — classifier bypassed")
+    else:
+        effective_mode, decision = classify_question(state["question"])
     # Carry the deterministic complexity verdict into the run state (and a stats
     # counter) so the cost tier we routed to is observable on the receipt / fleet view.
     from aughor.agent.complexity import assess_complexity

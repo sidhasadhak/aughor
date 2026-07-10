@@ -435,6 +435,10 @@ class AgentState(TypedDict):
 
     # Routing: set by route_question node; None until classified
     query_mode: Optional[Literal["direct", "investigate", "explore", "final_text"]]
+    # An EXPLICIT user mode choice (the /investigate Deep Analysis surface). When set,
+    # route_question honors it verbatim — the LLM classifier must never downgrade a
+    # deliberate deep-mode selection to a 'direct' lookup.
+    requested_mode: Optional[str]
     route_reasoning: Optional[str]
     route_confidence: Optional[float]
     # Deterministic complexity assessment → cost-tiered routing (Part 2). The tier the
