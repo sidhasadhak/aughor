@@ -1022,7 +1022,13 @@ async def _stream_chat(
     # table list (missimi.orders → 'missimi'). Without the pin an unqualified `FROM orders`
     # leaks to a sibling schema's same-named table (missimi silently answering from netflix).
     from aughor.canvas.scope import resolve_execution_scope
-    _es = resolve_execution_scope(connection_id, canvas_id)
+    from aughor.tools.schema import build_canvas_schema_context
+    # Parity with the Deep path: build the canvas schema FRESH (live information_schema),
+    # never by filtering the conn-keyed cached string — a snapshot predating a new upload
+    # silently DROPPED the missing tables (live incident: Insight declared "no sales
+    # transaction table available" while reading its sibling from the same schema).
+    _es = resolve_execution_scope(connection_id, canvas_id,
+                                  schema_context_builder=build_canvas_schema_context)
     connection_id = _es.connection_id                # canvas's primary connection wins
     canvas_scope_schema = _es.declared_schema        # raw declared → the prompt note
     canvas_scope_tables = list(_es.tables)
@@ -1122,13 +1128,19 @@ async def _stream_chat(
         # Deep Analysis path's build_canvas_schema_context. Falls back to the full
         # schema if filtering yields nothing.
         if canvas_scope_tables and not canvas_scope_full:
-            try:
-                from aughor.tools.schema import get_schema_for_tables
-                _scoped = get_schema_for_tables(schema, canvas_scope_tables)
-                if _scoped and _scoped.strip():
-                    schema = _scoped
-            except Exception:
-                logger.warning("Canvas table-scope filter failed; using full schema", exc_info=True)
+            if (_es.schema_context or "").strip():
+                # Fresh canvas schema (live introspection — same source Deep uses).
+                # Filtering the conn-keyed cached string instead silently dropped any
+                # canvas table the stale snapshot didn't know about yet.
+                schema = _es.schema_context
+            else:
+                try:
+                    from aughor.tools.schema import get_schema_for_tables
+                    _scoped = get_schema_for_tables(schema, canvas_scope_tables)
+                    if _scoped and _scoped.strip():
+                        schema = _scoped
+                except Exception:
+                    logger.warning("Canvas table-scope filter failed; using full schema", exc_info=True)
 
         # Metrics built AFTER schema (needs the column set to filter out metrics
         # whose tables/columns aren't in THIS connection — metrics are global, so
