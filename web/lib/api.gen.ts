@@ -245,6 +245,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/custom/{agent_id}/observability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * User Agent Observability
+         * @description The Agent Workspace overview data for one agent: its run history (from the
+         *     history store, stamped with agent_id) enriched with MLflow trace stats when
+         *     `obs.mlflow` is on. Degrades to history-only (`trace_stats: null`) when the
+         *     tracking server is off — the workspace is useful without MLflow (B3: the
+         *     dependency is one-directional).
+         */
+        get: operations["user_agent_observability_agents_custom__agent_id__observability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/{agent_id}": {
         parameters: {
             query?: never;
@@ -7392,6 +7416,37 @@ export interface operations {
             path: {
                 agent_id: string;
                 golden_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    user_agent_observability_agents_custom__agent_id__observability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
             };
             cookie?: never;
         };
