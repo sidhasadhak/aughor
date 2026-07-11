@@ -41,24 +41,24 @@ function useThemeMode(): "light" | "dark" {
 const AUG_THEME_DARK: Parameters<typeof ConfigProvider>[0]["theme"] = {
   algorithm: theme.darkAlgorithm,
   token: {
-    // Backgrounds
-    colorBgBase:         "#0D1117",   // --bg-0
-    colorBgContainer:    "#111418",   // --bg-1
-    colorBgElevated:     "#161A20",   // --bg-2
-    colorBgLayout:       "#0D1117",
-    // Borders
-    colorBorder:         "#1E2329",   // --b1
-    colorBorderSecondary:"#161A20",   // --b0
-    colorSplit:          "#161A20",
+    // Backgrounds (MLflow near-black)
+    colorBgBase:         "#0A0A0E",   // --bg-0
+    colorBgContainer:    "#0C0D12",   // --bg-1
+    colorBgElevated:     "#121318",   // --bg-2
+    colorBgLayout:       "#0A0A0E",
+    // Borders (hairlines)
+    colorBorder:         "#23252E",   // --b1
+    colorBorderSecondary:"#1A1C23",   // --b0
+    colorSplit:          "#1A1C23",
     // Text
-    colorText:           "#E2E4E9",   // --t1
-    colorTextSecondary:  "#939AA6",   // --t2
-    colorTextDescription:"#6E7886",   // --t3
+    colorText:           "#F2F3F6",   // --t1
+    colorTextSecondary:  "#989BA6",   // --t2
+    colorTextDescription:"#686B77",   // --t3
     colorTextDisabled:   "#525B69",   // --t4
-    // Brand
-    colorPrimary:        "#0C8CE9",   // --blue3
-    colorPrimaryHover:   "#4BA3F5",   // --blue4
-    // Misc
+    // Brand (interaction accent)
+    colorPrimary:        "#5A9FD6",   // --blue3
+    colorPrimaryHover:   "#7DB6E8",   // --blue4
+    // Misc — grid stays DM Sans (text columns readable); numeric formatting keeps tabular alignment
     fontSize:            12,
     fontFamily:          "'DM Sans', system-ui, sans-serif",
     borderRadius:        3,
@@ -69,26 +69,26 @@ const AUG_THEME_DARK: Parameters<typeof ConfigProvider>[0]["theme"] = {
   components: {
     Table: {
       // Header
-      headerBg:             "#161A20",   // --bg-2
-      headerColor:          "#6E7886",   // --t3
-      headerSortActiveBg:   "#161A20",
-      headerSortHoverBg:    "#1C2128",   // --bg-3
-      headerSplitColor:     "#1E2329",   // --b1
+      headerBg:             "#181A21",   // --bg-3 (surface-2)
+      headerColor:          "#989BA6",   // --t2
+      headerSortActiveBg:   "#181A21",
+      headerSortHoverBg:    "#20222B",   // --bg-4
+      headerSplitColor:     "#23252E",   // --b1
       // Rows
-      rowHoverBg:           "rgba(255, 255, 255, 0.035)",
-      rowSelectedBg:        "rgba(12, 140, 233, 0.10)",    // --bg-sel
-      rowSelectedHoverBg:   "rgba(12, 140, 233, 0.18)",
-      bodySortBg:           "#111418",
+      rowHoverBg:           "rgba(255, 255, 255, 0.04)",
+      rowSelectedBg:        "rgba(90, 159, 214, 0.14)",    // --bg-sel
+      rowSelectedHoverBg:   "rgba(90, 159, 214, 0.22)",
+      bodySortBg:           "#0C0D12",
       // Borders
-      borderColor:          "#161A20",   // --b0
+      borderColor:          "#1A1C23",   // --b0 (line-faint)
       // Cell sizing
       cellFontSize:         12,
       cellPaddingInline:    14,
       cellPaddingBlock:     9,
     },
     Pagination: {
-      colorBgContainer:    "#111418",
-      itemActiveBg:        "rgba(12, 140, 233, 0.12)",
+      colorBgContainer:    "#0C0D12",
+      itemActiveBg:        "rgba(90, 159, 214, 0.14)",
     },
   },
 };

@@ -8,16 +8,15 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ── Font wiring ─────────────────────────────────────────────────────────────
-   ONE font across the whole platform (Databricks policy): DM Sans everywhere —
-   only weight/style/size vary. The `font-mono` Tailwind utility is REPOINTED to
-   the sans font so the hundreds of legacy `font-mono` data labels (table/column
-   names, ids, numbers, timestamps, chips) render in the single UI font. The
-   monospace family survives ONLY as `font-code` (Tailwind) / `--font-code`
-   (inline), used exclusively on real code/SQL `<pre>` blocks. */
+/* ── Font wiring (MLflow-informed: two families) ─────────────────────────────
+   DM Sans carries the UI; IBM Plex Mono carries every figure, id, timestamp and
+   metric. The `font-mono` Tailwind utility points at the mono family so the data
+   labels (table/column names, ids, numbers, chips) render in tabular monospace —
+   numbers as a precision instrument. `font-code` / `--font-code` stay mono for
+   real code/SQL `<pre>` blocks (same family). */
 @theme inline {
   --font-sans: var(--font-dm-sans), system-ui, sans-serif;
-  --font-mono: var(--font-dm-sans), system-ui, sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
   --font-code: var(--font-ibm-plex-mono), 'Consolas', monospace;
 }
 
@@ -52,7 +51,8 @@ input, textarea, select { font-family: var(--font-ui); font-size: 13px; color: v
    explicit font-code class/var override consistently. Tailwind preflight points
    these at --font-mono (now the sans alias), so without this they'd go sans. */
 pre, code, kbd, samp { font-family: var(--font-code); }
-a { color: var(--blue4); text-decoration: none; }
+a { color: var(--blue3); text-decoration: none; }
+a:hover { color: var(--blue4); }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -123,7 +123,7 @@ a { color: var(--blue4); text-decoration: none; }
   border: none;
 }
 .aug-nav-item:hover { background: var(--bg-hover); color: var(--t1); }
-.aug-nav-item.active { background: var(--bg-sel); color: var(--blue5); }
+.aug-nav-item.active { background: var(--bg-sel); color: var(--t1); font-weight: 500; }
 .aug-nav-item.active::before {
   content: '';
   position: absolute;
@@ -164,14 +164,15 @@ a { color: var(--blue4); text-decoration: none; }
 .aug-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 7px;
-  border-radius: var(--r1);
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
   border: 1px solid transparent;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
 }
 .aug-tag-blue   { color: var(--blue5); background: var(--blue1); border-color: var(--blue2); }
 .aug-tag-green  { color: var(--grn5);  background: var(--grn1);  border-color: var(--grn2); }
@@ -187,7 +188,7 @@ a { color: var(--blue4); text-decoration: none; }
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  border-radius: var(--r2);
+  border-radius: var(--r1);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -197,8 +198,8 @@ a { color: var(--blue4); text-decoration: none; }
   outline: none;
   font-family: var(--font-ui);
 }
-.aug-btn-primary   { background: var(--blue3); border-color: var(--blue2); color: #fff; }
-.aug-btn-primary:hover { background: var(--blue4); }
+.aug-btn-primary   { background: var(--blue-solid); border-color: var(--blue-solid); color: #fff; font-weight: 600; }
+.aug-btn-primary:hover { background: #2A82CC; border-color: #2A82CC; }
 .aug-btn-secondary { background: var(--bg-3); border-color: var(--b2); color: var(--t1); }
 .aug-btn-secondary:hover { background: var(--bg-4); border-color: var(--b3); }
 .aug-btn-ghost     { background: transparent; border-color: transparent; color: var(--t2); }
@@ -221,7 +222,7 @@ a { color: var(--blue4); text-decoration: none; }
   transition: border-color 0.12s;
   width: 100%;
 }
-.aug-input:focus { border-color: var(--bfocus); }
+.aug-input:focus { border-color: var(--bfocus); box-shadow: 0 0 0 3px var(--bg-sel); }
 .aug-input::placeholder { color: var(--t3); }
 
 /* ── Data table ──────────────────────────────────────────────────────────── */

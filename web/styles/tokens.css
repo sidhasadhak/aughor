@@ -46,11 +46,12 @@
   --cyn1:  #0D2030; --cyn2:  #124060; --cyn3:  #1690BE; --cyn4:  #30B8E0; --cyn5:  #78D8F8;
 
   /* ── Typography ── */
-  /* One platform font. --font-mono is an ALIAS of the UI font (legacy inline
-     `var(--font-mono)` data labels collapse onto the single sans). Real code
-     uses --font-code only — see globals.css @theme + the SQL <pre> blocks. */
+  /* Two families (MLflow-informed): DM Sans for UI, IBM Plex Mono for every
+     figure / id / timestamp / metric. --font-mono is repointed to the mono
+     family so tabular data reads as a precision instrument. --font-code stays
+     mono for SQL/code <pre> blocks. */
   --font-ui:   var(--font-dm-sans), system-ui, sans-serif;
-  --font-mono: var(--font-dm-sans), system-ui, sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
   --font-code: var(--font-ibm-plex-mono), 'Consolas', monospace;
 
   /* ── Motion vocabulary (WCH-15) ──
