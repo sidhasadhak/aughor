@@ -288,6 +288,72 @@ def mlflow_tool_span(
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+def agent_trace_stats(agent_id: str, *, limit: int = 200) -> dict | None:
+    """Aggregate MLflow trace stats for a user-agent's runs (traces carry the
+    ``agent_id`` tag written by :func:`_tag_current_trace`).
+
+    Returns ``{trace_count, error_count, total_tokens, total_cost,
+    latency_p50_ms, latency_p90_ms}`` — or ``None`` when tracing is off, mlflow
+    is unavailable, or nothing has been logged yet. The Agent Workspace overview
+    degrades to run-history-only on ``None`` (B3: MLflow is a one-directional
+    dependency — the workspace works without the server). Best-effort; the tag
+    filter is sanitised (our agent ids are hex, but never interpolate a quote).
+    """
+    mlf = _mlflow()
+    if mlf is None or not agent_id:
+        return None
+    safe_id = agent_id.replace("'", "")
+    if safe_id != agent_id:
+        return None  # never seen; a quoted id can't be one of ours
+    try:
+        exp = mlf.get_experiment_by_name(os.getenv("AUGHOR_MLFLOW_EXPERIMENT", "aughor"))
+        if exp is None:
+            return None
+        traces = mlf.search_traces(
+            locations=[exp.experiment_id],
+            filter_string=f"tags.agent_id = '{safe_id}'",
+            max_results=limit, return_type="list", include_spans=False,
+        )
+        if not traces:
+            return None
+        durations: list[float] = []
+        tokens = 0
+        cost = 0.0
+        errors = 0
+        for t in traces:
+            info = t.info
+            d = getattr(info, "execution_duration", None) or getattr(info, "execution_time_ms", None)
+            if d:
+                durations.append(float(d))
+            tu = getattr(info, "token_usage", None)
+            if isinstance(tu, dict):
+                tokens += int(tu.get("total_tokens") or tu.get("total") or 0)
+            c = getattr(info, "cost", None)
+            if c:
+                cost += float(c)
+            state = str(getattr(info, "state", "") or getattr(info, "status", ""))
+            if state and "OK" not in state.upper():
+                errors += 1
+        durations.sort()
+
+        def _pct(p: float) -> float | None:
+            if not durations:
+                return None
+            return round(durations[min(len(durations) - 1, int(p * len(durations)))], 1)
+
+        return {
+            "trace_count": len(traces),
+            "error_count": errors,
+            "total_tokens": tokens,
+            "total_cost": round(cost, 4),
+            "latency_p50_ms": _pct(0.5),
+            "latency_p90_ms": _pct(0.9),
+        }
+    except Exception as exc:
+        logger.debug("agent_trace_stats failed: %s", exc)
+        return None
+
+
 def new_trace(investigation_id: str, question: str, connection_id: str) -> str:
     """Register a Langfuse trace for the investigation.
 

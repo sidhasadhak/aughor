@@ -90,6 +90,20 @@ def test_migration_upgrades_legacy_db_and_backfills_empty(hist_db):
     assert row is not None and row["agent_id"] == ""
 
 
+def test_list_investigations_for_agent_filters(hist_db):
+    a1 = history.create_investigation("q1", "conn1", agent_id="alpha")
+    a2 = history.create_investigation("q2", "conn1", agent_id="alpha")
+    history.create_investigation("q3", "conn1", agent_id="beta")
+    history.create_investigation("q4", "conn1")  # unbound (no persona)
+
+    alpha = history.list_investigations_for_agent("alpha")
+    assert {r["id"] for r in alpha} == {a1, a2}
+    assert all(r["agent_id"] == "alpha" for r in alpha)
+    assert len(history.list_investigations_for_agent("beta")) == 1
+    assert history.list_investigations_for_agent("") == []          # unbound runs aren't a persona's
+    assert history.list_investigations_for_agent("ghost") == []     # unknown agent
+
+
 def test_migration_is_idempotent(hist_db):
     history.create_investigation("q", "conn1")  # builds + migrates to v3
     c = tune(sqlite3.connect(str(hist_db)))

@@ -398,6 +398,27 @@ def test_executor_emits_tool_span(monkeypatch):
     assert "SELECT 1" in s.attributes["sql"]
 
 
+# ── agent_trace_stats degradation (hermetic) ────────────────────────────────
+
+def test_agent_trace_stats_none_when_flag_off(monkeypatch):
+    _set_flag(monkeypatch, False)
+    assert tel.agent_trace_stats("alpha") is None
+
+
+def test_agent_trace_stats_none_for_empty_agent(monkeypatch):
+    _set_flag(monkeypatch, True)
+    monkeypatch.setitem(sys.modules, "mlflow", _make_stub(active=True))
+    assert tel.agent_trace_stats("") is None
+
+
+def test_agent_trace_stats_rejects_quoted_id(monkeypatch):
+    """A quoted id can't be one of our hex ids — reject rather than interpolate
+    it into the filter string."""
+    _set_flag(monkeypatch, True)
+    monkeypatch.setitem(sys.modules, "mlflow", _make_stub(active=True))
+    assert tel.agent_trace_stats("a' OR '1'='1") is None
+
+
 # ── Real-package integration (skipped unless installed) ──────────────────────
 
 def test_real_mlflow_trace_roundtrip(monkeypatch, tmp_path):
@@ -455,3 +476,50 @@ def test_real_mlflow_trace_roundtrip(monkeypatch, tmp_path):
         release_agent(tok)
         reset_user_id(su)
         reset_session_id(st)
+
+
+def test_agent_trace_stats_real_aggregation(monkeypatch, tmp_path):
+    """Against the real package: three traces tagged agent 'alpha', one 'beta';
+    agent_trace_stats('alpha') aggregates exactly the three. Catches a wrong
+    trace-info field name (execution_duration / token_usage / cost / state) —
+    those would be swallowed in prod and silently return no stats."""
+    mlflow = pytest.importorskip("mlflow", minversion="3.0")
+    _set_flag(monkeypatch, True)
+    monkeypatch.setenv("MLFLOW_ENABLE_ASYNC_TRACE_LOGGING", "false")
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+    monkeypatch.setenv("AUGHOR_MLFLOW_TRACKING_URI", str(tmp_path / "mlruns"))
+    monkeypatch.setenv("AUGHOR_MLFLOW_EXPERIMENT", "aughor-stats")
+
+    import types as _types
+
+    from aughor.user_agents.context import activate_agent, release_agent
+
+    prev_uri = mlflow.get_tracking_uri()
+    try:
+        with tel.span("warm", "warmup", {}):  # lazy init + set experiment
+            pass
+
+        def _traced_run(inv_id: str, agent_id: str) -> None:
+            tok = activate_agent(_types.SimpleNamespace(id=agent_id))
+            try:
+                with mlflow.start_span(name="investigation"):
+                    with tel.span(inv_id, "node", {}):
+                        pass
+            finally:
+                release_agent(tok)
+
+        for i in range(3):
+            _traced_run(f"inv-a{i}", "alpha")
+        _traced_run("inv-b0", "beta")
+
+        stats = tel.agent_trace_stats("alpha")
+        assert stats is not None
+        assert stats["trace_count"] == 3
+        assert stats["error_count"] == 0
+        assert set(stats) == {"trace_count", "error_count", "total_tokens",
+                              "total_cost", "latency_p50_ms", "latency_p90_ms"}
+        assert tel.agent_trace_stats("beta")["trace_count"] == 1
+        assert tel.agent_trace_stats("nobody") is None       # no traces → None
+    finally:
+        tel._mlflow_disable()
+        mlflow.set_tracking_uri(prev_uri)
