@@ -24,9 +24,15 @@ packs/volumes/charters with MLflow as the lifecycle plane). Phase 1 shipped on b
 autolog trace roots, node spans via the existing `node_span` seam, guarded SQL as `TOOL` spans,
 `tags.investigation_id` search; `mlflow-skinny` client (the full distribution would downgrade
 pandas/cryptography in the lock), compose `obs` profile server on :5001, cooldown-retry init,
-autolog unpatch on flag-off. Off by default = byte-identical. NEXT in the arc: the eval harness →
-**P7 model bake-off through `mlflow.genai.evaluate`** (guards as scorers), then the Agent entity
-(Gem MVP, doc Part B Phase 1).
+autolog unpatch on flag-off. Off by default = byte-identical. **A1-P2 also shipped: the P7
+bake-off instrument** — `evals/model_bakeoff.py` runs candidate coder models through
+`mlflow.genai.evaluate` with deterministic scorers only (`evals/mlflow_scorers.py`: the golden
+execution-accuracy comparator + the Trust-plane guard battery + exec-success), one env-isolated
+subprocess arm per model, tokens/latency from kernel metering, comparable runs in the
+`aughor-bakeoff` MLflow experiment + a printed ranking. LIVE-verified (glm-5.2:cloud, 2 questions:
+exec_acc 0.85 · trust 1.0 · 7.6k tok/q). **P7 itself is now one command:**
+`uv run --extra observability python -m evals.model_bakeoff --models "glm-5.2:cloud,<candidate>"`.
+NEXT in the arc: the Agent entity (Gem MVP, doc Part B Phase 1).
 
 **NEXT (queued 2026-07-11) — the post-head-to-head backlog.** The Databricks Genie head-to-head
 (same question, same bakehouse data) drove two shipped arcs (see §2); what remains, in leverage order:

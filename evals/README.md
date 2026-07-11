@@ -40,6 +40,30 @@ uv run python evals/run.py
 uv run python evals/run.py --fail-on-regression 0.05
 ```
 
+## P7 model bake-off (`model_bakeoff.py`)
+
+Compare candidate `coder` models head-to-head, scored deterministically (no LLM
+judges), logged to MLflow as directly comparable evaluation runs:
+
+```bash
+# one env-isolated subprocess arm per candidate + a printed ranking table
+uv run --extra observability python -m evals.model_bakeoff \
+    --models "glm-5.2:cloud,qwen3-coder-next:cloud" --limit 20
+
+# a single arm (also what the parent spawns)
+uv run --extra observability python -m evals.model_bakeoff --model glm-5.2:cloud
+```
+
+Per question: the live production-mirror pipeline (`run_golden` mode `full`)
+generates SQL → executes → three scorers (`evals/mlflow_scorers.py`): golden
+**execution accuracy** (multi-reference `sql_accuracy` comparator), the
+**Trust-plane guard battery** (`aughor.trust.verify`), and **exec success** —
+plus latency and kernel-metered tokens/question. Results land in the
+`aughor-bakeoff` MLflow experiment (`AUGHOR_MLFLOW_TRACKING_URI`, or a local
+sqlite store under `evals/bakeoff_out/`) with per-question traces, and each arm
+writes `evals/bakeoff_out/<model>.json` for the comparison table. Needs a
+seeded `samples` connection and live LLM credentials.
+
 ## Golden dataset
 
 `evals/golden.jsonl` — 15 Q&A pairs covering:
