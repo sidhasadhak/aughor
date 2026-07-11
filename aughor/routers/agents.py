@@ -199,3 +199,61 @@ def delete_user_agent(agent_id: str):
     if not delete_agent(agent_id):
         raise HTTPException(status_code=404, detail="No such agent")
     return {"deleted": agent_id}
+
+
+# ── Golden questions + evaluation ("measured agents") ─────────────────────────
+
+class GoldenCreate(BaseModel):
+    question: str
+    reference_sql: str
+
+
+@router.get("/agents/custom/{agent_id}/goldens")
+def list_agent_goldens(agent_id: str):
+    _require_user_agents()
+    from aughor.user_agents import get_agent
+    from aughor.user_agents.store import list_goldens
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return list_goldens(agent_id)
+
+
+@router.post("/agents/custom/{agent_id}/goldens", status_code=201)
+def create_agent_golden(agent_id: str, body: GoldenCreate):
+    """Pin a golden question: the agent's own regression suite. reference_sql is
+    the ground truth the evaluation compares against (executed, not matched as
+    text) — read-only statements only."""
+    _require_user_agents()
+    from aughor.user_agents import get_agent
+    from aughor.user_agents.store import add_golden
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    if not body.question.strip() or not body.reference_sql.strip():
+        raise HTTPException(status_code=422, detail="question and reference_sql are required")
+    from aughor.sql.readonly import is_mutating
+    if is_mutating(body.reference_sql):
+        raise HTTPException(status_code=422, detail="reference_sql must be read-only")
+    return add_golden(agent_id, body.question, body.reference_sql)
+
+
+@router.delete("/agents/custom/{agent_id}/goldens/{golden_id}")
+def delete_agent_golden(agent_id: str, golden_id: str):
+    _require_user_agents()
+    from aughor.user_agents.store import delete_golden
+    if not delete_golden(golden_id):
+        raise HTTPException(status_code=404, detail="No such golden")
+    return {"deleted": golden_id}
+
+
+@router.post("/agents/custom/{agent_id}/evaluate")
+def evaluate_user_agent(agent_id: str):
+    """Run the agent's golden suite NOW (one coder-model call per golden, capped)
+    and stamp the result on the agent — 'your agent still passes 11/12'. Run it
+    after editing instructions or documents to catch regressions."""
+    _require_user_agents()
+    from aughor.user_agents import get_agent
+    from aughor.user_agents.quality import evaluate_agent
+    agent = get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return evaluate_agent(agent)

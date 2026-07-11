@@ -183,6 +183,68 @@ export interface paths {
         patch: operations["patch_user_agent_agents_custom__agent_id__patch"];
         trace?: never;
     };
+    "/agents/custom/{agent_id}/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Evaluate User Agent
+         * @description Run the agent's golden suite NOW (one coder-model call per golden, capped)
+         *     and stamp the result on the agent — 'your agent still passes 11/12'. Run it
+         *     after editing instructions or documents to catch regressions.
+         */
+        post: operations["evaluate_user_agent_agents_custom__agent_id__evaluate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/custom/{agent_id}/goldens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Agent Goldens */
+        get: operations["list_agent_goldens_agents_custom__agent_id__goldens_get"];
+        put?: never;
+        /**
+         * Create Agent Golden
+         * @description Pin a golden question: the agent's own regression suite. reference_sql is
+         *     the ground truth the evaluation compares against (executed, not matched as
+         *     text) — read-only statements only.
+         */
+        post: operations["create_agent_golden_agents_custom__agent_id__goldens_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/custom/{agent_id}/goldens/{golden_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Agent Golden */
+        delete: operations["delete_agent_golden_agents_custom__agent_id__goldens__golden_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/{agent_id}": {
         parameters: {
             query?: never;
@@ -5693,6 +5755,13 @@ export interface components {
              */
             think: string;
         };
+        /** GoldenCreate */
+        GoldenCreate: {
+            /** Question */
+            question: string;
+            /** Reference Sql */
+            reference_sql: string;
+        };
         /** GrantRequest */
         GrantRequest: {
             /** Catalog Id */
@@ -7198,6 +7267,135 @@ export interface operations {
                 "application/json": components["schemas"]["UserAgentPatch"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    evaluate_user_agent_agents_custom__agent_id__evaluate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_agent_goldens_agents_custom__agent_id__goldens_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_agent_golden_agents_custom__agent_id__goldens_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoldenCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_agent_golden_agents_custom__agent_id__goldens__golden_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                golden_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

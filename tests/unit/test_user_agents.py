@@ -373,3 +373,106 @@ def test_apply_agent_bindings_rules():
     req = _ask_req(connection_id="conn-x", schema="s1")
     assert _apply_agent_bindings(req, free, "conn-x") == "conn-x"
     assert req.schema_name == "s1"
+
+
+# ── Slice 5: measured agents (goldens + evaluation) ───────────────────────────
+
+def test_goldens_store_roundtrip():
+    from aughor.user_agents.store import add_golden, delete_golden, list_goldens
+    a = create_agent("Measured")
+    g = add_golden(a.id, "How many orders?", "SELECT COUNT(*) FROM orders")
+    assert g["id"].startswith("ag_")
+    assert [x["question"] for x in list_goldens(a.id)] == ["How many orders?"]
+    assert delete_golden(g["id"]) is True
+    assert list_goldens(a.id) == []
+    # Deleting the agent removes its goldens too.
+    add_golden(a.id, "q", "SELECT 1")
+    delete_agent(a.id)
+    assert list_goldens(a.id) == []
+
+
+def test_results_match_semantics():
+    from aughor.user_agents.quality import results_match
+    assert results_match([[5]], [[5]])
+    assert results_match([[5.0]], [["5"]])            # type-tolerant
+    assert results_match([[1], [2]], [[2], [1]])      # order-insensitive
+    assert not results_match([[5]], [[6]])
+    assert not results_match([[1], [2]], [[1]])       # row-count must agree
+    assert results_match([["a", 3]], [["a", 3, "extra"]])  # richer answer passes
+    assert not results_match([], [[1]])
+
+
+def test_evaluate_agent_stamps_result(monkeypatch):
+    import duckdb as _duckdb
+    import types as _types
+
+    from aughor.user_agents.quality import evaluate_agent
+    from aughor.user_agents.store import add_golden
+
+    con = _duckdb.connect()
+    con.execute("CREATE TABLE orders AS SELECT * FROM (VALUES (1), (2), (3)) t(id)")
+
+    class _Res:
+        def __init__(self, rows, error=None):
+            self.rows, self.error = rows, error
+
+    def _exec(qid, sql):
+        try:
+            return _Res(con.execute(sql).fetchall())
+        except Exception as e:
+            return _Res([], error=str(e))
+
+    db = _types.SimpleNamespace(execute=_exec, get_schema=lambda: "orders(id)")
+
+    a = create_agent("Measured2", instructions="count things")
+    add_golden(a.id, "How many orders?", "SELECT COUNT(*) FROM orders")
+    add_golden(a.id, "Max id?", "SELECT MAX(id) FROM orders")
+
+    # A "model" that gets the first right and the second wrong.
+    def _gen(question, schema):
+        assert current_agent() is not None  # runs AS the agent
+        return ("SELECT COUNT(*) FROM orders" if "many" in question
+                else "SELECT MIN(id) FROM orders")
+
+    result = evaluate_agent(a, db=db, generate=_gen)
+    assert result["total"] == 2 and result["passed"] == 1
+    assert result["per_question"][1]["error"] == "result mismatch vs reference"
+    assert get_agent(a.id).last_eval["passed"] == 1  # stamped on the agent
+
+
+def test_evaluate_agent_generation_failure_is_scored(monkeypatch):
+    import types as _types
+
+    from aughor.user_agents.quality import evaluate_agent
+    from aughor.user_agents.store import add_golden
+
+    db = _types.SimpleNamespace(
+        execute=lambda qid, sql: _types.SimpleNamespace(rows=[[1]], error=None),
+        get_schema=lambda: "t(x)")
+    a = create_agent("Measured3")
+    add_golden(a.id, "q", "SELECT 1")
+
+    def _boom(question, schema):
+        raise RuntimeError("model down")
+
+    result = evaluate_agent(a, db=db, generate=_boom)
+    assert result["passed"] == 0 and result["total"] == 1
+    assert "model down" in result["per_question"][0]["error"]
+
+
+def test_golden_routes(client, monkeypatch):
+    _flag(monkeypatch, True)
+    r = client.post("/agents/custom", json={"name": "Routed"})
+    aid = r.json()["id"]
+    # Mutating reference SQL is rejected.
+    assert client.post(f"/agents/custom/{aid}/goldens",
+                       json={"question": "q", "reference_sql": "DROP TABLE x"}
+                       ).status_code == 422
+    r = client.post(f"/agents/custom/{aid}/goldens",
+                    json={"question": "q", "reference_sql": "SELECT 1"})
+    assert r.status_code == 201
+    gid = r.json()["id"]
+    assert len(client.get(f"/agents/custom/{aid}/goldens").json()) == 1
+    assert client.delete(f"/agents/custom/{aid}/goldens/{gid}").status_code == 200
+    # Unknown agent 404s.
+    assert client.get("/agents/custom/ua_nope/goldens").status_code == 404

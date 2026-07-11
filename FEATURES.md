@@ -307,8 +307,12 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   retrieval is agent-scoped through the same seam as the quick path. **Schema + pack bindings
   included**: `schema_scope` pins the agent to one schema (conflicting explicit schema → 409) and
   `pack_ids` restricts specialist-pack selection to the agent's packs — a preference, never a
-  deploy-gate bypass (the pinned-binding requirement applies unchanged). Slices 1–4 of the
-  agentic-platform arc (`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md` Part B).
+  deploy-gate bypass (the pinned-binding requirement applies unchanged). **Measured agents
+  included**: each agent carries its own GOLDEN QUESTIONS (question + read-only reference SQL);
+  `POST /agents/custom/{id}/evaluate` generates SQL as the agent, executes both, compares result
+  sets deterministically (no LLM judges), and stamps the "n/m passing" chip — quality is measured,
+  not vibes, which no Gem/custom-GPT builder offers. Slices 1–5 of the agentic-platform arc
+  (`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md` Part B).
   Off by default (routes 404, answer path byte-identical, picker hidden).
 - **MLflow investigation tracing** (`obs.mlflow`) — every investigation exported to a self-hosted MLflow
   server as one inspectable trace tree: LangChain/OpenAI autolog creates the trace root per graph run (LLM

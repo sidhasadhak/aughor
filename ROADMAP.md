@@ -56,9 +56,17 @@ nothing rather than guessing). Builder form gained Schema scope + Expertise pack
 deferred — per-agent ledger crystallization**: an agent bound to a connection inherits that
 connection's crystallized resolutions, which is the correct default; partitioning the Ambiguity
 Ledger per agent needs a scope-column schema change + a product decision (do two agents on one
-connection WANT different metric readings?) — revisit with A1-P4. NEXT: the uploaded-PDF
-exit-criterion run (needs Qdrant + embedder live), then A1-P3/P4 (prompt-registry versioning per
-agent, eval-on-edit) per the study doc Part B Phases 2–3.
+connection WANT different metric readings?) — revisit with A1-P4. **Slice 5 (measured agents)
+shipped + LIVE-verified**: per-agent GOLDEN QUESTIONS (`user_agent_goldens`, CRUD under
+`/agents/custom/{id}/goldens`, read-only reference SQL enforced) + `POST
+/agents/custom/{id}/evaluate` — generates SQL AS the agent with the current coder model,
+executes generated vs reference on the agent's connection, compares result sets
+deterministically (`user_agents/quality.py`, no LLM judges; order/type tolerant, a richer
+correct answer passes), stamps `last_eval` (the "n/m passing" chip on the roster); the builder
+gained a Goldens editor + Run-evaluation (live: golden → evaluate → 1/1 passing → stamped,
+glm-5.2:cloud). NEXT: auto-eval-on-edit (async suite run after instruction/document PATCHes),
+the uploaded-PDF exit-criterion run (needs Qdrant + embedder live), A1-P3 lifecycle, then the
+Part-A lakehouse connector family as its own PR.
 
 **NEXT (queued 2026-07-11) — the post-head-to-head backlog.** The Databricks Genie head-to-head
 (same question, same bakehouse data) drove two shipped arcs (see §2); what remains, in leverage order:

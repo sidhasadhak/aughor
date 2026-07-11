@@ -3416,6 +3416,7 @@ export interface UserAgent {
   pack_ids: string[];
   owner: string;
   enabled: boolean;
+  last_eval: { passed: number; total: number; at: string } | null;
   created_at: string;
   updated_at: string;
 }
@@ -3455,4 +3456,54 @@ export async function deleteUserAgent(agentId: string): Promise<boolean> {
     method: "DELETE",
   });
   return res.ok;
+}
+
+// ── Measured agents: golden questions + evaluation ────────────────────────────
+
+export interface AgentGolden {
+  id: string;
+  agent_id: string;
+  question: string;
+  reference_sql: string;
+  created_at: string;
+}
+
+export interface AgentEvalResult {
+  passed: number;
+  total: number;
+  at: string;
+  duration_ms?: number;
+  per_question: { golden_id: string; question: string; passed: boolean; error: string }[];
+}
+
+export async function listAgentGoldens(agentId: string): Promise<AgentGolden[]> {
+  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/goldens`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createAgentGolden(agentId: string, body: {
+  question: string; reference_sql: string;
+}): Promise<AgentGolden> {
+  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/goldens`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `add golden failed (${res.status})`);
+  return res.json();
+}
+
+export async function deleteAgentGolden(agentId: string, goldenId: string): Promise<boolean> {
+  const res = await fetch(
+    `${BASE}/agents/custom/${encodeURIComponent(agentId)}/goldens/${encodeURIComponent(goldenId)}`,
+    { method: "DELETE" });
+  return res.ok;
+}
+
+export async function evaluateUserAgent(agentId: string): Promise<AgentEvalResult> {
+  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/evaluate`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error((await res.text()) || `evaluate failed (${res.status})`);
+  return res.json();
 }

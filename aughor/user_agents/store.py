@@ -24,6 +24,19 @@ CREATE TABLE IF NOT EXISTS user_agents (
 )
 """
 
+# Golden questions — the agent's own regression suite ("measured agents",
+# study Part B Phase 3). reference_sql is the ground truth; an evaluation
+# generates SQL AS the agent and compares executed results deterministically.
+_GOLDENS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS user_agent_goldens (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    reference_sql TEXT NOT NULL,
+    created_at TEXT NOT NULL
+)
+"""
+
 
 def _db_path() -> str:
     return resolve_db_path("AUGHOR_AGENTS_DB", "agents.db")
@@ -40,6 +53,9 @@ def _connect() -> sqlite3.Connection:
         conn.execute("ALTER TABLE user_agents ADD COLUMN schema_scope TEXT NOT NULL DEFAULT ''")
     if "pack_ids" not in cols:
         conn.execute("ALTER TABLE user_agents ADD COLUMN pack_ids TEXT NOT NULL DEFAULT '[]'")
+    if "last_eval" not in cols:  # slice 5: the latest golden-suite result (JSON)
+        conn.execute("ALTER TABLE user_agents ADD COLUMN last_eval TEXT NOT NULL DEFAULT ''")
+    conn.execute(_GOLDENS_SCHEMA)
     return conn
 
 
@@ -50,6 +66,7 @@ def _row_to_agent(row: sqlite3.Row) -> UserAgent:
         doc_ids=json.loads(row["doc_ids"] or "[]"),
         pack_ids=json.loads(row["pack_ids"] or "[]"),
         owner=row["owner"], enabled=bool(row["enabled"]),
+        last_eval=json.loads(row["last_eval"]) if row["last_eval"] else None,
         created_at=row["created_at"], updated_at=row["updated_at"],
     )
 
@@ -123,4 +140,42 @@ def update_agent(agent_id: str, **fields) -> Optional[UserAgent]:
 def delete_agent(agent_id: str) -> bool:
     with _connect() as conn:
         cur = conn.execute("DELETE FROM user_agents WHERE id = ?", (agent_id,))
+        conn.execute("DELETE FROM user_agent_goldens WHERE agent_id = ?", (agent_id,))
         return cur.rowcount > 0
+
+
+# ── Golden questions (the agent's own regression suite) ──────────────────────
+
+def add_golden(agent_id: str, question: str, reference_sql: str) -> dict:
+    row = {"id": f"ag_{uuid.uuid4().hex[:12]}", "agent_id": agent_id,
+           "question": question.strip(), "reference_sql": reference_sql.strip(),
+           "created_at": _now()}
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO user_agent_goldens (id, agent_id, question, reference_sql,"
+            " created_at) VALUES (?,?,?,?,?)",
+            (row["id"], row["agent_id"], row["question"], row["reference_sql"],
+             row["created_at"]),
+        )
+    return row
+
+
+def list_goldens(agent_id: str) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM user_agent_goldens WHERE agent_id = ? ORDER BY created_at",
+            (agent_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_golden(golden_id: str) -> bool:
+    with _connect() as conn:
+        cur = conn.execute("DELETE FROM user_agent_goldens WHERE id = ?", (golden_id,))
+        return cur.rowcount > 0
+
+
+def record_eval(agent_id: str, result: dict) -> None:
+    """Stamp the latest golden-suite result onto the agent (the pass chip)."""
+    with _connect() as conn:
+        conn.execute("UPDATE user_agents SET last_eval = ?, updated_at = ? WHERE id = ?",
+                     (json.dumps(result), _now(), agent_id))

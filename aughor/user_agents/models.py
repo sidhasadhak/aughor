@@ -22,5 +22,8 @@ class UserAgent(BaseModel):
     pack_ids: list[str] = Field(default_factory=list)
     owner: str = ""                  # org/user identity when identity is enforced
     enabled: bool = True
+    # Latest golden-suite evaluation ({passed, total, at, per_question}); None =
+    # never evaluated. Written by quality.evaluate_agent, shown as the pass chip.
+    last_eval: dict | None = None
     created_at: str = ""
     updated_at: str = ""

@@ -8,9 +8,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import {
-  createUserAgent, deleteUserAgent, getConnections, getPacks, listDocuments,
+  createAgentGolden, createUserAgent, deleteAgentGolden, deleteUserAgent,
+  evaluateUserAgent, getConnections, getPacks, listAgentGoldens, listDocuments,
   listUserAgents, patchUserAgent,
-  type Connection, type DocumentEntry, type PackSummary, type UserAgent,
+  type AgentEvalResult, type AgentGolden, type Connection, type DocumentEntry,
+  type PackSummary, type UserAgent,
 } from "@/lib/api";
 
 interface FormState {
@@ -37,6 +39,10 @@ export function AgentsAdminPanel() {
   const [editTarget, setEditTarget] = useState<UserAgent | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [goldens, setGoldens] = useState<AgentGolden[]>([]);
+  const [goldenDraft, setGoldenDraft] = useState({ question: "", reference_sql: "" });
+  const [evaluating, setEvaluating] = useState(false);
+  const [evalResult, setEvalResult] = useState<AgentEvalResult | null>(null);
 
   const reload = useCallback(() => {
     listUserAgents().then(setAgents).catch(() => setAgents([]));
@@ -60,6 +66,10 @@ export function AgentsAdminPanel() {
     setForm({ name: a.name, instructions: a.instructions,
               connection_id: a.connection_id, schema_scope: a.schema_scope,
               doc_ids: a.doc_ids, pack_ids: a.pack_ids });
+    setGoldens([]);
+    setEvalResult(null);
+    setGoldenDraft({ question: "", reference_sql: "" });
+    listAgentGoldens(a.id).then(setGoldens).catch(() => {});
     setEditTarget(a);
     setError(null);
     setView("form");
@@ -103,6 +113,37 @@ export function AgentsAdminPanel() {
         ? f.doc_ids.filter(d => d !== docId)
         : [...f.doc_ids, docId],
     }));
+  }
+
+  async function addGolden() {
+    if (!editTarget || !goldenDraft.question.trim() || !goldenDraft.reference_sql.trim()) return;
+    try {
+      const g = await createAgentGolden(editTarget.id, goldenDraft);
+      setGoldens(gs => [...gs, g]);
+      setGoldenDraft({ question: "", reference_sql: "" });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Add golden failed.");
+    }
+  }
+
+  async function removeGolden(g: AgentGolden) {
+    if (!editTarget) return;
+    await deleteAgentGolden(editTarget.id, g.id);
+    setGoldens(gs => gs.filter(x => x.id !== g.id));
+  }
+
+  async function runEvaluation() {
+    if (!editTarget) return;
+    setEvaluating(true);
+    setError(null);
+    try {
+      setEvalResult(await evaluateUserAgent(editTarget.id));
+      reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Evaluation failed.");
+    } finally {
+      setEvaluating(false);
+    }
   }
 
   function togglePack(packId: string) {
@@ -162,6 +203,11 @@ export function AgentsAdminPanel() {
                       <StatusChip hue={a.enabled ? "positive" : "muted"}>
                         {a.enabled ? "enabled" : "disabled"}
                       </StatusChip>
+                      {a.last_eval && a.last_eval.total > 0 && (
+                        <StatusChip hue={a.last_eval.passed === a.last_eval.total ? "positive" : "caution"}>
+                          {a.last_eval.passed}/{a.last_eval.total} passing
+                        </StatusChip>
+                      )}
                     </div>
                     <div style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 3,
                                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -267,6 +313,60 @@ export function AgentsAdminPanel() {
                 <span style={{ fontSize: 11, color: "var(--t3)" }}>
                   A preference: pack steering is restricted to these packs when the agent runs.
                   A pack still only steers where it is deployed on the connection.
+                </span>
+              </div>
+            )}
+
+            {editTarget && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6,
+                            padding: "12px 14px", border: "1px solid var(--b1)",
+                            borderRadius: "var(--r2)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="aug-label">Golden questions</span>
+                  <span style={{ fontSize: 11, color: "var(--t3)" }}>
+                    the agent's own regression suite — re-run after editing instructions or documents
+                  </span>
+                  <span style={{ marginLeft: "auto" }}>
+                    <Button size="xs" variant="outline" onClick={runEvaluation}
+                            disabled={evaluating || goldens.length === 0}>
+                      {evaluating ? "Evaluating…" : "Run evaluation"}
+                    </Button>
+                  </span>
+                </div>
+                {evalResult && (
+                  <div style={{ fontSize: 12, color: evalResult.passed === evalResult.total
+                                ? "var(--green5)" : "var(--amber5)" }}>
+                    {evalResult.passed}/{evalResult.total} passing
+                    {evalResult.per_question.filter(p => !p.passed).slice(0, 3).map(p => (
+                      <div key={p.golden_id} style={{ color: "var(--t3)", fontSize: 11.5 }}>
+                        ✗ {p.question} — {p.error}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {goldens.map(g => (
+                  <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8,
+                                           fontSize: 12, color: "var(--t2)" }}>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis",
+                                   whiteSpace: "nowrap" }}
+                          title={g.reference_sql}>
+                      {g.question}
+                    </span>
+                    <Button variant="ghost" size="xs" onClick={() => removeGolden(g)}>Remove</Button>
+                  </div>
+                ))}
+                <input className="aug-input" placeholder="Golden question — e.g. How many active customers?"
+                       value={goldenDraft.question}
+                       onChange={e => setGoldenDraft(d => ({ ...d, question: e.target.value }))} />
+                <textarea className="aug-input" rows={2}
+                          placeholder="Reference SQL (the known-correct answer; read-only)"
+                          value={goldenDraft.reference_sql}
+                          onChange={e => setGoldenDraft(d => ({ ...d, reference_sql: e.target.value }))} />
+                <span>
+                  <Button size="xs" variant="secondary" onClick={addGolden}
+                          disabled={!goldenDraft.question.trim() || !goldenDraft.reference_sql.trim()}>
+                    Add golden
+                  </Button>
                 </span>
               </div>
             )}
