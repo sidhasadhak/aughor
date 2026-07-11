@@ -230,7 +230,7 @@ One corpus at three altitudes plus the **Evidence** layer. The Briefing is **con
 | Analytics | DuckDB, PostgreSQL |
 | LLM runtime | Ollama / Groq / Together / Anthropic (configurable per role) |
 | Statistics · SQL | scipy, statsmodels, numpy · SQLGlot |
-| Vector · Observability | Qdrant + ChromaDB · Langfuse, OpenTelemetry |
+| Vector · Observability | Qdrant + ChromaDB · Langfuse, OpenTelemetry, MLflow tracing (`obs.mlflow`) |
 | State · Packaging | SQLite (history, registry, evidence, audit) · uv |
 
 ## Project structure

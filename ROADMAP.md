@@ -14,6 +14,20 @@
 
 ## 0 · Immediate next action ⏭️
 
+**🚧 IN FLIGHT (2026-07-11) — the Databricks-OSS arc, phase 1: MLflow investigation tracing
+(`obs.mlflow`).** Study + full sequencing in
+[`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md`](docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md)
+(Part A verdicts: MLflow=adopt · UC=interop-as-client · lakehouse connector family=build ·
+Redash=mine patterns; Part B: the agentic-platform direction — user-created domain agents over
+packs/volumes/charters with MLflow as the lifecycle plane). Phase 1 shipped on branch
+`2026-07-11-obs-mlflow-tracing`: the third backend of the one telemetry seam (`aughor/telemetry.py`) —
+autolog trace roots, node spans via the existing `node_span` seam, guarded SQL as `TOOL` spans,
+`tags.investigation_id` search; `mlflow-skinny` client (the full distribution would downgrade
+pandas/cryptography in the lock), compose `obs` profile server on :5001, cooldown-retry init,
+autolog unpatch on flag-off. Off by default = byte-identical. NEXT in the arc: the eval harness →
+**P7 model bake-off through `mlflow.genai.evaluate`** (guards as scorers), then the Agent entity
+(Gem MVP, doc Part B Phase 1).
+
 **NEXT (queued 2026-07-11) — the post-head-to-head backlog.** The Databricks Genie head-to-head
 (same question, same bakehouse data) drove two shipped arcs (see §2); what remains, in leverage order:
 1. **P7 — pin a frontier `coder` model** (ops/config, non-code). Every remaining rough edge —

@@ -174,7 +174,13 @@ def execute_guarded(
             tolerate(_exc, "AL-01 trust.verify live gate (advisory; execute proceeds)",
                      counter="trust.verify_live")
 
-    result = conn.execute(query_id, sql)
+    # obs.mlflow: a TOOL span per guarded execution, nested under the active
+    # investigation trace. When the flag is off this is one ledger flag read —
+    # the same cost class as the trust.verify_live gate above.
+    from aughor.telemetry import mlflow_tool_span
+    with mlflow_tool_span("sql.execute", {"query_id": query_id, "sql": sql,
+                                          "dialect": getattr(conn, "dialect", "")}):
+        result = conn.execute(query_id, sql)
 
     # Determine whether to retry: hard error OR suspicious zero-row result
     _zero_diag = None
@@ -303,7 +309,10 @@ def execute_guarded(
                 user=fix_prompt,
                 response_model=_Fix,
             )
-            retry = conn.execute(query_id, fix.fixed_sql)
+            with mlflow_tool_span("sql.execute.retry",
+                                  {"query_id": query_id, "sql": fix.fixed_sql,
+                                   "dialect": getattr(conn, "dialect", "")}):
+                retry = conn.execute(query_id, fix.fixed_sql)
             # Accept the fix if: hard error resolved, OR zero-row and fix got rows.
             # For a domain-mismatch retry, additionally require the regeneration to
             # actually CLEAR the mismatch — never replace a query with one that still
