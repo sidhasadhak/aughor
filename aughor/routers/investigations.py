@@ -3117,6 +3117,7 @@ async def ask_endpoint(req: AskRequest, request: Request):
     if agent is not None:
         conn_id = _apply_agent_bindings(req, agent, conn_id)
     stream = _stream_ask(req, request, conn_id)
+    stream = _stream_with_session(req.session_id, stream)  # ambient session → trace attribution
     if agent is not None:
         stream = _stream_as_agent(agent, stream)
     return StreamingResponse(
@@ -3212,6 +3213,20 @@ async def _stream_as_agent(agent, stream: AsyncGenerator[str, None]) -> AsyncGen
             yield event
     finally:
         release_agent(token)
+
+
+async def _stream_with_session(session_id: str, stream: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
+    """Run the ask stream with the conversation session contextvar active, so the
+    telemetry seam can attribute the investigation trace to its session ambiently
+    (MLflow Sessions view) — propagates into the deep-run job + waves like the
+    agent persona does. No-op wrapper when there's no session id."""
+    from aughor.org.context import reset_session_id, set_session_id
+    token = set_session_id(session_id or "")
+    try:
+        async for event in stream:
+            yield event
+    finally:
+        reset_session_id(token)
 
 
 def _job_id_for_investigation(inv_id: str) -> Optional[str]:

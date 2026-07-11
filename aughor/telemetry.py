@@ -185,14 +185,59 @@ def _mlflow_disable() -> None:
         logger.info("MLflow tracing disabled (obs.mlflow off)")
 
 
+def _trace_identity() -> tuple[str, str, str]:
+    """The ambient (session_id, user_id, agent_id) for trace attribution.
+
+    All three ride request-scoped contextvars (org.context session/user set by
+    the /ask stream + identity middleware; user_agents.context agent set by the
+    persona wrapper) and propagate into the deep-run job and the parallel-wave
+    workers (ContextThreadPoolExecutor copies context) — so a node span deep in a
+    wave still sees them, with nothing threaded through the graph. Every lookup
+    degrades to '' rather than raise (telemetry must never break the answer path).
+    """
+    try:
+        from aughor.org.context import current_session_id, current_user_id
+        session_id, user_id = current_session_id(), current_user_id()
+    except Exception:
+        session_id, user_id = "", ""
+    try:
+        from aughor.user_agents.context import current_agent
+        agent = current_agent()
+        agent_id = agent.id if agent is not None else ""
+    except Exception:
+        agent_id = ""
+    return session_id, user_id, agent_id
+
+
+def _tag_current_trace(mlf: Any, trace_id: str) -> None:
+    """Attribute the active trace so MLflow's Sessions / user / per-agent + cost
+    views populate (E1 of the 2026-07-11 Databricks-OSS study).
+
+    ``investigation_id`` and ``agent_id`` are TAGS (mutable, filterable); session
+    and user go through ``update_current_trace``'s dedicated kwargs, which write
+    the reserved ``mlflow.trace.session`` / ``mlflow.trace.user`` metadata the
+    demo's Sessions and user filters key on. Idempotent, best-effort — a tagging
+    failure never breaks the span it rides on.
+    """
+    session_id, user_id, agent_id = _trace_identity()
+    tags = {"investigation_id": trace_id}
+    if agent_id:
+        tags["agent_id"] = agent_id
+    try:
+        mlf.update_current_trace(tags=tags, session_id=session_id or None, user=user_id or None)
+    except Exception as exc:
+        logger.debug("MLflow trace tag failed: %s", exc)
+
+
 def _mlflow_enter_span(stack: ExitStack, name: str, attributes: dict | None,
                        *, span_type: str | None = None, trace_id: str = "") -> Any | None:
     """Enter an MLflow span on ``stack`` when the flag is on AND a trace is active.
 
     Autolog owns the trace root — a call outside a traced run never creates an
-    orphan trace. Tags the active trace with the investigation id when given
-    (idempotent in-memory tag). String attributes are capped at
-    ``_MLF_ATTR_MAX_CHARS`` (SQL text). Start failures degrade to None.
+    orphan trace. Tags the active trace with the investigation id + ambient
+    session/user/agent attribution when given (idempotent in-memory tag). String
+    attributes are capped at ``_MLF_ATTR_MAX_CHARS`` (SQL text). Start failures
+    degrade to None.
     """
     mlf = _mlflow()
     if mlf is None:
@@ -201,10 +246,7 @@ def _mlflow_enter_span(stack: ExitStack, name: str, attributes: dict | None,
         if mlf.get_current_active_span() is None:
             return None
         if trace_id:
-            try:
-                mlf.update_current_trace(tags={"investigation_id": trace_id})
-            except Exception as exc:
-                logger.debug("MLflow trace tag failed: %s", exc)
+            _tag_current_trace(mlf, trace_id)
         attrs = {k: (v[:_MLF_ATTR_MAX_CHARS] if isinstance(v, str) else v)
                  for k, v in _flat_attrs(attributes or {}).items()}
         kwargs = {"span_type": span_type} if span_type else {}
