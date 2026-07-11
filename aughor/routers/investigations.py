@@ -2301,6 +2301,9 @@ async def _stream_investigation(
         initial_state: AgentState = {
             "question": question, "connection_id": connection_id, "investigation_id": inv_id,
             "trace_id": trace_id,
+            # agents.user_defined — persist the active persona so a plan/clarify-gate
+            # resume (which never passes through /ask) can re-activate it.
+            "agent_id": _current_agent_id(),
             "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": "", "events_context": "",
             "hypotheses": [], "current_hypothesis_idx": 0, "query_history": [], "evidence_scores": [],
             "pitfalls": [], "prior_analyses": _seed_priors, "origin_finding": _origin, "iteration": 0,
@@ -3147,6 +3150,38 @@ def _resolve_ask_agent(req: "AskRequest"):
     return agent
 
 
+def _current_agent_id() -> str:
+    """The active user-agent's id for state seeding ("" when none)."""
+    from aughor.user_agents.context import current_agent
+    agent = current_agent()
+    return agent.id if agent is not None else ""
+
+
+def _persona_for_investigation(inv_id: str):
+    """The user-agent persona a checkpointed deep run was launched AS, or None.
+
+    Resume (plan/clarify-gate feedback) never passes through /ask, so the
+    persona is re-read from the run's persisted state (`agent_id`). Fail-open:
+    a missing checkpoint, an unknown/disabled agent, or the flag being off all
+    resume the run WITHOUT the persona rather than blocking it."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("agents.user_defined"):
+        return None
+    try:
+        from aughor.agent.graph import read_checkpoint_values
+        agent_id = read_checkpoint_values(inv_id).get("agent_id") or ""
+        if not agent_id:
+            return None
+        from aughor.user_agents import get_agent
+        persona = get_agent(agent_id)
+        return persona if (persona is not None and persona.enabled) else None
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "persona re-activation on resume is best-effort; resuming without it",
+                 counter="agents.resume_persona")
+        return None
+
+
 async def _stream_as_agent(agent, stream: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
     """Run the ask stream with the user-agent contextvar active, so the prompt
     brief and the document-retrieval scope see the agent everywhere (threads
@@ -3188,9 +3223,16 @@ def cancel_investigation_route(inv_id: str):
 
 @router.post("/investigations/{inv_id}/feedback")
 async def submit_feedback(inv_id: str, req: FeedbackRequest, request: Request):
+    stream = _stream_resume(inv_id, req.feedback, request, keep_subquestions=req.keep_subquestions,
+                            clarify_choice=req.clarify_choice)
+    # agents.user_defined — a deep run launched AS an agent resumes AS it: the
+    # persona persists in the run's checkpointed state (resume never passes
+    # through /ask). Fail-open: no persona → resume unchanged.
+    persona = _persona_for_investigation(inv_id)
+    if persona is not None:
+        stream = _stream_as_agent(persona, stream)
     return StreamingResponse(
-        _stream_resume(inv_id, req.feedback, request, keep_subquestions=req.keep_subquestions,
-                       clarify_choice=req.clarify_choice),
+        stream,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

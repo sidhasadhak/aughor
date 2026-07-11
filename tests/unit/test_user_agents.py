@@ -232,3 +232,47 @@ async def test_stream_as_agent_activates_and_releases():
     assert any('"agent"' in e or "agent" in e for e in events)  # the agent SSE receipt
     assert seen["during"].id == a.id
     assert current_agent() is None  # released after the stream
+
+
+# ── Deep-path: state seeding + resume re-activation ──────────────────────────
+
+def test_current_agent_id_for_state_seeding():
+    from aughor.routers.investigations import _current_agent_id
+    assert _current_agent_id() == ""
+    a = create_agent("Seeded")
+    token = activate_agent(a)
+    try:
+        assert _current_agent_id() == a.id
+    finally:
+        release_agent(token)
+
+
+def test_read_checkpoint_values_missing_run_is_empty():
+    from aughor.agent.graph import read_checkpoint_values
+    assert read_checkpoint_values("inv-does-not-exist") == {}
+
+
+def test_persona_for_investigation_rules(monkeypatch):
+    import aughor.agent.graph as graph
+    from aughor.routers.investigations import _persona_for_investigation
+
+    a = create_agent("Deep Persona", instructions="deep focus")
+    monkeypatch.setattr(graph, "read_checkpoint_values", lambda inv: {"agent_id": a.id})
+
+    _flag(monkeypatch, False)
+    assert _persona_for_investigation("inv-1") is None  # flag off → never
+
+    _flag(monkeypatch, True)
+    resolved = _persona_for_investigation("inv-1")
+    assert resolved is not None and resolved.id == a.id
+
+    update_agent(a.id, enabled=False)
+    assert _persona_for_investigation("inv-1") is None  # disabled → resume without persona
+
+    monkeypatch.setattr(graph, "read_checkpoint_values", lambda inv: {})
+    assert _persona_for_investigation("inv-1") is None  # pre-upgrade checkpoint → None
+
+    def _boom(inv):
+        raise RuntimeError("checkpoint store unavailable")
+    monkeypatch.setattr(graph, "read_checkpoint_values", _boom)
+    assert _persona_for_investigation("inv-1") is None  # fail-open, never blocks resume

@@ -5940,7 +5940,20 @@ def ada_synthesize(state: AgentState) -> dict:
         tolerate(_exc, "org-intelligence section is advisory; synthesis proceeds without "
                        "promoted canvas insights", counter="ada.synth_context")
 
-    synth_prompt = ADA_SYNTHESIZE_PROMPT.format(
+    # agents.user_defined — the active persona's standing instructions lead the
+    # synthesis prompt (mirrors the quick path's rules_block seam; the document
+    # sections above are already agent-scoped via build_external_context_section).
+    # Inert ("") when no agent is active.
+    _agent_brief = ""
+    try:
+        from aughor.user_agents.context import agent_brief_block
+        _agent_brief = agent_brief_block()
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "agent brief is advisory; synthesis proceeds without it",
+                 counter="ada.synth_context")
+
+    synth_prompt = _agent_brief + ADA_SYNTHESIZE_PROMPT.format(
         question=question,
         phases_summary=phases_summary,
         evidence_log=evidence_log,

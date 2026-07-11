@@ -61,6 +61,16 @@ def _checkpointer():
     return SqliteSaver(conn)
 
 
+def read_checkpoint_values(investigation_id: str) -> dict:
+    """The persisted state values of a checkpointed run, without building the graph.
+
+    A cheap read for callers that need one field off a paused run (e.g. the
+    resume door re-activating the run's user-agent persona from ``agent_id``).
+    Returns {} when the run has no checkpoint."""
+    cp = _checkpointer().get({"configurable": {"thread_id": investigation_id}})
+    return dict((cp or {}).get("channel_values") or {})
+
+
 def _explore_parallel_enabled() -> bool:
     """The explore.parallel_subq flag, resolved fail-safe (env/ledger). A ledger read can fail in
     a bare CLI context, so any error means 'off' (the safe, byte-identical sequential path)."""

@@ -384,6 +384,10 @@ class AgentState(TypedDict):
     schema_context: str
     # Telemetry — Langfuse trace ID (== investigation_id). Empty string when disabled.
     trace_id: str
+    # agents.user_defined — the user-agent persona this run was launched AS ("" = none).
+    # Persisted in state (checkpointed) because resume never passes through /ask: the
+    # feedback endpoint re-activates the persona from here for the rest of the run.
+    agent_id: str
 
     # Canvas context (Sprint 21) — set when request arrives via canvas_id.
     # canvas_id: the Canvas the user launched the investigation from.

@@ -301,10 +301,13 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   whole trust substrate — guards, receipts, RBAC — untouched. **Builder UI included**: the
   Intelligence-rail **Agents** panel (roster + create/edit with connection select + document
   multi-attach + enable toggle, `web/components/AgentsAdminPanel.tsx`), an agent picker on the ask
-  composer, and an "Answering as …" `AgentBadge` receipt per turn. Slices 1–2 of the
+  composer, and an "Answering as …" `AgentBadge` receipt per turn. **Deep path included**: the
+  persona persists in the run's checkpointed state (`AgentState.agent_id`) so a plan/clarify-gate
+  resume re-activates it (fail-open), the brief leads the ADA synthesis prompt, and deep document
+  retrieval is agent-scoped through the same seam as the quick path. Slices 1–3 of the
   agentic-platform arc (`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md` Part B);
-  deep-path intake and pack/schema bindings are the next slices. Off by default (routes 404, answer
-  path byte-identical, picker hidden).
+  pack/schema bindings are the next slices. Off by default (routes 404, answer path
+  byte-identical, picker hidden).
 - **MLflow investigation tracing** (`obs.mlflow`) — every investigation exported to a self-hosted MLflow
   server as one inspectable trace tree: LangChain/OpenAI autolog creates the trace root per graph run (LLM
   calls with token counts), the existing `node_span` seam nests each graph node under it, and every guarded

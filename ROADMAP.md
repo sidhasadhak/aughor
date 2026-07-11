@@ -42,10 +42,14 @@ SSE receipt opens the stream), **and the builder UI**: the Intelligence-rail **A
 document multi-attach + enable toggle), the composer agent picker (ChatPanel → `agent_id` on
 /ask), and the `AgentBadge` "Answering as …" receipt on each turn. **LIVE-verified end-to-end**
 (flag flipped at runtime, a Churn Analyst created + asked → agent receipt → answer → Trust
-Receipt; panel screenshot-verified, 0 console errors). NEXT slices (in order): **(a) deep-path
-intake injection** (ADA gets the brief + doc scope); **(b) pack bindings + schema scoping via
-ExecutionScope; per-agent ledger crystallization**; **(c)** the uploaded-PDF exit-criterion run
-(needs Qdrant + embedder live). Then A1-P3/P4 (prompt-registry versioning per agent,
+Receipt; panel screenshot-verified, 0 console errors). **Slice 3 (deep path) shipped too**: the
+persona persists in graph state (`AgentState.agent_id`) so a plan/clarify-gate **resume
+re-activates it** (the feedback door reads it via `graph.read_checkpoint_values` — resume never
+passes through /ask; fail-open, never blocks a resume), the agent brief leads the ADA synthesis
+prompt, and deep document retrieval was already agent-scoped (it routes through
+`build_external_context_section`). NEXT slices (in order): **(a) pack bindings + schema scoping
+via ExecutionScope; per-agent ledger crystallization**; **(b)** the uploaded-PDF exit-criterion
+run (needs Qdrant + embedder live). Then A1-P3/P4 (prompt-registry versioning per agent,
 eval-on-edit) per the study doc Part B Phases 2–3.
 
 **NEXT (queued 2026-07-11) — the post-head-to-head backlog.** The Databricks Genie head-to-head
