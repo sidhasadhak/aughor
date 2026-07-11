@@ -18,6 +18,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 import type { OpsLayer } from "@/components/OperationsWorkspace";
+import type { AgentLayer } from "@/components/AgentWorkspace";
 import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
 
 function LoadingPanel() {
@@ -52,7 +53,7 @@ const CanvasWorkspace   = dynamic(() => import("@/components/CanvasWorkspace").t
 const QueryBuilder      = dynamic(() => import("@/components/QueryBuilder").then(m => ({ default: m.QueryBuilder })),        { ssr: false, loading });
 const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
 const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
-const AgentsAdminPanel  = dynamic(() => import("@/components/AgentsAdminPanel").then(m => ({ default: m.AgentsAdminPanel })), { ssr: false, loading });
+const AgentWorkspace    = dynamic(() => import("@/components/AgentWorkspace").then(m => ({ default: m.AgentWorkspace })), { ssr: false, loading });
 import { API_BASE } from "@/lib/config";
 import {
   getConnections,
@@ -1609,6 +1610,7 @@ export default function Home() {
   const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
   const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
   const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
+  const [agentLayer, setAgentLayer] = useState<AgentLayer>("overview");
   const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
   const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
   const [showHistory, setShowHistory] = useState(false);
@@ -2194,11 +2196,9 @@ export default function Home() {
               </div>
             )}
 
-            {/* ── AGENTS (user-defined personas) ── */}
+            {/* ── AGENTS (user-defined personas) — Overview + Manage layers ── */}
             {tab === "agents" && (
-              <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
-                <AgentsAdminPanel />
-              </div>
+              <AgentWorkspace layer={agentLayer} onLayerChange={setAgentLayer} />
             )}
 
             {/* ── SETTINGS ── */}

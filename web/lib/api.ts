@@ -3507,3 +3507,42 @@ export async function evaluateUserAgent(agentId: string): Promise<AgentEvalResul
   if (!res.ok) throw new Error((await res.text()) || `evaluate failed (${res.status})`);
   return res.json();
 }
+
+// ── Observability: per-agent run history + optional MLflow trace stats ─────────
+// The Agent Workspace overview. Run history always populates (from the history
+// store); trace_stats is null when obs.mlflow is off — the overview degrades to
+// history-only (the workspace works without a running MLflow server).
+
+export interface AgentRunSummary {
+  id: string;
+  question: string;
+  connection_id: string;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  headline: string | null;
+  query_count: number;
+  agent_id: string;
+}
+
+export interface AgentTraceStats {
+  trace_count: number;
+  error_count: number;
+  total_tokens: number;
+  total_cost: number;
+  latency_p50_ms: number | null;
+  latency_p90_ms: number | null;
+}
+
+export interface AgentObservability {
+  agent_id: string;
+  run_count: number;
+  runs: AgentRunSummary[];
+  trace_stats: AgentTraceStats | null;
+}
+
+export async function getAgentObservability(agentId: string): Promise<AgentObservability | null> {
+  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/observability`);
+  if (!res.ok) return null;
+  return res.json();
+}
