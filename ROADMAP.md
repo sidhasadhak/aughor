@@ -32,17 +32,21 @@ subprocess arm per model, tokens/latency from kernel metering, comparable runs i
 `aughor-bakeoff` MLflow experiment + a printed ranking. LIVE-verified (glm-5.2:cloud, 2 questions:
 exec_acc 0.85 · trust 1.0 · 7.6k tok/q). **P7 itself is now one command:**
 `uv run --extra observability python -m evals.model_bakeoff --models "glm-5.2:cloud,<candidate>"`.
-**B4-P1 slice 1 also shipped: user-defined agents** (flag `agents.user_defined`) — the Agent
+**B4-P1 slices 1+2 also shipped: user-defined agents** (flag `agents.user_defined`) — the Agent
 entity (`aughor/user_agents/`: model + `agents.db` store + contextvar), CRUD under
-`/agents/custom`, and `/ask?agent_id` binding: pinned instructions lead the quick-path prompt
-(rules_block-style), document retrieval scoped to the agent's bound docs (fail-closed: an agent
-with none sees none), connection binding wins (conflicting explicit connection → 409), and an
-`agent` SSE receipt event opens the stream. NEXT slices (in order): **(a) the builder UI** —
-an Agents panel (create → instructions textarea → pick connection → attach uploaded documents →
-enable toggle) + an agent picker chip on the ask composer consuming the `agent` SSE event;
-**(b) deep-path intake injection** (ADA gets the brief + doc scope); **(c) pack bindings +
-schema scoping via ExecutionScope; per-agent ledger crystallization**. Then A1-P3/P4 (prompt
-registry versioning per agent, eval-on-edit) per the study doc Part B Phases 2–3.
+`/agents/custom`, `/ask?agent_id` binding (pinned instructions lead the quick-path prompt
+rules_block-style; document retrieval scoped to the agent's bound docs, fail-closed: an agent
+with none sees none; connection binding wins, conflicting explicit connection → 409; an `agent`
+SSE receipt opens the stream), **and the builder UI**: the Intelligence-rail **Agents** panel
+(`web/components/AgentsAdminPanel.tsx` — roster + create/edit form with connection select +
+document multi-attach + enable toggle), the composer agent picker (ChatPanel → `agent_id` on
+/ask), and the `AgentBadge` "Answering as …" receipt on each turn. **LIVE-verified end-to-end**
+(flag flipped at runtime, a Churn Analyst created + asked → agent receipt → answer → Trust
+Receipt; panel screenshot-verified, 0 console errors). NEXT slices (in order): **(a) deep-path
+intake injection** (ADA gets the brief + doc scope); **(b) pack bindings + schema scoping via
+ExecutionScope; per-agent ledger crystallization**; **(c)** the uploaded-PDF exit-criterion run
+(needs Qdrant + embedder live). Then A1-P3/P4 (prompt-registry versioning per agent,
+eval-on-edit) per the study doc Part B Phases 2–3.
 
 **NEXT (queued 2026-07-11) — the post-head-to-head backlog.** The Databricks Genie head-to-head
 (same question, same bakehouse data) drove two shipped arcs (see §2); what remains, in leverage order:

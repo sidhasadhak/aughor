@@ -298,10 +298,13 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   restricted to the agent's bound documents (fail-closed — an agent with none sees none), the
   connection binding wins (a conflicting explicit connection is a 409, never a silent override), and
   the stream opens with an `agent` receipt event. Unlike a Gem/custom-GPT, the persona inherits the
-  whole trust substrate — guards, receipts, RBAC — untouched. Slice 1 of the agentic-platform arc
-  (`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md` Part B); builder UI, deep-path
-  intake, pack/schema bindings are the next slices. Off by default (routes 404, answer path
-  byte-identical).
+  whole trust substrate — guards, receipts, RBAC — untouched. **Builder UI included**: the
+  Intelligence-rail **Agents** panel (roster + create/edit with connection select + document
+  multi-attach + enable toggle, `web/components/AgentsAdminPanel.tsx`), an agent picker on the ask
+  composer, and an "Answering as …" `AgentBadge` receipt per turn. Slices 1–2 of the
+  agentic-platform arc (`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md` Part B);
+  deep-path intake and pack/schema bindings are the next slices. Off by default (routes 404, answer
+  path byte-identical, picker hidden).
 - **MLflow investigation tracing** (`obs.mlflow`) — every investigation exported to a self-hosted MLflow
   server as one inspectable trace tree: LangChain/OpenAI autolog creates the trace root per graph run (LLM
   calls with token counts), the existing `node_span` seam nests each graph node under it, and every guarded
