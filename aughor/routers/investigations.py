@@ -2131,7 +2131,7 @@ async def _stream_investigation(
             yield _sse("done", {})
             return
 
-    inv_id = create_investigation(question, connection_id, canvas_id=canvas_id)
+    inv_id = create_investigation(question, connection_id, canvas_id=canvas_id, agent_id=_current_agent_id())
     from aughor import telemetry as _telemetry
     trace_id = _telemetry.new_trace(inv_id, question, connection_id)
     yield _sse("start", {"question": question, "connection_id": connection_id, "investigation_id": inv_id, "trace_id": trace_id})
