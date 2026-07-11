@@ -22,65 +22,65 @@
 
 /* ── DARK (default) ──────────────────────────────────────────────────────── */
 :root {
-  /* Backgrounds — deeper canvas, clearer per-layer lift (was flat/borderless) */
-  --bg-0: #0A0D13;
-  --bg-1: #0E121A;
-  --bg-2: #141925;
-  --bg-3: #1A2030;
-  --bg-4: #232C3E;
+  /* Backgrounds — MLflow near-black canvas, hairline-lifted layers */
+  --bg-0: #0A0A0E;   /* canvas */
+  --bg-1: #0C0D12;   /* sidebar / topbar — one step off the canvas */
+  --bg-2: #121318;   /* surface: cards, panels, tables */
+  --bg-3: #181A21;   /* surface-2: table headers, insets, inputs, hover fills */
+  --bg-4: #20222B;   /* surface-3: pressed / gauge tracks */
   --bg-hover: rgba(255, 255, 255, 0.045);
-  --bg-sel:   rgba(59, 130, 246, 0.14);
+  --bg-sel:   rgba(90, 159, 214, 0.14);   /* blue-tint — selected rows / active nav wash */
 
-  /* Borders — hairline, slightly cooler */
-  --b0: #11151D;
-  --b1: #1B2130;
-  --b2: #252E40;
-  --b3: #334056;
-  --bfocus: #3B82F6;
+  /* Borders — hairline structure carries the layout (not shadows) */
+  --b0: #1A1C23;   /* line-faint: internal table-row separators */
+  --b1: #23252E;   /* line: default border / divider */
+  --b2: #2F323C;   /* line-strong: inputs, pills, emphasised borders */
+  --b3: #3A3D48;   /* stronger emphasis / hover borders */
+  --bfocus: #5A9FD6;
 
-  /* Text — unchanged hierarchy, marginally brighter t1 for the deeper canvas */
-  --t1: #EAEDF3;
-  --t2: #9BA6B8;
-  --t3: #6B7689;
-  --t4: #4A5468;
+  /* Text — ink */
+  --t1: #F2F3F6;
+  --t2: #989BA6;
+  --t3: #686B77;
+  --t4: #525B69;
 
-  /* Accent — Blueprint blue brightened for the deeper surfaces.
-     --blue3 is THE accent the bridges read (--primary/--accent/--ring/--sidebar-*). */
-  --blue1: #11233F; --blue2: #1C3A66; --blue3: #3B82F6; --blue4: #5B9DFF; --blue5: #BFDBFF;
-  --grn1:  #0C2417; --grn2:  #134E32; --grn3:  #1FA968; --grn4:  #34D399; --grn5:  #86EFC0;
-  --amb1:  #2A1E05; --amb2:  #5A4109; --amb3:  #D9A013; --amb4:  #F5C542; --amb5:  #FFE08A;
-  --red1:  #2A0F12; --red2:  #591C22; --red3:  #E0444E; --red4:  #F76B73; --red5:  #FFA9AE;
-  --vio1:  #1B1340; --vio2:  #312069; --vio3:  #7C5CE0; --vio4:  #A285F5; --vio5:  #CBB8FF;
-  --cyn1:  #06222E; --cyn2:  #0B4658; --cyn3:  #1AA0C4; --cyn4:  #42C5E6; --cyn5:  #9BE4F7;
+  /* Accent — two-blue MLflow system. --blue3 is THE interaction accent
+     (accent, ring, sidebar, nav, links, tabs). --blue-solid is the darker
+     primary-button fill (white text); --primary is repointed to it here. */
+  --blue1: #10233B; --blue2: #1A4E82; --blue3: #5A9FD6; --blue4: #7DB6E8; --blue5: #BFDBFF;
+  --blue-solid: #2272B4;          /* primary-button fill; hover #2A82CC */
+  --primary:    var(--blue-solid);
+  --grn1:  #14251C; --grn2:  #1E4230; --grn3:  #4FA96D; --grn4:  #5FBE82; --grn5:  #8FD9A8;
+  --amb1:  #2A1E08; --amb2:  #5A430F; --amb3:  #C68A2E; --amb4:  #E0A54D; --amb5:  #EEC57A;
+  --red1:  #2A1114; --red2:  #59232A; --red3:  #C85C5C; --red4:  #E07070; --red5:  #EF9A9A;
+  --vio1:  #1B1340; --vio2:  #312069; --vio3:  #7E62BE; --vio4:  #9B7BD4; --vio5:  #C3AEE8;
+  --cyn1:  #06222E; --cyn2:  #0B4658; --cyn3:  #38A5A5; --cyn4:  #4FC4C4; --cyn5:  #9BE4E4;
 
-  /* Radius — modernised. Controls stay tight; panels/cards soften.
-     If you must hold the original 6px ceiling, comment these three out. */
-  --r1: 4px;
-  --r2: 6px;
-  --r3: 10px;
-  --r-pill: 9999px;  /* pills/avatars/dots — the one full-round exception (REC-U1).
-                        Also in styles/tokens.css for the legacy theme; kept here so
-                        the active v2 theme is self-contained. */
+  /* Radius — MLflow: tight controls, softer cards. buttons 6 · pills/inputs 8 · cards 12 */
+  --r1: 6px;
+  --r2: 8px;
+  --r3: 12px;
+  --r-pill: 9999px;  /* pills/avatars/dots — the one full-round exception (REC-U1). */
 
-  /* Layout — slightly roomier shell */
-  --sidebar: 232px;
-  --topbar:  56px;
+  /* Layout — MLflow shell */
+  --sidebar: 264px;
+  --topbar:  54px;
 
-  /* Elevation — tinted, layered (replaces the two flat shadows) */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.40), 0 1px 1px rgba(0,0,0,.30);
-  --shadow-md: 0 4px 16px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.40);
+  /* Elevation — borders do the work; shadows only for true overlays (menus, dialogs) */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.40);
+  --shadow-md: 0 8px 30px rgba(0,0,0,.50);
 
-  /* Chart palette — same hues, calibrated for the deeper canvas */
-  --chart-1: #4C8EEE; --chart-2: #2EC87B; --chart-3: #E0AD00;
-  --chart-4: #8B68D8; --chart-5: #E64848; --chart-6: #30B8E0;
-  --chart-threshold-warn:   #D9A013;
-  --chart-threshold-crit:   #E0444E;
-  --chart-threshold-target: #1FA968;
-  --chart-axis: rgba(255,255,255,.10);
-  --chart-grid: rgba(255,255,255,.05);
-  --chart-tick: #7C8699;
+  /* Chart palette — calm sky-blue lead, muted categoricals (charts never shout) */
+  --chart-1: #5A9FD6; --chart-2: #5FBE82; --chart-3: #E0A54D;
+  --chart-4: #9B7BD4; --chart-5: #E07070; --chart-6: #4FC4C4;
+  --chart-threshold-warn:   #E0A54D;
+  --chart-threshold-crit:   #E07070;
+  --chart-threshold-target: #5FBE82;
+  --chart-axis: #23252E;
+  --chart-grid: #1E2129;
+  --chart-tick: #686B77;
 
-  --code-bg: #07090E;
+  --code-bg: #0D0E13;
 }
 
 /* ── LIGHT ───────────────────────────────────────────────────────────────── */
@@ -105,6 +105,7 @@
   --t4: #A9B4C4;
 
   --blue1: #EAF3FA; --blue2: #C3DDF0; --blue3: #1F77B4; --blue4: #175A88; --blue5: #103E5E;
+  --blue-solid: #1F77B4;   /* primary-button fill in light mode */
   --grn1:  #E7F6EE; --grn2:  #BEE6CF; --grn3:  #1FA968; --grn4:  #168A52; --grn5:  #0E5C36;
   --amb1:  #FCF1DA; --amb2:  #F2D89B; --amb3:  #B97D08; --amb4:  #9A6505; --amb5:  #6E4703;
   --red1:  #FBE9EB; --red2:  #F2C3C7; --red3:  #D62839; --red4:  #B11D2C; --red5:  #7E1320;
