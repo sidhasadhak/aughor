@@ -16,7 +16,10 @@ prompt, agent-scoped deep doc retrieval) + schema scoping & pack-preference bind
 agents (per-agent golden questions, deterministic evaluate, "n/m passing" chip — B Phase 3);
 live-verified). Remaining: auto-eval-on-edit, the PDF exit-criterion run, per-agent ledger
 crystallization (deliberately deferred — see ROADMAP §0), A1-P3, Part-A connectors
-(UC/lakehouse/Redash patterns), per Part C sequencing.*
+(UC/lakehouse/Redash patterns), per Part C sequencing. **2026-07-11 post-merge: Part E added**
+— the six-point platform critique + second assessment (MLflow-underneath Agent Workspace ·
+open-swe learnings · adaptive capabilities · learning visibility · wired-vs-surfaced audit),
+with the revised next-wave sequencing in E6.*
 
 *Method: five parallel research passes (Unity Catalog OSS · Redash · MLflow 3.x GenAI · the
 Delta/Iceberg/Delta-Sharing lakehouse stack · an Aughor repo seam-map), each grounded against primary
@@ -496,6 +499,166 @@ answer-quality lever and is *accelerated*, not blocked, by A1-P2.
   tracker (a 3.9.0 Postgres+S3 consistency bug existed, fixed), not load-tested by us.
 - `ContextThreadPoolExecutor` → MLflow span nesting: structurally expected to work (both
   contextvars-based); **must be verified empirically in A1 Phase 1**.
+
+# Part E — Platform critique & second assessment (2026-07-11, post-merge of PR #138)
+
+*Trigger: a six-point user critique after the first build wave landed — (1) agent assessment
+should look like the MLflow demo (demo.mlflow.org), (2) what to learn from
+langchain-ai/open-swe, (3) feature flags should be intelligently self-activating, (4) Fleet
+belongs inside an Agents workspace built on MLflow's ready platform, (5) agent learning has no
+visible proof, (6) audit whether built features are wired & surfaced at all. Method: three
+parallel research passes — the MLflow 3.12 GenAI UI verified LIVE against demo.mlflow.org
+(REST endpoints probed), the open-swe repo/blogs, and a full BUILT→WIRED→SURFACED audit of this
+repo. Everything below is verified, not recalled.*
+
+## E1 · Agent assessment the demo way — MLflow server underneath (answers critique #1 + #4)
+
+**The demo is stock OSS MLflow 3.12** — every view it shows is available self-hosted; nothing
+Databricks-managed. Its UI inventory: **Overview** (Usage: trace count · latency p50/90/99 ·
+error rate · token usage · cost-over-time by model/provider; Quality: per-scorer charts; Tool
+calls: per-tool performance), **Traces**, **Sessions**, **Judges** (incl. an *online
+auto-evaluation* toggle — OSS), **Datasets**, **Evaluation runs** (with Issues workflow),
+**Prompts**, **Agent versions**. Requirements: SQL-backed tracking store (dashboards/datasets),
+`mlflow[genai]` on the server for cost computation (LiteLLM pricing), MLflow ≥3.10.
+
+**What we get for free by tagging correctly** (the load-bearing finding): the Sessions view,
+user filters, and all token/cost dashboards hang off two metadata keys + autolog —
+`mlflow.trace.session`, `mlflow.trace.user` (set via `mlflow.update_current_trace(session_id=…,
+user=…)`), with `tokenUsage`/`cost` auto-written by autolog. Aughor's `/ask` already carries
+`session_id` and org identity; traces already tag `investigation_id`. One wiring change in the
+telemetry seam populates Sessions/user/cost views.
+
+**The design unlock — one MLflow EXPERIMENT per user-agent** (`agent:{id}`): MLflow filter
+state is NOT URL-addressable, but experiments are. Per-agent experiments make the entire demo
+surface deep-linkable per agent: `/#/experiments/{id}/overview/usage?startTime=…`,
+`…/traces/{trace_id}`, `…/chat-sessions/{session_id}`, `…/evaluation-runs`. **Iframe embedding
+is officially supported**: `mlflow server --x-frame-options NONE --cors-allowed-origins <origin>`
+(documented flags; the demo itself serves no X-Frame-Options).
+
+**Programmatic access for native cards** (verified live): `POST /api/3.0/mlflow/traces/search`
+(filters: `tag.<k>`, ``metadata.`mlflow.trace.user` ``, `feedback.<name>`, span fields; returns
+assessments inline) and `POST /api/3.0/mlflow/traces/metrics` — the aggregation endpoint that
+serves the demo's usage/cost charts (metrics: trace_count/latency/tokens on TRACES,
+input/output/total_cost by span_model_name/provider on SPANS; time-bucketed). ⚠ the metrics
+endpoint is undocumented/internal-ish — fall back to traces/search + client aggregation if it
+shifts. Also: datasets REST (`/api/3.0/mlflow/datasets/*`), scorers/judges REST, assessments
+CRUD; prompts ride the model-registry REST in OSS.
+
+**The Agent Workspace** (reuse the existing `Workspace` layers shell, as
+IntelligenceWorkspace/OperationsWorkspace do):
+
+| Layer | Source | Cost |
+|---|---|---|
+| Overview | native roster (exists) + summary cards via traces/search + traces/metrics | small |
+| Traces / Sessions | embedded/deep-linked MLflow views per agent-experiment | tiny |
+| Evaluations | goldens pushed as MLflow eval datasets; each evaluate → an eval run (compare view) | small |
+| Prompts | A1-P3: instructions → prompt registry (versions + linked traces) | the planned slice |
+| Memory | the learning surfaces from E4 | small |
+| Fleet | folds in as an operations layer (charters + metered jobs — audit confirms that's all it is) | small |
+
+**Schema fix required**: `agent_id` is NOT persisted on investigation rows (`db/history.py` has
+no such column — it lives only in LangGraph state, re-read from checkpoints). One additive
+column via the existing `add_column_if_missing` migration makes per-agent run history joinable.
+
+**Caveats**: OSS MLflow has no per-user auth (fine self-hosted/LAN; gate before exposing);
+deep-link routes aren't a stable API (changed across 3.x minors); only time-range + selected
+trace/session/run are URL-addressable — custom-tag filters are not (hence per-agent experiments).
+
+## E2 · open-swe learnings (answers critique #2)
+
+**Meta-lesson first**: LangChain ABANDONED their hosted product (swe.langchain.com is
+DNS-dead) and their bespoke four-graph orchestration (manager/planner/programmer/reviewer),
+relaunching ~2026-03 as a thin Python framework composed on their maintained `deepagents`
+harness. *Compose on the platform, don't own the loop* — independent validation of Part E1's
+borrow-MLflow strategy. Transferable ideas, ranked by Aughor fit:
+
+1. **Double-texting** — a message queue drained before each model call lets users steer a
+   RUNNING investigation without cancel/restart (their `check_message_queue_before_model`
+   middleware). Aughor's deep runs are fire-and-forget between gates; this is the gap.
+2. **Reviewer with a feedback LOOP** — their reviewer sends work back to the executor with
+   objections until resolved. Aughor's adversarial refuter is one-shot (caps confidence,
+   records objection); a bounded fix-loop is the natural evolution.
+3. **Deterministic thread per artifact** — follow-ups rejoin the same running agent + state.
+   Maps to: a follow-up on an investigation rejoins its thread/checkpoint instead of starting
+   fresh.
+4. **Graduated autonomy tiers** (labels `open-swe`/`-auto`/`-max` bundling autonomy + model
+   tier) → per-agent autonomy setting (always-ask / auto-accept-plan / auto+strong-model) on
+   top of the existing plan gate + charter governance.
+5. **Tracking-issue-as-live-state + checkpoint resume** → a canvas/briefing as the living
+   findings doc a long investigation continuously updates; partial work survives failure.
+6. Validations of existing Aughor theses: deterministic middleware safety-nets (= guards),
+   curated small toolset over accumulation (Stripe's insight), `AGENTS.md` context contract
+   (= editable ontology), aggressive prompt caching + published per-run costs.
+
+**Cautionary tales**: mandatory plan+review made small tasks miserable (validates Aughor's
+auto-router downgrading); they never published end-to-end benchmarks (their only real eval is
+reviewer-scoped, 50 PRs/136 golden findings, frozen dataset, LLM pairwise judge) — Aughor's
+deterministic bake-off/goldens are the credibility antidote.
+
+## E3 · Adaptive capabilities — the flag system should decide, with receipts (answers critique #3)
+
+The audit classified all 35 registered flags: **~14 are already SELF-GATING** — flag AND a
+deterministic runtime trigger must both hold (clarify gate: material metric divergence;
+adversarial high-stakes: HIGH-confidence decision-changing verdicts only; key-reconciliation:
+only after a value-domain mismatch; capability contract: only on a native-SQL failure; premise
+check: only "why high/low" questions; guarded extract: only on typed-field failures). The
+"intelligence" half-exists — missing are the policy layer, the feedback loop, and receipts:
+
+- **Phase 1 — tri-state Auto/On/Off + activation receipts.** Reclassify flags into
+  capabilities; self-gating ones default to **Auto** (platform decides per run via existing
+  deterministic triggers); every activation emits a receipt edge ("activated premise-check
+  because the question asserts a comparison"). Cost-dangerous ones (`ai_sql`, federation,
+  champion-validate) stay manual. Operator override always wins; budget caps apply.
+- **Phase 2 — runtime feedback closes the loop.** Deterministic per-connection priors from
+  already-captured verdicts/outcomes: "refuter changed the outcome 3/4 times here → keep
+  Auto-on"; "premise-check never fired usefully → deprioritize". Counters, never an LLM vote.
+- **Phase 3 — Settings→System becomes a Capabilities page** with evidence per capability
+  ("fired 12× this week, changed the answer 3×") instead of a raw toggle wall.
+
+Housekeeping: `explorer.manifest_driven` is consulted (`explorer/agent.py:1858`) but never
+registered in FLAG_ENV — permanently-off dead code; register or delete.
+
+## E4 · Learning is real but INVISIBLE (answers critique #5)
+
+Audit verdict: the closed loop is captured and read back into prompts, but its accumulation is
+invisible. Specifics: the ambiguity-ledger burn-down (`ledger_stats`: `served_total`,
+by-source) has **no API endpoint at all**; `/verify/verdicts/stats` (acceptance rate) exists
+but is **consumed by zero components**; trusted queries and trusted programs are injected into
+prompts but never displayed; verdict capture is wired only on ExplorationReport. The ONLY
+visible learning signal is the per-answer `◆ resolved reading` badge on the Trust Receipt.
+
+**The fix (thin, data already exists):**
+- **Per-run Learning Receipt** — an SSE event + Trust-Receipt section: "reused 2 resolved
+  readings (0 clarifying questions asked) · applied 1 correction · crystallized 1 NEW
+  resolution · trusted plan replayed · playbook outcome logged."
+- **Memory layer in the Agent Workspace** — ledger burn-down chart (new endpoint over the
+  existing `ledger_stats`), acceptance-rate card (endpoint already exists), trusted
+  queries/programs lists, and per-agent eval **history** (extend the single `last_eval` stamp
+  to a trend line).
+
+## E5 · BUILT→WIRED→SURFACED audit results (answers critique #6)
+
+All 35 registered flags have live call sites — none dead (one unregistered: E3 above). The
+deficit is presentation, not plumbing:
+
+| Built & wired, NOT surfaced | Where it lives | Recommendation |
+|---|---|---|
+| Plan-as-program answers | `POST /query/plan-run`, `/plan-answer` (auto-routed in /ask only) | surface the program + artifacts as an inspectable answer view |
+| Federated answers + cross-source join | `/query/federated-answer`, `/cross-source-join` | show the federation plan receipt when auto-routed |
+| Capability-pipeline answers | `/query/capability-answer` | fold into the same receipt pattern |
+| Ambiguity-ledger burn-down | `ledger_stats` (no endpoint) | E4 Memory layer |
+| Verdict trust-economy stats | `/verify/verdicts/stats` (no consumer) | E4 Memory layer |
+| Trusted queries / programs | prompt-injected only | E4 Memory layer lists |
+| Per-agent run history | `agent_id` absent from investigations rows | additive column migration (E1) |
+
+## E6 · Revised next-wave sequencing (supersedes Part C's "later" ordering)
+
+Each its own PR off main: **(1) MLflow-underneath Agent Workspace** — session/user tagging +
+per-agent experiments + embedded views + Fleet fold-in + `agent_id` column (biggest visible
+win, mostly borrowed UI); **(2) Learning Receipt + Memory layer** (E4 — thin); **(3)
+Capabilities Auto-mode Phase 1** with activation receipts (E3); **(4) double-texting +
+reviewer-loop** (E2 — deeper agent work). The Part-A lakehouse connector family remains queued
+in parallel (unchanged verdict); P7 remains one quiet-machine bake-off run away.
 
 # Key sources
 
