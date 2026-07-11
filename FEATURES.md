@@ -314,11 +314,25 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   not vibes, which no Gem/custom-GPT builder offers. Slices 1–5 of the agentic-platform arc
   (`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md` Part B).
   Off by default (routes 404, answer path byte-identical, picker hidden).
+- **The Agent Workspace** (`web/components/AgentWorkspace.tsx`) — one perspective-switched surface
+  (an instance of the `<Workspace>` shell) that folds the formerly-scattered agent surfaces into
+  **Overview / Manage / Fleet**: the Agents and Fleet rail items are now two deep-links into one
+  workspace. **Overview** renders Aughor's own "native cards" over
+  `GET /agents/custom/{id}/observability` — per-agent run count + recent runs (from the history
+  store, joinable now that the run row carries `agent_id`) and, when `obs.mlflow` is on, MLflow
+  trace stats (traces, errored, tokens, cost, latency p50/p90 — `telemetry.agent_trace_stats`,
+  filtered by the `agent_id` trace tag). MLflow stays **backend-only** (no iframe / cross-origin /
+  no-auth exposure); the Overview **degrades to run-history-only** with an explicit note when
+  tracing is off, so the workspace is useful without a running MLflow server (a one-directional
+  dependency). E6 item (1) of the platform-critique wave (study Part E).
 - **MLflow investigation tracing** (`obs.mlflow`) — every investigation exported to a self-hosted MLflow
   server as one inspectable trace tree: LangChain/OpenAI autolog creates the trace root per graph run (LLM
   calls with token counts), the existing `node_span` seam nests each graph node under it, and every guarded
   SQL execution (`sql/executor.py`) appears as a `TOOL` span carrying the SQL — searchable by
-  `tags.investigation_id`. Third backend of the one telemetry seam (`aughor/telemetry.py`, beside
+  `tags.investigation_id`, and attributed to its **session** (`mlflow.trace.session`), **user**
+  (`mlflow.trace.user`) and **agent** (`tags.agent_id`) so MLflow's Sessions / user / per-agent /
+  cost views populate — all ambient from request-scoped contextvars, no threading through the
+  graph. Third backend of the one telemetry seam (`aughor/telemetry.py`, beside
   Langfuse/OTel): lazy lock-serialized init, transient server failures retry on a 60s cooldown (never a
   process-lifetime disable), HTTP timeout/retries bounded so a dead server can't stall the answer path,
   and flipping the flag OFF **unpatches autolog** (no silent trace export after opting out). Client is

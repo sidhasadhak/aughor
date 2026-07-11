@@ -476,3 +476,33 @@ def test_golden_routes(client, monkeypatch):
     assert client.delete(f"/agents/custom/{aid}/goldens/{gid}").status_code == 200
     # Unknown agent 404s.
     assert client.get("/agents/custom/ua_nope/goldens").status_code == 404
+
+
+# ── Observability (Agent Workspace overview) ─────────────────────────────────
+
+def test_observability_endpoint_history_and_degradation(client, monkeypatch, tmp_path):
+    """Per-agent run history surfaces from the history store; trace_stats is None
+    when obs.mlflow is off (history-only — the workspace works without MLflow)."""
+    _flag(monkeypatch, True)  # agents.user_defined on; obs.mlflow stays off
+    from aughor.db import history
+    monkeypatch.setattr(history, "_DB_PATH", str(tmp_path / "history.db"))
+
+    aid = client.post("/agents/custom",
+                      json={"name": "Churn Analyst", "instructions": "churn"}).json()["id"]
+
+    empty = client.get(f"/agents/custom/{aid}/observability")
+    assert empty.status_code == 200
+    assert empty.json() == {"agent_id": aid, "run_count": 0, "runs": [], "trace_stats": None}
+
+    history.create_investigation("why did churn spike", "conn-1", agent_id=aid)
+    body = client.get(f"/agents/custom/{aid}/observability").json()
+    assert body["run_count"] == 1
+    assert body["runs"][0]["agent_id"] == aid
+    assert body["trace_stats"] is None  # obs.mlflow off → history-only, never raises
+
+
+def test_observability_404s(client, monkeypatch):
+    _flag(monkeypatch, False)
+    assert client.get("/agents/custom/whatever/observability").status_code == 404
+    _flag(monkeypatch, True)
+    assert client.get("/agents/custom/ua_nope/observability").status_code == 404

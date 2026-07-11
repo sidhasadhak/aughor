@@ -18,6 +18,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 import type { OpsLayer } from "@/components/OperationsWorkspace";
+import type { AgentLayer } from "@/components/AgentWorkspace";
 import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
 
 function LoadingPanel() {
@@ -52,7 +53,7 @@ const CanvasWorkspace   = dynamic(() => import("@/components/CanvasWorkspace").t
 const QueryBuilder      = dynamic(() => import("@/components/QueryBuilder").then(m => ({ default: m.QueryBuilder })),        { ssr: false, loading });
 const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
 const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
-const AgentsAdminPanel  = dynamic(() => import("@/components/AgentsAdminPanel").then(m => ({ default: m.AgentsAdminPanel })), { ssr: false, loading });
+const AgentWorkspace    = dynamic(() => import("@/components/AgentWorkspace").then(m => ({ default: m.AgentWorkspace })), { ssr: false, loading });
 import { API_BASE } from "@/lib/config";
 import {
   getConnections,
@@ -1609,6 +1610,7 @@ export default function Home() {
   const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
   const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
   const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
+  const [agentLayer, setAgentLayer] = useState<AgentLayer>("overview");
   const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
   const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
   const [showHistory, setShowHistory] = useState(false);
@@ -1793,6 +1795,13 @@ export default function Home() {
     semantic: "semantic",
   };
 
+  // Agents + Fleet are layers of one Agent workspace: the "Agents" rail item opens
+  // the native Overview, "Fleet" opens the built-in fleet layer.
+  const LEGACY_AGENT_LAYER: Partial<Record<NavTab, AgentLayer>> = {
+    agents: "overview",
+    fleet:  "fleet",
+  };
+
   const handleNavigate = (t: NavTab) => {
     // Always dismiss any floating overlays when the user navigates.
     // The History backdrop is fixed inset-0 and will intercept sidebar clicks
@@ -1839,6 +1848,13 @@ export default function Home() {
     if (data) {
       setDataLayer(data);
       setTab("data");
+      return;
+    }
+    // Agents / Fleet rail items open the Agent workspace at the matching layer.
+    const agentL = LEGACY_AGENT_LAYER[t];
+    if (agentL) {
+      setAgentLayer(agentL);
+      setTab("agents");
       return;
     }
     setTab(t);
@@ -1937,7 +1953,7 @@ export default function Home() {
       <div className="aug-body">
 
         {/* Sidebar */}
-        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? dataLayer : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} />
+        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? dataLayer : tab === "agents" ? (agentLayer === "fleet" ? "fleet" : "agents") : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} />
 
         {/* Content */}
         <SchemaProvider connId={selectedConn}>
@@ -2069,15 +2085,7 @@ export default function Home() {
               </div>
             )}
 
-            {tab === "fleet" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <FleetScreen
-                  onNavigate={handleNavigate}
-                  workspaceId={activeWs && !activeWs.is_default ? activeWs.id : undefined}
-                  workspaceName={activeWs && !activeWs.is_default ? activeWs.name : undefined}
-                />
-              </div>
-            )}
+            {/* Fleet renders as the operations layer of the Agent workspace below. */}
 
             {/* ── INTELLIGENCE (unified, multi-layered) ── */}
             {tab === "intelligence" && (
@@ -2194,11 +2202,19 @@ export default function Home() {
               </div>
             )}
 
-            {/* ── AGENTS (user-defined personas) ── */}
+            {/* ── AGENTS — Overview + Manage + Fleet layers ── */}
             {tab === "agents" && (
-              <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
-                <AgentsAdminPanel />
-              </div>
+              <AgentWorkspace
+                layer={agentLayer}
+                onLayerChange={setAgentLayer}
+                fleetSlot={
+                  <FleetScreen
+                    onNavigate={handleNavigate}
+                    workspaceId={activeWs && !activeWs.is_default ? activeWs.id : undefined}
+                    workspaceName={activeWs && !activeWs.is_default ? activeWs.name : undefined}
+                  />
+                }
+              />
             )}
 
             {/* ── SETTINGS ── */}

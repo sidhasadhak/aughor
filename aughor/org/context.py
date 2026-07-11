@@ -74,3 +74,30 @@ def reset_user_id(token: "contextvars.Token[str]") -> None:
     except Exception as exc:  # best-effort, like reset_org_id
         from aughor.kernel.errors import tolerate
         tolerate(exc, "user context reset", counter="org")
+
+
+# ── Current session (correlates the turns of one conversation) ─────────────────
+# Unlike org/user (header-derived, pinned by the identity middleware), the session
+# id rides the request BODY (AskRequest.session_id), so it is pinned by the /ask
+# stream itself. Holding it in a contextvar lets the telemetry seam attribute a
+# trace to its conversation session ambiently — no threading through the graph —
+# and it propagates into the deep-run job + parallel waves like org/user do.
+_current_session: contextvars.ContextVar[str] = contextvars.ContextVar("aughor_current_session", default="")
+
+
+def current_session_id() -> str:
+    """The conversation session id for the running code, or "" when none."""
+    return _current_session.get() or ""
+
+
+def set_session_id(session_id: str) -> "contextvars.Token[str]":
+    """Pin the current session id; returns a token for :func:`reset_session_id`."""
+    return _current_session.set(session_id or "")
+
+
+def reset_session_id(token: "contextvars.Token[str]") -> None:
+    try:
+        _current_session.reset(token)
+    except Exception as exc:  # best-effort, like reset_org_id
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "session context reset", counter="org")

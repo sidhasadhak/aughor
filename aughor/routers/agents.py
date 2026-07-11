@@ -245,6 +245,28 @@ def delete_agent_golden(agent_id: str, golden_id: str):
     return {"deleted": golden_id}
 
 
+@router.get("/agents/custom/{agent_id}/observability")
+def user_agent_observability(agent_id: str):
+    """The Agent Workspace overview data for one agent: its run history (from the
+    history store, stamped with agent_id) enriched with MLflow trace stats when
+    `obs.mlflow` is on. Degrades to history-only (`trace_stats: null`) when the
+    tracking server is off — the workspace is useful without MLflow (B3: the
+    dependency is one-directional)."""
+    _require_user_agents()
+    from aughor.user_agents import get_agent
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    from aughor import telemetry
+    from aughor.db.history import list_investigations_for_agent
+    runs = list_investigations_for_agent(agent_id)
+    return {
+        "agent_id": agent_id,
+        "run_count": len(runs),
+        "runs": runs,
+        "trace_stats": telemetry.agent_trace_stats(agent_id),
+    }
+
+
 @router.post("/agents/custom/{agent_id}/evaluate")
 def evaluate_user_agent(agent_id: str):
     """Run the agent's golden suite NOW (one coder-model call per golden, capped)

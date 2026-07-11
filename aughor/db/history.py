@@ -87,7 +87,18 @@ def _migrate_v2(c: sqlite3.Connection) -> None:
               "WHERE kind = 'chat' AND (session_id IS NULL OR session_id = '')")
 
 
-_MIGRATIONS = [Migration(2, "additive columns + backfills (through 2026-07)", _migrate_v2)]
+def _migrate_v3(c: sqlite3.Connection) -> None:
+    """Persist the active user-agent on the run row so per-agent run history is
+    joinable (E1/E5 of the 2026-07-11 Databricks-OSS study — ``agent_id`` lived
+    only in the LangGraph checkpoint before, invisible to the history store).
+    Additive + idempotent; existing rows default to '' (no agent)."""
+    add_column_if_missing(c, "investigations", "agent_id", "TEXT NOT NULL DEFAULT ''")
+
+
+_MIGRATIONS = [
+    Migration(2, "additive columns + backfills (through 2026-07)", _migrate_v2),
+    Migration(3, "add agent_id (per-agent run history)", _migrate_v3),
+]
 
 
 def _ensure_schema(c: sqlite3.Connection) -> None:
@@ -116,15 +127,20 @@ def create_investigation(
     question: str,
     connection_id: str,
     canvas_id: Optional[str] = None,
+    agent_id: str = "",
 ) -> str:
-    """Insert a new in-progress row and return its ID."""
+    """Insert a new in-progress row and return its ID.
+
+    ``agent_id`` records the active user-agent (persona) the run executed under
+    ('' when none), so the Agent Workspace can join run history per agent.
+    """
     inv_id = uuid.uuid4().hex[:8]
     c = _conn()
     _ensure_schema(c)
     c.execute(
-        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (inv_id, question, connection_id, canvas_id, _now(), "running", current_org_id()),
+        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (inv_id, question, connection_id, canvas_id, _now(), "running", current_org_id(), agent_id),
     )
     c.commit()
     c.close()
@@ -574,7 +590,7 @@ def list_investigations(limit: int = 50) -> list[dict]:
         f"""SELECT id, question, connection_id, canvas_id, started_at, completed_at,
                   status, hypothesis_count, query_count, headline,
                   COALESCE(kind, 'investigation') as kind,
-                  NULL as session_id
+                  NULL as session_id, COALESCE(agent_id, '') as agent_id
            FROM investigations
            WHERE (kind IS NULL OR kind = 'investigation'){_org}
            ORDER BY started_at DESC
@@ -596,7 +612,8 @@ def list_investigations(limit: int = 50) -> list[dict]:
                MAX(headline) as headline,
                'chat' as kind,
                session_id,
-               MAX(canvas_id) as canvas_id
+               MAX(canvas_id) as canvas_id,
+               COALESCE(MAX(agent_id), '') as agent_id
            FROM investigations
            WHERE kind = 'chat' AND session_id IS NOT NULL AND session_id != ''{_org}
            GROUP BY session_id, connection_id
@@ -608,7 +625,8 @@ def list_investigations(limit: int = 50) -> list[dict]:
     legacy_rows = c.execute(
         f"""SELECT id, question, connection_id, started_at, completed_at,
                   'complete' as status, 0 as hypothesis_count, 1 as query_count,
-                  headline, 'chat' as kind, id as session_id, canvas_id
+                  headline, 'chat' as kind, id as session_id, canvas_id,
+                  COALESCE(agent_id, '') as agent_id
            FROM investigations
            WHERE kind = 'chat' AND (session_id IS NULL OR session_id = ''){_org}
            ORDER BY started_at DESC""",
@@ -620,6 +638,31 @@ def list_investigations(limit: int = 50) -> list[dict]:
     combined = [dict(r) for r in list(inv_rows) + list(session_rows) + list(legacy_rows)]
     combined.sort(key=lambda r: r.get("started_at", ""), reverse=True)
     return combined[:limit]
+
+
+def list_investigations_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
+    """Run history for a single user-agent (deep runs stamped with ``agent_id``),
+    newest-first and org-scoped exactly like :func:`list_investigations`. Powers
+    the Agent Workspace overview; '' agent_id yields no rows (unbound runs are not
+    a persona's history)."""
+    if not agent_id:
+        return []
+    c = _conn()
+    _ensure_schema(c)
+    from aughor.security.authz import require_identity_enabled
+    _org, _op = (" AND org_id = ?", [current_org_id()]) if require_identity_enabled() else ("", [])
+    rows = c.execute(
+        f"""SELECT id, question, connection_id, canvas_id, started_at, completed_at,
+                  status, hypothesis_count, query_count, headline,
+                  COALESCE(kind, 'investigation') as kind, agent_id
+           FROM investigations
+           WHERE agent_id = ? AND (kind IS NULL OR kind = 'investigation'){_org}
+           ORDER BY started_at DESC
+           LIMIT ?""",
+        (agent_id, *_op, limit),
+    ).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
 
 
 def get_investigation(inv_id: str) -> Optional[dict]:
