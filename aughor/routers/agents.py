@@ -76,3 +76,104 @@ def patch_agent(agent_id: str, body: AgentGovernancePatch):
         model=body.model,
     )
     return {"agent_id": agent_id, "governance": gov.to_dict()}
+
+
+# ── User-defined agents (flag `agents.user_defined`) ──────────────────────────
+# Dynamic, user-created personas (aughor/user_agents/) — distinct from the
+# static built-in fleet charters above. Routes 404 when the flag is off.
+
+def _require_user_agents() -> None:
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("agents.user_defined"):
+        raise HTTPException(status_code=404,
+                            detail="user-defined agents are disabled (flag agents.user_defined)")
+
+
+def _validate_agent_fields(name: Optional[str] = None, instructions: Optional[str] = None,
+                           connection_id: Optional[str] = None,
+                           doc_ids: Optional[list] = None) -> None:
+    from aughor.user_agents.models import INSTRUCTIONS_MAX, NAME_MAX
+    if name is not None and not (0 < len(name.strip()) <= NAME_MAX):
+        raise HTTPException(status_code=422, detail=f"name must be 1..{NAME_MAX} chars")
+    if instructions is not None and len(instructions) > INSTRUCTIONS_MAX:
+        raise HTTPException(status_code=422,
+                            detail=f"instructions exceed {INSTRUCTIONS_MAX} chars")
+    if connection_id:
+        from aughor.db.registry import BUILTIN_ID, list_connections
+        known = {c.get("id") for c in list_connections()} | {BUILTIN_ID}
+        if connection_id not in known:
+            raise HTTPException(status_code=422,
+                                detail=f"unknown connection '{connection_id}'")
+    if doc_ids:
+        from aughor.knowledge.indexer import get_document
+        missing = [d for d in doc_ids if get_document(d) is None]
+        if missing:
+            raise HTTPException(status_code=422,
+                                detail=f"unknown document id(s): {', '.join(missing)}")
+
+
+class UserAgentCreate(BaseModel):
+    name: str
+    instructions: str = ""
+    connection_id: str = ""
+    doc_ids: list[str] = []
+
+
+class UserAgentPatch(BaseModel):
+    name: Optional[str] = None
+    instructions: Optional[str] = None
+    connection_id: Optional[str] = None
+    doc_ids: Optional[list[str]] = None
+    enabled: Optional[bool] = None
+
+
+@router.get("/agents/custom")
+def list_user_agents():
+    """All user-defined agents (the persona roster, newest first)."""
+    _require_user_agents()
+    from aughor.user_agents import list_agents
+    return [a.model_dump() for a in list_agents()]
+
+
+@router.post("/agents/custom", status_code=201)
+def create_user_agent(body: UserAgentCreate):
+    _require_user_agents()
+    _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
+    from aughor.org.context import current_org_id
+    from aughor.user_agents import create_agent
+    agent = create_agent(body.name, instructions=body.instructions,
+                         connection_id=body.connection_id, doc_ids=body.doc_ids,
+                         owner=current_org_id() or "")
+    return agent.model_dump()
+
+
+@router.get("/agents/custom/{agent_id}")
+def get_user_agent(agent_id: str):
+    _require_user_agents()
+    from aughor.user_agents import get_agent
+    agent = get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return agent.model_dump()
+
+
+@router.patch("/agents/custom/{agent_id}")
+def patch_user_agent(agent_id: str, body: UserAgentPatch):
+    _require_user_agents()
+    _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
+    from aughor.user_agents import update_agent
+    agent = update_agent(agent_id, name=body.name, instructions=body.instructions,
+                         connection_id=body.connection_id, doc_ids=body.doc_ids,
+                         enabled=body.enabled)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return agent.model_dump()
+
+
+@router.delete("/agents/custom/{agent_id}")
+def delete_user_agent(agent_id: str):
+    _require_user_agents()
+    from aughor.user_agents import delete_agent
+    if not delete_agent(agent_id):
+        raise HTTPException(status_code=404, detail="No such agent")
+    return {"deleted": agent_id}

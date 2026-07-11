@@ -197,11 +197,25 @@ def build_external_context_section(query: str, top_k: int = 4) -> str:
     """
     Retrieve relevant document snippets and format them for prompt injection.
     Returns empty string when no documents are indexed or Qdrant is unavailable.
+
+    When a user-defined agent is active (flag `agents.user_defined`), retrieval
+    is scoped to THAT agent's bound documents: search wider, keep only its
+    doc_ids. An agent with no bound documents sees none (fail-closed — its
+    context is what its creator gave it). No agent → unchanged global behavior.
     """
-    hits = search_documents(query, top_k=top_k)
+    from aughor.user_agents.context import agent_doc_ids
+    allowed = agent_doc_ids()
+    if allowed is not None and not allowed:
+        return ""
+    hits = search_documents(query, top_k=top_k if allowed is None else max(top_k * 4, 16))
+    if allowed is not None:
+        hits = [h for h in hits if h.get("doc_id") in allowed][:top_k]
     if not hits:
         return ""
-    lines = ["EXTERNAL CONTEXT (from uploaded documents — use where relevant):"]
+    header = ("AGENT DOCUMENTS (this agent's bound context — use where relevant):"
+              if allowed is not None else
+              "EXTERNAL CONTEXT (from uploaded documents — use where relevant):")
+    lines = [header]
     for h in hits:
         lines.append(f"\n── {h['title']} ({h['filename']}) ──")
         lines.append(h["text"])

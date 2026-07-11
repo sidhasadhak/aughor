@@ -608,6 +608,10 @@ class AskRequest(BaseModel):
     session_id: str = ""
     schema_name: Optional[str] = Field(default=None, alias="schema")
     depth: Literal["auto", "quick", "deep"] = "auto"
+    # Answer AS this user-defined agent (flag `agents.user_defined`): its pinned
+    # instructions lead the prompt, retrieval is scoped to its documents, and its
+    # connection binding wins (a conflicting explicit connection is a 409).
+    agent_id: Optional[str] = None
     # Set when the user answered (or dismissed) a clarifying question — bypass the
     # clarify gate so we don't ask again about the now-clarified request.
     skip_clarify: bool = False
@@ -1309,6 +1313,13 @@ async def _stream_chat(
         )
         if rules_block:
             prompt = rules_block + prompt
+        # User-agent brief (flag `agents.user_defined`) — the active agent's pinned
+        # instructions lead the prompt, rules_block-style. Empty (inert) when no
+        # agent is active.
+        from aughor.user_agents.context import agent_brief_block
+        _agent_brief = agent_brief_block()
+        if _agent_brief:
+            prompt = _agent_brief + prompt
         # Playbook context — when org playbook items match this question, give them
         # to the model AND surface them to the user (emitted below) so they can
         # keep / modify / remove them.
@@ -3099,11 +3110,57 @@ async def ask_endpoint(req: AskRequest, request: Request):
     if os.getenv("AUGHOR_UNIFIED_ASK", "1").lower() in ("0", "false", "no", "off"):
         raise HTTPException(status_code=404, detail="unified /ask is disabled")
     conn_id = _resolve_conn(req)
+    agent = _resolve_ask_agent(req)
+    if agent is not None and agent.connection_id:
+        # The agent's binding wins; an EXPLICIT conflicting connection is an
+        # error, not a silent override (fail-closed scope).
+        if req.connection_id not in (BUILTIN_ID, agent.connection_id):
+            raise HTTPException(
+                status_code=409,
+                detail=f"agent '{agent.name}' is bound to connection "
+                       f"'{agent.connection_id}' (asked: '{req.connection_id}')")
+        conn_id = agent.connection_id
+    stream = _stream_ask(req, request, conn_id)
+    if agent is not None:
+        stream = _stream_as_agent(agent, stream)
     return StreamingResponse(
-        _stream_ask(req, request, conn_id),
+        stream,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _resolve_ask_agent(req: "AskRequest"):
+    """The user-defined agent this ask runs as, or None (flag off / no agent_id)."""
+    if not req.agent_id:
+        return None
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("agents.user_defined"):
+        raise HTTPException(status_code=404,
+                            detail="user-defined agents are disabled (flag agents.user_defined)")
+    from aughor.user_agents import get_agent
+    agent = get_agent(req.agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"No such agent '{req.agent_id}'")
+    if not agent.enabled:
+        raise HTTPException(status_code=409, detail=f"agent '{agent.name}' is disabled")
+    return agent
+
+
+async def _stream_as_agent(agent, stream: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
+    """Run the ask stream with the user-agent contextvar active, so the prompt
+    brief and the document-retrieval scope see the agent everywhere (threads
+    included — ContextThreadPoolExecutor propagates contextvars)."""
+    from aughor.user_agents.context import activate_agent, release_agent
+    token = activate_agent(agent)
+    try:
+        yield _sse("agent", {"agent_id": agent.id, "name": agent.name,
+                             "connection_id": agent.connection_id,
+                             "doc_count": len(agent.doc_ids)})
+        async for event in stream:
+            yield event
+    finally:
+        release_agent(token)
 
 
 def _job_id_for_investigation(inv_id: str) -> Optional[str]:

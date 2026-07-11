@@ -291,6 +291,17 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 
 ## 12. Platform & infrastructure
 
+- **User-defined agents** (`agents.user_defined`) — reusable domain personas ("Gems on governed data"):
+  an agent binds standing INSTRUCTIONS + a set of uploaded DOCUMENTS + a CONNECTION
+  (`aughor/user_agents/`, store `data/agents.db`, CRUD `/agents/custom`). Answering via
+  `/ask` + `agent_id`: the instructions lead the prompt (rules_block-style), document retrieval is
+  restricted to the agent's bound documents (fail-closed — an agent with none sees none), the
+  connection binding wins (a conflicting explicit connection is a 409, never a silent override), and
+  the stream opens with an `agent` receipt event. Unlike a Gem/custom-GPT, the persona inherits the
+  whole trust substrate — guards, receipts, RBAC — untouched. Slice 1 of the agentic-platform arc
+  (`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md` Part B); builder UI, deep-path
+  intake, pack/schema bindings are the next slices. Off by default (routes 404, answer path
+  byte-identical).
 - **MLflow investigation tracing** (`obs.mlflow`) — every investigation exported to a self-hosted MLflow
   server as one inspectable trace tree: LangChain/OpenAI autolog creates the trace root per graph run (LLM
   calls with token counts), the existing `node_span` seam nests each graph node under it, and every guarded
