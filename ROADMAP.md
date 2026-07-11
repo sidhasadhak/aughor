@@ -68,6 +68,26 @@ glm-5.2:cloud). NEXT: auto-eval-on-edit (async suite run after instruction/docum
 the uploaded-PDF exit-criterion run (needs Qdrant + embedder live), A1-P3 lifecycle, then the
 Part-A lakehouse connector family as its own PR.
 
+**🚧 IN FLIGHT (2026-07-11) — E6 item (1): the MLflow-underneath Agent Workspace**, branch
+`2026-07-11-mlflow-agent-workspace` (own PR off main, per E6's each-its-own-PR sequencing). Five
+slices, all flag-gated / default-off, full unit suite green (2660), live-verified end-to-end.
+**(1)** `agent_id` is a first-class `investigations` column (additive Migration(3), persisted from
+the active-persona contextvar) — per-agent run history is joinable (the E1/E5 schema fix).
+**(2)** MLflow traces carry `mlflow.trace.session` / `mlflow.trace.user` + an `agent_id` tag,
+ambient from request-scoped contextvars (new `session` contextvar pinned by an `/ask` stream
+wrapper) — MLflow's Sessions / user / per-agent / cost views populate with no graph threading.
+**(4a)** `GET /agents/custom/{id}/observability` — per-agent run history + optional MLflow trace
+stats (count/errors/tokens/cost/latency, filtered by the `agent_id` tag), degrading to
+history-only when tracing is off (B3's one-directional rule). **(4b)** the **Agent Workspace**
+(`web/components/AgentWorkspace.tsx`) — one perspective-switched surface: **Overview** (native
+cards over the observability endpoint — MLflow stays backend-only, the "native cards first"
+decision), **Manage** (the existing builder), **Fleet** (the built-in fleet folded in; Agents +
+Fleet are now two deep-links into one workspace). **Deferred by that decision**: per-agent MLflow
+experiments (slice 3 — only needed for iframe deep-linking; feasible via context-local
+`set_destination`) and embedded iframe views (slice 5 — E1's no-per-user-auth caveat). NEXT per
+E6: (2) Learning Receipt + Memory layer, (3) Capabilities Auto-mode, (4) double-texting +
+reviewer-loop; lakehouse connectors queued in parallel.
+
 **NEXT (queued 2026-07-11) — the post-head-to-head backlog.** The Databricks Genie head-to-head
 (same question, same bakehouse data) drove two shipped arcs (see §2); what remains, in leverage order:
 1. **P7 — pin a frontier `coder` model** (ops/config, non-code). Every remaining rough edge —

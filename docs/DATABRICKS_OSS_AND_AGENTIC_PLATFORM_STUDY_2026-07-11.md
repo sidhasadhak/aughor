@@ -21,6 +21,31 @@ crystallization (deliberately deferred — see ROADMAP §0), A1-P3, Part-A conne
 open-swe learnings · adaptive capabilities · learning visibility · wired-vs-surfaced audit),
 with the revised next-wave sequencing in E6.*
 
+*Build status (2026-07-11, branch `2026-07-11-mlflow-agent-workspace`): **E6 item (1) —
+the MLflow-underneath Agent Workspace — shipped** across five slices. **Slice 1**: `agent_id`
+is now a first-class column on the `investigations` run row (additive Migration(3), persisted
+from the active-persona contextvar), so per-agent run history is joinable (the E1/E5 schema
+fix). **Slice 2**: MLflow traces are attributed with `mlflow.trace.session` /
+`mlflow.trace.user` (via `update_current_trace`'s dedicated kwargs) + an `agent_id` tag — all
+ambient from request-scoped contextvars (new `session` contextvar in `org/context.py`, pinned
+by an `/ask` stream wrapper), so MLflow's Sessions / user / per-agent / cost views populate
+with no threading through the graph. **Slice 4a**: `GET /agents/custom/{id}/observability` —
+per-agent run history + optional MLflow trace stats (`telemetry.agent_trace_stats`, filtered by
+the `agent_id` tag), degrading to history-only when tracing is off (B3's one-directional rule).
+**Slice 4b**: the **Agent Workspace** (`web/components/AgentWorkspace.tsx`) — one
+perspective-switched surface (an instance of the `<Workspace>` shell) with **Overview** (native
+cards over the observability endpoint — MLflow stays backend-only, the "native cards first"
+decision over embedded iframes), **Manage** (the existing builder), and **Fleet** (the built-in
+fleet, folded in as the operations layer; the Agents + Fleet rail items are now two deep-links
+into one workspace). **Deferred by the native-cards decision**: slice 3 (per-agent MLflow
+experiments — feasible via `set_destination(context_local=True)`, only needed for iframe
+deep-linking) and slice 5 (embedded iframe views — E1's no-per-user-auth caveat). Live-verified
+end-to-end (both/all-three layers render, real endpoint data with MLflow-off degradation, clean
+switching, zero console errors); full unit suite green; all flag-gated / default-off. **NEXT
+per E6**: (2) Learning Receipt + Memory layer (E4), (3) Capabilities Auto-mode (E3), (4)
+double-texting + reviewer-loop (E2); the Part-A lakehouse connector family remains queued in
+parallel.*
+
 *Method: five parallel research passes (Unity Catalog OSS · Redash · MLflow 3.x GenAI · the
 Delta/Iceberg/Delta-Sharing lakehouse stack · an Aughor repo seam-map), each grounded against primary
 sources (GitHub APIs, official docs, release notes) current as of 2026-07-11, then cross-checked
