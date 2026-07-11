@@ -3401,3 +3401,55 @@ export async function setPackDeltaStatus(deltaId: number, status: "accepted" | "
   });
   return res.ok;
 }
+
+// ── User-defined agents (flag `agents.user_defined`) ──────────────────────────
+// CRUD over /agents/custom — the domain personas ("Gems on governed data").
+// GETs fail soft (routes 404 when the flag is off → empty roster, no error UI).
+
+export interface UserAgent {
+  id: string;
+  name: string;
+  instructions: string;
+  connection_id: string;
+  doc_ids: string[];
+  owner: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listUserAgents(): Promise<UserAgent[]> {
+  const res = await fetch(`${BASE}/agents/custom`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createUserAgent(body: {
+  name: string; instructions?: string; connection_id?: string; doc_ids?: string[];
+}): Promise<UserAgent> {
+  const res = await fetch(`${BASE}/agents/custom`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `create agent failed (${res.status})`);
+  return res.json();
+}
+
+export async function patchUserAgent(agentId: string, body: {
+  name?: string; instructions?: string; connection_id?: string;
+  doc_ids?: string[]; enabled?: boolean;
+}): Promise<UserAgent> {
+  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `update agent failed (${res.status})`);
+  return res.json();
+}
+
+export async function deleteUserAgent(agentId: string): Promise<boolean> {
+  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}`, {
+    method: "DELETE",
+  });
+  return res.ok;
+}

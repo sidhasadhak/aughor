@@ -143,6 +143,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/custom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List User Agents
+         * @description All user-defined agents (the persona roster, newest first).
+         */
+        get: operations["list_user_agents_agents_custom_get"];
+        put?: never;
+        /** Create User Agent */
+        post: operations["create_user_agent_agents_custom_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/custom/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get User Agent */
+        get: operations["get_user_agent_agents_custom__agent_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete User Agent */
+        delete: operations["delete_user_agent_agents_custom__agent_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch User Agent */
+        patch: operations["patch_user_agent_agents_custom__agent_id__patch"];
+        trace?: never;
+    };
     "/agents/{agent_id}": {
         parameters: {
             query?: never;
@@ -5205,6 +5245,8 @@ export interface components {
          *     "Investigate deeper" escalations working through the one door.
          */
         AskRequest: {
+            /** Agent Id */
+            agent_id?: string | null;
             /** Canvas Id */
             canvas_id?: string | null;
             /**
@@ -6128,6 +6170,39 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** UserAgentCreate */
+        UserAgentCreate: {
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Doc Ids
+             * @default []
+             */
+            doc_ids: string[];
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+            /** Name */
+            name: string;
+        };
+        /** UserAgentPatch */
+        UserAgentPatch: {
+            /** Connection Id */
+            connection_id?: string | null;
+            /** Doc Ids */
+            doc_ids?: string[] | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Instructions */
+            instructions?: string | null;
+            /** Name */
+            name?: string | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -6959,6 +7034,156 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_user_agents_agents_custom_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_user_agent_agents_custom_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserAgentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_agent_agents_custom__agent_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_agent_agents_custom__agent_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_user_agent_agents_custom__agent_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserAgentPatch"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

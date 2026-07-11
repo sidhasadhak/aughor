@@ -52,6 +52,7 @@ const CanvasWorkspace   = dynamic(() => import("@/components/CanvasWorkspace").t
 const QueryBuilder      = dynamic(() => import("@/components/QueryBuilder").then(m => ({ default: m.QueryBuilder })),        { ssr: false, loading });
 const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
 const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
+const AgentsAdminPanel  = dynamic(() => import("@/components/AgentsAdminPanel").then(m => ({ default: m.AgentsAdminPanel })), { ssr: false, loading });
 import { API_BASE } from "@/lib/config";
 import {
   getConnections,
@@ -89,6 +90,7 @@ type NavTab =
   | "canvas-workspace"
   | "recents"
   | "fleet"              // the agent fleet — runs, status, cost
+  | "agents"             // user-defined agents (domain personas, flag agents.user_defined)
   | "inbox"
   | "briefing"
   | "intelligence"      // unified multi-layered Intelligence workspace
@@ -461,6 +463,7 @@ const NAV_SECTIONS = [
       { id: "intelligence", icon: "brief",    label: "Briefing" },
       { id: "recents",      icon: "search",   label: "Investigations" },
       { id: "fleet",        icon: "node",     label: "Fleet" },
+      { id: "agents",       icon: "spark",    label: "Agents" },
       { id: "health",       icon: "activity", label: "Health" },
       { id: "playbook",     icon: "playbook", label: "Playbook" },
     ],
@@ -2188,6 +2191,13 @@ export default function Home() {
             {tab === "metrics" && (
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
                 <MetricsPanel connId={selectedConn ?? undefined} />
+              </div>
+            )}
+
+            {/* ── AGENTS (user-defined personas) ── */}
+            {tab === "agents" && (
+              <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
+                <AgentsAdminPanel />
               </div>
             )}
 

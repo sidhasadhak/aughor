@@ -84,6 +84,15 @@ export interface ChatTurn {
     downgradedFrom: string | null;   // "deep" when capability-gated down to quick
   } | null;
 
+  // User-agent receipt (flag `agents.user_defined`) — the persona this turn ran
+  // as; opens the /ask stream when agent_id was sent. Null on plain turns.
+  agent: {
+    agentId: string;
+    name: string;
+    connectionId: string;
+    docCount: number;
+  } | null;
+
   // Ask-vs-guess (Phase 3) — when set, the agent asked a clarifying question instead of
   // answering; the turn renders a clarify card and the user's reply re-asks with skip_clarify.
   clarify: {
@@ -176,6 +185,7 @@ export interface ChatState {
 export type ChatAction =
   | { type: "ASK";          id: string; question: string; mode: "ask" | "investigate" }
   | { type: "ROUTE";        route: NonNullable<ChatTurn["route"]> }
+  | { type: "AGENT";        agent: NonNullable<ChatTurn["agent"]> }
   | { type: "CLARIFY";      clarify: NonNullable<ChatTurn["clarify"]> }
   | { type: "ESCALATE";     escalate: NonNullable<ChatTurn["escalate"]> }
   | { type: "SQL";          sql: string }
@@ -223,6 +233,7 @@ function updateLast(state: ChatState, fn: (t: ChatTurn) => ChatTurn): ChatState 
 export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   status: "loading",
   route: null,
+  agent: null,
   clarify: null,
   escalate: null,
   sql: null, columns: [], rows: [], headline: null, chartType: null,
@@ -248,6 +259,9 @@ function finish(t: ChatTurn): ChatTurn {
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
+    case "AGENT":
+      // The user-agent receipt — carried on the turn for the AgentBadge chip.
+      return updateLast(state, t => ({ ...t, agent: action.agent }));
     case "ASK":
       return {
         ...state, streaming: true,
@@ -381,6 +395,14 @@ export async function consumeStream(
           const p = JSON.parse(chunk.slice(6)) as { type: string } & Record<string, unknown>;
           logEvent({ ts: Date.now(), type: p.type, summary: summarisePayload(p.type, p), payload: p });
           switch (p.type) {
+            case "agent":
+              dispatch({ type: "AGENT", agent: {
+                agentId: (p.agent_id as string) ?? "",
+                name: (p.name as string) ?? "",
+                connectionId: (p.connection_id as string) ?? "",
+                docCount: Number(p.doc_count ?? 0),
+              } });
+              break;
             case "route":
               dispatch({ type: "ROUTE", route: {
                 depth: (p.depth as "quick" | "deep") ?? "quick",
