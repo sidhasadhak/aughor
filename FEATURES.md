@@ -291,6 +291,41 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 
 ## 12. Platform & infrastructure
 
+- **User-defined agents** (`agents.user_defined`) — reusable domain personas ("Gems on governed data"):
+  an agent binds standing INSTRUCTIONS + a set of uploaded DOCUMENTS + a CONNECTION
+  (`aughor/user_agents/`, store `data/agents.db`, CRUD `/agents/custom`). Answering via
+  `/ask` + `agent_id`: the instructions lead the prompt (rules_block-style), document retrieval is
+  restricted to the agent's bound documents (fail-closed — an agent with none sees none), the
+  connection binding wins (a conflicting explicit connection is a 409, never a silent override), and
+  the stream opens with an `agent` receipt event. Unlike a Gem/custom-GPT, the persona inherits the
+  whole trust substrate — guards, receipts, RBAC — untouched. **Builder UI included**: the
+  Intelligence-rail **Agents** panel (roster + create/edit with connection select + document
+  multi-attach + enable toggle, `web/components/AgentsAdminPanel.tsx`), an agent picker on the ask
+  composer, and an "Answering as …" `AgentBadge` receipt per turn. **Deep path included**: the
+  persona persists in the run's checkpointed state (`AgentState.agent_id`) so a plan/clarify-gate
+  resume re-activates it (fail-open), the brief leads the ADA synthesis prompt, and deep document
+  retrieval is agent-scoped through the same seam as the quick path. **Schema + pack bindings
+  included**: `schema_scope` pins the agent to one schema (conflicting explicit schema → 409) and
+  `pack_ids` restricts specialist-pack selection to the agent's packs — a preference, never a
+  deploy-gate bypass (the pinned-binding requirement applies unchanged). **Measured agents
+  included**: each agent carries its own GOLDEN QUESTIONS (question + read-only reference SQL);
+  `POST /agents/custom/{id}/evaluate` generates SQL as the agent, executes both, compares result
+  sets deterministically (no LLM judges), and stamps the "n/m passing" chip — quality is measured,
+  not vibes, which no Gem/custom-GPT builder offers. Slices 1–5 of the agentic-platform arc
+  (`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md` Part B).
+  Off by default (routes 404, answer path byte-identical, picker hidden).
+- **MLflow investigation tracing** (`obs.mlflow`) — every investigation exported to a self-hosted MLflow
+  server as one inspectable trace tree: LangChain/OpenAI autolog creates the trace root per graph run (LLM
+  calls with token counts), the existing `node_span` seam nests each graph node under it, and every guarded
+  SQL execution (`sql/executor.py`) appears as a `TOOL` span carrying the SQL — searchable by
+  `tags.investigation_id`. Third backend of the one telemetry seam (`aughor/telemetry.py`, beside
+  Langfuse/OTel): lazy lock-serialized init, transient server failures retry on a 60s cooldown (never a
+  process-lifetime disable), HTTP timeout/retries bounded so a dead server can't stall the answer path,
+  and flipping the flag OFF **unpatches autolog** (no silent trace export after opting out). Client is
+  `mlflow-skinny` (`uv sync --extra observability` — the full server distribution would downgrade
+  pandas/cryptography); server via `docker compose --profile obs up -d mlflow` (localhost:5001).
+  Engineer-facing observability only — answers, receipts, ledgers unchanged. Off by default = byte-identical.
+  Phase 1 of the MLflow arc in `docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md`.
 - **Functional-plane consolidation** (Part 2 of the 2026-07-03 review, flag-gated) — the diffused agent
   runtime is being re-drawn as clean horizontal planes, each with a typed contract + a conformance test:
   a **Trust plane** (`aughor/trust:verify(sql|code|metadata, scope) → Verdict`) hoisting the ~9 scattered

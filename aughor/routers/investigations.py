@@ -608,6 +608,10 @@ class AskRequest(BaseModel):
     session_id: str = ""
     schema_name: Optional[str] = Field(default=None, alias="schema")
     depth: Literal["auto", "quick", "deep"] = "auto"
+    # Answer AS this user-defined agent (flag `agents.user_defined`): its pinned
+    # instructions lead the prompt, retrieval is scoped to its documents, and its
+    # connection binding wins (a conflicting explicit connection is a 409).
+    agent_id: Optional[str] = None
     # Set when the user answered (or dismissed) a clarifying question — bypass the
     # clarify gate so we don't ask again about the now-clarified request.
     skip_clarify: bool = False
@@ -1309,6 +1313,13 @@ async def _stream_chat(
         )
         if rules_block:
             prompt = rules_block + prompt
+        # User-agent brief (flag `agents.user_defined`) — the active agent's pinned
+        # instructions lead the prompt, rules_block-style. Empty (inert) when no
+        # agent is active.
+        from aughor.user_agents.context import agent_brief_block
+        _agent_brief = agent_brief_block()
+        if _agent_brief:
+            prompt = _agent_brief + prompt
         # Playbook context — when org playbook items match this question, give them
         # to the model AND surface them to the user (emitted below) so they can
         # keep / modify / remove them.
@@ -2290,6 +2301,9 @@ async def _stream_investigation(
         initial_state: AgentState = {
             "question": question, "connection_id": connection_id, "investigation_id": inv_id,
             "trace_id": trace_id,
+            # agents.user_defined — persist the active persona so a plan/clarify-gate
+            # resume (which never passes through /ask) can re-activate it.
+            "agent_id": _current_agent_id(),
             "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": "", "events_context": "",
             "hypotheses": [], "current_hypothesis_idx": 0, "query_history": [], "evidence_scores": [],
             "pitfalls": [], "prior_analyses": _seed_priors, "origin_finding": _origin, "iteration": 0,
@@ -3099,11 +3113,105 @@ async def ask_endpoint(req: AskRequest, request: Request):
     if os.getenv("AUGHOR_UNIFIED_ASK", "1").lower() in ("0", "false", "no", "off"):
         raise HTTPException(status_code=404, detail="unified /ask is disabled")
     conn_id = _resolve_conn(req)
+    agent = _resolve_ask_agent(req)
+    if agent is not None:
+        conn_id = _apply_agent_bindings(req, agent, conn_id)
+    stream = _stream_ask(req, request, conn_id)
+    if agent is not None:
+        stream = _stream_as_agent(agent, stream)
     return StreamingResponse(
-        _stream_ask(req, request, conn_id),
+        stream,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _resolve_ask_agent(req: "AskRequest"):
+    """The user-defined agent this ask runs as, or None (flag off / no agent_id)."""
+    if not req.agent_id:
+        return None
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("agents.user_defined"):
+        raise HTTPException(status_code=404,
+                            detail="user-defined agents are disabled (flag agents.user_defined)")
+    from aughor.user_agents import get_agent
+    agent = get_agent(req.agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"No such agent '{req.agent_id}'")
+    if not agent.enabled:
+        raise HTTPException(status_code=409, detail=f"agent '{agent.name}' is disabled")
+    return agent
+
+
+def _apply_agent_bindings(req: "AskRequest", agent, conn_id: str) -> str:
+    """Enforce the agent's connection + schema bindings on this ask.
+
+    Fail-closed: an EXPLICIT conflicting value is a 409, never a silent
+    override; an unset/default value is bound to the agent's. Returns the
+    effective connection id."""
+    if agent.connection_id:
+        if req.connection_id not in (BUILTIN_ID, agent.connection_id):
+            raise HTTPException(
+                status_code=409,
+                detail=f"agent '{agent.name}' is bound to connection "
+                       f"'{agent.connection_id}' (asked: '{req.connection_id}')")
+        conn_id = agent.connection_id
+    if agent.schema_scope:
+        if req.schema_name and req.schema_name != agent.schema_scope:
+            raise HTTPException(
+                status_code=409,
+                detail=f"agent '{agent.name}' is scoped to schema "
+                       f"'{agent.schema_scope}' (asked: '{req.schema_name}')")
+        req.schema_name = agent.schema_scope
+    return conn_id
+
+
+def _current_agent_id() -> str:
+    """The active user-agent's id for state seeding ("" when none)."""
+    from aughor.user_agents.context import current_agent
+    agent = current_agent()
+    return agent.id if agent is not None else ""
+
+
+def _persona_for_investigation(inv_id: str):
+    """The user-agent persona a checkpointed deep run was launched AS, or None.
+
+    Resume (plan/clarify-gate feedback) never passes through /ask, so the
+    persona is re-read from the run's persisted state (`agent_id`). Fail-open:
+    a missing checkpoint, an unknown/disabled agent, or the flag being off all
+    resume the run WITHOUT the persona rather than blocking it."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("agents.user_defined"):
+        return None
+    try:
+        from aughor.agent.graph import read_checkpoint_values
+        agent_id = read_checkpoint_values(inv_id).get("agent_id") or ""
+        if not agent_id:
+            return None
+        from aughor.user_agents import get_agent
+        persona = get_agent(agent_id)
+        return persona if (persona is not None and persona.enabled) else None
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "persona re-activation on resume is best-effort; resuming without it",
+                 counter="agents.resume_persona")
+        return None
+
+
+async def _stream_as_agent(agent, stream: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
+    """Run the ask stream with the user-agent contextvar active, so the prompt
+    brief and the document-retrieval scope see the agent everywhere (threads
+    included — ContextThreadPoolExecutor propagates contextvars)."""
+    from aughor.user_agents.context import activate_agent, release_agent
+    token = activate_agent(agent)
+    try:
+        yield _sse("agent", {"agent_id": agent.id, "name": agent.name,
+                             "connection_id": agent.connection_id,
+                             "doc_count": len(agent.doc_ids)})
+        async for event in stream:
+            yield event
+    finally:
+        release_agent(token)
 
 
 def _job_id_for_investigation(inv_id: str) -> Optional[str]:
@@ -3131,9 +3239,16 @@ def cancel_investigation_route(inv_id: str):
 
 @router.post("/investigations/{inv_id}/feedback")
 async def submit_feedback(inv_id: str, req: FeedbackRequest, request: Request):
+    stream = _stream_resume(inv_id, req.feedback, request, keep_subquestions=req.keep_subquestions,
+                            clarify_choice=req.clarify_choice)
+    # agents.user_defined — a deep run launched AS an agent resumes AS it: the
+    # persona persists in the run's checkpointed state (resume never passes
+    # through /ask). Fail-open: no persona → resume unchanged.
+    persona = _persona_for_investigation(inv_id)
+    if persona is not None:
+        stream = _stream_as_agent(persona, stream)
     return StreamingResponse(
-        _stream_resume(inv_id, req.feedback, request, keep_subquestions=req.keep_subquestions,
-                       clarify_choice=req.clarify_choice),
+        stream,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -52,6 +52,8 @@ FLAG_ENV = {
     "plan.program": "AUGHOR_PLAN_PROGRAM",
     "capability.contract": "AUGHOR_CAPABILITY_CONTRACT",
     "rbac.row_policy": "AUGHOR_RBAC_ROW_POLICY",
+    "obs.mlflow": "AUGHOR_OBS_MLFLOW",
+    "agents.user_defined": "AUGHOR_USER_AGENTS",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -190,6 +192,14 @@ FLAG_META = {
     "rbac.row_policy": {
         "label": "RBAC row-level policy (row filters in the WHERE)",
         "description": "Compile per-role, per-table row-filters into executed SQL (a deterministic AST rewrite wrapping each policied table as a filtered subquery) so a role physically cannot read rows outside its filter. Double-gated like the rest of RBAC (no-op unless identity AND the org's RBAC_SSO capability are on) AND this flag; fails CLOSED (a policy that can't be applied blocks the query). Enforced at every connector's execution gate (DuckDB/Postgres/warehouse/file/API). Off by default. Rec 7 of the external-sources study.",
+    },
+    "agents.user_defined": {
+        "label": "User-defined agents (domain personas)",
+        "description": "Create reusable agents that bind standing INSTRUCTIONS + a set of uploaded DOCUMENTS + a CONNECTION into a persona, then answer as that agent via /ask (agent_id). The agent's instructions lead the prompt, document retrieval is restricted to ITS documents (an agent with none sees none — fail-closed), and its connection binding wins (a conflicting explicit connection is rejected). CRUD under /agents/custom. Off by default — routes 404 and the answer path is byte-identical. Part B Phase 1 (slice 1) of docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md.",
+    },
+    "obs.mlflow": {
+        "label": "MLflow tracing (agent observability)",
+        "description": "Send every investigation to a self-hosted MLflow server as one inspectable trace tree — graph nodes as spans, LLM calls via LangChain/OpenAI autolog (with token counts), and each guarded SQL execution as a TOOL span — searchable by tags.investigation_id. Point AUGHOR_MLFLOW_TRACKING_URI at the server (`docker compose --profile obs up -d mlflow` starts one on http://localhost:5001) and install the extra (`uv sync --extra observability`). Engineer-facing observability only — answers, receipts and ledgers are unchanged. Off by default = byte-identical.",
     },
     "plan.program": {
         "label": "Plan-as-program executor",

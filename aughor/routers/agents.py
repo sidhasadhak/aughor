@@ -76,3 +76,184 @@ def patch_agent(agent_id: str, body: AgentGovernancePatch):
         model=body.model,
     )
     return {"agent_id": agent_id, "governance": gov.to_dict()}
+
+
+# ── User-defined agents (flag `agents.user_defined`) ──────────────────────────
+# Dynamic, user-created personas (aughor/user_agents/) — distinct from the
+# static built-in fleet charters above. Routes 404 when the flag is off.
+
+def _require_user_agents() -> None:
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("agents.user_defined"):
+        raise HTTPException(status_code=404,
+                            detail="user-defined agents are disabled (flag agents.user_defined)")
+
+
+def _validate_agent_fields(name: Optional[str] = None, instructions: Optional[str] = None,
+                           connection_id: Optional[str] = None,
+                           doc_ids: Optional[list] = None) -> None:
+    from aughor.user_agents.models import INSTRUCTIONS_MAX, NAME_MAX
+    if name is not None and not (0 < len(name.strip()) <= NAME_MAX):
+        raise HTTPException(status_code=422, detail=f"name must be 1..{NAME_MAX} chars")
+    if instructions is not None and len(instructions) > INSTRUCTIONS_MAX:
+        raise HTTPException(status_code=422,
+                            detail=f"instructions exceed {INSTRUCTIONS_MAX} chars")
+    if connection_id:
+        from aughor.db.registry import BUILTIN_ID, list_connections
+        known = {c.get("id") for c in list_connections()} | {BUILTIN_ID}
+        if connection_id not in known:
+            raise HTTPException(status_code=422,
+                                detail=f"unknown connection '{connection_id}'")
+    if doc_ids:
+        from aughor.knowledge.indexer import get_document
+        missing = [d for d in doc_ids if get_document(d) is None]
+        if missing:
+            raise HTTPException(status_code=422,
+                                detail=f"unknown document id(s): {', '.join(missing)}")
+
+
+def _validate_agent_packs(pack_ids: Optional[list]) -> None:
+    if not pack_ids:
+        return
+    try:
+        from aughor.packs.intake import active_packs
+        known = {p.id for p in active_packs()}
+    except Exception:
+        known = set()
+    missing = [p for p in pack_ids if p not in known]
+    if missing:
+        raise HTTPException(status_code=422,
+                            detail=f"unknown/inactive pack id(s): {', '.join(missing)}")
+
+
+class UserAgentCreate(BaseModel):
+    name: str
+    instructions: str = ""
+    connection_id: str = ""
+    schema_scope: str = ""
+    doc_ids: list[str] = []
+    pack_ids: list[str] = []
+
+
+class UserAgentPatch(BaseModel):
+    name: Optional[str] = None
+    instructions: Optional[str] = None
+    connection_id: Optional[str] = None
+    schema_scope: Optional[str] = None
+    doc_ids: Optional[list[str]] = None
+    pack_ids: Optional[list[str]] = None
+    enabled: Optional[bool] = None
+
+
+@router.get("/agents/custom")
+def list_user_agents():
+    """All user-defined agents (the persona roster, newest first)."""
+    _require_user_agents()
+    from aughor.user_agents import list_agents
+    return [a.model_dump() for a in list_agents()]
+
+
+@router.post("/agents/custom", status_code=201)
+def create_user_agent(body: UserAgentCreate):
+    _require_user_agents()
+    _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
+    _validate_agent_packs(body.pack_ids)
+    from aughor.org.context import current_org_id
+    from aughor.user_agents import create_agent
+    agent = create_agent(body.name, instructions=body.instructions,
+                         connection_id=body.connection_id, schema_scope=body.schema_scope,
+                         doc_ids=body.doc_ids, pack_ids=body.pack_ids,
+                         owner=current_org_id() or "")
+    return agent.model_dump()
+
+
+@router.get("/agents/custom/{agent_id}")
+def get_user_agent(agent_id: str):
+    _require_user_agents()
+    from aughor.user_agents import get_agent
+    agent = get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return agent.model_dump()
+
+
+@router.patch("/agents/custom/{agent_id}")
+def patch_user_agent(agent_id: str, body: UserAgentPatch):
+    _require_user_agents()
+    _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
+    _validate_agent_packs(body.pack_ids)
+    from aughor.user_agents import update_agent
+    agent = update_agent(agent_id, name=body.name, instructions=body.instructions,
+                         connection_id=body.connection_id, schema_scope=body.schema_scope,
+                         doc_ids=body.doc_ids, pack_ids=body.pack_ids,
+                         enabled=body.enabled)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return agent.model_dump()
+
+
+@router.delete("/agents/custom/{agent_id}")
+def delete_user_agent(agent_id: str):
+    _require_user_agents()
+    from aughor.user_agents import delete_agent
+    if not delete_agent(agent_id):
+        raise HTTPException(status_code=404, detail="No such agent")
+    return {"deleted": agent_id}
+
+
+# ── Golden questions + evaluation ("measured agents") ─────────────────────────
+
+class GoldenCreate(BaseModel):
+    question: str
+    reference_sql: str
+
+
+@router.get("/agents/custom/{agent_id}/goldens")
+def list_agent_goldens(agent_id: str):
+    _require_user_agents()
+    from aughor.user_agents import get_agent
+    from aughor.user_agents.store import list_goldens
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return list_goldens(agent_id)
+
+
+@router.post("/agents/custom/{agent_id}/goldens", status_code=201)
+def create_agent_golden(agent_id: str, body: GoldenCreate):
+    """Pin a golden question: the agent's own regression suite. reference_sql is
+    the ground truth the evaluation compares against (executed, not matched as
+    text) — read-only statements only."""
+    _require_user_agents()
+    from aughor.user_agents import get_agent
+    from aughor.user_agents.store import add_golden
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    if not body.question.strip() or not body.reference_sql.strip():
+        raise HTTPException(status_code=422, detail="question and reference_sql are required")
+    from aughor.sql.readonly import is_mutating
+    if is_mutating(body.reference_sql):
+        raise HTTPException(status_code=422, detail="reference_sql must be read-only")
+    return add_golden(agent_id, body.question, body.reference_sql)
+
+
+@router.delete("/agents/custom/{agent_id}/goldens/{golden_id}")
+def delete_agent_golden(agent_id: str, golden_id: str):
+    _require_user_agents()
+    from aughor.user_agents.store import delete_golden
+    if not delete_golden(golden_id):
+        raise HTTPException(status_code=404, detail="No such golden")
+    return {"deleted": golden_id}
+
+
+@router.post("/agents/custom/{agent_id}/evaluate")
+def evaluate_user_agent(agent_id: str):
+    """Run the agent's golden suite NOW (one coder-model call per golden, capped)
+    and stamp the result on the agent — 'your agent still passes 11/12'. Run it
+    after editing instructions or documents to catch regressions."""
+    _require_user_agents()
+    from aughor.user_agents import get_agent
+    from aughor.user_agents.quality import evaluate_agent
+    agent = get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return evaluate_agent(agent)

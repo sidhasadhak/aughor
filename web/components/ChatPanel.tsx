@@ -9,7 +9,7 @@ import ChevronDownIcon    from "@atlaskit/icon/core/chevron-down";
 import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
 import CommentIcon        from "@atlaskit/icon/core/comment";
 import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
-import { uploadDocument } from "@/lib/api";
+import { uploadDocument, listUserAgents, type UserAgent } from "@/lib/api";
 import { useChat, type DebugEvent, type ChatTurn } from "@/lib/useChat";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
 import { TrustReceipt } from "./TrustReceipt";
@@ -55,9 +55,13 @@ interface InputBoxProps {
   onClear: () => void;
   attachedFile?: File | null;
   onAttach?: (f: File | null) => void;
+  // User-defined agents (flag `agents.user_defined`) — empty roster hides the picker.
+  agents?: UserAgent[];
+  agentId?: string;
+  setAgentId?: (id: string) => void;
 }
 
-function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, setMode, onSend, onStop, onClear, attachedFile, onAttach }: InputBoxProps) {
+function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, setMode, onSend, onStop, onClear, attachedFile, onAttach, agents, agentId, setAgentId }: InputBoxProps) {
   const [focused, setFocused] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -165,6 +169,29 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             Deep
           </button>
         </div>
+
+        {/* Agent picker (flag `agents.user_defined`) — answer AS a saved persona.
+            Hidden when the roster is empty (flag off → the list endpoint 404s → []). */}
+        {(agents?.length ?? 0) > 0 && setAgentId && (
+          <select
+            value={agentId ?? ""}
+            onChange={(e) => setAgentId(e.target.value)}
+            disabled={streaming}
+            title="Answer as a saved agent (its instructions, documents and connection apply)"
+            style={{
+              marginLeft: 8, marginRight: "auto", padding: "3px 8px", fontSize: 11, fontWeight: 500,
+              fontFamily: "var(--font-ui)", borderRadius: "var(--r1)",
+              background: agentId ? "var(--green1)" : "var(--bg-0)",
+              border: `1px solid ${agentId ? "var(--green2)" : "var(--b1)"}`,
+              color: agentId ? "var(--green5)" : "var(--t3)", cursor: "pointer",
+            }}
+          >
+            <option value="">No agent</option>
+            {agents!.filter(a => a.enabled).map(a => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+        )}
 
         {/* Actions: clear · attach · send/stop */}
         <div className="flex items-center gap-1.5">
@@ -336,6 +363,31 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
   );
 }
 
+/* ── Agent badge — the user-agent receipt on a turn (flag `agents.user_defined`).
+   Mirrors DepthBanner: reads turn.agent, renders nothing on plain turns. */
+function AgentBadge({ turn }: { turn: ChatTurn }) {
+  const a = turn.agent;
+  if (!a) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+      <span style={{
+        display: "inline-flex", alignItems: "center", gap: 5,
+        padding: "2px 9px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
+        fontFamily: "var(--font-ui)",
+        background: "var(--green1)", border: "1px solid var(--green2)", color: "var(--green5)",
+      }}>
+        <AiSparkleIcon label="" size="small" />
+        Answering as {a.name}
+      </span>
+      {a.docCount > 0 && (
+        <span style={{ fontSize: 11.5, color: "var(--t3)" }}>
+          {a.docCount} bound document{a.docCount === 1 ? "" : "s"}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /* ── Clarify card — the ask-vs-guess prompt (Phase 3) ──
    Shown when the agent asked one targeted question instead of guessing. The user's
    reply (an option chip, a typed detail, or "answer anyway") re-asks the original
@@ -413,6 +465,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const { state, ask, stop, clear, restore, resumePlan, rejectPlan, resumeClarify, eventLogRef } = useChat();
   const [input, setInput]           = useState("");
   const [mode, setMode]             = useState<"auto" | "ask" | "investigate">("auto");
+  // User-defined agents (flag `agents.user_defined`): the roster + the picked persona.
+  const [agents, setAgents]         = useState<UserAgent[]>([]);
+  const [agentId, setAgentId]       = useState<string>("");
+  useEffect(() => { listUserAgents().then(setAgents).catch(() => {}); }, []);
   const [starters, setStarters]     = useState<Starter[]>(FALLBACK_STARTERS);
   const [loadingStarters, setLoadingStarters] = useState(false);
   const [showDebug, setShowDebug]   = useState(false);
@@ -465,6 +521,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           mode: "ask" as const,
           status: "done" as const,
           route: null,
+          agent: null,
           clarify: null,
           escalate: null,
           // Restored turns: the turn id IS the receipt key; the component 404-noops
@@ -560,9 +617,9 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
       }
       setAttachedFile(null);
     }
-    ask(question, connectionId, m ?? mode, { ...opts, canvasId: canvasId ?? undefined });
+    ask(question, connectionId, m ?? mode, { ...opts, canvasId: canvasId ?? undefined, agentId: agentId || undefined });
     textareaRef.current?.focus();
-  }, [input, state.streaming, ask, connectionId, canvasId, mode, attachedFile]);
+  }, [input, state.streaming, ask, connectionId, canvasId, mode, attachedFile, agentId]);
 
   const isEmpty = state.turns.length === 0;
 
@@ -590,6 +647,9 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     onClear: clear,
     attachedFile,
     onAttach: setAttachedFile,
+    agents,
+    agentId,
+    setAgentId,
   };
 
   return (
@@ -697,6 +757,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                       turn={turn}
                       onRerun={(depth) => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, depth })}
                     />
+                    <AgentBadge turn={turn} />
                     <ChatMessage
                       turn={turn}
                       connectionId={connectionId}

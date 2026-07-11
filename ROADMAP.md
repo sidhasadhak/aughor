@@ -14,6 +14,60 @@
 
 ## 0 · Immediate next action ⏭️
 
+**🚧 IN FLIGHT (2026-07-11) — the Databricks-OSS arc, phase 1: MLflow investigation tracing
+(`obs.mlflow`).** Study + full sequencing in
+[`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md`](docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md)
+(Part A verdicts: MLflow=adopt · UC=interop-as-client · lakehouse connector family=build ·
+Redash=mine patterns; Part B: the agentic-platform direction — user-created domain agents over
+packs/volumes/charters with MLflow as the lifecycle plane). Phase 1 shipped on branch
+`2026-07-11-obs-mlflow-tracing`: the third backend of the one telemetry seam (`aughor/telemetry.py`) —
+autolog trace roots, node spans via the existing `node_span` seam, guarded SQL as `TOOL` spans,
+`tags.investigation_id` search; `mlflow-skinny` client (the full distribution would downgrade
+pandas/cryptography in the lock), compose `obs` profile server on :5001, cooldown-retry init,
+autolog unpatch on flag-off. Off by default = byte-identical. **A1-P2 also shipped: the P7
+bake-off instrument** — `evals/model_bakeoff.py` runs candidate coder models through
+`mlflow.genai.evaluate` with deterministic scorers only (`evals/mlflow_scorers.py`: the golden
+execution-accuracy comparator + the Trust-plane guard battery + exec-success), one env-isolated
+subprocess arm per model, tokens/latency from kernel metering, comparable runs in the
+`aughor-bakeoff` MLflow experiment + a printed ranking. LIVE-verified (glm-5.2:cloud, 2 questions:
+exec_acc 0.85 · trust 1.0 · 7.6k tok/q). **P7 itself is now one command:**
+`uv run --extra observability python -m evals.model_bakeoff --models "glm-5.2:cloud,<candidate>"`.
+**B4-P1 slices 1+2 also shipped: user-defined agents** (flag `agents.user_defined`) — the Agent
+entity (`aughor/user_agents/`: model + `agents.db` store + contextvar), CRUD under
+`/agents/custom`, `/ask?agent_id` binding (pinned instructions lead the quick-path prompt
+rules_block-style; document retrieval scoped to the agent's bound docs, fail-closed: an agent
+with none sees none; connection binding wins, conflicting explicit connection → 409; an `agent`
+SSE receipt opens the stream), **and the builder UI**: the Intelligence-rail **Agents** panel
+(`web/components/AgentsAdminPanel.tsx` — roster + create/edit form with connection select +
+document multi-attach + enable toggle), the composer agent picker (ChatPanel → `agent_id` on
+/ask), and the `AgentBadge` "Answering as …" receipt on each turn. **LIVE-verified end-to-end**
+(flag flipped at runtime, a Churn Analyst created + asked → agent receipt → answer → Trust
+Receipt; panel screenshot-verified, 0 console errors). **Slice 3 (deep path) shipped too**: the
+persona persists in graph state (`AgentState.agent_id`) so a plan/clarify-gate **resume
+re-activates it** (the feedback door reads it via `graph.read_checkpoint_values` — resume never
+passes through /ask; fail-open, never blocks a resume), the agent brief leads the ADA synthesis
+prompt, and deep document retrieval was already agent-scoped (it routes through
+`build_external_context_section`). **Slice 4 (pack bindings + schema scoping) shipped**:
+`UserAgent.schema_scope` (the agent answers within its schema; a conflicting explicit schema is a
+409 — live-verified) and `UserAgent.pack_ids` — a pack **preference** that restricts specialist-pack
+selection to the agent's packs when it runs, never a deploy-gate bypass (the pinned-binding
+requirement in `packs/intake.py` applies unchanged; an agent bound to an undeployed pack steers
+nothing rather than guessing). Builder form gained Schema scope + Expertise packs. **Deliberately
+deferred — per-agent ledger crystallization**: an agent bound to a connection inherits that
+connection's crystallized resolutions, which is the correct default; partitioning the Ambiguity
+Ledger per agent needs a scope-column schema change + a product decision (do two agents on one
+connection WANT different metric readings?) — revisit with A1-P4. **Slice 5 (measured agents)
+shipped + LIVE-verified**: per-agent GOLDEN QUESTIONS (`user_agent_goldens`, CRUD under
+`/agents/custom/{id}/goldens`, read-only reference SQL enforced) + `POST
+/agents/custom/{id}/evaluate` — generates SQL AS the agent with the current coder model,
+executes generated vs reference on the agent's connection, compares result sets
+deterministically (`user_agents/quality.py`, no LLM judges; order/type tolerant, a richer
+correct answer passes), stamps `last_eval` (the "n/m passing" chip on the roster); the builder
+gained a Goldens editor + Run-evaluation (live: golden → evaluate → 1/1 passing → stamped,
+glm-5.2:cloud). NEXT: auto-eval-on-edit (async suite run after instruction/document PATCHes),
+the uploaded-PDF exit-criterion run (needs Qdrant + embedder live), A1-P3 lifecycle, then the
+Part-A lakehouse connector family as its own PR.
+
 **NEXT (queued 2026-07-11) — the post-head-to-head backlog.** The Databricks Genie head-to-head
 (same question, same bakehouse data) drove two shipped arcs (see §2); what remains, in leverage order:
 1. **P7 — pin a frontier `coder` model** (ops/config, non-code). Every remaining rough edge —

@@ -3401,3 +3401,109 @@ export async function setPackDeltaStatus(deltaId: number, status: "accepted" | "
   });
   return res.ok;
 }
+
+// ── User-defined agents (flag `agents.user_defined`) ──────────────────────────
+// CRUD over /agents/custom — the domain personas ("Gems on governed data").
+// GETs fail soft (routes 404 when the flag is off → empty roster, no error UI).
+
+export interface UserAgent {
+  id: string;
+  name: string;
+  instructions: string;
+  connection_id: string;
+  schema_scope: string;
+  doc_ids: string[];
+  pack_ids: string[];
+  owner: string;
+  enabled: boolean;
+  last_eval: { passed: number; total: number; at: string } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listUserAgents(): Promise<UserAgent[]> {
+  const res = await fetch(`${BASE}/agents/custom`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createUserAgent(body: {
+  name: string; instructions?: string; connection_id?: string; schema_scope?: string;
+  doc_ids?: string[]; pack_ids?: string[];
+}): Promise<UserAgent> {
+  const res = await fetch(`${BASE}/agents/custom`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `create agent failed (${res.status})`);
+  return res.json();
+}
+
+export async function patchUserAgent(agentId: string, body: {
+  name?: string; instructions?: string; connection_id?: string; schema_scope?: string;
+  doc_ids?: string[]; pack_ids?: string[]; enabled?: boolean;
+}): Promise<UserAgent> {
+  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `update agent failed (${res.status})`);
+  return res.json();
+}
+
+export async function deleteUserAgent(agentId: string): Promise<boolean> {
+  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}`, {
+    method: "DELETE",
+  });
+  return res.ok;
+}
+
+// ── Measured agents: golden questions + evaluation ────────────────────────────
+
+export interface AgentGolden {
+  id: string;
+  agent_id: string;
+  question: string;
+  reference_sql: string;
+  created_at: string;
+}
+
+export interface AgentEvalResult {
+  passed: number;
+  total: number;
+  at: string;
+  duration_ms?: number;
+  per_question: { golden_id: string; question: string; passed: boolean; error: string }[];
+}
+
+export async function listAgentGoldens(agentId: string): Promise<AgentGolden[]> {
+  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/goldens`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createAgentGolden(agentId: string, body: {
+  question: string; reference_sql: string;
+}): Promise<AgentGolden> {
+  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/goldens`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `add golden failed (${res.status})`);
+  return res.json();
+}
+
+export async function deleteAgentGolden(agentId: string, goldenId: string): Promise<boolean> {
+  const res = await fetch(
+    `${BASE}/agents/custom/${encodeURIComponent(agentId)}/goldens/${encodeURIComponent(goldenId)}`,
+    { method: "DELETE" });
+  return res.ok;
+}
+
+export async function evaluateUserAgent(agentId: string): Promise<AgentEvalResult> {
+  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/evaluate`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error((await res.text()) || `evaluate failed (${res.status})`);
+  return res.json();
+}

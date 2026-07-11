@@ -81,6 +81,12 @@ observability = [
     "langfuse>=2.0.0",
     "opentelemetry-sdk>=1.24.0",
     "opentelemetry-exporter-otlp>=1.24.0",
+    # obs.mlflow feature flag — MLflow trace trees per investigation (≥3.13 for
+    # the OSS RBAC/archival-era client; 3.9.0 had a Postgres+S3 trace bug).
+    # Skinny on purpose: the full `mlflow` server distribution pins pandas<3 /
+    # older cryptography, which would downgrade the whole lock (CVE-audit
+    # regressions). The server runs in Docker; the app only needs the client.
+    "mlflow-skinny>=3.13",
 ]
 evals = [
     "braintrust>=0.0.150",

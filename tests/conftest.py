@@ -47,6 +47,7 @@ for _env, _file in (
     ("AUGHOR_CHECKPOINTS_DB", "checkpoints.db"),
     ("AUGHOR_IDEMPOTENCY_DB", "idempotency.db"),
     ("AUGHOR_RBAC_DB", "rbac.db"),
+    ("AUGHOR_AGENTS_DB", "agents.db"),
     # DuckDB demo stores — without these the suite CREATED data/aughor.duckdb and
     # opened data/samples.duckdb read-write in the developer's live data/ (lock
     # contention with a running app; same class as the registry incident).
