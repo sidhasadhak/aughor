@@ -42,6 +42,18 @@ def agent_brief_block() -> str:
     )
 
 
+def agent_pack_ids() -> list[str]:
+    """The active agent's explicit pack bindings ([] = none / no agent).
+
+    A PREFERENCE that restricts pack selection to these packs — never a
+    deploy-gate bypass (the pinned-binding requirement in packs/intake.py
+    applies unchanged). An agent without pack bindings leaves the connection's
+    normal pack steering untouched (packs are operator-deployed infrastructure,
+    not per-agent context like documents)."""
+    agent = current_agent()
+    return list(agent.pack_ids) if agent is not None else []
+
+
 def agent_doc_ids() -> Optional[set[str]]:
     """The active agent's document scope.
 

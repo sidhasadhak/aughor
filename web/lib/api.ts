@@ -3411,7 +3411,9 @@ export interface UserAgent {
   name: string;
   instructions: string;
   connection_id: string;
+  schema_scope: string;
   doc_ids: string[];
+  pack_ids: string[];
   owner: string;
   enabled: boolean;
   created_at: string;
@@ -3425,7 +3427,8 @@ export async function listUserAgents(): Promise<UserAgent[]> {
 }
 
 export async function createUserAgent(body: {
-  name: string; instructions?: string; connection_id?: string; doc_ids?: string[];
+  name: string; instructions?: string; connection_id?: string; schema_scope?: string;
+  doc_ids?: string[]; pack_ids?: string[];
 }): Promise<UserAgent> {
   const res = await fetch(`${BASE}/agents/custom`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -3436,8 +3439,8 @@ export async function createUserAgent(body: {
 }
 
 export async function patchUserAgent(agentId: string, body: {
-  name?: string; instructions?: string; connection_id?: string;
-  doc_ids?: string[]; enabled?: boolean;
+  name?: string; instructions?: string; connection_id?: string; schema_scope?: string;
+  doc_ids?: string[]; pack_ids?: string[]; enabled?: boolean;
 }): Promise<UserAgent> {
   const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" },

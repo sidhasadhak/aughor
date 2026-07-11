@@ -112,18 +112,36 @@ def _validate_agent_fields(name: Optional[str] = None, instructions: Optional[st
                                 detail=f"unknown document id(s): {', '.join(missing)}")
 
 
+def _validate_agent_packs(pack_ids: Optional[list]) -> None:
+    if not pack_ids:
+        return
+    try:
+        from aughor.packs.intake import active_packs
+        known = {p.id for p in active_packs()}
+    except Exception:
+        known = set()
+    missing = [p for p in pack_ids if p not in known]
+    if missing:
+        raise HTTPException(status_code=422,
+                            detail=f"unknown/inactive pack id(s): {', '.join(missing)}")
+
+
 class UserAgentCreate(BaseModel):
     name: str
     instructions: str = ""
     connection_id: str = ""
+    schema_scope: str = ""
     doc_ids: list[str] = []
+    pack_ids: list[str] = []
 
 
 class UserAgentPatch(BaseModel):
     name: Optional[str] = None
     instructions: Optional[str] = None
     connection_id: Optional[str] = None
+    schema_scope: Optional[str] = None
     doc_ids: Optional[list[str]] = None
+    pack_ids: Optional[list[str]] = None
     enabled: Optional[bool] = None
 
 
@@ -139,10 +157,12 @@ def list_user_agents():
 def create_user_agent(body: UserAgentCreate):
     _require_user_agents()
     _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
+    _validate_agent_packs(body.pack_ids)
     from aughor.org.context import current_org_id
     from aughor.user_agents import create_agent
     agent = create_agent(body.name, instructions=body.instructions,
-                         connection_id=body.connection_id, doc_ids=body.doc_ids,
+                         connection_id=body.connection_id, schema_scope=body.schema_scope,
+                         doc_ids=body.doc_ids, pack_ids=body.pack_ids,
                          owner=current_org_id() or "")
     return agent.model_dump()
 
@@ -161,9 +181,11 @@ def get_user_agent(agent_id: str):
 def patch_user_agent(agent_id: str, body: UserAgentPatch):
     _require_user_agents()
     _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
+    _validate_agent_packs(body.pack_ids)
     from aughor.user_agents import update_agent
     agent = update_agent(agent_id, name=body.name, instructions=body.instructions,
-                         connection_id=body.connection_id, doc_ids=body.doc_ids,
+                         connection_id=body.connection_id, schema_scope=body.schema_scope,
+                         doc_ids=body.doc_ids, pack_ids=body.pack_ids,
                          enabled=body.enabled)
     if agent is None:
         raise HTTPException(status_code=404, detail="No such agent")

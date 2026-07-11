@@ -14,7 +14,12 @@ class UserAgent(BaseModel):
     name: str
     instructions: str = ""
     connection_id: str = ""          # "" = unbound (answers on the ask's connection)
+    schema_scope: str = ""           # "" = all schemas; else the agent answers in this schema
     doc_ids: list[str] = Field(default_factory=list)  # bound documents (knowledge registry ids)
+    # Bound Domain Expertise Packs: a preference that RESTRICTS pack selection to
+    # these when the agent runs — never a deploy-gate bypass (a pack still only
+    # steers where a pinned, human-confirmed binding exists). [] = no restriction.
+    pack_ids: list[str] = Field(default_factory=list)
     owner: str = ""                  # org/user identity when identity is enforced
     enabled: bool = True
     created_at: str = ""

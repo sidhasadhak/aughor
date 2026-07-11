@@ -8,24 +8,30 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import {
-  createUserAgent, deleteUserAgent, getConnections, listDocuments,
+  createUserAgent, deleteUserAgent, getConnections, getPacks, listDocuments,
   listUserAgents, patchUserAgent,
-  type Connection, type DocumentEntry, type UserAgent,
+  type Connection, type DocumentEntry, type PackSummary, type UserAgent,
 } from "@/lib/api";
 
 interface FormState {
   name: string;
   instructions: string;
   connection_id: string;
+  schema_scope: string;
   doc_ids: string[];
+  pack_ids: string[];
 }
 
-const EMPTY_FORM: FormState = { name: "", instructions: "", connection_id: "", doc_ids: [] };
+const EMPTY_FORM: FormState = {
+  name: "", instructions: "", connection_id: "", schema_scope: "",
+  doc_ids: [], pack_ids: [],
+};
 
 export function AgentsAdminPanel() {
   const [agents, setAgents] = useState<UserAgent[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [documents, setDocuments] = useState<DocumentEntry[]>([]);
+  const [packs, setPacks] = useState<PackSummary[]>([]);
   const [view, setView] = useState<"list" | "form">("list");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editTarget, setEditTarget] = useState<UserAgent | null>(null);
@@ -40,6 +46,7 @@ export function AgentsAdminPanel() {
     reload();
     getConnections().then(setConnections).catch(() => {});
     listDocuments().then(setDocuments).catch(() => {});
+    getPacks().then(r => setPacks((r.packs || []).filter(p => p.ok))).catch(() => {});
   }, [reload]);
 
   function openCreate() {
@@ -51,7 +58,8 @@ export function AgentsAdminPanel() {
 
   function openEdit(a: UserAgent) {
     setForm({ name: a.name, instructions: a.instructions,
-              connection_id: a.connection_id, doc_ids: a.doc_ids });
+              connection_id: a.connection_id, schema_scope: a.schema_scope,
+              doc_ids: a.doc_ids, pack_ids: a.pack_ids });
     setEditTarget(a);
     setError(null);
     setView("form");
@@ -94,6 +102,15 @@ export function AgentsAdminPanel() {
       doc_ids: f.doc_ids.includes(docId)
         ? f.doc_ids.filter(d => d !== docId)
         : [...f.doc_ids, docId],
+    }));
+  }
+
+  function togglePack(packId: string) {
+    setForm(f => ({
+      ...f,
+      pack_ids: f.pack_ids.includes(packId)
+        ? f.pack_ids.filter(p => p !== packId)
+        : [...f.pack_ids, packId],
     }));
   }
 
@@ -148,7 +165,10 @@ export function AgentsAdminPanel() {
                     </div>
                     <div style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 3,
                                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {connName(a.connection_id)} · {a.doc_ids.length} document{a.doc_ids.length === 1 ? "" : "s"}
+                      {connName(a.connection_id)}
+                      {a.schema_scope ? ` · ${a.schema_scope}` : ""}
+                      {" · "}{a.doc_ids.length} document{a.doc_ids.length === 1 ? "" : "s"}
+                      {a.pack_ids.length > 0 ? ` · ${a.pack_ids.length} pack${a.pack_ids.length === 1 ? "" : "s"}` : ""}
                       {a.instructions ? ` · ${a.instructions}` : ""}
                     </div>
                   </div>
@@ -190,6 +210,16 @@ export function AgentsAdminPanel() {
               </span>
             </label>
 
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span className="aug-label">Schema scope</span>
+              <input className="aug-input" value={form.schema_scope} maxLength={120}
+                     placeholder="e.g. finance — leave empty for all schemas"
+                     onChange={e => setForm(f => ({ ...f, schema_scope: e.target.value }))} />
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>
+                When set, the agent answers within this schema; asking it about another schema is rejected.
+              </span>
+            </label>
+
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <span className="aug-label">Documents</span>
               {documents.length === 0 ? (
@@ -216,6 +246,30 @@ export function AgentsAdminPanel() {
                 </div>
               )}
             </div>
+
+            {packs.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <span className="aug-label">Expertise packs</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4,
+                              maxHeight: 140, overflowY: "auto", padding: "8px 10px",
+                              border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
+                  {packs.map(p => (
+                    <label key={p.id}
+                           style={{ display: "flex", alignItems: "center", gap: 8,
+                                    fontSize: 12, color: "var(--t2)", cursor: "pointer" }}>
+                      <input type="checkbox"
+                             checked={form.pack_ids.includes(p.id)}
+                             onChange={() => togglePack(p.id)} />
+                      <span>{p.name || p.id}</span>
+                    </label>
+                  ))}
+                </div>
+                <span style={{ fontSize: 11, color: "var(--t3)" }}>
+                  A preference: pack steering is restricted to these packs when the agent runs.
+                  A pack still only steers where it is deployed on the connection.
+                </span>
+              </div>
+            )}
 
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               <Button onClick={save} disabled={saving}>

@@ -47,10 +47,18 @@ persona persists in graph state (`AgentState.agent_id`) so a plan/clarify-gate *
 re-activates it** (the feedback door reads it via `graph.read_checkpoint_values` — resume never
 passes through /ask; fail-open, never blocks a resume), the agent brief leads the ADA synthesis
 prompt, and deep document retrieval was already agent-scoped (it routes through
-`build_external_context_section`). NEXT slices (in order): **(a) pack bindings + schema scoping
-via ExecutionScope; per-agent ledger crystallization**; **(b)** the uploaded-PDF exit-criterion
-run (needs Qdrant + embedder live). Then A1-P3/P4 (prompt-registry versioning per agent,
-eval-on-edit) per the study doc Part B Phases 2–3.
+`build_external_context_section`). **Slice 4 (pack bindings + schema scoping) shipped**:
+`UserAgent.schema_scope` (the agent answers within its schema; a conflicting explicit schema is a
+409 — live-verified) and `UserAgent.pack_ids` — a pack **preference** that restricts specialist-pack
+selection to the agent's packs when it runs, never a deploy-gate bypass (the pinned-binding
+requirement in `packs/intake.py` applies unchanged; an agent bound to an undeployed pack steers
+nothing rather than guessing). Builder form gained Schema scope + Expertise packs. **Deliberately
+deferred — per-agent ledger crystallization**: an agent bound to a connection inherits that
+connection's crystallized resolutions, which is the correct default; partitioning the Ambiguity
+Ledger per agent needs a scope-column schema change + a product decision (do two agents on one
+connection WANT different metric readings?) — revisit with A1-P4. NEXT: the uploaded-PDF
+exit-criterion run (needs Qdrant + embedder live), then A1-P3/P4 (prompt-registry versioning per
+agent, eval-on-edit) per the study doc Part B Phases 2–3.
 
 **NEXT (queued 2026-07-11) — the post-head-to-head backlog.** The Databricks Genie head-to-head
 (same question, same bakehouse data) drove two shipped arcs (see §2); what remains, in leverage order:

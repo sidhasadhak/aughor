@@ -3114,15 +3114,8 @@ async def ask_endpoint(req: AskRequest, request: Request):
         raise HTTPException(status_code=404, detail="unified /ask is disabled")
     conn_id = _resolve_conn(req)
     agent = _resolve_ask_agent(req)
-    if agent is not None and agent.connection_id:
-        # The agent's binding wins; an EXPLICIT conflicting connection is an
-        # error, not a silent override (fail-closed scope).
-        if req.connection_id not in (BUILTIN_ID, agent.connection_id):
-            raise HTTPException(
-                status_code=409,
-                detail=f"agent '{agent.name}' is bound to connection "
-                       f"'{agent.connection_id}' (asked: '{req.connection_id}')")
-        conn_id = agent.connection_id
+    if agent is not None:
+        conn_id = _apply_agent_bindings(req, agent, conn_id)
     stream = _stream_ask(req, request, conn_id)
     if agent is not None:
         stream = _stream_as_agent(agent, stream)
@@ -3148,6 +3141,29 @@ def _resolve_ask_agent(req: "AskRequest"):
     if not agent.enabled:
         raise HTTPException(status_code=409, detail=f"agent '{agent.name}' is disabled")
     return agent
+
+
+def _apply_agent_bindings(req: "AskRequest", agent, conn_id: str) -> str:
+    """Enforce the agent's connection + schema bindings on this ask.
+
+    Fail-closed: an EXPLICIT conflicting value is a 409, never a silent
+    override; an unset/default value is bound to the agent's. Returns the
+    effective connection id."""
+    if agent.connection_id:
+        if req.connection_id not in (BUILTIN_ID, agent.connection_id):
+            raise HTTPException(
+                status_code=409,
+                detail=f"agent '{agent.name}' is bound to connection "
+                       f"'{agent.connection_id}' (asked: '{req.connection_id}')")
+        conn_id = agent.connection_id
+    if agent.schema_scope:
+        if req.schema_name and req.schema_name != agent.schema_scope:
+            raise HTTPException(
+                status_code=409,
+                detail=f"agent '{agent.name}' is scoped to schema "
+                       f"'{agent.schema_scope}' (asked: '{req.schema_name}')")
+        req.schema_name = agent.schema_scope
+    return conn_id
 
 
 def _current_agent_id() -> str:

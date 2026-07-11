@@ -304,10 +304,12 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   composer, and an "Answering as …" `AgentBadge` receipt per turn. **Deep path included**: the
   persona persists in the run's checkpointed state (`AgentState.agent_id`) so a plan/clarify-gate
   resume re-activates it (fail-open), the brief leads the ADA synthesis prompt, and deep document
-  retrieval is agent-scoped through the same seam as the quick path. Slices 1–3 of the
-  agentic-platform arc (`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md` Part B);
-  pack/schema bindings are the next slices. Off by default (routes 404, answer path
-  byte-identical, picker hidden).
+  retrieval is agent-scoped through the same seam as the quick path. **Schema + pack bindings
+  included**: `schema_scope` pins the agent to one schema (conflicting explicit schema → 409) and
+  `pack_ids` restricts specialist-pack selection to the agent's packs — a preference, never a
+  deploy-gate bypass (the pinned-binding requirement applies unchanged). Slices 1–4 of the
+  agentic-platform arc (`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md` Part B).
+  Off by default (routes 404, answer path byte-identical, picker hidden).
 - **MLflow investigation tracing** (`obs.mlflow`) — every investigation exported to a self-hosted MLflow
   server as one inspectable trace tree: LangChain/OpenAI autolog creates the trace root per graph run (LLM
   calls with token counts), the existing `node_span` seam nests each graph node under it, and every guarded

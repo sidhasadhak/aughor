@@ -6189,6 +6189,16 @@ export interface components {
             instructions: string;
             /** Name */
             name: string;
+            /**
+             * Pack Ids
+             * @default []
+             */
+            pack_ids: string[];
+            /**
+             * Schema Scope
+             * @default
+             */
+            schema_scope: string;
         };
         /** UserAgentPatch */
         UserAgentPatch: {
@@ -6202,6 +6212,10 @@ export interface components {
             instructions?: string | null;
             /** Name */
             name?: string | null;
+            /** Pack Ids */
+            pack_ids?: string[] | null;
+            /** Schema Scope */
+            schema_scope?: string | null;
         };
         /** ValidationError */
         ValidationError: {

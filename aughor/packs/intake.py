@@ -55,6 +55,19 @@ def injection_for_question(
     if not flag_enabled("specialist_packs"):
         return None
     pool = packs if packs is not None else active_packs()
+    # agents.user_defined — an active user-agent with EXPLICIT pack bindings
+    # restricts selection to its packs (a preference, not a safety bypass: the
+    # pinned-binding deploy gate below applies unchanged). No agent, or an agent
+    # without pack bindings → the pool is untouched.
+    try:
+        from aughor.user_agents.context import agent_pack_ids
+        _agent_packs = agent_pack_ids()
+        if _agent_packs:
+            pool = [p for p in pool if p.id in set(_agent_packs)]
+    except Exception as e:
+        from aughor.kernel.errors import tolerate
+        tolerate(e, "agent pack-preference is advisory; full pool proceeds",
+                 counter="packs.agent_pool")
     if not pool:
         return None
     hit = select_pack(question, pool)

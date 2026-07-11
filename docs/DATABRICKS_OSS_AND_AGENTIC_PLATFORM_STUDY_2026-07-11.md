@@ -9,11 +9,13 @@ lifecycle plane.*
 
 *Build status (2026-07-11, branch `2026-07-11-obs-mlflow-tracing`): **A1-P1 shipped** (`obs.mlflow`
 tracing — telemetry-seam third backend, mlflow-skinny); **A1-P2 shipped** (`evals/model_bakeoff.py`
-— P7 through `mlflow.genai.evaluate` with deterministic scorers, live-verified); **B4-P1 slices 1–3
-shipped** (`agents.user_defined` — the Agent entity + /ask binding + builder UI + deep path:
-persona persisted in checkpointed state with resume re-activation, brief on the synthesis prompt,
-agent-scoped deep doc retrieval; slices 1–2 live-verified). Remaining: B4-P1 pack/schema slices,
-A1-P3/P4, Part-A connectors (UC/lakehouse/Redash patterns), per Part C sequencing.*
+— P7 through `mlflow.genai.evaluate` with deterministic scorers, live-verified); **B4-P1 slices 1–4
+shipped** (`agents.user_defined` — the Agent entity + /ask binding + builder UI + deep path
+(persona persisted in checkpointed state with resume re-activation, brief on the synthesis
+prompt, agent-scoped deep doc retrieval) + schema scoping & pack-preference bindings;
+live-verified). Remaining: the PDF exit-criterion run, per-agent ledger crystallization
+(deliberately deferred — see ROADMAP §0), A1-P3/P4, Part-A connectors (UC/lakehouse/Redash
+patterns), per Part C sequencing.*
 
 *Method: five parallel research passes (Unity Catalog OSS · Redash · MLflow 3.x GenAI · the
 Delta/Iceberg/Delta-Sharing lakehouse stack · an Aughor repo seam-map), each grounded against primary

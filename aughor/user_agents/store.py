@@ -33,14 +33,22 @@ def _connect() -> sqlite3.Connection:
     conn = tune(sqlite3.connect(_db_path()))
     conn.row_factory = sqlite3.Row
     conn.execute(_SCHEMA)
+    # Additive columns (slice 4: schema scoping + pack bindings) — pre-existing
+    # stores lack them; probe the live schema and ALTER only what's missing.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(user_agents)")}
+    if "schema_scope" not in cols:
+        conn.execute("ALTER TABLE user_agents ADD COLUMN schema_scope TEXT NOT NULL DEFAULT ''")
+    if "pack_ids" not in cols:
+        conn.execute("ALTER TABLE user_agents ADD COLUMN pack_ids TEXT NOT NULL DEFAULT '[]'")
     return conn
 
 
 def _row_to_agent(row: sqlite3.Row) -> UserAgent:
     return UserAgent(
         id=row["id"], name=row["name"], instructions=row["instructions"],
-        connection_id=row["connection_id"],
+        connection_id=row["connection_id"], schema_scope=row["schema_scope"],
         doc_ids=json.loads(row["doc_ids"] or "[]"),
+        pack_ids=json.loads(row["pack_ids"] or "[]"),
         owner=row["owner"], enabled=bool(row["enabled"]),
         created_at=row["created_at"], updated_at=row["updated_at"],
     )
@@ -51,20 +59,23 @@ def _now() -> str:
 
 
 def create_agent(name: str, *, instructions: str = "", connection_id: str = "",
-                 doc_ids: Optional[list[str]] = None, owner: str = "") -> UserAgent:
+                 schema_scope: str = "", doc_ids: Optional[list[str]] = None,
+                 pack_ids: Optional[list[str]] = None, owner: str = "") -> UserAgent:
     agent = UserAgent(
         id=f"ua_{uuid.uuid4().hex[:12]}", name=name.strip(),
         instructions=instructions, connection_id=connection_id,
-        doc_ids=list(doc_ids or []), owner=owner,
+        schema_scope=schema_scope, doc_ids=list(doc_ids or []),
+        pack_ids=list(pack_ids or []), owner=owner,
         enabled=True, created_at=_now(), updated_at=_now(),
     )
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO user_agents (id, name, instructions, connection_id, doc_ids,"
-            " owner, enabled, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO user_agents (id, name, instructions, connection_id, schema_scope,"
+            " doc_ids, pack_ids, owner, enabled, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (agent.id, agent.name, agent.instructions, agent.connection_id,
-             json.dumps(agent.doc_ids), agent.owner, int(agent.enabled),
-             agent.created_at, agent.updated_at),
+             agent.schema_scope, json.dumps(agent.doc_ids), json.dumps(agent.pack_ids),
+             agent.owner, int(agent.enabled), agent.created_at, agent.updated_at),
         )
     return agent
 
@@ -81,7 +92,8 @@ def list_agents() -> list[UserAgent]:
     return [_row_to_agent(r) for r in rows]
 
 
-_PATCHABLE = ("name", "instructions", "connection_id", "doc_ids", "enabled")
+_PATCHABLE = ("name", "instructions", "connection_id", "schema_scope",
+              "doc_ids", "pack_ids", "enabled")
 
 
 def update_agent(agent_id: str, **fields) -> Optional[UserAgent]:
@@ -93,7 +105,7 @@ def update_agent(agent_id: str, **fields) -> Optional[UserAgent]:
     sets, params = [], []
     for k, v in updates.items():
         sets.append(f"{k} = ?")
-        if k == "doc_ids":
+        if k in ("doc_ids", "pack_ids"):
             params.append(json.dumps(list(v)))
         elif k == "enabled":
             params.append(int(bool(v)))

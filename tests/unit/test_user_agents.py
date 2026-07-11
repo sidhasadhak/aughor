@@ -276,3 +276,100 @@ def test_persona_for_investigation_rules(monkeypatch):
         raise RuntimeError("checkpoint store unavailable")
     monkeypatch.setattr(graph, "read_checkpoint_values", _boom)
     assert _persona_for_investigation("inv-1") is None  # fail-open, never blocks resume
+
+
+# ── Slice 4: schema scoping + pack bindings ───────────────────────────────────
+
+def test_store_schema_scope_and_pack_ids_roundtrip():
+    a = create_agent("Scoped Agent", schema_scope="finance", pack_ids=["customer-analytics"])
+    got = get_agent(a.id)
+    assert got.schema_scope == "finance"
+    assert got.pack_ids == ["customer-analytics"]
+    updated = update_agent(a.id, schema_scope="", pack_ids=[])
+    assert updated.schema_scope == "" and updated.pack_ids == []
+
+
+def test_agent_pack_ids_semantics():
+    from aughor.user_agents.context import agent_pack_ids
+    assert agent_pack_ids() == []  # no agent → no restriction
+    a = create_agent("Packed", pack_ids=["p1", "p2"])
+    token = activate_agent(a)
+    try:
+        assert agent_pack_ids() == ["p1", "p2"]
+    finally:
+        release_agent(token)
+
+
+def test_intake_pool_restricted_to_agent_packs(monkeypatch):
+    """An active agent with pack bindings restricts pack selection to ITS packs;
+    the pinned-binding deploy gate is untouched (still consulted)."""
+    import types
+
+    import aughor.packs.intake as intake
+
+    pack_a, pack_b = types.SimpleNamespace(id="pack-a"), types.SimpleNamespace(id="pack-b")
+    monkeypatch.setattr(intake, "flag_enabled", lambda name: name == "specialist_packs")
+    monkeypatch.setattr(intake, "active_packs", lambda packs_dir=None: [pack_a, pack_b])
+    monkeypatch.setattr(intake, "select_pack", lambda q, pool: (pool[0], 1.0) if pool else None)
+    monkeypatch.setattr(intake, "load_binding", lambda pid, conn, schema: {"bindings": {"t": "x"}})
+    captured = {}
+
+    def _build(pack, binding, business_model, currency_code):
+        captured["pack"] = pack.id
+        return types.SimpleNamespace(pack_id=pack.id)
+
+    monkeypatch.setattr(intake, "build_injection", _build)
+
+    # No agent → full pool, first pack wins.
+    assert intake.injection_for_question("q", "conn-1").pack_id == "pack-a"
+
+    # Agent bound to pack-b → pool restricted, pack-b steers.
+    a = create_agent("Pack Agent", pack_ids=["pack-b"])
+    token = activate_agent(a)
+    try:
+        assert intake.injection_for_question("q", "conn-1").pack_id == "pack-b"
+        # The deploy gate still gates: an undeployed pack never steers.
+        monkeypatch.setattr(intake, "load_binding", lambda pid, conn, schema: None)
+        assert intake.injection_for_question("q", "conn-1") is None
+    finally:
+        release_agent(token)
+
+    # Agent bound to a pack NOT in the active pool → nothing steers (no fallback guess).
+    b = create_agent("Ghost Pack Agent", pack_ids=["pack-zzz"])
+    token = activate_agent(b)
+    try:
+        monkeypatch.setattr(intake, "load_binding", lambda pid, conn, schema: {"bindings": {"t": "x"}})
+        assert intake.injection_for_question("q", "conn-1") is None
+    finally:
+        release_agent(token)
+
+
+def test_apply_agent_bindings_rules():
+    from aughor.routers.investigations import _apply_agent_bindings
+
+    bound = create_agent("Bound", connection_id="conn-b", schema_scope="finance")
+
+    # Defaults bind: connection + schema adopted from the agent.
+    req = _ask_req()
+    assert _apply_agent_bindings(req, bound, "whatever") == "conn-b"
+    assert req.schema_name == "finance"
+
+    # Matching explicit values pass through.
+    req = _ask_req(connection_id="conn-b", schema="finance")
+    assert _apply_agent_bindings(req, bound, "conn-b") == "conn-b"
+
+    # Conflicting explicit connection → 409.
+    with pytest.raises(HTTPException) as e:
+        _apply_agent_bindings(_ask_req(connection_id="conn-other"), bound, "conn-other")
+    assert e.value.status_code == 409
+
+    # Conflicting explicit schema → 409.
+    with pytest.raises(HTTPException) as e:
+        _apply_agent_bindings(_ask_req(schema="marketing"), bound, "any")
+    assert e.value.status_code == 409
+
+    # Unbound agent changes nothing.
+    free = create_agent("Free")
+    req = _ask_req(connection_id="conn-x", schema="s1")
+    assert _apply_agent_bindings(req, free, "conn-x") == "conn-x"
+    assert req.schema_name == "s1"
