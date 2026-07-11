@@ -26,7 +26,7 @@ the eval measures real platform quality, not a re-implementation.
 
 Tracking: ``AUGHOR_MLFLOW_TRACKING_URI`` if set (share the compose ``obs``
 server with the ``obs.mlflow`` runtime traces), else a local
-``sqlite:///evals/bakeoff_out/mlruns.db`` store. Requires
+``evals/bakeoff_out/mlruns`` file store. Requires
 ``uv sync --extra observability``, a seeded connection (``aughor seed``), and
 live LLM credentials for the arms.
 """
@@ -163,9 +163,14 @@ def run_arm(args: argparse.Namespace, db=None) -> dict:
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Default to a local FILE store — mlflow-skinny ships without SQLAlchemy
+    # (no sqlite:/// URIs), and MLflow ≥3.14 gates the filesystem backend
+    # behind this env opt-out. A real deployment points
+    # AUGHOR_MLFLOW_TRACKING_URI at the compose `obs` server instead.
+    os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
     mlflow.set_tracking_uri(args.tracking_uri
                             or os.getenv("AUGHOR_MLFLOW_TRACKING_URI")
-                            or f"sqlite:///{out_dir / 'mlruns.db'}")
+                            or str(out_dir / "mlruns"))
     mlflow.set_experiment(args.experiment)
 
     timings: list[dict] = []
@@ -255,7 +260,7 @@ def main() -> int:
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--tracking-uri", default="",
                         help="MLflow tracking URI (default: AUGHOR_MLFLOW_TRACKING_URI "
-                             "or a local sqlite store under --output-dir)")
+                             "or a local file store under --output-dir)")
     parser.add_argument("--experiment", default="aughor-bakeoff")
     parser.add_argument("--output-dir", default=_DEFAULT_OUT)
     args = parser.parse_args()

@@ -93,3 +93,4 @@ evals/spider2_probes_smoke/
 evals/spider2_*_run.log
 evals/lsb_out/
 evals/llm_exp/
+/agents.db*

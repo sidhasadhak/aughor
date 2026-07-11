@@ -42,7 +42,7 @@ def _record(question="How many orders?", ref="SELECT COUNT(*) AS n FROM orders")
 def _args(tmp_path, **over):
     base = dict(model="stub-model", models=None, dataset=str(tmp_path / "ds.jsonl"),
                 connection="samples", limit=0, mode="full", temperature=0.0,
-                tracking_uri=f"sqlite:///{tmp_path}/mlruns.db",
+                tracking_uri=str(tmp_path / "mlruns"),  # file store: skinny has no sqlite
                 experiment="aughor-bakeoff-test", output_dir=str(tmp_path / "out"))
     base.update(over)
     return argparse.Namespace(**base)
@@ -52,6 +52,7 @@ def _args(tmp_path, **over):
 def _clean_env(monkeypatch):
     monkeypatch.delenv("MLFLOW_GENAI_EVAL_MAX_WORKERS", raising=False)
     monkeypatch.setenv("MLFLOW_ENABLE_ASYNC_TRACE_LOGGING", "false")
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")  # ≥3.14 gates file stores
     monkeypatch.setenv("AUGHOR_CODER_MODEL", "pre-existing")  # restored by monkeypatch
     yield
     os.environ.pop("MLFLOW_GENAI_EVAL_MAX_WORKERS", None)

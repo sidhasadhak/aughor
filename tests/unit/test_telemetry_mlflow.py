@@ -373,8 +373,11 @@ def test_real_mlflow_trace_roundtrip(monkeypatch, tmp_path):
     # Traces export through an async queue by default — the write races the
     # read-back below. Synchronous export keeps this test deterministic.
     monkeypatch.setenv("MLFLOW_ENABLE_ASYNC_TRACE_LOGGING", "false")
-    monkeypatch.setenv("AUGHOR_MLFLOW_TRACKING_URI",
-                       f"sqlite:///{tmp_path}/mlflow.db")
+    # A plain-path FILE store — mlflow-skinny has no SQLAlchemy, so sqlite:///
+    # URIs don't exist in a fresh env (CI caught exactly that), and MLflow
+    # ≥3.14 gates the filesystem backend behind an env opt-out.
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+    monkeypatch.setenv("AUGHOR_MLFLOW_TRACKING_URI", str(tmp_path / "mlruns"))
     monkeypatch.setenv("AUGHOR_MLFLOW_EXPERIMENT", "aughor-test")
     prev_uri = mlflow.get_tracking_uri()
     try:

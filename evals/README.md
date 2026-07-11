@@ -60,7 +60,7 @@ generates SQL → executes → three scorers (`evals/mlflow_scorers.py`): golden
 **Trust-plane guard battery** (`aughor.trust.verify`), and **exec success** —
 plus latency and kernel-metered tokens/question. Results land in the
 `aughor-bakeoff` MLflow experiment (`AUGHOR_MLFLOW_TRACKING_URI`, or a local
-sqlite store under `evals/bakeoff_out/`) with per-question traces, and each arm
+file store under `evals/bakeoff_out/`) with per-question traces, and each arm
 writes `evals/bakeoff_out/<model>.json` for the comparison table. Needs a
 seeded `samples` connection and live LLM credentials.
 
