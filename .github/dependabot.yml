@@ -21,8 +21,12 @@ updates:
       npm-minor-and-patch:
         update-types: ["minor", "patch"]
 
-  # Keep the CI actions current (checkout, setup-uv, setup-node).
+  # Keep the CI actions current (checkout, setup-uv, setup-node). Group them into
+  # a single PR/month so three action bumps don't each trigger their own CI run.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "monthly"
+    groups:
+      github-actions:
+        patterns: ["*"]
