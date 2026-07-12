@@ -57,6 +57,7 @@ FLAG_ENV = {
     "search.rrf": "AUGHOR_SEARCH_RRF",
     "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
     "learning.receipt": "AUGHOR_LEARNING_RECEIPT",
+    "capabilities.auto": "AUGHOR_CAPABILITIES_AUTO",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -83,6 +84,10 @@ FLAG_META = {
     "learning.receipt": {
         "label": "Per-run Learning Receipt",
         "description": "Attach a Learning Receipt to each answer — a per-run summary of what the closed loop DID: resolved readings reused (and how many were human corrections), resolutions crystallized this run, and trusted plan-as-programs replayed. Emitted as an SSE `learning` event and stamped on the Trust Receipt so the accumulation the loop already captures is finally visible. Off by default = byte-identical (no event, no receipt section). Wave 1 · E4 of the combined platform study.",
+    },
+    "capabilities.auto": {
+        "label": "Capabilities Auto-mode (self-gating guards decide per run)",
+        "description": "Master switch for Auto-mode: with it on, each SELF-GATING capability (a deterministic guard that already only fires on a runtime trigger — premise-check, clarify gate, high-stakes adversarial verify, join key-reconciliation, capability-contract repair, guarded extract) is ENABLED unless the operator explicitly turned it off, and its own trigger decides per run — so you turn on the smart guards with one switch instead of flipping each. An explicit per-capability On/Off always wins; cost-dangerous flags (ai_sql, federation, champion-validate) are NOT auto-eligible. Off by default = byte-identical. Wave 1 · E3 of the combined platform study.",
     },
     "snapshot_receipts": {
         "label": "Snapshot-pinned receipts",
@@ -223,6 +228,36 @@ FLAG_META = {
 }
 
 
+# ── Capabilities Auto-mode (Wave 1 · E3) ────────────────────────────────────
+# SELF-GATING capabilities: a deterministic runtime trigger already decides whether they fire, so the
+# flag is just a master enable. Under `capabilities.auto`, an unset one is treated as ENABLED (its own
+# trigger then gates it per run) — the operator turns on the smart guards with one switch instead of
+# flipping each. Cost-dangerous flags (ai_sql, federation.*, semops.champion_validate) are deliberately
+# NOT here: running them automatically would be expensive, so they stay manual.
+AUTO_ELIGIBLE: frozenset = frozenset({
+    "ada.premise_check", "ada.clarify_gate", "ada.adversarial_high_stakes",
+    "join.key_reconciliation", "capability.contract", "semops.guarded_extract",
+})
+# Human description of each capability's deterministic trigger — surfaced in the flags API and (later) as
+# the "why" on an activation receipt.
+CAPABILITY_TRIGGER: dict = {
+    "ada.premise_check": "the question asserts why a metric is high or low",
+    "ada.clarify_gate": "candidate readings diverge materially on the metric",
+    "ada.adversarial_high_stakes": "a high-confidence verdict would change the decision",
+    "join.key_reconciliation": "a join's key value-domains mismatch",
+    "capability.contract": "a generated query fails on a native-SQL warehouse",
+    "semops.guarded_extract": "a typed-field extraction fails",
+}
+
+
+def _auto_mode_active() -> bool:
+    """Whether the master Capabilities Auto-mode switch is on (default-off → byte-identical).
+
+    Safe from recursion: `capabilities.auto` is not itself auto-eligible, so resolving it never re-enters
+    the Auto-mode elevation branch below."""
+    return flag_enabled("capabilities.auto")
+
+
 def _env_resolved(name: str) -> bool:
     """Env-var value with the flag's default semantics.
 
@@ -234,7 +269,13 @@ def _env_resolved(name: str) -> bool:
     var = FLAG_ENV.get(name, "")
     raw = os.getenv(var)
     if raw is None:
-        return FLAG_DEFAULT.get(name, False)
+        if FLAG_DEFAULT.get(name, False):
+            return True
+        # Capabilities Auto-mode: an unset auto-eligible guard is enabled (its own trigger then decides)
+        # when the master switch is on. The master defaults off, so this is byte-identical to before.
+        if name in AUTO_ELIGIBLE and _auto_mode_active():
+            return True
+        return False
     if FLAG_DEFAULT.get(name, False):
         return raw.strip().lower() not in ("0", "false", "no", "off")
     return raw.strip().lower() in ("1", "true", "yes", "on")
@@ -250,6 +291,25 @@ def flag_enabled(name: str) -> bool:
     if ov is not None:
         return bool(ov)
     return _env_resolved(name)
+
+
+def flag_state(name: str) -> str:
+    """Tri-state view for the Capabilities UI: ``"on"`` | ``"off"`` | ``"auto"``.
+
+    ``"auto"`` means the capability is enabled ONLY because the master Auto-mode elevated this self-gating
+    guard (its deterministic trigger decides per run) — an explicit operator On/Off always resolves to
+    ``"on"``/``"off"``. A display refinement over ``flag_enabled`` (which is True for both on and auto)."""
+    ov = _override(name)
+    if ov is not None:
+        return "on" if ov else "off"
+    raw = os.getenv(FLAG_ENV.get(name, ""))
+    if raw is not None:
+        return "on" if _env_resolved(name) else "off"
+    if FLAG_DEFAULT.get(name, False):
+        return "on"
+    if name in AUTO_ELIGIBLE and _auto_mode_active():
+        return "auto"
+    return "off"
 
 
 def set_flag(name: str, value: bool) -> None:
@@ -270,6 +330,9 @@ def list_flags() -> dict:
         meta = FLAG_META.get(name, {})
         out[name] = {
             "value": bool(ov) if ov is not None else _env_resolved(name),
+            "state": flag_state(name),
+            "auto_eligible": name in AUTO_ELIGIBLE,
+            **({"trigger": CAPABILITY_TRIGGER[name]} if name in CAPABILITY_TRIGGER else {}),
             "source": "runtime" if ov is not None else "env",
             "env_var": var,
             "label": meta.get("label", name),
