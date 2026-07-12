@@ -18,7 +18,20 @@ import time
 import uuid
 from pathlib import Path
 
-_DATA_DIR = Path("data")
+from aughor.db.sqlite_util import resolve_db_path
+
+# WP-4 — env override (AUGHOR_EPISODES_DIR) for test isolation; the episodes JSONL
+# files were written into the live data/ dir with no override (a non-hermetic hole).
+_DATA_DIR = resolve_db_path("AUGHOR_EPISODES_DIR", Path("data"))
+
+
+def episodes_dir() -> Path:
+    """The directory episode JSONL files live in (honours AUGHOR_EPISODES_DIR).
+
+    The single source of truth for both writers (EpisodeCollector) and the readers in
+    the exploration router / explorer agent, so a redirected dir keeps them consistent.
+    """
+    return _DATA_DIR
 
 
 class EpisodeCollector:

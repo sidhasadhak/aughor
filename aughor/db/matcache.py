@@ -34,9 +34,12 @@ from typing import Optional
 
 import duckdb
 
+from aughor.db.sqlite_util import resolve_db_path
 from aughor.platform.contracts.execution import QueryResult
 
-_CACHE_PATH = Path("data") / "mat_cache.duckdb"
+# WP-4 — env override (AUGHOR_MATCACHE_DB) so the test suite can point this at a temp
+# file; it was hardcoded to the live data/ dir with no override (a non-hermetic hole).
+_CACHE_PATH = resolve_db_path("AUGHOR_MATCACHE_DB", Path("data") / "mat_cache.duckdb")
 DEFAULT_TTL: float = 3_600.0   # 1 hour
 
 # Module-level connection — opened lazily once, reused.

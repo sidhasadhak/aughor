@@ -51,8 +51,10 @@ def test_annotations_come_from_per_schema_runs(tmp_path):
 def test_episodes_endpoint_merges_per_schema_files(tmp_path, monkeypatch):
     import aughor.routers.exploration as expl_router
 
-    monkeypatch.chdir(tmp_path)
     (tmp_path / "data").mkdir()
+    # WP-4 — the endpoint now reads episodes_dir() (honours AUGHOR_EPISODES_DIR), not a
+    # CWD-relative Path("data"). Point the resolved dir at this test's fixture files.
+    monkeypatch.setattr("aughor.explorer.episodes._DATA_DIR", tmp_path / "data")
     (tmp_path / "data" / "episodes_c1.jsonl").write_text(
         json.dumps({"connection_id": "c1", "phase": "exploration", "ts": 1, "sql": "q1"}) + "\n")
     (tmp_path / "data" / "episodes_c1__sales.jsonl").write_text(

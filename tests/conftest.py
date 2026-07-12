@@ -48,6 +48,10 @@ for _env, _file in (
     ("AUGHOR_IDEMPOTENCY_DB", "idempotency.db"),
     ("AUGHOR_RBAC_DB", "rbac.db"),
     ("AUGHOR_AGENTS_DB", "agents.db"),
+    # WP-4 — matcache had NO env override and was hardcoded to data/mat_cache.duckdb, so
+    # any test touching the result cache wrote the developer's live file (a non-hermetic
+    # hole; the same class that once emptied the live registry).
+    ("AUGHOR_MATCACHE_DB", "mat_cache.duckdb"),
     # DuckDB demo stores — without these the suite CREATED data/aughor.duckdb and
     # opened data/samples.duckdb read-write in the developer's live data/ (lock
     # contention with a running app; same class as the registry incident).
@@ -55,6 +59,13 @@ for _env, _file in (
     ("AUGHOR_SAMPLES_DB", "samples.duckdb"),
 ):
     os.environ.setdefault(_env, os.path.join(_test_stores_dir, _file))
+
+# WP-4 — three stores write into a DIRECTORY (JSONL / JSON files), not a single file, and
+# had no env override: episode collectors (data/episodes_*.jsonl), agent procedural memory
+# (data/agent_runs.json, data/learned_actions.json), and the Action Hub (data/action_*.json).
+# Point each dir at the throwaway temp dir so the suite never writes/deletes the live files.
+for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR"):
+    os.environ.setdefault(_dir_env, _test_stores_dir)
 
 # The glossary + metrics catalog are file stores (YAML/JSON, not SQLite) with real content — and the
 # autoseed / knowledge-sync path WRITES them with no path, so the suite mutated the live

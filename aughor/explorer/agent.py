@@ -23,7 +23,6 @@ import re
 import time
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -1947,7 +1946,8 @@ class SchemaExplorer:
                 # The collector writes under the run's STORE KEY ({conn}__{schema}
                 # for a per-schema run) — reading the bare conn file returned the
                 # generic fallback on every multi-schema run.
-                ep_path = Path("data") / f"episodes_{self._store_key}.jsonl"
+                from aughor.explorer.episodes import episodes_dir
+                ep_path = episodes_dir() / f"episodes_{self._store_key}.jsonl"
                 if ep_path.exists():
                     last = ep_path.read_text().strip().split("\n")[-1]
                     return _j.loads(last).get("observation", "SQL execution failed")

@@ -17,13 +17,15 @@ import logging
 import re
 from typing import Any, Callable, Optional
 
+from aughor.memory.paths import agent_runs_path, learned_actions_path
 from aughor.util.json_store import KeyedJsonStore
 
 logger = logging.getLogger(__name__)
 
 # {conn}:{schema} -> {action_id: OntologyAction.model_dump()}. Ledger-backed (transactional),
 # survives ontology rebuilds (the structural fingerprint cache never bakes these in).
-_STORE = KeyedJsonStore("data/learned_actions.json")
+# WP-4: path resolves AUGHOR_MEMORY_DIR (test-isolatable) instead of a hardcoded data/ path.
+_STORE = KeyedJsonStore(learned_actions_path())
 
 _MAX_PARAMS = 4   # a skill with more free parameters than this isn't a clean reusable template
 
@@ -318,9 +320,9 @@ def _autonomy_level(connection_id: str) -> int:
 
 
 def _run_signals(inv_id: str) -> dict:
-    """The recorded reflection signals for a run (from data/agent_runs.json), or {}."""
+    """The recorded reflection signals for a run (from agent_runs.json), or {}."""
     try:
-        return KeyedJsonStore("data/agent_runs.json", max_entries=2000).get(inv_id, {}) or {}
+        return KeyedJsonStore(agent_runs_path(), max_entries=2000).get(inv_id, {}) or {}
     except Exception:
         return {}
 
