@@ -5,8 +5,33 @@ name: CI
 # stores honour AUGHOR_*_DB overrides (REC-04) so CI never depends on real data.
 on:
   pull_request:
+    # Pure docs / data-file changes can't affect the tests, the build, or codegen,
+    # so don't spend a run on them. paths-ignore skips a run only when *every*
+    # changed file matches — a mixed commit (code + docs) still runs in full.
+    paths-ignore:
+      - '*.md'
+      - '**/*.md'
+      - 'docs/**'
+      - '*.db'
+      - '**/*.db'
+      - 'LICENSE'
+      - 'NOTICE'
   push:
     branches: [main]
+    paths-ignore:
+      - '*.md'
+      - '**/*.md'
+      - 'docs/**'
+      - '*.db'
+      - '**/*.db'
+      - 'LICENSE'
+      - 'NOTICE'
+  # The full interpreter matrix runs weekly (and on demand) instead of on every
+  # PR — see the `python` matrix expression. Keeps the hot path ~3x cheaper while
+  # still exercising 3.12/3.13 regularly.
+  schedule:
+    - cron: '0 6 * * 1'    # Mondays, 06:00 UTC
+  workflow_dispatch:
 
 # A newer push to the same branch/PR cancels the in-flight run.
 concurrency:
@@ -25,9 +50,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # pyproject declares requires-python = ">=3.11". Test what we claim:
-        # the full suite is green on all three (verified locally, 2947 passed each).
-        python: ["3.11", "3.12", "3.13"]
+        # pyproject declares requires-python = ">=3.11". The hot path (PRs and
+        # pushes to main) tests only the 3.11 floor; the weekly `schedule` run and
+        # a manual `workflow_dispatch` expand to the full set. The suite is green on
+        # all three (verified locally, 2947 passed each); 3.12/3.13 rarely diverge
+        # from 3.11 between weekly runs, so this drops the per-run cost ~3x without
+        # giving up multi-version coverage.
+        python: >-
+          ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+              && fromJSON('["3.11","3.12","3.13"]')
+              || fromJSON('["3.11"]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
