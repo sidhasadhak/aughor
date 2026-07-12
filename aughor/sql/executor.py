@@ -224,11 +224,58 @@ def execute_guarded(
     except Exception:
         _idmath_warn = ""
 
+    # WP-1a — the caveat carrier. A guard finding that the retry below does NOT
+    # resolve must reach the caller as a caveat on the result, not evaporate: a
+    # value-disjoint join / unbound filter / id-arithmetic query executes without
+    # error and is silently wrong. Short, deterministic, guard-prefixed strings —
+    # the ADA path folds them into `trust_caveat` (which caps confidence) and the
+    # program planner surfaces them as step warnings.
+    _guard_caveats: list[str] = []
+    for _w in _domain_warnings:
+        _rec = (f" (keys reconcile after normalizing: {_w.reconciliation.label})"
+                if _w.reconciliation else "")
+        _guard_caveats.append(
+            f"join guard: {_w.table_a}.{_w.col_a} ↔ {_w.table_b}.{_w.col_b} share only "
+            f"{_w.overlap:.0%} of sampled values — the join may be unreliable{_rec}")
+    for _w in _filter_warnings:
+        _sugg = f" (did you mean '{_w.suggestion}'?)" if _w.suggestion else ""
+        _guard_caveats.append(
+            f"filter guard: '{_w.bad_value}' is not a stored value of "
+            f"{_w.table}.{_w.col}{_sugg} — the predicate is a silent no-op")
+    if _idmath_warn:
+        _guard_caveats.append(f"id-arithmetic guard: {_idmath_warn}")
+    if _zero_diag:
+        _guard_caveats.append(f"zero-row check: {_zero_diag}")
+
+    def _attach_caveats(res, extra: list[str]):
+        if extra:
+            res.caveats = list(dict.fromkeys([*res.caveats, *extra]))
+        return res
+
+    # E1 function-semantics checks (flag `trust.e1_live`, default off): pure-AST
+    # footgun detection (timestamp bounded by a date-only literal, lexicographic
+    # ORDER BY on numeric text, text↔numeric compare). WARN-only per the E1
+    # contract — never drives the retry, never rewrites; computed on the FINAL
+    # SQL at exit so an accepted repair is re-checked.
+    def _e1_caveats(final_sql: str) -> list[str]:
+        if not flag_enabled("trust.e1_live"):
+            return []
+        try:
+            from aughor.sql.trust_checks import run_trust_checks
+            return [f"{t.pattern}: {t.message}"
+                    for t in run_trust_checks(final_sql, dialect=getattr(conn, "dialect", "duckdb"))]
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "E1 live checks are advisory; result proceeds uncaveated",
+                     counter="trust.e1_live")
+            return []
+
     if result.error or _zero_diag or _domain_warnings or _filter_warnings or _idmath_warn:
         # No fixer supplied (template or provider missing) → deterministic-only mode:
-        # the guards above have run; return the raw result to the caller unchanged.
+        # the guards above have run; return the raw result WITH its caveats attached
+        # (previously they were dropped here — the WP-1a swallow seam).
         if fix_prompt_template is None or provider_factory is None:
-            return result
+            return _attach_caveats(result, [*_guard_caveats, *_e1_caveats(result.sql)])
 
         class _Fix(BaseModel):
             fixed_sql: str
@@ -341,10 +388,15 @@ def execute_guarded(
                 except Exception:
                     _accept = False
             if _accept:
+                # The acceptance gates above re-probed every triggering guard against
+                # the fixed SQL, so an accepted repair carries no guard caveats.
                 retry.sql = fix.fixed_sql
                 result = retry
+            else:
+                result = _attach_caveats(result, _guard_caveats)
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "post-execute LLM fix is best-effort; returning the raw retry "
                            "result", counter="ada.exec_retry_fix")
-    return result
+            result = _attach_caveats(result, _guard_caveats)
+    return _attach_caveats(result, _e1_caveats(result.sql))

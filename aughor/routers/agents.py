@@ -230,6 +230,18 @@ def create_agent_golden(agent_id: str, body: GoldenCreate):
         raise HTTPException(status_code=404, detail="No such agent")
     if not body.question.strip() or not body.reference_sql.strip():
         raise HTTPException(status_code=422, detail="question and reference_sql are required")
+    # WP-1c — fail CLOSED on unparseable SQL: `is_mutating` returns False on a parse
+    # failure, so an unparseable statement previously slipped past the read-only check.
+    # Goldens are user-authored ground truth; a parse failure is a user error to fix.
+    import sqlglot
+    try:
+        _parsed = sqlglot.parse_one(body.reference_sql)
+    except Exception:
+        _parsed = None
+    if _parsed is None:
+        raise HTTPException(
+            status_code=422,
+            detail="reference_sql could not be parsed — provide valid, read-only SQL")
     from aughor.sql.readonly import is_mutating
     if is_mutating(body.reference_sql):
         raise HTTPException(status_code=422, detail="reference_sql must be read-only")

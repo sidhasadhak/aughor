@@ -302,6 +302,12 @@ def run_program(program: Program, conn_id: str, *, investigation_id: str,
                 else:
                     result = execute_guarded(db, step.sql, query_id=f"__program__{step.id}",
                                              schema=(None if step.reads else schema))
+                    # WP-1a — deterministic-only mode has no LLM fixer, so a guard
+                    # finding (value-disjoint join, unbound filter, id-arithmetic)
+                    # can't be repaired here. Surface it as a step warning on the
+                    # ProgramResult instead of dropping it (the swallow seam).
+                    warnings.extend(f"{step.id}: {c}"
+                                    for c in (getattr(result, "caveats", None) or []))
             else:
                 src = by_name.get(step.reads[0]) if step.reads else None
                 if src is None:

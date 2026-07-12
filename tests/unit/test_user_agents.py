@@ -506,3 +506,18 @@ def test_observability_404s(client, monkeypatch):
     assert client.get("/agents/custom/whatever/observability").status_code == 404
     _flag(monkeypatch, True)
     assert client.get("/agents/custom/ua_nope/observability").status_code == 404
+
+
+def test_golden_unparseable_reference_sql_fails_closed(client, monkeypatch):
+    """WP-1c — `is_mutating` returns False on a parse failure, so an unparseable
+    statement previously slipped past the read-only check. Goldens are
+    user-authored ground truth: a parse failure is now an explicit 422."""
+    _flag(monkeypatch, True)
+    agent_id = client.post("/agents/custom", json={"name": "G"}).json()["id"]
+    bad = client.post(f"/agents/custom/{agent_id}/goldens",
+                      json={"question": "q?", "reference_sql": ")))((( not sql"})
+    assert bad.status_code == 422
+    assert "parsed" in bad.json()["detail"]
+    ok = client.post(f"/agents/custom/{agent_id}/goldens",
+                     json={"question": "q?", "reference_sql": "SELECT 1"})
+    assert ok.status_code == 201

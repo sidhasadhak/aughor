@@ -47,6 +47,16 @@ _AUDITED_AGENT_LABELS = frozenset({
     "__fix_save__",        # persisting a repaired finding re-runs its SQL
     "__fed_driver__",      # federated planner driver query (user question)
     "__remote_join__",     # cross-source remote join (user question)
+    # WP-1c — model-generated and stored-SQL paths that ran with the gate SKIPPED
+    # (the "any dunder is internal" exemption). Generated SQL must always pass the
+    # AST mutation gate; stored governed SQL gets the same treatment the explorer
+    # and monitors already have. NOTE: a blanket "gate every dunder label" is NOT
+    # safe — platform-authored mutations (e.g. the `alter_column` catalog op) are
+    # legitimate; only genuine data-activity labels belong here.
+    "__agent_eval_ref__",  # custom-agent golden reference SQL (user-authored, re-run)
+    "__agent_eval_gen__",  # custom-agent evaluation SQL (MODEL-GENERATED)
+    "__brief_metric_move__",  # briefing metric-move re-runs governed metric SQL
+    "__ground__",          # insight grounding re-runs stored finding SQL
 })
 
 
@@ -470,6 +480,10 @@ class DatabaseConnection(ABC):
     # transpiles read=duckdb→dialect via translate(), so the LLM writes DuckDB.
     # Drives the SQL-writer's dialect rules (aughor/db/dialects.py:writer_rules).
     writes_native_sql: bool = False
+    # WP-1d — is the ENGINE session itself read-only (True), read-write (False), or
+    # unknown for this connector (None)? When False/None the AST mutation gate is the
+    # effective read-only boundary; recorded so that residual is inspectable, never silent.
+    engine_read_only: bool | None = None
     _ontology = None  # Optional[OntologyGraph] — set by get_schema()
 
     @abstractmethod
@@ -658,9 +672,25 @@ class DuckDBConnection(DatabaseConnection):
 
     def __init__(self, path: str | Path, schema_name: str | None = None, connection_id: str = ""):
         self._path = Path(path)
-        # Remote DuckDB backends (MotherDuck, S3, etc.) often fail with read_only=True.
+        # WP-1d — ATTEMPT read-only for every backend. Local DuckDB always supports it;
+        # remote backends (MotherDuck, S3, …) often reject it, so fall back to
+        # read-write but RECORD the fact: with the engine not read-only, the AST
+        # mutation gate is the only mutation guard on this connection, and that
+        # residual must be visible (surfaced via `engine_read_only`), not silent.
         _is_local = _duckdb_is_local(self._path)
-        self._conn = duckdb.connect(str(self._path), read_only=_is_local)
+        self.engine_read_only = True
+        if _is_local:
+            self._conn = duckdb.connect(str(self._path), read_only=True)
+        else:
+            try:
+                self._conn = duckdb.connect(str(self._path), read_only=True)
+            except Exception:
+                self._conn = duckdb.connect(str(self._path), read_only=False)
+                self.engine_read_only = False
+                import logging as _logging
+                _logging.getLogger(__name__).info(
+                    "duckdb connection %s opened read-WRITE (backend rejected read_only=True); "
+                    "the AST mutation gate is the effective read-only boundary", connection_id or path)
         self._connection_id = connection_id
         self._schema_name = schema_name or None
         # For MotherDuck, explicitly switch to the target database so that
@@ -857,6 +887,7 @@ class PostgresConnection(DatabaseConnection):
         # so a write raises "cannot execute ... in a read-only transaction". (SET
         # search_path is a session command, not DML, so it is still permitted.)
         self._conn = psycopg2.connect(self._dsn, options="-c default_transaction_read_only=on")
+        self.engine_read_only = True  # WP-1d — session-level read-only is enforced above
         self._conn.autocommit = True
         # Set search_path so unqualified table names resolve to the right schema
         if self._schema_name != "public":

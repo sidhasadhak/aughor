@@ -1768,6 +1768,26 @@ async def _stream_chat(
                 logger.info("[chat] id-arithmetic caveat applied to headline")
         except Exception as _e:
             logger.debug("chat id-arithmetic backstop is best-effort; skipped: %s", _e)
+        # WP-1e — E1 function-semantics checks on the LIVE answer (flag `trust.e1_live`):
+        # pure-AST footguns (timestamp bounded by a date-only literal, lexicographic
+        # ORDER BY on numeric text, text↔numeric compare) previously ran only on
+        # /query/validate — never on an answer a user actually saw. WARN-only: the
+        # headline gets the caveat, the SQL is never rewritten (the E1 contract).
+        from aughor.kernel.flags import flag_enabled as _flag_enabled
+        if final_sql and _flag_enabled("trust.e1_live"):
+            try:
+                from aughor.sql.trust_checks import run_trust_checks
+                _e1_hits = run_trust_checks(final_sql, dialect=db.dialect)
+                if _e1_hits:
+                    _e1_msgs = "; ".join(t.message for t in _e1_hits[:2])
+                    _grounded_headline = (
+                        f"{(_grounded_headline or '').rstrip('. ')} — caution: {_e1_msgs}"
+                    )
+                    _rcpt["e1_checks"] = [t.pattern for t in _e1_hits]
+                    logger.info("[chat] E1 trust-check caveat applied to headline: %s",
+                                [t.pattern for t in _e1_hits])
+            except Exception as _e:
+                logger.debug("chat E1 checks are best-effort; skipped: %s", _e)
         # Deterministic concentration→pareto (the renderer never sees the question).
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
         yield _sse("columns", {"columns": result.columns})
