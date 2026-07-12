@@ -1247,13 +1247,16 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
  *  Confidence % is deliberately NOT shown — it carried no call to action. */
 function VerdictHero({
   narrative, headline, domainCount, totalInsights, synthesizedAt,
-  onInvestigate, controls, actions,
+  onInvestigate, controls, actions, scope,
 }: {
   narrative:     BriefingNarrativeResponse | null;
   headline:      SynthesisSignal | null;
   domainCount:   number;
   totalInsights: number;
   synthesizedAt: string;
+  /** WP-5 — the schema this briefing is for; shown in the footer so two scopes can't be
+   *  confused (the flip used to swap a scoped verdict for an unscoped one with no signal). */
+  scope?:        string;
   onInvestigate: (q: string, insightId?: string) => void;
   controls?:     ReactNode;   // Generate / Reload buttons (top-right)
   actions?:      ReactNode;   // FindingActions menu for the headline finding
@@ -1319,6 +1322,7 @@ function VerdictHero({
 
         {/* quiet provenance — present for trust, but not the headline (click Investigate for the rest) */}
         <div style={{ marginTop: 16, fontSize: 10.5, color: "var(--t4)" }}>
+          {scope && <><span style={{ color: "var(--t3)", fontWeight: 500 }}>{scope}</span>{" · "}</>}
           {narrative ? "Synthesized" : "Ranked"} from {domainCount} {domainCount === 1 ? "domain" : "domains"}
           {" · "}{totalInsights} {totalInsights === 1 ? "finding" : "findings"}
           {" · "}{timeAgo(synthesizedAt)}
@@ -1675,6 +1679,7 @@ export function BriefingPanel({
   canvasId,
   schema,
   workspaceId,
+  schemaReady = true,
 }: {
   connectionId: string;
   onInvestigate: (q: string, insightId?: string) => void;
@@ -1687,6 +1692,10 @@ export function BriefingPanel({
   /** Active workspace — lets a workspace-scoped currency/industry override win in the
    *  backend briefing (override-wins over the app default). Undefined = app default. */
   workspaceId?: string;
+  /** WP-5 — whether the parent's schema selector has settled. The narrative auto-fetch
+   *  waits for this so it never fires an unscoped request before the schema resolves.
+   *  Defaults true for callers without a schema selector (e.g. a canvas mount). */
+  schemaReady?: boolean;
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [loading, setLoading]               = useState(false);
@@ -1698,6 +1707,10 @@ export function BriefingPanel({
   // re-fetches when the shared schema selector changes (it previously short-circuited
   // on `narrative !== null`, leaving the synthesis stale while every other card updated).
   const fetchedScope = useRef<string | null>(null);
+  // WP-5 — monotonically increasing request id: only the LATEST narrative fetch may apply
+  // its result. Kills the headline-flip when two briefings (e.g. an unscoped one that raced
+  // ahead, or a StrictMode double-invoke) resolve out of order — the stale one is discarded.
+  const reqSeq = useRef(0);
   const [explorerStatus, setExplorerStatus]   = useState<ExplorerStatus | null>(null);
   const [explorerBusy, setExplorerBusy]       = useState(false);
   const [explorerError, setExplorerError]     = useState<string | null>(null);
@@ -1747,18 +1760,20 @@ export function BriefingPanel({
 
   const generateNarrative = useCallback(async (forceRefresh = false) => {
     if (!canvasId && !connectionId) return;
+    const myReq = ++reqSeq.current;   // WP-5 — this call is now the latest
     setNarrativeLoading(true);
     setNarrativeError(null);
     try {
       const result = canvasId
         ? await generateCanvasBriefingNarrative(canvasId, forceRefresh, workspaceId)
         : await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId);
+      if (myReq !== reqSeq.current) return;   // superseded → don't paint a stale brief (the flip guard)
       if (result.available) setNarrative(result);
       else setNarrativeError("No domain intelligence available — run an exploration first.");
     } catch (e) {
-      setNarrativeError(e instanceof Error ? e.message : "Failed to generate narrative");
+      if (myReq === reqSeq.current) setNarrativeError(e instanceof Error ? e.message : "Failed to generate narrative");
     } finally {
-      setNarrativeLoading(false);
+      if (myReq === reqSeq.current) setNarrativeLoading(false);
     }
   }, [connectionId, canvasId, schema, workspaceId]);
 
@@ -1819,12 +1834,15 @@ export function BriefingPanel({
   // !== null` — so a schema switch actually re-fetches instead of keeping the old one.
   useEffect(() => {
     if (!canvasId && !connectionId) return;
+    // WP-5 — wait for the shared schema selector to settle before the first connection-scoped
+    // fetch, so we never issue an unscoped briefing request that then races the scoped one.
+    if (!canvasId && !schemaReady) return;
     const scope = canvasId ?? `${connectionId}:${schema ?? ""}`;
     if (scope === fetchedScope.current) return;
     fetchedScope.current = scope;
     generateNarrative(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, canvasId, schema]);
+  }, [connectionId, canvasId, schema, schemaReady]);
 
   // Poll explorer status — canvas-scoped when a canvasId is set (#7), so the control
   // bar + empty-state reflect the *canvas* explorer's phase, not the connection's.
@@ -1856,6 +1874,7 @@ export function BriefingPanel({
     const phase = explorerStatus?.phase ?? null;
     if (prevPhaseRef.current && prevPhaseRef.current !== "complete" && phase === "complete") {
       load();
+      fetchedScope.current = null; // WP-5 — clear the scope guard so the auto-fetch refires
       setNarrative(null); // let the cached-narrative auto-fetch pick up fresh intel
     }
     prevPhaseRef.current = phase;
@@ -1980,6 +1999,7 @@ export function BriefingPanel({
         domainCount={briefing.domainCount}
         totalInsights={briefing.totalInsights}
         synthesizedAt={briefing.synthesizedAt}
+        scope={schema}
         onInvestigate={onInvestigate}
         controls={
           <>
