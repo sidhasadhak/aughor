@@ -2906,8 +2906,18 @@ export interface RunCost {
   query_ms?: number;
 }
 
+// Per-run receipts stamped on the answer's Trust Receipt (Wave 1 · E4 learning, E3 activations).
+export interface LearningReceiptPayload {
+  readings_reused: number;
+  corrections_applied: number;
+  by_source: Record<string, number>;
+  resolutions_crystallized: number;
+  trusted_program_replayed: number;
+}
+export interface ActivationReceiptEntry { capability: string; reason: string; count: number }
+
 export interface InsightReceipt {
-  artifact: { id: string; kind: string; version: number; created_at: string; payload: Record<string, unknown> & { dossier?: FindingDossier } };
+  artifact: { id: string; kind: string; version: number; created_at: string; payload: Record<string, unknown> & { dossier?: FindingDossier; learning?: LearningReceiptPayload; activations?: ActivationReceiptEntry[] } };
   lineage: { relation: string; ref: string; detail: string | null }[];
   job: { id: string; kind: string; state: string; started_at: string | null; finished_at: string | null; metrics?: RunCost | null } | null;
   cost?: RunCost | null;
@@ -3237,12 +3247,18 @@ export async function applyPostproc(
 
 // ── System feature flags (runtime override > env) ───────────────────────────────
 
+export type CapabilityState = "on" | "off" | "auto";
 export interface SystemFlag {
   value: boolean;
   source: "runtime" | "env";
   env_var: string;
   label: string;
   description: string;
+  // Capabilities Auto-mode (Wave 1 · E3) — present on every flag:
+  state?: CapabilityState;          // effective tri-state
+  override?: boolean | null;        // the runtime override, or null when following env/Auto-mode
+  auto_eligible?: boolean;          // a self-gating guard the master Auto-mode can run
+  trigger?: string;                 // (auto-eligible only) the deterministic trigger, in words
 }
 
 export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
@@ -3254,6 +3270,14 @@ export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
 export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag | null> {
   const res = await fetch(`${BASE}/system/flags/${encodeURIComponent(name)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+/** Set a capability's tri-state — "auto" clears the override so it follows the Auto-mode master. */
+export async function setCapabilityState(name: string, state: CapabilityState): Promise<SystemFlag | null> {
+  const res = await fetch(`${BASE}/system/flags/${encodeURIComponent(name)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state }),
   });
   if (!res.ok) return null;
   return res.json();
@@ -3543,6 +3567,40 @@ export interface AgentObservability {
 
 export async function getAgentObservability(agentId: string): Promise<AgentObservability | null> {
   const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/observability`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── Learning / Memory layer (Wave 1 · E4) ───────────────────────────────────
+// The closed loop's accumulation, made visible: ambiguity-ledger burn-down, the
+// verdict acceptance economy, and trusted-asset counts/lists. See routers/learning.py.
+export interface LearningSummary {
+  connection_id: string | null;
+  ledger: { resolutions: number; by_source: Record<string, number>; served_total: number };
+  verdicts: { counts: Record<string, number>; total: number; acceptance_rate: number | null };
+  trusted: { queries: number; programs: number };
+}
+
+export interface TrustedAssets {
+  queries: { id: string; question: string; note?: string; tables?: string[]; tags?: string[] }[];
+  programs: {
+    id: string; question: string; use_count: number;
+    verified_at?: string; last_used_at?: string | null; plan_source?: string;
+  }[];
+}
+
+/** The Memory-layer headline (org-wide, or one connection). Null on failure — the panel degrades. */
+export async function getLearningSummary(connectionId?: string): Promise<LearningSummary | null> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${BASE}/learning/summary${q}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/** The trusted assets themselves — curated queries + replayable programs. */
+export async function getTrustedAssets(connectionId?: string): Promise<TrustedAssets | null> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${BASE}/learning/trusted${q}`);
   if (!res.ok) return null;
   return res.json();
 }

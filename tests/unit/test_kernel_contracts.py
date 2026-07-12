@@ -61,6 +61,26 @@ def _private_imports(path):
     return out
 
 
+def _flag_enabled_literals(path):
+    """`flag_enabled("literal")` call sites → (flag_name, lineno). Covers bare and attribute calls."""
+    out = []
+    try:
+        tree = ast.parse(open(path).read())
+    except SyntaxError:
+        return out
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and node.args):
+            continue
+        fn = node.func
+        name = getattr(fn, "id", None) or getattr(fn, "attr", None)
+        if name != "flag_enabled":
+            continue
+        a0 = node.args[0]
+        if isinstance(a0, ast.Constant) and isinstance(a0.value, str):
+            out.append((a0.value, node.lineno))
+    return out
+
+
 class TestRatchets:
     def test_no_new_silent_swallows(self):
         hits = {f: _silent_swallows(f) for f in _py_files()}
@@ -83,6 +103,22 @@ class TestRatchets:
         assert total <= PRIVATE_IMPORT_BASELINE, (
             f"{total} cross-module private imports (baseline {PRIVATE_IMPORT_BASELINE}). "
             f"Import the module's public interface instead of its _internals."
+        )
+
+    def test_no_unregistered_flag_enabled_literals(self):
+        # A flag consulted via flag_enabled("x") but ABSENT from FLAG_ENV can never turn on —
+        # `FLAG_ENV.get(name, "")` → `os.getenv("")` → None → default False — so the guarded code is
+        # silently, permanently dead. This root-causes the class after explorer.manifest_driven shipped
+        # consulted-but-unregistered (study E3): register in FLAG_ENV (+ FLAG_META) or drop the call.
+        from aughor.kernel.flags import FLAG_ENV
+        unregistered = {}
+        for f in _py_files():
+            for name, lineno in _flag_enabled_literals(f):
+                if name not in FLAG_ENV:
+                    unregistered.setdefault(name, []).append(f"{Path(f).name}:{lineno}")
+        assert not unregistered, (
+            f"flag_enabled(...) called with flag name(s) missing from FLAG_ENV: {unregistered}. "
+            f"Register each in FLAG_ENV (+ FLAG_META) so it is reachable and toggleable, or remove the call."
         )
 
 

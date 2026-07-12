@@ -121,8 +121,12 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
                           sqls: list[str], headline: str, schema: str,
                           connection_id: str, canvas_id: str = "",
                           guard_edges: list | None = None,
-                          payload_extra: dict | None = None) -> None:
+                          payload_extra: dict | None = None) -> dict:
     """K3-wide Trust Receipt for any user-facing answer (chat / ADA / monitor):
+
+    Returns ``{"learning": …|None, "activations": …|None}`` — the per-run Learning Receipt (Wave 1·E4) and
+    Activation Receipt (Wave 1·E3), each present only when its flag is on and the run had something to
+    report — so a streaming caller can emit them as SSE events.
     a versioned ledger artifact with HONEST lineage + B-7 metric enforcement.
     Records only verifiable provenance — executed SQL(s), input tables, the
     registered metrics available, whether the governed formula was USED or the
@@ -188,6 +192,27 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             from aughor.kernel.errors import tolerate
             tolerate(exc, "ambiguity-ledger lineage on the Trust Receipt is best-effort; the receipt still writes without it",
                      counter="chat.receipt_ambiguity")
+        # Per-run Learning Receipt (Wave 1·E4): what the closed loop DID this run — readings reused /
+        # corrections (from the resolutions above) plus runtime events (crystallized, trusted replay).
+        # Flag-gated (learning.receipt) → None when off; best-effort, never breaks the receipt.
+        _learning = None
+        try:
+            from aughor.agent.learning_receipt import build_learning_receipt
+            _learning = build_learning_receipt(_resolved_ambig)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "learning receipt is best-effort; the Trust Receipt still writes without it",
+                     counter="chat.receipt_learning")
+        # Activation Receipt (Wave 1·E3): which self-gating guards fired this run + the trigger that fired
+        # each. Flag-gated (capabilities.receipt) → None when off; best-effort, never breaks the receipt.
+        _activations = None
+        try:
+            from aughor.agent.learning_receipt import build_activation_receipt
+            _activations = build_activation_receipt()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "activation receipt is best-effort; the Trust Receipt still writes without it",
+                     counter="chat.receipt_activations")
         # Stamp per-run compute onto the artifact so the Trust Receipt shows what the
         # answer cost. For job-backed answers (ADA) the job row carries the full total
         # too; for the synchronous chat/insight path this is the only sink.
@@ -199,14 +224,18 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
              "sql": sqls[0] if sqls else "", "tables": sorted(seen),
              **({"cost": _cost} if _cost is not None else {}),
              **({"resolved_ambiguities": _resolved_ambig} if _resolved_ambig else {}),
+             **({"learning": _learning} if _learning else {}),
+             **({"activations": _activations} if _activations else {}),
              **(payload_extra or {})},
             conn_id=connection_id, canvas_id=canvas_id or None, lineage=lineage,
         )
         if enf is not None:
             Ledger.default().emit("metric.enforcement", enf,
                                   conn_id=connection_id, canvas_id=canvas_id or None)
+        return {"learning": _learning, "activations": _activations}
     except Exception:
         logger.debug("%s receipt write failed", kind, exc_info=True)
+    return {"learning": None, "activations": None}
 
 
 _TABLE_RE = re.compile(r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)', re.IGNORECASE)
@@ -328,10 +357,16 @@ async def _aiter_sync(sync_iter):
     except/salvage path instead of clean post-loop finalization. `next(it, _AITER_DONE)`
     returns the sentinel on exhaustion, so the loop ends cleanly.
     """
+    import contextvars
     loop = asyncio.get_running_loop()
     it = iter(sync_iter)
+    # Carry the run's context (the metering RunMetrics + org) into every graph step. `run_in_executor`
+    # does not propagate contextvars on its own, so without this a node's record_llm/record_query/
+    # record_activation would miss the run's accumulator and the ADA Trust Receipt would show empty
+    # cost/learning/activations. The progress variant already does this (via ctx.run for its sink).
+    ctx = contextvars.copy_context()
     while True:
-        item = await loop.run_in_executor(None, next, it, _AITER_DONE)
+        item = await loop.run_in_executor(None, ctx.run, next, it, _AITER_DONE)
         if item is _AITER_DONE:
             break
         yield item
@@ -1806,7 +1841,7 @@ async def _stream_chat(
                                 "the question was under-specified (no explicit metric/time window); answered with a default reading — refine for a different cut"))
             for _tq in (_trusted_used or []):
                 _guards.append(("trusted", f"query:{(_tq.get('question') or '')[:60]}", _tq.get('note')))
-            _write_answer_receipt(
+            _receipts = _write_answer_receipt(
                 kind="chat_answer", natural_key=f"chat:{connection_id}:{_chat_inv_id}",
                 question=question, sqls=[final_sql], headline=_grounded_headline or question,
                 schema=schema, connection_id=connection_id, canvas_id=canvas_id,
@@ -1814,6 +1849,10 @@ async def _stream_chat(
                 payload_extra={"chart_type": answer.chart_type, "row_count": len(result.rows),
                                "complexity_tier": _cx.tier},
             )
+            # Surface the per-run receipts live (Wave 1·E4 learning · E3 activations); each is flag-gated.
+            for _evt in ("learning", "activations"):
+                if _receipts.get(_evt):
+                    yield _sse(_evt, _receipts[_evt])
 
             # Self-improving loop: notice ontology gaps from this real query (e.g. a
             # currency measure aggregated with no canonical metric covering it) and
@@ -2333,9 +2372,11 @@ async def _stream_investigation(
         report_emitted = False  # did the graph reach a terminal synthesis node?
 
         async for event in _investigation_stream(agent.stream(initial_state, config={"configurable": {"thread_id": inv_id}})):
-            if await request.is_disconnected():
-                fail_investigation(inv_id, status="timed_out")
-                return
+            # A supervised kernel job (K1) completes SERVER-SIDE even if the streaming client goes away: a
+            # tab close or a transient disconnect must not discard a multi-minute investigation — nor write
+            # its Trust Receipt outside the job's metering (which is exactly what an early abort did: an
+            # empty cost/learning/activation receipt). The run stays bounded by the deadline below, and an
+            # explicit stop still cancels through the kernel. (Previously a disconnect failed it as timed_out.)
             if time.monotonic() > deadline:
                 timed_out = True
                 break
@@ -2664,9 +2705,8 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
         deadline = time.monotonic() + _TIMEOUT
 
         async for event in _investigation_stream(agent.stream(None, config=config)):
-            if await request.is_disconnected():
-                fail_investigation(inv_id, status="timed_out")
-                return
+            # Same K1 rule: the resumed job completes server-side despite a client disconnect (bounded by
+            # the deadline; explicit stop still cancels). An early abort here wrote an empty receipt too.
             if time.monotonic() > deadline:
                 yield _sse("error", {"message": "Timed out waiting for synthesis."})
                 fail_investigation(inv_id, status="timed_out")

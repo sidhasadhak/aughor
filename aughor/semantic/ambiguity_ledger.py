@@ -186,11 +186,14 @@ def crystallize_user_choice(connection_id: str, subject: str, reading: str, *,
         return None
     kind, facet = (("AmbiValue", "literal") if clarify_source == "ambiguous_term"
                    else ("AmbiIntent", "grain"))
-    return save_resolution(AmbiguityResolution(
+    res = save_resolution(AmbiguityResolution(
         connection_id=connection_id, org_id=org_id, dim_kind=kind, dim_facet=facet,
         subject=subject, readings=readings or [], resolved_reading=reading,
         resolved_sql=resolved_sql, resolution_source="user",
         evidence="the user chose this reading when asked to clarify"))
+    from aughor.kernel import metering
+    metering.record_learning(resolutions_crystallized=1)   # per-run Learning Receipt (Wave 1·E4); no-op off-run
+    return res
 
 
 def crystallize_verdict(connection_id: str, subject: str, *, org_id: str = "",
@@ -200,11 +203,14 @@ def crystallize_verdict(connection_id: str, subject: str, *, org_id: str = "",
     correction as the settled reading for the judged question. Returns None on empty input."""
     if not (connection_id and (subject or "").strip()):
         return None
-    return save_resolution(AmbiguityResolution(
+    res = save_resolution(AmbiguityResolution(
         connection_id=connection_id, org_id=org_id, dim_kind="AmbiIntent", dim_facet="grain",
         subject=subject, resolved_reading=((note or "").strip() or "reviewer-corrected reading"),
         resolved_sql=corrected_sql, resolution_source="verdict",
         evidence=((note or "").strip() or "a reviewer corrected an earlier answer")))
+    from aughor.kernel import metering
+    metering.record_learning(resolutions_crystallized=1)   # per-run Learning Receipt (Wave 1·E4); no-op off-run
+    return res
 
 
 # ── read path (I1) ────────────────────────────────────────────────────────────

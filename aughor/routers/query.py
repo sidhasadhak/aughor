@@ -57,9 +57,17 @@ async def query_run(body: _QueryRunRequest):
             "error": blocked.error,
         }
 
+    # Under an active RBAC row policy these cached rows are post-RLS, but the cache is consulted before the
+    # connection layer injects a principal's row filters — so the key must carry the principal/policy or one
+    # principal's rows leak to another. `tenancy` is None (legacy key) until `rbac.row_policy` is live for an
+    # identified user; it is computed here in the request context that also drives enforcement (the default
+    # executor copies contextvars into `_work`), and reused for the paired put below.
+    tenancy = None
     if body.use_cache:
+        from aughor.db.connection import result_cache_tenancy
         from aughor.db.matcache import get_cached
-        cached = get_cached(body.conn_id, body.sql)
+        tenancy = result_cache_tenancy()
+        cached = get_cached(body.conn_id, body.sql, tenancy=tenancy)
         if cached is not None:
             return {
                 "columns": cached.columns,
@@ -105,7 +113,7 @@ async def query_run(body: _QueryRunRequest):
 
     if body.use_cache and not result.error:
         from aughor.db.matcache import put_cache
-        put_cache(body.conn_id, body.sql, result)
+        put_cache(body.conn_id, body.sql, result, tenancy=tenancy)
 
     return {
         "columns": result.columns,

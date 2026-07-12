@@ -426,7 +426,7 @@ def _metric_moves_provider(conn_id: str, profile):
 
     def _provider():
         from aughor.knowledge.metric_moves import compute_metric_moves
-        from aughor.db.connection import open_connection_for
+        from aughor.db.connection import open_connection_for, result_cache_tenancy
         from aughor.db.matcache import get_cached, put_cache
         try:
             db = open_connection_for(conn_id)
@@ -434,14 +434,17 @@ def _metric_moves_provider(conn_id: str, profile):
             return []
         try:
             def run_sql(sql: str):
-                cached = get_cached(conn_id, sql)
+                # Per-principal cache key under an active row policy (None → legacy key). Computed in the
+                # same context db.execute runs in below, so it matches what enforce_row_policy will filter.
+                tenancy = result_cache_tenancy()
+                cached = get_cached(conn_id, sql, tenancy=tenancy)
                 if cached is not None:
                     return cached.columns, cached.rows, None
                 res = db.execute("__brief_metric_move__", sql)
                 err = getattr(res, "error", None)
                 if not err:
                     try:
-                        put_cache(conn_id, sql, res)
+                        put_cache(conn_id, sql, res, tenancy=tenancy)
                     except Exception as _e:
                         from aughor.kernel.errors import tolerate
                         tolerate(_e, "metric-move: matcache put", counter="brief.metric_move.cache_put_failed")

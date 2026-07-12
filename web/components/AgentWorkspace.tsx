@@ -14,11 +14,13 @@ const loading = () => (
 
 const AgentOverviewPanel = dynamic(() => import("@/components/AgentOverviewPanel").then(m => ({ default: m.AgentOverviewPanel })), { ssr: false, loading });
 const AgentsAdminPanel   = dynamic(() => import("@/components/AgentsAdminPanel").then(m => ({ default: m.AgentsAdminPanel })),   { ssr: false, loading });
+const MemoryPanel        = dynamic(() => import("@/components/MemoryPanel").then(m => ({ default: m.MemoryPanel })),             { ssr: false, loading });
 
 const ICONS: Record<string, string> = {
-  spark: "M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z",
-  list:  "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
-  node:  "M5 3a2 2 0 100 4 2 2 0 000-4zM19 17a2 2 0 100 4 2 2 0 000-4zM19 3a2 2 0 100 4 2 2 0 000-4zM7 5h8a2 2 0 012 2v8M5 7v10a2 2 0 002 2h8",
+  spark:  "M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z",
+  list:   "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+  node:   "M5 3a2 2 0 100 4 2 2 0 000-4zM19 17a2 2 0 100 4 2 2 0 000-4zM19 3a2 2 0 100 4 2 2 0 000-4zM7 5h8a2 2 0 012 2v8M5 7v10a2 2 0 002 2h8",
+  memory: "M12 3l9 5-9 5-9-5 9-5zM3 12l9 5 9-5M3 17l9 5 9-5",
 };
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -30,12 +32,13 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type AgentLayer = "overview" | "manage" | "fleet";
+export type AgentLayer = "overview" | "memory" | "manage" | "fleet";
 
 const LAYERS: WorkspaceLayer<AgentLayer>[] = [
-  { id: "overview", icon: "spark", label: "Overview", blurb: "Runs, quality & cost per agent" },
-  { id: "manage",   icon: "list",  label: "Manage",   blurb: "Create & configure agents" },
-  { id: "fleet",    icon: "node",  label: "Fleet",    blurb: "Built-in agents · runs, status & spend" },
+  { id: "overview", icon: "spark",  label: "Overview", blurb: "Runs, quality & cost per agent" },
+  { id: "memory",   icon: "memory", label: "Memory",   blurb: "What the closed loop has learned" },
+  { id: "manage",   icon: "list",   label: "Manage",   blurb: "Create & configure agents" },
+  { id: "fleet",    icon: "node",   label: "Fleet",    blurb: "Built-in agents · runs, status & spend" },
 ];
 
 type Props = {
@@ -66,6 +69,7 @@ export function AgentWorkspace({ layer, onLayerChange, fleetSlot }: Props) {
       renderLayer={id => {
         if (id === "manage") return <AgentsAdminPanel />;
         if (id === "fleet")  return <>{fleetSlot}</>;
+        if (id === "memory") return <MemoryPanel />;
         return <AgentOverviewPanel onManage={() => onLayerChange("manage")} />; // "overview"
       }}
     />

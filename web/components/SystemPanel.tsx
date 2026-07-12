@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getDevStats, resetDevStats, getSystemFlags, setSystemFlag, type DevStats, type SystemFlag } from "@/lib/api";
+import { getDevStats, resetDevStats, getSystemFlags, setSystemFlag, setCapabilityState, type DevStats, type SystemFlag, type CapabilityState } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { PacksManager } from "@/components/PacksManager";
 import { subscribeKernelEvents } from "@/lib/events";
 import { formatCount, pct as fmtPct } from "@/lib/format";
@@ -136,6 +137,9 @@ export function SystemPanel() {
         </button>
       </div>
 
+      {/* Capabilities — Auto-mode master + the self-gating guards (Wave 1 · E3) */}
+      <Capabilities />
+
       {/* Feature flags */}
       <FeatureFlags />
 
@@ -240,7 +244,8 @@ function FeatureFlags() {
     setBusy("");
   };
 
-  const entries = Object.entries(flags);
+  // Auto-eligible guards + the Auto-mode master live in the Capabilities section instead.
+  const entries = Object.entries(flags).filter(([name, f]) => !f.auto_eligible && name !== "capabilities.auto");
   if (entries.length === 0) return null;
 
   return (
@@ -256,25 +261,89 @@ function FeatureFlags() {
             </div>
             <p className="aug-fs-xs text-zinc-500 mt-0.5 leading-snug">{f.description}</p>
           </div>
-          <button
-            onClick={() => toggle(name, !f.value)}
-            disabled={busy === name}
-            role="switch"
-            aria-checked={f.value}
-            className="shrink-0 mt-0.5 rounded-[var(--r-pill)] transition-colors disabled:opacity-50"
-            style={{
-              width: 36, height: 20, padding: 2,
-              background: f.value ? "var(--grn2)" : "var(--bg-3)",
-              border: "1px solid var(--b1)",
-            }}
-          >
-            <span style={{
-              display: "block", width: 14, height: 14, borderRadius: "9999px", background: "#fff",
-              transform: f.value ? "translateX(16px)" : "translateX(0)", transition: "transform .15s",
-            }} />
-          </button>
+          <Toggle checked={f.value} disabled={busy === name} onChange={v => toggle(name, v)} />
         </div>
       ))}
+    </Section>
+  );
+}
+
+/** The pill switch shared by Feature flags and the Capabilities Auto-mode master. */
+function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)}
+      className="shrink-0 mt-0.5 rounded-[var(--r-pill)] transition-colors disabled:opacity-50"
+      style={{ width: 36, height: 20, padding: 2, background: checked ? "var(--grn2)" : "var(--bg-3)", border: "1px solid var(--b1)" }}
+    >
+      <span style={{ display: "block", width: 14, height: 14, borderRadius: "9999px", background: "#fff",
+        transform: checked ? "translateX(16px)" : "translateX(0)", transition: "transform .15s" }} />
+    </button>
+  );
+}
+
+function TriState({ value, disabled, onChange }: { value: CapabilityState; disabled: boolean; onChange: (s: CapabilityState) => void }) {
+  const opts: CapabilityState[] = ["auto", "on", "off"];
+  return (
+    <div className="inline-flex shrink-0 overflow-hidden rounded-[var(--r2)]" style={{ border: "1px solid var(--b1)" }}>
+      {opts.map(o => (
+        <Button key={o} size="xs" variant={value === o ? "secondary" : "ghost"} disabled={disabled}
+          onClick={() => onChange(o)} className="h-6 rounded-none px-2 capitalize">
+          {o}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+function Capabilities() {
+  const [flags, setFlags] = useState<Record<string, SystemFlag>>({});
+  const [busy, setBusy] = useState("");
+
+  useEffect(() => { getSystemFlags().then(setFlags).catch(() => setFlags({})); }, []);
+
+  const patch = (u: SystemFlag | null, name: string) => { if (u) setFlags(f => ({ ...f, [name]: u })); setBusy(""); };
+  // The master flips EVERY auto-eligible guard's effective state, so re-fetch all flags (not just the master).
+  const setMaster = async (v: boolean) => { setBusy("capabilities.auto"); await setSystemFlag("capabilities.auto", v); setFlags(await getSystemFlags()); setBusy(""); };
+  const setOne = async (name: string, s: CapabilityState) => { setBusy(name); patch(await setCapabilityState(name, s), name); };
+
+  const master = flags["capabilities.auto"];
+  const caps = Object.entries(flags).filter(([, f]) => f.auto_eligible).sort((a, b) => a[1].label.localeCompare(b[1].label));
+  if (!master && caps.length === 0) return null;
+  const autoOn = !!master?.value;
+
+  return (
+    <Section title="Capabilities">
+      {master && (
+        <div className="flex items-start justify-between gap-4 py-2 border-b border-white/5">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-zinc-200">Auto-mode</span>
+              <span className="text-[9.5px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t4)" }}>master</span>
+            </div>
+            <p className="aug-fs-xs text-zinc-500 mt-0.5 leading-snug">
+              Run the deterministic guards below on their own triggers with one switch — each one set to Auto activates only when its trigger fires.
+            </p>
+          </div>
+          <Toggle checked={autoOn} disabled={busy === "capabilities.auto"} onChange={setMaster} />
+        </div>
+      )}
+      {caps.map(([name, f]) => {
+        const setting: CapabilityState = f.override === true ? "on" : f.override === false ? "off" : "auto";
+        const active = !!f.value;
+        return (
+          <div key={name} className="flex items-start justify-between gap-4 py-2 border-b border-white/5 last:border-0">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-200">{f.label}</span>
+                <span className="text-[9.5px]" style={{ color: active ? "var(--grn2)" : "var(--t4)" }}>{active ? "active" : "inactive"}</span>
+              </div>
+              {f.trigger && <p className="aug-fs-xs text-zinc-500 mt-0.5 leading-snug">Fires when {f.trigger}.</p>}
+            </div>
+            <TriState value={setting} disabled={busy === name} onChange={s => setOne(name, s)} />
+          </div>
+        );
+      })}
     </Section>
   );
 }

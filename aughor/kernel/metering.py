@@ -28,8 +28,22 @@ from __future__ import annotations
 import contextvars
 import threading
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Iterator, Optional
+
+
+@dataclass
+class LearningSignals:
+    """Closed-loop learning events attributed to one run — the per-run Learning Receipt (Wave 1 · E4).
+
+    These are RUNTIME events that occur within the answering run (a resolution settled on a clarify
+    resume, a trusted plan replayed); the receipt combines them with receipt-time read-backs (readings
+    reused / corrections) — see ``aughor/agent/learning_receipt.py``. (Clarifications-asked is deliberately
+    NOT here: the asking turn pauses without a receipt and resumes as a fresh run, so it needs cross-turn
+    state to surface honestly — a follow-up.)"""
+
+    resolutions_crystallized: int = 0     # a resolution settled by the user/a reviewer this run
+    trusted_program_replayed: int = 0     # a verified plan-as-program replayed deterministically
 
 
 @dataclass
@@ -45,9 +59,17 @@ class RunMetrics:
     rows_returned: int = 0
     llm_ms: float = 0.0
     query_ms: float = 0.0
+    learning: LearningSignals = field(default_factory=LearningSignals)
+    activations: list = field(default_factory=list)   # self-gating guards that fired this run (E3)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        # The COST view — learning signals and capability activations ride the same run accumulator but
+        # are separate surfaces (the Learning / Activation Receipts), so the cost blob stamped on the
+        # Trust Receipt stays byte-identical.
+        d = asdict(self)
+        d.pop("learning", None)
+        d.pop("activations", None)
+        return d
 
 
 _current: contextvars.ContextVar[Optional[RunMetrics]] = contextvars.ContextVar(
@@ -111,6 +133,51 @@ def record_query(rows: int = 0, ms: float = 0.0) -> None:
     except Exception as exc:  # never let metering break a query
         from aughor.kernel.errors import tolerate
         tolerate(exc, "query metering", counter="metering")
+
+
+def record_learning(**deltas: int) -> None:
+    """Attribute closed-loop learning events to the active run (fields of ``LearningSignals``:
+    ``resolutions_crystallized`` / ``trusted_program_replayed``). No-op when no run is active
+    (background/seed calls) or a delta names an unknown field — cheap and fail-safe, so touchpoints call
+    it unconditionally."""
+    m = _current.get()
+    if m is None:
+        return
+    try:
+        with _lock:
+            for k, v in deltas.items():
+                if hasattr(m.learning, k):
+                    setattr(m.learning, k, getattr(m.learning, k) + int(v or 0))
+    except Exception as exc:  # never let a learning-signal count break the answer path
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "learning-signal metering", counter="metering.learning")
+
+
+def learning_snapshot() -> Optional[dict]:
+    """The active run's learning signals as a plain dict, or ``None`` if no run is active."""
+    m = _current.get()
+    return asdict(m.learning) if m is not None else None
+
+
+def record_activation(capability: str) -> None:
+    """Note that a self-gating capability FIRED on the active run (its deterministic trigger held) — the
+    per-run Activation Receipt (Wave 1 · E3). No-op when no run is active. The human 'why' is looked up
+    from ``kernel/flags.CAPABILITY_TRIGGER`` at receipt-build time, so touchpoints pass only the name."""
+    m = _current.get()
+    if m is None or not capability:
+        return
+    try:
+        with _lock:
+            m.activations.append(capability)
+    except Exception as exc:  # never let a receipt count break a guard
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "activation metering", counter="metering.activation")
+
+
+def activations_snapshot() -> Optional[list]:
+    """The active run's capability activations (a list of names, one per firing), or ``None`` if no run."""
+    m = _current.get()
+    return list(m.activations) if m is not None else None
 
 
 # A run's live metrics, also reachable by job_id — so the kernel heartbeat (a
