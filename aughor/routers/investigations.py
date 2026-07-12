@@ -357,10 +357,16 @@ async def _aiter_sync(sync_iter):
     except/salvage path instead of clean post-loop finalization. `next(it, _AITER_DONE)`
     returns the sentinel on exhaustion, so the loop ends cleanly.
     """
+    import contextvars
     loop = asyncio.get_running_loop()
     it = iter(sync_iter)
+    # Carry the run's context (the metering RunMetrics + org) into every graph step. `run_in_executor`
+    # does not propagate contextvars on its own, so without this a node's record_llm/record_query/
+    # record_activation would miss the run's accumulator and the ADA Trust Receipt would show empty
+    # cost/learning/activations. The progress variant already does this (via ctx.run for its sink).
+    ctx = contextvars.copy_context()
     while True:
-        item = await loop.run_in_executor(None, next, it, _AITER_DONE)
+        item = await loop.run_in_executor(None, ctx.run, next, it, _AITER_DONE)
         if item is _AITER_DONE:
             break
         yield item
@@ -2366,9 +2372,11 @@ async def _stream_investigation(
         report_emitted = False  # did the graph reach a terminal synthesis node?
 
         async for event in _investigation_stream(agent.stream(initial_state, config={"configurable": {"thread_id": inv_id}})):
-            if await request.is_disconnected():
-                fail_investigation(inv_id, status="timed_out")
-                return
+            # A supervised kernel job (K1) completes SERVER-SIDE even if the streaming client goes away: a
+            # tab close or a transient disconnect must not discard a multi-minute investigation — nor write
+            # its Trust Receipt outside the job's metering (which is exactly what an early abort did: an
+            # empty cost/learning/activation receipt). The run stays bounded by the deadline below, and an
+            # explicit stop still cancels through the kernel. (Previously a disconnect failed it as timed_out.)
             if time.monotonic() > deadline:
                 timed_out = True
                 break
@@ -2697,9 +2705,8 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
         deadline = time.monotonic() + _TIMEOUT
 
         async for event in _investigation_stream(agent.stream(None, config=config)):
-            if await request.is_disconnected():
-                fail_investigation(inv_id, status="timed_out")
-                return
+            # Same K1 rule: the resumed job completes server-side despite a client disconnect (bounded by
+            # the deadline; explicit stop still cancels). An early abort here wrote an empty receipt too.
             if time.monotonic() > deadline:
                 yield _sse("error", {"message": "Timed out waiting for synthesis."})
                 fail_investigation(inv_id, status="timed_out")
