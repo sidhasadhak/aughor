@@ -73,7 +73,7 @@ def reexplore_decision(state: dict, current_fp: Optional[str], *,
                 if (now - done).total_seconds() > refresh_secs:
                     return STALE
             except (TypeError, ValueError):
-                pass
+                return SKIP   # unparseable timestamp → don't re-arm on staleness (a handled path, not a swallow)
     return SKIP
 
 

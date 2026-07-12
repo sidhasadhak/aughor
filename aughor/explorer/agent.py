@@ -841,8 +841,11 @@ class SchemaExplorer:
             try:
                 from aughor.explorer.continuous import connection_schema_fingerprint
                 self._state["schema_fingerprint"] = connection_schema_fingerprint(self.connection_id)
-            except Exception:
-                pass
+            except Exception as _fp_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_fp_exc, "schema-fingerprint stamp is best-effort; continuous re-arm "
+                                  "falls back to the staleness refresh for this connection",
+                         counter="explorer.fingerprint_stamp")
             self._save_state()
             logger.info(
                 f"[explorer:{self.connection_id}] Complete — "
