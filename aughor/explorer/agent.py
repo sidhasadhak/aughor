@@ -834,6 +834,15 @@ class SchemaExplorer:
             self._state["completed_at"] = self._status.completed_at
             self._state["domain_intel_skipped"] = self._status.domain_intel_skipped
             self._state["domain_intel_note"] = self._status.domain_intel_note
+            # WP-6 — stamp the connection-level schema fingerprint this run covered, so the
+            # continuous-exploration tick can detect a later schema change (a table/column
+            # added or removed) and re-arm the Scout. Best-effort; None just means the tick
+            # falls back to the staleness refresh for this connection.
+            try:
+                from aughor.explorer.continuous import connection_schema_fingerprint
+                self._state["schema_fingerprint"] = connection_schema_fingerprint(self.connection_id)
+            except Exception:
+                pass
             self._save_state()
             logger.info(
                 f"[explorer:{self.connection_id}] Complete — "

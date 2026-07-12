@@ -59,6 +59,7 @@ FLAG_ENV = {
     "learning.receipt": "AUGHOR_LEARNING_RECEIPT",
     "capabilities.auto": "AUGHOR_CAPABILITIES_AUTO",
     "capabilities.receipt": "AUGHOR_CAPABILITIES_RECEIPT",
+    "explorer.continuous": "AUGHOR_EXPLORER_CONTINUOUS",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -89,6 +90,10 @@ FLAG_META = {
     "capabilities.auto": {
         "label": "Capabilities Auto-mode (self-gating guards decide per run)",
         "description": "Master switch for Auto-mode: with it on, each SELF-GATING capability (a deterministic guard that already only fires on a runtime trigger — premise-check, clarify gate, high-stakes adversarial verify, join key-reconciliation, capability-contract repair, guarded extract) is ENABLED unless the operator explicitly turned it off, and its own trigger decides per run — so you turn on the smart guards with one switch instead of flipping each. An explicit per-capability On/Off always wins; cost-dangerous flags (ai_sql, federation, champion-validate) are NOT auto-eligible. Off by default = byte-identical. Wave 1 · E3 of the combined platform study.",
+    },
+    "explorer.continuous": {
+        "label": "Continuous exploration (re-explore on schema change / staleness)",
+        "description": "Keep the Scout learning after the first pass: a periodic tick re-arms exploration when the connection's live schema fingerprint no longer matches the one the last run recorded (a table/column was added or removed), or when the last completed run is older than the staleness window (AUGHOR_EXPLORER_REFRESH_DAYS, default 7). Re-runs are incremental — the coverage frontier is recomputed from persisted insights, so only genuinely new cuts spend budget — and still flow through the Scout-governance + AUTO_EXPLORATION gates and the per-run charter budget. Off by default = byte-identical (exploration runs once on connect + on demand). WP-6 of the 2026-07-12 platform review; makes the \"never stops learning\" claim true rather than aspirational.",
     },
     "capabilities.receipt": {
         "label": "Activation Receipt (which guards fired, and why)",

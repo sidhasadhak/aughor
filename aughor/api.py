@@ -70,6 +70,7 @@ async def _lifespan(app: "FastAPI"):
     await _validate_connections()
     await _start_explorers()
     await _start_ontology_refresh_loop()
+    await _start_continuous_exploration_loop()
     await _seed_playbook()
     await _start_monitor_scheduler()
     await _start_brief_scheduler()
@@ -500,6 +501,33 @@ async def _ontology_refresh_loop() -> None:
 
 async def _start_ontology_refresh_loop() -> None:
     asyncio.create_task(_ontology_refresh_loop(), name="ontology-refresh")
+
+
+async def _continuous_exploration_loop() -> None:
+    """WP-6 — periodically re-arm the Scout so exploration doesn't die after the first
+    pass. Gated by the `explorer.continuous` flag (default off = a pure sleep, byte-
+    identical). The per-connection decision + governance/licensing gates live in
+    `explorer.continuous.run_continuous_tick`; this is just the heartbeat.
+    """
+    from aughor.explorer.continuous import _TICK_SECONDS, run_continuous_tick
+    from aughor.kernel.flags import flag_enabled
+
+    while True:
+        await asyncio.sleep(_TICK_SECONDS)
+        if not flag_enabled("explorer.continuous"):
+            continue
+        try:
+            # run_continuous_tick does its blocking decision off the loop internally, then
+            # schedules spawns on it — so it's awaited here, not executor-wrapped.
+            n = await run_continuous_tick()
+            if n:
+                logger.info("Continuous exploration re-armed %d connection(s)", n)
+        except Exception as exc:
+            logger.warning("Continuous exploration tick error: %s", exc)
+
+
+async def _start_continuous_exploration_loop() -> None:
+    asyncio.create_task(_continuous_exploration_loop(), name="continuous-exploration")
 
 
 async def _seed_playbook() -> None:
