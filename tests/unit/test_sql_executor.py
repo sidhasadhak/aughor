@@ -277,3 +277,80 @@ def test_investigate_execute_safe_delegates_here(monkeypatch):
     assert captured["schema"] == "s"
     assert captured["template"]                     # FIX_SQL_PROMPT threaded through
     assert captured["factory"] is I._provider       # module-late-bound → monkeypatchable
+
+
+# ── WP-1a (platform review 2026-07-12): the caveat carrier ────────────────────
+# A guard finding the retry can NOT clear must survive on QueryResult.caveats —
+# previously the deterministic-only mode and a rejected fix dropped it entirely
+# (the swallow seam): a value-disjoint join / unbound filter / id-arithmetic
+# query executes without error and is silently wrong.
+
+def test_clean_query_has_no_caveats():
+    r = execute_guarded(_conn(), _GOOD, query_id="p1")
+    assert r.caveats == []
+
+
+def test_deterministic_only_mode_attaches_join_caveat():
+    r = execute_guarded(_conn(), _BAD, query_id="p1", schema="orders campaigns")
+    assert any("join guard" in c for c in r.caveats), r.caveats
+    assert any("%" in c for c in r.caveats)  # the sampled-overlap % is stated
+
+
+def test_rejected_fix_attaches_caveats():
+    provider = _StubProvider(_BAD)  # "fix" fails the same guard → rejected
+    r = execute_guarded(
+        _conn(), _BAD, query_id="p1", schema="orders campaigns",
+        fix_prompt_template=_FIX_TEMPLATE,
+        provider_factory=lambda role="coder": provider,
+    )
+    assert any("join guard" in c for c in r.caveats), r.caveats
+
+
+def test_adopted_fix_carries_no_guard_caveats():
+    provider = _StubProvider(_GOOD)
+    r = execute_guarded(
+        _conn(), _BAD, query_id="p1",
+        schema="orders(cust,camp,amt) campaigns(id,name)",
+        fix_prompt_template=_FIX_TEMPLATE,
+        provider_factory=lambda role="coder": provider,
+    )
+    assert r.error is None
+    assert r.caveats == []  # acceptance gates re-probed the guards — nothing to caveat
+
+
+def test_id_arithmetic_caveat_in_deterministic_mode():
+    conn = DuckDBConnection.__new__(DuckDBConnection)
+    conn._path = Path(":memory:")
+    conn._conn = duckdb.connect(":memory:")
+    conn._connection_id = "test"
+    conn._schema_name = None
+    conn._conn.execute("CREATE TABLE sales (order_id INT, amt DOUBLE)")
+    conn._conn.execute("INSERT INTO sales VALUES (1, 10.0), (2, 20.0)")
+    r = execute_guarded(conn, "SELECT SUM(amt * order_id) AS x FROM sales",
+                        query_id="p1")
+    assert any("id-arithmetic" in c for c in r.caveats), r.caveats
+
+
+def test_e1_caveats_are_flag_gated(monkeypatch):
+    """`trust.e1_live` off (default) → byte-identical, no caveat. On → the E1
+    date-boundary footgun (timestamp bounded by a date-only literal) is caveated
+    on the final SQL, WARN-only (the SQL itself is never rewritten)."""
+    def _ev_conn():
+        conn = DuckDBConnection.__new__(DuckDBConnection)
+        conn._path = Path(":memory:")
+        conn._conn = duckdb.connect(":memory:")
+        conn._connection_id = "test"
+        conn._schema_name = None
+        conn._conn.execute("CREATE TABLE ev (created_at TIMESTAMP, v INT)")
+        conn._conn.execute("INSERT INTO ev VALUES ('2024-03-01 10:00:00', 1)")
+        return conn
+
+    sql = "SELECT COUNT(*) AS n FROM ev WHERE created_at <= '2024-03-01'"
+    monkeypatch.delenv("AUGHOR_TRUST_E1_LIVE", raising=False)
+    r = execute_guarded(_ev_conn(), sql, query_id="p1")
+    assert r.caveats == []  # default off = byte-identical
+
+    monkeypatch.setenv("AUGHOR_TRUST_E1_LIVE", "1")
+    r2 = execute_guarded(_ev_conn(), sql, query_id="p1")
+    assert any("E1-date-boundary" in c for c in r2.caveats), r2.caveats
+    assert r2.sql == sql  # WARN-only — never rewrites

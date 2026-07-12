@@ -59,6 +59,8 @@ FLAG_ENV = {
     "learning.receipt": "AUGHOR_LEARNING_RECEIPT",
     "capabilities.auto": "AUGHOR_CAPABILITIES_AUTO",
     "capabilities.receipt": "AUGHOR_CAPABILITIES_RECEIPT",
+    "trust.e1_live": "AUGHOR_TRUST_E1_LIVE",
+    "monitors.guarded": "AUGHOR_MONITORS_GUARDED",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -89,6 +91,14 @@ FLAG_META = {
     "capabilities.auto": {
         "label": "Capabilities Auto-mode (self-gating guards decide per run)",
         "description": "Master switch for Auto-mode: with it on, each SELF-GATING capability (a deterministic guard that already only fires on a runtime trigger — premise-check, clarify gate, high-stakes adversarial verify, join key-reconciliation, capability-contract repair, guarded extract) is ENABLED unless the operator explicitly turned it off, and its own trigger decides per run — so you turn on the smart guards with one switch instead of flipping each. An explicit per-capability On/Off always wins; cost-dangerous flags (ai_sql, federation, champion-validate) are NOT auto-eligible. Off by default = byte-identical. Wave 1 · E3 of the combined platform study.",
+    },
+    "trust.e1_live": {
+        "label": "E1 function-semantics checks on live answers",
+        "description": "Run the E1 footgun battery (a timestamp bounded by a date-only literal drops that day's later rows; ORDER BY/MIN/MAX over numeric-looking text sorts lexicographically; text↔numeric comparisons) on the FINAL SQL of live answers — the quick/chat headline and every Deep-Analysis phase query — as labelled WARN caveats. Pure AST, deterministic, never rewrites the query (the E1 contract). Previously these checks ran only on /query/validate, never on an answer a user actually saw. Off by default = byte-identical. WP-1e of the 2026-07-12 platform review.",
+    },
+    "monitors.guarded": {
+        "label": "Guarded monitor evaluations",
+        "description": "Run the deterministic correctness probes (fan-out/grain, id-arithmetic) on a monitor's SQL at evaluation time and attach any finding as a caveat on the alert — a wrong-grain SUM in a monitor otherwise silently mis-values the metric and then alerts on it. Never rewrites the monitor's SQL; caveat-and-deliver. Off by default = byte-identical. WP-1b of the 2026-07-12 platform review.",
     },
     "capabilities.receipt": {
         "label": "Activation Receipt (which guards fired, and why)",

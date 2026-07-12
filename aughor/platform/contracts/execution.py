@@ -45,3 +45,10 @@ class QueryResult(BaseModel):
     # Predictions set at plan time; carried through for comparison at score time
     expected_if_true: Optional[str] = None
     expected_if_false: Optional[str] = None
+    # Guard caveats the executor DETECTED but could not repair (value-disjoint join,
+    # unbound filter literal, id-arithmetic, suspicious zero-row, E1 footguns). A
+    # result that executed without error can still be silently wrong — this is the
+    # channel that carries that knowledge to the caller instead of dropping it
+    # (WP-1a: previously `execute_guarded`'s deterministic-only mode swallowed the
+    # findings entirely). Additive: default [] keeps every existing consumer intact.
+    caveats: list[str] = Field(default_factory=list)

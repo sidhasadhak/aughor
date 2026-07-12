@@ -898,6 +898,16 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
             except Exception as _e:
                 from aughor.kernel.errors import tolerate
                 tolerate(_e, "ada: advisory trust check", counter="ada.trust_advisory_failed")
+        # WP-1a — live-detected guard caveats from `execute_guarded` (a value-disjoint
+        # join / unbound filter the retry could not clear). These were detected against
+        # the REAL data at execute time, so they lead; the static verify_insight caveat
+        # (conn=None) follows. Flows into the existing HIGH→MEDIUM confidence cap via
+        # `_cap_confidence_on_trust_advisory` — a detected-but-unrepaired guard finding
+        # now costs confidence instead of evaporating.
+        _live_caveats = list(getattr(r, "caveats", None) or [])
+        if _live_caveats:
+            _parts = _live_caveats + ([f["trust_caveat"]] if f.get("trust_caveat") else [])
+            f["trust_caveat"] = "; ".join(dict.fromkeys(_parts))
         # Criterion-complete enumeration: when several entities TIE at the extreme of a
         # ranked scan, stamp the full list into stat_note — the narrator drops ties
         # (live: 3 franchises at $3.00/txn, only 2 named), the stamp can't.

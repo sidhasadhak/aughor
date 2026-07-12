@@ -80,6 +80,38 @@ class UpdateMonitorRequest(BaseModel):
     metric_name: Optional[str] = None
 
 
+def _validate_custom_sql(conn_id: str, custom_sql: Optional[str]) -> None:
+    """WP-1b — validate a monitor's user-authored SQL at CREATE/UPDATE time.
+
+    (1) The AST mutation gate (same `gate_user_sql` the Query Builder runs —
+        unconditional: a mutating monitor SQL is never legitimate, and catching it
+        here beats an opaque per-tick block at run time).
+    (2) A best-effort dry-run bind check: a definitive binder failure is a 422 with
+        the engine's reason (the monitor would otherwise silently never fire);
+        a connection that can't be reached right now does NOT block creation.
+    """
+    if not custom_sql or not custom_sql.strip():
+        return
+    from aughor.db.connection import gate_user_sql
+    blocked = gate_user_sql(conn_id, "monitor_sql", custom_sql.strip())
+    if blocked is not None:
+        raise HTTPException(status_code=422,
+                            detail=f"custom_sql rejected: {blocked.error}")
+    try:
+        from aughor.db.connection import open_connection_for
+        db = open_connection_for(conn_id)
+        ok, err = db.dry_run(custom_sql.strip())[:2]
+        if not ok and err:
+            raise HTTPException(status_code=422,
+                                detail=f"custom_sql does not bind: {err}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "monitor dry-run validation is best-effort; creation proceeds",
+                 counter="monitors.create_dry_run")
+
+
 # ── Monitor CRUD ───────────────────────────────────────────────────────────────
 
 @router.get("/monitors")
@@ -114,6 +146,7 @@ def create_monitor(req: CreateMonitorRequest, request: Request) -> dict:
     # DATA-06: can't attach a monitor to a connection your org can't see.
     from aughor.security.authz import check_owner, get_principal
     check_owner("connection", req.conn_id, get_principal(request))
+    _validate_custom_sql(req.conn_id, req.custom_sql)  # WP-1b — mutation gate + bind check
     # CreateMonitorRequest is permissive (str fields); Monitor enforces strict
     # Literals (alert_on, threshold_direction, …). Translate a domain-model
     # validation failure into a clean 422 instead of leaking a 500.
@@ -137,6 +170,8 @@ def update_monitor(monitor_id: str, req: UpdateMonitorRequest) -> dict:
     existing = get_monitor(monitor_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Monitor not found")
+    if req.custom_sql is not None:
+        _validate_custom_sql(existing.conn_id, req.custom_sql)  # WP-1b
     # Merge non-None fields
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     updated = existing.model_copy(update=updates)

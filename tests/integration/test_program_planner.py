@@ -409,3 +409,23 @@ def test_answer_program_stale_cached_falls_through(monkeypatch, tmp_path):
     pr = program_planner.answer_program("count urgent tickets", cid, org_id="o1")
     assert calls["n"] == 1                          # stale plan rejected → planned fresh
     assert pr.issues == []
+
+
+def test_data_step_guard_caveat_surfaces_as_warning(tmp_path):
+    """WP-1a — the planner runs `execute_guarded` in deterministic-only mode (no
+    LLM fixer), so a guard finding can't be repaired there; it must surface as a
+    step warning on the ProgramResult instead of being dropped (the swallow seam)."""
+    # id-arithmetic (SUM(measure * key)) is the right trigger here: it executes
+    # without error, preflight can NOT repair it (only the LLM fixer could, and the
+    # planner runs deterministic-only), so the caveat is the only surviving signal.
+    con = duckdb.connect(str(tmp_path / "sales.duckdb"))
+    con.execute("CREATE TABLE sales (order_id INT, amt DOUBLE)")
+    con.execute("INSERT INTO sales VALUES (1, 10.0), (2, 20.0)")
+    con.close()
+    cid = registry.add_connection("pp-sales", "duckdb", str(tmp_path / "sales.duckdb"))
+    prog = Program(steps=[
+        ProgramStep(id="s0", kind="data", writes="rows",
+                    sql="SELECT SUM(amt * order_id) AS x FROM sales"),
+    ])
+    res = run_program(prog, cid, investigation_id="wp1-caveat-test")
+    assert any("s0: id-arithmetic" in w for w in res.warnings), res.warnings

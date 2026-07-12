@@ -2293,6 +2293,9 @@ export interface MonitorAlert {
   previous_value: number | null;
   threshold: number | null;
   message: string;
+  /** WP-1b (`monitors.guarded`) — deterministic correctness finding on the monitor's
+   *  SQL (id-arithmetic / fan-out); the alert fired but its value may be mis-computed. */
+  caveat?: string | null;
   acknowledged: boolean;
   acknowledged_at: string | null;
 }
