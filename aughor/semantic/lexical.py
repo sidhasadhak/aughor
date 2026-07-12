@@ -69,6 +69,45 @@ def _minmax(vals: list[float]) -> list[float]:
     return [(v - lo) / (hi - lo) for v in vals]
 
 
+def _alpha_blend_order(vec: list[float], lex: list[float], *, alpha: float) -> list[int]:
+    """The original min-max α-blend ordering (default path — kept byte-identical). Both signals are
+    min-max normalized over the pool, ordered by ``α·vec + (1-α)·lex`` with the *normalized* vector as
+    the stable tiebreak, so a pool with no lexical signal preserves the vector order exactly."""
+    v = _minmax(vec)
+    l = _minmax(lex)
+    return sorted(range(len(vec)), key=lambda i: (alpha * v[i] + (1.0 - alpha) * l[i], v[i]), reverse=True)
+
+
+def _ranks(scores: list[float]) -> list[int]:
+    """1-based positional ranks (highest score → rank 1). Ties keep pool order (Python's stable sort),
+    so the ranking is deterministic."""
+    order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+    ranks = [0] * len(scores)
+    for pos, i in enumerate(order):
+        ranks[i] = pos + 1
+    return ranks
+
+
+def _rrf_order(vec: list[float], lex: list[float], *, alpha: float = 0.6, k: int = 60) -> list[int]:
+    """Reciprocal Rank Fusion (Rec 6 / L5): fuse the vector and lexical RANKINGS, not their scores.
+
+    Each signal contributes ``weight / (k + rank)`` with ``k=60``; the α knob carries over as the rank
+    weights (``w_vec=α``, ``w_lex=1-α``). Because only ranks enter, the result is immune to the
+    score-scale mismatch that min-max α-blending suffers — a tight Qdrant-cosine cluster stretched to
+    [0,1] beside a lone dominant BM25 spike no longer distorts the fusion. A pool with no lexical signal
+    falls back to pure vector rank (matching the α-blend's preserve-vector guarantee); the raw vector
+    score breaks ties, stably."""
+    n = len(vec)
+    rv = _ranks(vec)
+    w_vec, w_lex = alpha, 1.0 - alpha
+    if any(x > 0 for x in lex):
+        rl = _ranks(lex)
+        fused = [w_vec / (k + rv[i]) + w_lex / (k + rl[i]) for i in range(n)]
+    else:
+        fused = [w_vec / (k + rv[i]) for i in range(n)]
+    return sorted(range(n), key=lambda i: (fused[i], vec[i]), reverse=True)
+
+
 def hybrid_rerank(
     query: str,
     candidates: list[dict],
@@ -77,19 +116,25 @@ def hybrid_rerank(
     score_key: str = "score",
     alpha: float = 0.6,
 ) -> list[dict]:
-    """Rerank vector-retrieved ``candidates`` by ``alpha·vector + (1-alpha)·BM25``, both
-    min-max normalized over the pool. ``alpha=0.6`` keeps the (semantic) vector in the lead
-    while letting an exact lexical hit climb. Stable: the vector score breaks ties, so on a
-    pool with no lexical signal the original vector order is preserved exactly."""
+    """Rerank vector-retrieved ``candidates`` by fusing the dense (vector) and lexical (BM25) signals,
+    recovering the exact-term hits a dense retriever buries. ``alpha=0.6`` keeps the semantic vector in
+    the lead while letting an exact lexical hit climb.
+
+    Two fusion methods, selected by the ``search.rrf`` flag:
+      • **off (default)** — min-max α-blend, byte-identical to the historical behaviour.
+      • **on** — Reciprocal Rank Fusion (rank-based, k=60), robust to the cosine⊕BM25 score-scale
+        mismatch that α-blending is sensitive to. See ``_rrf_order``.
+
+    Both are stable (vector score breaks ties) and both preserve the pool's vector order when there is no
+    lexical signal, so flipping the flag is a safe, evaluable change."""
     if len(candidates) <= 1:
         return list(candidates)
-    vec = _minmax([float(c.get(score_key, 0.0) or 0.0) for c in candidates])
-    lex = _minmax(bm25_scores(query, [text_of(c) for c in candidates]))
-    order = sorted(
-        range(len(candidates)),
-        key=lambda i: (alpha * vec[i] + (1.0 - alpha) * lex[i], vec[i]),
-        reverse=True,
-    )
+    vec = [float(c.get(score_key, 0.0) or 0.0) for c in candidates]
+    lex = bm25_scores(query, [text_of(c) for c in candidates])
+    from aughor.kernel.flags import flag_enabled
+    order = (_rrf_order(vec, lex, alpha=alpha)
+             if flag_enabled("search.rrf")
+             else _alpha_blend_order(vec, lex, alpha=alpha))
     return [candidates[i] for i in order]
 
 

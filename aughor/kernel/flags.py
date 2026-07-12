@@ -54,6 +54,7 @@ FLAG_ENV = {
     "rbac.row_policy": "AUGHOR_RBAC_ROW_POLICY",
     "obs.mlflow": "AUGHOR_OBS_MLFLOW",
     "agents.user_defined": "AUGHOR_USER_AGENTS",
+    "search.rrf": "AUGHOR_SEARCH_RRF",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -68,6 +69,10 @@ FLAG_META = {
     "ai_sql": {
         "label": "In-SQL AI operators",
         "description": "Register the governed prompt()/embedding() UDFs and let the generator use them. Makes per-row LLM calls — enable deliberately.",
+    },
+    "search.rrf": {
+        "label": "Reciprocal Rank Fusion (hybrid retrieval)",
+        "description": "Fuse the vector and lexical (BM25) rankings in hybrid_rerank by Reciprocal Rank Fusion (rank-based, k=60) instead of the min-max α-blend. Rank-based fusion is robust to the score-scale mismatch between Qdrant cosine and BM25 that α-blending is sensitive to; it preserves vector order when there is no lexical signal, so it is a safe A/B on the KB-retrieval evals. Off by default = byte-identical (α-blend). Rec 6 of the combined platform study.",
     },
     "snapshot_receipts": {
         "label": "Snapshot-pinned receipts",
