@@ -7,6 +7,8 @@ SQLGlot handles dialect translation transparently.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -220,6 +222,28 @@ def security_post(connection_id: str, hypothesis_id: str, sql: str,
     return _security_post(connection_id, hypothesis_id, sql, result, duration_ms)
 
 
+def _row_policy_principal() -> "tuple[str, str, list[str]] | None":
+    """``(org_id, user_id, roles)`` the RBAC row policy applies to for THIS request, or ``None`` when the
+    policy is inert *beyond the flag itself* — identity is not required, the org lacks the RBAC_SSO
+    capability, or there is no identified user (internal / background / localhost query). Callers MUST have
+    already checked ``flag_enabled('rbac.row_policy')``.
+
+    Shared by ``enforce_row_policy`` (which injects the filters) and ``result_cache_tenancy`` (which
+    fingerprints them) so the two can never drift on *whether a request is scoped* and *by whom*. May raise
+    on an unexpected resolver error — every caller treats a raise as FAIL-CLOSED."""
+    from aughor.licensing import Capability, has_capability
+    from aughor.org.context import current_org_id, current_user_id
+    from aughor.security.authz import Principal, require_identity_enabled
+    if not require_identity_enabled() or not has_capability(Capability.RBAC_SSO):
+        return None
+    user = current_user_id()
+    if not user:                              # not an identified user request → nothing to scope
+        return None
+    org = current_org_id()
+    from aughor.rbac.resolver import resolve_roles
+    return org, user, resolve_roles(Principal(user_id=user, org_id=org))
+
+
 def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
                        sql: str) -> "tuple[str, QueryResult | None]":
     """RBAC row-level policy (Rec 7): AND the caller's per-role row filters into ``sql`` before execution.
@@ -236,19 +260,12 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
     if not flag_enabled("rbac.row_policy"):
         return sql, None
     try:
-        from aughor.licensing import Capability, has_capability
-        from aughor.org.context import current_org_id, current_user_id
-        from aughor.security.authz import require_identity_enabled
-        if not require_identity_enabled() or not has_capability(Capability.RBAC_SSO):
+        ctx = _row_policy_principal()
+        if ctx is None:
             return sql, None
-        user = current_user_id()
-        if not user:                          # not an identified user request → nothing to scope
-            return sql, None
-        org = current_org_id()
-        from aughor.rbac.resolver import resolve_roles
+        org, user, roles = ctx
         from aughor.rbac.row_policy import resolve_row_filters
-        from aughor.security.authz import Principal
-        filters = resolve_row_filters(resolve_roles(Principal(user_id=user, org_id=org)), org, user)
+        filters = resolve_row_filters(roles, org, user)
         if not filters:
             return sql, None
         from aughor.sql.rls import inject_row_filters
@@ -261,6 +278,47 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
         return sql, QueryResult(
             hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0,
             error="[ROW POLICY] query blocked — the row-level access policy could not be safely applied")
+
+
+def result_cache_tenancy() -> "str | None":
+    """Cache-partition fingerprint for RESULT caches (see ``aughor/db/matcache.py``) under the RBAC row policy.
+
+    ``None`` → the policy is inert for this request (flag off, or identity / capability / user absent); the
+    caller uses the legacy ``(conn_id, sql)`` key, **byte-identical** to pre-policy behaviour. Every current
+    (default-off) deployment lands here, so nothing about caching changes until the policy is actually on.
+
+    ``str``  → the policy gate is LIVE for an identified user; the token folds ``(org_id, effective roles,
+    resolved row filters)`` so a cached result is only ever reused by a principal entitled to
+    identically-filtered rows. The resolved-filter *text* doubles as the policy VERSION — edit a policy and
+    the fingerprint changes, so entries written under the old policy become unreachable (never served across
+    a policy edit). Two principals share an entry iff they resolve to the same filters (e.g. same-org same-role
+    users under an ``org_id``-scoped policy) — which is exactly when they are entitled to the same rows.
+
+    Mirrors ``enforce_row_policy``'s gate via the shared ``_row_policy_principal`` so it returns a real
+    fingerprint on *exactly* the requests that get filtered. Fails CLOSED: if the gate is live but the
+    fingerprint cannot be computed, returns a per-call unique token so the entry can be neither shared nor
+    reused (the cache is effectively bypassed for that call) — never the legacy key."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("rbac.row_policy"):
+        return None
+    try:
+        ctx = _row_policy_principal()
+        if ctx is None:
+            return None
+        org, user, roles = ctx
+        from aughor.rbac.row_policy import resolve_row_filters
+        filters = resolve_row_filters(roles, org, user)
+        payload = json.dumps(
+            {"org": org, "roles": sorted(roles), "filters": {k: filters[k] for k in sorted(filters)}},
+            separators=(",", ":"), sort_keys=True,
+        )
+        return "rp:" + hashlib.sha256(payload.encode()).hexdigest()[:24]
+    except Exception as exc:  # noqa: BLE001 — fail CLOSED: a shared/legacy key here would be the leak
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "result-cache tenancy fingerprint failed; bypassing the cache for this call (fail-closed)",
+                 counter="matcache.tenancy.failed")
+        import uuid
+        return "rp-blocked:" + uuid.uuid4().hex
 
 
 # ── Proactive PostgreSQL dialect transforms ───────────────────────────────────

@@ -2,7 +2,7 @@
 Materialization Cache — M3c
 
 Caches expensive query results as rows in a DuckDB file
-(data/mat_cache.duckdb), keyed by (conn_id, sha256(sql)).
+(data/mat_cache.duckdb), keyed by (conn_id, [tenancy], sha256(sql)).
 TTL defaults to 1 hour.
 
 Usage::
@@ -13,6 +13,16 @@ Usage::
     if result is None:
         result = db.execute(hyp_id, sql)
         put_cache(conn_id, sql, result)         # store for next time
+
+**Tenancy (RBAC row policy).** These rows are POST-execution — i.e. post-RLS when
+``rbac.row_policy`` is active — but the cache is consulted *before* the connection layer
+injects a principal's row filters. Keyed on ``(conn_id, sql)`` alone, one principal's filtered
+rows would be served to another under the same key. Callers on a per-principal result path must
+therefore pass ``tenancy=result_cache_tenancy()`` (``aughor/db/connection.py``) to both
+``get_cached`` and ``put_cache``: it folds ``(org, roles, resolved row filters)`` into the key
+when the policy gate is live, and is ``None`` (→ the legacy key, byte-identical) when it is inert.
+Do NOT pass a tenancy for permission-independent results (schema/metadata) — a raw shared key is
+correct there (the schema is identical for every principal on a connection).
 """
 from __future__ import annotations
 
@@ -53,8 +63,11 @@ def _db() -> duckdb.DuckDBPyConnection:
     return _conn
 
 
-def _cache_key(conn_id: str, sql: str) -> str:
-    raw = f"{conn_id}::{sql.strip()}"
+def _cache_key(conn_id: str, sql: str, tenancy: str | None = None) -> str:
+    # tenancy=None reproduces the historical key EXACTLY (byte-identical), so entries written before
+    # this parameter existed — and every current default-off deployment — keep resolving. A non-None
+    # tenancy partitions the key per principal/policy (see the module docstring).
+    raw = f"{conn_id}::{sql.strip()}" if tenancy is None else f"{conn_id}::{tenancy}::{sql.strip()}"
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
@@ -64,11 +77,17 @@ def get_cached(
     conn_id: str,
     sql: str,
     ttl: float = DEFAULT_TTL,
+    *,
+    tenancy: str | None = None,
 ) -> Optional[QueryResult]:
-    """Return a cached QueryResult if one exists and is still fresh, else None."""
+    """Return a cached QueryResult if one exists and is still fresh, else None.
+
+    ``tenancy`` partitions the entry per principal/policy under the RBAC row policy — pass
+    ``result_cache_tenancy()`` on a per-principal result path; leave it ``None`` (the default,
+    byte-identical legacy key) for permission-independent results. See the module docstring."""
     try:
         c = _db()
-        key = _cache_key(conn_id, sql)
+        key = _cache_key(conn_id, sql, tenancy)
         row = c.execute(
             "SELECT columns_json, rows_json, row_count, stored_at "
             "FROM mat_cache WHERE cache_key = ?",
@@ -91,11 +110,14 @@ def get_cached(
         return None
 
 
-def put_cache(conn_id: str, sql: str, result: QueryResult) -> None:
-    """Store a QueryResult in the cache (upsert by cache_key)."""
+def put_cache(conn_id: str, sql: str, result: QueryResult, *, tenancy: str | None = None) -> None:
+    """Store a QueryResult in the cache (upsert by cache_key).
+
+    ``tenancy`` MUST match the value used for the paired ``get_cached`` so a principal reads back
+    exactly what it wrote. See the module docstring."""
     try:
         c = _db()
-        key = _cache_key(conn_id, sql)
+        key = _cache_key(conn_id, sql, tenancy)
         c.execute(
             """
             INSERT OR REPLACE INTO mat_cache

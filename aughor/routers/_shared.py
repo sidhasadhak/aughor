@@ -13,6 +13,10 @@ _SCHEMA_CACHE_TTL = 300.0  # seconds
 
 
 def get_schema_cached(conn_id: str, db) -> str:
+    # Keyed on conn_id ALONE by design — audited against the RBAC row policy: this caches the connection's
+    # *schema* (table/column structure), which is identical for every principal. The row policy filters ROWS,
+    # not schema, and there is no column-level security — so this is permission-independent and correctly uses
+    # a raw shared key (unlike matcache, which caches post-RLS result rows and folds in tenancy).
     cached = _schema_cache.get(conn_id)
     if cached and (_time.monotonic() - cached[0]) < _SCHEMA_CACHE_TTL:
         return cached[1]
