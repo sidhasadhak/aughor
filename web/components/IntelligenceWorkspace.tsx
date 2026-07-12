@@ -83,9 +83,20 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
   // together (a connection can expose several schemas; a canvas is already scoped).
   const [schemas, setSchemas]               = useState<string[]>([]);
   const [selectedSchema, setSelectedSchema] = useState<string | null>(null);
+  // WP-5 — has the schema selector settled? The briefing auto-fetch must wait for this.
+  // Otherwise the panel's first render (selectedSchema still null) fires an UNSCOPED
+  // briefing request that races the SCOPED one issued once the catalog resolves — the two
+  // hit different cached briefs, and the VERDICT headline visibly flips as the last lands.
+  const [schemaResolved, setSchemaResolved] = useState(false);
   useEffect(() => {
-    if (canvasId || !connectionId) { setSchemas([]); setSelectedSchema(null); return; }
+    // A canvas is already table-scoped → ready immediately. But "no connection yet" is NOT
+    // ready: setting resolved=true here would leak a stale `true` into the first render where
+    // connectionId appears (before this effect re-runs), and the panel would fire an UNSCOPED
+    // briefing request in that window — the exact race WP-5 removes.
+    if (canvasId) { setSchemas([]); setSelectedSchema(null); setSchemaResolved(true); return; }
+    if (!connectionId) { setSchemas([]); setSelectedSchema(null); setSchemaResolved(false); return; }
     let alive = true;
+    setSchemaResolved(false);   // re-gate while this connection's schemas resolve
     getCatalogTree()
       .then(tree => {
         if (!alive) return;
@@ -95,8 +106,9 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // TEMP (2026-06-26): "All schemas" removed — each schema is selected individually,
         // so default to the first concrete schema rather than the all-schemas (null) scope.
         setSelectedSchema(names[0] ?? null);
+        setSchemaResolved(true);   // same callback as setSelectedSchema → one batched render
       })
-      .catch(() => { if (alive) setSchemas([]); });
+      .catch(() => { if (alive) { setSchemas([]); setSchemaResolved(true); } });
     return () => { alive = false; };
   }, [connectionId, canvasId]);
   const schema = selectedSchema ?? undefined;
@@ -156,7 +168,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       headerControls={headerControls}
       renderLayer={id => {
-        if (id === "briefing") return <BriefingPanel connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} workspaceId={workspaceId} />;
+        if (id === "briefing") return <BriefingPanel connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />;
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
         if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
