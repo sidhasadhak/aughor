@@ -603,6 +603,7 @@ from aughor.routers import (  # noqa: E402
     learning,
     roles as roles_router,
     packs as packs_router,
+    receipt as receipt_router,
 )
 
 app.include_router(system.router)
@@ -635,3 +636,4 @@ app.include_router(verify.router)
 app.include_router(learning.router)
 app.include_router(packs_router.router)
 app.include_router(roles_router.router)
+app.include_router(receipt_router.router)

@@ -195,6 +195,14 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   earned confidence (`kernel/ledger.py`, `_write_answer_receipt`) — **and any resolved ambiguity the answer
   applied** ("followed a previously-resolved reading, settled by a probe / the user / a reviewer"), so the
   compounding machinery is inspectable, not hidden (`web/components/TrustReceipt.tsx`).
+- **Trustworthy by inspection — the public Trust Receipt** (`GET /receipt/{id}`, `aughor/trust/receipt.py`) —
+  every answer, of any mode (quick · deep · builder · briefing figure), carries a stable **receipt id** (the
+  kernel ledger artifact id, streamed as a `receipt_id` event) that resolves to ONE signed, inspectable
+  contract: the executed SQL, input tables, the guards that fired (each named, with its action), caveats,
+  governed-metric enforcement, cost and the model used. An **HMAC signature** over the canonical JSON proves
+  the server issued it and detects tampering (server-side secret — issuance proof, not third-party
+  non-repudiation). RBAC-scoped: a receipt on a connection outside the caller's org 404s identically to a
+  missing one (no existence leak). The moat, made inspectable — one "why this number" object across surfaces.
 - **Finding Dossier** — drill-down is a *read* of captured derivation, not a second (re-)analysis.
 - **Outcome tracking & feedback loop** — close the loop on whether findings were acted on.
 

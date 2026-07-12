@@ -787,6 +787,30 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 
 #### WP-10 · Public Trust Receipt (`GET /receipt/{id}`) — the moat, inspectable
 **Source:** ROADMAP §3 “single highest-leverage open bet”. **Effort:** ~1 week.
+> **STATUS 2026-07-13: backend core SHIPPED + live-verified** (branch
+> `2026-07-13-wp10-public-receipt`, stacked on WP-7). One receipt **id** (the kernel ledger
+> artifact id) + one `GET /receipt/{receipt_id}` (`aughor/routers/receipt.py`) resolving any
+> mode into one signed public contract (`aughor/trust/receipt.py` `build_public_receipt`):
+> `{id, created_at, mode, question, headline, connection, executed_sql[], input_tables[],
+> guards[{name,fired,action,caveat}], caveats[], metrics{used/drifted/available/proposed},
+> confidence, data_trust, model, cost, signature}`. **HMAC-SHA256** over the canonical body
+> (`sign`/`verify`, per-install secret from `AUGHOR_RECEIPT_SECRET` or a ledger-kv-persisted
+> one) proves server issuance + detects tampering. **RBAC**: a receipt on a connection outside
+> the caller's org 404s identically to a missing id (fail-closed, no existence leak). Ledger
+> gained `artifact_by_id` / `receipt_by_id` (exact version, immutable link);
+> `_write_answer_receipt` now stamps the coder model + returns the `receipt_id`; the chat path
+> streams a `receipt_id` SSE event. **Live-verified**: real `/ask` → `receipt_id ba5a3c15138b`
+> → `GET /receipt/{id}` returned the signed contract (executed SQL, tables, available governed
+> metrics, real cost metering) and the signature **verified**. +6 tests (exact-version resolve ·
+> projection · signature+tamper · route round-trip · 404 unknown · 404 foreign-org). `gen:api`
+> regenerated (route in `api.gen.ts`). FEATURES §3 gained the "trustworthy by inspection" para.
+> **REMAINING (frontend + extend):** the "Why this number" **drawer** rendering the unified
+> receipt (a reusable component; the chat/ada surfaces already have `TrustReceipt.tsx` via the
+> per-mode route — the unified drawer's value is the surfaces that lack one); **stamp receipt
+> ids** on the Query Builder path + briefing figures (`BriefFigure.source` → add `receipt_id`)
+> + emit the id on the ADA stream; then wire the drawer onto ResultFigure / KPI tiles / briefing
+> figures. Deferred as separate slices — the signed, RBAC'd, inspectable **contract** (the moat)
+> is the shipped core.
 
 - **Unify:** per-mode receipt routes exist (`/ada/{conn}/{inv}/receipt`,
   `/chat/{conn}/{turn}/receipt`). Introduce a receipt **id** (the kernel ledger artifact id —

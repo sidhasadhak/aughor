@@ -293,28 +293,38 @@ class Ledger:
                 )
         return art_id
 
-    def artifact_latest(self, natural_key: str) -> Optional[dict]:
-        with self._lock:
-            cur = self._conn.execute(
-                "SELECT * FROM artifacts WHERE natural_key=? ORDER BY version DESC LIMIT 1",
-                (natural_key,),
-            )
-            row = cur.fetchone()
-            if row is None:
-                return None
-            cols = [d[0] for d in cur.description]
-        out = dict(zip(cols, row))
+    @staticmethod
+    def _artifact_row(cur, row) -> Optional[dict]:
+        """A fetched artifacts row → dict with its JSON payload decoded (best-effort — a
+        non-JSON payload stays a string). Shared by artifact_latest/artifact_by_id."""
+        if row is None:
+            return None
+        out = dict(zip([d[0] for d in cur.description], row))
         try:
             out["payload"] = json.loads(out["payload"])
         except Exception:
             pass
         return out
 
-    def receipt(self, natural_key: str) -> Optional[dict]:
-        """The Trust Receipt: the latest artifact version + its provenance edges
-        + the job that computed it. One query path answers 'why should I trust
-        this number'."""
-        art = self.artifact_latest(natural_key)
+    def artifact_latest(self, natural_key: str) -> Optional[dict]:
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT * FROM artifacts WHERE natural_key=? ORDER BY version DESC LIMIT 1",
+                (natural_key,),
+            )
+            return self._artifact_row(cur, cur.fetchone())
+
+    def artifact_by_id(self, art_id: str) -> Optional[dict]:
+        """One artifact by its stable id (the receipt id — WP-10), payload decoded.
+        Unlike ``artifact_latest`` (keyed by natural_key → newest version) this resolves
+        the EXACT version a caller was handed, so a receipt link is immutable."""
+        with self._lock:
+            cur = self._conn.execute("SELECT * FROM artifacts WHERE id=? LIMIT 1", (art_id,))
+            return self._artifact_row(cur, cur.fetchone())
+
+    def _receipt_from_artifact(self, art: Optional[dict]) -> Optional[dict]:
+        """Assemble the Trust Receipt view from a resolved artifact: provenance edges
+        + the job that computed it + one normalized cost field."""
         if art is None:
             return None
         with self._lock:
@@ -340,6 +350,17 @@ class Ledger:
             "job": job_view,
             "cost": cost,
         }
+
+    def receipt(self, natural_key: str) -> Optional[dict]:
+        """The Trust Receipt: the latest artifact version + its provenance edges
+        + the job that computed it. One query path answers 'why should I trust
+        this number'."""
+        return self._receipt_from_artifact(self.artifact_latest(natural_key))
+
+    def receipt_by_id(self, art_id: str) -> Optional[dict]:
+        """The Trust Receipt for one EXACT artifact id (the receipt id — WP-10's unified
+        `GET /receipt/{id}`), rather than the latest version of a natural_key."""
+        return self._receipt_from_artifact(self.artifact_by_id(art_id))
 
     # ── jobs: rows for the K1 job kernel (state machine lives in jobs.py) ────
 
