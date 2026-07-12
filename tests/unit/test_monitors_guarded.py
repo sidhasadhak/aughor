@@ -8,7 +8,6 @@ non-binding custom SQL with an explicit 422 instead of a silent never-fires.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
