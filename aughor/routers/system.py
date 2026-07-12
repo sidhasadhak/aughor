@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -135,15 +136,27 @@ def get_system_flags():
 
 
 class _FlagPatch(BaseModel):
-    value: bool
+    value: Optional[bool] = None
+    state: Optional[str] = None      # "on" | "off" | "auto" — "auto" clears the override (follows env/Auto-mode)
 
 
 @router.put("/system/flags/{name}")
 def set_system_flag(name: str, body: _FlagPatch):
-    from aughor.kernel.flags import FLAG_ENV, list_flags, set_flag
+    from aughor.kernel.flags import FLAG_ENV, clear_flag, list_flags, set_flag
     if name not in FLAG_ENV:
         raise HTTPException(status_code=404, detail=f"unknown flag '{name}'")
-    set_flag(name, body.value)
+    if body.state is not None:
+        st = body.state.strip().lower()
+        if st == "auto":
+            clear_flag(name)              # drop the override → the env var / Auto-mode master decides
+        elif st in ("on", "off"):
+            set_flag(name, st == "on")
+        else:
+            raise HTTPException(status_code=422, detail=f"invalid state '{body.state}' (on|off|auto)")
+    elif body.value is not None:
+        set_flag(name, body.value)        # legacy binary path
+    else:
+        raise HTTPException(status_code=422, detail="provide `state` (on|off|auto) or `value`")
     return list_flags()[name]
 
 

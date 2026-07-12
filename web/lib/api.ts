@@ -3237,12 +3237,18 @@ export async function applyPostproc(
 
 // ── System feature flags (runtime override > env) ───────────────────────────────
 
+export type CapabilityState = "on" | "off" | "auto";
 export interface SystemFlag {
   value: boolean;
   source: "runtime" | "env";
   env_var: string;
   label: string;
   description: string;
+  // Capabilities Auto-mode (Wave 1 · E3) — present on every flag:
+  state?: CapabilityState;          // effective tri-state
+  override?: boolean | null;        // the runtime override, or null when following env/Auto-mode
+  auto_eligible?: boolean;          // a self-gating guard the master Auto-mode can run
+  trigger?: string;                 // (auto-eligible only) the deterministic trigger, in words
 }
 
 export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
@@ -3254,6 +3260,14 @@ export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
 export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag | null> {
   const res = await fetch(`${BASE}/system/flags/${encodeURIComponent(name)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+/** Set a capability's tri-state — "auto" clears the override so it follows the Auto-mode master. */
+export async function setCapabilityState(name: string, state: CapabilityState): Promise<SystemFlag | null> {
+  const res = await fetch(`${BASE}/system/flags/${encodeURIComponent(name)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state }),
   });
   if (!res.ok) return null;
   return res.json();

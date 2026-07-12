@@ -336,6 +336,7 @@ def list_flags() -> dict:
         out[name] = {
             "value": bool(ov) if ov is not None else _env_resolved(name),
             "state": flag_state(name),
+            "override": ov,                       # None (no override) | True | False — the UI's tri-state setting
             "auto_eligible": name in AUTO_ELIGIBLE,
             **({"trigger": CAPABILITY_TRIGGER[name]} if name in CAPABILITY_TRIGGER else {}),
             "source": "runtime" if ov is not None else "env",

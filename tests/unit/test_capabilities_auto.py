@@ -83,3 +83,19 @@ def test_list_flags_exposes_capability_metadata(monkeypatch):
     g = fl[GUARD]
     assert g["auto_eligible"] is True and g["state"] == "auto" and g.get("trigger")
     assert fl[COSTLY]["auto_eligible"] is False and "trigger" not in fl[COSTLY]
+
+
+def test_flags_endpoint_tri_state(monkeypatch):
+    # PUT /system/flags/{name} accepts state=on|off|auto (auto clears the override → follows Auto-mode).
+    from fastapi.testclient import TestClient
+
+    from aughor.api import app
+    monkeypatch.setenv(_env(MASTER), "1")            # Auto-mode on → an un-overridden guard reads "auto"
+    client = TestClient(app)
+    assert client.put(f"/system/flags/{GUARD}", json={"state": "off"}).json()["state"] == "off"
+    assert client.put(f"/system/flags/{GUARD}", json={"state": "on"}).json()["state"] == "on"
+    got = client.put(f"/system/flags/{GUARD}", json={"state": "auto"}).json()
+    assert got["state"] == "auto" and got["override"] is None    # auto = no override, follows the master
+    g = client.get("/system/flags").json()[GUARD]
+    assert g["auto_eligible"] is True and g.get("trigger")
+    assert client.put(f"/system/flags/{GUARD}", json={"state": "bogus"}).status_code == 422
