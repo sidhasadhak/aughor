@@ -61,6 +61,7 @@ FLAG_ENV = {
     "capabilities.receipt": "AUGHOR_CAPABILITIES_RECEIPT",
     "trust.e1_live": "AUGHOR_TRUST_E1_LIVE",
     "monitors.guarded": "AUGHOR_MONITORS_GUARDED",
+    "explorer.continuous": "AUGHOR_EXPLORER_CONTINUOUS",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -99,6 +100,10 @@ FLAG_META = {
     "monitors.guarded": {
         "label": "Guarded monitor evaluations",
         "description": "Run the deterministic correctness probes (fan-out/grain, id-arithmetic) on a monitor's SQL at evaluation time and attach any finding as a caveat on the alert — a wrong-grain SUM in a monitor otherwise silently mis-values the metric and then alerts on it. Never rewrites the monitor's SQL; caveat-and-deliver. Off by default = byte-identical. WP-1b of the 2026-07-12 platform review.",
+    },
+    "explorer.continuous": {
+        "label": "Continuous exploration (re-explore on schema change / staleness)",
+        "description": "Keep the Scout learning after the first pass: a periodic tick re-arms exploration when the connection's live schema fingerprint no longer matches the one the last run recorded (a table/column was added or removed), or when the last completed run is older than the staleness window (AUGHOR_EXPLORER_REFRESH_DAYS, default 7). Re-runs are incremental — the coverage frontier is recomputed from persisted insights, so only genuinely new cuts spend budget — and still flow through the Scout-governance + AUTO_EXPLORATION gates and the per-run charter budget. Off by default = byte-identical (exploration runs once on connect + on demand). WP-6 of the 2026-07-12 platform review; makes the \"never stops learning\" claim true rather than aspirational.",
     },
     "capabilities.receipt": {
         "label": "Activation Receipt (which guards fired, and why)",

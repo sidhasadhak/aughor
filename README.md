@@ -23,15 +23,15 @@
 
 ---
 
-Aughor connects to your database and **never stops learning from it**. It builds a living map of your business — entities, relationships, metrics, lifecycles — explores the data on its own, and answers hard analytical questions in plain English with **evidence, citations, and statistical confidence**.
+Aughor connects to your database and **keeps learning from it**. It builds a living map of your business — entities, relationships, metrics, lifecycles — explores the data on its own, and answers hard analytical questions in plain English with **evidence, citations, and statistical confidence**.
 
 No dashboards to maintain. No SQL to write. No analyst backlog.
 
-> **The thesis:** most AI data tools are query wrappers — you ask, they translate. Aughor explores *continuously in the background*, forms a business ontology, surfaces domain insights, and is engineered so the numbers it reports are **trustworthy, not just plausible**.
+> **The thesis:** most AI data tools are query wrappers — you ask, they translate. Aughor explores *your data in the background*, forms a business ontology, surfaces domain insights, and (in continuous mode) re-explores as your schema and data evolve — engineered so the numbers it reports are **trustworthy, not just plausible**.
 
 ## Why Aughor
 
-- 🔭 **It explores on its own.** The moment you connect, it starts learning your business — no prompts — and keeps a living frontier of what it's already covered.
+- 🔭 **It explores on its own.** The moment you connect, it starts learning your business — no prompts — and keeps a living frontier of what it's already covered. Turn on **continuous mode** and it re-arms itself whenever your schema changes or a run goes stale, so it keeps learning as your data evolves.
 - 🧠 **It builds an ontology, not a dashboard.** Entities, relationships, governed metrics, and lifecycles, inferred from real data and human-editable.
 - 🏭 **It adapts to your industry.** An airline gets load-factor and on-time-performance; a DTC retailer gets AOV and repeat-rate — not one generic lens.
 - 🛡 **It refuses to be confidently wrong.** Deterministic, engine-driven trust guards keep fabricated numbers out of every answer.
@@ -108,7 +108,7 @@ AUGHOR_EMBED_MODEL=nomic-embed-text
 
 The moment you connect, Aughor starts exploring through structured phases: **null-meaning resolution** (event-not-yet vs data gap), **join verification**, **lifecycle mapping** (state machines per entity), **distribution profiling** (catalog stats, no full scans), **cross-table patterns**, a per-domain **domain-intelligence** curiosity loop, and a closing **synthesis** pass — all visible and cancellable in the Activity log.
 
-**Generation is grounded in your real schema by construction:** the explorer *chooses* measures and dimensions from the connection's *actual* columns and *compiles* grain-safe SQL, so a non-existent column can't be emitted (this took Phase-8 from ~190k tokens per kept finding to several findings per run on a 13-table warehouse). It **builds on what it knows**: a **cut-level frontier** never re-asks a covered measure×dimension cut; a **cross-finding synthesis** pass composes existing findings into emergent insights — *"the top 20 SKUs account for 8.13% of all out-of-stock days"* — each **proven by a confirming query**, not narrated; the org **playbook** steers what to look for next; a surprising finding **drills itself**. An opt-in **manifest-driven mode** (`explorer.manifest_driven`) makes the loop deterministic and KPI-led — **~17× fewer tokens per finding**, completing within budget.
+**Generation is grounded in your real schema by construction:** the explorer *chooses* measures and dimensions from the connection's *actual* columns and *compiles* grain-safe SQL, so a non-existent column can't be emitted (this took Phase-8 from ~190k tokens per kept finding to several findings per run on a 13-table warehouse). It **builds on what it knows**: a **cut-level frontier** never re-asks a covered measure×dimension cut; a **cross-finding synthesis** pass composes existing findings into emergent insights — *"the top 20 SKUs account for 8.13% of all out-of-stock days"* — each **proven by a confirming query**, not narrated; the org **playbook** steers what to look for next; a surprising finding **drills itself**. An opt-in **manifest-driven mode** (`explorer.manifest_driven`) makes the loop deterministic and KPI-led — **~17× fewer tokens per finding**, completing within budget. And an opt-in **continuous mode** (`explorer.continuous`) keeps the Scout alive after the first pass: a periodic tick re-arms exploration when the connection's schema fingerprint changes (a table or column added/removed) or the last run ages past a staleness window — re-runs are frontier-incremental, so only genuinely new cuts spend budget. *(Default-off today; it re-explores on connect and on demand out of the box, with continuous re-exploration one switch away — the review's cost-metering work gates promoting it on by default.)*
 
 </details>
 
