@@ -35,7 +35,11 @@ def test_al01_blocks_mutation_when_flag_on(monkeypatch):
 
 
 def test_al01_flag_off_executes_unchanged(monkeypatch):
-    monkeypatch.delenv("AUGHOR_TRUST_VERIFY_LIVE", raising=False)
+    # WP-1f promoted trust.verify_live default-ON, so this "off" path must be forced off
+    # explicitly (the ambient default no longer gates it). Pin e1_live off too: this test
+    # asserts the EXACT executed SQL, and default-on e1 adds an information_schema probe.
+    monkeypatch.setenv("AUGHOR_TRUST_VERIFY_LIVE", "0")
+    monkeypatch.setenv("AUGHOR_TRUST_E1_LIVE", "0")
     from aughor.agent.investigate import _execute_safe
     spy = _SpyConn()
     _execute_safe(spy, "p1", "DELETE FROM orders", schema=None)
@@ -44,6 +48,7 @@ def test_al01_flag_off_executes_unchanged(monkeypatch):
 
 def test_al01_clean_select_passes_when_flag_on(monkeypatch):
     monkeypatch.setenv("AUGHOR_TRUST_VERIFY_LIVE", "1")
+    monkeypatch.setenv("AUGHOR_TRUST_E1_LIVE", "0")   # isolate verify_live; e1 adds a col-types probe
     from aughor.agent.investigate import _execute_safe
     spy = _SpyConn()
     r = _execute_safe(spy, "p1", "SELECT id FROM orders", schema=None)

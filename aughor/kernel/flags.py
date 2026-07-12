@@ -69,6 +69,17 @@ FLAG_ENV = {
 # old call site), so registering it here must not flip the live default.
 FLAG_DEFAULT = {
     "ask.clarify": True,
+    # WP-1f (2026-07-12 platform review) — the trust plane LEVERAGED, not just built.
+    # Promoted to default-ON after a live A/B over the workspace + fixture healthy-path
+    # corpus (1,837 unique executed statements): `trust.verify_live` produced ZERO
+    # false-positive blocks, and once the E1 live checks read real column types
+    # (`connection_column_types`) the only false-positive caveat — a DATE column named
+    # `*_at`/`*_ts` tripping the name heuristic — disappeared, leaving only genuine
+    # timestamp-boundary footguns. An operator can still disable any of these with an
+    # explicit env `=0` or a runtime override. See docs/PLATFORM_REVIEW…2026-07-12.md WP-1f.
+    "trust.verify_live": True,     # AST read-only BLOCK on the deep-answer executor path
+    "trust.e1_live": True,         # E1 function-semantics WARN caveats on live answers
+    "trust.verify_facade": True,   # AST read-only gate on the /query/validate surface (additive field)
 }
 
 # Human-facing copy for the Settings UI.

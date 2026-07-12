@@ -157,3 +157,40 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
         from aughor.stats import bump
         bump("guard.trust_e1.fired", len(out))
     return out
+
+
+# Per-connection real column types for the E1 checks, cached like `_GRAIN_CACHE` (one
+# information_schema scan per connection). Feeding real types is what makes the date-boundary
+# check precise: a DATE column named like a timestamp (`acquired_at`, `order_purchase_ts`) is
+# then correctly NOT flagged — `_is_timestamp` returns False for DATE — instead of tripping the
+# name heuristic. Without this, the live answer paths call run_trust_checks with no types and a
+# DATE-named-*_at column produces a false-positive boundary caveat (WP-1f A/B finding).
+_COLTYPE_CACHE: dict[str, dict] = {}
+
+
+def connection_column_types(conn_id: str, db) -> dict:
+    """Real column types for a connection → the `col_types` map run_trust_checks wants (keys
+    lowercased "table.col" AND bare "col" → type string), cached per connection. Best-effort:
+    any failure caches and returns ``{}`` → the E1 checks fall back to their name heuristic,
+    byte-identical to the no-types call. Read-only single introspection scan."""
+    # An empty id must NOT share a cache slot — that would serve one connection's types to
+    # every other id-less connection. Introspect fresh instead (rare on the hot answer path;
+    # the ADA/chat connection always carries a real id).
+    if conn_id and conn_id in _COLTYPE_CACHE:
+        return _COLTYPE_CACHE[conn_id]
+    out: dict = {}
+    try:
+        r = db.execute("__trust_coltypes__",
+                       "SELECT table_name, column_name, data_type FROM information_schema.columns")
+        if r and not r.error and r.rows:
+            for tbl, col, dt in r.rows:
+                if col and dt:
+                    out[f"{str(tbl).lower()}.{str(col).lower()}"] = str(dt)
+                    out.setdefault(str(col).lower(), str(dt))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "E1 col-types introspection is best-effort; the name heuristic applies",
+                 counter="trust.e1_coltypes")
+    if conn_id:
+        _COLTYPE_CACHE[conn_id] = out
+    return out

@@ -407,8 +407,23 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 > failure). 1c shipped as the TARGETED variant (four labels promoted to
 > `_AUDITED_AGENT_LABELS`) — the blanket "gate every internal label" is UNSAFE: platform-
 > authored mutations (`alter_column`) are legitimate; see the code comment at the labels
-> set. **1f (default promotion) remains** — flip `trust.verify_live`/`trust.e1_live`
-> after a live A/B on luxexperience shows zero false-positive caveats.
+> set.
+> **1f SHIPPED (default promotion — the LEVERAGE step)** (branch
+> `2026-07-12-wp1f-trust-promotion`). A deterministic live A/B over the real healthy-path
+> corpus — 1,837 unique executed statements from the `workspace` + `fixture` connections
+> (audit_log, verdict='safe') — replicating exactly what the two flags do live: **0**
+> would-be `trust.verify_live` blocks, and after wiring **real column types** into the E1
+> live checks (new `connection_column_types`, cached per connection), the only E1 caveat
+> the name heuristic raised (a DATE column named `acquired_at` — a false positive)
+> disappeared, leaving only a genuine timestamp-boundary footgun. `FLAG_DEFAULT` now
+> carries `trust.verify_live` / `trust.e1_live` / `trust.verify_facade` = True (operators
+> can still disable via env `=0` or a runtime override). Live-verified on the running server:
+> `/query/validate` BLOCKs a DELETE by default; the fixture DATE column raises no E1
+> caveat; a real `/ask` answered cleanly with no spurious caveat. **A key fix rode along:**
+> the executor keyed the col-types cache on a non-existent `connection_id` attribute
+> (`getattr(conn, "connection_id", "")` → always `""`), which would have cross-served one
+> connection's types to all others — corrected to `_connection_id`, empty ids skip the
+> cache, and a regression test locks the DATE-no-FP / TIMESTAMP-still-fires contract.
 
 **1a — `QueryResult.caveats` (the swallow seam).**
 - Add `caveats: list[str] = field(default_factory=list)` (match existing dataclass/pydantic style)

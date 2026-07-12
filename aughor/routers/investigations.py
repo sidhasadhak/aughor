@@ -1776,8 +1776,12 @@ async def _stream_chat(
         from aughor.kernel.flags import flag_enabled as _flag_enabled
         if final_sql and _flag_enabled("trust.e1_live"):
             try:
-                from aughor.sql.trust_checks import run_trust_checks
-                _e1_hits = run_trust_checks(final_sql, dialect=db.dialect)
+                from aughor.sql.trust_checks import connection_column_types, run_trust_checks
+                # Real column types (cached) so the date-boundary check distinguishes a genuine
+                # TIMESTAMP footgun from a DATE column merely named `*_at`/`*_ts` (WP-1f: the DATE
+                # false positive the name heuristic would raise otherwise).
+                _e1_ct = connection_column_types(connection_id, db)
+                _e1_hits = run_trust_checks(final_sql, col_types=_e1_ct or None, dialect=db.dialect)
                 if _e1_hits:
                     _e1_msgs = "; ".join(t.message for t in _e1_hits[:2])
                     _grounded_headline = (
