@@ -484,6 +484,19 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 
 #### WP-2 · /ask stream robustness + error boundary
 **Closes:** §1.5 stream findings. **Effort:** 1–2 days. **Priority: #2.**
+> **STATUS 2026-07-12: SHIPPED** (branch `2026-07-12-wp4-wp2-hygiene`). `consumeStream`
+> guards `res.ok` + `content-type: text/event-stream` (kills the stuck-spinner-on-error
+> class); on a mid-run drop it captures `investigation_id` from the `start` event and
+> `recoverAfterDrop` polls `GET /investigations/{id}` to a terminal state (render+DONE /
+> ERROR), never a bare "interrupted". New `ErrorBoundary.tsx` (class comp, `<Button>`)
+> wraps `ChatMessage` + the five god panels in `page.tsx`. Dead `eventsource-parser`
+> removed. **Scout finding:** NO SSE re-attach endpoint exists → poll-for-final-report is
+> the correct design (deep runs are kernel-decoupled, so they survive the disconnect).
+> **Live-verified:** a real /ask streamed + rendered through the new guard (content-type
+> `text/event-stream; charset=utf-8` passes `.includes`), inside the boundary, 0 console/
+> server errors. tsc + 3 web gates green. *True in-place re-render of a recovered report
+> (vs the current guarded render on drop) can be tightened later; the reconnect-vs-poll
+> decision is settled.*
 
 - **`res.ok` check** in `web/lib/useChat.ts` (`:92-150`): before handing to `consumeStream`, if
   `!res.ok` → read `await res.text()` (bounded), dispatch the existing `ERROR` action with
@@ -536,6 +549,17 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 
 #### WP-4 · Persistence hygiene: agents.db relocation + the four hermeticity holes
 **Closes:** §1.4 store risks 1–2. **Effort:** ~half day. **Priority: #4.**
+> **STATUS 2026-07-12: SHIPPED** (branch `2026-07-12-wp4-wp2-hygiene`). agents.db default
+> `"agents.db"` → `data/agents.db` + a one-time VACUUM-INTO relocation shim (skips when
+> `AUGHOR_AGENTS_DB` is set, so tests never read a repo-root file) + migration-framework
+> adoption (v2–4 replacing the probe-ALTER); `git rm --cached agents.db`. Env overrides
+> `AUGHOR_MATCACHE_DB` / `AUGHOR_EPISODES_DIR` / `AUGHOR_MEMORY_DIR` / `AUGHOR_ACTIONS_DIR`
+> close the four holes; new `aughor/memory/paths.py`; episode readers unified via
+> `episodes_dir()`. conftest redirects all four; hermeticity + relocation + migration
+> tests added. **Live-verified:** API start relocated the root DB into `data/`, both demo
+> agents preserved & served; targeted suite left `data/` byte-identical (md5 match).
+> *Note: the redundant per-test matcache monkeypatch was LEFT — it overrides `_conn` (the
+> connection object), which is a valid, path-independent hermetic mechanism, not the hole.*
 
 - **agents.db →** `resolve_db_path("agents.db")` (i.e., `data/agents.db`, env `AUGHOR_AGENTS_DB`
   already exists) in `user_agents/store.py:42`. One-time adoption shim at store init: if legacy
