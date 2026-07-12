@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.db.connection import open_connection_for
+from aughor.explorer.episodes import episodes_dir  # WP-4: honour AUGHOR_EPISODES_DIR
 from aughor.explorer.models import ExplorationPhase, elapsed_seconds
 from aughor.routers._shared import (
     explorers as _explorers,
@@ -577,8 +578,8 @@ def get_exploration_episodes(conn_id: str, phase: str = "", limit: int = 300):
     # key); reading only the bare file left the Activity feed EMPTY on every
     # multi-schema connection. Merge all of this connection's episode files,
     # ordered by timestamp. (Mirrors the purge path's key resolution.)
-    paths = [Path("data") / f"episodes_{conn_id}.jsonl",
-             *sorted(Path("data").glob(f"episodes_{conn_id}__*.jsonl"))]
+    paths = [episodes_dir() / f"episodes_{conn_id}.jsonl",
+             *sorted(episodes_dir().glob(f"episodes_{conn_id}__*.jsonl"))]
     entries = []
     for p in paths:
         if not p.exists():
@@ -898,7 +899,7 @@ def get_canvas_exploration_episodes(canvas_id: str, phase: str = "", limit: int 
     from aughor.canvas.store import get_canvas
     if not get_canvas(canvas_id):
         raise HTTPException(status_code=404, detail="Canvas not found")
-    p = Path("data") / f"episodes_canvas_{canvas_id}.jsonl"
+    p = episodes_dir() / f"episodes_canvas_{canvas_id}.jsonl"
     if not p.exists():
         return []
     entries = []
@@ -956,7 +957,7 @@ async def restart_canvas_exploration(canvas_id: str):
     if old_task:
         old_task.cancel()
     save_canvas(canvas_id, _empty())
-    ep_path = Path("data") / f"episodes_canvas_{canvas_id}.jsonl"
+    ep_path = episodes_dir() / f"episodes_canvas_{canvas_id}.jsonl"
     if ep_path.exists():
         ep_path.unlink()
     res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables)

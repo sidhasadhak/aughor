@@ -8,6 +8,7 @@
 
 import type { AnswerReport, ExplorationReport, Hypothesis, InvestigationPhase, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import type { PlaybookRef, FindingDossier } from "@/lib/api";
+import { API_BASE } from "./config";
 
 // Re-export so existing imports keep working
 export type { InvestigationPhase as InvPhase };
@@ -374,11 +375,27 @@ export async function consumeStream(
   signal: AbortSignal,
   logEvent: (e: DebugEvent) => void,
 ) {
+  // WP-2 — fail fast on a non-stream response. Without this a non-2xx (or an HTML
+  // dev-overlay) body is fed to the reader, which finds no `data:` frames, ends on
+  // `done`, and dispatches NEITHER error nor done — the turn spins forever. Every SSE
+  // endpoint returns `text/event-stream`, so anything else is an error to surface.
+  const ctype = res.headers.get("content-type") || "";
+  if (!res.ok || !ctype.includes("text/event-stream")) {
+    let detail = "";
+    try { detail = (await res.text()).slice(0, 200).trim(); } catch { /* body unreadable */ }
+    dispatch({ type: "ERROR", message: !res.ok
+      ? `Request failed (HTTP ${res.status})${detail ? `: ${detail}` : "."}`
+      : `Unexpected response type (${ctype || "none"}).` });
+    return;
+  }
   if (!res.body) { dispatch({ type: "ERROR", message: "No response body" }); return; }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  // WP-2 — captured from the early `start` event so a mid-run drop can poll the
+  // (kernel-decoupled, so still-running) investigation for its terminal state.
+  let invId: string | null = null;
 
   try {
     while (true) {
@@ -393,6 +410,7 @@ export async function consumeStream(
         if (!chunk.startsWith("data: ")) continue;
         try {
           const p = JSON.parse(chunk.slice(6)) as { type: string } & Record<string, unknown>;
+          if (typeof p.investigation_id === "string" && p.investigation_id) invId = p.investigation_id;
           logEvent({ ts: Date.now(), type: p.type, summary: summarisePayload(p.type, p), payload: p });
           switch (p.type) {
             case "agent":
@@ -534,9 +552,52 @@ export async function consumeStream(
       // User stopped — treat as done rather than error
       dispatch({ type: "DONE" });
     } else {
-      dispatch({ type: "ERROR", message: "Stream interrupted" });
+      // WP-2 — a dropped stream is NOT the end of the work: a deep `/ask` run executes
+      // as a kernel-decoupled job that survives the client disconnect and writes its
+      // terminal row. Poll for that outcome instead of asserting a bare "interrupted".
+      await recoverAfterDrop(invId, dispatch);
     }
   }
+}
+
+// WP-2 — after an SSE drop, poll the investigation's persisted terminal state so the
+// turn resolves to the TRUTH (completed / failed / timed-out) rather than a misleading
+// "interrupted". Always ends in exactly one DONE or ERROR — never a stuck spinner.
+async function recoverAfterDrop(invId: string | null, dispatch: (a: ChatAction) => void) {
+  if (!invId) {
+    dispatch({ type: "ERROR", message: "Connection dropped before the run was identified." });
+    return;
+  }
+  dispatch({ type: "STATUS_TEXT", text: "Connection dropped — recovering the investigation…" });
+  const deadlineMs = Date.now() + 5 * 60 * 1000;   // bounded: ~5 min of polling
+  while (Date.now() < deadlineMs) {
+    await new Promise(r => setTimeout(r, 4000));
+    let d: { status?: string; report?: unknown } | null = null;
+    try {
+      const r = await fetch(`${API_BASE}/investigations/${encodeURIComponent(invId)}`);
+      if (!r.ok) continue;
+      d = await r.json();
+    } catch { continue; }   // transient — keep polling
+    const status = d?.status;
+    if (status === "complete") {
+      const rep = d?.report as AnswerReport | undefined;
+      // Render the recovered report when it's the expected shape; a mismatch can't throw
+      // (the turn renderer is wrapped in an error boundary), but guard anyway.
+      if (rep && Array.isArray(rep.phases) && rep.headline) {
+        dispatch({ type: "ADA_REPORT", report: rep, queryMode: "investigate", investigationId: invId });
+      }
+      dispatch({ type: "DONE", receiptId: invId });
+      return;
+    }
+    if (status === "failed" || status === "timed_out") {
+      dispatch({ type: "ERROR", message: status === "timed_out"
+        ? "The investigation timed out after the connection dropped."
+        : "The investigation failed after the connection dropped." });
+      return;
+    }
+    // running / paused → keep polling until it settles or the deadline passes
+  }
+  dispatch({ type: "ERROR", message: "Connection dropped; the investigation may still be running — check History." });
 }
 
 // Tiny session ID generator — no external deps

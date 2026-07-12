@@ -2,13 +2,23 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import sqlite3
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path, tune
 from aughor.user_agents.models import UserAgent
+
+logger = logging.getLogger(__name__)
+
+# WP-4 — the default was a bare "agents.db", so a live runtime DB materialized at the
+# repo root, escaped data/'s gitignore, was tracked in git, and churned every run.
+_DEFAULT_DB_PATH = Path("data") / "agents.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS user_agents (
@@ -38,24 +48,65 @@ CREATE TABLE IF NOT EXISTS user_agent_goldens (
 """
 
 
+# WP-4 — additive schema evolution, now on the forward-only migration framework
+# (was an ad-hoc PRAGMA table_info probe-and-ALTER block). add_column_if_missing is
+# idempotent, so a DB that already grew these via the old idiom is a clean no-op.
+_MIGRATIONS = [
+    Migration(2, "schema_scope (agent schema scoping)",
+              lambda c: add_column_if_missing(c, "user_agents", "schema_scope",
+                                              "TEXT NOT NULL DEFAULT ''")),
+    Migration(3, "pack_ids (specialist-pack binding preference)",
+              lambda c: add_column_if_missing(c, "user_agents", "pack_ids",
+                                              "TEXT NOT NULL DEFAULT '[]'")),
+    Migration(4, "last_eval (latest golden-suite result JSON)",
+              lambda c: add_column_if_missing(c, "user_agents", "last_eval",
+                                              "TEXT NOT NULL DEFAULT ''")),
+]
+
+_legacy_checked = False
+
+
+def _maybe_adopt_legacy_db(target: Path) -> None:
+    """One-time relocation of a pre-WP-4 repo-root ``agents.db`` into ``data/``.
+
+    If the old bare-path file exists and the new ``data/agents.db`` does not, consolidate
+    it (``VACUUM INTO`` folds any WAL) so agents created before the fix survive. Runs at
+    most once per process. Skipped entirely when ``AUGHOR_AGENTS_DB`` is set (tests /
+    on-prem) — a controlled path must never have a repo-root file read out from under it.
+    """
+    global _legacy_checked
+    if _legacy_checked or os.environ.get("AUGHOR_AGENTS_DB"):
+        _legacy_checked = True
+        return
+    _legacy_checked = True
+    legacy = Path("agents.db")
+    if target.exists() or not legacy.exists() or legacy.resolve() == target.resolve():
+        return
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        src = tune(sqlite3.connect(str(legacy)))
+        try:
+            src.execute(f"VACUUM INTO '{target}'")
+        finally:
+            src.close()
+        logger.info("relocated legacy agents.db → %s (existing agents preserved)", target)
+    except Exception as exc:
+        logger.warning("legacy agents.db relocation skipped (%s); using a fresh %s",
+                       exc, target)
+
+
 def _db_path() -> str:
-    return resolve_db_path("AUGHOR_AGENTS_DB", "agents.db")
+    target = resolve_db_path("AUGHOR_AGENTS_DB", _DEFAULT_DB_PATH)
+    _maybe_adopt_legacy_db(target)
+    return str(target)
 
 
 def _connect() -> sqlite3.Connection:
     conn = tune(sqlite3.connect(_db_path()))
     conn.row_factory = sqlite3.Row
     conn.execute(_SCHEMA)
-    # Additive columns (slice 4: schema scoping + pack bindings) — pre-existing
-    # stores lack them; probe the live schema and ALTER only what's missing.
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(user_agents)")}
-    if "schema_scope" not in cols:
-        conn.execute("ALTER TABLE user_agents ADD COLUMN schema_scope TEXT NOT NULL DEFAULT ''")
-    if "pack_ids" not in cols:
-        conn.execute("ALTER TABLE user_agents ADD COLUMN pack_ids TEXT NOT NULL DEFAULT '[]'")
-    if "last_eval" not in cols:  # slice 5: the latest golden-suite result (JSON)
-        conn.execute("ALTER TABLE user_agents ADD COLUMN last_eval TEXT NOT NULL DEFAULT ''")
     conn.execute(_GOLDENS_SCHEMA)
+    run_migrations(conn, _MIGRATIONS, store="user_agents")
     return conn
 
 

@@ -20,6 +20,7 @@ import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 import type { OpsLayer } from "@/components/OperationsWorkspace";
 import type { AgentLayer } from "@/components/AgentWorkspace";
 import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function LoadingPanel() {
   return (
@@ -1985,14 +1986,16 @@ export default function Home() {
 
             {/* ── CANVAS WORKSPACE ── */}
             {tab === "canvas-workspace" && activeCanvas && (
-              <CanvasWorkspace
-                canvas={activeCanvas}
-                connections={wsConnections}
-                onClose={() => { setActiveCanvas(null); setTab("canvases"); setInitialCanvasInvId(null); setInitialCanvasChatId(null); }}
-                onCanvasUpdate={updated => setActiveCanvas(updated)}
-                initialOpenInvId={initialCanvasInvId}
-                initialRestoreSessionId={initialCanvasChatId}
-              />
+              <ErrorBoundary label="The Canvas workspace hit an error.">
+                <CanvasWorkspace
+                  canvas={activeCanvas}
+                  connections={wsConnections}
+                  onClose={() => { setActiveCanvas(null); setTab("canvases"); setInitialCanvasInvId(null); setInitialCanvasChatId(null); }}
+                  onCanvasUpdate={updated => setActiveCanvas(updated)}
+                  initialOpenInvId={initialCanvasInvId}
+                  initialRestoreSessionId={initialCanvasChatId}
+                />
+              </ErrorBoundary>
             )}
 
             {/* ── CHAT (Investigate) ── always mounted so SSE streams survive tab switches */}
@@ -2089,15 +2092,17 @@ export default function Home() {
 
             {/* ── INTELLIGENCE (unified, multi-layered) ── */}
             {tab === "intelligence" && (
-              <IntelligenceWorkspace
-                connectionId={selectedConn}
-                onInvestigate={goToChat}
-                layer={intelLayer}
-                onLayerChange={setIntelLayer}
-                connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name }))}
-                onConnectionChange={setSelectedConn}
-                workspaceId={selectedWorkspace}
-              />
+              <ErrorBoundary label="The Intelligence workspace hit an error.">
+                <IntelligenceWorkspace
+                  connectionId={selectedConn}
+                  onInvestigate={goToChat}
+                  layer={intelLayer}
+                  onLayerChange={setIntelLayer}
+                  connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name }))}
+                  onConnectionChange={setSelectedConn}
+                  workspaceId={selectedWorkspace}
+                />
+              </ErrorBoundary>
             )}
 
             {/* Briefing now lives inside the unified Intelligence workspace as its
@@ -2106,14 +2111,16 @@ export default function Home() {
             {/* ── SECURITY & AUDIT (merged Security + Audit Log — directive #6) ── */}
             {/* ── OPERATIONS (Monitors / Action Hub / Security & Audit) ── */}
             {tab === "operations" && (
-              <OperationsWorkspace
-                connId={selectedConn ?? undefined}
-                workspaceId={selectedWorkspace}
-                layer={opsLayer}
-                onLayerChange={setOpsLayer}
-                secLens={secLens}
-                onSecLensChange={setSecLens}
-              />
+              <ErrorBoundary label="The Operations workspace hit an error.">
+                <OperationsWorkspace
+                  connId={selectedConn ?? undefined}
+                  workspaceId={selectedWorkspace}
+                  layer={opsLayer}
+                  onLayerChange={setOpsLayer}
+                  secLens={secLens}
+                  onSecLensChange={setSecLens}
+                />
+              </ErrorBoundary>
             )}
 
             {/* ── PLAYBOOK ── */}
@@ -2161,6 +2168,7 @@ export default function Home() {
             {/* ── DATA (Catalog / Query Builder / Semantic Layer) ── */}
             {/* Monitors + Action Hub render as layers of the Operations workspace above. */}
             {tab === "data" && (
+              <ErrorBoundary label="The Data workspace hit an error.">
               <WorkspaceShell
                 layers={DATA_LAYERS}
                 layer={dataLayer}
@@ -2193,6 +2201,7 @@ export default function Home() {
                   );
                 }}
               />
+              </ErrorBoundary>
             )}
 
             {/* ── METRICS ── */}
@@ -2204,17 +2213,19 @@ export default function Home() {
 
             {/* ── AGENTS — Overview + Manage + Fleet layers ── */}
             {tab === "agents" && (
-              <AgentWorkspace
-                layer={agentLayer}
-                onLayerChange={setAgentLayer}
-                fleetSlot={
-                  <FleetScreen
-                    onNavigate={handleNavigate}
-                    workspaceId={activeWs && !activeWs.is_default ? activeWs.id : undefined}
-                    workspaceName={activeWs && !activeWs.is_default ? activeWs.name : undefined}
-                  />
-                }
-              />
+              <ErrorBoundary label="The Agents workspace hit an error.">
+                <AgentWorkspace
+                  layer={agentLayer}
+                  onLayerChange={setAgentLayer}
+                  fleetSlot={
+                    <FleetScreen
+                      onNavigate={handleNavigate}
+                      workspaceId={activeWs && !activeWs.is_default ? activeWs.id : undefined}
+                      workspaceName={activeWs && !activeWs.is_default ? activeWs.name : undefined}
+                    />
+                  }
+                />
+              </ErrorBoundary>
             )}
 
             {/* ── SETTINGS ── */}

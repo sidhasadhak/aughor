@@ -12,6 +12,7 @@ import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
 import { uploadDocument, listUserAgents, type UserAgent } from "@/lib/api";
 import { useChat, type DebugEvent, type ChatTurn } from "@/lib/useChat";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { TrustReceipt } from "./TrustReceipt";
 
 import { API_BASE as BASE } from "@/lib/config";
@@ -758,17 +759,22 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                       onRerun={(depth) => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, depth })}
                     />
                     <AgentBadge turn={turn} />
-                    <ChatMessage
-                      turn={turn}
-                      connectionId={connectionId}
-                      onFollowUp={(q) => handleSend(q)}
-                      onRunFresh={(q) => handleSend(q, "investigate", { skipCache: true })}
-                      onShowSource={setSourcePanel}
-                      onDeeper={(q, insightId) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, insightId: insightId ?? undefined, deep: true })}
-                      onApprovePlan={(invId, keep) => resumePlan(invId, keep)}
-                      onRejectPlan={(invId) => rejectPlan(invId)}
-                      onChooseClarify={(invId, opt) => resumeClarify(invId, opt)}
-                    />
+                    {/* WP-2 — isolate a single answer's render: a throw here (a malformed
+                        report, a recovered-report shape mismatch) must not white-screen the
+                        conversation or kill the composer. */}
+                    <ErrorBoundary label="This answer couldn't be displayed.">
+                      <ChatMessage
+                        turn={turn}
+                        connectionId={connectionId}
+                        onFollowUp={(q) => handleSend(q)}
+                        onRunFresh={(q) => handleSend(q, "investigate", { skipCache: true })}
+                        onShowSource={setSourcePanel}
+                        onDeeper={(q, insightId) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, insightId: insightId ?? undefined, deep: true })}
+                        onApprovePlan={(invId, keep) => resumePlan(invId, keep)}
+                        onRejectPlan={(invId) => rejectPlan(invId)}
+                        onChooseClarify={(invId, opt) => resumeClarify(invId, opt)}
+                      />
+                    </ErrorBoundary>
                     {turn.clarify && (
                       <ClarifyCard
                         turn={turn}

@@ -32,8 +32,9 @@ _RUNGS = (
 def _runs_for(connection_id: str) -> list:
     """All recorded run signals for this connection (from data/agent_runs.json)."""
     try:
+        from aughor.memory.paths import agent_runs_path
         from aughor.util.json_store import KeyedJsonStore
-        allruns = KeyedJsonStore("data/agent_runs.json", max_entries=2000).load() or {}
+        allruns = KeyedJsonStore(agent_runs_path(), max_entries=2000).load() or {}
     except Exception as exc:
         logger.debug("autonomy: runs store read failed: %s", exc)
         return []

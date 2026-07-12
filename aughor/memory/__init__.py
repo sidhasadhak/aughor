@@ -22,10 +22,11 @@ def record_run(inv_id: str, connection_id: str, question: str, state: dict[str, 
     if not inv_id:
         return None
     try:
+        from aughor.memory.paths import agent_runs_path
         from aughor.util.json_store import KeyedJsonStore
         from aughor.util.time import now_iso
         st = state or {}
-        KeyedJsonStore("data/agent_runs.json", max_entries=2000).put(inv_id, {
+        KeyedJsonStore(agent_runs_path(), max_entries=2000).put(inv_id, {
             "inv_id": inv_id,
             "connection_id": connection_id,
             "question": question,
