@@ -55,6 +55,7 @@ FLAG_ENV = {
     "obs.mlflow": "AUGHOR_OBS_MLFLOW",
     "agents.user_defined": "AUGHOR_USER_AGENTS",
     "search.rrf": "AUGHOR_SEARCH_RRF",
+    "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -73,6 +74,10 @@ FLAG_META = {
     "search.rrf": {
         "label": "Reciprocal Rank Fusion (hybrid retrieval)",
         "description": "Fuse the vector and lexical (BM25) rankings in hybrid_rerank by Reciprocal Rank Fusion (rank-based, k=60) instead of the min-max α-blend. Rank-based fusion is robust to the score-scale mismatch between Qdrant cosine and BM25 that α-blending is sensitive to; it preserves vector order when there is no lexical signal, so it is a safe A/B on the KB-retrieval evals. Off by default = byte-identical (α-blend). Rec 6 of the combined platform study.",
+    },
+    "explorer.manifest_driven": {
+        "label": "Manifest-driven deterministic exploration (Phase 8)",
+        "description": "Cover the Phase-8 L2 baseline cells (measure × dimension) with SYNTHESISED SQL from a deterministic coverage manifest — no per-cell generation LLM call — with the existing explorer guards enforcing correctness; the LLM curiosity loop still handles cells/domains the manifest doesn't cover. Deterministic-first: fewer LLM calls, reproducible baseline coverage tracked across re-runs. Fails closed to the LLM loop if the manifest can't build. Off by default = byte-identical (LLM-only exploration). (Was consulted but unregistered — study E3 housekeeping.)",
     },
     "snapshot_receipts": {
         "label": "Snapshot-pinned receipts",
