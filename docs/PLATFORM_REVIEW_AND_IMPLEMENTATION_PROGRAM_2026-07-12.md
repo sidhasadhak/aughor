@@ -623,6 +623,30 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 
 #### WP-6 · Continuous exploration (or honest copy) — the headline claim
 **Closes:** §1.2. **Effort:** 2–4 days. Flag `explorer.continuous`, default-off → promote.
+> **STATUS 2026-07-12: 6a + 6c + 6d SHIPPED** (branch `2026-07-12-wp6-continuous-exploration`).
+> **6a** — `aughor/explorer/continuous.py`: a pure `reexplore_decision()` (schema-fingerprint
+> change OR staleness window, with a `None`-stored-fp guard so pre-existing runs don't all
+> false-fire on first enable) + `plan_reexplorations()` (sync, executor-safe) + async
+> `run_continuous_tick()` (spawns on the loop via `kickoff_exploration(auto=True)`); hourly
+> lifespan loop `_continuous_exploration_loop` (flag-gated, default-off = a pure sleep). The
+> explorer now stamps a connection-level `schema_fingerprint` at the COMPLETE transition (it
+> was only ever read before, so it stayed `None`). **6c** — the on-connect + tick governance
+> skip now emits an `exploration.skipped` ledger event (was log-only); a re-arm emits
+> `exploration.rearmed`. **6d** — README + FEATURES made honest ("keeps learning" not "never
+> stops"; "explores in the background" not "continuously"; continuous mode documented as the
+> opt-in that re-explores on schema change). **Live-verified on the real `workspace`
+> connection**: the actual planner detected a seeded schema-fingerprint change and selected it
+> for re-arm (no POST), and did NOT re-arm when the fingerprint matched — state restored
+> non-destructively. +14 tests; ruff clean.
+> **DEFERRED (noted, lower value):** **6b** auto-resume-once on budget-cancel — the kernel
+> stamps `error="budget exceeded: …"` on the job before cancelling (`jobs.py:257`), which
+> distinguishes budget-cancel from user-stop, but threading that marker into the exploration
+> state + a resume-count is a clean separable follow-up. **Large-workspace budget** (scale
+> Scout `time_budget_s` with catalog size) — needs a per-run budget override on
+> `kernel().submit`, distinct from this tick. **Promotion to default-on** gated on WP-7
+> (background cost metering) so a big cloud warehouse can't get a surprise re-explore bill.
+> Also spun off: a task chip to give `explorer/store.py` an `AUGHOR_EXPLORATION_DIR` override
+> (same WP-4 hermeticity hole class).
 
 - **6a — staleness/schema re-arm tick.** A periodic loop beside the hourly ontology refresh
   (`api.py:470` pattern): for each ACTIVE connection where Scout is governance-enabled and the

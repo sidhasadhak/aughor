@@ -7,7 +7,8 @@ chronological build log (171 numbered features, sprint by sprint) is preserved v
 per-feature detail, history, and the technology behind each increment.
 
 > **One-line thesis:** not a SQL copilot — an always-thinking analyst that builds a business ontology,
-> explores continuously, and is engineered so *the numbers are trustworthy, not just plausible*.
+> explores your warehouse in the background (and re-explores as it changes, in continuous mode), and is
+> engineered so *the numbers are trustworthy, not just plausible*.
 > Values, in priority order: **trustworthiness > autonomy > discipline (test ratchets) > local/privacy > breadth**.
 
 ---
@@ -23,8 +24,11 @@ The underlying depths:
 - **Quick (Insight)** — fast NL→SQL→answer with auto-charting and a plain-English headline.
 - **Deep / ADA** — an autonomous investigative loop: decompose a question into hypotheses, run
   evidence-gathering SQL, synthesize, and report with a confidence verdict; resumable and crash-recoverable.
-- **Explorer** — background autonomous learning: continuously probes connected warehouses to build and
-  refresh the ontology, surface findings, and seed suggestions.
+- **Explorer** — background autonomous learning: probes connected warehouses to build and refresh the
+  ontology, surface findings, and seed suggestions. It runs on connect and on demand; an opt-in
+  **continuous mode** (`explorer.continuous`) re-arms it whenever the schema fingerprint changes (a table
+  or column added/removed) or the last run ages past a staleness window, so it keeps learning as the data
+  evolves — re-runs are frontier-incremental (only genuinely new cuts spend budget).
 
 On top of the depths, the conversational agent (the unified-answer-path arc, PR #89):
 
@@ -510,8 +514,9 @@ of separate full-screen tabs (deep-links preserved). A **turn renderer registry*
 
 A question enters one of the three modes → schema intelligence + ontology + metrics ground the context →
 the LLM proposes SQL → the deterministic guard battery validates/repairs it → execution → the answer is
-rendered with a chart and a trust receipt. The Explorer runs this loop continuously in the background to
-keep the ontology and suggestions fresh.
+rendered with a chart and a trust receipt. The Explorer runs this loop in the background to keep the
+ontology and suggestions fresh — on connect and on demand, and (with continuous mode) re-arming as the
+schema changes or a run goes stale.
 
 ## Pointers
 

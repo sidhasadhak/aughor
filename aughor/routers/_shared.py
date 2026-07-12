@@ -219,6 +219,17 @@ def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: b
             import logging
             logging.getLogger(__name__).info(
                 "kickoff_exploration: Scout disabled by governance — skipping auto run for %s", conn_id)
+            # WP-6/6c — surface the silent skip: an auto run (on-connect or the continuous
+            # tick) that never happens because Scout is disabled was previously log-only, so
+            # a connection that never explores was invisible. Emit a ledger event the event
+            # spine carries to the UI (Inbox / the EXPLORER status chip).
+            try:
+                from aughor.kernel.ledger import Ledger
+                Ledger.default().emit(
+                    "exploration.skipped",
+                    {"reason": "scout_disabled", "connection_id": conn_id}, conn_id=conn_id)
+            except Exception:
+                logging.getLogger(__name__).debug("exploration.skipped emit failed", exc_info=True)
             return False
 
     if schema_name:
