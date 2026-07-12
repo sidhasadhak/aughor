@@ -697,6 +697,27 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 
 #### WP-7 · Meter the background: monitors + briefs through the kernel
 **Closes:** §1.2 cost gap. **Effort:** 1–2 days. Flag `ops.metered_monitors`, default-off → promote.
+> **STATUS 2026-07-13: metering core SHIPPED** (branch `2026-07-13-wp7-metered-background`,
+> flag `ops.metered_monitors`, default-off). The Watcher/Briefer charters are non-reserved
+> with real budgets (Watcher 50k tok / 120s, Briefer 400k / 300s); the monitor + brief cron
+> `_job`s route through `kernel().submit(...)` via a new thread→loop bridge
+> `submit_background_tick` (the scheduler runs on an APScheduler thread, the kernel on the main
+> loop, captured at startup in `_install_context_executor`). The work runs in the
+> context-propagating executor, so the run's metering accumulator + Org binding reach the
+> monitor/brief SQL — it is now metered (Fleet/`GET /jobs?kind=monitor`), counted against the
+> agent's budget, and heartbeat-supervised. `kernel().submit` gained an explicit `org_id` so a
+> cross-thread submit stamps the right tenant. Preserves the schedulers' tenant re-bind; the
+> manual "test now" endpoint (`trigger_now`) is unchanged (synchronous, already visible).
+> **Live-verified** on the running server: a per-minute fixture monitor ran as a `SUCCEEDED`
+> **Watcher** job with `cost={query_count:1, rows_returned:1}`. +4 tests (charter wiring ·
+> flag routing · no-loop fallback · end-to-end metering with a real loop). Suite green; ruff
+> clean; byte-identical when the flag is off.
+> **DEFERRED (noted):** **promotion to default-ON** is gated on a large-workspace A/B (the
+> Briefer's 300s budget must not cancel a legitimate wide-workspace brief — the same
+> large-workspace-budget thread WP-6 deferred); until then it stays flag-gated. **Per-connection
+> caps** (`max_monitor_runs_per_hour` + per-day query budget on connection settings + skip-with-
+> Inbox) are a separate slice — the per-run **budget** already caps a runaway tick, and the cron
+> already bounds frequency, so the rate-cap is a lower-value follow-up (spun off as a task).
 
 - Route `monitors/scheduler.py:36-65 _job` (and the brief scheduler's run) through
   `kernel().submit(...)` with the Watcher/Briefer charters made non-reserved (define real budgets:

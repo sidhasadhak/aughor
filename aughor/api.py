@@ -222,7 +222,12 @@ def _install_context_executor() -> None:
     try:
         from aughor.kernel.concurrency import ContextThreadPoolExecutor
         _CTX_EXECUTOR = ContextThreadPoolExecutor(thread_name_prefix="aughor-exec")
-        asyncio.get_running_loop().set_default_executor(_CTX_EXECUTOR)
+        loop = asyncio.get_running_loop()
+        loop.set_default_executor(_CTX_EXECUTOR)
+        # WP-7: record the loop so scheduler threads (monitor/brief cron) can bridge a
+        # supervised kernel job onto it via run_coroutine_threadsafe.
+        from aughor.kernel.jobs import set_main_loop
+        set_main_loop(loop)
     except Exception as exc:
         logger.warning("context executor install failed (non-fatal): %s", exc)
 
