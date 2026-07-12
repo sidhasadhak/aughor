@@ -429,6 +429,13 @@ function AlertRow({ alert, onAck }: { alert: MonitorAlert; onAck: () => void }) 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)" }}>{alert.monitor_name}</div>
         <div style={{ fontSize: 12, color: "var(--t2)", marginTop: 2 }}>{alert.message}</div>
+        {alert.caveat && (
+          <div style={{
+            fontSize: 11, color: SEVERITY_COLOR.warning, marginTop: 4,
+          }}>
+            ⚠ Value may be mis-computed — {alert.caveat}
+          </div>
+        )}
         {alert.current_value != null && (
           <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>
             Value: <strong>{alert.current_value}</strong>

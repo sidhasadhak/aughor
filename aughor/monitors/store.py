@@ -80,12 +80,23 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+# WP-1b — this store now rides the forward-only migration framework (DATA-05):
+# the base DDL stays conceptually v1; each additive change is a versioned step.
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
+
+_MIGRATIONS = [
+    Migration(2, "alert caveat (guarded monitor evaluations, WP-1b)",
+              lambda c: add_column_if_missing(c, "monitor_alerts", "caveat", "TEXT")),
+]
+
+
 def _init_schema() -> None:
     with _LOCK:
         conn = _connect()
         try:
             conn.executescript(_DDL)
             conn.commit()
+            run_migrations(conn, _MIGRATIONS, store="monitors")
         finally:
             conn.close()
 
@@ -280,11 +291,11 @@ def append_alert(alert: MonitorAlert) -> MonitorAlert:
                 INSERT OR IGNORE INTO monitor_alerts (
                     id, monitor_id, monitor_name, conn_id, metric_name,
                     triggered_at, alert_on, severity, current_value, previous_value,
-                    threshold, message, acknowledged, acknowledged_at
+                    threshold, message, caveat, acknowledged, acknowledged_at
                 ) VALUES (
                     :id, :monitor_id, :monitor_name, :conn_id, :metric_name,
                     :triggered_at, :alert_on, :severity, :current_value, :previous_value,
-                    :threshold, :message, :acknowledged, :acknowledged_at
+                    :threshold, :message, :caveat, :acknowledged, :acknowledged_at
                 )
             """, alert.model_dump())
             conn.commit()

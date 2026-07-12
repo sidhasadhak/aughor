@@ -112,6 +112,44 @@ def _suppressed_by_grace(monitor: Monitor, alert: MonitorAlert) -> bool:
     return age is not None and age < grace
 
 
+def _guard_caveats(monitor: Monitor, db) -> Optional[str]:
+    """WP-1b (`monitors.guarded`) — deterministic correctness probes on the SQL a
+    monitor evaluates: id-arithmetic (pure AST) and parent fan-out / dim-ratio chasm
+    (schema-based). A wrong-grain SUM in a monitor silently mis-values the metric and
+    then alerts on it — this attaches the reason to the alert instead of asserting the
+    number clean. Caveat-and-deliver: NEVER rewrites the monitor's SQL, never blocks
+    the alert; every probe is fail-open. Returns a short caveat string or None."""
+    sql = _resolve_sql(monitor, db)
+    if not sql or " from " not in f" {sql.lower()} ":
+        return None  # bare scalar expression — nothing the AST probes can see
+    notes: list[str] = []
+    dialect = getattr(db, "dialect", "duckdb")
+    try:
+        from aughor.sql.fanout import measure_times_key_arithmetic
+        w = measure_times_key_arithmetic(sql, dialect=dialect)
+        if w:
+            notes.append(f"id-arithmetic guard: {w}")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "monitor id-arithmetic probe is advisory; alert proceeds",
+                 counter="monitors.guard_idmath")
+    try:
+        from aughor.sql.fanout import detect_fanout, dimension_ratio_chasm
+        from aughor.db.schema_render import parse_schema_tables
+        tc = {t: (list(c.keys()) if isinstance(c, dict) else c)
+              for t, c in parse_schema_tables(db.get_schema()).items()}
+        if detect_fanout(sql, tc, dialect=dialect) or \
+                dimension_ratio_chasm(sql, tc, dialect=dialect):
+            notes.append(
+                "fan-out guard: an aggregate over a one-to-many join may over- or "
+                "under-count — verify the metric's grain before acting on this value")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "monitor fan-out probe is advisory; alert proceeds",
+                 counter="monitors.guard_fanout")
+    return "; ".join(notes) or None
+
+
 def _make_alert(
     monitor: Monitor,
     severity: str,
@@ -500,6 +538,18 @@ def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[Monitor
     except Exception as exc:
         logger.error("Monitor %s (%s) runner crashed: %s", monitor.id, monitor.name, exc)
         alert = _make_alert(monitor, "info", f"{monitor.name}: runner error — {exc}")
+
+    # WP-1b — guarded evaluation (flag `monitors.guarded`, default off): attach any
+    # deterministic correctness finding on the monitor's SQL to the fired alert.
+    if alert is not None:
+        try:
+            from aughor.kernel.flags import flag_enabled
+            if flag_enabled("monitors.guarded"):
+                _cav = _guard_caveats(monitor, db)
+                if _cav:
+                    alert.caveat = _cav
+        except Exception:
+            logger.debug("monitor guard probes are best-effort; skipped", exc_info=True)
 
     # Anti-flap: debounce a repeat alert of the same-or-lower severity within the grace window.
     if suppress and alert is not None and _suppressed_by_grace(monitor, alert):
