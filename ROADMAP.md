@@ -384,6 +384,12 @@ Source: [`docs/PLATFORM_REVIEW…2026-07-12.md`](docs/PLATFORM_REVIEW_AND_IMPLEM
 - **Signed + RBAC'd** — HMAC-SHA256 over the canonical body proves server issuance + detects tampering (per-install secret); a receipt outside the caller's org 404s identically to a missing one (fail-closed, no existence leak).
 - **Answers carry it** — `_write_answer_receipt` stamps the coder model + returns the `receipt_id`; the chat path streams a `receipt_id` SSE event. **Live-verified**: `/ask` → `receipt_id` → `GET /receipt/{id}` returned the signed contract; signature verifies. +6 tests; `gen:api` regenerated; FEATURES §3 updated. **Follow-ups:** the "Why this number" drawer + stamp ids on Query Builder/briefing figures + ADA-stream emit (separate frontend slices).
 
+### IA: ask-on-Home + a11y — WP-11 of the platform review (2026-07-13, branch `2026-07-13-wp11-ask-on-home`)
+Source: [`docs/PLATFORM_REVIEW…2026-07-12.md`](docs/PLATFORM_REVIEW_AND_IMPLEMENTATION_PROGRAM_2026-07-12.md) (WP-11; §1.7-2 no ask box on Home · §1.7-7 nav buttons unnamed / hidden panels in the AX tree).
+- **Ask-on-Home** — a composer hero atop `HomeScreen` (`app/page.tsx`): textarea + Insight/Deep depth pills + Ask, firing the question into the chat via the existing `goToChat(q, mode)` (pre-fill + auto-fire). Home becomes a launchpad, not a dead dashboard. **Live-verified**: a real question typed on Home routed into the chat + fired in Insight mode, 0 console errors.
+- **A11y** — every sidebar nav button now exposes an accessible name (`aria-label` + `aria-current`), verified in the AX tree (anonymous `button [ref]` → named "Home"/"Briefing"/…); keep-alive hidden Workspace layers get `inert` + `aria-hidden` so a hidden panel's controls leave the tab order + AX tree (`components/Workspace.tsx`).
+- **Copy** — the Home health empty-state's nonexistent "Metrics panel" → "Semantic Layer". New buttons use the `<Button>` primitive (raw-button ratchet flat at 204); tokens/format/tsc green. **Follow-ups:** the U5 fold (16 nav → ~5 workspaces) + full a11y sweep (separate slices).
+
 Grouped by area; each ✅ is verified shipped (git + code). Representative commits/PRs in parentheses.
 
 ### SOTA answer quality — the Databricks Genie head-to-head (2026-07-10, PR #136 + branch `2026-07-10-genie-parity-presentation`)

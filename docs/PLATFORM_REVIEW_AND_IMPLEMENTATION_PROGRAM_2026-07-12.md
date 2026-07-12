@@ -835,6 +835,23 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 
 #### WP-11 · IA: ask-on-Home, finish the U5 fold, a11y pass
 **Closes:** §1.7-2/7. **Effort:** 2–3 days.
+> **STATUS 2026-07-13: ask-on-Home + a11y quick-wins SHIPPED** (branch
+> `2026-07-13-wp11-ask-on-home`, stacked). **Ask-on-Home**: a composer hero at the top of
+> `HomeScreen` (`app/page.tsx`) — textarea + Insight/Deep depth pills + Ask — that fires the
+> question into the chat via the existing `goToChat(q, mode)` (pre-fill + auto-fire), so Home
+> is a launchpad not a dead dashboard. **Live-verified in the browser**: typed "Which regions
+> drive the most revenue?" on Home → routed into the chat, question fired, Insight mode carried
+> through, 0 console errors. **A11y**: (1) every sidebar nav button now exposes an accessible
+> name (`aria-label` + `aria-current` on the active item) — verified: the AX tree went from
+> anonymous `button [ref]` to named "Home"/"Briefing"/…; (2) keep-alive hidden Workspace layers
+> get `inert` + `aria-hidden` so a hidden panel's controls (e.g. the chat composer behind
+> another workspace) leave the tab order + AX tree (`components/Workspace.tsx`). **Copy fix**:
+> the Home health empty-state pointed at a nonexistent "Metrics panel" → "Semantic Layer"
+> (`ProcessHealthPanel.tsx`). New buttons use the `<Button>` primitive (raw-button ratchet flat
+> at 204); tokens/format/tsc green.
+> **DEFERRED:** the **U5 fold** (16 nav items → ~5 workspaces via `<Workspace>` + `LEGACY_*_LAYER`
+> deep-link maps) — a mechanical but broad refactor, left as its own slice (PART-2's
+> `CanvasWorkspace` caveat still applies); the full a11y sweep (remaining raw `<button>`s).
 
 - **Ask-on-Home:** compose the existing InputBox (ChatPanel's composer with Auto/Insight/Deep +
   agent picker) as Home's hero. Submitting from Home: pick the most-recent Data Canvas (or prompt

@@ -116,6 +116,12 @@ function Layer({ show, children }: { show: boolean; children: React.ReactNode })
   return (
     <div
       className={show ? "aug-anim-fade" : undefined}
+      // WP-11 a11y (§1.7-7): a keep-alive layer stays MOUNTED when not shown. `inert` +
+      // `aria-hidden` take the hidden layer's controls out of the tab order and the AX tree
+      // (so e.g. the chat composer isn't reachable behind another workspace), belt-and-
+      // suspenders with display:none.
+      inert={!show}
+      aria-hidden={!show || undefined}
       style={{
         position: "absolute",
         inset: 0,
