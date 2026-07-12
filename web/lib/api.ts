@@ -2906,8 +2906,18 @@ export interface RunCost {
   query_ms?: number;
 }
 
+// Per-run receipts stamped on the answer's Trust Receipt (Wave 1 · E4 learning, E3 activations).
+export interface LearningReceiptPayload {
+  readings_reused: number;
+  corrections_applied: number;
+  by_source: Record<string, number>;
+  resolutions_crystallized: number;
+  trusted_program_replayed: number;
+}
+export interface ActivationReceiptEntry { capability: string; reason: string; count: number }
+
 export interface InsightReceipt {
-  artifact: { id: string; kind: string; version: number; created_at: string; payload: Record<string, unknown> & { dossier?: FindingDossier } };
+  artifact: { id: string; kind: string; version: number; created_at: string; payload: Record<string, unknown> & { dossier?: FindingDossier; learning?: LearningReceiptPayload; activations?: ActivationReceiptEntry[] } };
   lineage: { relation: string; ref: string; detail: string | null }[];
   job: { id: string; kind: string; state: string; started_at: string | null; finished_at: string | null; metrics?: RunCost | null } | null;
   cost?: RunCost | null;

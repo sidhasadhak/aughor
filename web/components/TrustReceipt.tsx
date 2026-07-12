@@ -10,15 +10,43 @@
  * turns, or answers with no SQL).
  */
 import { useEffect, useState } from "react";
-import { getAnswerReceipt, type InsightReceipt } from "@/lib/api";
+import { getAnswerReceipt, type InsightReceipt, type LearningReceiptPayload } from "@/lib/api";
 import { costSummary } from "@/lib/cost";
 import { formatTimestamp } from "@/lib/format";
 
-const REL_LABEL: Record<string, string> = {
-  metric_available: "metric",
-  validated_by: "guard",
-  trusted: "trusted",
-};
+// The NEW-this-run learning signals (readings reused is already shown as the ◆ badge from lineage).
+const learnedNewCount = (l?: LearningReceiptPayload) =>
+  (l?.resolutions_crystallized ?? 0) + (l?.trusted_program_replayed ?? 0);
+
+function learningPhrases(l: LearningReceiptPayload): string[] {
+  const p: string[] = [];
+  if (l.readings_reused)
+    p.push(`reused ${l.readings_reused} resolved reading${l.readings_reused !== 1 ? "s" : ""}` +
+      (l.corrections_applied ? ` (${l.corrections_applied} correction${l.corrections_applied !== 1 ? "s" : ""})` : ""));
+  if (l.resolutions_crystallized)
+    p.push(`crystallized ${l.resolutions_crystallized} new resolution${l.resolutions_crystallized !== 1 ? "s" : ""}`);
+  if (l.trusted_program_replayed) p.push("replayed a trusted plan");
+  return p;
+}
+
+// "ada.premise_check" → "premise check"
+const capLabel = (c: string) => c.replace(/^[a-z]+\./, "").replace(/[._]/g, " ");
+
+function Badge({ tone, title, children }: { tone: "governed" | "drift" | "guard" | "propose" | "muted"; title?: string; children: React.ReactNode }) {
+  const c = {
+    governed: ["var(--blue1)", "var(--blue2)", "var(--blue4)"],
+    drift: ["var(--amb1)", "var(--amb2)", "var(--amb4)"],
+    guard: ["var(--grn1)", "var(--grn2)", "var(--grn4)"],
+    propose: ["var(--vio1)", "var(--vio2)", "var(--vio4)"],
+    muted: ["var(--bg-3)", "var(--b1)", "var(--t3)"],
+  }[tone];
+  return (
+    <span title={title} style={{
+      fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
+      background: c[0], border: `1px solid ${c[1]}`, color: c[2],
+    }}>{children}</span>
+  );
+}
 
 export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { connectionId: string; receiptId: string; kind?: "chat" | "ada" }) {
   const [rec, setRec] = useState<InsightReceipt | null>(null);
@@ -44,22 +72,10 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
   const sqlEdge = rec.lineage.find(l => l.relation === "source_sql");
   // I6 — a reading this connection settled earlier (Ambiguity Ledger) that this answer applied.
   const resolved = rec.lineage.filter(l => l.relation === "resolved_ambiguity");
-
-  const Badge = ({ tone, title, children }: { tone: "governed" | "drift" | "guard" | "propose" | "muted"; title?: string; children: React.ReactNode }) => {
-    const c = {
-      governed: ["var(--blue1)", "var(--blue2)", "var(--blue4)"],
-      drift: ["var(--amb1)", "var(--amb2)", "var(--amb4)"],
-      guard: ["var(--grn1)", "var(--grn2)", "var(--grn4)"],
-      propose: ["var(--vio1)", "var(--vio2)", "var(--vio4)"],
-      muted: ["var(--bg-3)", "var(--b1)", "var(--t3)"],
-    }[tone];
-    return (
-      <span title={title} style={{
-        fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
-        background: c[0], border: `1px solid ${c[1]}`, color: c[2],
-      }}>{children}</span>
-    );
-  };
+  // Wave 1 receipts family: per-run Learning Receipt (E4) + Activation Receipt (E3), stamped on the payload.
+  const learning = rec.artifact.payload.learning;
+  const activations = rec.artifact.payload.activations ?? [];
+  const learnedNew = learnedNewCount(learning);
 
   return (
     <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 5 }}>
@@ -77,7 +93,9 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
         {proposed.map((m, i) => <Badge key={`prop:${i}:${m.ref}`} tone="propose" title={m.detail || "Define this metric in the Semantic Layer to enforce it"}>✎ define {m.ref.replace("metric:", "")}</Badge>)}
         {guards.map((g, i) => <Badge key={`guard:${i}:${g.ref}`} tone="guard">✓ {g.ref.replace("guard:", "").replace(/_/g, " ")}</Badge>)}
         {resolved.length > 0 && <Badge tone="governed" title="This answer applied an ambiguity this connection resolved earlier">◆ {resolved.length === 1 ? "resolved reading" : `${resolved.length} resolved readings`}</Badge>}
-        {used.length === 0 && drift.length === 0 && proposed.length === 0 && guards.length === 0 && resolved.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
+        {learnedNew > 0 && learning && <Badge tone="governed" title="What the closed loop learned on this answer">✦ {[learning.resolutions_crystallized && `crystallized ${learning.resolutions_crystallized}`, learning.trusted_program_replayed && "trusted plan replayed"].filter(Boolean).join(" · ")}</Badge>}
+        {activations.length > 0 && <Badge tone="guard" title="Self-gating capabilities whose trigger fired this run">⚡ {activations.length} capabilit{activations.length !== 1 ? "ies" : "y"}</Badge>}
+        {used.length === 0 && drift.length === 0 && proposed.length === 0 && guards.length === 0 && resolved.length === 0 && learnedNew === 0 && activations.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
         <span style={{ fontSize: 10, color: "var(--t4)" }}>{open ? "▾" : "▸"}</span>
       </button>
 
@@ -111,6 +129,23 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
                 <div key={`resolved:${i}:${r.ref}`} style={{ marginTop: 2 }}>
                   <span style={{ color: "var(--blue4)" }}>◆ {r.ref.replace("reading:", "")}</span>
                   {r.detail ? ` — ${r.detail}` : ""}
+                </div>
+              ))}
+            </div>
+          )}
+          {learning && (learning.readings_reused > 0 || learnedNew > 0) && (
+            <div style={{ fontSize: 11, color: "var(--t2)" }}>
+              <span style={{ color: "var(--t3)" }}>What the loop learned this run:</span>{" "}
+              {learningPhrases(learning).join(" · ")}.
+            </div>
+          )}
+          {activations.length > 0 && (
+            <div style={{ fontSize: 11, color: "var(--t2)" }}>
+              <span style={{ color: "var(--t3)" }}>Guards that fired (their trigger held):</span>
+              {activations.map((a, i) => (
+                <div key={`act:${i}:${a.capability}`} style={{ marginTop: 2 }}>
+                  <span style={{ color: "var(--grn4)" }}>⚡ {capLabel(a.capability)}</span>
+                  {a.reason ? ` — activated because ${a.reason}` : ""}{a.count > 1 ? ` (×${a.count})` : ""}
                 </div>
               ))}
             </div>
