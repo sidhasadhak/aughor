@@ -2916,6 +2916,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/learning/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Learning Summary
+         * @description The Memory-layer headline in one call: the ambiguity-ledger burn-down (resolutions crystallized by
+         *     source + total times served — should grow as fresh probes/asks shrink), the verdict acceptance economy
+         *     (the non-circular calibration signal), and trusted-asset counts. Scoped to the current org, optionally
+         *     to one connection.
+         */
+        get: operations["learning_summary_learning_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/trusted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Learning Trusted
+         * @description The trusted assets themselves — curated queries and replayable plan-as-programs injected
+         *     authoritatively into prompts, now inspectable. Programs return metadata only (the serialized program
+         *     body is omitted from the list view). Scoped to the current org, optionally to one connection.
+         */
+        get: operations["learning_trusted_learning_trusted_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/llm/config": {
         parameters: {
             query?: never;
@@ -6536,8 +6581,10 @@ export interface components {
         };
         /** _FlagPatch */
         _FlagPatch: {
+            /** State */
+            state?: string | null;
             /** Value */
-            value: boolean;
+            value?: boolean | null;
         };
         /** _MeasureDef */
         _MeasureDef: {
@@ -12284,6 +12331,68 @@ export interface operations {
             path: {
                 job_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    learning_summary_learning_summary_get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    learning_trusted_learning_trusted_get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
