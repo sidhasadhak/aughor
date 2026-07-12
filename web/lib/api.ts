@@ -3546,3 +3546,37 @@ export async function getAgentObservability(agentId: string): Promise<AgentObser
   if (!res.ok) return null;
   return res.json();
 }
+
+// ── Learning / Memory layer (Wave 1 · E4) ───────────────────────────────────
+// The closed loop's accumulation, made visible: ambiguity-ledger burn-down, the
+// verdict acceptance economy, and trusted-asset counts/lists. See routers/learning.py.
+export interface LearningSummary {
+  connection_id: string | null;
+  ledger: { resolutions: number; by_source: Record<string, number>; served_total: number };
+  verdicts: { counts: Record<string, number>; total: number; acceptance_rate: number | null };
+  trusted: { queries: number; programs: number };
+}
+
+export interface TrustedAssets {
+  queries: { id: string; question: string; note?: string; tables?: string[]; tags?: string[] }[];
+  programs: {
+    id: string; question: string; use_count: number;
+    verified_at?: string; last_used_at?: string | null; plan_source?: string;
+  }[];
+}
+
+/** The Memory-layer headline (org-wide, or one connection). Null on failure — the panel degrades. */
+export async function getLearningSummary(connectionId?: string): Promise<LearningSummary | null> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${BASE}/learning/summary${q}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/** The trusted assets themselves — curated queries + replayable programs. */
+export async function getTrustedAssets(connectionId?: string): Promise<TrustedAssets | null> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${BASE}/learning/trusted${q}`);
+  if (!res.ok) return null;
+  return res.json();
+}
