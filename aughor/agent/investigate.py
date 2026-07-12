@@ -3754,6 +3754,8 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
                 three_way_sql += f" WHERE {active_filter}"
 
             val_result = _execute_safe(conn, "premise_check", three_way_sql, schema=schema)
+            from aughor.kernel import metering
+            metering.record_activation("ada.premise_check")   # Activation Receipt (Wave 1·E3)
             if (not val_result.error and val_result.rows
                     and len(val_result.rows[0]) >= 3):
                 row = val_result.rows[0]
@@ -6084,6 +6086,9 @@ def ada_synthesize(state: AgentState) -> dict:
                 from aughor.agent.explore import run_refutation
                 _verdict = run_refutation(question, synth.headline or "", _phases_summary(phases))
                 _apply_adversarial_refutation(synth, _verdict)
+                if _adv_high_stakes:                          # Activation Receipt (Wave 1·E3)
+                    from aughor.kernel import metering
+                    metering.record_activation("ada.adversarial_high_stakes")
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "adversarial verification is best-effort; report proceeds",

@@ -274,6 +274,8 @@ def execute_guarded(
                     _cap_dialect = conn.dialect if getattr(conn, "writes_native_sql", False) else "duckdb"
                     _caps = capability_diagnostics(sql, _cap_dialect)
                     if _caps:
+                        from aughor.kernel import metering
+                        metering.record_activation("capability.contract")   # Activation Receipt (Wave 1·E3)
                         _cap_text = "\n".join(f"- {c}" for c in _caps)
                         _diag = ((f"{_diag}\n" if _diag else "DIAGNOSIS:\n")
                                  + f"UNSUPPORTED CONSTRUCTS (rewrite these for {_cap_dialect}):\n{_cap_text}\n")

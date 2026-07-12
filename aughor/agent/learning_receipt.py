@@ -1,4 +1,10 @@
-"""Per-run Learning Receipt (Wave 1 · E4) — make the closed loop's per-answer work visible.
+"""Per-run answer receipts — make the machinery's per-answer work visible (the S3 receipts family).
+
+Hosts two sibling, flag-gated receipts built from the shared run accumulator (``kernel/metering.py``):
+the **Learning Receipt** (Wave 1 · E4, below) and the **Activation Receipt** (Wave 1 · E3,
+``build_activation_receipt`` — which self-gating guards fired this run and why).
+
+Learning Receipt (Wave 1 · E4) — make the closed loop's per-answer work visible.
 
 Aughor's closed loop is captured and read back into prompts, but per answer the only visible learning
 signal was the single ``◆ resolved reading`` badge. This builds a compact summary of what the loop DID on
@@ -50,3 +56,24 @@ def build_learning_receipt(resolved_ambig: Optional[list[dict]] = None) -> Optio
     if not any(receipt[k] for k in receipt if k != "by_source"):
         return None
     return receipt
+
+
+def build_activation_receipt() -> Optional[list]:
+    """The self-gating guards that fired this run, each with the deterministic trigger that fired it (the
+    Activation Receipt, Wave 1 · E3) — or ``None`` when the ``capabilities.receipt`` flag is off or nothing
+    fired. Entries are ``{capability, reason, count}``, deduped by capability (a guard may fire several times
+    a run) in first-fired order. The 'why' is centralized in ``flags.CAPABILITY_TRIGGER`` so touchpoints
+    only record the capability name."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("capabilities.receipt"):
+        return None
+    from aughor.kernel import metering
+    fired = metering.activations_snapshot() or []
+    if not fired:
+        return None
+    from aughor.kernel.flags import CAPABILITY_TRIGGER
+    counts: dict[str, int] = {}
+    for cap in fired:
+        counts[cap] = counts.get(cap, 0) + 1
+    return [{"capability": cap, "reason": CAPABILITY_TRIGGER.get(cap, ""), "count": n}
+            for cap, n in counts.items()]

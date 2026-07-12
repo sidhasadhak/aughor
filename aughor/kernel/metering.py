@@ -60,12 +60,15 @@ class RunMetrics:
     llm_ms: float = 0.0
     query_ms: float = 0.0
     learning: LearningSignals = field(default_factory=LearningSignals)
+    activations: list = field(default_factory=list)   # self-gating guards that fired this run (E3)
 
     def to_dict(self) -> dict:
-        # The COST view — learning signals ride the same run accumulator but are a separate surface
-        # (the Learning Receipt), so the cost blob stamped on the Trust Receipt stays byte-identical.
+        # The COST view — learning signals and capability activations ride the same run accumulator but
+        # are separate surfaces (the Learning / Activation Receipts), so the cost blob stamped on the
+        # Trust Receipt stays byte-identical.
         d = asdict(self)
         d.pop("learning", None)
+        d.pop("activations", None)
         return d
 
 
@@ -154,6 +157,27 @@ def learning_snapshot() -> Optional[dict]:
     """The active run's learning signals as a plain dict, or ``None`` if no run is active."""
     m = _current.get()
     return asdict(m.learning) if m is not None else None
+
+
+def record_activation(capability: str) -> None:
+    """Note that a self-gating capability FIRED on the active run (its deterministic trigger held) — the
+    per-run Activation Receipt (Wave 1 · E3). No-op when no run is active. The human 'why' is looked up
+    from ``kernel/flags.CAPABILITY_TRIGGER`` at receipt-build time, so touchpoints pass only the name."""
+    m = _current.get()
+    if m is None or not capability:
+        return
+    try:
+        with _lock:
+            m.activations.append(capability)
+    except Exception as exc:  # never let a receipt count break a guard
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "activation metering", counter="metering.activation")
+
+
+def activations_snapshot() -> Optional[list]:
+    """The active run's capability activations (a list of names, one per firing), or ``None`` if no run."""
+    m = _current.get()
+    return list(m.activations) if m is not None else None
 
 
 # A run's live metrics, also reachable by job_id — so the kernel heartbeat (a

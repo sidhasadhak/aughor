@@ -58,6 +58,7 @@ FLAG_ENV = {
     "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
     "learning.receipt": "AUGHOR_LEARNING_RECEIPT",
     "capabilities.auto": "AUGHOR_CAPABILITIES_AUTO",
+    "capabilities.receipt": "AUGHOR_CAPABILITIES_RECEIPT",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -88,6 +89,10 @@ FLAG_META = {
     "capabilities.auto": {
         "label": "Capabilities Auto-mode (self-gating guards decide per run)",
         "description": "Master switch for Auto-mode: with it on, each SELF-GATING capability (a deterministic guard that already only fires on a runtime trigger — premise-check, clarify gate, high-stakes adversarial verify, join key-reconciliation, capability-contract repair, guarded extract) is ENABLED unless the operator explicitly turned it off, and its own trigger decides per run — so you turn on the smart guards with one switch instead of flipping each. An explicit per-capability On/Off always wins; cost-dangerous flags (ai_sql, federation, champion-validate) are NOT auto-eligible. Off by default = byte-identical. Wave 1 · E3 of the combined platform study.",
+    },
+    "capabilities.receipt": {
+        "label": "Activation Receipt (which guards fired, and why)",
+        "description": "Attach an Activation Receipt to each answer — the self-gating guards that actually fired this run and the deterministic trigger that fired them (\"activated premise-check because the question asserts why a metric is high/low\"). Emitted as an SSE `activations` event and stamped on the Trust Receipt, so Auto-mode's per-run decisions are visible instead of implicit. Off by default = byte-identical (no event, no receipt section). Wave 1 · E3 of the combined platform study.",
     },
     "snapshot_receipts": {
         "label": "Snapshot-pinned receipts",
