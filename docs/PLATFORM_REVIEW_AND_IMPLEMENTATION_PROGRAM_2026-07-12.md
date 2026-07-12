@@ -402,6 +402,13 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 
 #### WP-1 · Caveats carried, trust plane promoted, guard coverage extended
 **Closes:** F1, F4, F5, F7 (§1.1). **Effort:** 2–4 days. **Priority: #1.**
+> **STATUS 2026-07-12: 1a–1e SHIPPED** (branch `2026-07-12-wp1-trust-caveats`, +21 tests,
+> live-verified: monitors caveat end-to-end in the UI; create-gate rejected a real bind
+> failure). 1c shipped as the TARGETED variant (four labels promoted to
+> `_AUDITED_AGENT_LABELS`) — the blanket "gate every internal label" is UNSAFE: platform-
+> authored mutations (`alter_column`) are legitimate; see the code comment at the labels
+> set. **1f (default promotion) remains** — flip `trust.verify_live`/`trust.e1_live`
+> after a live A/B on luxexperience shows zero false-positive caveats.
 
 **1a — `QueryResult.caveats` (the swallow seam).**
 - Add `caveats: list[str] = field(default_factory=list)` (match existing dataclass/pydantic style)
@@ -516,6 +523,11 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 
 #### WP-3 · Run the P7 bake-off and pin the coder model (decision debt, not code)
 **Effort:** hours (mostly wall-clock). **Priority: #3 — unblocks quality everywhere.**
+> **STATUS 2026-07-12: DONE.** 3-model 53q run completed: kimi-k2.7-code 63.3% ·
+> minimax-m2.5 63.1% · glm-5.2 63.0% exec-acc — statistical tie at n=53 (all 100%
+> trust/exec-success). **Decision: keep `glm-5.2:cloud`** (no candidate beats the
+> incumbent; a switch would re-pin the live-ratchet baseline for zero proven gain).
+> Recorded in ROADMAP §3 P7; raw results `evals/bakeoff_out/*.json`.
 
 - Command (per ROADMAP §0): `uv run --extra observability python -m evals.model_bakeoff --models
   "glm-5.2:cloud,<candidate-1>,<candidate-2>"` — one env-isolated subprocess per model,
