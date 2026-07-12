@@ -56,6 +56,7 @@ FLAG_ENV = {
     "agents.user_defined": "AUGHOR_USER_AGENTS",
     "search.rrf": "AUGHOR_SEARCH_RRF",
     "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
+    "learning.receipt": "AUGHOR_LEARNING_RECEIPT",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -78,6 +79,10 @@ FLAG_META = {
     "explorer.manifest_driven": {
         "label": "Manifest-driven deterministic exploration (Phase 8)",
         "description": "Cover the Phase-8 L2 baseline cells (measure × dimension) with SYNTHESISED SQL from a deterministic coverage manifest — no per-cell generation LLM call — with the existing explorer guards enforcing correctness; the LLM curiosity loop still handles cells/domains the manifest doesn't cover. Deterministic-first: fewer LLM calls, reproducible baseline coverage tracked across re-runs. Fails closed to the LLM loop if the manifest can't build. Off by default = byte-identical (LLM-only exploration). (Was consulted but unregistered — study E3 housekeeping.)",
+    },
+    "learning.receipt": {
+        "label": "Per-run Learning Receipt",
+        "description": "Attach a Learning Receipt to each answer — a per-run summary of what the closed loop DID: resolved readings reused (and how many were human corrections), resolutions crystallized this run, and trusted plan-as-programs replayed. Emitted as an SSE `learning` event and stamped on the Trust Receipt so the accumulation the loop already captures is finally visible. Off by default = byte-identical (no event, no receipt section). Wave 1 · E4 of the combined platform study.",
     },
     "snapshot_receipts": {
         "label": "Snapshot-pinned receipts",

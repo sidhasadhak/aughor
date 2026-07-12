@@ -121,8 +121,11 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
                           sqls: list[str], headline: str, schema: str,
                           connection_id: str, canvas_id: str = "",
                           guard_edges: list | None = None,
-                          payload_extra: dict | None = None) -> None:
+                          payload_extra: dict | None = None) -> "dict | None":
     """K3-wide Trust Receipt for any user-facing answer (chat / ADA / monitor):
+
+    Returns the per-run Learning Receipt (Wave 1·E4) when the ``learning.receipt`` flag is on and the run
+    did something the loop can report, else ``None`` — so a streaming caller can emit it as an SSE event.
     a versioned ledger artifact with HONEST lineage + B-7 metric enforcement.
     Records only verifiable provenance — executed SQL(s), input tables, the
     registered metrics available, whether the governed formula was USED or the
@@ -188,6 +191,17 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             from aughor.kernel.errors import tolerate
             tolerate(exc, "ambiguity-ledger lineage on the Trust Receipt is best-effort; the receipt still writes without it",
                      counter="chat.receipt_ambiguity")
+        # Per-run Learning Receipt (Wave 1·E4): what the closed loop DID this run — readings reused /
+        # corrections (from the resolutions above) plus runtime events (crystallized, trusted replay).
+        # Flag-gated (learning.receipt) → None when off; best-effort, never breaks the receipt.
+        _learning = None
+        try:
+            from aughor.agent.learning_receipt import build_learning_receipt
+            _learning = build_learning_receipt(_resolved_ambig)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "learning receipt is best-effort; the Trust Receipt still writes without it",
+                     counter="chat.receipt_learning")
         # Stamp per-run compute onto the artifact so the Trust Receipt shows what the
         # answer cost. For job-backed answers (ADA) the job row carries the full total
         # too; for the synchronous chat/insight path this is the only sink.
@@ -199,14 +213,17 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
              "sql": sqls[0] if sqls else "", "tables": sorted(seen),
              **({"cost": _cost} if _cost is not None else {}),
              **({"resolved_ambiguities": _resolved_ambig} if _resolved_ambig else {}),
+             **({"learning": _learning} if _learning else {}),
              **(payload_extra or {})},
             conn_id=connection_id, canvas_id=canvas_id or None, lineage=lineage,
         )
         if enf is not None:
             Ledger.default().emit("metric.enforcement", enf,
                                   conn_id=connection_id, canvas_id=canvas_id or None)
+        return _learning
     except Exception:
         logger.debug("%s receipt write failed", kind, exc_info=True)
+    return None
 
 
 _TABLE_RE = re.compile(r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)', re.IGNORECASE)
@@ -1806,7 +1823,7 @@ async def _stream_chat(
                                 "the question was under-specified (no explicit metric/time window); answered with a default reading — refine for a different cut"))
             for _tq in (_trusted_used or []):
                 _guards.append(("trusted", f"query:{(_tq.get('question') or '')[:60]}", _tq.get('note')))
-            _write_answer_receipt(
+            _learning_receipt = _write_answer_receipt(
                 kind="chat_answer", natural_key=f"chat:{connection_id}:{_chat_inv_id}",
                 question=question, sqls=[final_sql], headline=_grounded_headline or question,
                 schema=schema, connection_id=connection_id, canvas_id=canvas_id,
@@ -1814,6 +1831,8 @@ async def _stream_chat(
                 payload_extra={"chart_type": answer.chart_type, "row_count": len(result.rows),
                                "complexity_tier": _cx.tier},
             )
+            if _learning_receipt:                          # Wave 1·E4 — surface the loop's per-run work live
+                yield _sse("learning", _learning_receipt)
 
             # Self-improving loop: notice ontology gaps from this real query (e.g. a
             # currency measure aggregated with no canonical metric covering it) and

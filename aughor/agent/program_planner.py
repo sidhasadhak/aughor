@@ -406,6 +406,8 @@ def _replay_trusted_program(question: str, conn_id: str, *, investigation_id: st
     if not cached.steps or _gate_program_sql(cached, conn_id) or validate_program(cached, conn_id):
         return None
     record_program_hit(tp.id)
+    from aughor.kernel import metering
+    metering.record_learning(trusted_program_replayed=1)   # per-run Learning Receipt (Wave 1·E4)
     return run_program(cached, conn_id, investigation_id=investigation_id, org_id=org_id)
 
 
