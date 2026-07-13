@@ -1,17 +1,22 @@
 """
-Aughor CLI — run autonomous investigations from the terminal.
+Aughor CLI — start the platform and run autonomous investigations from the terminal.
 
 Usage:
+  aughor up          # start API (:8000) + web UI (:3000) — the one-command bootstrap
   aughor investigate "Why did revenue drop 8% last week?"
   aughor investigate "Why did revenue drop 8% last week?" --db data/aughor.duckdb
   aughor seed        # create the fixture database
 """
 from __future__ import annotations
 
+import os
+import signal
+import socket
+import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import click
 import duckdb
@@ -28,6 +33,11 @@ from rich.table import Table
 console = Console()
 
 DEFAULT_DB = Path(__file__).parent.parent / "data" / "aughor.duckdb"
+
+# Mirrors aughor.llm.provider.BACKENDS — kept as a literal so `aughor --help` stays
+# instant (importing the provider pulls in instructor/openai at module scope).
+# tests/unit/test_cli_up.py pins the two lists in sync.
+LLM_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anthropic")
 
 
 # ── CLI group ────────────────────────────────────────────────────────────────
@@ -62,13 +72,249 @@ def seed(db: str):
     console.print(f"  Failure rate APAC SMB on outage: {summary['apac_smb_outage_failure_rate_pct']}%")
 
 
+# ── Up (one-command bootstrap: API + web UI) ─────────────────────────────────
+
+def _repo_root() -> Path:
+    """Locate the repo root for `aughor up`.
+
+    Rule: prefer the current working directory when it looks like an Aughor
+    checkout (has both pyproject.toml and web/) — that keeps `uv run aughor up`
+    working from any clone; otherwise fall back to the parent of this package
+    (the checkout the `aughor` package was imported from, same anchor DEFAULT_DB
+    uses)."""
+    cwd = Path.cwd()
+    if (cwd / "pyproject.toml").is_file() and (cwd / "web").is_dir():
+        return cwd
+    return Path(__file__).resolve().parent.parent
+
+
+def _port_in_use(port: int) -> bool:
+    """True when something already listens on the port (best-effort: try to bind
+    127.0.0.1 — the interface uvicorn/next bind by default in dev)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("127.0.0.1", port))
+        except OSError:
+            return True
+    return False
+
+
+def _port_owner(port: int) -> str:
+    """Best-effort 'command (pid N)' description of the port's listener via lsof.
+    Empty string when lsof is unavailable or the owner can't be determined."""
+    try:
+        out = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip().splitlines()
+    except Exception:
+        return ""  # lsof missing / not permitted — the port-busy verdict still stands
+    if len(out) < 2:
+        return ""
+    parts = out[1].split()  # header then: COMMAND PID USER ...
+    return f"{parts[0]} (pid {parts[1]})" if len(parts) >= 2 else ""
+
+
+def _check_port_free(port: int, what: str, flag: str) -> None:
+    """Refuse to start on a busy port — never kill the owner (it may be someone
+    else's live server). Print who owns it and how to pick another port."""
+    if not _port_in_use(port):
+        return
+    owner = _port_owner(port)
+    owner_bit = f" — owned by [bold]{owner}[/bold]" if owner else ""
+    console.print(f"[red]Port {port} is already in use[/red] (needed for {what}){owner_bit}.", soft_wrap=True)
+    console.print(
+        f"Aughor won't kill it. Stop that process yourself, or pick another port with [bold]{flag}[/bold].",
+        soft_wrap=True,
+    )
+    sys.exit(1)
+
+
+def _launch(cmd: list[str], *, cwd: Path, env: Optional[dict] = None) -> subprocess.Popen:
+    """Thin Popen wrapper (module-level so tests can stub spawning). Children
+    inherit stdout/stderr — `aughor up` is a foreground dev runner."""
+    return subprocess.Popen(cmd, cwd=str(cwd), env=env)
+
+
+def _ensure_web_deps(root: Path) -> None:
+    """First-run preflight: install frontend deps when web/node_modules is absent."""
+    web_dir = root / "web"
+    if not web_dir.is_dir():
+        console.print(f"[red]web/ not found under {root}[/red] — is this an Aughor checkout?")
+        sys.exit(1)
+    if (web_dir / "node_modules").exists():
+        return
+    console.print("[cyan]First run — installing frontend deps (npm install, one-time)…[/cyan]")
+    try:
+        proc = subprocess.run(["npm", "install", "--prefix", str(web_dir)])
+    except FileNotFoundError:
+        console.print("[red]npm not found.[/red] Install Node 20+ (https://nodejs.org) and re-run.")
+        sys.exit(1)
+    if proc.returncode != 0:
+        console.print("[red]npm install failed[/red] — see the output above.")
+        sys.exit(proc.returncode)
+
+
+def _wait_for_health(
+    url: str, timeout: float = 30.0, *, is_alive: Optional[Callable[[], bool]] = None
+) -> Optional[dict]:
+    """Poll /health until it answers 200 (returns its JSON) or the timeout lapses
+    (returns None). `is_alive` short-circuits the wait when the API process dies."""
+    import httpx
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if is_alive is not None and not is_alive():
+            return None
+        try:
+            r = httpx.get(url, timeout=2.0)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            r = None  # not accepting connections yet — keep polling
+        time.sleep(0.5)
+    return None
+
+
+def _print_boot_summary(health: Optional[dict], api_port: int, web_port: Optional[int]) -> None:
+    console.print()
+    console.print(Rule("[bold cyan]Aughor is up[/bold cyan]", style="cyan"))
+    console.print(f"  API   [bold]http://localhost:{api_port}[/bold]  [dim](docs at /docs)[/dim]")
+    if web_port is not None:
+        console.print(f"  Web   [bold]http://localhost:{web_port}[/bold]")
+    if health is None:
+        console.print("  [yellow]/health did not answer within 30s — the API may still be starting; check the logs above.[/yellow]")
+    else:
+        if health.get("fixture_db"):
+            console.print("  Data  demo dataset ready [dim](auto-seeded on first boot)[/dim]")
+        else:
+            console.print("  Data  [yellow]demo dataset not seeded yet[/yellow] [dim](run `aughor seed` if it never appears)[/dim]")
+        llm = health.get("llm") or {}
+        backend, model = llm.get("backend") or "unknown", llm.get("model") or "?"
+        if llm.get("ready"):
+            console.print(f"  LLM   {backend} · {model} · [green]ready[/green]", soft_wrap=True)
+        else:
+            console.print(f"  LLM   {backend} · {model} · [red]not ready (API key missing)[/red]", soft_wrap=True)
+            console.print(
+                "        Fix it in Settings → Inference in the web UI, or set AUGHOR_BACKEND/key envs in .env",
+                soft_wrap=True,
+            )
+    console.print()
+    console.print("[dim]Ctrl-C stops everything.[/dim]")
+    console.print()
+
+
+def _signal_quietly(proc: subprocess.Popen, method: str) -> None:
+    """terminate()/kill() tolerant of the child exiting in the same instant."""
+    try:
+        getattr(proc, method)()
+    except OSError as exc:
+        _ = exc  # already gone — nothing left to stop
+
+
+def _terminate(procs: list[subprocess.Popen], grace: float = 5.0) -> None:
+    """Stop every still-running child: terminate → wait up to `grace`s → kill."""
+    live = [p for p in procs if p.poll() is None]
+    for p in live:
+        _signal_quietly(p, "terminate")
+    deadline = time.monotonic() + grace
+    for p in live:
+        try:
+            p.wait(timeout=max(0.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            _signal_quietly(p, "kill")
+            p.wait()
+
+
+def _supervise(procs: list[subprocess.Popen]) -> int:
+    """Foreground both children; return the exit code of whichever exits first
+    (the caller stops the sibling)."""
+    while True:
+        for p in procs:
+            code = p.poll()
+            if code is not None:
+                return code
+        time.sleep(0.5)
+
+
+def _raise_sigterm(signum, frame):  # pragma: no cover — signal plumbing
+    raise KeyboardInterrupt
+
+
+@cli.command()
+@click.option("--api-port", default=8000, show_default=True, type=int, help="Port for the FastAPI backend")
+@click.option("--web-port", default=3000, show_default=True, type=int, help="Port for the Next.js web UI")
+@click.option("--dev", is_flag=True, help="Run the API with auto-reload (uvicorn --reload)")
+@click.option("--api-only", is_flag=True, help="Start only the API")
+@click.option("--web-only", is_flag=True, help="Start only the web UI")
+def up(api_port: int, web_port: int, dev: bool, api_only: bool, web_only: bool):
+    """Start Aughor — API + web UI — with one command.
+
+    Installs frontend deps on the first run, refuses to touch ports something
+    else owns, waits for the API to come up healthy, then prints where
+    everything is (URLs, demo-data status, LLM readiness). First boot
+    auto-seeds a demo dataset. Ctrl-C stops both processes.
+    """
+    if api_only and web_only:
+        raise click.UsageError("--api-only and --web-only are mutually exclusive.")
+
+    root = _repo_root()
+    run_api, run_web = not web_only, not api_only
+
+    if run_api:
+        _check_port_free(api_port, "the Aughor API", "--api-port")
+    if run_web:
+        _check_port_free(web_port, "the web UI", "--web-port")
+        _ensure_web_deps(root)
+
+    procs: list[subprocess.Popen] = []
+    api_proc: Optional[subprocess.Popen] = None
+    signal.signal(signal.SIGTERM, _raise_sigterm)  # docker/CI stop → same clean path as Ctrl-C
+
+    try:
+        if run_api:
+            api_cmd = [sys.executable, "-m", "uvicorn", "aughor.api:app", "--port", str(api_port)]
+            if dev:
+                api_cmd += ["--reload", "--timeout-graceful-shutdown", "3"]
+            api_proc = _launch(api_cmd, cwd=root)
+            procs.append(api_proc)
+
+        if run_web:
+            env = dict(os.environ)
+            if api_port != 8000:
+                # The web app defaults to http://localhost:8000 — point it at the chosen port.
+                env["NEXT_PUBLIC_API_URL"] = f"http://localhost:{api_port}"
+            web_cmd = ["npm", "run", "dev", "--prefix", str(root / "web"), "--", "-p", str(web_port)]
+            procs.append(_launch(web_cmd, cwd=root, env=env))
+
+        if api_proc is not None:
+            health = _wait_for_health(
+                f"http://127.0.0.1:{api_port}/health",
+                is_alive=lambda: api_proc.poll() is None,
+            )
+            if health is None and api_proc.poll() is not None:
+                console.print(f"[red]API exited during startup (code {api_proc.returncode})[/red] — see the logs above.")
+                sys.exit(api_proc.returncode or 1)
+            _print_boot_summary(health, api_port, web_port if run_web else None)
+        else:
+            console.print(f"\n  Web  [bold]http://localhost:{web_port}[/bold]  [dim](expects the API on :{api_port})[/dim]\n")
+
+        code = _supervise(procs)
+        console.print(f"\n[yellow]A process exited (code {code}) — stopping the rest.[/yellow]")
+        sys.exit(code)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Shutting down…[/dim]")
+        sys.exit(0)
+    finally:
+        _terminate(procs)
+
+
 # ── Investigate ──────────────────────────────────────────────────────────────
 
 @cli.command()
 @click.argument("question")
 @click.option("--db", default=str(DEFAULT_DB), show_default=True, help="Path to DuckDB file")
-@click.option("--model", default=None, help="Override Ollama model (e.g. qwen2.5-coder:14b)")
-@click.option("--backend", default="ollama", show_default=True, type=click.Choice(["ollama", "anthropic"]))
+@click.option("--model", default=None, help="Override the model (e.g. qwen2.5-coder:14b)")
+@click.option("--backend", default="ollama", show_default=True, type=click.Choice(list(LLM_BACKENDS)))
 def investigate(question: str, db: str, model: Optional[str], backend: str):
     """Run an autonomous investigation on a business question."""
     import os

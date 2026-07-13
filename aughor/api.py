@@ -169,7 +169,12 @@ app = FastAPI(title="Aughor API", lifespan=_lifespan,
 app.add_middleware(_OrgContextMiddleware)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
-_cors_raw = os.environ.get("AUGHOR_CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
+# Defaults cover the dev web UI (:3000/:3001) and the prod-preview server (:3210);
+# AUGHOR_CORS_ORIGINS overrides the whole list.
+_cors_raw = os.environ.get(
+    "AUGHOR_CORS_ORIGINS",
+    "http://localhost:3000,http://localhost:3001,http://localhost:3210",
+)
 _cors_origins: list[str] = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 
 app.add_middleware(

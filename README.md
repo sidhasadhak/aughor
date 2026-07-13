@@ -58,29 +58,52 @@ No dashboards to maintain. No SQL to write. No analyst backlog.
 
 ## Quick start
 
-**You need:** [uv](https://docs.astral.sh/uv/), **Python 3.11+**, **Node 20+**, and an
-LLM backend — either [Ollama](https://ollama.com) running locally, or an API key for
-Groq / Together / Anthropic.
+**You need:** [uv](https://docs.astral.sh/uv/), **Python 3.11+**, and **Node 20+**.
 
 ```bash
 git clone https://github.com/sidhasadhak/aughor.git && cd aughor
-uv sync                                          # 1. Python deps (DuckDB is built in)
-cd web && npm install && cd ..                   # 2. frontend deps
-cp .env.example .env                             # 3. then edit: set your LLM backend + key
-./start.sh                                       # 4. API :8000 + web → http://localhost:3000
+uv sync            # 1. Python deps (DuckDB is built in)
+uv run aughor up   # 2. installs web deps on first run, starts API :8000 + web :3000
 ```
 
-On first boot Aughor seeds a **synthetic DuckDB fixture** and registers it as a
-connection, so there is something to explore before you connect anything real.
+Then open **http://localhost:3000** — that's it. First boot auto-seeds a
+**synthetic demo dataset** and registers it as a connection, so there is
+something to explore before you connect anything real. `aughor up` never kills
+an existing process: if a port is busy it tells you who owns it and exits
+(pick another with `--api-port` / `--web-port`).
+
+**Pick your LLM.** Aughor defaults to [Ollama](https://ollama.com) on localhost.
+The built-in default models are Ollama *cloud-tier* (they need `ollama signin`);
+for a fully-local run, `ollama pull qwen2.5-coder:14b` and pin it (see below).
+Prefer a hosted API? Configure it in **Settings → Inference** in the web UI, or
+`cp .env.example .env` and set `AUGHOR_BACKEND` + key (Groq / Together /
+Anthropic blocks are inside). The boot summary printed by `aughor up` shows
+whether your LLM is ready — the API serves without one, but questions fail
+until a backend is reachable.
 
 To use your own data: click **+ Add** in the sidebar → paste a DuckDB path or a
 PostgreSQL DSN → Aughor starts exploring immediately.
 
-> Step 3 is not optional. The API will start and serve without an LLM key, but
-> every question you ask will fail until a backend is configured.
+<details>
+<summary><strong>Advanced / manual startup</strong></summary>
 
-> `./start.sh` frees port 8000 before starting, which will kill any unrelated
-> process listening there.
+`aughor up` flags: `--api-port` / `--web-port` (defaults 8000/3000), `--dev`
+(uvicorn auto-reload), `--api-only` / `--web-only`. `./start.sh` is a thin
+alias for `uv run aughor up` (plus `./start.sh --stop` to stop stray processes).
+
+Or run the pieces yourself:
+
+```bash
+cd web && npm install && cd ..                    # frontend deps
+cp .env.example .env                              # optional: configure the LLM via env
+uv run uvicorn aughor.api:app --port 8000         # API
+cd web && npm run dev                             # web UI on :3000
+```
+
+If the API isn't on `:8000`, point the web UI at it with `NEXT_PUBLIC_API_URL`.
+The `/health` endpoint reports demo-data and LLM readiness.
+
+</details>
 
 <details>
 <summary><strong>Minimal local <code>.env</code> (Ollama)</strong></summary>
@@ -275,7 +298,7 @@ The defaults assume a trusted single-user machine:
 | Variable | Default | What it does |
 |---|---|---|
 | `AUGHOR_API_KEY` | *unset — API is open* | When set, every request must send `X-Api-Key` |
-| `AUGHOR_CORS_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Allowed browser origins |
+| `AUGHOR_CORS_ORIGINS` | `http://localhost:3000,http://localhost:3001,http://localhost:3210` | Allowed browser origins |
 | `AUGHOR_SECRET_KEY` | auto-generated to `data/.aughor_key` (mode `0600`) | Fernet key encrypting stored connection credentials |
 
 ## Project status
