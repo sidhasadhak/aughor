@@ -28,7 +28,7 @@ import {
   type BriefMetric,
 } from "@/components/brief/Brief";
 import { ChatTurn } from "@/lib/useChat";
-import { validateQuery, sendChatFeedback, proposeLearnedSkill, saveLearnedSkill, type QueryValidation } from "@/lib/api";
+import { validateQuery, sendChatFeedback, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { DossierTrace } from "@/components/BriefingPanel";
@@ -994,6 +994,56 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
   );
 }
 
+// ── Grounding receipt (Rec 5): the input-side twin of the Trust Receipt — the
+// exact blocks the SQL writer was grounded on. Fetched lazily on demand (the
+// endpoint runs real retrievers); hidden entirely when the flag is off (404 → null).
+function GroundingDetails({ connectionId, question }: { connectionId: string; question: string }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<GroundingReceipt | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setOpen(true);
+    if (data !== undefined) return;         // fetch once
+    setBusy(true);
+    try { setData(await getGroundingContext(connectionId, question)); }
+    finally { setBusy(false); }
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={load}
+        className="self-start flex items-center gap-1.5 aug-text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+      >
+        <InformationIcon label="" size="small" />
+        Show grounding
+      </button>
+    );
+  }
+
+  const present = data?.receipt.blocks.filter(b => b.present) ?? [];
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        onClick={() => setOpen(false)}
+        className="self-start aug-text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+      >
+        Hide grounding
+      </button>
+      {busy && <p className="aug-text-sm text-zinc-500">Loading grounding…</p>}
+      {data === null && <p className="aug-text-sm text-zinc-500">Grounding receipt isn&rsquo;t available for this answer.</p>}
+      {data && present.length === 0 && <p className="aug-text-sm text-zinc-500">No grounding blocks fired for this question.</p>}
+      {present.map(b => (
+        <div key={b.key} className="flex flex-col gap-1">
+          <p className="aug-text-xs text-zinc-400 font-medium">{b.title}</p>
+          <pre className="aug-text-xs text-zinc-400 whitespace-pre-wrap break-words bg-zinc-900/40 rounded-md p-2 max-h-48 overflow-auto">{b.content}</pre>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Insight machinery — folded into one quiet disclosure ──────────────────────
 function InsightDetails({
   turn, connectionId, onShowSource,
@@ -1009,7 +1059,8 @@ function InsightDetails({
   const hasPlaybook = turn.playbookRefs.length > 0;
   const hasElapsed  = turn.elapsedMs != null;
   const hasActions  = !!(turn.sql && turn.sql.trim() && connectionId);
-  if (!(hasAnalysis || hasTables || hasContext || hasSource || hasPlaybook || hasElapsed || hasActions)) return null;
+  const hasGrounding = !!(connectionId && turn.question && turn.sql && turn.sql.trim());
+  if (!(hasAnalysis || hasTables || hasContext || hasSource || hasPlaybook || hasElapsed || hasActions || hasGrounding)) return null;
 
   return (
     <BriefDetails>
@@ -1021,6 +1072,11 @@ function InsightDetails({
       {hasActions && (
         <BriefDetailBlock label="Validate &amp; feedback">
           <InsightActions turn={turn} connectionId={connectionId} />
+        </BriefDetailBlock>
+      )}
+      {hasGrounding && (
+        <BriefDetailBlock label="Grounding">
+          <GroundingDetails connectionId={connectionId!} question={turn.question} />
         </BriefDetailBlock>
       )}
       {hasAnalysis && (
