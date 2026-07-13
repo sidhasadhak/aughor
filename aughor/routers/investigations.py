@@ -1397,6 +1397,48 @@ async def _stream_chat(
             tolerate(exc, "human-corrections prompt section is best-effort; answering without correction priors",
                      counter="chat.corrections_section")
 
+        # ── Ground-first resolution (flag `ask.resolve_first`) ────────────────
+        # Decide ONCE, deterministically, whether this is answerable as asked —
+        # BEFORE anything model-shaped runs. This sits ABOVE the semantic compiler
+        # and the SOMA probe deliberately: both spend an LLM call parsing/probing
+        # the question, which is wasted work (cost + latency) when the verdict is
+        # an honest abstention. Off → `_resolution` stays None → byte-identical.
+        _resolution = None
+        try:
+            from aughor.kernel.flags import flag_enabled as _rf_flag
+            if _rf_flag("ask.resolve_first"):
+                from aughor.semantic.answer_resolution import resolve as _resolve_answer
+                _resolution = _resolve_answer(question, schema=_full_schema, db=db,
+                                              connection_id=connection_id,
+                                              eff_schema=canvas_scope_eff_schema)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "ground-first resolution is best-effort; answering without it",
+                     counter="chat.resolve")
+
+        # Honest abstention: a clear filter entity isn't in the data → say so with
+        # what IS present, instead of running an empty filter and narrating around
+        # the emptiness (the "Mytheresa isn't a franchise here" case).
+        if _resolution is not None and _resolution.feasibility == "not_answerable":
+            _abstain = _resolution.caveat
+            yield _sse("mode", {"query_mode": "final_text"})
+            yield _sse("headline", {"headline": _abstain})
+            yield _sse("done", {})
+            try:
+                await asyncio.to_thread(lambda: save_chat_turn(
+                    question=question, connection_id=connection_id, headline=_abstain[:2000],
+                    sql="", session_id=session_id, columns=[], rows=[], chart_type="none",
+                    tables_used=[], intent="", approach=[], canvas_id=canvas_id))
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "abstention turn save is best-effort; the message was already streamed",
+                         counter="chat.resolve_abstain_save")
+            yield _sse("followups", {"questions": [
+                "What values are available to filter by?",
+                "Show the same measure without that filter",
+            ]})
+            return
+
         # Semantic Compiler fast-path (backlog #11): for the safe analytical shapes
         # (scalar / timeseries / breakdown / ranking) assemble grounded SQL deterministically
         # from the verified ontology instead of free-form generation. The LLM still writes the
@@ -1463,49 +1505,10 @@ async def _stream_chat(
             except Exception:
                 logger.debug("SOMA probe failed; proceeding to answer", exc_info=True)
 
-        # ── Ground-first resolution (flag `ask.resolve_first`) ────────────────
-        # Decide ONCE, deterministically, whether this is answerable as asked —
-        # BEFORE the model writes SQL — and hand the generator the settled facts so
-        # it can't silently downgrade the grain or invent a filter value. Off →
-        # `_resolution` stays None → byte-identical.
-        _resolution = None
-        try:
-            from aughor.kernel.flags import flag_enabled as _rf_flag
-            if _rf_flag("ask.resolve_first"):
-                from aughor.semantic.answer_resolution import resolve as _resolve_answer
-                _resolution = _resolve_answer(question, schema=_full_schema, db=db,
-                                              connection_id=connection_id,
-                                              eff_schema=canvas_scope_eff_schema)
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "ground-first resolution is best-effort; answering without it",
-                     counter="chat.resolve")
-
-        # Honest abstention: a clear filter entity isn't in the data → say so with
-        # what IS present, instead of running an empty filter and narrating around
-        # the emptiness (the "Mytheresa isn't a franchise here" case).
-        if _resolution is not None and _resolution.feasibility == "not_answerable":
-            _abstain = _resolution.caveat
-            yield _sse("mode", {"query_mode": "final_text"})
-            yield _sse("headline", {"headline": _abstain})
-            yield _sse("done", {})
-            try:
-                await asyncio.to_thread(lambda: save_chat_turn(
-                    question=question, connection_id=connection_id, headline=_abstain[:2000],
-                    sql="", session_id=session_id, columns=[], rows=[], chart_type="none",
-                    tables_used=[], intent="", approach=[], canvas_id=canvas_id))
-            except Exception as exc:
-                from aughor.kernel.errors import tolerate
-                tolerate(exc, "abstention turn save is best-effort; the message was already streamed",
-                         counter="chat.resolve_abstain_save")
-            yield _sse("followups", {"questions": [
-                "What values are available to filter by?",
-                "Show the same measure without that filter",
-            ]})
-            return
-
         # Constrain generation with what the resolution settled (entity binding,
-        # grain ceiling). Highest-priority block → prepended above everything else.
+        # grain ceiling). The resolution itself ran ABOVE the compiler; the prepend
+        # happens here — after every other prompt section — so the settled facts
+        # stay the topmost block the generator sees.
         if _resolution is not None and _resolution.prompt_constraints:
             prompt = _resolution.prompt_constraints + "\n\n" + prompt
 

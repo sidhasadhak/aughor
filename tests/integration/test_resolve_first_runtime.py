@@ -69,7 +69,11 @@ def test_abstains_before_generation_on_absent_entity(client: TestClient, builtin
     got = _stream_headline(client, builtin_conn_id, "show me sales for mytheresa")
     assert got["headline"] and "not present in this data" in got["headline"], got
     mytheresa_prompts = [u for u in called.get("users", []) if "mytheresa" in u.lower()]
-    assert not mytheresa_prompts, "abstain must short-circuit before SQL generation for THIS question"
+    assert not mytheresa_prompts, (
+        "abstain must short-circuit before SQL generation for THIS question; "
+        f"headline={got['headline']!r} types={got['types']} "
+        f"coder_prompt_head={mytheresa_prompts[0][:600] if mytheresa_prompts else ''!r}"
+    )
 
 
 def test_flag_off_is_unchanged(client: TestClient, builtin_conn_id: str, monkeypatch):
