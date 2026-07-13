@@ -1250,6 +1250,33 @@ flag-gated, default-off, byte-identical when off, BUILT→WIRED→TESTED→LEVER
 **Build status (2026-07-12, branch `2026-07-12-matcache-tenancy-fix`, pushed to origin — 10 commits):
 Wave 0 COMPLETE; Wave 1 substantially SHIPPED (the receipts family + Capabilities Auto-mode).**
 
+**Build status (2026-07-13, local working tree — Wave 2 #6 `task_history` SHIPPED, flag `obs.task_table`):**
+the spans-as-a-table spine + both its leverages, in three slices, all flag-gated / default-off /
+byte-identical when off; ruff-clean, kernel ratchets green.
+- *Slice 1 — the spine:* `Migration(4)` adds `task_history` (Spice's exact shape) to the kernel ledger
+  (`system.db`, already hermetic); a pure **sink** in `aughor/telemetry.py` — a contextvar span-stack
+  makes the existing node spans (`span()`) and the SQL tool span (`mlflow_tool_span`) each write one
+  row with real `parent_span_id`/`trace_id` linkage, riding `ContextThreadPoolExecutor`'s
+  `copy_context()` so parallel waves link correctly. No new instrumentation (reuses spans telemetry
+  already emits). `Ledger.task_history_insert/task_history()`.
+- *Slice 2 — leverage #1 (eval recovery + forensics):* `aughor/obs/task_history.py`
+  (`recover_sql(trace_id)`, `recover_run()`, `recent_runs()`, `slow_tasks()`) + the `evals/task_recover.py`
+  CLI (`--trace/--recent/--slow`). Proven on the REAL path (an integration test drives the actual
+  `execute_guarded` and recovers the SQL). Deliberately did NOT contort `model_bakeoff`/the ground-truth
+  gate to "read from" the table — their replica pipelines emit no spans, so that would be a bench-hack;
+  the honest recovery surface is the API + CLI, and the live investigation path is where it populates.
+- *Slice 3 — leverage #2 ("Aughor investigates Aughor"):* an `aughor_ops` built-in connection
+  (`AughorOpsConnection`) — an in-memory DuckDB that live-**ATTACH**es the ledger sqlite READ-ONLY as
+  the `aughor_ops` schema (fresh, not a snapshot; materialise fallback for a cold offline extension
+  cache), exposing `task_history`/`jobs`/`events` so Deep Analysis can ask "why were yesterday's
+  briefings slow?" as an ordinary investigation. Listed/openable only while `obs.task_table` is on.
+  En route, fixed a pre-existing false positive in the connection read-only gate (`_validate`): the
+  forbidden-keyword pre-scan matched DML words inside string **literals** (so `… WHERE task =
+  'sql.execute'` — the natural self-investigation query — was wrongly rejected); literals are now
+  blanked before the scan, with the sqlglot AST type-check still the authority. ~15 new tests.
+  **NEXT (unbuilt):** Rec 5 grounding-context receipt (last Wave-1 item) · Wave 2 #7 A1-P3 lifecycle ·
+  #8 the P7 decision run (biggest answer-quality lever; harness + now task_history forensics both ready).
+
 *Wave 0 — Correctness + trivial wins — ✅ COMPLETE:*
 - Matcache tenancy fix (II·Rec 1) — `de04429`. Shared `_row_policy_principal` gate + `result_cache_tenancy()`
   fold `(org, roles, resolved filters)` into the result-cache key; `None`→legacy key (byte-identical). Closed
