@@ -58,10 +58,39 @@ _COL = [
     ("yearly",    re.compile(r"(^|_)(year|fiscal_year|calendar_year|fy|yr)(_|$)", re.I)),
 ]
 
-# measure-ish column-name signal (what "sales/revenue" resolve against).
+# The measure NOUNS a question can name, and the column-name substrings each maps
+# to. This is what ties the answer to the RIGHT table: "sales" resolves against a
+# net_sales/revenue column, NOT a collaboration's est_gmv — so the entity binds to
+# and the grain is read from the table that actually holds the asked-for measure.
+_MEASURE_NOUNS = re.compile(
+    r"\b(sales|revenue|turnover|gmv|orders?|customers?|aov|margin|profit|ebitda|units?|"
+    r"quantity|spend|cost|bookings?|volume)\b", re.I)
+_MEASURE_SYNONYMS = {
+    "sales": ("net_sales", "sales", "revenue", "turnover"),
+    "revenue": ("revenue", "net_sales", "sales", "turnover"),
+    "turnover": ("turnover", "revenue", "sales"),
+    "gmv": ("gmv",),
+    "order": ("orders", "order_count", "num_orders"),
+    "orders": ("orders", "order_count", "num_orders"),
+    "customer": ("customers", "active_customers", "buyers"),
+    "customers": ("customers", "active_customers", "buyers"),
+    "aov": ("aov", "average_order"),
+    "margin": ("margin",),
+    "profit": ("profit", "ebitda"),
+    "ebitda": ("ebitda",),
+    "unit": ("units", "quantity", "qty"),
+    "units": ("units", "quantity", "qty"),
+    "quantity": ("quantity", "qty", "units"),
+    "spend": ("spend", "cost", "budget"),
+    "cost": ("cost", "spend"),
+    "booking": ("bookings",),
+    "bookings": ("bookings",),
+    "volume": ("volume", "units", "quantity"),
+}
+# fallback measure-ish signal when the question names no explicit measure.
 _MEASURE_RX = re.compile(
-    r"(sales|revenue|net_sales|gmv|amount|total|price|spend|cost|profit|margin|units?|qty|quantity|"
-    r"orders?|count|value|volume|bookings?|gross|turnover)", re.I)
+    r"(sales|revenue|net_sales|gmv|amount|total|spend|cost|profit|margin|units?|qty|quantity|"
+    r"orders?|count|volume|bookings?|turnover|ebitda|aov)", re.I)
 
 # question tokens that are NEVER an entity filter (time, measure, glue words).
 _STOP = {
@@ -221,25 +250,65 @@ def _entity_candidates(question: str) -> list[str]:
     return out
 
 
-def _match_annotation(token: str, domains) -> Optional[EntityBinding]:
-    """Exact (case-insensitive) then fuzzy match of a token against annotated value
-    domains. Returns a binding or None."""
+def _question_measures(question: str) -> list[str]:
+    """The measure nouns the question names (e.g. ['sales']) — what the answer is
+    ABOUT. Empty when the question names no explicit measure."""
+    return list(dict.fromkeys(m.lower() for m in _MEASURE_NOUNS.findall(question or "")))
+
+
+def _col_matches_measure(col: str, measures: list[str]) -> bool:
+    c = col.lower()
+    for m in measures:
+        if any(syn in c for syn in _MEASURE_SYNONYMS.get(m, (m,))):
+            return True
+    return False
+
+
+def _measure_tables(tables: dict, measures: list[str]) -> set:
+    """Tables that carry a column for the asked-for measure — the tables an answer
+    about that measure must come from. Falls back to any measure-ish column when the
+    question names no explicit measure. This is what stops the entity binding and
+    the grain from latching onto an unrelated table (e.g. brand_collaborations'
+    launch_date) that merely happens to share the entity value."""
+    out = set()
+    for t, cols in tables.items():
+        if measures:
+            if any(_col_matches_measure(c, measures) for c in cols):
+                out.add(t)
+        elif any(_MEASURE_RX.search(c) for c in cols):
+            out.add(t)
+    return out
+
+
+def _annotation_matches(token: str, domains) -> list:
+    """All (table, col, value, conf) where an annotated value domain contains the
+    token — exact (case-insensitive) first, else fuzzy. Never raises."""
     tl = token.lower()
+    out = []
     for table, col, vals in domains:
         for v in vals:
             if v.lower() == tl:
-                return EntityBinding(token, table, col, v, 1.0)
-    # fuzzy — only over the columns whose domain looks entity-like
+                out.append((table, col, v, 1.0))
+                break
+    if out:
+        return out
     try:
         from aughor.sql.value_index import ValueIndex
         for table, col, vals in domains:
-            idx = ValueIndex(vals)
-            hit = idx.best_match(token, cutoff=0.9)
+            hit = ValueIndex(vals).best_match(token, cutoff=0.9)
             if hit:
-                return EntityBinding(token, table, col, hit, 0.9)
+                out.append((table, col, hit, 0.9))
     except Exception:
-        pass
-    return None
+        return out
+    return out
+
+
+def _pick(matches: list, prefer_tables: set):
+    """Choose the match whose table carries the asked-for measure; else the first."""
+    for m in matches:
+        if m[0] in prefer_tables:
+            return m
+    return matches[0] if matches else None
 
 
 _STR_TYPE = re.compile(r"(VARCHAR|TEXT|CHAR|STRING|NVARCHAR)", re.I)
@@ -264,14 +333,19 @@ def _string_dim_columns(schema: str) -> list[tuple[str, str]]:
     return out
 
 
-def _db_find_value(db, schema: str, token: str, *, max_cols: int = 8):
+def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] = None,
+                   max_cols: int = 8):
     """Bounded, injection-safe existence probe: is ``token`` a value in any string
     dimension column? Returns (table, col, value) on the first hit, "absent" when
     every probed column is confirmed to lack it, or None when we couldn't tell
-    (no db / no candidate columns) — in which case the caller must NOT abstain."""
+    (no db / no candidate columns) — in which case the caller must NOT abstain.
+    Measure-bearing tables are probed first so a found value binds to the right one."""
     if db is None:
         return None
-    cols = _string_dim_columns(schema)[:max_cols]
+    cols = _string_dim_columns(schema)
+    if prefer_tables:
+        cols = sorted(cols, key=lambda tc: tc[0] not in prefer_tables)
+    cols = cols[:max_cols]
     if not cols:
         return None
     lit = token.replace("'", "''")  # SQL-literal escape; the read-only gate blocks non-SELECT
@@ -282,6 +356,8 @@ def _db_find_value(db, schema: str, token: str, *, max_cols: int = 8):
         try:
             rows = db.rows(sql, label="__resolve__")
         except Exception:
+            rows = None          # couldn't probe this column — skip, don't count as "absent"
+        if rows is None:
             continue
         checked += 1
         if rows:
@@ -290,40 +366,46 @@ def _db_find_value(db, schema: str, token: str, *, max_cols: int = 8):
     return "absent" if checked else None
 
 
-def _available_grain(schema: str, requested: str):
-    """(available_grain, feasible_via) for a measure at the requested grain. Scans
-    tables that carry a measure-ish column: if any has a time column ≤ requested,
-    that's the finer path; otherwise the finest measure-table grain is the ceiling."""
-    tables, _ = _parse_schema(schema)
+def _available_grain(tables: dict, measure_tables: set, requested: str):
+    """(available_grain, feasible_via) for the asked-for measure at the requested
+    grain. Scans ONLY the tables that carry that measure: if any has a time column
+    at least as fine as requested, that's a genuine finer path; otherwise the finest
+    measure-table grain is the ceiling (→ answer-at-coarser caveat)."""
     want = _RANK[requested]
-    finest_measure_grain = None
-    for tname, cols in tables.items():
-        if not any(_MEASURE_RX.search(c) for c in cols):
-            continue
-        tg = _columns_grain(cols)
+    finest = None
+    for tname in measure_tables:
+        tg = _columns_grain(tables.get(tname, []))
         if tg is None:
             continue
         if _RANK[tg] <= want:
             return tg, tname                       # a finer path exists → repair
-        if finest_measure_grain is None or _RANK[tg] < _RANK[finest_measure_grain]:
-            finest_measure_grain = tg
-    return finest_measure_grain, None
+        if finest is None or _RANK[tg] < _RANK[finest]:
+            finest = tg
+    return finest, None
 
 
 def resolve(question: str, *, schema: str = "", db=None, connection_id: str = "",
             eff_schema: Optional[str] = None) -> Resolution:
-    """The single ground-first verdict. Never raises; degrades to ``answerable``."""
+    """The single ground-first verdict. Never raises; degrades to ``answerable``.
+
+    Measure-first: resolve WHAT the question is about (the measure), then bind the
+    entity and read the grain from the table(s) that actually carry that measure —
+    so an unrelated table sharing the entity value (or a stray date column) can't
+    hijack the answer."""
     r = Resolution(question=question)
     try:
-        _tables, domains = _parse_schema(schema)
+        tables, domains = _parse_schema(schema)
+        measures = _question_measures(question)
+        mtables = _measure_tables(tables, measures)
 
-        # ── entity resolution ──
+        # ── entity resolution — bind to a MEASURE-bearing table when possible ──
         for token in _entity_candidates(question):
-            bind = _match_annotation(token, domains)
-            if bind is not None:
-                r.entity_bindings.append(bind)
+            matches = _annotation_matches(token, domains)
+            if matches:
+                t, c, v, conf = _pick(matches, mtables)
+                r.entity_bindings.append(EntityBinding(token, t, c, v, conf))
                 continue
-            probe = _db_find_value(db, schema, token)
+            probe = _db_find_value(db, schema, token, prefer_tables=mtables)
             if isinstance(probe, tuple):
                 r.entity_bindings.append(EntityBinding(token, probe[0], probe[1], probe[2], 0.95))
             elif probe == "absent":
@@ -335,11 +417,11 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
                            for _t, _c, v in domains), "")
             r.what_is_available = sample
 
-        # ── time-grain resolution ──
+        # ── time-grain resolution — over the measure's table(s) only ──
         req = requested_time_grain(question)
         if req is not None:
             r.requested_grain = req
-            avail, via = _available_grain(schema, req)
+            avail, via = _available_grain(tables, mtables, req)
             r.available_grain = avail
             r.grain_feasible_via = via
 

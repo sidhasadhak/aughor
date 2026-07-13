@@ -6,12 +6,21 @@ from __future__ import annotations
 from aughor.semantic import answer_resolution as R
 
 # luxexperience: Mytheresa IS an annotated `platform` value; net sales are annual.
+# brand_collaborations is a DECOY — it ALSO has platform=Mytheresa and a daily
+# launch_date, but no net-sales measure (est_gmv is a different measure). The real
+# luxexperience data has exactly this shape and it broke the naive scan: the entity
+# bound to brand_collaborations and its launch_date was mistaken for a monthly-sales
+# path. Measure-first resolution must bind to financial_summary and read yearly.
 _LUX = """\
 TABLE: luxexperience.financial_summary  (25 rows)
   net_sales_eur_m  DOUBLE
   platform  VARCHAR  -- [NET-A-PORTER, Mytheresa, YOOX, THE OUTNET, MR PORTER]
   fiscal_year  BIGINT
   gmv_eur_m  BIGINT
+TABLE: luxexperience.brand_collaborations  (40 rows)
+  platform  VARCHAR  -- [MR PORTER, Mytheresa, NET-A-PORTER]
+  launch_date  DATE
+  est_gmv_eur  DOUBLE
 TABLE: luxexperience.dim_date  (1826 rows)
   month  BIGINT
   date  DATE
@@ -54,17 +63,21 @@ class _FakeDB:
 
 # ── entity binding (found via annotation) ─────────────────────────────────────
 
-def test_binds_entity_from_annotation():
+def test_binds_entity_to_the_measure_table_not_the_decoy():
+    # Both financial_summary and brand_collaborations carry platform=Mytheresa; the
+    # answer is about SALES, so it must bind to financial_summary (the sales table).
     r = R.resolve("Show me month wise sales for mytheresa", schema=_LUX)
     assert [b.value for b in r.entity_bindings] == ["Mytheresa"]
     b = r.entity_bindings[0]
     assert (b.table, b.column) == ("luxexperience.financial_summary", "platform")
     assert "financial_summary.platform = 'Mytheresa'" in r.prompt_constraints
+    assert "brand_collaborations" not in r.prompt_constraints
 
 
 # ── time-grain gap (monthly asked, yearly available) ──────────────────────────
 
 def test_grain_gap_when_measure_is_annual_only():
+    # The decoy's daily launch_date must NOT be mistaken for a monthly-sales path.
     r = R.resolve("Show me month wise sales for mytheresa", schema=_LUX)
     assert r.requested_grain == "monthly" and r.available_grain == "yearly"
     assert r.grain_feasible_via is None
