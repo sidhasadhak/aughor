@@ -1891,6 +1891,27 @@ async def _stream_chat(
         # Carry the turn id so the client can fetch this answer's Trust Receipt.
         yield _sse("done", {"inv_id": _chat_inv_id, "has_receipt": bool(_chat_inv_id and final_sql)})
 
+        # Grounded time-grain verdict (flag `grain.feasibility`) — ONE deterministic
+        # answer to "was a finer grain asked than the answer delivered, and is it
+        # reachable?" It then drives the narrative, follow-ups AND the inspect warning
+        # below so they can't contradict each other (the grain 'massive disconnect':
+        # inspect suggested a non-existent `fiscal_month` while the narrative claimed
+        # monthly data was unavailable). Off → None → every channel unchanged.
+        _grain_gap = None
+        _grain_measure = "the measure"
+        try:
+            from aughor.kernel.flags import flag_enabled as _flag
+            if _flag("grain.feasibility"):
+                from aughor.semantic.grain_feasibility import grain_gap as _grain_gap_fn, measure_terms as _mterms
+                _grain_gap = _grain_gap_fn(question, result.columns, _full_schema)
+                _mt = _mterms(result.columns)
+                if _mt:
+                    _grain_measure = _mt[0].replace("_", " ")
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "grain-feasibility verdict is best-effort; answering without it",
+                     counter="chat.grain_gap")
+
         # ── Post-answer enrichment (streams in after DONE, never delays it) ──
         # ONE narrator call produces BOTH the analytical insight and the
         # follow-up questions (was two separate round-trips). For trivial result
@@ -1934,6 +1955,20 @@ async def _stream_chat(
                 f"recent of {len(result.rows)} periods, oldest→newest):"
                 if _is_ts else f"Results (sample of {len(_sample_rows)} rows):"
             )
+            # Grain verdict (grounded) → the narrator states it ONCE and does not
+            # speculate about other tables/grains, so narrative + follow-ups agree.
+            _grain_note = ""
+            if _grain_gap is not None:
+                _grain_note = (
+                    f"\n\nGROUNDED FACT — state this once, honestly, and do NOT speculate about other "
+                    f"tables or whether the data 'might' exist elsewhere: {_grain_gap.caveat(_grain_measure)}."
+                )
+                if _grain_gap.feasible:
+                    _grain_note += (f" A finer breakdown IS available from `{_grain_gap.feasible_via}` — one "
+                                    f"follow-up may offer to query it; do not claim it is unavailable.")
+                else:
+                    _grain_note += (" Do NOT ask a follow-up about whether the finer grain exists elsewhere — "
+                                    "it does not.")
             _user = (
                 f"Question: {question}\n"
                 f"SQL: {final_sql}\n"
@@ -1941,6 +1976,7 @@ async def _stream_chat(
                 f"{_rows_label}\n"
                 f"Columns: {', '.join(_sample_cols)}\n"
                 f"{_rows_text}"
+                f"{_grain_note}"
             )
             _pa: _PostAnswer = await asyncio.to_thread(
                 lambda: get_provider("narrator").complete(
@@ -1974,17 +2010,27 @@ async def _stream_chat(
             tolerate(exc, "post-answer insight/follow-up enrichment is best-effort; the answer is already done",
                      counter="chat.post_answer")
 
-        # Semantic inspect — logical validation
+        # Semantic inspect — logical validation. Grounded on the schema (so it stops
+        # inventing columns) and deferring time-grain to the deterministic gate above
+        # (so the two never contradict). The grounded grain caveat, when present, LEADS
+        # the warning; the LLM inspect adds only non-grain issues.
         try:
             from aughor.sql.inspect import inspect as _inspect_sql
             _ir = await asyncio.to_thread(
-                lambda: _inspect_sql(question, final_sql, result.columns, result.rows)
+                lambda: _inspect_sql(question, final_sql, result.columns, result.rows,
+                                     schema=_full_schema, skip_grain=_grain_gap is not None)
             )
-            if not _ir.valid and _ir.issues:
-                yield _sse("inspect_warning", {
-                    "issues":        _ir.issues,
-                    "suggested_fix": _ir.suggested_fix,
-                })
+            _issues = list(_ir.issues) if (not _ir.valid and _ir.issues) else []
+            _fix = _ir.suggested_fix
+            if _grain_gap is not None:
+                _issues = [_grain_gap.caveat(_grain_measure)] + _issues
+                if _grain_gap.feasible:
+                    _fix = f"query `{_grain_gap.feasible_via}` for the {_grain_gap.requested} breakdown"
+                elif not _fix:
+                    _fix = (f"{_grain_gap.requested} data isn't available for {_grain_measure}; "
+                            f"present the {_grain_gap.delivered} view instead")
+            if _issues:
+                yield _sse("inspect_warning", {"issues": _issues, "suggested_fix": _fix})
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "post-answer semantic inspect is best-effort validation; skipping the warning",

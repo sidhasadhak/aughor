@@ -57,7 +57,7 @@ QUESTION:
 
 SQL WRITTEN TO ANSWER IT:
 {sql}
-
+{schema_block}
 FIRST FEW RESULT COLUMNS AND ROWS (sample):
 {result_sample}
 
@@ -67,12 +67,19 @@ Review whether the SQL actually answers the question. Check:
 3. Is the aggregation correct (e.g. "ratio" → SUM/SUM not AVG)?
 4. Are column semantics correct (numerator / denominator not swapped)?
 5. Does the result shape match the question (e.g. "by state" → state column present)?
+{grain_rule}
+CRITICAL: when the schema is given above, any column you name in suggested_fix MUST appear
+in it verbatim — never invent a plausible-sounding column (e.g. do not say "use fiscal_month"
+unless a fiscal_month column is actually listed). If the needed column is absent, say so.
 
 Return:
 - valid: true if no significant issues
 - issues: list of specific problems found (empty if valid)
 - suggested_fix: one sentence describing what to change (empty if valid)
 """
+
+_GRAIN_RULE = ("6. Do NOT flag time-GRAIN mismatches (monthly vs yearly etc.) — a separate "
+               "deterministic gate owns that; focus on the checks above.\n")
 
 
 # ── Inspector ─────────────────────────────────────────────────────────────────
@@ -83,8 +90,15 @@ def inspect(
     columns: list[str],
     rows: list[list],
     max_rows: int = 5,
+    schema: str = "",
+    skip_grain: bool = False,
 ) -> InspectResult:
-    """Run semantic inspection.  Never raises — returns valid=True on any error."""
+    """Run semantic inspection.  Never raises — returns valid=True on any error.
+
+    ``schema`` (the rendered schema slice) grounds the inspector so it stops
+    inventing columns in ``suggested_fix``. ``skip_grain`` tells it to leave
+    time-grain mismatches to the deterministic grain-feasibility gate (which owns
+    that verdict), so the two don't emit contradictory advice."""
     try:
         sample_rows = rows[:max_rows]
         if columns and sample_rows:
@@ -96,9 +110,12 @@ def inspect(
         else:
             result_sample = "(no rows)"
 
+        schema_block = f"\nSCHEMA (the only columns that exist):\n{schema}\n" if schema else ""
         prompt = _INSPECT_PROMPT.format(
             question=question,
             sql=sql,
+            schema_block=schema_block,
+            grain_rule=_GRAIN_RULE if skip_grain else "",
             result_sample=result_sample,
         )
 

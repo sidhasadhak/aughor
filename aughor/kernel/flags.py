@@ -55,6 +55,7 @@ FLAG_ENV = {
     "obs.mlflow": "AUGHOR_OBS_MLFLOW",
     "obs.task_table": "AUGHOR_OBS_TASK_TABLE",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
+    "grain.feasibility": "AUGHOR_GRAIN_FEASIBILITY",
     "agents.user_defined": "AUGHOR_USER_AGENTS",
     "search.rrf": "AUGHOR_SEARCH_RRF",
     "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
@@ -90,6 +91,10 @@ FLAG_META = {
     "ai_sql": {
         "label": "In-SQL AI operators",
         "description": "Register the governed prompt()/embedding() UDFs and let the generator use them. Makes per-row LLM calls — enable deliberately.",
+    },
+    "grain.feasibility": {
+        "label": "Time-grain feasibility (one grounded verdict on monthly/weekly/daily asks)",
+        "description": "When a question asks for a breakdown at a finer time grain than the answer delivered (e.g. \"month-wise\" but the SQL grouped by fiscal_year), decide ONCE, deterministically from the schema, whether a finer-grain path to the same measure exists — repair-worthy — or the measure is only reported at the coarser grain — abstain honestly. That single verdict drives the narrative, the follow-ups and the semantic-inspect warning so they stop contradicting each other (the failure where inspect suggests a non-existent `fiscal_month` while the narrative claims monthly data is unavailable). Also feeds the schema into the semantic inspector so it stops inventing columns. Off by default = byte-identical. Fixes the grain 'massive disconnect'.",
     },
     "ask.context_receipt": {
         "label": "Grounding-context receipt (show what the model was grounded on)",
