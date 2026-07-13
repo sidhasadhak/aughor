@@ -56,6 +56,7 @@ FLAG_ENV = {
     "obs.mlflow": "AUGHOR_OBS_MLFLOW",
     "obs.task_table": "AUGHOR_OBS_TASK_TABLE",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
+    "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
     "agents.user_defined": "AUGHOR_USER_AGENTS",
     "search.rrf": "AUGHOR_SEARCH_RRF",
     "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
@@ -84,6 +85,19 @@ FLAG_DEFAULT = {
     "trust.verify_live": True,     # AST read-only BLOCK on the deep-answer executor path
     "trust.e1_live": True,         # E1 function-semantics WARN caveats on live answers
     "trust.verify_facade": True,   # AST read-only gate on the /query/validate surface (additive field)
+    # Capability graduation (2026-07-13, agentic-platform unification). Policy: a capability that is
+    # (a) self-gating behind a deterministic runtime trigger, or (b) a pure observability/receipt
+    # surface with negligible cost, GRADUATES to default-on once BUILT→WIRED→TESTED. The platform
+    # decides per run; the operator can still force any flag off (env =0 / runtime override) — an
+    # explicit setting always wins over these defaults. This is E3 Phase 1 ("the flag system should
+    # decide, with receipts") made the default posture instead of an opt-in.
+    "capabilities.auto": True,     # master: self-gating guards elevate; their triggers gate per run
+    "capabilities.receipt": True,  # autonomy requires receipts — record which guard fired and why
+    "learning.receipt": True,      # learning visibility: reused/crystallized resolutions per answer
+    "ask.context_receipt": True,   # input-side trust: the exact grounding block, inspectable
+    "obs.task_table": True,        # the queryable spine — a sink over spans already emitted
+    "ada.progress_events": True,   # deep-run dead-air fix (CK-0.4): fine-grained progress beats
+    "ask.stream_text": True,       # CK-0.2 dual-emit insight deltas; terminal event stays authoritative
 }
 
 # Human-facing copy for the Settings UI.
@@ -91,6 +105,10 @@ FLAG_META = {
     "ai_sql": {
         "label": "In-SQL AI operators",
         "description": "Register the governed prompt()/embedding() UDFs and let the generator use them. Makes per-row LLM calls — enable deliberately.",
+    },
+    "ask.stream_text": {
+        "label": "Token-stream the answer narrative",
+        "description": "Stream the post-answer insight narrative as it is written (`insight_delta` SSE events carrying the partial text) instead of one late pop-in, then emit the existing full `insight` event as the authoritative terminal value (self-healing: a dropped delta costs nothing). Dual-emit and additive — old clients ignore the unknown delta events; off = byte-identical to the pre-streaming stream. Falls back to the blocking call on any streaming error. CK-0.2 of the CopilotKit/AG-UI adoption plan.",
     },
     "ask.context_receipt": {
         "label": "Grounding-context receipt (show what the model was grounded on)",
@@ -288,6 +306,10 @@ FLAG_META = {
 AUTO_ELIGIBLE: frozenset = frozenset({
     "ada.premise_check", "ada.clarify_gate", "ada.adversarial_high_stakes",
     "join.key_reconciliation", "capability.contract", "semops.guarded_extract",
+    # Graduated 2026-07-13 (agentic-platform unification): both are deterministic and fail-open —
+    # resolve() degrades to `answerable` when nothing binds; metric pinning requires a governed
+    # metric match AND a clean dry-run before it does anything.
+    "ask.resolve_first", "ada.pin_canonical_metric",
 })
 # Human description of each capability's deterministic trigger — surfaced in the flags API and (later) as
 # the "why" on an activation receipt.
@@ -298,6 +320,8 @@ CAPABILITY_TRIGGER: dict = {
     "join.key_reconciliation": "a join's key value-domains mismatch",
     "capability.contract": "a generated query fails on a native-SQL warehouse",
     "semops.guarded_extract": "a typed-field extraction fails",
+    "ask.resolve_first": "the question names an entity or time grain the schema resolves deterministically",
+    "ada.pin_canonical_metric": "a governed metric matches the question and its canonical SQL dry-runs clean",
 }
 
 

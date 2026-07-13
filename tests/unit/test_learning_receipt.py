@@ -56,7 +56,8 @@ def test_cost_snapshot_stays_byte_identical(run):
 # ── the pure builder ──────────────────────────────────────────────────────────
 
 def test_receipt_is_none_when_flag_off(monkeypatch, run):
-    monkeypatch.delenv("AUGHOR_LEARNING_RECEIPT", raising=False)
+    # learning.receipt graduated to default-ON (2026-07-13); off now means explicit "0"
+    monkeypatch.setenv("AUGHOR_LEARNING_RECEIPT", "0")
     metering.record_learning(resolutions_crystallized=1)
     assert build_learning_receipt(_ra("user")) is None       # off → nothing, byte-identical
 
@@ -123,7 +124,7 @@ def test_write_answer_receipt_attaches_and_returns_learning(monkeypatch, run):
 
 
 def test_write_answer_receipt_byte_identical_when_flag_off(monkeypatch, run):
-    monkeypatch.delenv("AUGHOR_LEARNING_RECEIPT", raising=False)
+    monkeypatch.setenv("AUGHOR_LEARNING_RECEIPT", "0")
     monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
     purge_connections(["lr_off"])
@@ -148,7 +149,8 @@ def test_record_activation_noop_without_a_run():
 
 
 def test_activation_receipt_none_when_flag_off(monkeypatch, run):
-    monkeypatch.delenv("AUGHOR_CAPABILITIES_RECEIPT", raising=False)
+    # capabilities.receipt graduated to default-ON (2026-07-13); off now means explicit "0"
+    monkeypatch.setenv("AUGHOR_CAPABILITIES_RECEIPT", "0")
     metering.record_activation("ada.premise_check")
     assert build_activation_receipt() is None                # off → byte-identical
 

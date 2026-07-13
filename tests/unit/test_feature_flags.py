@@ -36,13 +36,29 @@ def test_ws4b_flags_registered_with_meta():
         assert FLAG_META.get(name, {}).get("label"), f"{name} needs Settings-UI copy"
 
 
-def test_default_off_flag_env_semantics(monkeypatch):
+def test_auto_eligible_flag_env_semantics(monkeypatch):
+    # 2026-07-13 capability graduation: `capabilities.auto` defaults ON, so an unset
+    # auto-eligible guard is ELEVATED (its deterministic trigger gates per run). An
+    # explicit env value always wins — the kill switch survives graduation.
+    monkeypatch.delenv("AUGHOR_CAPABILITIES_AUTO", raising=False)
     monkeypatch.delenv("AUGHOR_PREMISE_CHECK", raising=False)
-    assert flag_enabled("ada.premise_check") is False
+    assert flag_enabled("ada.premise_check") is True
     monkeypatch.setenv("AUGHOR_PREMISE_CHECK", "1")
     assert flag_enabled("ada.premise_check") is True
     monkeypatch.setenv("AUGHOR_PREMISE_CHECK", "garbage")
     assert flag_enabled("ada.premise_check") is False
+    monkeypatch.setenv("AUGHOR_PREMISE_CHECK", "0")
+    assert flag_enabled("ada.premise_check") is False
+
+
+def test_plain_default_off_flag_env_semantics(monkeypatch):
+    # A NON-auto-eligible default-off flag keeps the strict opt-in contract.
+    monkeypatch.delenv("AUGHOR_SPECIALIST_PACKS", raising=False)
+    assert flag_enabled("specialist_packs") is False
+    monkeypatch.setenv("AUGHOR_SPECIALIST_PACKS", "1")
+    assert flag_enabled("specialist_packs") is True
+    monkeypatch.setenv("AUGHOR_SPECIALIST_PACKS", "garbage")
+    assert flag_enabled("specialist_packs") is False
 
 
 def test_ask_clarify_is_default_on(monkeypatch):

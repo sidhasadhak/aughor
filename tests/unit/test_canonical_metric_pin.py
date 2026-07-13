@@ -147,7 +147,8 @@ def test_pin_fails_closed_when_probe_errors(monkeypatch):
 
 
 def test_pin_noop_when_flag_off(monkeypatch):
-    monkeypatch.delenv("AUGHOR_ADA_PIN_CANONICAL_METRIC", raising=False)
+    # ada.pin_canonical_metric is auto-elevated by default (2026-07-13 graduation); off = explicit "0"
+    monkeypatch.setenv("AUGHOR_ADA_PIN_CANONICAL_METRIC", "0")
     monkeypatch.setattr("aughor.semantic.canonical.resolve_canonical_metrics",
                         lambda *a, **k: [_governed_refund_rate()])
     intake = _intake()

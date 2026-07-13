@@ -87,8 +87,12 @@ def test_no_tier_never_runs():
 
 # ── Flag registration ─────────────────────────────────────────────────────────────
 
-def test_high_stakes_flag_registered_and_default_off(monkeypatch):
+def test_high_stakes_flag_registered_and_auto_elevated(monkeypatch):
     from aughor.kernel.flags import FLAG_ENV, FLAG_META, flag_enabled
     assert "ada.adversarial_high_stakes" in FLAG_ENV and "ada.adversarial_high_stakes" in FLAG_META
+    # Auto-eligible + master default-ON (2026-07-13 graduation): unset ⇒ elevated; "0" kills.
     monkeypatch.delenv("AUGHOR_ADA_ADVERSARIAL_HIGH_STAKES", raising=False)
+    monkeypatch.delenv("AUGHOR_CAPABILITIES_AUTO", raising=False)
+    assert flag_enabled("ada.adversarial_high_stakes") is True
+    monkeypatch.setenv("AUGHOR_ADA_ADVERSARIAL_HIGH_STAKES", "0")
     assert flag_enabled("ada.adversarial_high_stakes") is False
