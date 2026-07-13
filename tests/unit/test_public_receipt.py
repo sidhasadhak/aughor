@@ -89,3 +89,32 @@ def test_receipt_route_404_on_foreign_org(client, monkeypatch):
     # Same call with the connection visible → 200 (proves it's the org gate, not a bad id).
     monkeypatch.setattr("aughor.security.authz.org_visible_conn_ids", lambda: {"secretconn"})
     assert client.get(f"/receipt/{rid}").status_code == 200
+
+
+# ── WP-10 extend: Query Builder run carries a signed receipt ──────────────────
+
+def test_query_run_returns_a_resolvable_builder_receipt(client):
+    """POST /query/run on a successful query returns a receipt_id that resolves to a signed
+    `builder` receipt (Why-this-number on the Query Builder surface)."""
+    r = client.post("/query/run", json={
+        "conn_id": "fixture", "sql": "SELECT COUNT(*) AS n FROM customers", "limit": 100})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body.get("error") is None, body
+    rid = body.get("receipt_id")
+    assert rid, "a successful query run should carry a receipt id"
+
+    rec = client.get(f"/receipt/{rid}")
+    assert rec.status_code == 200, rec.text
+    pub = rec.json()
+    assert pub["mode"] == "builder"
+    assert pub["executed_sql"][0]["sql"] == "SELECT COUNT(*) AS n FROM customers"
+    assert "customers" in pub["input_tables"]
+    assert verify(pub)                       # server-signed
+
+
+def test_query_run_blocked_sql_has_no_receipt(client):
+    """A blocked (mutating) query returns no receipt id."""
+    r = client.post("/query/run", json={"conn_id": "fixture", "sql": "DELETE FROM customers"})
+    assert r.status_code == 200
+    assert r.json().get("receipt_id") is None

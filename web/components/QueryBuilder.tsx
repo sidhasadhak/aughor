@@ -11,6 +11,7 @@ import {
   type DecompiledQuery,
 } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
+import { WhyThisNumber } from "@/components/WhyThisNumber";
 import { type ChartCustom } from "@/components/Chart";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlResultTable } from "@/components/AugTable";
@@ -909,6 +910,8 @@ function ResultsPane({
       <div className="flex items-center gap-2.5">
         <div className="ml-auto flex items-center gap-2.5">
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{meta}</span>
+          {/* WP-10 — "Why this number": the signed receipt for exactly this query run. */}
+          {!semResult && result.receipt_id && <WhyThisNumber receiptId={result.receipt_id} />}
           <button onClick={exportCsv} title="Download results as CSV"
             className="aug-fs-xs px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition flex items-center gap-1">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>

@@ -2041,6 +2041,7 @@ export interface DirectQueryResult {
   sql: string;
   cached: boolean;
   error: string | null;
+  receipt_id?: string | null;   // WP-10: signed provenance → GET /receipt/{id}
 }
 
 export async function runDirectQuery(

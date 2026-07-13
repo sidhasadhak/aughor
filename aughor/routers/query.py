@@ -31,6 +31,30 @@ class _QueryRunRequest(BaseModel):
     use_bulk: bool = False
 
 
+def _write_builder_receipt(conn_id: str, sql: str) -> Optional[str]:
+    """WP-10: a signed provenance receipt for a Query Builder run — the exact SQL that ran +
+    its input tables, resolvable via GET /receipt/{id} (so "Why this number" opens the same
+    drawer as an answer). Best-effort. Keyed by the SQL hash, so re-running the same query
+    versions one receipt rather than spamming the ledger."""
+    try:
+        import hashlib
+        from aughor.kernel.ledger import Ledger
+        from aughor.sql.tables import extract_tables
+        tables = sorted({t.table for t in extract_tables(sql) if t.table})
+        key = f"builder:{conn_id}:{hashlib.sha1(sql.encode('utf-8')).hexdigest()[:12]}"
+        lineage = [("source_sql", "sql", sql)] + [("input", f"table:{t}", None) for t in tables]
+        return Ledger.default().artifact_write(
+            "builder", key,
+            {"question": "Query Builder run", "headline": "", "sql": sql, "tables": tables},
+            conn_id=conn_id, lineage=lineage,
+        )
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "builder receipt is best-effort; the query result is unaffected",
+                 counter="query.builder_receipt")
+        return None
+
+
 @router.post("/query/run")
 async def query_run(body: _QueryRunRequest):
     """Execute a SQL query against a registered connection."""
@@ -55,6 +79,7 @@ async def query_run(body: _QueryRunRequest):
             "sql": body.sql,
             "cached": False,
             "error": blocked.error,
+            "receipt_id": None,          # a blocked query has no receipt
         }
 
     # Under an active RBAC row policy these cached rows are post-RLS, but the cache is consulted before the
@@ -77,6 +102,7 @@ async def query_run(body: _QueryRunRequest):
                 "sql": cached.sql,
                 "cached": True,
                 "error": None,
+                "receipt_id": _write_builder_receipt(body.conn_id, body.sql),
             }
 
     try:
@@ -115,6 +141,10 @@ async def query_run(body: _QueryRunRequest):
         from aughor.db.matcache import put_cache
         put_cache(body.conn_id, body.sql, result, tenancy=tenancy)
 
+    # WP-10: a successful run gets a signed receipt so the UI can open "Why this number".
+    # Record the user's ORIGINAL SQL (not the internal LIMIT-wrapped form the executor ran).
+    receipt_id = _write_builder_receipt(body.conn_id, body.sql) if not result.error else None
+
     return {
         "columns": result.columns,
         "rows": result.rows,
@@ -123,6 +153,7 @@ async def query_run(body: _QueryRunRequest):
         "sql": result.sql,
         "cached": False,
         "error": result.error,
+        "receipt_id": receipt_id,
     }
 
 
