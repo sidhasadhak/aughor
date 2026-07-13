@@ -3088,6 +3088,41 @@ export async function getAnswerReceipt(kind: "chat" | "ada", connId: string, id:
   return res.json();
 }
 
+// ── WP-10: the unified public Trust Receipt (GET /receipt/{id}) ─────────────────
+export interface PublicReceiptGuard { name: string; fired: boolean; action: string; caveat: string }
+export interface PublicReceiptSql { sql: string; label: string; duration_ms: number | null; row_count: number | null }
+export interface PublicReceipt {
+  receipt_version: number;
+  id: string;
+  created_at: string | null;
+  mode: string;                         // quick | deep | builder | explore | monitor | brief
+  question: string;
+  headline: string;
+  connection: { id: string | null; name: string | null; dialect: string | null };
+  executed_sql: PublicReceiptSql[];
+  input_tables: string[];
+  guards: PublicReceiptGuard[];          // each names a guard that FIRED, with its action
+  caveats: string[];
+  metrics: {
+    used: string[];
+    drifted: { metric: string; detail: string | null }[];
+    available: string[];
+    proposed: { metric: string; detail: string | null }[];
+  };
+  confidence: { level: string | null; capped_by: string | null };
+  data_trust: { window: string | null; coverage_notes: string | null };
+  model: { role: string; id: string | null };
+  cost: Record<string, number | string> | null;
+  signature: string;                     // HMAC — server-issued proof
+}
+
+/** Resolve any answer's receipt id into the one signed public contract. 404 → null. */
+export async function getPublicReceipt(receiptId: string): Promise<PublicReceipt | null> {
+  const res = await fetch(`${BASE}/receipt/${encodeURIComponent(receiptId)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 // ── Metastore: Volumes (the governed unstructured tier) ─────────────────────────
 
 export interface MetastoreVolume {

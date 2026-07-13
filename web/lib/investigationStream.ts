@@ -134,6 +134,7 @@ export interface ChatTurn {
   hypotheses: Hypothesis[];
   investigationId: string | null;
   receiptId: string | null;   // chat turn id for the Trust Receipt
+  publicReceiptId: string | null;   // WP-10: the ledger artifact id → unified GET /receipt/{id}
 
   // Shared
   tablesUsed: string[];
@@ -193,6 +194,7 @@ export type ChatAction =
   | { type: "COLUMNS";      columns: string[] }
   | { type: "ROWS";         rows: unknown[][] }
   | { type: "HEADLINE";     headline: string }
+  | { type: "PUBLIC_RECEIPT"; receiptId: string }
   | { type: "CHART_TYPE";   chartType: string }
   | { type: "CHART_CONFIG"; chartConfig: Record<string, unknown> }
   | { type: "STATUS_TEXT";  text: string }
@@ -242,7 +244,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   subQuestions: [], subqAnswers: [], exploreReport: null,
   dossierReport: null, dossierInsightId: null,
   queriesExecuted: [], latestScore: null,
-  hypotheses: [], investigationId: null, receiptId: null,
+  hypotheses: [], investigationId: null, receiptId: null, publicReceiptId: null,
   tablesUsed: [], contextManifest: null, planPending: null, clarifyPending: null, followups: [], analysis: null, error: null,
   startedAt: 0, elapsedMs: null,
   fromCache: false, cachedQuestion: null,
@@ -284,6 +286,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "COLUMNS":    return updateLast(state, t => ({ ...t, columns: action.columns }));
     case "ROWS":       return updateLast(state, t => ({ ...t, rows: action.rows }));
     case "HEADLINE":   return updateLast(state, t => ({ ...t, headline: action.headline }));
+    case "PUBLIC_RECEIPT": return updateLast(state, t => ({ ...t, publicReceiptId: action.receiptId }));
     case "CHART_TYPE": return updateLast(state, t => ({ ...t, chartType: action.chartType }));
     case "CHART_CONFIG": return updateLast(state, t => ({ ...t, chartConfig: action.chartConfig }));
     case "STATUS_TEXT":return updateLast(state, t => ({ ...t, statusText: action.text }));
@@ -451,6 +454,7 @@ export async function consumeStream(
             case "columns":      dispatch({ type: "COLUMNS",    columns:   p.columns as string[] }); break;
             case "rows":         dispatch({ type: "ROWS",       rows:      p.rows as unknown[][] }); break;
             case "headline":     dispatch({ type: "HEADLINE",   headline:  p.headline as string }); break;
+            case "receipt_id":   dispatch({ type: "PUBLIC_RECEIPT", receiptId: p.receipt_id as string }); break;
             case "answer":       dispatch({ type: "HEADLINE",   headline:  (p.text ?? p.answer) as string }); break;
             case "chart_type":   dispatch({ type: "CHART_TYPE", chartType: p.chart_type as string }); break;
             case "chart_config": dispatch({ type: "CHART_CONFIG", chartConfig: p.chart_config as Record<string, unknown> }); break;
