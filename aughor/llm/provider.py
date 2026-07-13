@@ -30,7 +30,7 @@ import random
 import threading
 import time
 from pathlib import Path
-from typing import Literal, Optional, Type, TypeVar
+from typing import Callable, Literal, Optional, Type, TypeVar
 
 import instructor
 from openai import OpenAI
@@ -439,6 +439,37 @@ class LLMProvider:
             except Exception:
                 raise primary_exc  # surface the original failure if fallback also fails
 
+    def complete_streaming(
+        self,
+        *,
+        system: str,
+        user: str,
+        response_model: Type[T],
+        temperature: float = 0.0,
+        text_field: str,
+        on_text: Callable[[str], None],
+    ) -> T:
+        """Like :meth:`complete`, but streams the growing value of one text field
+        (``text_field``) through ``on_text`` while the model writes it — instructor
+        partial streaming (CK-0.2). Each callback receives the FULL text so far
+        (replace semantics, never a suffix delta), and only when it grew.
+
+        Self-healing: any failure — before or during the stream, including a final
+        partial that doesn't validate as a complete ``response_model`` — falls back
+        to the blocking :meth:`complete` (which itself has the Anthropic fallback).
+        Partial ``on_text`` calls that already happened are harmless: the caller's
+        terminal event always carries the authoritative final value."""
+        self._warn_if_over_window(system, user)
+        try:
+            return self._stream_on(self._client, self.backend, self._model,
+                                   system, user, response_model, temperature,
+                                   text_field, on_text, base_url=self._base_url)
+        except Exception as stream_exc:
+            logger.warning("provider: partial streaming failed (%s); falling back to blocking complete()",
+                           str(stream_exc)[:120])
+            return self.complete(system=system, user=user,
+                                 response_model=response_model, temperature=temperature)
+
     def _warn_if_over_window(self, system: str, user: str) -> None:
         """Layer-A safety net (§5b.3): a single, universal overflow check on every call.
         Warn-only — never truncates (silently cutting evidence would risk grounding); the
@@ -486,6 +517,61 @@ class LLMProvider:
         metering.record_llm(pt, ct, (time.monotonic() - _t0) * 1000.0)
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         return out
+
+    @staticmethod
+    def _stream_on(client, backend, model, system, user, response_model, temperature,
+                   text_field, on_text, base_url: str = ""):
+        from aughor.kernel import metering
+        if backend == "anthropic":
+            endpoint = client.messages
+            kwargs = dict(model=model, max_tokens=4096, system=system,
+                          messages=[{"role": "user", "content": user}],
+                          response_model=response_model)
+        else:
+            endpoint = client.chat.completions
+            kwargs = dict(model=model, temperature=temperature, response_model=response_model,
+                          messages=[{"role": "system", "content": system},
+                                    {"role": "user", "content": user}])
+        # instructor ≥1 exposes create_partial on both wrapper families; older
+        # clients simply don't stream — raise so the caller falls back to complete().
+        create_partial = getattr(endpoint, "create_partial", None)
+        if create_partial is None:
+            raise RuntimeError(f"{backend} client has no create_partial — partial streaming unavailable")
+
+        def _do():
+            # Drain the WHOLE stream inside the resilient closure: the per-endpoint
+            # semaphore is released the moment do() returns, so the slot must be held
+            # for the stream's entire life (a generator escaping here would keep the
+            # HTTP connection open un-gated). Partials leave via on_text side effects.
+            last = None
+            seen = ""
+            for partial in create_partial(**kwargs):
+                last = partial
+                text = getattr(partial, text_field, None)
+                if isinstance(text, str) and len(text) > len(seen):
+                    seen = text
+                    try:
+                        on_text(text)   # full text so far — replace semantics
+                    except Exception:
+                        # A callback bug must never kill the stream (deltas are
+                        # best-effort by contract; the final object still returns).
+                        logger.debug("llm: on_text callback failed; delta dropped", exc_info=True)
+            if last is None:
+                raise RuntimeError("partial stream yielded no objects")
+            return last
+
+        _t0 = time.monotonic()
+        last = _run_resilient(_do, base_url)   # concurrency cap + transient-error retry/backoff
+        # Partial streams don't reliably carry usage — probe best-effort and record
+        # (0, 0) when absent (metering is honest, never guesses); wall-clock is real.
+        pt, ct = _extract_usage(getattr(last, "_raw_response", None))
+        metering.record_llm(pt, ct, (time.monotonic() - _t0) * 1000.0)
+        metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
+        # instructor yields Partial[response_model] objects (all fields optional, so
+        # required-field validation was skipped mid-stream). Re-validate the terminal
+        # partial into a plain, fully-validated response_model; a failure here means
+        # the stream ended incomplete — raise so the caller's complete() fallback heals it.
+        return response_model.model_validate(last.model_dump())
 
     def _fallback_client(self):
         """Lazily build (and cache) an Anthropic client for fallback, or None when

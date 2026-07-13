@@ -172,6 +172,11 @@ export interface ChatTurn {
     confidence: string;
   } | null;
 
+  // CK-0.2 token streaming — the narrative's growing partial text (`insight_delta`
+  // frames, replace semantics). Cleared when the authoritative `insight` lands.
+  // Always null on restored turns (history never carries deltas).
+  insightStream: string | null;
+
   // Clarifying questions surfaced before deep analysis starts
   clarifyingQuestions: string[];
   clarifyingContext: string;
@@ -220,6 +225,7 @@ export type ChatAction =
   | { type: "PLAYBOOK_REFS";    items: PlaybookRef[] }
   | { type: "ERROR";            message: string }
   | { type: "INSIGHT";           narrative: string; anomalies: string[]; trend: string; confidence: string }
+  | { type: "INSIGHT_DELTA";     narrative: string }
   | { type: "CLARIFYING_QUESTIONS"; questions: string[]; contextNote: string }
   | { type: "DONE"; receiptId?: string | null }
   | { type: "CLEAR" }
@@ -251,6 +257,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   inspectWarning: null,
   playbookRefs: [],
   insight: null,
+  insightStream: null,
   clarifyingQuestions: [],
   clarifyingContext: '',
 };
@@ -326,7 +333,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "CLARIFYING_QUESTIONS":
       return updateLast(state, t => ({ ...t, clarifyingQuestions: action.questions, clarifyingContext: action.contextNote }));
     case "INSIGHT":
-      return updateLast(state, t => ({ ...t, insight: { narrative: action.narrative, anomalies: action.anomalies, trend: action.trend, confidence: action.confidence } }));
+      // The terminal insight replaces the partial stream (delta frames are advisory;
+      // this event is authoritative) — clear insightStream so renderers switch over.
+      return updateLast(state, t => ({ ...t, insight: { narrative: action.narrative, anomalies: action.anomalies, trend: action.trend, confidence: action.confidence }, insightStream: null }));
+    case "INSIGHT_DELTA":
+      // Growing partial narrative (replace semantics — each frame carries the full text so far).
+      return updateLast(state, t => ({ ...t, insightStream: action.narrative }));
     case "PHASE":
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
     case "ADA_REPORT":
@@ -366,6 +378,7 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "report":         return `mode: ${p.query_mode ?? "?"}`;
     case "error":          return `message: ${p.message}`;
     case "insight":        return String(p.narrative ?? "").slice(0, 40);
+    case "insight_delta":  return `partial: ${String(p.narrative ?? "").slice(0, 32)}`;
     case "clarifying_questions": return String((p.questions as string[])?.length ?? 0) + " questions";
     case "start":          return `inv: ${p.investigation_id ?? "new"}`;
     default:               return Object.keys(p).slice(0, 3).join(", ");
@@ -544,6 +557,7 @@ export async function consumeStream(
               break;
             case "playbook_refs": dispatch({ type: "PLAYBOOK_REFS", items: (p.items as PlaybookRef[]) ?? [] }); break;
             case "insight":      dispatch({ type: "INSIGHT", narrative: (p.narrative as string) ?? "", anomalies: (p.anomalies as string[]) ?? [], trend: (p.trend as string) ?? "stable", confidence: (p.confidence as string) ?? "medium" }); break;
+            case "insight_delta": dispatch({ type: "INSIGHT_DELTA", narrative: (p.narrative as string) ?? "" }); break;
             case "clarifying_questions": dispatch({ type: "CLARIFYING_QUESTIONS", questions: (p.questions as string[]) ?? [], contextNote: (p.context_note as string) ?? "" }); break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
             case "done":         dispatch({ type: "DONE", receiptId: (p.has_receipt ? (p.inv_id as string) : null) }); break;

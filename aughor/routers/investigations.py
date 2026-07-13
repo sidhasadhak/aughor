@@ -1995,14 +1995,78 @@ async def _stream_chat(
                 f"{_rows_text}"
                 f"{_res_note}"
             )
-            _pa: _PostAnswer = await asyncio.to_thread(
-                lambda: get_provider("narrator").complete(
-                    system=_system,
-                    user=_user,
-                    response_model=_PostAnswer,
-                    temperature=0.2,
+            # CK-0.2 token-streaming (flag `ask.stream_text`, default ON): dual-emit the
+            # narrative as `insight_delta` frames while the narrator writes it, then let
+            # the existing terminal `insight` event carry the authoritative final value —
+            # self-healing (a dropped delta costs nothing; old clients ignore the unknown
+            # event). Flag off = the exact pre-streaming blocking call, byte-identical.
+            from aughor.kernel.flags import flag_enabled as _stream_flag
+            if _stream_flag("ask.stream_text"):
+                import queue as _queue
+                import threading as _threading
+                import time as _time
+
+                _pa_q: _queue.Queue = _queue.Queue()
+                _pa_result: dict = {}
+
+                def _pa_worker() -> None:
+                    # complete_streaming falls back to the blocking complete() internally
+                    # on ANY streaming failure, so "exc" only means BOTH paths failed —
+                    # re-raised below into the enclosing tolerate, exactly like today.
+                    try:
+                        _pa_result["pa"] = get_provider("narrator").complete_streaming(
+                            system=_system, user=_user, response_model=_PostAnswer,
+                            temperature=0.2, text_field="narrative", on_text=_pa_q.put,
+                        )
+                    except Exception as worker_exc:
+                        _pa_result["exc"] = worker_exc
+                    finally:
+                        _pa_q.put(None)   # sentinel: the stream is over
+
+                _pa_thread = _threading.Thread(target=_pa_worker, daemon=True,
+                                               name="insight-stream")
+                _pa_thread.start()
+                # Drain partials → SSE deltas, throttled (grew ≥12 chars since the last
+                # emit, or >150ms elapsed) so a chatty stream can't spam frames. Deltas
+                # go out strictly BEFORE the terminal `insight` event, and only when the
+                # insight is worth narrating (same gate the terminal event uses).
+                _last_len, _last_ts = 0, _time.monotonic()
+                _POLL_EMPTY = object()  # poll-timeout marker, distinct from the None sentinel
+
+                def _pa_poll():
+                    # A poll timeout is the loop's heartbeat, not a failure — return a
+                    # marker instead of swallowing queue.Empty at the call site.
+                    try:
+                        return _pa_q.get(True, 0.25)
+                    except _queue.Empty:
+                        return _POLL_EMPTY
+
+                while True:
+                    _item = await asyncio.to_thread(_pa_poll)
+                    if _item is _POLL_EMPTY:
+                        continue
+                    if _item is None:
+                        break
+                    if not (_insight_worth_it and isinstance(_item, str)):
+                        continue
+                    _now = _time.monotonic()
+                    if len(_item) - _last_len >= 12 or _now - _last_ts > 0.150:
+                        _last_len, _last_ts = len(_item), _now
+                        yield _sse("insight_delta",
+                                   {"narrative": _apply_currency(_item, _cur_sym)})
+                await asyncio.to_thread(_pa_thread.join)
+                if "exc" in _pa_result:
+                    raise _pa_result["exc"]
+                _pa: _PostAnswer = _pa_result["pa"]
+            else:
+                _pa = await asyncio.to_thread(
+                    lambda: get_provider("narrator").complete(
+                        system=_system,
+                        user=_user,
+                        response_model=_PostAnswer,
+                        temperature=0.2,
+                    )
                 )
-            )
             if _insight_worth_it and _pa.narrative:
                 _insight_dict = {
                     "narrative": _apply_currency(_pa.narrative, _cur_sym),

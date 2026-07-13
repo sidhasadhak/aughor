@@ -563,6 +563,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           inspectWarning: null,
           playbookRefs: [],
           insight: t.insight || null,
+          insightStream: null,   // deltas are live-only; history restores the final insight
           clarifyingQuestions: [],
           clarifyingContext: "",
         })));

@@ -27,6 +27,7 @@ import {
   BriefMeta,
   type BriefMetric,
 } from "@/components/brief/Brief";
+import { safePartial } from "@/lib/useReveal";
 import { ChatTurn } from "@/lib/useChat";
 import { validateQuery, sendChatFeedback, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
@@ -918,7 +919,18 @@ function InsightBrief({
   // The narrative + anomalies ride along the follow-ups narrator call (no extra cost),
   // but for a direct lookup they're noise — reveal them on demand via "Explain the data".
   const [explained, setExplained] = useState(false);
+  // CK-0.2 token streaming: while `insight_delta` frames arrive (and no final insight
+  // yet), the narrative is being written live — auto-reveal the prose section and ride
+  // the partial text. Once the terminal `insight` lands (insightStream clears), stay
+  // revealed rather than collapsing back behind the button.
+  const streamingProse = turn.insight == null ? turn.insightStream : null;
+  useEffect(() => {
+    if (turn.insightStream != null) setExplained(true);
+  }, [turn.insightStream]);
   const hasExplanation = !!(proseText || anomalies.length);
+  // Post-done arrival fade (uplift pattern) — live turns only; restored turns render
+  // instantly, and prefers-reduced-motion disables the CSS animation globally.
+  const fadeCls = turn.startedAt > 0 ? "aug-anim-fade" : "";
 
   return (
     <Brief>
@@ -965,13 +977,17 @@ function InsightBrief({
       )}
       {!streaming && explained && (
         <>
-          {proseText && <BriefProse text={proseText} />}
-          {anomalies.length > 0 && <BriefBullets items={anomalies} />}
+          {/* One BriefProse for both phases (streaming partial → final narrative) so the
+              text swap never remounts; safePartial closes a dangling ** mid-stream. */}
+          {(streamingProse || proseText) && (
+            <BriefProse className={fadeCls} text={streamingProse != null ? safePartial(streamingProse) : proseText} />
+          )}
+          {streamingProse == null && anomalies.length > 0 && <BriefBullets className={fadeCls} items={anomalies} />}
         </>
       )}
 
       {!streaming && turn.followups.length > 0 && (
-        <BriefSection label="Follow-ups">
+        <BriefSection className={fadeCls} label="Follow-ups">
           <div className="flex flex-col gap-1">
             {turn.followups.map((q, i) => (
               <button
