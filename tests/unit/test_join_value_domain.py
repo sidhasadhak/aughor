@@ -144,8 +144,11 @@ def test_bad_sql_is_fail_open():
     conn.execute.assert_not_called()
 
 
-def test_caps_at_max_probes():
+def test_caps_at_max_probes(monkeypatch):
     """Guard probes at most 4 join conditions, not unbounded."""
+    # Pin reconciliation off: it is auto-elevated by default (2026-07-13 graduation) and
+    # its transform probes would ride on top of the base probe budget under test here.
+    monkeypatch.setenv("AUGHOR_JOIN_KEY_RECONCILIATION", "0")
     conn = _mock_conn(matched=0, total=100)  # all mismatches to maximise probe count
     sql = """
     SELECT * FROM a
@@ -269,8 +272,10 @@ def test_reconciliation_finds_prefix_skew(monkeypatch):
     assert "regexp_replace" in txt      # the actionable normalized-join expression
 
 
-def test_reconciliation_off_by_default_is_byte_identical(monkeypatch):
-    monkeypatch.delenv("AUGHOR_JOIN_KEY_RECONCILIATION", raising=False)
+def test_reconciliation_off_when_explicitly_disabled(monkeypatch):
+    # join.key_reconciliation is auto-elevated by default (2026-07-13 graduation);
+    # the byte-identical contract now belongs to the explicit "0" kill switch.
+    monkeypatch.setenv("AUGHOR_JOIN_KEY_RECONCILIATION", "0")
     conn = _real_conn_skew()
     sql = "SELECT * FROM books b JOIN reviews r ON b.bid = r.book_ref"
     warnings = check_join_value_domains(conn, sql)
