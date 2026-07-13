@@ -36,6 +36,12 @@ def _stream_headline(client, conn_id, question, *, want_type="headline", timeout
 
 
 def _stub_coder(monkeypatch, called):
+    # Records every user prompt the coder sees. The abstain assertion must be
+    # QUESTION-scoped: the session TestClient app keeps background work alive
+    # (investigation jobs / explorer threads from earlier tests), and any of it
+    # calling the process-global get_provider during this test's monkeypatch
+    # window would trip a bare "was the coder called at all" flag — a proven
+    # full-suite-order flake, not a product regression.
     import aughor.llm.provider as prov
     from aughor.routers.investigations import _ChatAnswer
     real = prov.get_provider
@@ -43,10 +49,14 @@ def _stub_coder(monkeypatch, called):
     class FakeCoder:
         def complete(self, *a, **k):
             called["coder"] = True
+            called.setdefault("users", []).append(str(k.get("user", "")))
             return _ChatAnswer(sql="SELECT 1 AS x", headline="stub answer")
 
+        def complete_streaming(self, *a, **k):
+            return self.complete(*a, **k)
+
     monkeypatch.setattr(prov, "get_provider",
-                        lambda role="coder": FakeCoder() if role == "coder" else real(role))
+                        lambda role="coder", **kw: FakeCoder() if role == "coder" else real(role))
 
 
 def test_abstains_before_generation_on_absent_entity(client: TestClient, builtin_conn_id: str, monkeypatch):
@@ -58,7 +68,8 @@ def test_abstains_before_generation_on_absent_entity(client: TestClient, builtin
 
     got = _stream_headline(client, builtin_conn_id, "show me sales for mytheresa")
     assert got["headline"] and "not present in this data" in got["headline"], got
-    assert called["coder"] is False, "abstain must short-circuit before SQL generation"
+    mytheresa_prompts = [u for u in called.get("users", []) if "mytheresa" in u.lower()]
+    assert not mytheresa_prompts, "abstain must short-circuit before SQL generation for THIS question"
 
 
 def test_flag_off_is_unchanged(client: TestClient, builtin_conn_id: str, monkeypatch):
