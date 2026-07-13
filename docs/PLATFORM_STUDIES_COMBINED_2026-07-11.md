@@ -1294,7 +1294,12 @@ and the eval mirror already drifts (`build_metrics_block` vs the real path's `un
   schema-linking + governed-metric blocks stay inline (entangled with canvas-scope resolution) — folding those
   through `build_grounding_context()` is the reviewed follow-up. Value-index literal binding is post-generation
   on the answer path (a guard, not a prompt block) → not yet surfaced. 10 tests; ruff clean.
-  **NOT yet built:** the "Show grounding" answer-UI affordance (frontend), and the schema-block convergence.
+  - **"Show grounding" answer-UI affordance SHIPPED:** `web/lib/api.ts::getGroundingContext` + a `GroundingDetails`
+    component in `web/components/ChatMessage.tsx` — a lazy "Show grounding" toggle (fetches on click; the endpoint
+    runs real retrievers) rendering each active block, hidden when the flag is off (404 → null). Live-verified: the
+    endpoint serves 4 populated blocks (incl. schema-dependent) flag-on / 404 flag-off on the real API server, and
+    the web app loads it with zero console errors; eslint/design-token/raw-element/tsc gates clean.
+  **Still open (own follow-up):** the schema-linking + governed-metric block convergence into `_stream_chat`.
 
 *Wave 0 — Correctness + trivial wins — ✅ COMPLETE:*
 - Matcache tenancy fix (II·Rec 1) — `de04429`. Shared `_row_policy_principal` gate + `result_cache_tenancy()`
