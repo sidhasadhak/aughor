@@ -1277,6 +1277,25 @@ byte-identical when off; ruff-clean, kernel ratchets green.
   **NEXT (unbuilt):** Rec 5 grounding-context receipt (last Wave-1 item) · Wave 2 #7 A1-P3 lifecycle ·
   #8 the P7 decision run (biggest answer-quality lever; harness + now task_history forensics both ready).
 
+**Build status (2026-07-13, local working tree — Rec 5 grounding-context receipt BACKEND SHIPPED, flag
+`ask.context_receipt`):** the input-side twin of the Trust Receipt. Staged (chosen over a full hot-path
+rewire, which memory flags as the riskiest Wave-1 item): the map found NO central assembler — grounding is
+built per-caller across three seams (quick `/ask` `_stream_chat` richest, deep ADA leaner, explorer thinnest),
+and the eval mirror already drifts (`build_metrics_block` vs the real path's `unified_metric_grounding`).
+- New pure `aughor/agent/grounding.py`: one producer function per grounding block (dialect rules, agent/pack
+  brief, trusted templates, ambiguity-ledger corrections, governed-metric bindings, schema slice, glossary,
+  KB patterns, SQL examples, exploration, causal, docs) — each wrapping the SAME retriever the answer path
+  calls, so per-block data can't drift. `build_grounding_context()` composes them into a `GroundingContext`
+  (schema-dependent blocks fire only when a schema is resolved); `to_dict()` + `to_markdown()`.
+- `GET /ask/context?connection=&question=` (`routers/investigations.py`) → `{receipt, markdown}`; 404 when the
+  flag is off (byte-identical default).
+- Convergence proof (no drift): `_stream_chat`'s three pure prepend producers (dialect rules, agent brief,
+  corrections) now call the shared block functions — a byte-identical swap (parity asserted in tests). The
+  schema-linking + governed-metric blocks stay inline (entangled with canvas-scope resolution) — folding those
+  through `build_grounding_context()` is the reviewed follow-up. Value-index literal binding is post-generation
+  on the answer path (a guard, not a prompt block) → not yet surfaced. 10 tests; ruff clean.
+  **NOT yet built:** the "Show grounding" answer-UI affordance (frontend), and the schema-block convergence.
+
 *Wave 0 — Correctness + trivial wins — ✅ COMPLETE:*
 - Matcache tenancy fix (II·Rec 1) — `de04429`. Shared `_row_policy_principal` gate + `result_cache_tenancy()`
   fold `(org, roles, resolved filters)` into the result-cache key; `None`→legacy key (byte-identical). Closed

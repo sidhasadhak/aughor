@@ -8,7 +8,7 @@ import os
 import re
 from typing import AsyncGenerator, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -1100,9 +1100,13 @@ async def _stream_chat(
     try:
         from aughor.agent.prompts import CHAT_PROMPT, CHAT_SQL_SYSTEM
         from aughor.llm.provider import get_provider
-        from aughor.rules import get_chat_rules_block
+        # Shared grounding producers (Rec 5): the same block functions the
+        # `GET /ask/context` receipt calls, so the receipt shows exactly what the
+        # answer path was grounded on (no drift). dialect_rules_block() == the old
+        # get_chat_rules_block() verbatim.
+        from aughor.agent.grounding import dialect_rules_block
 
-        rules_block = get_chat_rules_block()
+        rules_block = dialect_rules_block()
 
         from aughor.agent.followup import is_followup
         history_section = build_history_section(history, followup=is_followup(question))
@@ -1362,8 +1366,8 @@ async def _stream_chat(
         # User-agent brief (flag `agents.user_defined`) — the active agent's pinned
         # instructions lead the prompt, rules_block-style. Empty (inert) when no
         # agent is active.
-        from aughor.user_agents.context import agent_brief_block
-        _agent_brief = agent_brief_block()
+        from aughor.agent.grounding import agent_brief as _grounding_agent_brief
+        _agent_brief = _grounding_agent_brief()  # == agent_brief_block() (shared Rec 5 producer)
         if _agent_brief:
             prompt = _agent_brief + prompt
         # Playbook context — when org playbook items match this question, give them
@@ -1407,8 +1411,8 @@ async def _stream_chat(
         # not repeat a mistake a reviewer already flagged. Flag-gated + empty when
         # nothing relevant matches, so the default path is byte-for-byte unchanged.
         try:
-            from aughor.verify.priors import build_corrections_section
-            _cblk = build_corrections_section(question, connection_id)
+            from aughor.agent.grounding import correction_priors
+            _cblk = correction_priors(question, connection_id)  # == build_corrections_section (shared Rec 5)
             if _cblk:
                 prompt = _cblk + "\n" + prompt
         except Exception as exc:
@@ -3208,6 +3212,43 @@ async def ask_endpoint(req: AskRequest, request: Request):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/ask/context")
+def ask_context_endpoint(
+    connection: str = Query(..., description="connection id"),
+    question: str = Query(..., description="the question to ground"),
+    principal=Depends(get_principal),
+):
+    """The grounding-context receipt (flag ``ask.context_receipt``) — the exact
+    grounding blocks the SQL writer would be given for this question on this
+    connection: schema slice, glossary, governed-metric bindings, ambiguity-ledger
+    priors, dialect rules, trusted templates, and the active agent/pack brief.
+
+    The input-side twin of the Trust Receipt. Read-only, deterministic (re-derives
+    the same blocks the answer path assembles from the same producers). 404 when
+    the flag is off, so the default path is byte-identical.
+    """
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ask.context_receipt"):
+        raise HTTPException(status_code=404,
+                            detail="grounding-context receipt is disabled (flag ask.context_receipt)")
+    from aughor.agent.grounding import build_grounding_context
+    from aughor.db.connection import open_connection_for
+    try:
+        db = open_connection_for(connection)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Connection {connection!r} not found")
+    try:
+        schema = _get_schema_cached(connection, db) or ""
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "grounding receipt: schema fetch best-effort; schema-dependent blocks skipped",
+                 counter="ask.context_receipt.schema")
+        schema = ""
+    ctx = build_grounding_context(question, connection, schema=schema,
+                                  eff_schema=getattr(db, "_schema_name", None))
+    return {"receipt": ctx.to_dict(), "markdown": ctx.to_markdown()}
 
 
 def _resolve_ask_agent(req: "AskRequest"):
