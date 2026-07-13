@@ -14,6 +14,19 @@
 
 ## 0 · Immediate next action ⏭️
 
+### 🧭 Session handoff — 2026-07-13 (later) · branch `agentic-platform` — the unification wave
+
+The two branches below (plus `2026-07-08-ui-ux-uplift`) are now **CONSOLIDATED onto one branch,
+`agentic-platform`** (NOT pushed), and the first unification wave shipped on top of it. Program +
+graduation policy + deletion roadmap: [`docs/AGENTIC_PLATFORM_UNIFICATION_2026-07-13.md`](docs/AGENTIC_PLATFORM_UNIFICATION_2026-07-13.md).
+Highlights: capability graduation (`capabilities.auto` + receipts + `obs.task_table` +
+`ada.progress_events` default-ON; `ask.resolve_first` + `ada.pin_canonical_metric` AUTO-elevated;
+explicit `=0`/override still wins everywhere); the superseded `grain.feasibility` post-hoc verdict
+REMOVED; CK-0.1 feel branch merged; CK-0.2 insight token streaming (`ask.stream_text`,
+`insight_delta` dual-emit + `LLMProvider.complete_streaming`); `aughor up` one-command setup +
+/health LLM readiness. **NEXT:** live-verify streaming + resolve-first on a responsive LLM, then
+the staged guard deletions; CK-1 AG-UI seam; P7 decision run.
+
 ### 🧭 Session handoff — 2026-07-13 (answer-quality / the "Mytheresa disconnects")
 
 Two branches off `main`, **both NOT pushed, NO PR yet**, all work flag-gated / default-off /
