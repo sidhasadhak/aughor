@@ -62,6 +62,7 @@ FLAG_ENV = {
     "trust.e1_live": "AUGHOR_TRUST_E1_LIVE",
     "monitors.guarded": "AUGHOR_MONITORS_GUARDED",
     "explorer.continuous": "AUGHOR_EXPLORER_CONTINUOUS",
+    "ops.metered_monitors": "AUGHOR_METERED_MONITORS",
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -69,6 +70,17 @@ FLAG_ENV = {
 # old call site), so registering it here must not flip the live default.
 FLAG_DEFAULT = {
     "ask.clarify": True,
+    # WP-1f (2026-07-12 platform review) — the trust plane LEVERAGED, not just built.
+    # Promoted to default-ON after a live A/B over the workspace + fixture healthy-path
+    # corpus (1,837 unique executed statements): `trust.verify_live` produced ZERO
+    # false-positive blocks, and once the E1 live checks read real column types
+    # (`connection_column_types`) the only false-positive caveat — a DATE column named
+    # `*_at`/`*_ts` tripping the name heuristic — disappeared, leaving only genuine
+    # timestamp-boundary footguns. An operator can still disable any of these with an
+    # explicit env `=0` or a runtime override. See docs/PLATFORM_REVIEW…2026-07-12.md WP-1f.
+    "trust.verify_live": True,     # AST read-only BLOCK on the deep-answer executor path
+    "trust.e1_live": True,         # E1 function-semantics WARN caveats on live answers
+    "trust.verify_facade": True,   # AST read-only gate on the /query/validate surface (additive field)
 }
 
 # Human-facing copy for the Settings UI.
@@ -96,6 +108,10 @@ FLAG_META = {
     "trust.e1_live": {
         "label": "E1 function-semantics checks on live answers",
         "description": "Run the E1 footgun battery (a timestamp bounded by a date-only literal drops that day's later rows; ORDER BY/MIN/MAX over numeric-looking text sorts lexicographically; text↔numeric comparisons) on the FINAL SQL of live answers — the quick/chat headline and every Deep-Analysis phase query — as labelled WARN caveats. Pure AST, deterministic, never rewrites the query (the E1 contract). Previously these checks ran only on /query/validate, never on an answer a user actually saw. Off by default = byte-identical. WP-1e of the 2026-07-12 platform review.",
+    },
+    "ops.metered_monitors": {
+        "label": "Meter background monitors & briefs through the kernel",
+        "description": "Route each scheduled monitor tick and brief delivery through the job kernel (as the Watcher / Briefer agents) instead of calling the runner directly on the scheduler thread. The warehouse SQL a monitor/brief runs then joins the same metering as an answer — visible in Fleet/metering, counted toward the agent's per-run token/time budget, and heartbeat-supervised (a run over budget is cancelled). Preserves the tenant re-bind the schedulers already do. Off by default = byte-identical (the direct in-thread path). Gate for turning continuous exploration (`explorer.continuous`) on by default — background cost must be metered before it can re-explore automatically. WP-7 of the 2026-07-12 platform review.",
     },
     "monitors.guarded": {
         "label": "Guarded monitor evaluations",

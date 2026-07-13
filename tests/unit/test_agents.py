@@ -48,7 +48,12 @@ class TestRegistry:
         assert {"scout", "analyst", "watcher", "briefer", "curator"} <= ids
         scout = get_charter("scout")
         assert scout.lane == "background" and scout.reserved is False
-        assert get_charter("watcher").reserved is True   # defined, not yet wired
+        # WP-7: Watcher/Briefer are now WIRED to the metered monitor/brief cron (non-reserved,
+        # with real budgets); only Curator (profile refresh) stays reserved.
+        watcher, briefer = get_charter("watcher"), get_charter("briefer")
+        assert watcher.reserved is False and watcher.default_budget.time_budget_s
+        assert briefer.reserved is False and briefer.default_budget.token_budget
+        assert get_charter("curator").reserved is True   # defined, not yet wired
 
     def test_insight_charter_backs_the_chat_budget(self):
         c = get_charter("insight")

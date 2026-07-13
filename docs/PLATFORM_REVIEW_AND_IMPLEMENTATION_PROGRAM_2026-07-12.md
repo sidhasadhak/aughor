@@ -407,8 +407,23 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 > failure). 1c shipped as the TARGETED variant (four labels promoted to
 > `_AUDITED_AGENT_LABELS`) — the blanket "gate every internal label" is UNSAFE: platform-
 > authored mutations (`alter_column`) are legitimate; see the code comment at the labels
-> set. **1f (default promotion) remains** — flip `trust.verify_live`/`trust.e1_live`
-> after a live A/B on luxexperience shows zero false-positive caveats.
+> set.
+> **1f SHIPPED (default promotion — the LEVERAGE step)** (branch
+> `2026-07-12-wp1f-trust-promotion`). A deterministic live A/B over the real healthy-path
+> corpus — 1,837 unique executed statements from the `workspace` + `fixture` connections
+> (audit_log, verdict='safe') — replicating exactly what the two flags do live: **0**
+> would-be `trust.verify_live` blocks, and after wiring **real column types** into the E1
+> live checks (new `connection_column_types`, cached per connection), the only E1 caveat
+> the name heuristic raised (a DATE column named `acquired_at` — a false positive)
+> disappeared, leaving only a genuine timestamp-boundary footgun. `FLAG_DEFAULT` now
+> carries `trust.verify_live` / `trust.e1_live` / `trust.verify_facade` = True (operators
+> can still disable via env `=0` or a runtime override). Live-verified on the running server:
+> `/query/validate` BLOCKs a DELETE by default; the fixture DATE column raises no E1
+> caveat; a real `/ask` answered cleanly with no spurious caveat. **A key fix rode along:**
+> the executor keyed the col-types cache on a non-existent `connection_id` attribute
+> (`getattr(conn, "connection_id", "")` → always `""`), which would have cross-served one
+> connection's types to all others — corrected to `_connection_id`, empty ids skip the
+> cache, and a regression test locks the DATE-no-FP / TIMESTAMP-still-fires contract.
 
 **1a — `QueryResult.caveats` (the swallow seam).**
 - Add `caveats: list[str] = field(default_factory=list)` (match existing dataclass/pydantic style)
@@ -682,6 +697,27 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 
 #### WP-7 · Meter the background: monitors + briefs through the kernel
 **Closes:** §1.2 cost gap. **Effort:** 1–2 days. Flag `ops.metered_monitors`, default-off → promote.
+> **STATUS 2026-07-13: metering core SHIPPED** (branch `2026-07-13-wp7-metered-background`,
+> flag `ops.metered_monitors`, default-off). The Watcher/Briefer charters are non-reserved
+> with real budgets (Watcher 50k tok / 120s, Briefer 400k / 300s); the monitor + brief cron
+> `_job`s route through `kernel().submit(...)` via a new thread→loop bridge
+> `submit_background_tick` (the scheduler runs on an APScheduler thread, the kernel on the main
+> loop, captured at startup in `_install_context_executor`). The work runs in the
+> context-propagating executor, so the run's metering accumulator + Org binding reach the
+> monitor/brief SQL — it is now metered (Fleet/`GET /jobs?kind=monitor`), counted against the
+> agent's budget, and heartbeat-supervised. `kernel().submit` gained an explicit `org_id` so a
+> cross-thread submit stamps the right tenant. Preserves the schedulers' tenant re-bind; the
+> manual "test now" endpoint (`trigger_now`) is unchanged (synchronous, already visible).
+> **Live-verified** on the running server: a per-minute fixture monitor ran as a `SUCCEEDED`
+> **Watcher** job with `cost={query_count:1, rows_returned:1}`. +4 tests (charter wiring ·
+> flag routing · no-loop fallback · end-to-end metering with a real loop). Suite green; ruff
+> clean; byte-identical when the flag is off.
+> **DEFERRED (noted):** **promotion to default-ON** is gated on a large-workspace A/B (the
+> Briefer's 300s budget must not cancel a legitimate wide-workspace brief — the same
+> large-workspace-budget thread WP-6 deferred); until then it stays flag-gated. **Per-connection
+> caps** (`max_monitor_runs_per_hour` + per-day query budget on connection settings + skip-with-
+> Inbox) are a separate slice — the per-run **budget** already caps a runaway tick, and the cron
+> already bounds frequency, so the rate-cap is a lower-value follow-up (spun off as a task).
 
 - Route `monitors/scheduler.py:36-65 _job` (and the brief scheduler's run) through
   `kernel().submit(...)` with the Watcher/Briefer charters made non-reserved (define real budgets:
@@ -751,6 +787,30 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 
 #### WP-10 · Public Trust Receipt (`GET /receipt/{id}`) — the moat, inspectable
 **Source:** ROADMAP §3 “single highest-leverage open bet”. **Effort:** ~1 week.
+> **STATUS 2026-07-13: backend core SHIPPED + live-verified** (branch
+> `2026-07-13-wp10-public-receipt`, stacked on WP-7). One receipt **id** (the kernel ledger
+> artifact id) + one `GET /receipt/{receipt_id}` (`aughor/routers/receipt.py`) resolving any
+> mode into one signed public contract (`aughor/trust/receipt.py` `build_public_receipt`):
+> `{id, created_at, mode, question, headline, connection, executed_sql[], input_tables[],
+> guards[{name,fired,action,caveat}], caveats[], metrics{used/drifted/available/proposed},
+> confidence, data_trust, model, cost, signature}`. **HMAC-SHA256** over the canonical body
+> (`sign`/`verify`, per-install secret from `AUGHOR_RECEIPT_SECRET` or a ledger-kv-persisted
+> one) proves server issuance + detects tampering. **RBAC**: a receipt on a connection outside
+> the caller's org 404s identically to a missing id (fail-closed, no existence leak). Ledger
+> gained `artifact_by_id` / `receipt_by_id` (exact version, immutable link);
+> `_write_answer_receipt` now stamps the coder model + returns the `receipt_id`; the chat path
+> streams a `receipt_id` SSE event. **Live-verified**: real `/ask` → `receipt_id ba5a3c15138b`
+> → `GET /receipt/{id}` returned the signed contract (executed SQL, tables, available governed
+> metrics, real cost metering) and the signature **verified**. +6 tests (exact-version resolve ·
+> projection · signature+tamper · route round-trip · 404 unknown · 404 foreign-org). `gen:api`
+> regenerated (route in `api.gen.ts`). FEATURES §3 gained the "trustworthy by inspection" para.
+> **REMAINING (frontend + extend):** the "Why this number" **drawer** rendering the unified
+> receipt (a reusable component; the chat/ada surfaces already have `TrustReceipt.tsx` via the
+> per-mode route — the unified drawer's value is the surfaces that lack one); **stamp receipt
+> ids** on the Query Builder path + briefing figures (`BriefFigure.source` → add `receipt_id`)
+> + emit the id on the ADA stream; then wire the drawer onto ResultFigure / KPI tiles / briefing
+> figures. Deferred as separate slices — the signed, RBAC'd, inspectable **contract** (the moat)
+> is the shipped core.
 
 - **Unify:** per-mode receipt routes exist (`/ada/{conn}/{inv}/receipt`,
   `/chat/{conn}/{turn}/receipt`). Introduce a receipt **id** (the kernel ledger artifact id —
@@ -775,6 +835,23 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 
 #### WP-11 · IA: ask-on-Home, finish the U5 fold, a11y pass
 **Closes:** §1.7-2/7. **Effort:** 2–3 days.
+> **STATUS 2026-07-13: ask-on-Home + a11y quick-wins SHIPPED** (branch
+> `2026-07-13-wp11-ask-on-home`, stacked). **Ask-on-Home**: a composer hero at the top of
+> `HomeScreen` (`app/page.tsx`) — textarea + Insight/Deep depth pills + Ask — that fires the
+> question into the chat via the existing `goToChat(q, mode)` (pre-fill + auto-fire), so Home
+> is a launchpad not a dead dashboard. **Live-verified in the browser**: typed "Which regions
+> drive the most revenue?" on Home → routed into the chat, question fired, Insight mode carried
+> through, 0 console errors. **A11y**: (1) every sidebar nav button now exposes an accessible
+> name (`aria-label` + `aria-current` on the active item) — verified: the AX tree went from
+> anonymous `button [ref]` to named "Home"/"Briefing"/…; (2) keep-alive hidden Workspace layers
+> get `inert` + `aria-hidden` so a hidden panel's controls (e.g. the chat composer behind
+> another workspace) leave the tab order + AX tree (`components/Workspace.tsx`). **Copy fix**:
+> the Home health empty-state pointed at a nonexistent "Metrics panel" → "Semantic Layer"
+> (`ProcessHealthPanel.tsx`). New buttons use the `<Button>` primitive (raw-button ratchet flat
+> at 204); tokens/format/tsc green.
+> **DEFERRED:** the **U5 fold** (16 nav items → ~5 workspaces via `<Workspace>` + `LEGACY_*_LAYER`
+> deep-link maps) — a mechanical but broad refactor, left as its own slice (PART-2's
+> `CanvasWorkspace` caveat still applies); the full a11y sweep (remaining raw `<button>`s).
 
 - **Ask-on-Home:** compose the existing InputBox (ChatPanel's composer with Auto/Insight/Deep +
   agent picker) as Home's hero. Submitting from Home: pick the most-recent Data Canvas (or prompt

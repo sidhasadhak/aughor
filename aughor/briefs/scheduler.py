@@ -35,9 +35,24 @@ def _make_job_fn(sub_id: str):
             # DATA-06: a background delivery has no request context — bind the
             # subscription's tenant (its connection's org) so the digest is built and
             # any persisted trace stamps the right org (mirrors the monitor scheduler).
-            with using_org(get_connection_org(sub.conn_id) or ""):
-                result = deliver_subscription(sub)
-            logger.info("Brief '%s' delivered [%s]", sub.name, result.get("status"))
+            org = get_connection_org(sub.conn_id) or ""
+
+            def _work():
+                with using_org(org):
+                    result = deliver_subscription(sub)
+                logger.info("Brief '%s' delivered [%s]", sub.name, result.get("status"))
+
+            # WP-7: under `ops.metered_monitors`, deliver as a supervised Briefer job so the
+            # brief's synthesis LLM calls + warehouse SQL are metered + budget-enforced.
+            from aughor.kernel.flags import flag_enabled
+            if flag_enabled("ops.metered_monitors"):
+                from aughor.kernel.jobs import submit_background_tick
+                job_id = submit_background_tick(
+                    "brief", _work, conn_id=sub.conn_id, org_id=org,
+                    idempotency_key=f"brief:{sub_id}")
+                if job_id is not None:
+                    return   # routed through the kernel
+            _work()          # legacy / no-loop fallback
         except Exception as exc:
             logger.error("Brief job %s crashed: %s", sub_id, exc)
 

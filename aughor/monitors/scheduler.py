@@ -49,24 +49,38 @@ def _make_job_fn(monitor_id: str):
             # would default to 'default' and mis-stamp the emitted monitor.alert event.
             # Re-bind the monitor's tenant (its connection's org) for the run — the same
             # re-bind the kernel does for a boot-recovered job (kernel/jobs.py).
-            with using_org(get_connection_org(monitor.conn_id) or ""):
-                db = open_connection_for(monitor.conn_id)
-                try:
-                    alert = run_monitor(monitor, db)
-                finally:
-                    try:
-                        db.close()
-                    except Exception as exc:
-                        from aughor.kernel.errors import tolerate
-                        tolerate(exc, "closing the per-tick db handle is best-effort; the monitor result is already computed",
-                                 counter="monitors.scheduler.tick.db_close")
+            org = get_connection_org(monitor.conn_id) or ""
 
-                if alert is not None:
-                    append_alert(alert)
-                    logger.info(
-                        "Monitor '%s' fired [%s]: %s",
-                        monitor.name, alert.severity, alert.message[:120],
-                    )
+            def _work():
+                with using_org(org):
+                    db = open_connection_for(monitor.conn_id)
+                    try:
+                        alert = run_monitor(monitor, db)
+                    finally:
+                        try:
+                            db.close()
+                        except Exception as exc:
+                            from aughor.kernel.errors import tolerate
+                            tolerate(exc, "closing the per-tick db handle is best-effort; the monitor result is already computed",
+                                     counter="monitors.scheduler.tick.db_close")
+                    if alert is not None:
+                        append_alert(alert)
+                        logger.info(
+                            "Monitor '%s' fired [%s]: %s",
+                            monitor.name, alert.severity, alert.message[:120],
+                        )
+
+            # WP-7: under `ops.metered_monitors`, run the tick as a supervised Watcher job so
+            # its warehouse SQL is metered + budget-enforced (else the direct in-thread path).
+            from aughor.kernel.flags import flag_enabled
+            if flag_enabled("ops.metered_monitors"):
+                from aughor.kernel.jobs import submit_background_tick
+                job_id = submit_background_tick(
+                    "monitor", _work, conn_id=monitor.conn_id, org_id=org,
+                    idempotency_key=f"monitor:{monitor_id}")
+                if job_id is not None:
+                    return   # routed through the kernel
+            _work()          # legacy / no-loop fallback
         except Exception as exc:
             logger.error("Monitor job %s crashed: %s", monitor_id, exc)
 

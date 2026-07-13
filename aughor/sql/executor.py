@@ -261,9 +261,16 @@ def execute_guarded(
         if not flag_enabled("trust.e1_live"):
             return []
         try:
-            from aughor.sql.trust_checks import run_trust_checks
+            from aughor.sql.trust_checks import connection_column_types, run_trust_checks
+            # Real column types (cached per connection) so the date-boundary check doesn't
+            # false-fire on a DATE column named like a timestamp — WP-1f. Fail-open to the
+            # name heuristic when a connection has no id / no information_schema. NB: the
+            # attribute is `_connection_id` (there is no public `connection_id` property) —
+            # keying on the wrong name collapses every connection to one shared cache entry.
+            _ct = connection_column_types(getattr(conn, "_connection_id", ""), conn) or None
             return [f"{t.pattern}: {t.message}"
-                    for t in run_trust_checks(final_sql, dialect=getattr(conn, "dialect", "duckdb"))]
+                    for t in run_trust_checks(final_sql, col_types=_ct,
+                                              dialect=getattr(conn, "dialect", "duckdb"))]
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "E1 live checks are advisory; result proceeds uncaveated",

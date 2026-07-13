@@ -14,6 +14,7 @@ import { OpenInBuilderProvider } from "@/lib/openInBuilder";
 import { getCanvases } from "@/lib/api";
 import { CommandPalette } from "@/components/CommandPalette";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
+import { Button } from "@/components/ui/button";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
@@ -511,6 +512,11 @@ function Sidebar({
       key={item.id}
       className={`aug-nav-item${tab === item.id ? " active" : ""}`}
       onClick={() => onNavigate(item.id as NavTab)}
+      // WP-11 a11y (§1.7-7): the visible <span> label wasn't computing an accessible name,
+      // so every nav button read as anonymous. An explicit aria-label guarantees the name;
+      // aria-current marks the active destination for screen readers.
+      aria-label={item.label}
+      aria-current={tab === item.id ? "page" : undefined}
     >
       <NavIcon name={item.icon} size={14} color={tab === item.id ? "var(--blue4)" : "currentColor"} />
       <span>{item.label}</span>
@@ -713,6 +719,14 @@ function HomeScreen({
   const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
   const [ontology, setOntology] = useState<OntologyGraph | null>(null);
   const [domainInsightCount, setDomainInsightCount] = useState<number | null>(null);
+  // WP-11 — ask-on-Home: the composer as Home's hero. Submitting routes into the chat with
+  // the question pre-filled + fired (goToChat), so Home is a launchpad, not a dead dashboard.
+  const [homeQ, setHomeQ] = useState("");
+  const [homeMode, setHomeMode] = useState<AskMode>("ask");
+  const submitHome = () => {
+    const q = homeQ.trim();
+    if (q) { onGoToChat(q, homeMode); setHomeQ(""); }
+  };
 
   useEffect(() => {
     fetch(`${API_BASE}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`)
@@ -739,6 +753,38 @@ function HomeScreen({
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24 }}>
+
+        {/* WP-11 — ask-on-Home hero: the composer, front and centre. Shown once a connection
+            exists (before that, the first-run funnel guides connecting). Enter (or Ask) fires
+            the question into the chat with the chosen depth. */}
+        {connections.length > 0 && (
+          <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 20px" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 650, color: "var(--t1)", marginBottom: 10 }}>Ask anything about your data</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <textarea
+                value={homeQ}
+                onChange={e => setHomeQ(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitHome(); } }}
+                placeholder="e.g. Where are we losing money? · Which segments churn most? · How did revenue trend last quarter?"
+                rows={2}
+                aria-label="Ask a question about your data"
+                className="aug-input"
+                style={{ width: "100%", resize: "vertical", fontSize: 13, lineHeight: 1.5, padding: "10px 12px" }}
+              />
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <div role="group" aria-label="Answer depth" style={{ display: "flex", gap: 4, padding: 3, background: "var(--bg-3)", borderRadius: "var(--r2)", border: "1px solid var(--b1)" }}>
+                  <Button size="xs" variant={homeMode === "ask" ? "default" : "ghost"} aria-pressed={homeMode === "ask"} onClick={() => setHomeMode("ask")}>Insight</Button>
+                  <Button size="xs" variant={homeMode === "investigate" ? "default" : "ghost"} aria-pressed={homeMode === "investigate"} onClick={() => setHomeMode("investigate")}>Deep</Button>
+                </div>
+                <span style={{ fontSize: 11, color: "var(--t4)" }}>
+                  {homeMode === "ask" ? "a fast, grounded answer" : "a full multi-step investigation"}
+                </span>
+                <div style={{ flex: 1 }} />
+                <Button size="sm" disabled={!homeQ.trim()} onClick={submitHome}>Ask →</Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* First-run funnel — shown until the user runs their first investigation */}
         {recentInvs.length === 0 && (

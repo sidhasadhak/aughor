@@ -151,12 +151,18 @@ class JobKernel:
         canvas_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
         payload: Any = None,
+        org_id: Optional[str] = None,
         on_finish: Optional[Callable[[str, str], None]] = None,
     ) -> str:
         """Create a supervised job and start it. Returns the job id.
 
         ``on_finish(job_id, final_state)`` runs after the terminal transition —
         callers use it for registry cleanup (the old add_done_callback role).
+
+        ``org_id`` stamps the job's tenant explicitly — required when submitting from
+        OFF the request/loop context (e.g. a scheduler thread via
+        ``run_coroutine_threadsafe``, where ``current_org_id()`` would be 'default').
+        When omitted, ``job_insert`` falls back to the current Org context, unchanged.
         """
         if idempotency_key:
             existing = self.ledger.jobs_where(
@@ -168,7 +174,7 @@ class JobKernel:
         job_id = uuid.uuid4().hex[:12]
         self.ledger.job_insert({
             "id": job_id, "kind": kind, "conn_id": conn_id, "canvas_id": canvas_id,
-            "state": JobState.PENDING, "payload": payload,
+            "org_id": org_id, "state": JobState.PENDING, "payload": payload,
             "idempotency_key": idempotency_key, "attempt": 1, "created_at": _now(),
         })
         self.ledger.emit("job.state", {"state": JobState.PENDING, "kind": kind},
@@ -450,6 +456,62 @@ def kernel() -> JobKernel:
     if _kernel is None:
         _kernel = JobKernel()
     return _kernel
+
+
+# The main asyncio loop, captured at app startup. Background schedulers run their
+# ticks on APScheduler THREADS (no running loop), so to submit a supervised kernel
+# job they bridge onto this loop with `asyncio.run_coroutine_threadsafe`. None until
+# startup captures it (and in tests) — callers must treat None as "no loop, run
+# inline" (WP-7).
+_main_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def set_main_loop(loop: "asyncio.AbstractEventLoop") -> None:
+    """Record the app's running loop (called once from the lifespan startup)."""
+    global _main_loop
+    _main_loop = loop
+
+
+def main_loop() -> Optional["asyncio.AbstractEventLoop"]:
+    """The captured main loop, or None (no app loop — e.g. a unit test)."""
+    return _main_loop
+
+
+def submit_background_tick(
+    kind: str,
+    work_fn: Callable[[], Any],
+    *,
+    conn_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+    timeout: float = 10.0,
+) -> Optional[str]:
+    """Submit a scheduled background tick (monitor/brief) as a supervised, METERED kernel
+    job FROM A SCHEDULER THREAD (WP-7). ``work_fn`` is the synchronous unit of work
+    (open → run → persist); it runs inside the context-propagating executor, so the kernel
+    run's metering accumulator + Org binding reach the warehouse SQL it issues — the tick
+    then shows in Fleet/metering and counts against the agent's (Watcher/Briefer) budget.
+
+    Returns the job id, or ``None`` when there is no captured main loop (a unit test, or
+    before startup) — the caller then runs ``work_fn`` inline (the legacy path). Only the
+    *submit* is awaited (it is fast); the work itself runs asynchronously on the loop, so an
+    idempotency key prevents a slow tick from piling up on the next cron fire."""
+    # No live loop (pre-startup, a unit test, or mid reload/shutdown) → decline so the caller
+    # runs work_fn inline. `is_running()` guards against a stale global pointing at a dead loop,
+    # which would otherwise make run_coroutine_threadsafe raise and drop the tick entirely.
+    loop = main_loop()
+    if loop is None or not loop.is_running():
+        return None
+
+    async def _coro() -> None:
+        await asyncio.get_running_loop().run_in_executor(None, work_fn)
+
+    fut = asyncio.run_coroutine_threadsafe(
+        kernel().submit(kind, _coro, conn_id=conn_id, org_id=org_id or None,
+                        idempotency_key=idempotency_key),
+        loop,
+    )
+    return fut.result(timeout=timeout)
 
 
 def budget_fraction_used(job_id: Optional[str] = None) -> Optional[float]:

@@ -218,11 +218,20 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # too; for the synchronous chat/insight path this is the only sink.
         from aughor.kernel import metering
         _cost = metering.snapshot()
-        Ledger.default().artifact_write(
+        # WP-10: stamp the coder model used, so the public receipt's model{role,id} is honest
+        # (the model at answer time, not the config at read time). Best-effort.
+        _model = None
+        try:
+            from aughor.llm.provider import get_provider
+            _model = {"role": "coder", "id": getattr(get_provider("coder"), "model", None)}
+        except Exception:
+            _model = None
+        _receipt_id = Ledger.default().artifact_write(
             kind, natural_key,
             {"question": question, "headline": headline or question,
              "sql": sqls[0] if sqls else "", "tables": sorted(seen),
              **({"cost": _cost} if _cost is not None else {}),
+             **({"model": _model} if _model else {}),
              **({"resolved_ambiguities": _resolved_ambig} if _resolved_ambig else {}),
              **({"learning": _learning} if _learning else {}),
              **({"activations": _activations} if _activations else {}),
@@ -232,10 +241,12 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         if enf is not None:
             Ledger.default().emit("metric.enforcement", enf,
                                   conn_id=connection_id, canvas_id=canvas_id or None)
-        return {"learning": _learning, "activations": _activations}
+        # `receipt_id` is the stable artifact id → the unified GET /receipt/{id} (WP-10); a
+        # streaming caller emits it so the UI's "Why this number" opens the public receipt.
+        return {"learning": _learning, "activations": _activations, "receipt_id": _receipt_id}
     except Exception:
         logger.debug("%s receipt write failed", kind, exc_info=True)
-    return {"learning": None, "activations": None}
+    return {"learning": None, "activations": None, "receipt_id": None}
 
 
 _TABLE_RE = re.compile(r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)', re.IGNORECASE)
@@ -1776,8 +1787,12 @@ async def _stream_chat(
         from aughor.kernel.flags import flag_enabled as _flag_enabled
         if final_sql and _flag_enabled("trust.e1_live"):
             try:
-                from aughor.sql.trust_checks import run_trust_checks
-                _e1_hits = run_trust_checks(final_sql, dialect=db.dialect)
+                from aughor.sql.trust_checks import connection_column_types, run_trust_checks
+                # Real column types (cached) so the date-boundary check distinguishes a genuine
+                # TIMESTAMP footgun from a DATE column merely named `*_at`/`*_ts` (WP-1f: the DATE
+                # false positive the name heuristic would raise otherwise).
+                _e1_ct = connection_column_types(connection_id, db)
+                _e1_hits = run_trust_checks(final_sql, col_types=_e1_ct or None, dialect=db.dialect)
                 if _e1_hits:
                     _e1_msgs = "; ".join(t.message for t in _e1_hits[:2])
                     _grounded_headline = (
@@ -1873,6 +1888,10 @@ async def _stream_chat(
             for _evt in ("learning", "activations"):
                 if _receipts.get(_evt):
                     yield _sse(_evt, _receipts[_evt])
+            # WP-10: hand the UI the stable receipt id so "Why this number" opens the unified
+            # public receipt (GET /receipt/{id}) — one contract across every answer mode.
+            if _receipts.get("receipt_id"):
+                yield _sse("receipt_id", {"receipt_id": _receipts["receipt_id"]})
 
             # Self-improving loop: notice ontology gaps from this real query (e.g. a
             # currency measure aggregated with no canonical metric covering it) and

@@ -52,9 +52,9 @@ class AgentCharter:
         return d
 
 
-# The roster. Scout + Analyst run today; the reserved three are registered so they
-# appear (greyed) in the management UI and get wired when monitors/briefs/profile
-# move under the kernel.
+# The roster. Scout + Analyst + Insight run interactive/background work today; Watcher +
+# Briefer are wired to the metered monitor/brief cron (WP-7, flag `ops.metered_monitors`);
+# only Curator (profile refresh) stays reserved until it moves under the kernel.
 AGENTS: tuple[AgentCharter, ...] = (
     AgentCharter(
         id="scout", name="Scout", role="Autonomous data explorer",
@@ -81,12 +81,17 @@ AGENTS: tuple[AgentCharter, ...] = (
         id="watcher", name="Watcher", role="KPI sentinel",
         goal="Watch metrics and spawn an investigation when something moves.",
         lane="background", job_kinds=("monitor",), tools=("thresholds", "anomaly checks"),
-        icon="radar", reserved=True),
+        icon="radar",
+        # WP-7: a tick is a scalar/threshold SQL check (rarely any LLM) — a small token
+        # ceiling + generous time for a slow warehouse query. Governable per-agent.
+        default_budget=Budget(token_budget=50_000, time_budget_s=120)),
     AgentCharter(
         id="briefer", name="Briefer", role="Verdict synthesizer",
         goal="Synthesize the briefing — the state of the business in one read.",
         lane="background", job_kinds=("brief",), tools=("tree-reduce", "grounding"),
-        icon="newspaper", reserved=True),
+        icon="newspaper",
+        # WP-7: a brief runs real tree-reduce synthesis (LLM) over the workspace insights.
+        default_budget=Budget(token_budget=400_000, time_budget_s=300)),
     AgentCharter(
         id="curator", name="Curator", role="Semantic-layer keeper",
         goal="Keep the profile, ontology, and metrics fresh and governed.",

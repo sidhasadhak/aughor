@@ -102,6 +102,10 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
 - **Semantic compiler** — typed intent IR → deterministic SQL for the well-specified core.
 - **Result-trust checks (CIDR-E1)** — flag function-semantics footguns (timestamp vs date-literal boundary,
   lexicographic order of numeric text, text↔numeric comparison) as labelled caveats, never overwriting the query.
+  **On by default** on every live answer — the quick/chat headline and each Deep-Analysis phase query
+  (`trust.e1_live`) — reading the connection's real column types so a DATE column merely *named* like a
+  timestamp (`acquired_at`) is not false-flagged; validated by a live A/B over 1,837 executed statements
+  (zero false-positive caveats). Previously these ran only on `/query/validate`.
 - **Finding-trust ladder** — guards → quarantine → dismiss-with-reason; pre-emission insight verification;
   numeral grounding; ratio-aware cross-sectional scans; angle-feasibility + repair intent-preservation gates.
 - **Numeric grounding, reconciled** — a claimed figure is credited when it appears in the result cells **or is
@@ -191,6 +195,14 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   earned confidence (`kernel/ledger.py`, `_write_answer_receipt`) — **and any resolved ambiguity the answer
   applied** ("followed a previously-resolved reading, settled by a probe / the user / a reviewer"), so the
   compounding machinery is inspectable, not hidden (`web/components/TrustReceipt.tsx`).
+- **Trustworthy by inspection — the public Trust Receipt** (`GET /receipt/{id}`, `aughor/trust/receipt.py`) —
+  every answer, of any mode (quick · deep · builder · briefing figure), carries a stable **receipt id** (the
+  kernel ledger artifact id, streamed as a `receipt_id` event) that resolves to ONE signed, inspectable
+  contract: the executed SQL, input tables, the guards that fired (each named, with its action), caveats,
+  governed-metric enforcement, cost and the model used. An **HMAC signature** over the canonical JSON proves
+  the server issued it and detects tampering (server-side secret — issuance proof, not third-party
+  non-repudiation). RBAC-scoped: a receipt on a connection outside the caller's org 404s identically to a
+  missing one (no existence leak). The moat, made inspectable — one "why this number" object across surfaces.
 - **Finding Dossier** — drill-down is a *read* of captured derivation, not a second (re-)analysis.
 - **Outcome tracking & feedback loop** — close the loop on whether findings were acted on.
 
@@ -347,7 +359,10 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 - **Functional-plane consolidation** (Part 2 of the 2026-07-03 review, flag-gated) — the diffused agent
   runtime is being re-drawn as clean horizontal planes, each with a typed contract + a conformance test:
   a **Trust plane** (`aughor/trust:verify(sql|code|metadata, scope) → Verdict`) hoisting the ~9 scattered
-  validation guards behind one façade (the read-only/mutation gate now runs on the generation path too);
+  validation guards behind one façade — its live consumers are now **on by default** (WP-1f): the AST
+  read-only/mutation **BLOCK** runs on the Deep-Analysis generation path (`trust.verify_live`) and on the
+  `/query/validate` surface (`trust.verify_facade`), so a mutating/DDL statement is stopped at the plane,
+  not just at the fail-closed connection layer;
   a **Capability plane** (`aughor/capability`) — one `Generate→Validate→Execute→Interpret` template
   parameterized by domain (`data` SQL + `metadata` schema-Q&A), whose `validate` *is* the Trust plane;
   and a **Semantic plane** (`aughor/semantic/context.py:resolve → SemanticContext`) that resolves

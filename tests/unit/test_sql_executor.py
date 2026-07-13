@@ -346,11 +346,39 @@ def test_e1_caveats_are_flag_gated(monkeypatch):
         return conn
 
     sql = "SELECT COUNT(*) AS n FROM ev WHERE created_at <= '2024-03-01'"
-    monkeypatch.delenv("AUGHOR_TRUST_E1_LIVE", raising=False)
+    # WP-1f promoted trust.e1_live default-ON, so the "off" path is forced explicitly.
+    monkeypatch.setenv("AUGHOR_TRUST_E1_LIVE", "0")
     r = execute_guarded(_ev_conn(), sql, query_id="p1")
-    assert r.caveats == []  # default off = byte-identical
+    assert r.caveats == []  # flag off = byte-identical
 
     monkeypatch.setenv("AUGHOR_TRUST_E1_LIVE", "1")
     r2 = execute_guarded(_ev_conn(), sql, query_id="p1")
     assert any("E1-date-boundary" in c for c in r2.caveats), r2.caveats
     assert r2.sql == sql  # WARN-only — never rewrites
+
+
+def test_e1_live_reads_real_types_no_date_false_positive(monkeypatch):
+    """WP-1f: the E1 live check reads REAL column types (connection_column_types), so a
+    DATE column named like a timestamp (`acquired_at`) is NOT flagged — the name heuristic
+    would false-fire. A genuine TIMESTAMP column of the same shape still IS flagged."""
+    from aughor.sql import trust_checks
+    monkeypatch.setattr(trust_checks, "_COLTYPE_CACHE", {})   # isolate the per-conn cache
+    monkeypatch.setenv("AUGHOR_TRUST_E1_LIVE", "1")
+
+    def _conn_with(coldef: str, col: str):
+        conn = DuckDBConnection.__new__(DuckDBConnection)
+        conn._path = Path(":memory:")
+        conn._conn = duckdb.connect(":memory:")
+        conn._connection_id = f"e1_{col}_{coldef}"      # unique key so the cache never collides
+        conn._schema_name = None
+        conn._conn.execute(f"CREATE TABLE t ({col} {coldef}, v INT)")
+        return conn
+
+    # DATE column bounded by a date-only literal is CORRECT SQL — must NOT caveat.
+    sql_date = "SELECT COUNT(*) AS n FROM t WHERE acquired_at <= '2025-11-30'"
+    r_date = execute_guarded(_conn_with("DATE", "acquired_at"), sql_date, query_id="p1")
+    assert not any("E1-date-boundary" in c for c in r_date.caveats), r_date.caveats
+
+    # TIMESTAMP column of the same name is a genuine boundary footgun — must still caveat.
+    r_ts = execute_guarded(_conn_with("TIMESTAMP", "acquired_at"), sql_date, query_id="p1")
+    assert any("E1-date-boundary" in c for c in r_ts.caveats), r_ts.caveats

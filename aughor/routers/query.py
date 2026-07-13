@@ -676,20 +676,10 @@ def query_validate(body: _QueryValidateRequest):
         # lexicographic order of numeric text, text-vs-numeric compare). Pure AST; col_types best-
         # effort from information_schema, with a name heuristic fallback for the date-boundary case.
         try:
-            from aughor.sql.trust_checks import run_trust_checks
-            col_types: dict | None = None
-            try:
-                r = db.execute("__trust_coltypes__",
-                               "SELECT table_name, column_name, data_type FROM information_schema.columns")
-                if r and not r.error and r.rows:
-                    col_types = {}
-                    for tbl, col, dt in r.rows:
-                        if col and dt:
-                            col_types[f"{str(tbl).lower()}.{str(col).lower()}"] = str(dt)
-                            col_types.setdefault(str(col).lower(), str(dt))
-            except Exception as exc:
-                tolerate(exc, "validate: trust col-types (heuristic fallback used)",
-                         counter="validate.trust_coltypes")
+            # One source of truth for the col-types introspection (shared with the live E1
+            # answer paths): uncapped scan, cached per connection, fail-open to the heuristic.
+            from aughor.sql.trust_checks import connection_column_types, run_trust_checks
+            col_types = connection_column_types(body.conn_id, db) or None
             trust_findings = [f.to_dict() for f in run_trust_checks(sql, col_types=col_types, dialect=dialect)]
         except Exception as exc:
             tolerate(exc, "validate: trust checks", counter="validate.trust")
