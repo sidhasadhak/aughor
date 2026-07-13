@@ -25,8 +25,11 @@ surfaced here.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _safe(fn: Callable[[], str], reason: str) -> str:
@@ -100,27 +103,45 @@ def external_docs(question: str, connection_id: str = "") -> str:
     return _safe(lambda: build_external_context_section(question, top_k=2), "grounding: connection documents")
 
 
-def governed_metrics(question: str, connection_id: str, *, schema: str = "",
-                     eff_schema: Optional[str] = None) -> str:
-    """Governed-metric bindings — the SAME resolver the answer + deep paths use
-    (``unified_metric_grounding``), so a metric resolves to the same SQL here."""
+def governed_metrics(question: str, connection_id: str, *, db: Optional[object] = None,
+                     schema: str = "", eff_schema: Optional[str] = None) -> str:
+    """Governed-metric grounding — byte-identical to the quick ``/ask`` path's
+    ``metrics_section``: the unified metric bindings (``unified_metric_grounding``,
+    the SAME resolver Deep uses), plus — when a live ``db`` is given — the measure
+    grain block and the metric-feasibility gap. Empty without a schema."""
     if not schema:
         return ""
-    from aughor.semantic.canonical import unified_metric_grounding
-    return _safe(lambda: unified_metric_grounding(connection_id, eff_schema, schema_text=schema,
-                                                  question=question),
-                 "grounding: governed-metric bindings")
+    try:
+        from aughor.semantic.canonical import unified_metric_grounding
+        _mb = unified_metric_grounding(connection_id, eff_schema, schema_text=schema, question=question)
+        out = (_mb + "\n\n") if _mb else ""
+    except Exception:
+        out = ""  # matches the answer path: a metric-grounding failure drops the block
+    if db is not None:
+        from aughor.semantic.data_understanding import build_data_understanding
+        _gb = build_data_understanding(db, connection_id=connection_id, schema=schema).grain_block
+        if _gb:
+            out += _gb + "\n\n"
+        from aughor.semantic.metric_feasibility import unsupported_metric_gap
+        _fg = unsupported_metric_gap(question, schema)
+        if _fg:
+            out += "DATA AVAILABILITY — " + _fg + ".\n\n"
+    return out
 
 
 def schema_slice(question: str, connection_id: str, *, schema: str = "") -> str:
     """The schema-linked slice (relevant tables/columns) — the same pre-filter the
-    answer path applies (``link_schema_for_prompt``, top_k=8)."""
+    answer path applies (``link_schema_for_prompt``, top_k=8), falling back to the
+    full schema on failure (byte-identical to the answer path's fallback)."""
     if not schema:
         return ""
-    from aughor.tools.schema_linker import link_schema_for_prompt
-    return _safe(lambda: link_schema_for_prompt(question, schema, top_k_tables=8, top_k_cols=8,
-                                                connection_id=connection_id),
-                 "grounding: schema slice (linking)")
+    try:
+        from aughor.tools.schema_linker import link_schema_for_prompt
+        return link_schema_for_prompt(question, schema, top_k_tables=8, top_k_cols=8,
+                                      connection_id=connection_id)
+    except Exception:
+        logger.warning("schema-linking pre-filter failed; using full schema", exc_info=True)
+        return schema
 
 
 # The receipt's block order (prepends first, then the template body) with titles.
@@ -131,7 +152,8 @@ _BLOCKS: list[tuple[str, str, Callable[..., str], bool]] = [
     ("trusted", "Trusted query templates", lambda q, c, **k: trusted_templates(q, c), False),
     ("corrections", "Ambiguity-ledger priors (corrections)", lambda q, c, **k: correction_priors(q, c), False),
     ("governed_metrics", "Governed-metric bindings",
-     lambda q, c, **k: governed_metrics(q, c, schema=k.get("schema", ""), eff_schema=k.get("eff_schema")), True),
+     lambda q, c, **k: governed_metrics(q, c, db=k.get("db"), schema=k.get("schema", ""),
+                                        eff_schema=k.get("eff_schema")), True),
     ("schema_slice", "Schema slice (linked)",
      lambda q, c, **k: schema_slice(q, c, schema=k.get("schema", "")), True),
     ("glossary", "Connection glossary / business definitions", lambda q, c, **k: connection_glossary(q, c), False),
@@ -202,17 +224,19 @@ def build_grounding_context(
     question: str,
     connection_id: str,
     *,
+    db: Optional[object] = None,
     schema: str = "",
     eff_schema: Optional[str] = None,
 ) -> GroundingContext:
     """Assemble the grounding blocks for a (question, connection).
 
     ``schema`` (a rendered schema string) enables the schema-dependent blocks
-    (governed metrics, schema slice); without it those are skipped. Every block is
-    best-effort — a failing producer degrades to an empty block, never an error.
+    (governed metrics, schema slice); a live ``db`` additionally fills the grain +
+    feasibility parts of the metrics block. Every block is best-effort — a failing
+    producer degrades to an empty block, never an error.
     """
     blocks: list[GroundingBlock] = []
     for key, title, producer, _needs in _BLOCKS:
-        content = producer(question, connection_id, schema=schema, eff_schema=eff_schema)
+        content = producer(question, connection_id, db=db, schema=schema, eff_schema=eff_schema)
         blocks.append(GroundingBlock(key=key, title=title, content=content))
     return GroundingContext(question=question, connection_id=connection_id, blocks=blocks)

@@ -1196,46 +1196,23 @@ async def _stream_chat(
                 except Exception:
                     logger.warning("Canvas table-scope filter failed; using full schema", exc_info=True)
 
-        # Metrics built AFTER schema (needs the column set to filter out metrics
-        # whose tables/columns aren't in THIS connection — metrics are global, so
-        # an unfiltered block leaks another connection's formula). Kept out of the
-        # gather to avoid a concurrent get_schema on the same db connection.
-        metrics_section = ""
-        try:
-            # UNIFIED metric grounding — the SAME resolver the Deep path uses, so a metric
-            # resolves to the SAME SQL in both. /chat previously injected only the global
-            # catalog (build_metrics_block) and never saw the connection's GOVERNED north-star
-            # value_sql, so it re-derived gross margin / ROAS / AOV and could disagree with Deep.
-            from aughor.semantic.canonical import unified_metric_grounding
-            _mb = unified_metric_grounding(connection_id, canvas_scope_eff_schema, schema_text=schema,
-                                           question=question)
-            metrics_section = (_mb + "\n\n") if _mb else ""
-        except Exception:
-            metrics_section = ""
-        # Measure-additivity PREVENTION: tell the generator each measure's grain (per-unit
-        # → SUM(x*quantity); per-line → SUM(x)). No-op safe; data-detected + cached. R4 — via the
-        # SHARED data-understanding builder, the same module the ADA phase planner now grounds on,
-        # so the two modes can never silently carry a different grain understanding.
-        from aughor.semantic.data_understanding import build_data_understanding as _build_du
-        _gb = _build_du(db, connection_id=connection_id, schema=schema).grain_block
-        if _gb:
-            metrics_section += _gb + "\n\n"
-        # Metric-feasibility: if the question needs a metric this connection can't support
-        # (profit with no cost, efficiency with no conversions), tell the generator to report
-        # what IS measurable instead of fabricating a verdict.
-        from aughor.semantic.metric_feasibility import unsupported_metric_gap as _feas_gap
-        _fg = _feas_gap(question, schema)
-        if _fg:
-            metrics_section += "DATA AVAILABILITY — " + _fg + ".\n\n"
+        # Governed-metric grounding — built AFTER schema (needs the column set to
+        # filter connection-scoped metrics) and BEFORE schema-linking (grounds on the
+        # full schema). Rec 5: the SAME producer the GET /ask/context receipt renders
+        # (unified bindings + measure grain + feasibility gap), so the receipt shows
+        # exactly what grounded this answer — no drift. Byte-identical to the prior
+        # inline block; the "SAME resolver as Deep" property (unified_metric_grounding,
+        # not the global build_metrics_block) is preserved inside the producer.
+        from aughor.agent.grounding import (governed_metrics as _grounding_metrics,
+                                            schema_slice as _grounding_schema_slice)
+        metrics_section = _grounding_metrics(question, connection_id, db=db, schema=schema,
+                                             eff_schema=canvas_scope_eff_schema)
 
-        # Schema-linking pre-filter: narrow schema to relevant tables/columns
-        # for this specific question. Reduces hallucination by 30-60%.
+        # Schema-linking pre-filter: narrow schema to relevant tables/columns for this
+        # question (reduces hallucination 30-60%). Shared Rec 5 producer — falls back to
+        # the full schema on failure, byte-identical to the prior inline try/except.
         _full_schema = schema  # keep the un-narrowed schema for FK-neighbour expansion
-        try:
-            from aughor.tools.schema_linker import link_schema_for_prompt
-            schema = link_schema_for_prompt(question, schema, top_k_tables=8, top_k_cols=8, connection_id=connection_id)
-        except Exception:
-            logger.warning("Schema-linking pre-filter failed; using full schema", exc_info=True)
+        schema = _grounding_schema_slice(question, connection_id, schema=schema)
 
         # Build structured Data Catalog from linked tables (MindsDB-style),
         # expanded with FK neighbours so bridge/output tables a multi-table
@@ -3246,7 +3223,7 @@ def ask_context_endpoint(
         tolerate(exc, "grounding receipt: schema fetch best-effort; schema-dependent blocks skipped",
                  counter="ask.context_receipt.schema")
         schema = ""
-    ctx = build_grounding_context(question, connection, schema=schema,
+    ctx = build_grounding_context(question, connection, db=db, schema=schema,
                                   eff_schema=getattr(db, "_schema_name", None))
     return {"receipt": ctx.to_dict(), "markdown": ctx.to_markdown()}
 

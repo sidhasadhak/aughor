@@ -1289,17 +1289,20 @@ and the eval mirror already drifts (`build_metrics_block` vs the real path's `un
   (schema-dependent blocks fire only when a schema is resolved); `to_dict()` + `to_markdown()`.
 - `GET /ask/context?connection=&question=` (`routers/investigations.py`) → `{receipt, markdown}`; 404 when the
   flag is off (byte-identical default).
-- Convergence proof (no drift): `_stream_chat`'s three pure prepend producers (dialect rules, agent brief,
-  corrections) now call the shared block functions — a byte-identical swap (parity asserted in tests). The
-  schema-linking + governed-metric blocks stay inline (entangled with canvas-scope resolution) — folding those
-  through `build_grounding_context()` is the reviewed follow-up. Value-index literal binding is post-generation
-  on the answer path (a guard, not a prompt block) → not yet surfaced. 10 tests; ruff clean.
+- Convergence proof (no drift): `_stream_chat` now calls the shared block producers for **five** blocks — the
+  three pure prepends (dialect rules, agent brief, corrections) AND the two schema-dependent ones: the
+  governed-metric block (`unified_metric_grounding` + measure-grain + feasibility gap) and the schema slice
+  (`link_schema_for_prompt`, with the same full-schema fallback). Each is a byte-identical swap with a parity
+  test that reconstructs the former inline assembly and asserts equality; the endpoint passes `db` so the
+  receipt's metrics block carries grain + feasibility too. Value-index literal binding is post-generation on the
+  answer path (a guard, not a prompt block) → not surfaced. 14 tests; ruff clean; broad chat regression green.
   - **"Show grounding" answer-UI affordance SHIPPED:** `web/lib/api.ts::getGroundingContext` + a `GroundingDetails`
     component in `web/components/ChatMessage.tsx` — a lazy "Show grounding" toggle (fetches on click; the endpoint
     runs real retrievers) rendering each active block, hidden when the flag is off (404 → null). Live-verified: the
     endpoint serves 4 populated blocks (incl. schema-dependent) flag-on / 404 flag-off on the real API server, and
     the web app loads it with zero console errors; eslint/design-token/raw-element/tsc gates clean.
-  **Still open (own follow-up):** the schema-linking + governed-metric block convergence into `_stream_chat`.
+  **Rec 5 COMPLETE** (backend + UI + full `_stream_chat` convergence). Only the data-catalog/FK/semantic-layer
+  schema *shaping* stays inline — that is answer-path rendering, not a distinct grounding block.
 
 *Wave 0 — Correctness + trivial wins — ✅ COMPLETE:*
 - Matcache tenancy fix (II·Rec 1) — `de04429`. Shared `_row_policy_principal` gate + `result_cache_tenancy()`

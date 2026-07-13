@@ -57,6 +57,58 @@ def test_correction_priors_matches_original():
     assert G.correction_priors(q, c) == (build_corrections_section(q, c) or "")
 
 
+def test_governed_metrics_matches_inline_assembly():
+    # Byte-parity with the quick /ask path's former inline metrics_section
+    # (unified bindings + grain block + feasibility gap), so the convergence into
+    # _stream_chat cannot change the answer prompt.
+    from aughor.db.connection import open_connection_for
+    from aughor.semantic.canonical import unified_metric_grounding
+    from aughor.semantic.data_understanding import build_data_understanding
+    from aughor.semantic.metric_feasibility import unsupported_metric_gap
+    db = open_connection_for("samples")
+    schema = db.get_schema()
+    q, c = "why is revenue down by channel", "samples"
+    eff = getattr(db, "_schema_name", None)
+    _mb = unified_metric_grounding(c, eff, schema_text=schema, question=q)
+    expected = (_mb + "\n\n") if _mb else ""
+    _gb = build_data_understanding(db, connection_id=c, schema=schema).grain_block
+    if _gb:
+        expected += _gb + "\n\n"
+    _fg = unsupported_metric_gap(q, schema)
+    if _fg:
+        expected += "DATA AVAILABILITY — " + _fg + ".\n\n"
+    assert G.governed_metrics(q, c, db=db, schema=schema, eff_schema=eff) == expected
+
+
+def test_schema_slice_matches_inline_link():
+    from aughor.db.connection import open_connection_for
+    from aughor.tools.schema_linker import link_schema_for_prompt
+    db = open_connection_for("samples")
+    schema = db.get_schema()
+    q, c = "why is revenue down by channel", "samples"
+    expected = link_schema_for_prompt(q, schema, top_k_tables=8, top_k_cols=8, connection_id=c)
+    assert G.schema_slice(q, c, schema=schema) == expected
+
+
+def test_schema_slice_falls_back_to_full_schema_on_failure(monkeypatch):
+    import aughor.tools.schema_linker as sl
+    monkeypatch.setattr(sl, "link_schema_for_prompt",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert G.schema_slice("q", "samples", schema="FULL SCHEMA TEXT") == "FULL SCHEMA TEXT"
+
+
+def test_governed_metrics_without_db_is_unified_only():
+    # The endpoint passes db (rich receipt); a db-less caller gets just the bindings.
+    from aughor.db.connection import open_connection_for
+    from aughor.semantic.canonical import unified_metric_grounding
+    db = open_connection_for("samples")
+    schema = db.get_schema()
+    q, c = "why is revenue down by channel", "samples"
+    eff = getattr(db, "_schema_name", None)
+    _mb = unified_metric_grounding(c, eff, schema_text=schema, question=q)
+    assert G.governed_metrics(q, c, schema=schema, eff_schema=eff) == ((_mb + "\n\n") if _mb else "")
+
+
 def test_producers_degrade_to_empty_not_raise(monkeypatch):
     # A failing producer must yield "" (never break the answer/receipt).
     import aughor.semantic.kb_retriever as kb
