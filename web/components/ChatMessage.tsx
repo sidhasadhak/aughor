@@ -219,8 +219,33 @@ function computeSummary(columns: string[], rows: unknown[][], sql?: string | nul
     return `${label}: ${fmtVal(Number((rows[0] as unknown[])[numIdx]))}`;
   }
 
-  // No category — just a numeric summary
+  // No non-numeric category. If a TIME axis is present (including a numeric year/
+  // quarter), this is a SERIES — describe first→last and the net change, never SUM a
+  // level metric across periods ("3.8K total across 5 rows" for annual net sales is
+  // meaningless; fiscal_year is the time axis, not a category to total). A plain
+  // numeric list with no time axis still gets a total.
   if (catIdx < 0) {
+    const timeIdx = columns.findIndex((c, i) => i !== numIdx && granFromName(c) !== null);
+    if (timeIdx >= 0 && n >= 2) {
+      const seq = [...rows].sort((a, b) => {
+        const av = (a as unknown[])[timeIdx], bv = (b as unknown[])[timeIdx];
+        const an = Number(av), bn = Number(bv);
+        return (!isNaN(an) && !isNaN(bn))
+          ? an - bn
+          : String(av ?? "") < String(bv ?? "") ? -1 : String(av ?? "") > String(bv ?? "") ? 1 : 0;
+      });
+      const fv = Number((seq[0] as unknown[])[numIdx]);
+      const lv = Number((seq[n - 1] as unknown[])[numIdx]);
+      const fp = String((seq[0] as unknown[])[timeIdx]);
+      const lp = String((seq[n - 1] as unknown[])[timeIdx]);
+      if (!isNaN(fv) && !isNaN(lv)) {
+        const label = cleanLabel(numCol);
+        if (isShare) return `${label}: ${fmtVal(fv)} (${fp}) → ${fmtVal(lv)} (${lp}).`;
+        const pct = fv ? Math.round(((lv - fv) / Math.abs(fv)) * 100) : 0;
+        const chg = pct === 0 ? "flat" : pct > 0 ? `+${pct}%` : `${pct}%`;
+        return `${label}: ${fmtVal(fv)} (${fp}) → ${fmtVal(lv)} (${lp}), ${chg} over ${n} periods.`;
+      }
+    }
     const nums = rows.map((r) => Number((r as unknown[])[numIdx])).filter((v) => !isNaN(v));
     const total = nums.reduce((a, b) => a + b, 0);
     return isShare ? `avg ${fmtVal(total / nums.length)}` : `${fmtVal(total)} total across ${n} rows.`;
