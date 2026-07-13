@@ -11,6 +11,7 @@ import CommentIcon        from "@atlaskit/icon/core/comment";
 import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
 import { uploadDocument, listUserAgents, type UserAgent } from "@/lib/api";
 import { useChat, type DebugEvent, type ChatTurn } from "@/lib/useChat";
+import { useStickToBottom } from "@/lib/useStickToBottom";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TrustReceipt } from "./TrustReceipt";
@@ -251,7 +252,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               onClick={() => onSend()}
               disabled={!input.trim()}
               title="Send"
-              className="rounded-[var(--r3)] text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
+              className="aug-pressable rounded-[var(--r3)] text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
               style={{ width: 30, height: 30 }}
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -477,7 +478,6 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const [feedbackDone, setFeedbackDone] = useState<Set<string>>(new Set());
   const [sourcePanel, setSourcePanel] = useState<SourcePanelData | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const scrollRef               = useRef<HTMLDivElement>(null);
   const turnTopRefs             = useRef<Map<string, HTMLElement>>(new Map());
   const textareaRef             = useRef<HTMLTextAreaElement>(null);
   const wasStreamingRef         = useRef(false);
@@ -571,13 +571,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restoreSessionId]);
 
-  // ── Scroll: bottom during streaming, back to question on completion ─────────
+  // ── Scroll: follow the newest content while pinned to the bottom, release
+  //    the moment the user scrolls up to read, snap back on completion. ───────
   const streamingKey = state.turns.map(t => `${t.id}:${t.phases.length}:${t.statusText}`).join("|");
-  useEffect(() => {
-    if (!state.streaming) return;
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamingKey]);
+  const { scrollRef, pinned, scrollToBottom } = useStickToBottom(streamingKey, { active: state.streaming });
 
   useEffect(() => {
     if (wasStreamingRef.current && !state.streaming && state.turns.length > 0) {
@@ -695,7 +692,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     <button
                       key={s.text}
                       onClick={() => handleSend(s.text, s.mode)}
-                      className="flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all"
+                      className="aug-pressable flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all"
                       style={s.mode === "investigate" ? {
                         background: "var(--bg-1)",
                         border: "0.5px solid var(--grn1)",
@@ -750,6 +747,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                 {state.turns.map((turn, i) => (
                   <div
                     key={turn.id}
+                    className="aug-anim-up"
                     ref={el => {
                       if (el) turnTopRefs.current.set(turn.id, el);
                       else turnTopRefs.current.delete(turn.id);
@@ -831,6 +829,32 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               height: 200, pointerEvents: "none", zIndex: 1,
               background: "linear-gradient(to bottom, transparent 0%, var(--bg-1) 68%)",
             }} />
+
+            {/* ── Jump to latest — shown only when the user has scrolled up off
+                 the newest content (stick-to-bottom released). ── */}
+            {!pinned && (
+              <div style={{
+                position: "absolute", bottom: 96, left: 0, right: 0,
+                zIndex: 3, display: "flex", justifyContent: "center", pointerEvents: "none",
+              }}>
+                <button
+                  onClick={() => scrollToBottom()}
+                  title="Jump to latest"
+                  className="aug-pressable aug-anim-fade flex items-center gap-1.5 rounded-[var(--r-pill)] transition"
+                  style={{
+                    pointerEvents: "all", padding: "5px 12px 5px 9px",
+                    fontSize: 11.5, fontWeight: 500, fontFamily: "var(--font-ui)",
+                    color: "var(--t2)", background: "var(--bg-3)", border: "1px solid var(--b2)",
+                    boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t1)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b3)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)"; }}
+                >
+                  <ChevronDownIcon label="" size="small" />
+                  Jump to latest
+                </button>
+              </div>
+            )}
 
             {/* ── Floating input ── */}
             <div style={{

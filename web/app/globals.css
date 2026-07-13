@@ -324,6 +324,12 @@ a:hover { color: var(--blue4); }
   animation: aug-shimmer 1.4s infinite;
 }
 
+/* Tactile press + crisp keyboard focus for interactive controls. Additive:
+   pair with an element's existing colour transition (Tailwind `transition`
+   already includes transform, so the press eases in and out). */
+.aug-pressable:active { transform: scale(0.97); }
+.aug-pressable:focus-visible { outline: 2px solid var(--bfocus); outline-offset: 2px; }
+
 /* ── Deep-Analysis trace (ThinkingTrace) step transitions ────────────────── */
 @keyframes aug-step-in  { from { opacity: 0; transform: translateY(5px) } to { opacity: 1; transform: none } }
 @keyframes aug-check-pop { 0% { transform: scale(0); opacity: 0 } 60% { transform: scale(1.3) } 100% { transform: scale(1); opacity: 1 } }
@@ -342,6 +348,7 @@ a:hover { color: var(--blue4); }
   .aug-step-in, .aug-check-pop, .aug-pulse-dot, .aug-flow-y,
   .aug-anim-blink, .aug-anim-up, .aug-anim-fade, .aug-anim-pop,
   .aug-shimmer { animation: none; }
+  .aug-pressable:active { transform: none; }
 }
 
 /* ── Ontology canvas edge animations ─────────────────────────────────────── */
