@@ -815,10 +815,26 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 > real `/ask` → "Why this number →" → drawer showed the SQL, metrics (revenue/aov), `16.6K tok · 1
 > query · 4.4s` cost, and the HMAC-signed indicator; Escape closes; 0 console errors; tsc + 3 web
 > gates green.
-> **REMAINING (extend to other surfaces):** stamp receipt ids on the Query Builder path + briefing
-> figures (`BriefFigure.source` → add `receipt_id`) + emit the id on the ADA/deep stream; then drop
-> `<WhyThisNumber>` onto ResultFigure / KPI tiles / briefing figures (the component is ready — those
-> surfaces just need to carry an id). Deferred as separate slices.
+> **EXTENDED to more surfaces** (branch `2026-07-13-wp10-receipt-surfaces`): (1) **Deep/ADA
+> answers** — the deep stream now emits the `receipt_id` at the completion site
+> (`investigations.py` ~2531), reusing the chat capture path (`ChatTurn.publicReceiptId`) + the
+> ChatPanel render, so a deep answer opens the same drawer (no frontend change). (2) **Query
+> Builder** — `POST /query/run` writes a signed `builder` receipt (`_write_builder_receipt`,
+> keyed by the SQL hash so re-runs version one receipt) recording the USER's original SQL + input
+> tables, and returns `receipt_id`; `DirectQueryResult` carries it and `<WhyThisNumber>` renders
+> in the ResultsPane toolbar. +2 backend tests (run→resolvable signed builder receipt · blocked
+> SQL→no receipt); backend curl-verified (`/query/run` → `receipt_id`); tsc + gates green. **NOT
+> extended (by design):** **briefing** figures already have receipt inspection via
+> `getInsightReceipt` ("show the receipt", BriefingPanel) — unifying that onto `<WhyThisNumber>`
+> is a separate "merge two receipt surfaces" slice (needs insights to expose a unified artifact
+> id), not missing coverage. **Browser-verified on a richer QUICK insight** (Insight mode, not
+> deep): "which product categories generate the most revenue?" → ranked bar chart → "Why this
+> number" drawer showed the real multi-table JOIN SQL (copyable), input tables `order_items` +
+> `products`, cost, HMAC-signed receipt — and a live **`⚠ revenue · non-governed`** metric-drift
+> chip (the answer improvised a revenue formula instead of a governed metric; the receipt flags
+> it). So the drawer works on chart+insight cards, not just scalars. Deep-run + QB-visual-composer
+> end-to-end drives still not run (deep runs are minutes; the composer needs drag automation) —
+> both feed the same verified `WhyThisNumber` component via id-plumbing verified above.
 
 - **Unify:** per-mode receipt routes exist (`/ada/{conn}/{inv}/receipt`,
   `/chat/{conn}/{turn}/receipt`). Introduce a receipt **id** (the kernel ledger artifact id —

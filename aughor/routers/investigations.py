@@ -2528,13 +2528,17 @@ async def _stream_investigation(
                 # K3-wide: the ADA report carries a Trust Receipt too (executed
                 # queries → input tables → metric enforcement), so an agentic
                 # answer self-justifies like a chat answer and an explorer finding.
-                _write_answer_receipt(
+                _ada_rcpt = _write_answer_receipt(
                     kind="ada_report", natural_key=f"ada:{connection_id}:{inv_id}",
                     question=question, sqls=_ada_sqls(ada) or [r.sql for r in qh if getattr(r, "sql", None)],
                     headline=(ada.get("headline", "") if isinstance(ada, dict) else ""),
                     schema=full_schema, connection_id=connection_id, canvas_id=canvas_id,
                     payload_extra={"investigation_id": inv_id},
                 )
+                # WP-10: hand the UI the unified receipt id so a deep answer opens the same
+                # "Why this number" drawer as a quick answer (GET /receipt/{id}).
+                if _ada_rcpt.get("receipt_id"):
+                    yield _sse("receipt_id", {"receipt_id": _ada_rcpt["receipt_id"]})
                 await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
                 report_emitted = True
             elif node_name == "decompose_exploration":
