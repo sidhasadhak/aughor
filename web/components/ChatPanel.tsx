@@ -14,6 +14,7 @@ import { useChat, type DebugEvent, type ChatTurn } from "@/lib/useChat";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TrustReceipt } from "./TrustReceipt";
+import { WhyThisNumber } from "./WhyThisNumber";
 
 import { API_BASE as BASE } from "@/lib/config";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
@@ -528,6 +529,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           // Restored turns: the turn id IS the receipt key; the component 404-noops
           // gracefully if this turn predates receipts.
           receiptId: t.sql ? t.id : null,
+          publicReceiptId: null,   // restored turns use the per-mode receipt route (receiptId)
           sql: t.sql || null,
           columns: t.columns || [],
           rows: t.rows || [],
@@ -796,6 +798,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     )}
                     {turn.status === "done" && turn.adaReport && turn.investigationId && (
                       <TrustReceipt connectionId={connectionId} receiptId={turn.investigationId} kind="ada" />
+                    )}
+                    {/* WP-10 — "Why this number": opens the unified signed receipt (GET /receipt/{id}). */}
+                    {turn.status === "done" && turn.publicReceiptId && (
+                      <WhyThisNumber receiptId={turn.publicReceiptId} />
                     )}
                     {/* Post-investigation feedback — shown once per completed investigation with hypotheses */}
                     {turn.mode === "investigate" &&

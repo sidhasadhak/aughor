@@ -804,13 +804,21 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 > metrics, real cost metering) and the signature **verified**. +6 tests (exact-version resolve ·
 > projection · signature+tamper · route round-trip · 404 unknown · 404 foreign-org). `gen:api`
 > regenerated (route in `api.gen.ts`). FEATURES §3 gained the "trustworthy by inspection" para.
-> **REMAINING (frontend + extend):** the "Why this number" **drawer** rendering the unified
-> receipt (a reusable component; the chat/ada surfaces already have `TrustReceipt.tsx` via the
-> per-mode route — the unified drawer's value is the surfaces that lack one); **stamp receipt
-> ids** on the Query Builder path + briefing figures (`BriefFigure.source` → add `receipt_id`)
-> + emit the id on the ADA stream; then wire the drawer onto ResultFigure / KPI tiles / briefing
-> figures. Deferred as separate slices — the signed, RBAC'd, inspectable **contract** (the moat)
-> is the shipped core.
+> **"Why this number" DRAWER SHIPPED** (branch `2026-07-13-wp10-why-this-number`, off main
+> after PR #150): a reusable `web/components/WhyThisNumber.tsx` — a trigger under an answer opens
+> a right-side drawer that resolves the answer's receipt id through `getPublicReceipt` and renders
+> the signed contract (executed SQL with per-query **copy**, guards that fired with their action,
+> caveats, governed-metric enforcement, confidence, connection · model · cost, and a **server-signed
+> 🔏** badge). The chat stream now captures the `receipt_id` SSE event onto `ChatTurn.publicReceiptId`
+> (`lib/investigationStream.ts`); wired next to the existing `TrustReceipt` in `ChatPanel`. `<Button>`
+> primitive (ratchet flat 204), StatusChip vocab, numbers via `lib/format`. **Browser-verified**:
+> real `/ask` → "Why this number →" → drawer showed the SQL, metrics (revenue/aov), `16.6K tok · 1
+> query · 4.4s` cost, and the HMAC-signed indicator; Escape closes; 0 console errors; tsc + 3 web
+> gates green.
+> **REMAINING (extend to other surfaces):** stamp receipt ids on the Query Builder path + briefing
+> figures (`BriefFigure.source` → add `receipt_id`) + emit the id on the ADA/deep stream; then drop
+> `<WhyThisNumber>` onto ResultFigure / KPI tiles / briefing figures (the component is ready — those
+> surfaces just need to carry an id). Deferred as separate slices.
 
 - **Unify:** per-mode receipt routes exist (`/ada/{conn}/{inv}/receipt`,
   `/chat/{conn}/{turn}/receipt`). Introduce a receipt **id** (the kernel ledger artifact id —
