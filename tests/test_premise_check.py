@@ -27,7 +27,11 @@ def test_neutral_questions_have_no_premise():
 
 
 def test_flag_gating(monkeypatch):
+    # ada.premise_check is auto-elevated by default (2026-07-13 graduation):
+    # unset ⇒ enabled (its deterministic trigger gates per run); explicit "0" kills.
     monkeypatch.delenv("AUGHOR_PREMISE_CHECK", raising=False)
+    assert _premise_enabled() is True
+    monkeypatch.setenv("AUGHOR_PREMISE_CHECK", "0")
     assert _premise_enabled() is False
     monkeypatch.setenv("AUGHOR_PREMISE_CHECK", "1")
     assert _premise_enabled() is True
