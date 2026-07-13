@@ -1482,6 +1482,52 @@ async def _stream_chat(
             except Exception:
                 logger.debug("SOMA probe failed; proceeding to answer", exc_info=True)
 
+        # ── Ground-first resolution (flag `ask.resolve_first`) ────────────────
+        # Decide ONCE, deterministically, whether this is answerable as asked —
+        # BEFORE the model writes SQL — and hand the generator the settled facts so
+        # it can't silently downgrade the grain or invent a filter value. Off →
+        # `_resolution` stays None → byte-identical.
+        _resolution = None
+        try:
+            from aughor.kernel.flags import flag_enabled as _rf_flag
+            if _rf_flag("ask.resolve_first"):
+                from aughor.semantic.answer_resolution import resolve as _resolve_answer
+                _resolution = _resolve_answer(question, schema=_full_schema, db=db,
+                                              connection_id=connection_id,
+                                              eff_schema=canvas_scope_eff_schema)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "ground-first resolution is best-effort; answering without it",
+                     counter="chat.resolve")
+
+        # Honest abstention: a clear filter entity isn't in the data → say so with
+        # what IS present, instead of running an empty filter and narrating around
+        # the emptiness (the "Mytheresa isn't a franchise here" case).
+        if _resolution is not None and _resolution.feasibility == "not_answerable":
+            _abstain = _resolution.caveat
+            yield _sse("mode", {"query_mode": "final_text"})
+            yield _sse("headline", {"headline": _abstain})
+            yield _sse("done", {})
+            try:
+                await asyncio.to_thread(lambda: save_chat_turn(
+                    question=question, connection_id=connection_id, headline=_abstain[:2000],
+                    sql="", session_id=session_id, columns=[], rows=[], chart_type="none",
+                    tables_used=[], intent="", approach=[], canvas_id=canvas_id))
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "abstention turn save is best-effort; the message was already streamed",
+                         counter="chat.resolve_abstain_save")
+            yield _sse("followups", {"questions": [
+                "What values are available to filter by?",
+                "Show the same measure without that filter",
+            ]})
+            return
+
+        # Constrain generation with what the resolution settled (entity binding,
+        # grain ceiling). Highest-priority block → prepended above everything else.
+        if _resolution is not None and _resolution.prompt_constraints:
+            prompt = _resolution.prompt_constraints + "\n\n" + prompt
+
         from aughor.agent.complexity import assess_complexity
         _cx = assess_complexity(question)
         # Run the (blocking) LLM call in a worker thread so the event loop stays
@@ -1953,6 +1999,12 @@ async def _stream_chat(
                 f"recent of {len(result.rows)} periods, oldest→newest):"
                 if _is_ts else f"Results (sample of {len(_sample_rows)} rows):"
             )
+            # The resolution's single caveat leads the narrator too, so the
+            # narrative + follow-ups agree with the answer instead of re-deciding.
+            _res_note = ""
+            if _resolution is not None and _resolution.caveat:
+                _res_note = (f"\n\nGROUNDED FACT — state this once, honestly, and do NOT speculate "
+                             f"about other tables or grains: {_resolution.caveat}.")
             _user = (
                 f"Question: {question}\n"
                 f"SQL: {final_sql}\n"
@@ -1960,6 +2012,7 @@ async def _stream_chat(
                 f"{_rows_label}\n"
                 f"Columns: {', '.join(_sample_cols)}\n"
                 f"{_rows_text}"
+                f"{_res_note}"
             )
             _pa: _PostAnswer = await asyncio.to_thread(
                 lambda: get_provider("narrator").complete(
@@ -1993,21 +2046,29 @@ async def _stream_chat(
             tolerate(exc, "post-answer insight/follow-up enrichment is best-effort; the answer is already done",
                      counter="chat.post_answer")
 
-        # Semantic inspect — logical validation
-        try:
-            from aughor.sql.inspect import inspect as _inspect_sql
-            _ir = await asyncio.to_thread(
-                lambda: _inspect_sql(question, final_sql, result.columns, result.rows)
-            )
-            if not _ir.valid and _ir.issues:
-                yield _sse("inspect_warning", {
-                    "issues":        _ir.issues,
-                    "suggested_fix": _ir.suggested_fix,
-                })
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "post-answer semantic inspect is best-effort validation; skipping the warning",
-                     counter="chat.inspect")
+        # Semantic inspect — logical validation. Phase 3 of the ground-first
+        # redesign: when the resolution ran, its verdict already settled entity /
+        # grain / measure / scope (the exact five things this LLM re-checks), so we
+        # SKIP the redundant round-trip — the first guard the resolution replaces
+        # rather than adds to. (Deletion roadmap — the other post-hoc guards it
+        # subsumes: entity-column alignment, breakdown-grain, id-arithmetic
+        # guard+backstop, ratio-of-sums, measure-grain caveat, scope guard — are
+        # staged follow-ons, not removed here.)
+        if _resolution is None:
+            try:
+                from aughor.sql.inspect import inspect as _inspect_sql
+                _ir = await asyncio.to_thread(
+                    lambda: _inspect_sql(question, final_sql, result.columns, result.rows)
+                )
+                if not _ir.valid and _ir.issues:
+                    yield _sse("inspect_warning", {
+                        "issues":        _ir.issues,
+                        "suggested_fix": _ir.suggested_fix,
+                    })
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "post-answer semantic inspect is best-effort validation; skipping the warning",
+                         counter="chat.inspect")
 
     except Exception as e:
         yield _sse("error", {"message": str(e)})

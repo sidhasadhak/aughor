@@ -43,6 +43,7 @@ FLAG_ENV = {
     "ada.progress_events": "AUGHOR_ADA_PROGRESS_EVENTS",
     "ada.clarify_gate": "AUGHOR_CLARIFY_GATE",
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
+    "ask.resolve_first": "AUGHOR_ASK_RESOLVE_FIRST",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
     "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
     "join.key_reconciliation": "AUGHOR_JOIN_KEY_RECONCILIATION",
@@ -216,6 +217,10 @@ FLAG_META = {
     "ask.clarify": {
         "label": "Ask-vs-guess clarification",
         "description": "When a fresh question is materially ambiguous, ask ONE targeted clarifying question instead of guessing (deterministic under-spec + value-term detection; budget one ask per turn). ON by default — disable to always answer immediately.",
+    },
+    "ask.resolve_first": {
+        "label": "Ground-first answer resolution",
+        "description": "Before the model writes SQL, decide ONCE and deterministically whether the question is answerable as asked: resolve the named entity against the data (bind the real value, or — if a bounded existence probe confirms it is absent — abstain honestly with what IS present, instead of running an empty filter and narrating around the emptiness), and reconcile the requested time grain against the finest grain the measure's table supports. The single verdict is handed to the generator as hard constraints (so it can't silently downgrade grain or guess a value) and drives one coherent caveat, replacing several post-hoc guards that each re-decide the same thing. Off by default = byte-identical (no resolution runs). The ground-first direction from the 2026-07-13 design discussion.",
     },
     "closed_loop": {
         "label": "Closed-loop corrections",
