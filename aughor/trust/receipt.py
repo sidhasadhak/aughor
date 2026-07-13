@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import json
 import os
+import threading
 from typing import Optional
 
 PUBLIC_RECEIPT_VERSION = 1
@@ -33,26 +34,44 @@ def _mode(kind: str) -> str:
     return _MODE.get(kind or "", kind or "answer")
 
 
+_SECRET_CACHE: Optional[bytes] = None
+_SECRET_LOCK = threading.Lock()
+
+
 def _server_secret() -> bytes:
-    """The HMAC secret. Prefer the operator-set env; else a stable per-install secret
-    generated once and persisted in the ledger kv (so signatures survive restarts without
-    requiring any config). Server-side only — never sent to a client."""
+    """The HMAC secret. Prefer the operator-set env (checked every call, so a rotation takes
+    effect at once); else a stable per-install secret generated once and persisted in the
+    ledger kv, then MEMOIZED for the process. Server-side only — never sent to a client."""
+    global _SECRET_CACHE
     env = os.getenv("AUGHOR_RECEIPT_SECRET", "").strip()
     if env:
         return env.encode("utf-8")
-    try:
-        from aughor.kernel.ledger import Ledger
-        led = Ledger.default()
-        sec = led.kv_get("receipt", "hmac_secret", None)
-        if not sec:
-            import secrets
-            sec = secrets.token_hex(32)
-            led.kv_put("receipt", "hmac_secret", sec)
-        return str(sec).encode("utf-8")
-    except Exception:
-        # Last resort (no ledger, e.g. a pure unit test): a fixed dev secret. Signatures are
-        # still internally consistent within the process; a real deployment sets the env/kv.
-        return b"aughor-dev-receipt-secret"
+    if _SECRET_CACHE is not None:
+        return _SECRET_CACHE
+    with _SECRET_LOCK:
+        if _SECRET_CACHE is not None:                 # another thread generated it while we waited
+            return _SECRET_CACHE
+        try:
+            from aughor.kernel.ledger import Ledger
+            led = Ledger.default()
+            sec = led.kv_get("receipt", "hmac_secret", None)
+            if not sec:
+                import secrets
+                led.kv_put("receipt", "hmac_secret", secrets.token_hex(32))
+                # Re-read so we adopt whatever actually persisted (accept-first) rather than a
+                # value a concurrent process may have clobbered — the two converge on one secret.
+                sec = led.kv_get("receipt", "hmac_secret", None)
+            if sec:
+                _SECRET_CACHE = str(sec).encode("utf-8")
+                return _SECRET_CACHE
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "receipt HMAC secret unavailable from the ledger; using the process dev "
+                          "fallback (signatures valid within this process only — set "
+                          "AUGHOR_RECEIPT_SECRET in production)", counter="trust.receipt_secret")
+    # Last resort (no ledger, e.g. a pure unit test). NOT memoized: keep trying the ledger on
+    # the next call so a transient outage doesn't pin the process to the dev secret.
+    return b"aughor-dev-receipt-secret"
 
 
 def _canonical(receipt: dict) -> bytes:

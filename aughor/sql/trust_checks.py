@@ -166,24 +166,39 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
 # name heuristic. Without this, the live answer paths call run_trust_checks with no types and a
 # DATE-named-*_at column produces a false-positive boundary caveat (WP-1f A/B finding).
 _COLTYPE_CACHE: dict[str, dict] = {}
+_COLTYPES_SQL = "SELECT table_name, column_name, data_type FROM information_schema.columns"
+
+
+def _coltype_cache_key(conn_id: str, db) -> str:
+    """A stable per-connection cache key. Prefer the connection id; fall back to the
+    connection's path/dsn so an id-LESS connection (the fixture opens with an empty id,
+    yet is the hot demo path) still caches instead of re-scanning every answer — while two
+    different id-less connections still get distinct keys (no cross-connection leak)."""
+    return str(conn_id or getattr(db, "_path", "") or getattr(db, "_dsn", "") or "")
 
 
 def connection_column_types(conn_id: str, db) -> dict:
     """Real column types for a connection → the `col_types` map run_trust_checks wants (keys
     lowercased "table.col" AND bare "col" → type string), cached per connection. Best-effort:
-    any failure caches and returns ``{}`` → the E1 checks fall back to their name heuristic,
-    byte-identical to the no-types call. Read-only single introspection scan."""
-    # An empty id must NOT share a cache slot — that would serve one connection's types to
-    # every other id-less connection. Introspect fresh instead (rare on the hot answer path;
-    # the ADA/chat connection always carries a real id).
-    if conn_id and conn_id in _COLTYPE_CACHE:
-        return _COLTYPE_CACHE[conn_id]
+    on failure returns ``{}`` (the E1 checks fall back to their name heuristic) and does NOT
+    cache, so a transient warehouse outage doesn't pin the connection to the heuristic for the
+    whole process. Read-only single introspection scan."""
+    key = _coltype_cache_key(conn_id, db)
+    if key and key in _COLTYPE_CACHE:
+        return _COLTYPE_CACHE[key]
     out: dict = {}
+    ok = False
     try:
-        r = db.execute("__trust_coltypes__",
-                       "SELECT table_name, column_name, data_type FROM information_schema.columns")
-        if r and not r.error and r.rows:
-            for tbl, col, dt in r.rows:
+        # execute_bounded (not execute) so a wide-schema warehouse's information_schema is not
+        # truncated at the 500-row answer cap — that would drop most columns, revert the E1
+        # checks to the name heuristic, and reintroduce the DATE-named-*_at false positive WP-1f
+        # closed. 50k column-rows covers any realistic schema; fail-open on a driver without it.
+        _bounded = getattr(db, "execute_bounded", None)
+        r = (_bounded("__trust_coltypes__", _COLTYPES_SQL, 50_000) if _bounded
+             else db.execute("__trust_coltypes__", _COLTYPES_SQL))
+        if r and not r.error:
+            ok = True
+            for tbl, col, dt in (r.rows or []):
                 if col and dt:
                     out[f"{str(tbl).lower()}.{str(col).lower()}"] = str(dt)
                     out.setdefault(str(col).lower(), str(dt))
@@ -191,6 +206,6 @@ def connection_column_types(conn_id: str, db) -> dict:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "E1 col-types introspection is best-effort; the name heuristic applies",
                  counter="trust.e1_coltypes")
-    if conn_id:
-        _COLTYPE_CACHE[conn_id] = out
+    if key and ok:                       # cache only a SUCCESSFUL scan (never a transient {})
+        _COLTYPE_CACHE[key] = out
     return out

@@ -94,6 +94,10 @@ def test_metered_tick_records_query_in_job_metrics(monkeypatch):
 
     t = threading.Thread(target=loop.run_forever, daemon=True)
     t.start()
+    for _ in range(200):                       # wait for the loop to actually be running
+        if loop.is_running():
+            break
+        time.sleep(0.01)
     try:
         def _work():
             # Stand in for a monitor's warehouse query — the metering chokepoint the real

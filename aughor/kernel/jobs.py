@@ -496,8 +496,11 @@ def submit_background_tick(
     before startup) — the caller then runs ``work_fn`` inline (the legacy path). Only the
     *submit* is awaited (it is fast); the work itself runs asynchronously on the loop, so an
     idempotency key prevents a slow tick from piling up on the next cron fire."""
+    # No live loop (pre-startup, a unit test, or mid reload/shutdown) → decline so the caller
+    # runs work_fn inline. `is_running()` guards against a stale global pointing at a dead loop,
+    # which would otherwise make run_coroutine_threadsafe raise and drop the tick entirely.
     loop = main_loop()
-    if loop is None:
+    if loop is None or not loop.is_running():
         return None
 
     async def _coro() -> None:
