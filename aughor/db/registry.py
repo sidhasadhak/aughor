@@ -30,6 +30,19 @@ BUILTIN_ID = "fixture"
 POSTGRES_BUILTIN_ID = "mydb"
 SAMPLES_ID = "samples"
 WORKSPACE_ID = "workspace"  # default DuckDB-backed scratch space for file uploads
+AUGHOR_OPS_ID = "aughor_ops"  # Aughor-on-Aughor: the platform's own task_history/jobs/events
+
+
+def _aughor_ops_available() -> bool:
+    """The self-investigation connection exists only when the span table is being
+    written (flag ``obs.task_table``) — no point pointing an investigator at an
+    always-empty table. Reads through the runtime flag so an operator toggle
+    surfaces/hides it live."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("obs.task_table")
+    except Exception:
+        return False
 
 
 def _postgres_builtin_dsn() -> str:
@@ -132,6 +145,19 @@ def list_connections(org_id: str | None = None) -> list[dict]:
             "builtin": False,
         })
 
+    # Aughor-on-Aughor — the platform's own operational tables as a queryable
+    # connection, present only while spans are being recorded (flag obs.task_table).
+    if AUGHOR_OPS_ID not in hidden and _aughor_ops_available():
+        rows.append({
+            "id": AUGHOR_OPS_ID,
+            "name": "Aughor Ops (self-investigation)",
+            "conn_type": "aughor_ops",
+            "dsn_preview": "aughor://ops/task_history",
+            "schema_name": "aughor_ops",
+            "meta": {"builtin_aughor_ops": True, "schema_name": "aughor_ops"},
+            "builtin": True,
+        })
+
     # Include default Postgres if configured and not removed
     if POSTGRES_BUILTIN_ID not in hidden and _postgres_builtin_dsn():
         rows.append({
@@ -202,6 +228,8 @@ def get_meta(conn_id: str) -> dict:
     """Return the metadata dict stored for a connection (e.g. schema_name)."""
     if conn_id == SAMPLES_ID:
         return {"builtin_samples": True, "schema_name": "ecommerce"}
+    if conn_id == AUGHOR_OPS_ID:
+        return {"builtin_aughor_ops": True, "schema_name": "aughor_ops"}
     if conn_id == WORKSPACE_ID:
         from aughor.samples.setup import samples_db_path
         samples_path = samples_db_path()
@@ -294,6 +322,11 @@ def get_dsn(conn_id: str) -> tuple[str, str]:
         return "duckdb", str(samples_db_path())
     if conn_id == WORKSPACE_ID:
         return "local_upload", "local://"
+    if conn_id == AUGHOR_OPS_ID:
+        if not _aughor_ops_available():
+            raise KeyError("aughor_ops is available only when obs.task_table is enabled")
+        from aughor.kernel.ledger import Ledger
+        return "aughor_ops", str(Ledger.default().path)
     if conn_id == BUILTIN_ID:
         from aughor.samples.setup import fixture_db_path
         return "duckdb", str(fixture_db_path())

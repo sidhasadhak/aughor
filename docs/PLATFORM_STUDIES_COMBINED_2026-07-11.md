@@ -1250,6 +1250,60 @@ flag-gated, default-off, byte-identical when off, BUILT→WIRED→TESTED→LEVER
 **Build status (2026-07-12, branch `2026-07-12-matcache-tenancy-fix`, pushed to origin — 10 commits):
 Wave 0 COMPLETE; Wave 1 substantially SHIPPED (the receipts family + Capabilities Auto-mode).**
 
+**Build status (2026-07-13, local working tree — Wave 2 #6 `task_history` SHIPPED, flag `obs.task_table`):**
+the spans-as-a-table spine + both its leverages, in three slices, all flag-gated / default-off /
+byte-identical when off; ruff-clean, kernel ratchets green.
+- *Slice 1 — the spine:* `Migration(4)` adds `task_history` (Spice's exact shape) to the kernel ledger
+  (`system.db`, already hermetic); a pure **sink** in `aughor/telemetry.py` — a contextvar span-stack
+  makes the existing node spans (`span()`) and the SQL tool span (`mlflow_tool_span`) each write one
+  row with real `parent_span_id`/`trace_id` linkage, riding `ContextThreadPoolExecutor`'s
+  `copy_context()` so parallel waves link correctly. No new instrumentation (reuses spans telemetry
+  already emits). `Ledger.task_history_insert/task_history()`.
+- *Slice 2 — leverage #1 (eval recovery + forensics):* `aughor/obs/task_history.py`
+  (`recover_sql(trace_id)`, `recover_run()`, `recent_runs()`, `slow_tasks()`) + the `evals/task_recover.py`
+  CLI (`--trace/--recent/--slow`). Proven on the REAL path (an integration test drives the actual
+  `execute_guarded` and recovers the SQL). Deliberately did NOT contort `model_bakeoff`/the ground-truth
+  gate to "read from" the table — their replica pipelines emit no spans, so that would be a bench-hack;
+  the honest recovery surface is the API + CLI, and the live investigation path is where it populates.
+- *Slice 3 — leverage #2 ("Aughor investigates Aughor"):* an `aughor_ops` built-in connection
+  (`AughorOpsConnection`) — an in-memory DuckDB that live-**ATTACH**es the ledger sqlite READ-ONLY as
+  the `aughor_ops` schema (fresh, not a snapshot; materialise fallback for a cold offline extension
+  cache), exposing `task_history`/`jobs`/`events` so Deep Analysis can ask "why were yesterday's
+  briefings slow?" as an ordinary investigation. Listed/openable only while `obs.task_table` is on.
+  En route, fixed a pre-existing false positive in the connection read-only gate (`_validate`): the
+  forbidden-keyword pre-scan matched DML words inside string **literals** (so `… WHERE task =
+  'sql.execute'` — the natural self-investigation query — was wrongly rejected); literals are now
+  blanked before the scan, with the sqlglot AST type-check still the authority. ~15 new tests.
+  **NEXT (unbuilt):** Rec 5 grounding-context receipt (last Wave-1 item) · Wave 2 #7 A1-P3 lifecycle ·
+  #8 the P7 decision run (biggest answer-quality lever; harness + now task_history forensics both ready).
+
+**Build status (2026-07-13, local working tree — Rec 5 grounding-context receipt BACKEND SHIPPED, flag
+`ask.context_receipt`):** the input-side twin of the Trust Receipt. Staged (chosen over a full hot-path
+rewire, which memory flags as the riskiest Wave-1 item): the map found NO central assembler — grounding is
+built per-caller across three seams (quick `/ask` `_stream_chat` richest, deep ADA leaner, explorer thinnest),
+and the eval mirror already drifts (`build_metrics_block` vs the real path's `unified_metric_grounding`).
+- New pure `aughor/agent/grounding.py`: one producer function per grounding block (dialect rules, agent/pack
+  brief, trusted templates, ambiguity-ledger corrections, governed-metric bindings, schema slice, glossary,
+  KB patterns, SQL examples, exploration, causal, docs) — each wrapping the SAME retriever the answer path
+  calls, so per-block data can't drift. `build_grounding_context()` composes them into a `GroundingContext`
+  (schema-dependent blocks fire only when a schema is resolved); `to_dict()` + `to_markdown()`.
+- `GET /ask/context?connection=&question=` (`routers/investigations.py`) → `{receipt, markdown}`; 404 when the
+  flag is off (byte-identical default).
+- Convergence proof (no drift): `_stream_chat` now calls the shared block producers for **five** blocks — the
+  three pure prepends (dialect rules, agent brief, corrections) AND the two schema-dependent ones: the
+  governed-metric block (`unified_metric_grounding` + measure-grain + feasibility gap) and the schema slice
+  (`link_schema_for_prompt`, with the same full-schema fallback). Each is a byte-identical swap with a parity
+  test that reconstructs the former inline assembly and asserts equality; the endpoint passes `db` so the
+  receipt's metrics block carries grain + feasibility too. Value-index literal binding is post-generation on the
+  answer path (a guard, not a prompt block) → not surfaced. 14 tests; ruff clean; broad chat regression green.
+  - **"Show grounding" answer-UI affordance SHIPPED:** `web/lib/api.ts::getGroundingContext` + a `GroundingDetails`
+    component in `web/components/ChatMessage.tsx` — a lazy "Show grounding" toggle (fetches on click; the endpoint
+    runs real retrievers) rendering each active block, hidden when the flag is off (404 → null). Live-verified: the
+    endpoint serves 4 populated blocks (incl. schema-dependent) flag-on / 404 flag-off on the real API server, and
+    the web app loads it with zero console errors; eslint/design-token/raw-element/tsc gates clean.
+  **Rec 5 COMPLETE** (backend + UI + full `_stream_chat` convergence). Only the data-catalog/FK/semantic-layer
+  schema *shaping* stays inline — that is answer-path rendering, not a distinct grounding block.
+
 *Wave 0 — Correctness + trivial wins — ✅ COMPLETE:*
 - Matcache tenancy fix (II·Rec 1) — `de04429`. Shared `_row_policy_principal` gate + `result_cache_tenancy()`
   fold `(org, roles, resolved filters)` into the result-cache key; `None`→legacy key (byte-identical). Closed

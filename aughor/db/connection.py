@@ -434,13 +434,24 @@ _FORBIDDEN = re.compile(
     r"\b(DROP|DELETE|INSERT|UPDATE|CREATE|ALTER|TRUNCATE|EXEC|EXECUTE|COPY|ATTACH|DETACH)\b",
     re.IGNORECASE,
 )
+# SQL single-quoted string literal (with '' escape). Blanked before the
+# forbidden-keyword pre-scan so a keyword that appears as DATA is not mistaken for
+# a statement (see _validate).
+_SQL_STRLIT = re.compile(r"'(?:[^']|'')*'")
 
 MAX_ROWS = 500
 
 
 def _validate(sql: str, dialect: str = "duckdb") -> tuple[bool, str]:
     sql = sql.strip().rstrip(";")
-    if _FORBIDDEN.search(sql):
+    # The forbidden-keyword pre-scan targets mutation STATEMENTS; a keyword inside a
+    # string literal ('sql.execute', 'please DELETE this') is data, not a statement,
+    # so blank literals out before scanning. The sqlglot AST type-check below stays
+    # the authority on statement kind, so this only removes false positives — a real
+    # DML keyword in statement position is outside any balanced string and still
+    # caught. (Without this, `… WHERE task = 'sql.execute'` — the natural aughor_ops
+    # self-investigation query — is wrongly rejected.)
+    if _FORBIDDEN.search(_SQL_STRLIT.sub("''", sql)):
         return False, "Only SELECT statements are permitted"
     try:
         # Parse in the connection's own dialect — a Postgres connection must not
@@ -864,6 +875,100 @@ class DuckDBConnection(DatabaseConnection):
             pass
 
 
+# ── Aughor-on-Aughor: the platform's own operational tables as a connection ────
+
+class AughorOpsConnection(DuckDBConnection):
+    """A read-only DuckDB view over Aughor's OWN operational tables — the
+    "Aughor investigates Aughor" connection (Rec 4 · leverage #2, flag
+    ``obs.task_table``).
+
+    An in-memory DuckDB ATTACHes the kernel ledger's SQLite (``system.db``) as the
+    read-only ``aughor_ops`` schema, so Deep Analysis can point at
+    ``aughor_ops.task_history`` (spans), ``aughor_ops.jobs`` and
+    ``aughor_ops.events`` and ask "why were yesterday's briefings slow?" as an
+    ordinary investigation. The ATTACH is live (new rows appear on re-query, no
+    copy); if the sqlite extension can't be autoloaded (a cold offline cache) it
+    falls back to materialising the current ``task_history`` rows via the Ledger
+    API, so the connection always opens. All mutations are blocked by the AST
+    gate; the ATTACH is ``READ_ONLY`` besides.
+    """
+
+    dialect = "duckdb"
+    # The curated surface — system.db also holds kv/meta/artifacts/lineage, which
+    # are noise for behavioural self-investigation.
+    _OPS_TABLES = ("task_history", "jobs", "events")
+
+    def __init__(self, path: str | Path, connection_id: str = "aughor_ops"):
+        self._path = Path(path)                 # the kernel ledger sqlite (system.db)
+        self._connection_id = connection_id
+        self._schema_name = "aughor_ops"
+        self.engine_read_only = True
+        self._conn = duckdb.connect(":memory:")
+        try:
+            # Live attach — DuckDB autoloads the sqlite extension; new ledger rows
+            # are visible on re-query (verified), so this is fresh, not a snapshot.
+            self._conn.execute(
+                f"ATTACH '{self._path.as_posix()}' AS aughor_ops (TYPE sqlite, READ_ONLY)")
+            self._conn.execute("SET search_path = 'aughor_ops'")
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "aughor_ops live sqlite ATTACH unavailable; materialising task_history",
+                     counter="obs.task_table.attach_fallback")
+            self._materialise_fallback()
+
+    def _materialise_fallback(self) -> None:
+        """Cold-cache path: build ``aughor_ops.task_history`` in memory from the
+        Ledger API (a point-in-time snapshot) when the sqlite extension can't load."""
+        from aughor.kernel.ledger import Ledger
+        self._conn.execute("CREATE SCHEMA IF NOT EXISTS aughor_ops")
+        self._conn.execute(
+            "CREATE TABLE aughor_ops.task_history ("
+            "span_id VARCHAR, trace_id VARCHAR, parent_span_id VARCHAR, task VARCHAR, "
+            "input VARCHAR, captured_output VARCHAR, start_time VARCHAR, end_time VARCHAR, "
+            "duration_ms DOUBLE, error_message VARCHAR, labels VARCHAR, org_id VARCHAR)")
+        rows = Ledger.default().task_history(limit=100000)
+        if rows:
+            import json as _json
+            self._conn.executemany(
+                "INSERT INTO aughor_ops.task_history VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                [(r["span_id"], r["trace_id"], r["parent_span_id"], r["task"], r["input"],
+                  r["captured_output"], r["start_time"], r["end_time"], r["duration_ms"],
+                  r["error_message"],
+                  _json.dumps(r["labels"]) if r.get("labels") is not None else None,
+                  r["org_id"]) for r in rows])
+        self._conn.execute("SET search_path = 'aughor_ops'")
+
+    def get_schema(self) -> str:
+        """A curated grounding for the self-investigation surface: only the
+        operationally-meaningful tables, with their columns, rather than the raw
+        sqlite catalog (which includes kv/meta/lineage noise)."""
+        lines = ["-- Aughor operational tables (schema: aughor_ops, read-only) --"]
+        for tbl in self._OPS_TABLES:
+            try:
+                # duckdb_columns() (not information_schema) reflects ATTACHed sqlite
+                # catalogs; the live-attach and materialise paths both answer it.
+                cols = self._conn.execute(
+                    "SELECT column_name, data_type FROM duckdb_columns() "
+                    "WHERE database_name = 'aughor_ops' AND table_name = ? ORDER BY column_index",
+                    [tbl]).fetchall()
+            except Exception:
+                cols = []
+            if not cols:
+                continue
+            col_sql = ", ".join(f"{c[0]} {c[1]}" for c in cols)
+            lines.append(f"TABLE aughor_ops.{tbl} ({col_sql})")
+        if len(lines) == 1:
+            lines.append("-- (empty — enable obs.task_table and run something) --")
+        return "\n".join(lines)
+
+    def test(self) -> tuple[bool, str]:
+        try:
+            self._conn.execute("SELECT 1 FROM aughor_ops.task_history LIMIT 1")
+            return True, "Connected (aughor_ops)"
+        except Exception as e:
+            return False, str(e)
+
+
 # ── Postgres ──────────────────────────────────────────────────────────────────
 
 class PostgresConnection(DatabaseConnection):
@@ -1188,6 +1293,8 @@ def open_connection(
     connection_id: str = "",
     meta: dict | None = None,
 ) -> DatabaseConnection:
+    if conn_type == "aughor_ops":
+        return AughorOpsConnection(dsn, connection_id=connection_id or "aughor_ops")
     if conn_type == "duckdb":
         return DuckDBConnection(dsn, schema_name=schema_name, connection_id=connection_id)
     elif conn_type == "postgres":

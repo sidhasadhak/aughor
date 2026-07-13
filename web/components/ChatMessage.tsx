@@ -28,7 +28,7 @@ import {
   type BriefMetric,
 } from "@/components/brief/Brief";
 import { ChatTurn } from "@/lib/useChat";
-import { validateQuery, sendChatFeedback, proposeLearnedSkill, saveLearnedSkill, type QueryValidation } from "@/lib/api";
+import { validateQuery, sendChatFeedback, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { DossierTrace } from "@/components/BriefingPanel";
@@ -219,8 +219,33 @@ function computeSummary(columns: string[], rows: unknown[][], sql?: string | nul
     return `${label}: ${fmtVal(Number((rows[0] as unknown[])[numIdx]))}`;
   }
 
-  // No category — just a numeric summary
+  // No non-numeric category. If a TIME axis is present (including a numeric year/
+  // quarter), this is a SERIES — describe first→last and the net change, never SUM a
+  // level metric across periods ("3.8K total across 5 rows" for annual net sales is
+  // meaningless; fiscal_year is the time axis, not a category to total). A plain
+  // numeric list with no time axis still gets a total.
   if (catIdx < 0) {
+    const timeIdx = columns.findIndex((c, i) => i !== numIdx && granFromName(c) !== null);
+    if (timeIdx >= 0 && n >= 2) {
+      const seq = [...rows].sort((a, b) => {
+        const av = (a as unknown[])[timeIdx], bv = (b as unknown[])[timeIdx];
+        const an = Number(av), bn = Number(bv);
+        return (!isNaN(an) && !isNaN(bn))
+          ? an - bn
+          : String(av ?? "") < String(bv ?? "") ? -1 : String(av ?? "") > String(bv ?? "") ? 1 : 0;
+      });
+      const fv = Number((seq[0] as unknown[])[numIdx]);
+      const lv = Number((seq[n - 1] as unknown[])[numIdx]);
+      const fp = String((seq[0] as unknown[])[timeIdx]);
+      const lp = String((seq[n - 1] as unknown[])[timeIdx]);
+      if (!isNaN(fv) && !isNaN(lv)) {
+        const label = cleanLabel(numCol);
+        if (isShare) return `${label}: ${fmtVal(fv)} (${fp}) → ${fmtVal(lv)} (${lp}).`;
+        const pct = fv ? Math.round(((lv - fv) / Math.abs(fv)) * 100) : 0;
+        const chg = pct === 0 ? "flat" : pct > 0 ? `+${pct}%` : `${pct}%`;
+        return `${label}: ${fmtVal(fv)} (${fp}) → ${fmtVal(lv)} (${lp}), ${chg} over ${n} periods.`;
+      }
+    }
     const nums = rows.map((r) => Number((r as unknown[])[numIdx])).filter((v) => !isNaN(v));
     const total = nums.reduce((a, b) => a + b, 0);
     return isShare ? `avg ${fmtVal(total / nums.length)}` : `${fmtVal(total)} total across ${n} rows.`;
@@ -994,6 +1019,56 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
   );
 }
 
+// ── Grounding receipt (Rec 5): the input-side twin of the Trust Receipt — the
+// exact blocks the SQL writer was grounded on. Fetched lazily on demand (the
+// endpoint runs real retrievers); hidden entirely when the flag is off (404 → null).
+function GroundingDetails({ connectionId, question }: { connectionId: string; question: string }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<GroundingReceipt | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setOpen(true);
+    if (data !== undefined) return;         // fetch once
+    setBusy(true);
+    try { setData(await getGroundingContext(connectionId, question)); }
+    finally { setBusy(false); }
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={load}
+        className="self-start flex items-center gap-1.5 aug-text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+      >
+        <InformationIcon label="" size="small" />
+        Show grounding
+      </button>
+    );
+  }
+
+  const present = data?.receipt.blocks.filter(b => b.present) ?? [];
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        onClick={() => setOpen(false)}
+        className="self-start aug-text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+      >
+        Hide grounding
+      </button>
+      {busy && <p className="aug-text-sm text-zinc-500">Loading grounding…</p>}
+      {data === null && <p className="aug-text-sm text-zinc-500">Grounding receipt isn&rsquo;t available for this answer.</p>}
+      {data && present.length === 0 && <p className="aug-text-sm text-zinc-500">No grounding blocks fired for this question.</p>}
+      {present.map(b => (
+        <div key={b.key} className="flex flex-col gap-1">
+          <p className="aug-text-xs text-zinc-400 font-medium">{b.title}</p>
+          <pre className="aug-text-xs text-zinc-400 whitespace-pre-wrap break-words bg-zinc-900/40 rounded-md p-2 max-h-48 overflow-auto">{b.content}</pre>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Insight machinery — folded into one quiet disclosure ──────────────────────
 function InsightDetails({
   turn, connectionId, onShowSource,
@@ -1009,7 +1084,8 @@ function InsightDetails({
   const hasPlaybook = turn.playbookRefs.length > 0;
   const hasElapsed  = turn.elapsedMs != null;
   const hasActions  = !!(turn.sql && turn.sql.trim() && connectionId);
-  if (!(hasAnalysis || hasTables || hasContext || hasSource || hasPlaybook || hasElapsed || hasActions)) return null;
+  const hasGrounding = !!(connectionId && turn.question && turn.sql && turn.sql.trim());
+  if (!(hasAnalysis || hasTables || hasContext || hasSource || hasPlaybook || hasElapsed || hasActions || hasGrounding)) return null;
 
   return (
     <BriefDetails>
@@ -1021,6 +1097,11 @@ function InsightDetails({
       {hasActions && (
         <BriefDetailBlock label="Validate &amp; feedback">
           <InsightActions turn={turn} connectionId={connectionId} />
+        </BriefDetailBlock>
+      )}
+      {hasGrounding && (
+        <BriefDetailBlock label="Grounding">
+          <GroundingDetails connectionId={connectionId!} question={turn.question} />
         </BriefDetailBlock>
       )}
       {hasAnalysis && (

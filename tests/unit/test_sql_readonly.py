@@ -6,9 +6,38 @@ SafetyChecker integration that now blocks AST-detected mutations.
 
 High-precision: a real SELECT must NEVER be flagged mutating.
 """
+from aughor.db.connection import _validate
 from aughor.sql.readonly import disallowed_functions, is_destructive, is_mutating
 from aughor.sql.tables import extract_tables
 from aughor.security.safety import SafetyChecker, SafetyVerdict
+
+
+# ── connection-level _validate: keyword-in-string is data, not a statement ────
+
+def test_validate_allows_dml_keyword_inside_a_string_literal():
+    # The natural aughor_ops self-investigation query — task names literally
+    # contain 'execute'/'delete'-ish words; these must not be mistaken for DML.
+    for sql in [
+        "SELECT input FROM aughor_ops.task_history WHERE task = 'sql.execute'",
+        "SELECT * FROM orders WHERE note = 'please DELETE this later'",
+        "SELECT 'DROP TABLE x' AS s",
+        "SELECT task FROM t WHERE task IN ('sql.execute', 'briefing.run')",
+    ]:
+        ok, reason = _validate(sql)
+        assert ok, f"{sql!r} wrongly blocked: {reason}"
+
+
+def test_validate_still_blocks_real_mutations_even_with_strings():
+    # A real DML keyword in statement position is outside any balanced string and
+    # must still be rejected (the fix only blanks string DATA, not the statement).
+    for sql in [
+        "DELETE FROM t WHERE note = 'keep this'",
+        "DROP TABLE aughor_ops.task_history",
+        "UPDATE t SET x = 1 WHERE label = 'select me'",
+        "INSERT INTO t (a) VALUES ('sql.execute')",
+    ]:
+        ok, _ = _validate(sql)
+        assert not ok, f"{sql!r} must be blocked"
 
 
 # ── reads must stay reads (no false positives) ────────────────────────────────

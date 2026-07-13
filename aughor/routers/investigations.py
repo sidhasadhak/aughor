@@ -8,7 +8,7 @@ import os
 import re
 from typing import AsyncGenerator, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -1100,9 +1100,13 @@ async def _stream_chat(
     try:
         from aughor.agent.prompts import CHAT_PROMPT, CHAT_SQL_SYSTEM
         from aughor.llm.provider import get_provider
-        from aughor.rules import get_chat_rules_block
+        # Shared grounding producers (Rec 5): the same block functions the
+        # `GET /ask/context` receipt calls, so the receipt shows exactly what the
+        # answer path was grounded on (no drift). dialect_rules_block() == the old
+        # get_chat_rules_block() verbatim.
+        from aughor.agent.grounding import dialect_rules_block
 
-        rules_block = get_chat_rules_block()
+        rules_block = dialect_rules_block()
 
         from aughor.agent.followup import is_followup
         history_section = build_history_section(history, followup=is_followup(question))
@@ -1192,46 +1196,23 @@ async def _stream_chat(
                 except Exception:
                     logger.warning("Canvas table-scope filter failed; using full schema", exc_info=True)
 
-        # Metrics built AFTER schema (needs the column set to filter out metrics
-        # whose tables/columns aren't in THIS connection — metrics are global, so
-        # an unfiltered block leaks another connection's formula). Kept out of the
-        # gather to avoid a concurrent get_schema on the same db connection.
-        metrics_section = ""
-        try:
-            # UNIFIED metric grounding — the SAME resolver the Deep path uses, so a metric
-            # resolves to the SAME SQL in both. /chat previously injected only the global
-            # catalog (build_metrics_block) and never saw the connection's GOVERNED north-star
-            # value_sql, so it re-derived gross margin / ROAS / AOV and could disagree with Deep.
-            from aughor.semantic.canonical import unified_metric_grounding
-            _mb = unified_metric_grounding(connection_id, canvas_scope_eff_schema, schema_text=schema,
-                                           question=question)
-            metrics_section = (_mb + "\n\n") if _mb else ""
-        except Exception:
-            metrics_section = ""
-        # Measure-additivity PREVENTION: tell the generator each measure's grain (per-unit
-        # → SUM(x*quantity); per-line → SUM(x)). No-op safe; data-detected + cached. R4 — via the
-        # SHARED data-understanding builder, the same module the ADA phase planner now grounds on,
-        # so the two modes can never silently carry a different grain understanding.
-        from aughor.semantic.data_understanding import build_data_understanding as _build_du
-        _gb = _build_du(db, connection_id=connection_id, schema=schema).grain_block
-        if _gb:
-            metrics_section += _gb + "\n\n"
-        # Metric-feasibility: if the question needs a metric this connection can't support
-        # (profit with no cost, efficiency with no conversions), tell the generator to report
-        # what IS measurable instead of fabricating a verdict.
-        from aughor.semantic.metric_feasibility import unsupported_metric_gap as _feas_gap
-        _fg = _feas_gap(question, schema)
-        if _fg:
-            metrics_section += "DATA AVAILABILITY — " + _fg + ".\n\n"
+        # Governed-metric grounding — built AFTER schema (needs the column set to
+        # filter connection-scoped metrics) and BEFORE schema-linking (grounds on the
+        # full schema). Rec 5: the SAME producer the GET /ask/context receipt renders
+        # (unified bindings + measure grain + feasibility gap), so the receipt shows
+        # exactly what grounded this answer — no drift. Byte-identical to the prior
+        # inline block; the "SAME resolver as Deep" property (unified_metric_grounding,
+        # not the global build_metrics_block) is preserved inside the producer.
+        from aughor.agent.grounding import (governed_metrics as _grounding_metrics,
+                                            schema_slice as _grounding_schema_slice)
+        metrics_section = _grounding_metrics(question, connection_id, db=db, schema=schema,
+                                             eff_schema=canvas_scope_eff_schema)
 
-        # Schema-linking pre-filter: narrow schema to relevant tables/columns
-        # for this specific question. Reduces hallucination by 30-60%.
+        # Schema-linking pre-filter: narrow schema to relevant tables/columns for this
+        # question (reduces hallucination 30-60%). Shared Rec 5 producer — falls back to
+        # the full schema on failure, byte-identical to the prior inline try/except.
         _full_schema = schema  # keep the un-narrowed schema for FK-neighbour expansion
-        try:
-            from aughor.tools.schema_linker import link_schema_for_prompt
-            schema = link_schema_for_prompt(question, schema, top_k_tables=8, top_k_cols=8, connection_id=connection_id)
-        except Exception:
-            logger.warning("Schema-linking pre-filter failed; using full schema", exc_info=True)
+        schema = _grounding_schema_slice(question, connection_id, schema=schema)
 
         # Build structured Data Catalog from linked tables (MindsDB-style),
         # expanded with FK neighbours so bridge/output tables a multi-table
@@ -1362,8 +1343,8 @@ async def _stream_chat(
         # User-agent brief (flag `agents.user_defined`) — the active agent's pinned
         # instructions lead the prompt, rules_block-style. Empty (inert) when no
         # agent is active.
-        from aughor.user_agents.context import agent_brief_block
-        _agent_brief = agent_brief_block()
+        from aughor.agent.grounding import agent_brief as _grounding_agent_brief
+        _agent_brief = _grounding_agent_brief()  # == agent_brief_block() (shared Rec 5 producer)
         if _agent_brief:
             prompt = _agent_brief + prompt
         # Playbook context — when org playbook items match this question, give them
@@ -1407,8 +1388,8 @@ async def _stream_chat(
         # not repeat a mistake a reviewer already flagged. Flag-gated + empty when
         # nothing relevant matches, so the default path is byte-for-byte unchanged.
         try:
-            from aughor.verify.priors import build_corrections_section
-            _cblk = build_corrections_section(question, connection_id)
+            from aughor.agent.grounding import correction_priors
+            _cblk = correction_priors(question, connection_id)  # == build_corrections_section (shared Rec 5)
             if _cblk:
                 prompt = _cblk + "\n" + prompt
         except Exception as exc:
@@ -2053,12 +2034,14 @@ async def _stream_chat(
         # rather than adds to. (Deletion roadmap — the other post-hoc guards it
         # subsumes: entity-column alignment, breakdown-grain, id-arithmetic
         # guard+backstop, ratio-of-sums, measure-grain caveat, scope guard — are
-        # staged follow-ons, not removed here.)
+        # staged follow-ons, not removed here.) When it runs (resolution off), it
+        # is grounded on the schema slice so it cannot invent columns.
         if _resolution is None:
             try:
                 from aughor.sql.inspect import inspect as _inspect_sql
                 _ir = await asyncio.to_thread(
-                    lambda: _inspect_sql(question, final_sql, result.columns, result.rows)
+                    lambda: _inspect_sql(question, final_sql, result.columns, result.rows,
+                                         schema=_full_schema)
                 )
                 if not _ir.valid and _ir.issues:
                     yield _sse("inspect_warning", {
@@ -3269,6 +3252,43 @@ async def ask_endpoint(req: AskRequest, request: Request):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/ask/context")
+def ask_context_endpoint(
+    connection: str = Query(..., description="connection id"),
+    question: str = Query(..., description="the question to ground"),
+    principal=Depends(get_principal),
+):
+    """The grounding-context receipt (flag ``ask.context_receipt``) — the exact
+    grounding blocks the SQL writer would be given for this question on this
+    connection: schema slice, glossary, governed-metric bindings, ambiguity-ledger
+    priors, dialect rules, trusted templates, and the active agent/pack brief.
+
+    The input-side twin of the Trust Receipt. Read-only, deterministic (re-derives
+    the same blocks the answer path assembles from the same producers). 404 when
+    the flag is off, so the default path is byte-identical.
+    """
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ask.context_receipt"):
+        raise HTTPException(status_code=404,
+                            detail="grounding-context receipt is disabled (flag ask.context_receipt)")
+    from aughor.agent.grounding import build_grounding_context
+    from aughor.db.connection import open_connection_for
+    try:
+        db = open_connection_for(connection)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Connection {connection!r} not found")
+    try:
+        schema = _get_schema_cached(connection, db) or ""
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "grounding receipt: schema fetch best-effort; schema-dependent blocks skipped",
+                 counter="ask.context_receipt.schema")
+        schema = ""
+    ctx = build_grounding_context(question, connection, db=db, schema=schema,
+                                  eff_schema=getattr(db, "_schema_name", None))
+    return {"receipt": ctx.to_dict(), "markdown": ctx.to_markdown()}
 
 
 def _resolve_ask_agent(req: "AskRequest"):
