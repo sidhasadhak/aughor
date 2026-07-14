@@ -11,7 +11,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Table, ConfigProvider, theme } from "antd";
+import { Table, ConfigProvider, theme, type ThemeConfig } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
 import { cleanLabel, formatMetricValue, formatPercent, displayCellValue } from "@/lib/format";
 import { isMoneyColumn, columnCurrencySymbol } from "@/lib/orgSettings";
@@ -36,109 +36,96 @@ function useThemeMode(): "light" | "dark" {
   return mode;
 }
 
-// ── Aughor dark tokens for Ant Design ───────────────────────────────────────
+// ── Aughor tokens for Ant Design — DERIVED from the live token sheet ─────────
+// Ant's theme tokens must be real colors (it derives shades), so we can't hand it
+// `var(--bg-0)` strings. Instead both mode themes are built from a single
+// getComputedStyle read of the ACTIVE sheet (tokens-v2 wins the cascade), so the
+// antd grid can never drift from the design tokens again — the old hand-mirrored
+// LIGHT block had fossilized the retired v1 palette. The literals below are
+// SSR/fallback values only, kept in sync with aughor-v2/theme/tokens-v2.css.
 
-const AUG_THEME_DARK: Parameters<typeof ConfigProvider>[0]["theme"] = {
-  algorithm: theme.darkAlgorithm,
-  token: {
-    // Backgrounds (MLflow near-black)
-    colorBgBase:         "#0A0A0E",   // --bg-0
-    colorBgContainer:    "#0C0D12",   // --bg-1
-    colorBgElevated:     "#121318",   // --bg-2
-    colorBgLayout:       "#0A0A0E",
-    // Borders (hairlines)
-    colorBorder:         "#23252E",   // --b1
-    colorBorderSecondary:"#1A1C23",   // --b0
-    colorSplit:          "#1A1C23",
-    // Text
-    colorText:           "#F2F3F6",   // --t1
-    colorTextSecondary:  "#989BA6",   // --t2
-    colorTextDescription:"#686B77",   // --t3
-    colorTextDisabled:   "#525B69",   // --t4
-    // Brand (interaction accent)
-    colorPrimary:        "#5A9FD6",   // --blue3
-    colorPrimaryHover:   "#7DB6E8",   // --blue4
-    // Misc — grid stays DM Sans (text columns readable); numeric formatting keeps tabular alignment
-    fontSize:            12,
-    fontFamily:          "'DM Sans', system-ui, sans-serif",
-    borderRadius:        3,
-    borderRadiusSM:      2,
-    controlHeight:       30,
-    lineWidth:           1,
+const TOKEN_FALLBACK: Record<"dark" | "light", Record<string, string>> = {
+  dark: {
+    "--bg-0": "#0A0A0E", "--bg-1": "#0C0D12", "--bg-2": "#121318", "--bg-3": "#181A21",
+    "--bg-4": "#20222B", "--b0": "#1A1C23", "--b1": "#23252E",
+    "--t1": "#F2F3F6", "--t2": "#989BA6", "--t3": "#686B77", "--t4": "#525B69",
+    "--blue3": "#5A9FD6", "--blue4": "#7DB6E8",
+    "--bg-hover": "rgba(255, 255, 255, 0.045)", "--bg-sel": "rgba(90, 159, 214, 0.14)",
   },
-  components: {
-    Table: {
-      // Header
-      headerBg:             "#181A21",   // --bg-3 (surface-2)
-      headerColor:          "#989BA6",   // --t2
-      headerSortActiveBg:   "#181A21",
-      headerSortHoverBg:    "#20222B",   // --bg-4
-      headerSplitColor:     "#23252E",   // --b1
-      // Rows
-      rowHoverBg:           "rgba(255, 255, 255, 0.04)",
-      rowSelectedBg:        "rgba(90, 159, 214, 0.14)",    // --bg-sel
-      rowSelectedHoverBg:   "rgba(90, 159, 214, 0.22)",
-      bodySortBg:           "#0C0D12",
-      // Borders
-      borderColor:          "#1A1C23",   // --b0 (line-faint)
-      // Cell sizing
-      cellFontSize:         12,
-      cellPaddingInline:    14,
-      cellPaddingBlock:     9,
-    },
-    Pagination: {
-      colorBgContainer:    "#0C0D12",
-      itemActiveBg:        "rgba(90, 159, 214, 0.14)",
-    },
+  light: {
+    "--bg-0": "#F4F6FA", "--bg-1": "#FFFFFF", "--bg-2": "#FFFFFF", "--bg-3": "#F7F9FC",
+    "--bg-4": "#EDF1F7", "--b0": "#EEF1F6", "--b1": "#E7ECF3",
+    "--t1": "#1C2330", "--t2": "#5A6678", "--t3": "#8593A6", "--t4": "#A9B4C4",
+    "--blue3": "#1F77B4", "--blue4": "#175A88",
+    "--bg-hover": "rgba(15, 30, 60, 0.04)", "--bg-sel": "rgba(31, 119, 180, 0.10)",
   },
 };
 
-// ── Aughor light tokens for Ant Design (mirrors the light palette in tokens.css) ──
-const AUG_THEME_LIGHT: Parameters<typeof ConfigProvider>[0]["theme"] = {
-  algorithm: theme.defaultAlgorithm,
-  token: {
-    colorBgBase:          "#F5F5F5",   // --bg-0
-    colorBgContainer:     "#FFFFFF",   // --bg-1
-    colorBgElevated:      "#FAFAFA",   // --bg-2
-    colorBgLayout:        "#F5F5F5",
-    colorBorder:          "#E1E1E1",   // --b1
-    colorBorderSecondary: "#ECECEC",   // --b0
-    colorSplit:           "#ECECEC",
-    colorText:            "#333333",   // --t1
-    colorTextSecondary:   "#555555",   // --t2
-    colorTextDescription: "#787878",   // --t3
-    colorTextDisabled:    "#9E9E9E",   // --t4
-    colorPrimary:         "#1F77B4",   // --blue3
-    colorPrimaryHover:    "#175A88",   // --blue4
-    fontSize:             12,
-    fontFamily:           "'DM Sans', system-ui, sans-serif",
-    borderRadius:         3,
-    borderRadiusSM:       2,
-    controlHeight:        30,
-    lineWidth:            1,
-  },
-  components: {
-    Table: {
-      headerBg:           "#FAFAFA",   // --bg-2
-      headerColor:        "#787878",   // --t3
-      headerSortActiveBg: "#F0F0F0",   // --bg-3
-      headerSortHoverBg:  "#F0F0F0",   // --bg-3
-      headerSplitColor:   "#E1E1E1",   // --b1
-      rowHoverBg:         "rgba(0, 0, 0, 0.04)",
-      rowSelectedBg:      "rgba(31, 119, 180, 0.10)",
-      rowSelectedHoverBg: "rgba(31, 119, 180, 0.16)",
-      bodySortBg:         "#FFFFFF",
-      borderColor:        "#ECECEC",   // --b0
-      cellFontSize:       12,
-      cellPaddingInline:  14,
-      cellPaddingBlock:   9,
-    },
-    Pagination: {
-      colorBgContainer:   "#FFFFFF",
-      itemActiveBg:       "rgba(31, 119, 180, 0.12)",
-    },
-  },
+// Selected-row hover: a stronger tint of the selection wash — no dedicated token.
+const ROW_SELECTED_HOVER: Record<"dark" | "light", string> = {
+  dark: "rgba(90, 159, 214, 0.22)",
+  light: "rgba(31, 119, 180, 0.16)",
 };
+
+function buildAntTheme(mode: "dark" | "light"): ThemeConfig {
+  const fb = TOKEN_FALLBACK[mode];
+  const cs = typeof window !== "undefined" ? getComputedStyle(document.documentElement) : null;
+  const v = (name: string) => (cs?.getPropertyValue(name).trim() || fb[name]);
+  return {
+    algorithm: mode === "light" ? theme.defaultAlgorithm : theme.darkAlgorithm,
+    token: {
+      // Backgrounds
+      colorBgBase:          v("--bg-0"),
+      colorBgContainer:     v("--bg-1"),
+      colorBgElevated:      v("--bg-2"),
+      colorBgLayout:        v("--bg-0"),
+      // Borders (hairlines)
+      colorBorder:          v("--b1"),
+      colorBorderSecondary: v("--b0"),
+      colorSplit:           v("--b0"),
+      // Text
+      colorText:            v("--t1"),
+      colorTextSecondary:   v("--t2"),
+      colorTextDescription: v("--t3"),
+      colorTextDisabled:    v("--t4"),
+      // Brand (interaction accent)
+      colorPrimary:         v("--blue3"),
+      colorPrimaryHover:    v("--blue4"),
+      // Misc — grid stays DM Sans (text columns readable); numeric formatting keeps tabular alignment
+      fontSize:             12,
+      fontFamily:           "'DM Sans', system-ui, sans-serif",
+      borderRadius:         6,   // --r1 (v2 control radius; was the retired 3px)
+      borderRadiusSM:       4,
+      controlHeight:        30,
+      lineWidth:            1,
+    },
+    components: {
+      Table: {
+        // Header
+        headerBg:           v("--bg-3"),
+        headerColor:        v("--t2"),
+        headerSortActiveBg: v("--bg-3"),
+        headerSortHoverBg:  v("--bg-4"),
+        headerSplitColor:   v("--b1"),
+        // Rows
+        rowHoverBg:         v("--bg-hover"),
+        rowSelectedBg:      v("--bg-sel"),
+        rowSelectedHoverBg: ROW_SELECTED_HOVER[mode],
+        bodySortBg:         v("--bg-1"),
+        // Borders
+        borderColor:        v("--b0"),
+        // Cell sizing
+        cellFontSize:       12,
+        cellPaddingInline:  14,
+        cellPaddingBlock:   9,
+      },
+      Pagination: {
+        colorBgContainer:   v("--bg-1"),
+        itemActiveBg:       v("--bg-sel"),
+      },
+    },
+  };
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -190,7 +177,10 @@ function fmt(col: string, v: unknown): React.ReactNode {
 export function AugTable<T extends object = Record<string, unknown>>(
   props: TableProps<T>,
 ) {
-  const antTheme = useThemeMode() === "light" ? AUG_THEME_LIGHT : AUG_THEME_DARK;
+  const mode = useThemeMode();
+  // Re-read tokens whenever the theme flips — getComputedStyle sees the sheet the
+  // moment [data-theme] changes (the MutationObserver in useThemeMode re-renders us).
+  const antTheme = useMemo(() => buildAntTheme(mode), [mode]);
   return (
     <ConfigProvider theme={antTheme}>
       <Table<T>

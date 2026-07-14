@@ -92,9 +92,9 @@ export function ResizableSplit({
           display: "flex", alignItems: "stretch", justifyContent: "center",
         }}
       >
-        <span style={{ width: 1, background: "var(--border-0, #2a2a2a)", transition: "background .1s" }}
+        <span style={{ width: 1, background: "var(--b0)", transition: "background .1s" }}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "var(--blue4, #60a5fa)"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "var(--border-0, #2a2a2a)"; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "var(--b0)"; }}
         />
       </div>
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>

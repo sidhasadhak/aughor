@@ -6,7 +6,12 @@
 @import "../aughor-v2/theme/elevation-motion.css";
 @import "../styles/type.css";
 
-@custom-variant dark (&:is(.dark *));
+/* The app stamps [data-theme="dark"|"light"] on <html> (app/page.tsx theme effect);
+   before the effect runs there is NO attribute and the app renders its default DARK
+   look. `dark:` therefore matches explicit dark AND the un-stamped default, and turns
+   off only when light is stamped. (The old `.dark *` variant matched nothing — the
+   class is never set — so every dark: utility in components/ui was dead.) */
+@custom-variant dark (&:is([data-theme="dark"] *, html:not([data-theme]) *));
 
 /* ── Font wiring (MLflow-informed: two families) ─────────────────────────────
    DM Sans carries the UI; IBM Plex Mono carries every figure, id, timestamp and
@@ -18,6 +23,39 @@
   --font-sans: var(--font-dm-sans), system-ui, sans-serif;
   --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
   --font-code: var(--font-ibm-plex-mono), 'Consolas', monospace;
+
+  /* ── shadcn semantic-variable bridge (UI Elevation Wave 1, move 5) ─────────
+     The aliases themselves live in styles/tokens.css (:root, both themes) and
+     point at tokens-v2 primitives; exposing them here makes the Tailwind
+     utilities (bg-background, border-border, text-muted-foreground, ring-ring,
+     bg-primary…) resolve — without this block every such class in
+     components/ui/* compiled to nothing. `--primary` is the INTERACTIVE blue
+     (--blue-solid via tokens-v2), never the chart/data blue. */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Radius scale for harvested shadcn code (rounded-sm/md utilities + the
+     min(var(--radius-md),…) clamps in components/ui) — seated on the v2 radius
+     vocabulary. rounded-lg/xl stay banned by lint:tokens; use rounded-[var(--r3)]. */
+  --radius-sm: var(--r1);
+  --radius-md: var(--r2);
 }
 
 /* ── Base reset ─────────────────────────────────────────────────────────── */
@@ -324,6 +362,12 @@ a:hover { color: var(--blue4); }
   animation: aug-shimmer 1.4s infinite;
 }
 
+/* Tactile press + crisp keyboard focus for interactive controls. Additive:
+   pair with an element's existing colour transition (Tailwind `transition`
+   already includes transform, so the press eases in and out). */
+.aug-pressable:active { transform: scale(0.97); }
+.aug-pressable:focus-visible { outline: 2px solid var(--bfocus); outline-offset: 2px; }
+
 /* ── Deep-Analysis trace (ThinkingTrace) step transitions ────────────────── */
 @keyframes aug-step-in  { from { opacity: 0; transform: translateY(5px) } to { opacity: 1; transform: none } }
 @keyframes aug-check-pop { 0% { transform: scale(0); opacity: 0 } 60% { transform: scale(1.3) } 100% { transform: scale(1); opacity: 1 } }
@@ -338,12 +382,51 @@ a:hover { color: var(--blue4); }
   background-size: 100% 10px;
   animation: aug-flow-y 0.65s linear infinite;
 }
+
+/* ── Streaming caret (CK-0.2 token stream, UI Wave 2) ──────────────────────────
+   A soft round dot that trails the last streamed block while the narrative is
+   being written, then vanishes when the terminal `insight` event lands. The
+   inline-block sizing keeps it on the text baseline; the pulse reuses the same
+   1.1s cadence as the trace dot so the surface breathes at one rhythm. */
+@keyframes aug-caret { 0%, 100% { opacity: 1; transform: scale(1) } 50% { opacity: 0.35; transform: scale(0.7) } }
+.aug-caret {
+  display: inline-block; width: 0.5em; height: 0.5em; margin-left: 0.15em;
+  vertical-align: baseline; border-radius: var(--r-pill);
+  background: currentColor; animation: aug-caret 1.05s ease-in-out infinite;
+}
+/* Streamed text settles in with a whisper of blur+lift the first time it mounts;
+   applied once to the prose container (not per word), so markdown re-renders on
+   each delta don't re-trigger it. */
+@keyframes aug-stream-in { from { opacity: 0; filter: blur(2px); transform: translateY(3px) } to { opacity: 1; filter: blur(0); transform: none } }
+.aug-stream-in { animation: aug-stream-in var(--dur-slow, .32s) var(--ease-out, ease-out) both; }
+
 @media (prefers-reduced-motion: reduce) {
-  .aug-step-in, .aug-check-pop, .aug-pulse-dot, .aug-flow-y,
+  .aug-step-in, .aug-check-pop, .aug-pulse-dot, .aug-flow-y, .aug-caret, .aug-stream-in,
   .aug-anim-blink, .aug-anim-up, .aug-anim-fade, .aug-anim-pop,
   .aug-shimmer { animation: none; }
+  .aug-caret { opacity: 0.6; }
+  .aug-pressable:active { transform: none; }
 }
 
 /* ── Ontology canvas edge animations ─────────────────────────────────────── */
 @keyframes edge-flow         { to { stroke-dashoffset: -12; } }
 @keyframes edge-flow-verified { to { stroke-dashoffset: -33; } }
+
+/* ── Smooth disclosure (CK-style reasoning row, UI Wave 3) ─────────────────
+   Height-animated collapsible region via the grid-template-rows 0fr→1fr trick:
+   the wrapper is a one-row grid whose row grows from nothing to content size;
+   the single child supplies the min-height:0 + overflow:hidden context the
+   fr-track needs. Because this is a *transition* (not an animation), mounting
+   directly in the open state paints instantly — restored/inert turns don't
+   animate; only a live data-open flip (user toggle / streaming arrival) does. */
+.aug-disclose {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-norm) var(--ease-out);
+}
+.aug-disclose[data-open="true"] { grid-template-rows: 1fr; }
+.aug-disclose > * { min-height: 0; overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .aug-disclose { transition: none; }
+}

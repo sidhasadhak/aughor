@@ -93,9 +93,10 @@ async function saveBudget(
 // ── Verdict badge ─────────────────────────────────────────────────────────────
 
 const VERDICT_COLOR: Record<string, string> = {
-  safe:       "var(--green3, #4ade80)",
-  suspicious: "var(--amb3, #f59e0b)",
-  blocked:    "var(--r2, #f87171)",
+  safe:       "var(--grn3)",
+  suspicious: "var(--amb3)",
+  // was var(--r2, …) — the RADIUS token used as a color, so it always fell to the fallback
+  blocked:    "var(--red3)",
 };
 
 // ── Agent attribution ─────────────────────────────────────────────────────────

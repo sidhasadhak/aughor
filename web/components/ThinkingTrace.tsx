@@ -1,5 +1,14 @@
 "use client";
 
+import type { ReactNode } from "react";
+import CompassIcon   from "@atlaskit/icon/core/compass";
+import DataFlowIcon  from "@atlaskit/icon/core/data-flow";
+import ScalesIcon    from "@atlaskit/icon/core/scales";
+import ZoomInIcon    from "@atlaskit/icon/core/zoom-in";
+import FlaskIcon     from "@atlaskit/icon/core/flask";
+import LightbulbIcon from "@atlaskit/icon/core/lightbulb";
+import MinusIcon     from "@atlaskit/icon/core/minus";
+import DatabaseIcon  from "@atlaskit/icon/core/database";
 import type { InvestigationState } from "@/lib/types";
 import type { ChatTurn } from "@/lib/useChat";
 import { localizeCurrency } from "@/lib/orgSettings";
@@ -40,6 +49,8 @@ type Verdict = "confirmed" | "refuted" | "inconclusive" | "untested";
 interface Step {
   id: string;
   label: string;
+  /** Leading icon rendered before the label (explore sub-question purposes). */
+  icon?: ReactNode;
   sublabel?: string;
   status: StepStatus;
   verdict?: Verdict;
@@ -55,14 +66,18 @@ const VERDICT_COLOR: Record<Verdict, string> = {
   untested: "text-zinc-500",
 };
 
-const PURPOSE_ICON: Record<string, string> = {
-  landscape:    "◎",
-  relationship: "⟺",
-  threshold:    "↯",
-  drill_down:   "⇣",
-  confounder:   "⊕",
-  synthesis:    "✦",
+// Sub-question purpose → leading icon (atlaskit core, 12px "small", colour
+// inherited from the step label). Real icons replace the old unicode glyphs.
+const PURPOSE_ICON: Record<string, ReactNode> = {
+  landscape:    <CompassIcon label="" size="small" />,
+  relationship: <DataFlowIcon label="" size="small" />,
+  threshold:    <ScalesIcon label="" size="small" />,
+  drill_down:   <ZoomInIcon label="" size="small" />,
+  confounder:   <FlaskIcon label="" size="small" />,
+  synthesis:    <LightbulbIcon label="" size="small" />,
 };
+// Neutral fallback for purposes the map doesn't know (was "·").
+const PURPOSE_FALLBACK_ICON: ReactNode = <MinusIcon label="" size="small" />;
 
 // Present-tense, plain-language labels for the ADA investigation phases — what the
 // agent is doing right now, not internal phase jargon. Falls back to phase_name.
@@ -136,14 +151,14 @@ function deriveSteps(state: InvestigationState): Step[] {
     for (let i = 0; i < subQuestions.length; i++) {
       const sq = subQuestions[i];
       const answered = sq.done || answeredIds.has(sq.id);
-      const icon = PURPOSE_ICON[sq.purpose] ?? "·";
-      const label = `${icon} ${sq.question.length > 44 ? sq.question.slice(0, 44) + "…" : sq.question}`;
+      const label = sq.question.length > 44 ? sq.question.slice(0, 44) + "…" : sq.question;
       const answer = subqAnswers.find(a => a.subq_id === sq.id);
       // Current = running and this is the first unanswered
       const isCurrentlyRunning = isRunning && !answered && subQuestions.slice(0, i).every(s => s.done || answeredIds.has(s.id));
       steps.push({
         id: `sq-${sq.id}`,
         label,
+        icon: PURPOSE_ICON[sq.purpose] ?? PURPOSE_FALLBACK_ICON,
         sublabel: answered && answer
           ? answer.answer.length > 56 ? answer.answer.slice(0, 56) + "…" : answer.answer
           : isCurrentlyRunning ? "running…" : undefined,
@@ -320,13 +335,15 @@ export function ThinkingTrace({ state }: Props) {
               </div>
               {/* Content */}
               <div className="min-w-0 pb-3 flex-1">
-                <p className={`text-xs leading-snug transition-colors duration-300 ${
+                <p className={`text-xs leading-snug transition-colors duration-300 flex items-start gap-1.5 ${
                   step.status === "pending" ? "text-zinc-500"
                   : step.status === "running" ? "text-amber-200 font-medium"
                   : step.status === "error" ? "text-red-300"
                   : "text-zinc-300"
                 }`}>
-                  {step.label}
+                  {/* Icon inherits the label's colour so pending/running/done tones carry through. */}
+                  {step.icon && <span className="shrink-0 mt-px" aria-hidden>{step.icon}</span>}
+                  <span className="min-w-0">{step.label}</span>
                 </p>
                 {step.sublabel && (
                   <p className={`aug-fs-xs mt-0.5 leading-snug aug-anim-fade ${
@@ -335,17 +352,24 @@ export function ThinkingTrace({ state }: Props) {
                     {step.sublabel}
                   </p>
                 )}
-                {/* Nested named query steps — indented rail of what was asked of the data */}
-                {step.substeps && (
-                  <div className="mt-1.5 ml-0.5 border-l border-violet-500/15 pl-2.5 space-y-1">
-                    {step.substeps.map((s, j) => (
-                      <p key={j} className="aug-fs-xs leading-snug text-zinc-400 flex items-start gap-1.5 aug-anim-fade">
-                        <span className="text-violet-400/60 shrink-0 mt-px">▤</span>
-                        <span className="min-w-0">{s.length > 76 ? s.slice(0, 76) + "…" : s}</span>
-                      </p>
-                    ))}
+                {/* Nested named query steps — indented rail of what was asked of the data.
+                    Wrapped in .aug-disclose so the region grows smoothly when the first
+                    finding streams in mid-run; restored turns mount already-open (no
+                    transition fires on initial render), so history doesn't animate. */}
+                <div className="aug-disclose" data-open={!!step.substeps}>
+                  <div>
+                    {step.substeps && (
+                      <div className="mt-1.5 ml-0.5 border-l border-violet-500/15 pl-2.5 space-y-1">
+                        {step.substeps.map((s, j) => (
+                          <p key={j} className="aug-fs-xs leading-snug text-zinc-400 flex items-start gap-1.5 aug-anim-fade">
+                            <span className="text-violet-400/60 shrink-0 mt-px" aria-hidden><DatabaseIcon label="" size="small" /></span>
+                            <span className="min-w-0">{s.length > 76 ? s.slice(0, 76) + "…" : s}</span>
+                          </p>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             </div>
           );

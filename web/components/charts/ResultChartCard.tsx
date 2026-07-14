@@ -229,13 +229,13 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
                   [{ v: AUTO_OPT, t: "Auto" }, ...(["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() }))],
                   (v) => setAggSel(v === AUTO_OPT ? null : (v as Agg)))}
               {rateSummed && (
-                <span className="aug-fs-xs" style={{ color: "var(--amber4, #B25D00)" }} title="Summing a rate/ratio is usually not meaningful — AVG is the grain-correct aggregate.">
+                <span className="aug-fs-xs" style={{ color: "var(--amb4)" }} title="Summing a rate/ratio is usually not meaningful — AVG is the grain-correct aggregate.">
                   ⚠ summing a rate
                 </span>
               )}
               {metricCols.length >= 1 &&
                 Dropdown("Transform", transformOp, TRANSFORM_OPTS, (v) => setTransformOp(v as PostprocOp | "none"))}
-              {tErr && <span className="aug-fs-xs" style={{ color: "var(--amber4, #B25D00)" }} title={tErr}>⚠ transform n/a</span>}
+              {tErr && <span className="aug-fs-xs" style={{ color: "var(--amb4)" }} title={tErr}>⚠ transform n/a</span>}
             </>
           )}
         </div>

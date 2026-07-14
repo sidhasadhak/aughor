@@ -30,6 +30,11 @@ import {
   type BulkUploadResult,
 } from "@/lib/api";
 import { BrandLogo, brandColor } from "@/components/BrandLogos";
+import { Button } from "@/components/ui/button";
+
+/** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
+ *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
+const SVG_SIZE_AUTO = "[&_svg:not([class*='size-'])]:size-auto";
 
 const WORKSPACE_ID = "workspace";
 
@@ -80,7 +85,8 @@ function LogoBox({ type, size = 36 }: { type: string; size?: number }) {
 function FileTile({ info, onClick }: { info: ConnectorTypeInfo; onClick: () => void }) {
   const m = meta(info.type);
   return (
-    <button onClick={onClick}
+    <Button variant="ghost" onClick={onClick}
+      className={`h-auto p-0 font-normal whitespace-normal items-stretch justify-start ${SVG_SIZE_AUTO}`}
       style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, borderRadius: 10, cursor: "pointer",
         background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", transition: "all .12s", width: "100%" }}
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = brandColor(info.type); (e.currentTarget as HTMLElement).style.background = "var(--bg-2)"; }}
@@ -89,14 +95,15 @@ function FileTile({ info, onClick }: { info: ConnectorTypeInfo; onClick: () => v
       <LogoBox type={info.type} size={34} />
       <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{m.label}</span>
       <span style={{ fontSize: 11.5, color: "var(--t3)", lineHeight: 1.45 }}>{m.blurb}</span>
-    </button>
+    </Button>
   );
 }
 
 function ConnectorCard({ info, onClick }: { info: ConnectorTypeInfo; onClick: () => void }) {
   const m = meta(info.type);
   return (
-    <button onClick={onClick}
+    <Button variant="ghost" onClick={onClick}
+      className={`h-auto p-0 font-normal justify-start ${SVG_SIZE_AUTO}`}
       style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 9, cursor: "pointer",
         background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", transition: "all .12s", width: "100%" }}
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = brandColor(info.type); (e.currentTarget as HTMLElement).style.background = "var(--bg-2)"; }}
@@ -110,7 +117,7 @@ function ConnectorCard({ info, onClick }: { info: ConnectorTypeInfo; onClick: ()
         </span>
         <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.blurb}</span>
       </span>
-    </button>
+    </Button>
   );
 }
 
@@ -292,10 +299,11 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input style={{ ...S, maxWidth: 220 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
             placeholder="New schema name…" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addSchema(); } }} />
-          <button type="button" onClick={addSchema} disabled={!newSchema.trim() || addingSchema}
+          <Button variant="ghost" type="button" onClick={addSchema} disabled={!newSchema.trim() || addingSchema}
+            className="h-auto p-0 font-normal"
             style={{ fontSize: 12, padding: "8px 12px", borderRadius: 6, cursor: newSchema.trim() ? "pointer" : "not-allowed", background: "transparent", color: "var(--t2)", border: "1px solid var(--b1)", whiteSpace: "nowrap" }}>
             + Add schema
-          </button>
+          </Button>
         </div>
 
         {conflict && (
@@ -325,13 +333,14 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                   {suggest && (
-                    <button type="button" onClick={() => setChosen(p => ({ ...p, [c.name]: suggest }))}
+                    <Button variant="ghost" type="button" onClick={() => setChosen(p => ({ ...p, [c.name]: suggest }))}
                       title={`DuckDB read this as text but the values look like ${suggest}`}
+                      className="h-auto p-0"
                       style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 5, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
                         background: chosen[c.name] === suggest ? "transparent" : "color-mix(in srgb, var(--amb4) 16%, transparent)",
                         color: "var(--amb4)", border: "1px solid color-mix(in srgb, var(--amb4) 35%, transparent)" }}>
                       {chosen[c.name] === suggest ? "✓ " : "→ "}{suggest}
-                    </button>
+                    </Button>
                   )}
                 </div>
               );
@@ -372,16 +381,19 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         {error && <p style={{ fontSize: 12, color: "var(--red4)" }}>{error}</p>}
 
         <div style={{ display: "flex", gap: 10 }}>
-          <button type="button" onClick={commit} disabled={committing}
+          <Button variant="ghost" type="button" onClick={commit} disabled={committing}
+            className="h-auto p-0"
             style={{ fontSize: 13, fontWeight: 600, padding: "9px 20px", borderRadius: 6, cursor: committing ? "not-allowed" : "pointer", background: "var(--blue3)", color: "#fff", border: "none", opacity: committing ? 0.6 : 1 }}>
             {committing ? "Importing…" : conflict ? "Replace table" : "Add table"}
-          </button>
+          </Button>
           {queue.length > 0 && (
-            <button type="button" onClick={() => analyzeNext(queue)} disabled={committing}
-              style={{ fontSize: 13, padding: "9px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "1px solid var(--b1)" }}>Skip</button>
+            <Button variant="ghost" type="button" onClick={() => analyzeNext(queue)} disabled={committing}
+              className="h-auto p-0 font-normal"
+              style={{ fontSize: 13, padding: "9px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "1px solid var(--b1)" }}>Skip</Button>
           )}
-          <button type="button" onClick={cancelReview}
-            style={{ fontSize: 13, padding: "9px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "1px solid var(--b1)" }}>Cancel</button>
+          <Button variant="ghost" type="button" onClick={cancelReview}
+            className="h-auto p-0 font-normal"
+            style={{ fontSize: 13, padding: "9px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "1px solid var(--b1)" }}>Cancel</Button>
         </div>
       </div>
     );
@@ -407,13 +419,14 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
       {/* Mode toggle: review each file vs. bulk import into one schema */}
       <div style={{ display: "inline-flex", gap: 2, padding: 3, borderRadius: 8, background: "var(--bg-2)", border: "1px solid var(--b1)", alignSelf: "flex-start" }}>
         {(["review", "bulk"] as const).map(m => (
-          <button key={m} type="button" onClick={() => { setMode(m); setError(""); setBulkResults(null); }}
+          <Button variant="ghost" key={m} type="button" onClick={() => { setMode(m); setError(""); setBulkResults(null); }}
+            className="h-auto p-0"
             style={{ fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 6, cursor: "pointer", border: "none",
               background: mode === m ? "var(--bg-0)" : "transparent",
               color: mode === m ? "var(--t1)" : "var(--t3)",
               boxShadow: mode === m ? "0 1px 2px rgba(0,0,0,.15)" : "none" }}>
             {m === "review" ? "Review each" : "Bulk import"}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -456,10 +469,11 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input style={{ ...S, maxWidth: 200 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
               placeholder="New schema name…" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); bulkAddSchema(); } }} />
-            <button type="button" onClick={bulkAddSchema} disabled={!newSchema.trim() || addingSchema}
+            <Button variant="ghost" type="button" onClick={bulkAddSchema} disabled={!newSchema.trim() || addingSchema}
+              className="h-auto p-0 font-normal"
               style={{ fontSize: 12, padding: "8px 12px", borderRadius: 6, cursor: newSchema.trim() ? "pointer" : "not-allowed", background: "transparent", color: "var(--t2)", border: "1px solid var(--b1)", whiteSpace: "nowrap" }}>
               + Add schema
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -527,13 +541,14 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                         <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{f.table_name}</span>
                         <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1 }}>{f.filename} · {fmtBytes(f.size_bytes)}{f.column_types && Object.keys(f.column_types).length > 0 ? ` · ${Object.keys(f.column_types).length} typed` : ""}</span>
                       </span>
-                      <button onClick={() => remove(f)} title="Remove table"
+                      <Button variant="ghost" onClick={() => remove(f)} title="Remove table"
+                        className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
                         style={{ width: 26, height: 26, borderRadius: 6, cursor: "pointer", background: "transparent", border: "1px solid var(--b1)", color: "var(--t4)", display: "flex", alignItems: "center", justifyContent: "center" }}
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--red4)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--red4)"; }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; }}
                       >
                         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -613,25 +628,28 @@ export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdde
       {/* Header bar */}
       <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", borderBottom: "1px solid var(--b1)", background: "var(--bg-0)" }}>
         {picked ? (
-          <button onClick={() => setPicked(null)} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
+          <Button variant="ghost" onClick={() => setPicked(null)}
+            className={`h-auto p-0 font-normal ${SVG_SIZE_AUTO}`}
+            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t3)"}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 12 6 8l4-4" /></svg>
             All sources
-          </button>
+          </Button>
         ) : (
           <div>
             <h1 style={{ fontSize: 18, fontWeight: 600, color: "var(--t1)" }}>Add data</h1>
             <p style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 2 }}>Connect to a data source, upload local files, or read from an application.</p>
           </div>
         )}
-        <button onClick={onClose} title="Close (Esc)"
+        <Button variant="ghost" onClick={onClose} title="Close (Esc)"
+          className={`h-auto p-0 font-normal ${SVG_SIZE_AUTO}`}
           style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "6px 12px", borderRadius: 6, cursor: "pointer", background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "inherit" }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
           onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t3)"}>
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 4 4 12M4 4l8 8" /></svg>
           Done
-        </button>
+        </Button>
       </div>
 
       {/* Body */}
@@ -705,12 +723,14 @@ export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdde
             {error && <p style={{ fontSize: 12, color: "var(--red4)" }}>{error}</p>}
 
             <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-              <button type="submit" disabled={saving}
+              <Button variant="ghost" type="submit" disabled={saving}
+                className="h-auto p-0"
                 style={{ fontSize: 13, fontWeight: 600, padding: "9px 20px", borderRadius: 6, cursor: saving ? "not-allowed" : "pointer", background: "var(--blue3)", color: "#fff", border: "none", opacity: saving ? 0.6 : 1 }}>
                 {saving ? "Connecting…" : "Create connection"}
-              </button>
-              <button type="button" onClick={() => setPicked(null)}
-                style={{ fontSize: 13, padding: "9px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "1px solid var(--b1)" }}>Back</button>
+              </Button>
+              <Button variant="ghost" type="button" onClick={() => setPicked(null)}
+                className="h-auto p-0 font-normal"
+                style={{ fontSize: 13, padding: "9px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "1px solid var(--b1)" }}>Back</Button>
             </div>
           </form>
         )}

@@ -10,11 +10,21 @@
  * turns, or answers with no SQL).
  */
 import { useEffect, useState } from "react";
+import CheckMarkIcon      from "@atlaskit/icon/core/check-mark";
+import WarningIcon        from "@atlaskit/icon/core/warning";
+import EditIcon           from "@atlaskit/icon/core/edit";
+import StatusVerifiedIcon from "@atlaskit/icon/core/status-verified";
+import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
+import AutomationIcon     from "@atlaskit/icon/core/automation";
+import ChevronDownIcon    from "@atlaskit/icon/core/chevron-down";
+import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
 import { getAnswerReceipt, type InsightReceipt, type LearningReceiptPayload } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { costSummary } from "@/lib/cost";
 import { formatTimestamp } from "@/lib/format";
 
-// The NEW-this-run learning signals (readings reused is already shown as the ◆ badge from lineage).
+// The NEW-this-run learning signals (readings reused is already shown as the resolved-reading badge from lineage).
 const learnedNewCount = (l?: LearningReceiptPayload) =>
   (l?.resolutions_crystallized ?? 0) + (l?.trusted_program_replayed ?? 0);
 
@@ -32,19 +42,22 @@ function learningPhrases(l: LearningReceiptPayload): string[] {
 // "ada.premise_check" → "premise check"
 const capLabel = (c: string) => c.replace(/^[a-z]+\./, "").replace(/[._]/g, " ");
 
-function Badge({ tone, title, children }: { tone: "governed" | "drift" | "guard" | "propose" | "muted"; title?: string; children: React.ReactNode }) {
-  const c = {
-    governed: ["var(--blue1)", "var(--blue2)", "var(--blue4)"],
-    drift: ["var(--amb1)", "var(--amb2)", "var(--amb4)"],
-    guard: ["var(--grn1)", "var(--grn2)", "var(--grn4)"],
-    propose: ["var(--vio1)", "var(--vio2)", "var(--vio4)"],
-    muted: ["var(--bg-3)", "var(--b1)", "var(--t3)"],
-  }[tone];
+// Receipt tone → the ONE chip vocabulary (StatusChip, REC-U3). The old private Badge
+// carried its own style map and a sub-floor 10px font; StatusChip renders the same
+// semantics at the 11px legibility floor.
+const TONE_HUE: Record<"governed" | "drift" | "guard" | "propose" | "muted", ChipHue> = {
+  governed: "info",
+  drift: "caution",
+  guard: "positive",
+  propose: "accent",
+  muted: "muted",
+};
+
+function Badge({ tone, title, icon, children }: { tone: keyof typeof TONE_HUE; title?: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <span title={title} style={{
-      fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
-      background: c[0], border: `1px solid ${c[1]}`, color: c[2],
-    }}>{children}</span>
+    <StatusChip hue={TONE_HUE[tone]} strength="soft" title={title} icon={icon} className="whitespace-nowrap font-normal">
+      {children}
+    </StatusChip>
   );
 }
 
@@ -78,30 +91,35 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
   const learnedNew = learnedNewCount(learning);
 
   return (
-    <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 5 }}>
-      <button
+    <div style={{ marginTop: 6, display: "flex", flexDirection: "column" }}>
+      <Button
+        variant="ghost"
         onClick={() => setOpen(o => !o)}
-        style={{
-          display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
-          background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left",
-        }}
+        className="h-auto w-full flex-wrap justify-start gap-1.5 p-0 whitespace-normal text-left font-normal hover:bg-transparent dark:hover:bg-transparent"
         aria-label="Trust receipt"
+        aria-expanded={open}
       >
-        <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
-        {used.map((m, i) => <Badge key={`used:${i}:${m.ref}`} tone="governed" title={m.detail || ""}>{m.ref.replace("metric:", "")} · governed ✓</Badge>)}
-        {drift.map((m, i) => <Badge key={`drift:${i}:${m.ref}`} tone="drift" title={m.detail || ""}>⚠ {m.ref.replace("metric:", "")} · non-governed</Badge>)}
-        {proposed.map((m, i) => <Badge key={`prop:${i}:${m.ref}`} tone="propose" title={m.detail || "Define this metric in the Semantic Layer to enforce it"}>✎ define {m.ref.replace("metric:", "")}</Badge>)}
-        {guards.map((g, i) => <Badge key={`guard:${i}:${g.ref}`} tone="guard">✓ {g.ref.replace("guard:", "").replace(/_/g, " ")}</Badge>)}
-        {resolved.length > 0 && <Badge tone="governed" title="This answer applied an ambiguity this connection resolved earlier">◆ {resolved.length === 1 ? "resolved reading" : `${resolved.length} resolved readings`}</Badge>}
-        {learnedNew > 0 && learning && <Badge tone="governed" title="What the closed loop learned on this answer">✦ {[learning.resolutions_crystallized && `crystallized ${learning.resolutions_crystallized}`, learning.trusted_program_replayed && "trusted plan replayed"].filter(Boolean).join(" · ")}</Badge>}
-        {activations.length > 0 && <Badge tone="guard" title="Self-gating capabilities whose trigger fired this run">⚡ {activations.length} capabilit{activations.length !== 1 ? "ies" : "y"}</Badge>}
+        <span className="aug-fs-xs" style={{ color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
+        {used.map((m, i) => <Badge key={`used:${i}:${m.ref}`} tone="governed" title={m.detail || ""} icon={<CheckMarkIcon label="" size="small" />}>{m.ref.replace("metric:", "")} · governed</Badge>)}
+        {drift.map((m, i) => <Badge key={`drift:${i}:${m.ref}`} tone="drift" title={m.detail || ""} icon={<WarningIcon label="" size="small" />}>{m.ref.replace("metric:", "")} · non-governed</Badge>)}
+        {proposed.map((m, i) => <Badge key={`prop:${i}:${m.ref}`} tone="propose" title={m.detail || "Define this metric in the Semantic Layer to enforce it"} icon={<EditIcon label="" size="small" />}>define {m.ref.replace("metric:", "")}</Badge>)}
+        {guards.map((g, i) => <Badge key={`guard:${i}:${g.ref}`} tone="guard" icon={<CheckMarkIcon label="" size="small" />}>{g.ref.replace("guard:", "").replace(/_/g, " ")}</Badge>)}
+        {resolved.length > 0 && <Badge tone="governed" title="This answer applied an ambiguity this connection resolved earlier" icon={<StatusVerifiedIcon label="" size="small" />}>{resolved.length === 1 ? "resolved reading" : `${resolved.length} resolved readings`}</Badge>}
+        {learnedNew > 0 && learning && <Badge tone="governed" title="What the closed loop learned on this answer" icon={<AiSparkleIcon label="" size="small" />}>{[learning.resolutions_crystallized && `crystallized ${learning.resolutions_crystallized}`, learning.trusted_program_replayed && "trusted plan replayed"].filter(Boolean).join(" · ")}</Badge>}
+        {activations.length > 0 && <Badge tone="guard" title="Self-gating capabilities whose trigger fired this run" icon={<AutomationIcon label="" size="small" />}>{activations.length} capabilit{activations.length !== 1 ? "ies" : "y"}</Badge>}
         {used.length === 0 && drift.length === 0 && proposed.length === 0 && guards.length === 0 && resolved.length === 0 && learnedNew === 0 && activations.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
-        <span style={{ fontSize: 10, color: "var(--t4)" }}>{open ? "▾" : "▸"}</span>
-      </button>
+        <span className="aug-fs-xs" style={{ color: "var(--t4)" }} aria-hidden>
+          {open ? <ChevronDownIcon label="" size="small" /> : <ChevronRightIcon label="" size="small" />}
+        </span>
+      </Button>
 
-      {open && (
+      {/* Expanded provenance panel — stays mounted so .aug-disclose can animate the
+          open/close height (grid-rows 0fr→1fr). Mounts closed; only the user's toggle
+          transitions it, so restored turns never animate on mount. */}
+      <div className="aug-disclose" data-open={open}>
+        <div>
         <div style={{
-          padding: "8px 10px", borderRadius: "var(--r2)", background: "var(--bg-2)",
+          marginTop: 5, padding: "8px 10px", borderRadius: "var(--r2)", background: "var(--bg-2)",
           border: "1px solid var(--b1)", display: "flex", flexDirection: "column", gap: 7,
         }}>
           {rec.job && (
@@ -111,7 +129,9 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
           )}
           {costSummary(rec.cost) && (
             <div style={{ fontSize: 11, color: "var(--t3)", display: "flex", gap: 6, alignItems: "center" }}>
-              <span style={{ color: "var(--t4)" }} title="What this answer cost to produce">⚡ cost</span>
+              <span style={{ color: "var(--t4)", display: "inline-flex", alignItems: "center", gap: 4 }} title="What this answer cost to produce">
+                <AutomationIcon label="" size="small" /> cost
+              </span>
               <span>{costSummary(rec.cost)}</span>
             </div>
           )}
@@ -127,7 +147,9 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
               <span style={{ color: "var(--t3)" }}>Applied a previously-resolved reading (so this question doesn’t re-ask):</span>
               {resolved.map((r, i) => (
                 <div key={`resolved:${i}:${r.ref}`} style={{ marginTop: 2 }}>
-                  <span style={{ color: "var(--blue4)" }}>◆ {r.ref.replace("reading:", "")}</span>
+                  <span style={{ color: "var(--blue4)", display: "inline-flex", alignItems: "center", gap: 4, verticalAlign: "text-bottom" }}>
+                    <StatusVerifiedIcon label="" size="small" /> {r.ref.replace("reading:", "")}
+                  </span>
                   {r.detail ? ` — ${r.detail}` : ""}
                 </div>
               ))}
@@ -144,7 +166,9 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
               <span style={{ color: "var(--t3)" }}>Guards that fired (their trigger held):</span>
               {activations.map((a, i) => (
                 <div key={`act:${i}:${a.capability}`} style={{ marginTop: 2 }}>
-                  <span style={{ color: "var(--grn4)" }}>⚡ {capLabel(a.capability)}</span>
+                  <span style={{ color: "var(--grn4)", display: "inline-flex", alignItems: "center", gap: 4, verticalAlign: "text-bottom" }}>
+                    <AutomationIcon label="" size="small" /> {capLabel(a.capability)}
+                  </span>
                   {a.reason ? ` — activated because ${a.reason}` : ""}{a.count > 1 ? ` (×${a.count})` : ""}
                 </div>
               ))}
@@ -152,7 +176,7 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
           )}
           {inputs.length > 0 && (
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: 10, color: "var(--t3)" }}>inputs:</span>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>inputs:</span>
               {inputs.map((inp, idx) => <Badge key={`input:${idx}:${inp.ref}`} tone="muted">{inp.ref.replace("table:", "")}</Badge>)}
             </div>
           )}
@@ -164,7 +188,8 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
             }}>{sqlEdge.detail}</pre>
           )}
         </div>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

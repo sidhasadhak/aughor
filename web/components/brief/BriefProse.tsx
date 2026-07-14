@@ -56,10 +56,13 @@ export function BriefProse({
   text,
   muted = false,
   className = "",
+  caret = false,
 }: {
   text: string;
   muted?: boolean;
   className?: string;
+  /** Trail a pulsing streaming caret after the text (CK-0.2 token stream). */
+  caret?: boolean;
 }) {
   if (!text) return null;
   return (
@@ -67,6 +70,7 @@ export function BriefProse({
       className={`aug-text-ui leading-relaxed ${muted ? "text-zinc-500" : "text-zinc-300"} ${className}`}
     >
       {renderEmphasis(text)}
+      {caret && <span className="aug-caret" aria-hidden="true" />}
     </p>
   );
 }

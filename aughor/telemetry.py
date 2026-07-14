@@ -14,13 +14,16 @@ All public functions are strict no-ops when no backend is configured.
 """
 from __future__ import annotations
 
+import contextvars
 import functools
 import logging
 import os
 import sys
 import threading
 import time as _time
+import uuid
 from contextlib import ExitStack, contextmanager
+from datetime import datetime, timezone
 from typing import Any, Generator
 
 logger = logging.getLogger(__name__)
@@ -271,19 +274,134 @@ def mlflow_tool_span(
     name: str,
     attributes: dict | None = None,
 ) -> Generator[Any, None, None]:
-    """A TOOL span nested under the active MLflow trace (flag `obs.mlflow`).
+    """A TOOL span for a unit of work (e.g. a guarded SQL execution).
 
-    Strict no-op (yields None) unless the flag is on, mlflow imports, AND a
-    trace is already active. Body exceptions propagate normally (the span
-    records the error status on exit); span start/end failures never reach
-    the caller.
+    Two independent, both-optional sinks hang off this one call:
+    - the MLflow TOOL span nested under the active trace (flag `obs.mlflow`) —
+      no-op unless that flag is on, mlflow imports, AND a trace is already active;
+    - the `task_history` row (flag `obs.task_table`) — no-op unless that flag is
+      on, inheriting the ambient node trace id + parenting to the enclosing span.
+
+    Body exceptions propagate normally (both sinks record the error on exit); a
+    sink's own start/end failure never reaches the caller.
     """
     stack = ExitStack()
+    # task_history sink first (outermost) so its span id is the parent of anything
+    # the body opens, and a body exception is recorded before it unwinds. No-op
+    # unless `obs.task_table`. trace_id="" → inherit the ambient node trace id.
+    stack.enter_context(_task_history_span(name, "", attributes))
     span_obj = _mlflow_enter_span(stack, name, attributes, span_type="TOOL")
     try:
         yield span_obj
     finally:
         _close_span_stack(stack, "MLflow tool")
+
+
+# ── task_history sink (feature flag `obs.task_table`) ─────────────────────────
+#
+# One append-only row per span, sunk from the SAME span calls that already drive
+# Langfuse/OTel/MLflow — the queryable spine of "what the agent actually did"
+# (Rec 4 of the 2026-07-11 platform study). A pure SINK: strict no-op unless the
+# flag is on, so an unflagged process is byte-identical (no rows written).
+#
+# Parent linkage + the ambient trace id ride contextvars, so:
+#   • a node span (`span()`, which carries trace_id) publishes the trace id, and a
+#     tool span nested inside it (`mlflow_tool_span`, which doesn't) reads it back;
+#   • `parent_span_id` is the enclosing span on the stack — one call tree per run;
+#   • ContextThreadPoolExecutor's `copy_context()` carries the stack into each
+#     parallel wave as a COPY, so a worker's child spans never leak back to the
+#     parent stack (the same structural match that makes MLflow nesting work).
+
+_span_stack: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
+    "aughor_task_span_stack", default=())
+_active_trace_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "aughor_task_trace_id", default="")
+
+# Metadata keys lifted into the dedicated input/captured_output columns (in
+# preference order); everything else on the span becomes labels JSON.
+_INPUT_KEYS = ("input", "sql", "question", "query")
+_OUTPUT_KEYS = ("captured_output", "output", "result", "row_count")
+
+
+def _task_table_enabled() -> bool:
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("obs.task_table")
+    except Exception:
+        return False
+
+
+def _split_span_attrs(attributes: dict | None) -> tuple[str | None, str | None, dict]:
+    """Split span metadata into (input, captured_output, labels): the first present
+    input/output key goes to its dedicated column (stringified + capped, since SQL
+    text can be large); the remainder become labels."""
+    attrs = dict(attributes or {})
+    inp = outp = None
+    for k in _INPUT_KEYS:
+        v = attrs.get(k)
+        if v not in (None, ""):
+            inp = str(v)[:_MLF_ATTR_MAX_CHARS]
+            attrs.pop(k, None)
+            break
+    for k in _OUTPUT_KEYS:
+        v = attrs.get(k)
+        if v not in (None, ""):
+            outp = str(v)[:_MLF_ATTR_MAX_CHARS]
+            attrs.pop(k, None)
+            break
+    return inp, outp, attrs
+
+
+@contextmanager
+def _task_history_span(task: str, trace_id: str, attributes: dict | None) -> Generator[None, None, None]:
+    """Record one ``task_history`` row around the wrapped body (flag
+    `obs.task_table`). Strict no-op when off. A body exception propagates
+    unchanged but is first captured as ``error_message``; the sink's own failures
+    (flag read, ledger write) never reach the caller — telemetry must not break
+    the node it wraps."""
+    if not _task_table_enabled():
+        yield
+        return
+    span_id = uuid.uuid4().hex
+    parent = _span_stack.get()
+    parent_id = parent[-1] if parent else None
+    tid = trace_id or _active_trace_id.get()
+    tok_stack = _span_stack.set(parent + (span_id,))
+    tok_tid = _active_trace_id.set(tid) if trace_id else None
+    start = datetime.now(timezone.utc)
+    t0 = _time.monotonic()
+    err: str | None = None
+    try:
+        yield
+    except BaseException as exc:  # record the failure, then re-raise unchanged
+        err = f"{type(exc).__name__}: {exc}"[:_MLF_ATTR_MAX_CHARS]
+        raise
+    finally:
+        _span_stack.reset(tok_stack)
+        if tok_tid is not None:
+            _active_trace_id.reset(tok_tid)
+        try:
+            inp, outp, labels = _split_span_attrs(attributes)
+            from aughor.kernel.ledger import Ledger
+            from aughor.org.context import current_org_id
+            Ledger.default().task_history_insert({
+                "span_id": span_id,
+                "trace_id": tid or None,
+                "parent_span_id": parent_id,
+                "task": task,
+                "input": inp,
+                "captured_output": outp,
+                "start_time": start.isoformat(),
+                "end_time": datetime.now(timezone.utc).isoformat(),
+                "duration_ms": round((_time.monotonic() - t0) * 1000, 1),
+                "error_message": err,
+                "labels": labels or None,
+                "org_id": current_org_id() or "default",
+            })
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "task_history sink best-effort; the span it wraps proceeds",
+                     counter="obs.task_table.sink")
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -408,6 +526,9 @@ def span(
     # `except: yield` shape re-yielded after a body throw, masking the real
     # error with a generator RuntimeError).
     _stack = ExitStack()
+    # task_history sink first (outermost): pushes this node's span id + publishes
+    # trace_id for nested tool spans to inherit. No-op unless `obs.task_table`.
+    _stack.enter_context(_task_history_span(name, trace_id, metadata))
     _mlflow_enter_span(_stack, name, metadata, trace_id=trace_id)
     otel = _otel()
     if otel is not None:

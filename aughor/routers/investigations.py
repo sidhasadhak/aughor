@@ -8,7 +8,7 @@ import os
 import re
 from typing import AsyncGenerator, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -1100,9 +1100,13 @@ async def _stream_chat(
     try:
         from aughor.agent.prompts import CHAT_PROMPT, CHAT_SQL_SYSTEM
         from aughor.llm.provider import get_provider
-        from aughor.rules import get_chat_rules_block
+        # Shared grounding producers (Rec 5): the same block functions the
+        # `GET /ask/context` receipt calls, so the receipt shows exactly what the
+        # answer path was grounded on (no drift). dialect_rules_block() == the old
+        # get_chat_rules_block() verbatim.
+        from aughor.agent.grounding import dialect_rules_block
 
-        rules_block = get_chat_rules_block()
+        rules_block = dialect_rules_block()
 
         from aughor.agent.followup import is_followup
         history_section = build_history_section(history, followup=is_followup(question))
@@ -1192,46 +1196,23 @@ async def _stream_chat(
                 except Exception:
                     logger.warning("Canvas table-scope filter failed; using full schema", exc_info=True)
 
-        # Metrics built AFTER schema (needs the column set to filter out metrics
-        # whose tables/columns aren't in THIS connection — metrics are global, so
-        # an unfiltered block leaks another connection's formula). Kept out of the
-        # gather to avoid a concurrent get_schema on the same db connection.
-        metrics_section = ""
-        try:
-            # UNIFIED metric grounding — the SAME resolver the Deep path uses, so a metric
-            # resolves to the SAME SQL in both. /chat previously injected only the global
-            # catalog (build_metrics_block) and never saw the connection's GOVERNED north-star
-            # value_sql, so it re-derived gross margin / ROAS / AOV and could disagree with Deep.
-            from aughor.semantic.canonical import unified_metric_grounding
-            _mb = unified_metric_grounding(connection_id, canvas_scope_eff_schema, schema_text=schema,
-                                           question=question)
-            metrics_section = (_mb + "\n\n") if _mb else ""
-        except Exception:
-            metrics_section = ""
-        # Measure-additivity PREVENTION: tell the generator each measure's grain (per-unit
-        # → SUM(x*quantity); per-line → SUM(x)). No-op safe; data-detected + cached. R4 — via the
-        # SHARED data-understanding builder, the same module the ADA phase planner now grounds on,
-        # so the two modes can never silently carry a different grain understanding.
-        from aughor.semantic.data_understanding import build_data_understanding as _build_du
-        _gb = _build_du(db, connection_id=connection_id, schema=schema).grain_block
-        if _gb:
-            metrics_section += _gb + "\n\n"
-        # Metric-feasibility: if the question needs a metric this connection can't support
-        # (profit with no cost, efficiency with no conversions), tell the generator to report
-        # what IS measurable instead of fabricating a verdict.
-        from aughor.semantic.metric_feasibility import unsupported_metric_gap as _feas_gap
-        _fg = _feas_gap(question, schema)
-        if _fg:
-            metrics_section += "DATA AVAILABILITY — " + _fg + ".\n\n"
+        # Governed-metric grounding — built AFTER schema (needs the column set to
+        # filter connection-scoped metrics) and BEFORE schema-linking (grounds on the
+        # full schema). Rec 5: the SAME producer the GET /ask/context receipt renders
+        # (unified bindings + measure grain + feasibility gap), so the receipt shows
+        # exactly what grounded this answer — no drift. Byte-identical to the prior
+        # inline block; the "SAME resolver as Deep" property (unified_metric_grounding,
+        # not the global build_metrics_block) is preserved inside the producer.
+        from aughor.agent.grounding import (governed_metrics as _grounding_metrics,
+                                            schema_slice as _grounding_schema_slice)
+        metrics_section = _grounding_metrics(question, connection_id, db=db, schema=schema,
+                                             eff_schema=canvas_scope_eff_schema)
 
-        # Schema-linking pre-filter: narrow schema to relevant tables/columns
-        # for this specific question. Reduces hallucination by 30-60%.
+        # Schema-linking pre-filter: narrow schema to relevant tables/columns for this
+        # question (reduces hallucination 30-60%). Shared Rec 5 producer — falls back to
+        # the full schema on failure, byte-identical to the prior inline try/except.
         _full_schema = schema  # keep the un-narrowed schema for FK-neighbour expansion
-        try:
-            from aughor.tools.schema_linker import link_schema_for_prompt
-            schema = link_schema_for_prompt(question, schema, top_k_tables=8, top_k_cols=8, connection_id=connection_id)
-        except Exception:
-            logger.warning("Schema-linking pre-filter failed; using full schema", exc_info=True)
+        schema = _grounding_schema_slice(question, connection_id, schema=schema)
 
         # Build structured Data Catalog from linked tables (MindsDB-style),
         # expanded with FK neighbours so bridge/output tables a multi-table
@@ -1362,8 +1343,8 @@ async def _stream_chat(
         # User-agent brief (flag `agents.user_defined`) — the active agent's pinned
         # instructions lead the prompt, rules_block-style. Empty (inert) when no
         # agent is active.
-        from aughor.user_agents.context import agent_brief_block
-        _agent_brief = agent_brief_block()
+        from aughor.agent.grounding import agent_brief as _grounding_agent_brief
+        _agent_brief = _grounding_agent_brief()  # == agent_brief_block() (shared Rec 5 producer)
         if _agent_brief:
             prompt = _agent_brief + prompt
         # Playbook context — when org playbook items match this question, give them
@@ -1407,14 +1388,56 @@ async def _stream_chat(
         # not repeat a mistake a reviewer already flagged. Flag-gated + empty when
         # nothing relevant matches, so the default path is byte-for-byte unchanged.
         try:
-            from aughor.verify.priors import build_corrections_section
-            _cblk = build_corrections_section(question, connection_id)
+            from aughor.agent.grounding import correction_priors
+            _cblk = correction_priors(question, connection_id)  # == build_corrections_section (shared Rec 5)
             if _cblk:
                 prompt = _cblk + "\n" + prompt
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "human-corrections prompt section is best-effort; answering without correction priors",
                      counter="chat.corrections_section")
+
+        # ── Ground-first resolution (flag `ask.resolve_first`) ────────────────
+        # Decide ONCE, deterministically, whether this is answerable as asked —
+        # BEFORE anything model-shaped runs. This sits ABOVE the semantic compiler
+        # and the SOMA probe deliberately: both spend an LLM call parsing/probing
+        # the question, which is wasted work (cost + latency) when the verdict is
+        # an honest abstention. Off → `_resolution` stays None → byte-identical.
+        _resolution = None
+        try:
+            from aughor.kernel.flags import flag_enabled as _rf_flag
+            if _rf_flag("ask.resolve_first"):
+                from aughor.semantic.answer_resolution import resolve as _resolve_answer
+                _resolution = _resolve_answer(question, schema=_full_schema, db=db,
+                                              connection_id=connection_id,
+                                              eff_schema=canvas_scope_eff_schema)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "ground-first resolution is best-effort; answering without it",
+                     counter="chat.resolve")
+
+        # Honest abstention: a clear filter entity isn't in the data → say so with
+        # what IS present, instead of running an empty filter and narrating around
+        # the emptiness (the "Mytheresa isn't a franchise here" case).
+        if _resolution is not None and _resolution.feasibility == "not_answerable":
+            _abstain = _resolution.caveat
+            yield _sse("mode", {"query_mode": "final_text"})
+            yield _sse("headline", {"headline": _abstain})
+            yield _sse("done", {})
+            try:
+                await asyncio.to_thread(lambda: save_chat_turn(
+                    question=question, connection_id=connection_id, headline=_abstain[:2000],
+                    sql="", session_id=session_id, columns=[], rows=[], chart_type="none",
+                    tables_used=[], intent="", approach=[], canvas_id=canvas_id))
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "abstention turn save is best-effort; the message was already streamed",
+                         counter="chat.resolve_abstain_save")
+            yield _sse("followups", {"questions": [
+                "What values are available to filter by?",
+                "Show the same measure without that filter",
+            ]})
+            return
 
         # Semantic Compiler fast-path (backlog #11): for the safe analytical shapes
         # (scalar / timeseries / breakdown / ranking) assemble grounded SQL deterministically
@@ -1481,6 +1504,13 @@ async def _stream_chat(
                             return
             except Exception:
                 logger.debug("SOMA probe failed; proceeding to answer", exc_info=True)
+
+        # Constrain generation with what the resolution settled (entity binding,
+        # grain ceiling). The resolution itself ran ABOVE the compiler; the prepend
+        # happens here — after every other prompt section — so the settled facts
+        # stay the topmost block the generator sees.
+        if _resolution is not None and _resolution.prompt_constraints:
+            prompt = _resolution.prompt_constraints + "\n\n" + prompt
 
         from aughor.agent.complexity import assess_complexity
         _cx = assess_complexity(question)
@@ -1953,6 +1983,12 @@ async def _stream_chat(
                 f"recent of {len(result.rows)} periods, oldest→newest):"
                 if _is_ts else f"Results (sample of {len(_sample_rows)} rows):"
             )
+            # The resolution's single caveat leads the narrator too, so the
+            # narrative + follow-ups agree with the answer instead of re-deciding.
+            _res_note = ""
+            if _resolution is not None and _resolution.caveat:
+                _res_note = (f"\n\nGROUNDED FACT — state this once, honestly, and do NOT speculate "
+                             f"about other tables or grains: {_resolution.caveat}.")
             _user = (
                 f"Question: {question}\n"
                 f"SQL: {final_sql}\n"
@@ -1960,15 +1996,80 @@ async def _stream_chat(
                 f"{_rows_label}\n"
                 f"Columns: {', '.join(_sample_cols)}\n"
                 f"{_rows_text}"
+                f"{_res_note}"
             )
-            _pa: _PostAnswer = await asyncio.to_thread(
-                lambda: get_provider("narrator").complete(
-                    system=_system,
-                    user=_user,
-                    response_model=_PostAnswer,
-                    temperature=0.2,
+            # CK-0.2 token-streaming (flag `ask.stream_text`, default ON): dual-emit the
+            # narrative as `insight_delta` frames while the narrator writes it, then let
+            # the existing terminal `insight` event carry the authoritative final value —
+            # self-healing (a dropped delta costs nothing; old clients ignore the unknown
+            # event). Flag off = the exact pre-streaming blocking call, byte-identical.
+            from aughor.kernel.flags import flag_enabled as _stream_flag
+            if _stream_flag("ask.stream_text"):
+                import queue as _queue
+                import threading as _threading
+                import time as _time
+
+                _pa_q: _queue.Queue = _queue.Queue()
+                _pa_result: dict = {}
+
+                def _pa_worker() -> None:
+                    # complete_streaming falls back to the blocking complete() internally
+                    # on ANY streaming failure, so "exc" only means BOTH paths failed —
+                    # re-raised below into the enclosing tolerate, exactly like today.
+                    try:
+                        _pa_result["pa"] = get_provider("narrator").complete_streaming(
+                            system=_system, user=_user, response_model=_PostAnswer,
+                            temperature=0.2, text_field="narrative", on_text=_pa_q.put,
+                        )
+                    except Exception as worker_exc:
+                        _pa_result["exc"] = worker_exc
+                    finally:
+                        _pa_q.put(None)   # sentinel: the stream is over
+
+                _pa_thread = _threading.Thread(target=_pa_worker, daemon=True,
+                                               name="insight-stream")
+                _pa_thread.start()
+                # Drain partials → SSE deltas, throttled (grew ≥12 chars since the last
+                # emit, or >150ms elapsed) so a chatty stream can't spam frames. Deltas
+                # go out strictly BEFORE the terminal `insight` event, and only when the
+                # insight is worth narrating (same gate the terminal event uses).
+                _last_len, _last_ts = 0, _time.monotonic()
+                _POLL_EMPTY = object()  # poll-timeout marker, distinct from the None sentinel
+
+                def _pa_poll():
+                    # A poll timeout is the loop's heartbeat, not a failure — return a
+                    # marker instead of swallowing queue.Empty at the call site.
+                    try:
+                        return _pa_q.get(True, 0.25)
+                    except _queue.Empty:
+                        return _POLL_EMPTY
+
+                while True:
+                    _item = await asyncio.to_thread(_pa_poll)
+                    if _item is _POLL_EMPTY:
+                        continue
+                    if _item is None:
+                        break
+                    if not (_insight_worth_it and isinstance(_item, str)):
+                        continue
+                    _now = _time.monotonic()
+                    if len(_item) - _last_len >= 12 or _now - _last_ts > 0.150:
+                        _last_len, _last_ts = len(_item), _now
+                        yield _sse("insight_delta",
+                                   {"narrative": _apply_currency(_item, _cur_sym)})
+                await asyncio.to_thread(_pa_thread.join)
+                if "exc" in _pa_result:
+                    raise _pa_result["exc"]
+                _pa: _PostAnswer = _pa_result["pa"]
+            else:
+                _pa = await asyncio.to_thread(
+                    lambda: get_provider("narrator").complete(
+                        system=_system,
+                        user=_user,
+                        response_model=_PostAnswer,
+                        temperature=0.2,
+                    )
                 )
-            )
             if _insight_worth_it and _pa.narrative:
                 _insight_dict = {
                     "narrative": _apply_currency(_pa.narrative, _cur_sym),
@@ -1993,21 +2094,31 @@ async def _stream_chat(
             tolerate(exc, "post-answer insight/follow-up enrichment is best-effort; the answer is already done",
                      counter="chat.post_answer")
 
-        # Semantic inspect — logical validation
-        try:
-            from aughor.sql.inspect import inspect as _inspect_sql
-            _ir = await asyncio.to_thread(
-                lambda: _inspect_sql(question, final_sql, result.columns, result.rows)
-            )
-            if not _ir.valid and _ir.issues:
-                yield _sse("inspect_warning", {
-                    "issues":        _ir.issues,
-                    "suggested_fix": _ir.suggested_fix,
-                })
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "post-answer semantic inspect is best-effort validation; skipping the warning",
-                     counter="chat.inspect")
+        # Semantic inspect — logical validation. Phase 3 of the ground-first
+        # redesign: when the resolution ran, its verdict already settled entity /
+        # grain / measure / scope (the exact five things this LLM re-checks), so we
+        # SKIP the redundant round-trip — the first guard the resolution replaces
+        # rather than adds to. (Deletion roadmap — the other post-hoc guards it
+        # subsumes: entity-column alignment, breakdown-grain, id-arithmetic
+        # guard+backstop, ratio-of-sums, measure-grain caveat, scope guard — are
+        # staged follow-ons, not removed here.) When it runs (resolution off), it
+        # is grounded on the schema slice so it cannot invent columns.
+        if _resolution is None:
+            try:
+                from aughor.sql.inspect import inspect as _inspect_sql
+                _ir = await asyncio.to_thread(
+                    lambda: _inspect_sql(question, final_sql, result.columns, result.rows,
+                                         schema=_full_schema)
+                )
+                if not _ir.valid and _ir.issues:
+                    yield _sse("inspect_warning", {
+                        "issues":        _ir.issues,
+                        "suggested_fix": _ir.suggested_fix,
+                    })
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "post-answer semantic inspect is best-effort validation; skipping the warning",
+                         counter="chat.inspect")
 
     except Exception as e:
         yield _sse("error", {"message": str(e)})
@@ -3066,6 +3177,116 @@ async def _stream_program(pr, conn_id: str) -> AsyncGenerator[str, None]:
     yield _sse("done", {})
 
 
+# ── Overview / "interesting facts about this schema" (the default first-look) ──
+# The widest-possible question answered the Genie way: a deterministic profile of the
+# whole dataset, not an investigation of one metric. Detection is a phrasing regex AND
+# the ABSENCE of a named metric/entity/time window — so a specific question still routes
+# normally. Fully deterministic (no LLM) → graduated to Auto (flag `ask.overview`).
+_OVERVIEW_RE = re.compile(
+    r"\b(interesting facts?|tell me about|what'?s (notable|interesting|here|in "
+    r"(this|the))|describe (this|the) (data|schema|dataset|tables?)|summar(y|ize|ise)"
+    r"|overview of|show me around|what can i ask|explore (this|the) (data|schema|dataset)"
+    r"|get to know|first look|what'?s in (this|the) (data|schema|dataset))\b", re.I)
+
+
+_OVERVIEW_GENERIC = re.compile(
+    r"\b(this|that|the|these|those|my|our|data|dataset|datasets|schema|table|tables|"
+    r"here|about|me|show|give|tell|please|some|any)\b", re.I)
+
+
+def _is_overview_question(question: str) -> bool:
+    q = (question or "").strip()
+    if not _OVERVIEW_RE.search(q):
+        return False
+    # signal-absence guard: strip the overview phrasing + generic dataset nouns, then
+    # require NO leftover metric/entity/time — so "tell me about REVENUE" (a real ask)
+    # still routes normally while "what's notable in this dataset" stays an overview.
+    residual = _OVERVIEW_GENERIC.sub(" ", _OVERVIEW_RE.sub(" ", q))
+    from aughor.semantic.answer_resolution import (
+        entity_candidates, question_measures, requested_time_grain)
+    return (not question_measures(residual) and not entity_candidates(residual)
+            and requested_time_grain(residual) is None)
+
+
+def _overview_eligible(req) -> bool:
+    """Whether a ``/ask`` turn is a widest-scope overview ask. A fresh auto turn (may be
+    in a canvas — that's the schema scope) whose phrasing asks for an overview and names
+    no metric/entity/time window. Flag-gated on ``ask.overview`` (graduated to Auto)."""
+    from aughor.kernel.flags import flag_enabled
+    return bool(
+        flag_enabled("ask.overview") and req.depth == "auto"
+        and not req.deep and not req.insight_id and not req.history and not req.skip_clarify
+        and _is_overview_question(req.question)
+    )
+
+
+async def _stream_overview(question: str, conn_id: str, req) -> AsyncGenerator[str, None]:
+    """Stream the deterministic interesting-facts tour as ``/ask`` events. Resolves the
+    canvas/connection scope exactly like ``_stream_chat`` (so tables + eff_schema are
+    right), builds the fact tour off the event loop, and emits one ``overview_report``.
+    No LLM, no metering — bounded and deterministic. Any failure degrades to an honest
+    headline, never a dead-ended turn."""
+    from aughor.canvas.scope import resolve_execution_scope
+    from aughor.tools.schema import build_canvas_schema_context, parse_schema_tables
+    yield _sse("route", {
+        "depth": "overview", "mode": "overview", "tier": "overview",
+        "score": 1.0, "confidence": 1.0, "ambiguous": False,
+        "why": "a broad overview — profiling the whole dataset for its most notable facts",
+        "alternatives": ["quick", "deep"], "forced": None, "downgraded_from": None,
+    })
+    try:
+        _es = resolve_execution_scope(conn_id, req.canvas_id,
+                                      schema_context_builder=build_canvas_schema_context)
+        cid = _es.connection_id
+        eff_schema = _es.eff_schema or ""
+        db = _es.open()
+    except Exception as e:
+        yield _sse("headline", {"headline": f"Couldn't open the connection for an overview: {e}"})
+        yield _sse("done", {})
+        return
+
+    # scoped table set: the canvas's tables, else every table in the effective schema.
+    tables = [t.split(".")[-1] for t in _es.tables] if (_es.tables and not _es.is_full_schema) else []
+    if not tables:
+        try:
+            sch = await asyncio.to_thread(_get_schema_cached, cid, db)
+            tables = [t.split(".")[-1] for t in parse_schema_tables(sch).keys()]
+        except Exception:
+            tables = []
+
+    rep = None
+    try:
+        from aughor.overview import build_overview
+        rep = await asyncio.to_thread(build_overview, db, cid, tables,
+                                      schema=eff_schema, entity_hint="rows", limit=8)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "overview fact tour is best-effort; degrading to an honest headline",
+                 counter="ask.overview_failed")
+
+    if rep is not None and rep.facts:
+        _report = rep.to_dict()
+        yield _sse("overview_report", {"overview_report": _report})
+        yield _sse("headline", {"headline": rep.summary})
+        # Persist the tour so it survives reload + appears in canvas History (the turn is
+        # otherwise ephemeral — the reason the cards vanished on refresh). Best-effort.
+        try:
+            await asyncio.to_thread(lambda: save_chat_turn(
+                question=question, connection_id=cid, headline=rep.summary[:2000],
+                sql="", session_id=getattr(req, "session_id", "") or "",
+                columns=[], rows=[], chart_type="none", tables_used=[], intent="",
+                approach=[], canvas_id=req.canvas_id, overview_report=_report))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "overview turn save is best-effort; the tour was already streamed",
+                     counter="ask.overview_save")
+    else:
+        yield _sse("headline", {"headline": (
+            "I couldn't surface overview facts for this dataset — try asking about a "
+            "specific measure, or open a table in the catalog.")})
+    yield _sse("done", {})
+
+
 async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> AsyncGenerator[str, None]:
     """The unified door: decide depth, emit the `route` receipt, then delegate to the
     existing quick (Insight) or deep (ADA/explore) body unchanged.
@@ -3101,6 +3322,14 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # Budget is one ask/turn — the user's answer comes back with skip_clarify set.
     # Flag `ask.clarify` (env AUGHOR_ASK_CLARIFY) is the rare DEFAULT-ON flag.
     from aughor.kernel.flags import flag_enabled
+
+    # Overview / "interesting facts about this schema" — the widest-scope ask. Checked
+    # BEFORE the clarify gate on purpose: an under-specified "tell me about this data" is
+    # exactly the case where an overview IS the answer, not a clarifying question.
+    if _overview_eligible(req):
+        async for _ev in _stream_overview(req.question, conn_id, req):
+            yield _ev
+        return
 
     if (req.depth == "auto" and not req.deep and not req.insight_id and not req.skip_clarify
             and flag_enabled("ask.clarify")):
@@ -3208,6 +3437,43 @@ async def ask_endpoint(req: AskRequest, request: Request):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/ask/context")
+def ask_context_endpoint(
+    connection: str = Query(..., description="connection id"),
+    question: str = Query(..., description="the question to ground"),
+    principal=Depends(get_principal),
+):
+    """The grounding-context receipt (flag ``ask.context_receipt``) — the exact
+    grounding blocks the SQL writer would be given for this question on this
+    connection: schema slice, glossary, governed-metric bindings, ambiguity-ledger
+    priors, dialect rules, trusted templates, and the active agent/pack brief.
+
+    The input-side twin of the Trust Receipt. Read-only, deterministic (re-derives
+    the same blocks the answer path assembles from the same producers). 404 when
+    the flag is off, so the default path is byte-identical.
+    """
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ask.context_receipt"):
+        raise HTTPException(status_code=404,
+                            detail="grounding-context receipt is disabled (flag ask.context_receipt)")
+    from aughor.agent.grounding import build_grounding_context
+    from aughor.db.connection import open_connection_for
+    try:
+        db = open_connection_for(connection)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Connection {connection!r} not found")
+    try:
+        schema = _get_schema_cached(connection, db) or ""
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "grounding receipt: schema fetch best-effort; schema-dependent blocks skipped",
+                 counter="ask.context_receipt.schema")
+        schema = ""
+    ctx = build_grounding_context(question, connection, db=db, schema=schema,
+                                  eff_schema=getattr(db, "_schema_name", None))
+    return {"receipt": ctx.to_dict(), "markdown": ctx.to_markdown()}
 
 
 def _resolve_ask_agent(req: "AskRequest"):

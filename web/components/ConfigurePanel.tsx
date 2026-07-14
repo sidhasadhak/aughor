@@ -47,15 +47,15 @@ function TabBar({
   onChange: (id: string) => void;
 }) {
   return (
-    <div className="flex border-b border-[--b1] shrink-0">
+    <div className="flex border-b border-[var(--b1)] shrink-0">
       {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
           className={`px-4 py-2.5 aug-fs-sm font-medium transition-colors border-b-2 -mb-px ${
             active === t.id
-              ? "border-[--blue3] text-[--t1]"
-              : "border-transparent text-[--t3] hover:text-[--t1]"
+              ? "border-[var(--blue3)] text-[var(--t1)]"
+              : "border-transparent text-[var(--t3)] hover:text-[var(--t1)]"
           }`}
         >
           {t.label}
@@ -126,7 +126,7 @@ function AboutTab({
           onChange={(e) => setDesc(e.target.value)}
           rows={4}
           placeholder="What is this canvas about? Auto-generated from your data — edit anytime."
-          className="w-full resize-none border border-[--b2] rounded-md px-3 py-2 aug-fs-sm text-[--t1] placeholder:text-[--t4] focus:outline-none focus:border-[--bfocus] transition-colors"
+          className="w-full resize-none border border-[var(--b2)] rounded-md px-3 py-2 aug-fs-sm text-[var(--t1)] placeholder:text-[var(--t4)] focus:outline-none focus:border-[var(--bfocus)] transition-colors"
           style={{ background: "var(--bg-0)", fontFamily: "var(--font-ui)" }}
         />
       </div>
@@ -143,11 +143,11 @@ function AboutTab({
 
       <div>
         <p className="aug-label mb-3">Scope</p>
-        <div className="rounded-md border border-[--b1] overflow-hidden" style={{ background: "var(--bg-3)" }}>
+        <div className="rounded-md border border-[var(--b1)] overflow-hidden" style={{ background: "var(--bg-3)" }}>
           {scopeRows.map((r, i) => (
-            <div key={r.label} className={`flex items-start px-3 py-2.5 gap-4 aug-fs-sm ${i > 0 ? "border-t border-[--b0]" : ""}`}>
-              <span className="w-20 shrink-0 text-[--t3]">{r.label}</span>
-              <span className="text-[--t1] font-mono break-all">{r.value}</span>
+            <div key={r.label} className={`flex items-start px-3 py-2.5 gap-4 aug-fs-sm ${i > 0 ? "border-t border-[var(--b0)]" : ""}`}>
+              <span className="w-20 shrink-0 text-[var(--t3)]">{r.label}</span>
+              <span className="text-[var(--t1)] font-mono break-all">{r.value}</span>
             </div>
           ))}
         </div>
@@ -197,13 +197,13 @@ function TableDetail({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[--b1] shrink-0">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--b1)] shrink-0">
         <div className="flex items-center gap-2">
-          <button onClick={onClose} className="text-[--t3] hover:text-[--t1] transition">
+          <button onClick={onClose} className="text-[var(--t3)] hover:text-[var(--t1)] transition">
             <span className="rotate-180 inline-block"><ChevronRightIcon label="Back" size="small" /></span>
           </button>
-          <span className="aug-fs-sm font-semibold text-[--t1] font-mono">{table.name}</span>
-          <span className="aug-fs-xs text-[--t3]">
+          <span className="aug-fs-sm font-semibold text-[var(--t1)] font-mono">{table.name}</span>
+          <span className="aug-fs-xs text-[var(--t3)]">
             {table.columns.length} cols · {formatCount(Number(table.row_count))} rows
           </span>
         </div>
@@ -220,17 +220,17 @@ function TableDetail({
           <table className="w-full aug-fs-sm">
             <thead className="sticky top-0 z-10">
               <tr style={{ background: "var(--bg-3)" }}>
-                <th className="px-3 py-2 text-left text-[--t2] font-semibold">Column</th>
-                <th className="px-3 py-2 text-left text-[--t2] font-semibold">Type</th>
-                <th className="px-3 py-2 text-left text-[--t2] font-semibold">FK</th>
+                <th className="px-3 py-2 text-left text-[var(--t2)] font-semibold">Column</th>
+                <th className="px-3 py-2 text-left text-[var(--t2)] font-semibold">Type</th>
+                <th className="px-3 py-2 text-left text-[var(--t2)] font-semibold">FK</th>
               </tr>
             </thead>
             <tbody>
               {table.columns.map((col, i) => (
-                <tr key={col.name} className={`border-t border-[--b0] ${i % 2 === 0 ? "" : "bg-white/[0.01]"}`}>
-                  <td className="px-3 py-2 font-mono text-[--t1]">{col.name}</td>
+                <tr key={col.name} className={`border-t border-[var(--b0)] ${i % 2 === 0 ? "" : "bg-white/[0.01]"}`}>
+                  <td className="px-3 py-2 font-mono text-[var(--t1)]">{col.name}</td>
                   <td className={`px-3 py-2 font-mono ${typeColor(col.type)}`}>{col.type}</td>
-                  <td className="px-3 py-2 text-[--t3]">{col.is_fk ? "✓" : ""}</td>
+                  <td className="px-3 py-2 text-[var(--t3)]">{col.is_fk ? "✓" : ""}</td>
                 </tr>
               ))}
             </tbody>
@@ -241,13 +241,13 @@ function TableDetail({
       {subtab === "sample" && (
         <div className="flex-1 overflow-auto">
           {loading && (
-            <div className="flex items-center justify-center h-24 aug-fs-sm text-[--t2]">Loading…</div>
+            <div className="flex items-center justify-center h-24 aug-fs-sm text-[var(--t2)]">Loading…</div>
           )}
           {!loading && sampleCols.length > 0 && (
             <SqlResultTable columns={sampleCols} rows={sampleRows as unknown[][]} maxHeight={420} />
           )}
           {!loading && sampleCols.length === 0 && loaded && (
-            <p className="aug-fs-sm text-[--t2] p-4">No data available.</p>
+            <p className="aug-fs-sm text-[var(--t2)] p-4">No data available.</p>
           )}
         </div>
       )}
@@ -330,27 +330,27 @@ function DataTab({
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Scope note + filter */}
-      <div className="px-3 py-2 border-b border-[--b1] shrink-0 space-y-2">
+      <div className="px-3 py-2 border-b border-[var(--b1)] shrink-0 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <p className="aug-fs-xs text-[--t3]">
+          <p className="aug-fs-xs text-[var(--t3)]">
             {isAll
               ? "All tables included in this canvas."
               : `${includedCount} of ${allTables.length} table${allTables.length === 1 ? "" : "s"} included.`}
-            {saving && <span className="text-[--t4]"> · saving…</span>}
+            {saving && <span className="text-[var(--t4)]"> · saving…</span>}
           </p>
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setAll(true)}
               disabled={isAll || saving}
-              className="aug-fs-xs text-[--t3] hover:text-[--t1] disabled:opacity-40 transition"
+              className="aug-fs-xs text-[var(--t3)] hover:text-[var(--t1)] disabled:opacity-40 transition"
             >
               Include all
             </button>
-            <span className="text-[--b2]">·</span>
+            <span className="text-[var(--b2)]">·</span>
             <button
               onClick={() => setAll(false)}
               disabled={includedCount === 0 || saving}
-              className="aug-fs-xs text-[--t3] hover:text-[--t1] disabled:opacity-40 transition"
+              className="aug-fs-xs text-[var(--t3)] hover:text-[var(--t1)] disabled:opacity-40 transition"
             >
               Clear
             </button>
@@ -367,7 +367,7 @@ function DataTab({
       {/* Table list — checkbox toggles canvas membership; row opens detail */}
       <div className="flex-1 overflow-y-auto">
         {allTables.length > 0 && (
-          <div className="flex items-center px-3 py-2 aug-label border-b border-[--b1] sticky top-0" style={{ background: "var(--bg-1)" }}>
+          <div className="flex items-center px-3 py-2 aug-label border-b border-[var(--b1)] sticky top-0" style={{ background: "var(--bg-1)" }}>
             <span className="w-6" />
             <span className="flex-1">Name</span>
             <span className="w-12 text-right">Cols</span>
@@ -380,7 +380,7 @@ function DataTab({
           return (
           <div
             key={t.name}
-            className="w-full flex items-center px-3 py-2.5 aug-fs-sm border-b border-[--b0] hover:bg-[--bg-hover] transition group"
+            className="w-full flex items-center px-3 py-2.5 aug-fs-sm border-b border-[var(--b0)] hover:bg-[var(--bg-hover)] transition group"
           >
             {/* Membership checkbox */}
             <button
@@ -403,24 +403,24 @@ function DataTab({
             </button>
             {/* Open detail */}
             <button onClick={() => setSelected(t)} className="flex-1 flex items-center min-w-0 text-left">
-              <span className="text-[--t3] shrink-0 mr-2"><TableIcon label="Table" size="small" /></span>
-              <span className="flex-1 font-mono text-[--t1] truncate">{t.name}</span>
+              <span className="text-[var(--t3)] shrink-0 mr-2"><TableIcon label="Table" size="small" /></span>
+              <span className="flex-1 font-mono text-[var(--t1)] truncate">{t.name}</span>
             </button>
-            <span className="w-12 text-right text-[--t3] shrink-0">{t.columns.length}</span>
-            <span className="w-20 text-right text-[--t3] shrink-0 font-mono">
+            <span className="w-12 text-right text-[var(--t3)] shrink-0">{t.columns.length}</span>
+            <span className="w-20 text-right text-[var(--t3)] shrink-0 font-mono">
               {compactNumber(Number(t.row_count), 1)}
             </span>
-            <button onClick={() => setSelected(t)} className="text-[--t4] group-hover:text-[--t2] transition ml-1 shrink-0">
+            <button onClick={() => setSelected(t)} className="text-[var(--t4)] group-hover:text-[var(--t2)] transition ml-1 shrink-0">
               <ChevronRightIcon label="" size="small" />
             </button>
           </div>
           );
         })}
         {filter && filtered.length === 0 && (
-          <p className="aug-fs-sm text-[--t2] p-4">No tables match &ldquo;{filter}&rdquo;.</p>
+          <p className="aug-fs-sm text-[var(--t2)] p-4">No tables match &ldquo;{filter}&rdquo;.</p>
         )}
         {!filter && allTables.length === 0 && (
-          <p className="aug-fs-sm text-[--t2] p-4">No tables available in this connection.</p>
+          <p className="aug-fs-sm text-[var(--t2)] p-4">No tables available in this connection.</p>
         )}
       </div>
     </div>
@@ -464,7 +464,7 @@ function InstructionsTab({ canvasId }: { canvasId: string }) {
 
       {subtab === "text" && (
         <div className="flex-1 flex flex-col overflow-hidden p-3 gap-2">
-          <p className="aug-fs-sm text-[--t2] leading-relaxed">
+          <p className="aug-fs-sm text-[var(--t2)] leading-relaxed">
             Plain-English instructions the AI follows for every query on this canvas. Describe business rules, metric definitions, fiscal calendar, naming conventions, etc.
           </p>
           <textarea
@@ -472,7 +472,7 @@ function InstructionsTab({ canvasId }: { canvasId: string }) {
             onChange={(e) => setText(e.target.value)}
             disabled={!loaded}
             placeholder={loaded ? "* Revenue uses the net_revenue column, not gross_revenue\n* Fiscal year starts in February\n* Always include region when comparing performance" : "Loading…"}
-            className="flex-1 resize-none border border-[--b2] rounded-md px-3 py-2.5 aug-fs-sm font-mono text-[--t1] placeholder:text-[--t4] focus:outline-none focus:border-[--bfocus] transition-colors"
+            className="flex-1 resize-none border border-[var(--b2)] rounded-md px-3 py-2.5 aug-fs-sm font-mono text-[var(--t1)] placeholder:text-[var(--t4)] focus:outline-none focus:border-[var(--bfocus)] transition-colors"
             style={{ background: "var(--bg-0)" }}
           />
           <div className="flex justify-end shrink-0">
@@ -529,17 +529,17 @@ export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate }:
 
       {/* Panel — anchored below topbars, not covering the header */}
       <div
-        className="fixed right-0 bottom-0 z-50 flex flex-col border-l border-[--b1] shadow-2xl"
+        className="fixed right-0 bottom-0 z-50 flex flex-col border-l border-[var(--b1)] shadow-2xl"
         style={{ top: "100px", width: "400px", background: "var(--bg-0)" }}
       >
         {/* Panel header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[--b1] shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--b1)] shrink-0">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[--t3]"><InformationIcon label="Configure" size="small" /></span>
-            <span className="aug-fs-sm font-semibold text-[--t1]">Configure</span>
-            <span className="aug-fs-xs text-[--t3] truncate max-w-[180px]">{canvas.name}</span>
+            <span className="text-[var(--t3)]"><InformationIcon label="Configure" size="small" /></span>
+            <span className="aug-fs-sm font-semibold text-[var(--t1)]">Configure</span>
+            <span className="aug-fs-xs text-[var(--t3)] truncate max-w-[180px]">{canvas.name}</span>
           </div>
-          <button onClick={onClose} className="text-[--t3] hover:text-[--t1] transition">
+          <button onClick={onClose} className="text-[var(--t3)] hover:text-[var(--t1)] transition">
             <CloseIcon label="Close" size="small" />
           </button>
         </div>

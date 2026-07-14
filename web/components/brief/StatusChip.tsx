@@ -50,15 +50,19 @@ export function StatusChip({
   icon,
   children,
   className = "",
+  title,
 }: {
   hue: ChipHue;
   strength?: ChipStrength;
   icon?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  /** Native tooltip — provenance detail on hover (TrustReceipt badges etc.). */
+  title?: string;
 }) {
   return (
     <span
+      title={title}
       className={`inline-flex items-center gap-1 aug-fs-xs font-medium px-1.5 py-0.5 rounded border ${chipTone(hue, strength).chip} ${className}`}
     >
       {icon != null && <span className="font-mono">{icon}</span>}

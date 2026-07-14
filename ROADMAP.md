@@ -14,6 +14,55 @@
 
 ## 0 · Immediate next action ⏭️
 
+### 🧭 Session handoff — 2026-07-13 (later) · branch `agentic-platform` — the unification wave
+
+The two branches below (plus `2026-07-08-ui-ux-uplift`) are now **CONSOLIDATED onto one branch,
+`agentic-platform`** (NOT pushed), and the first unification wave shipped on top of it. Program +
+graduation policy + deletion roadmap: [`docs/AGENTIC_PLATFORM_UNIFICATION_2026-07-13.md`](docs/AGENTIC_PLATFORM_UNIFICATION_2026-07-13.md).
+Highlights: capability graduation (`capabilities.auto` + receipts + `obs.task_table` +
+`ada.progress_events` default-ON; `ask.resolve_first` + `ada.pin_canonical_metric` AUTO-elevated;
+explicit `=0`/override still wins everywhere); the superseded `grain.feasibility` post-hoc verdict
+REMOVED; CK-0.1 feel branch merged; CK-0.2 insight token streaming (`ask.stream_text`,
+`insight_delta` dual-emit + `LLMProvider.complete_streaming`); `aughor up` one-command setup +
+/health LLM readiness. **2026-07-14 LIVE-PROVEN** on the real workspace connection (glm-5.2:cloud,
+isolated stack): the Mytheresa month-wise question binds the right table at the honest grain with no
+fiscal_month invention (found-entity path ✓), and the insight streams as 21 `insight_delta` frames
+(after fixing instructor-partial's preamble fragility with raw first-brace jiter streaming — commit
+`5a7022d`). **NEXT:** guard deletions after a real-traffic soak of the resolution verdict; CK-1
+AG-UI seam; P7 decision run.
+
+### 🧭 Session handoff — 2026-07-13 (answer-quality / the "Mytheresa disconnects")
+
+Two branches off `main`, **both NOT pushed, NO PR yet**, all work flag-gated / default-off /
+byte-identical-when-off. `main` and `origin` are untouched.
+
+- **`ground-first-resolution` (3 commits) — the current, recommended direction.** A single
+  deterministic resolution runs BEFORE SQL generation, constrains it, and speaks through the whole answer —
+  *replacing* post-hoc guards instead of adding more. `aughor/semantic/answer_resolution.py` +
+  `_stream_chat` wiring (flag `ask.resolve_first`) + Phase-3 first deletion (skip the redundant semantic
+  `inspect`). **Measure-first** (bind the entity + read grain from the table that carries the asked-for
+  measure — caught a real-data bug where Mytheresa bound to a `brand_collaborations` decoy). **Validated on
+  the REAL luxexperience connection** (read-only). Full detail + resume steps:
+  [`docs/GROUND_FIRST_RESOLUTION_2026-07-13.md`](docs/GROUND_FIRST_RESOLUTION_2026-07-13.md).
+  - **NEXT:** (1) enable `ask.resolve_first` and confirm end-to-end on the real canvas with a *responsive*
+    LLM (the found-entity path still needs the coder; the abstain path is already proven LLM-free); (2) work
+    down the deletion roadmap (the other ~6 guards the verdict subsumes); (3) adopt the verdict in the deep
+    path via `build_data_understanding`.
+- **`2026-07-13-task-history` (8 commits) — the earlier answer-quality arc** (superseded in spirit by
+  ground-first, but independently useful): Rec 4 `task_history` spans-as-a-table (`obs.task_table`) + recovery
+  API/CLI + `aughor_ops` self-investigation connection; Rec 5 grounding-context receipt
+  (`ask.context_receipt`, backend + "Show grounding" UI + `_stream_chat` convergence); the grain-feasibility
+  disconnect fix (`grain.feasibility`, a post-hoc guard now superseded); and the time-series `computeSummary`
+  fallback fix. Detail in [`docs/PLATFORM_STUDIES_COMBINED_2026-07-11.md`](docs/PLATFORM_STUDIES_COMBINED_2026-07-11.md).
+  - **NEXT:** decide push/PR (or land selectively); Wave 2 #7 A1-P3 lifecycle · **#8 the P7 decision run**
+    (still the single biggest answer-quality lever; harness ready).
+
+**Process note (learned this session):** do NOT edit the API dev server while the user is using it —
+`uvicorn --reload` cancels their in-flight requests and makes the app look broken. Verify with deterministic
+tests + read-only real-data checks, not by driving the live app.
+
+---
+
 **🚧 IN FLIGHT (2026-07-11) — the Databricks-OSS arc, phase 1: MLflow investigation tracing
 (`obs.mlflow`).** Study + full sequencing in
 [`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md`](docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md)

@@ -39,6 +39,11 @@ import { SchemaPanel } from "@/components/SchemaPanel";
 import { DocumentUploader } from "@/components/DocumentUploader";
 import { AddDataPanel } from "@/components/AddDataPanel";
 import { ResizableSplit } from "@/components/ResizableSplit";
+import { Button } from "@/components/ui/button";
+
+/** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
+ *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
+const SVG_SIZE_AUTO = "[&_svg:not([class*='size-'])]:size-auto";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -186,12 +191,14 @@ function BriefingsToggle({ connId }: { connId: string }) {
         <div style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)" }}>Briefings</div>
         <div style={{ fontSize: 11, color: "var(--t3)" }}>Show this connection in the Briefing workspace.</div>
       </div>
-      <button
+      <Button
+        variant="ghost"
         role="switch"
         aria-checked={enabled === true}
         aria-label="Enable briefings for this connection"
         disabled={enabled === null || saving}
         onClick={toggle}
+        className="h-auto p-0"
         style={{
           flexShrink: 0, width: 38, height: 22, borderRadius: 11, position: "relative", padding: 0,
           cursor: enabled === null ? "default" : "pointer", border: "none",
@@ -202,7 +209,7 @@ function BriefingsToggle({ connId }: { connId: string }) {
           position: "absolute", top: 2, left: enabled ? 18 : 2, width: 18, height: 18, borderRadius: "50%",
           background: "var(--bg-0)", transition: "left .15s",
         }} />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -293,9 +300,9 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
     <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--b1)" }}>
       {(isSyncable || isKnowledge) && (
         <div style={{ marginBottom: 10 }}>
-          <button style={BtnStyle} onClick={handleSync} disabled={syncing}>
+          <Button variant="ghost" className="h-auto p-0 font-normal" style={BtnStyle} onClick={handleSync} disabled={syncing}>
             {syncing ? "⏳ Syncing…" : isKnowledge ? "📚 Knowledge Sync" : "🔄 Sync Now"}
-          </button>
+          </Button>
           {status && <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 6 }}>{status}</p>}
         </div>
       )}
@@ -317,16 +324,17 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
                 <div key={f.filename} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t2)" }}>
                   <span style={{ fontFamily: "var(--font-mono, monospace)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.filename}</span>
                   <span style={{ color: "var(--t4)", fontSize: 11 }}>{Math.round(f.size_bytes / 1024)}KB</span>
-                  <button onClick={() => handleDelete(f.filename)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t4)", padding: 0, fontSize: 12 }} title="Remove">✕</button>
+                  <Button variant="ghost" onClick={() => handleDelete(f.filename)} className="h-auto p-0 font-normal" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t4)", padding: 0, fontSize: 12 }} title="Remove">✕</Button>
                 </div>
               ))}
             </div>
           )}
-          <button onClick={handleRestoreSamples}
+          <Button variant="ghost" onClick={handleRestoreSamples}
+            className="h-auto p-0 font-normal"
             style={{ marginTop: 10, background: "none", border: "none", cursor: "pointer", color: "var(--t4)", padding: 0, fontSize: 11, textDecoration: "underline" }}
             title="Re-add the bundled sample schemas you previously removed">
             Restore sample data
-          </button>
+          </Button>
           {restoreMsg && <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 6 }}>{restoreMsg}</p>}
         </div>
       )}
@@ -383,9 +391,11 @@ function TabBar({ tabs, active, onChange }: {
   return (
     <div style={{ display: "flex", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, padding: "0 8px", background: "var(--bg-0)" }}>
       {tabs.map(t => (
-        <button
+        <Button
+          variant="ghost"
           key={t.id}
           onClick={() => onChange(t.id)}
+          className="h-auto p-0 font-normal rounded-none"
           style={{
             fontSize: 12, padding: "8px 12px", cursor: "pointer", border: "none",
             background: "transparent", fontFamily: "inherit",
@@ -396,7 +406,7 @@ function TabBar({ tabs, active, onChange }: {
           }}
         >
           {t.label}
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -518,10 +528,10 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
       </div>
       {err && <p style={{ fontSize: 11, color: "var(--red4)" }}>{err}</p>}
       <div style={{ display: "flex", gap: 6 }}>
-        <button type="submit" disabled={loading} style={{ flex: 1, fontSize: 11, padding: "5px 0", borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", opacity: loading ? .5 : 1 }}>
+        <Button variant="ghost" type="submit" disabled={loading} className="h-auto p-0 font-normal" style={{ flex: 1, fontSize: 11, padding: "5px 0", borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", opacity: loading ? .5 : 1 }}>
           {loading ? "Saving…" : "Save"}
-        </button>
-        <button type="button" onClick={onCancel} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)" }}>Cancel</button>
+        </Button>
+        <Button variant="ghost" type="button" onClick={onCancel} className="h-auto p-0 font-normal" style={{ fontSize: 11, padding: "5px 10px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)" }}>Cancel</Button>
       </div>
     </form>
   );
@@ -721,20 +731,22 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                 <span style={{ fontSize: 11, color: "var(--t4)" }}>{distCount} profiled · click a column for its distribution</span>
               )}
               {onAsk && (
-                <button onClick={() => onAsk(sel.table.name, sel.connId)}
+                <Button variant="ghost" onClick={() => onAsk(sel.table.name, sel.connId)}
+                  className="h-auto p-0 font-normal"
                   style={{ marginLeft: "auto", fontSize: 11, padding: "4px 11px", borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", whiteSpace: "nowrap" }}>
                   Ask about this table →
-                </button>
+                </Button>
               )}
               {onRemoved && (
-                <button onClick={async () => {
+                <Button variant="ghost" onClick={async () => {
                   if (!confirm(`Remove table "${sel.table.name}" from the workspace? This drops the table and deletes its uploaded file.`)) return;
                   try { await deleteConnectionTable(sel.connId, sel.table.name, sel.schemaName); onRemoved(); }
                   catch (e) { alert((e as Error).message); }
                 }}
+                  className="h-auto p-0 font-normal"
                   style={{ marginLeft: onAsk ? 0 : "auto", fontSize: 11, padding: "4px 11px", borderRadius: 4, cursor: "pointer", background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)", whiteSpace: "nowrap" }}>
                   Remove
-                </button>
+                </Button>
               )}
             </div>
 
@@ -791,11 +803,13 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                             <option key={t} value={t} style={{ background: "var(--bg-0)", color: "var(--t1)" }}>{t}</option>
                           ))}
                         </select>
-                        <button
+                        <Button
+                          variant="ghost"
                           onClick={() => handleSave(col.name)}
                           disabled={alterBusy}
+                          className="h-auto p-0 font-normal"
                           style={{ fontSize: 9, padding: "1px 4px", borderRadius: 3, background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", cursor: "pointer" }}
-                        >Save</button>
+                        >Save</Button>
                       </div>
                     ) : (
                       <span
@@ -928,14 +942,15 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
           <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
             <FilterBox value={filter} onChange={setFilter} placeholder="Filter tables…" />
             {onRemoved && entry.name.toLowerCase() !== "main" && (
-              <button onClick={async () => {
+              <Button variant="ghost" onClick={async () => {
                 if (!confirm(`Remove the entire "${entry.name}" schema from the workspace? This drops all ${entry.tables.length} table(s), their files, and this dataset's saved intelligence (profile + exploration).`)) return;
                 try { await deleteConnectionSchema(sel.connId, entry.name); onRemoved(); }
                 catch (e) { alert((e as Error).message); }
               }}
+                className="h-auto p-0 font-normal"
                 style={{ marginLeft: "auto", fontSize: 11, padding: "4px 11px", borderRadius: 4, cursor: "pointer", background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)", whiteSpace: "nowrap" }}>
                 Remove schema
-              </button>
+              </Button>
             )}
           </div>
 
@@ -963,12 +978,14 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
                 </div>
                 <span style={{ fontSize: 11, color: "var(--t4)", textAlign: "right" }}>{fmtRows(t.row_count)}</span>
                 {onAsk && (
-                  <button
+                  <Button
+                    variant="ghost"
                     onClick={e => { e.stopPropagation(); onAsk(t.name, sel.connId); }}
+                    className="h-auto p-0 font-normal"
                     style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)", justifySelf: "end" as const }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--blue4)"; (e.currentTarget as HTMLElement).style.background = "var(--blue1)"; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                  >Ask →</button>
+                  >Ask →</Button>
                 )}
               </div>
             ))}
@@ -1104,17 +1121,19 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
           {/* Connection management actions (test / remove) */}
           {conn && (
             <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--b1)", display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
-              <button onClick={() => onTest?.(entry.conn_id)} disabled={testing}
+              <Button variant="ghost" onClick={() => onTest?.(entry.conn_id)} disabled={testing}
+                className="h-auto p-0"
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500, cursor: testing ? "not-allowed" : "pointer",
                   background: "var(--bg-1)", border: `0.5px solid ${testResult === true ? "var(--grn2)" : testResult === false ? "var(--red2)" : "var(--b2)"}`,
                   color: testResult === true ? "var(--grn4)" : testResult === false ? "var(--red4)" : "var(--t2)", opacity: testing ? 0.6 : 1 }}>
                 {testing ? "Testing…" : testResult === true ? "✓ Connection OK" : testResult === false ? "✗ Failed" : "Test connection"}
-              </button>
-              <button onClick={() => setConfirmDel(true)}
+              </Button>
+              <Button variant="ghost" onClick={() => setConfirmDel(true)}
+                className="h-auto p-0"
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500, cursor: "pointer",
                   background: "transparent", border: "0.5px solid var(--red2)", color: "var(--red4)" }}>
                 Remove connection
-              </button>
+              </Button>
 
               {/* Confirmation popup */}
               {confirmDel && (
@@ -1127,10 +1146,12 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
                       <span style={{ color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{entry.name}</span> will be disconnected and removed from your catalog. This cannot be undone.
                     </p>
                     <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                      <button onClick={() => setConfirmDel(false)}
-                        style={{ fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)" }}>Cancel</button>
-                      <button onClick={() => { setConfirmDel(false); onDelete?.(entry.conn_id); }}
-                        style={{ fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer", background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)", fontWeight: 500 }}>Remove</button>
+                      <Button variant="ghost" onClick={() => setConfirmDel(false)}
+                        className="h-auto p-0 font-normal"
+                        style={{ fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)" }}>Cancel</Button>
+                      <Button variant="ghost" onClick={() => { setConfirmDel(false); onDelete?.(entry.conn_id); }}
+                        className="h-auto p-0"
+                        style={{ fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer", background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)", fontWeight: 500 }}>Remove</Button>
                     </div>
                   </div>
                 </>
@@ -1246,7 +1267,8 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
             {chips.map(c => {
               const on = view === c.id;
               return (
-                <button key={c.id} onClick={() => setView(c.id)}
+                <Button variant="ghost" key={c.id} onClick={() => setView(c.id)}
+                  className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
                   style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 500, padding: "6px 14px", borderRadius: 999, cursor: "pointer",
                     background: on ? "rgba(45,114,210,0.13)" : "transparent",
                     color: on ? "var(--blue5)" : "var(--t2)",
@@ -1255,7 +1277,7 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
                   onMouseLeave={e => { if (!on) (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; }}
                 >
                   <span style={{ display: "flex" }}>{c.icon}</span>{c.label}
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -1299,13 +1321,14 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
               </span>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 <span style={{ fontSize: 12.5, color: "var(--t2)" }}>{it.type}</span>
-                <button onClick={e => { e.stopPropagation(); toggleFav(it.key); }} title={fav ? "Unfavorite" : "Favorite"}
+                <Button variant="ghost" onClick={e => { e.stopPropagation(); toggleFav(it.key); }} title={fav ? "Unfavorite" : "Favorite"}
+                  className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
                   style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: fav ? "var(--amb4)" : "var(--t4)", display: "flex" }}
                   onMouseEnter={e => { if (!fav) (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
                   onMouseLeave={e => { if (!fav) (e.currentTarget as HTMLElement).style.color = "var(--t4)"; }}
                 >
                   <svg width="13" height="13" viewBox="0 0 16 16" fill={fav ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.2L8 11.6 4.2 13.5l.7-4.2-3.1-3 4.3-.6z"/></svg>
-                </button>
+                </Button>
               </div>
             </div>
           );
@@ -1469,14 +1492,15 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             </span>
           </div>
           {section.id === "connections" && (
-            <button onClick={() => setShowAddData(true)}
+            <Button variant="ghost" onClick={() => setShowAddData(true)}
+              className={`h-auto p-0 font-normal ${SVG_SIZE_AUTO}`}
               style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)" }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; }}
             >
               <svg width="8" height="8" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 1v10M1 6h10" /></svg>
               Add
-            </button>
+            </Button>
           )}
         </div>
       );
@@ -1618,19 +1642,22 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
       <div style={{ borderRight: "0.5px solid var(--b1)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-1)", height: "100%", width: "100%" }}>
         {/* Top bar */}
         <div style={{ display: "flex", alignItems: "center", padding: "10px 12px 8px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, gap: 8 }}>
-          <button onClick={() => setSel(null)} title="Catalog home"
+          <Button variant="ghost" onClick={() => setSel(null)} title="Catalog home"
+            className="h-auto p-0 justify-start"
             style={{ fontSize: 12, fontWeight: 600, color: sel ? "var(--t3)" : "var(--t1)", textTransform: "uppercase", letterSpacing: "0.06em", flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = sel ? "var(--t3)" : "var(--t1)"}
-          >Catalog</button>
-          <button onClick={() => setShowAddData(true)} title="Add data"
+          >Catalog</Button>
+          <Button variant="ghost" onClick={() => setShowAddData(true)} title="Add data"
+            className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue5)", border: "0.5px solid var(--blue2)", padding: 0 }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--blue2)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "var(--blue1)"}
           >
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 1v10M1 6h10" /></svg>
-          </button>
-          <button onClick={() => { loadTree(); refreshSchema(); }} title="Refresh schema"
+          </Button>
+          <Button variant="ghost" onClick={() => { loadTree(); refreshSchema(); }} title="Refresh schema"
+            className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)", padding: 0 }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t2)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t4)"}
@@ -1639,7 +1666,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
               <path d="M1 4.5A7 7 0 0 1 14 8" /><path d="M15 11.5A7 7 0 0 1 2 8" />
               <polyline points="1 1 1 5 5 5" /><polyline points="15 15 15 11 11 11" />
             </svg>
-          </button>
+          </Button>
         </div>
 
         {/* Search */}

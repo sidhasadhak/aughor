@@ -16,7 +16,7 @@ import {
   type ChartType,
   type InferredChart,
 } from "@/components/charts/chartTypeInference";
-import { SHARE_COL } from "@/components/charts/columnRoles";
+import { SHARE_COL, DATE_VALUE_RE, firstNonNull } from "@/components/charts/columnRoles";
 import {
   lineOption, multiLineOption, smallMultiplesOption, barOption, groupedBarOption,
   stackedBarOption, pieOption, scatterOption, comboOption, heatmapOption, treemapOption,
@@ -56,7 +56,14 @@ export function optionFor(
   const x = columns[inferred.xCol];
   const ys = inferred.yCols.map((c) => columns[c]).filter(Boolean);
   const color = inferred.colorCol != null ? columns[inferred.colorCol] : undefined;
-  const xKind: BuildInput["xKind"] = TIME_TYPES.has(inferred.type) && dateIdxs.includes(inferred.xCol) ? "time" : "category";
+  // A time axis only when the x column is BOTH a temporal dimension AND carries real
+  // ISO date VALUES ("2024-01…"). A fiscal/ordinal grain (fiscal_year → "2021".."2025")
+  // is temporal but is NOT a continuous time scale — render it as ordered category
+  // labels, or 5 yearly points land on a date axis with awkward spacing.
+  const xFirst = firstNonNull(rows, inferred.xCol);
+  const xIsIsoDate = typeof xFirst === "string" && DATE_VALUE_RE.test(xFirst);
+  const xKind: BuildInput["xKind"] =
+    TIME_TYPES.has(inferred.type) && dateIdxs.includes(inferred.xCol) && xIsIsoDate ? "time" : "category";
   if (!x || !ys.length) return null;
   const base: BuildInput = { rows: objs, x, ys, color, xKind, title: opts?.title, labels: opts?.labels };
 

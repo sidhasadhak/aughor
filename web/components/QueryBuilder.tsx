@@ -18,6 +18,11 @@ import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
 import { inferChartType, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
+import { Button } from "@/components/ui/button";
+
+/** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
+ *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
+const SVG_SIZE_AUTO = "[&_svg:not([class*='size-'])]:size-auto";
 
 /** Client-side text-column detection mirroring aughor/semops/operators.py — the rows are already
  *  fetched, so the semantic-step UI can suggest operable columns without a server round-trip. */
@@ -77,13 +82,13 @@ function SemanticStepPanel({
   ));
   return (
     <div className="rounded border border-violet-500/25 bg-violet-500/[0.04]">
-      <button onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 aug-fs-xs text-violet-300 hover:text-violet-200 transition">
+      <Button variant="ghost" onClick={() => setOpen(!open)}
+        className={`w-full h-auto justify-start font-normal gap-1.5 px-2.5 py-1.5 aug-fs-xs text-violet-300 hover:text-violet-200 hover:bg-transparent dark:hover:bg-transparent transition ${SVG_SIZE_AUTO}`}>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l1.9 5.8L20 10l-5.1 2.2L12 18l-2.9-5.8L4 10l6.1-1.2z"/></svg>
         Semantic step
         <span className="text-zinc-500">— reason over a text column with an LLM</span>
         <svg className={`ml-auto transition-transform ${open ? "rotate-180" : ""}`} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
+      </Button>
       {open && (
         <div className="px-2.5 pb-2.5 flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -127,25 +132,25 @@ function SemanticStepPanel({
                   <input value={f.description} onChange={e => setFields(fields.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
                     placeholder="what to extract" className={`${inputCls} flex-1`} />
                   {fields.length > 1 && (
-                    <button onClick={() => setFields(fields.filter((_, j) => j !== i))}
-                      className="text-zinc-500 hover:text-zinc-300 text-sm px-1" title="remove field">×</button>
+                    <Button variant="ghost" size="xs" onClick={() => setFields(fields.filter((_, j) => j !== i))}
+                      className="h-auto px-1 py-0 font-normal text-sm text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent" title="remove field">×</Button>
                   )}
                 </div>
               ))}
-              <button onClick={() => setFields([...fields, { name: "", description: "" }])}
-                className="aug-fs-xs text-violet-400 hover:text-violet-300 self-start">+ field</button>
+              <Button variant="ghost" size="xs" onClick={() => setFields([...fields, { name: "", description: "" }])}
+                className="h-auto p-0 self-start font-normal aug-fs-xs text-violet-400 hover:text-violet-300 hover:bg-transparent dark:hover:bg-transparent">+ field</Button>
             </div>
           )}
 
           <div className="flex items-center gap-2">
-            <button onClick={onApply} disabled={!canApply || applying}
-              className="aug-fs-xs px-3 py-1 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40 flex items-center gap-1.5">
+            <Button variant="ghost" size="xs" onClick={onApply} disabled={!canApply || applying}
+              className="h-auto font-normal aug-fs-xs px-3 py-1 rounded border-violet-500/40 bg-violet-500/15 text-violet-200 hover:text-violet-200 hover:bg-violet-500/25 dark:hover:bg-violet-500/25 transition disabled:opacity-40 gap-1.5">
               {applying && <span className="w-3 h-3 border border-violet-300 border-t-transparent rounded-[var(--r-pill)] animate-spin" />}
               {applying ? "Applying…" : "Apply"}
-            </button>
+            </Button>
             {result && (
-              <button onClick={onRevert}
-                className="aug-fs-xs px-2 py-1 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 transition">Revert</button>
+              <Button variant="ghost" size="xs" onClick={onRevert}
+                className="h-auto font-normal aug-fs-xs px-2 py-1 rounded border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent transition">Revert</Button>
             )}
             {result && !result.error && (
               <span className="aug-fs-xs text-zinc-400">{result.input_rows} → {result.output_rows} rows · {result.llm_calls} call{result.llm_calls === 1 ? "" : "s"}</span>
@@ -166,17 +171,19 @@ function SemanticStepPanel({
 
 // ── Aggregation catalogue ─────────────────────────────────────────────────────
 
+// `hover:*` duplicates pin each chip's resting palette under the cursor — the ghost
+// <Button> variant would otherwise repaint a selected chip with hover:bg-muted/text-foreground.
 const AGG_OPTIONS = [
-  { fn: "SUM",            label: "SUM",    hint: "Sum of values",            cls: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10" },
-  { fn: "AVG",            label: "AVG",    hint: "Average value",            cls: "text-blue-400   border-blue-500/30   bg-blue-500/10"    },
-  { fn: "COUNT",          label: "COUNT",  hint: "Row count",                cls: "text-violet-400 border-violet-500/30 bg-violet-500/10"  },
-  { fn: "COUNT DISTINCT", label: "C.DIST", hint: "Count unique values",      cls: "text-purple-400 border-purple-500/30 bg-purple-500/10"  },
-  { fn: "MIN",            label: "MIN",    hint: "Minimum value",            cls: "text-amber-400  border-amber-500/30  bg-amber-500/10"   },
-  { fn: "MAX",            label: "MAX",    hint: "Maximum value",            cls: "text-orange-400 border-orange-500/30 bg-orange-500/10"  },
-  { fn: "MEDIAN",         label: "MEDIAN", hint: "50th percentile",          cls: "text-cyan-400   border-cyan-500/30   bg-cyan-500/10"    },
-  { fn: "STDDEV",         label: "STDDEV", hint: "Standard deviation",       cls: "text-rose-400   border-rose-500/30   bg-rose-500/10"    },
-  { fn: "VARIANCE",       label: "VAR",    hint: "Statistical variance",     cls: "text-pink-400   border-pink-500/30   bg-pink-500/10"    },
-  { fn: "CUSTOM",         label: "Custom", hint: "Write your own expression",cls: "text-zinc-400   border-zinc-600      bg-zinc-700/30"    },
+  { fn: "SUM",            label: "SUM",    hint: "Sum of values",            cls: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10 hover:text-emerald-400 hover:bg-emerald-500/10 dark:hover:bg-emerald-500/10" },
+  { fn: "AVG",            label: "AVG",    hint: "Average value",            cls: "text-blue-400 border-blue-500/30 bg-blue-500/10 hover:text-blue-400 hover:bg-blue-500/10 dark:hover:bg-blue-500/10" },
+  { fn: "COUNT",          label: "COUNT",  hint: "Row count",                cls: "text-violet-400 border-violet-500/30 bg-violet-500/10 hover:text-violet-400 hover:bg-violet-500/10 dark:hover:bg-violet-500/10" },
+  { fn: "COUNT DISTINCT", label: "C.DIST", hint: "Count unique values",      cls: "text-purple-400 border-purple-500/30 bg-purple-500/10 hover:text-purple-400 hover:bg-purple-500/10 dark:hover:bg-purple-500/10" },
+  { fn: "MIN",            label: "MIN",    hint: "Minimum value",            cls: "text-amber-400 border-amber-500/30 bg-amber-500/10 hover:text-amber-400 hover:bg-amber-500/10 dark:hover:bg-amber-500/10" },
+  { fn: "MAX",            label: "MAX",    hint: "Maximum value",            cls: "text-orange-400 border-orange-500/30 bg-orange-500/10 hover:text-orange-400 hover:bg-orange-500/10 dark:hover:bg-orange-500/10" },
+  { fn: "MEDIAN",         label: "MEDIAN", hint: "50th percentile",          cls: "text-cyan-400 border-cyan-500/30 bg-cyan-500/10 hover:text-cyan-400 hover:bg-cyan-500/10 dark:hover:bg-cyan-500/10" },
+  { fn: "STDDEV",         label: "STDDEV", hint: "Standard deviation",       cls: "text-rose-400 border-rose-500/30 bg-rose-500/10 hover:text-rose-400 hover:bg-rose-500/10 dark:hover:bg-rose-500/10" },
+  { fn: "VARIANCE",       label: "VAR",    hint: "Statistical variance",     cls: "text-pink-400 border-pink-500/30 bg-pink-500/10 hover:text-pink-400 hover:bg-pink-500/10 dark:hover:bg-pink-500/10" },
+  { fn: "CUSTOM",         label: "Custom", hint: "Write your own expression",cls: "text-zinc-400 border-zinc-600 bg-zinc-700/30 hover:text-zinc-400 hover:bg-zinc-700/30 dark:hover:bg-zinc-700/30" },
 ] as const;
 type AggFn = typeof AGG_OPTIONS[number]["fn"];
 
@@ -641,10 +648,10 @@ function ColRow({ col, tableName, onAddDim, onAddMeasure }: {
       </span>
       {col.is_fk && <span className="aug-fs-xs text-zinc-500">FK</span>}
       <div className="hidden group-hover:flex gap-0.5 shrink-0">
-        <button onMouseDown={e=>{e.stopPropagation();onAddDim();}} title="Add as dimension"
-          className="px-1.5 py-0.5 rounded aug-fs-xs font-bold bg-blue-500/20 text-blue-400 hover:bg-blue-500/40 transition">D</button>
-        <button onMouseDown={e=>{e.stopPropagation();onAddMeasure();}} title="Add as metric"
-          className="px-1.5 py-0.5 rounded aug-fs-xs font-bold bg-violet-500/20 text-violet-400 hover:bg-violet-500/40 transition">M</button>
+        <Button variant="ghost" size="xs" onMouseDown={e=>{e.stopPropagation();onAddDim();}} title="Add as dimension"
+          className="h-auto px-1.5 py-0.5 rounded aug-fs-xs font-bold bg-blue-500/20 text-blue-400 hover:text-blue-400 hover:bg-blue-500/40 dark:hover:bg-blue-500/40 transition">D</Button>
+        <Button variant="ghost" size="xs" onMouseDown={e=>{e.stopPropagation();onAddMeasure();}} title="Add as metric"
+          className="h-auto px-1.5 py-0.5 rounded aug-fs-xs font-bold bg-violet-500/20 text-violet-400 hover:text-violet-400 hover:bg-violet-500/40 dark:hover:bg-violet-500/40 transition">M</Button>
       </div>
     </div>
   );
@@ -678,18 +685,18 @@ function AggPicker({ col, table, onAdd, onCancel }: {
             <p className="text-base font-semibold text-zinc-100">Configure Metric</p>
             <p className="aug-fs-sm font-mono text-zinc-500 mt-0.5">{table}.{col.name} · {col.type}</p>
           </div>
-          <button onClick={onCancel} className="text-zinc-500 hover:text-zinc-300 text-lg p-0.5 leading-none">×</button>
+          <Button variant="ghost" size="xs" onClick={onCancel} className="h-auto p-0.5 font-normal text-lg leading-none text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">×</Button>
         </div>
 
         <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">Aggregation function</p>
         <div className="grid grid-cols-5 gap-2 mb-5">
           {AGG_OPTIONS.map(o => (
-            <button key={o.fn} onClick={() => changeAgg(o.fn as AggFn)} title={o.hint}
-              className={`py-2 aug-fs-xs font-medium rounded-[var(--r3)] border transition ${
-                agg === o.fn ? `${o.cls} ring-2 ring-current/40` : "text-zinc-500 border-zinc-700 bg-zinc-800/50 hover:border-zinc-500 hover:text-zinc-300"
+            <Button variant="ghost" size="xs" key={o.fn} onClick={() => changeAgg(o.fn as AggFn)} title={o.hint}
+              className={`h-auto px-0 py-2 aug-fs-xs font-medium rounded-[var(--r3)] transition ${
+                agg === o.fn ? `${o.cls} ring-2 ring-current/40` : "text-zinc-500 border-zinc-700 bg-zinc-800/50 hover:border-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 dark:hover:bg-zinc-800/50"
               }`}>
               {o.label}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -717,16 +724,17 @@ function AggPicker({ col, table, onAdd, onCancel }: {
         </div>
 
         <div className="flex gap-3 justify-end">
-          <button onClick={onCancel}
-            className="px-4 py-2 aug-fs-ui text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-md transition">
+          <Button variant="ghost" onClick={onCancel}
+            className="h-auto px-4 py-2 font-normal aug-fs-ui text-zinc-400 hover:text-zinc-200 border-zinc-700 rounded-md hover:bg-transparent dark:hover:bg-transparent transition">
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => onAdd({ id:uid(), col:col.name, table, agg, customExpr:expr, alias: alias||autoAlias(agg,col.name,expr) })}
             disabled={agg === "CUSTOM" && !expr.trim()}
-            className="px-5 py-2 aug-fs-ui bg-blue-600 hover:bg-blue-500 text-white rounded-md font-semibold transition disabled:opacity-40">
+            className="h-auto px-5 py-2 aug-fs-ui bg-blue-600 hover:bg-blue-500 dark:hover:bg-blue-500 text-white hover:text-white rounded-md font-semibold transition disabled:opacity-40">
             Add Metric
-          </button>
+          </Button>
         </div>
       </div>
     </>
@@ -749,12 +757,14 @@ function AcDropdown({ items, active, setActive, onSelect, onClose, pos }: {
           <span className="aug-fs-xs text-zinc-500">↑↓  ↵ insert  Esc</span>
         </div>
         {items.map((s, i) => (
-          <button key={s}
+          <Button variant="ghost" size="xs" key={s}
             onMouseDown={e => { e.preventDefault(); onSelect(s); }}
             onMouseEnter={() => setActive(i)}
-            className={`w-full text-left px-3 py-[7px] aug-fs-sm font-mono transition ${
-              i === active ? "bg-blue-600/25 text-blue-200" : "text-zinc-300 hover:bg-zinc-800"
-            }`}>{s}</button>
+            className={`w-full h-auto justify-start rounded-none font-normal text-left px-3 py-[7px] aug-fs-sm font-mono transition ${
+              i === active
+                ? "bg-blue-600/25 text-blue-200 hover:text-blue-200 hover:bg-blue-600/25 dark:hover:bg-blue-600/25"
+                : "text-zinc-300 hover:text-zinc-300 hover:bg-zinc-800 dark:hover:bg-zinc-800"
+            }`}>{s}</Button>
         ))}
       </div>
     </>
@@ -912,11 +922,11 @@ function ResultsPane({
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{meta}</span>
           {/* WP-10 — "Why this number": the signed receipt for exactly this query run. */}
           {!semResult && result.receipt_id && <WhyThisNumber receiptId={result.receipt_id} />}
-          <button onClick={exportCsv} title="Download results as CSV"
-            className="aug-fs-xs px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition flex items-center gap-1">
+          <Button variant="ghost" size="xs" onClick={exportCsv} title="Download results as CSV"
+            className={`h-auto font-normal aug-fs-xs px-2 py-0.5 rounded border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 hover:bg-transparent dark:hover:bg-transparent transition gap-1 ${SVG_SIZE_AUTO}`}>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             CSV
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -956,10 +966,12 @@ function ResultsPane({
       {/* Start Canvas */}
       {primaryTable && (
         <div className="flex justify-end pt-2">
-          <button
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={handleCreateCanvas}
             disabled={creatingCanvas}
-            className="aug-fs-xs px-3 py-1.5 rounded border border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition disabled:opacity-50 flex items-center gap-1.5"
+            className={`h-auto font-normal aug-fs-xs px-3 py-1.5 rounded border-violet-500/40 bg-violet-500/10 text-violet-300 hover:text-violet-300 hover:bg-violet-500/20 dark:hover:bg-violet-500/20 transition gap-1.5 ${SVG_SIZE_AUTO}`}
           >
             {creatingCanvas ? (
               <>
@@ -977,7 +989,7 @@ function ResultsPane({
                 Start Canvas
               </>
             )}
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -1624,7 +1636,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                 }`}>
                   <span className={`w-1.5 h-1.5 rounded-[var(--r-pill)] ${isPrimary ? "bg-blue-400" : found ? "bg-emerald-400" : "bg-amber-400"}`} />
                   {t}
-                  {!isPrimary && <button onClick={()=>removeJoin(t)} className="opacity-50 hover:opacity-100 ml-0.5 leading-none">×</button>}
+                  {!isPrimary && <Button variant="ghost" size="xs" onClick={()=>removeJoin(t)} className="h-auto p-0 font-normal aug-fs-xs font-mono opacity-50 hover:opacity-100 ml-0.5 leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>}
                 </span>
               );
             })}
@@ -1643,24 +1655,24 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
 
           {/* Saved queries — persistence */}
           <div className="relative flex items-center gap-1.5">
-            <button onClick={() => { setShowSaved(v => !v); refreshSavedList(); }}
+            <Button variant="ghost" size="xs" onClick={() => { setShowSaved(v => !v); refreshSavedList(); }}
               title="Open saved queries"
-              className="flex items-center gap-1 aug-fs-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
+              className={`h-auto font-normal gap-1 aug-fs-xs text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition ${SVG_SIZE_AUTO}`}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="shrink-0">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
               </svg>
               {savedName ? <span className="max-w-[110px] truncate">{savedName}</span> : "Saved"}
               {savedList.length > 0 && <span className="text-zinc-500">{savedList.length}</span>}
               <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="shrink-0"><polyline points="1,2 4,6 7,2"/></svg>
-            </button>
-            <button onClick={onSaveClick} disabled={!sql.trim()}
+            </Button>
+            <Button variant="ghost" size="xs" onClick={onSaveClick} disabled={!sql.trim()}
               title={savedId ? "Update this saved query" : "Save the current query"}
-              className={`aug-fs-xs rounded-[var(--r3)] px-2.5 py-1 transition border disabled:opacity-40 ${
-                savingState === "saved" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                  : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100"
+              className={`h-auto font-normal aug-fs-xs rounded-[var(--r3)] px-2.5 py-1 transition disabled:opacity-40 ${
+                savingState === "saved" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-500/10"
+                  : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 hover:bg-transparent dark:hover:bg-transparent"
               }`}>
               {savingState === "saving" ? "Saving…" : savingState === "saved" ? "Saved ✓" : savedId ? "Save" : "Save"}
-            </button>
+            </Button>
 
             {/* Saved-query list */}
             {showSaved && (
@@ -1669,9 +1681,9 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                 <div className="absolute right-0 top-full mt-2 z-40 w-72 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">
                   <div className="px-3 py-2 border-b border-zinc-700/50 flex items-center justify-between">
                     <span className="aug-fs-xs font-semibold text-zinc-400">Saved queries</span>
-                    <button onClick={() => { setSavedId(null); setSaveName(suggestedName()); setShowSaved(false); setShowSaveName(true); }}
+                    <Button variant="ghost" size="xs" onClick={() => { setSavedId(null); setSaveName(suggestedName()); setShowSaved(false); setShowSaveName(true); }}
                       disabled={!sql.trim()}
-                      className="aug-fs-xs text-blue-400 hover:text-blue-300 disabled:opacity-40">+ Save current as…</button>
+                      className="h-auto p-0 font-normal aug-fs-xs text-blue-400 hover:text-blue-300 hover:bg-transparent dark:hover:bg-transparent disabled:opacity-40">+ Save current as…</Button>
                   </div>
                   <div className="max-h-[320px] overflow-y-auto">
                     {savedList.length === 0 ? (
@@ -1684,8 +1696,8 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                           <p className="aug-fs-xs text-zinc-500 truncate font-mono">{(q.sql || "").replace(/\s+/g, " ").slice(0, 52)}</p>
                         </div>
                         {q.id === savedId && <span className="aug-fs-xs text-blue-400 shrink-0">active</span>}
-                        <button onClick={(e) => removeSaved(q.id, e)} title="Delete saved query"
-                          className="opacity-0 group-hover/sq:opacity-100 text-zinc-500 hover:text-red-400 shrink-0 leading-none">✕</button>
+                        <Button variant="ghost" size="xs" onClick={(e) => removeSaved(q.id, e)} title="Delete saved query"
+                          className="h-auto p-0 font-normal opacity-0 group-hover/sq:opacity-100 text-zinc-500 hover:text-red-400 hover:bg-transparent dark:hover:bg-transparent shrink-0 leading-none">✕</Button>
                       </div>
                     ))}
                   </div>
@@ -1704,9 +1716,9 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     placeholder="Query name"
                     className="w-full aug-fs-sm bg-zinc-800 border border-zinc-600 rounded-md px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-400" />
                   <div className="flex justify-end gap-2 mt-2.5">
-                    <button onClick={() => setShowSaveName(false)} className="aug-fs-xs text-zinc-400 hover:text-zinc-200 px-2 py-1">Cancel</button>
-                    <button onClick={() => doCreateSaved(saveName)} disabled={!saveName.trim()}
-                      className="aug-fs-xs bg-blue-600 hover:bg-blue-500 text-white rounded-md px-3 py-1 font-medium disabled:opacity-40">Save</button>
+                    <Button variant="ghost" size="xs" onClick={() => setShowSaveName(false)} className="h-auto font-normal aug-fs-xs text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent px-2 py-1">Cancel</Button>
+                    <Button variant="ghost" size="xs" onClick={() => doCreateSaved(saveName)} disabled={!saveName.trim()}
+                      className="h-auto aug-fs-xs bg-blue-600 hover:bg-blue-500 dark:hover:bg-blue-500 text-white hover:text-white rounded-md px-3 py-1 font-medium disabled:opacity-40">Save</Button>
                   </div>
                 </div>
               </>
@@ -1714,11 +1726,13 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
           </div>
 
           {!autoSql && (
-            <button
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={() => { setAutoSql(true); if (primaryTable) setSql(buildSql(primaryTable,joinedTables,schemaJoins,dims,measures,filters,orderBy,limit,tableSchemas,timeSpec,having)); }}
-              className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
+              className="h-auto font-normal aug-fs-xs text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
               ↺ Regenerate SQL
-            </button>
+            </Button>
           )}
           {!running && (runError || result) && (() => {
             const ok = !runError && !result?.error;
@@ -1739,16 +1753,16 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
             <input type="checkbox" checked={useCache} onChange={e=>setUseCache(e.target.checked)} className="w-3 h-3 accent-violet-500" />
             <span className="aug-fs-xs text-zinc-500">Cache</span>
           </label>
-          <button onClick={triggerRun} disabled={running||!sql.trim()}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-[var(--r3)] aug-fs-ui font-semibold transition ${
+          <Button variant="ghost" onClick={triggerRun} disabled={running||!sql.trim()}
+            className={`h-auto gap-2 px-4 py-1.5 rounded-[var(--r3)] aug-fs-ui font-semibold transition ${
               running ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
-                      : "bg-blue-600 hover:bg-blue-500 text-white shadow-sm"
-            }`}>
+                      : "bg-blue-600 hover:bg-blue-500 dark:hover:bg-blue-500 text-white hover:text-white shadow-sm"
+            } ${SVG_SIZE_AUTO}`}>
             {running
               ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-[var(--r-pill)] animate-spin"/>Running…</>
               : <><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>Run</>
             }
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -1769,7 +1783,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
               </svg>
               <input placeholder="Search tables &amp; columns…" value={colSearch} onChange={e=>setColSearch(e.target.value)}
                 className="bg-transparent aug-fs-sm text-zinc-300 outline-none placeholder-zinc-500 w-full" />
-              {colSearch && <button onClick={()=>setColSearch("")} className="text-zinc-500 hover:text-zinc-400 leading-none">✕</button>}
+              {colSearch && <Button variant="ghost" size="xs" onClick={()=>setColSearch("")} className="h-auto p-0 font-normal text-zinc-500 hover:text-zinc-400 hover:bg-transparent dark:hover:bg-transparent leading-none">✕</Button>}
             </div>
             {/* type legend */}
             <div className="flex items-center gap-3 mt-2.5">
@@ -1812,12 +1826,13 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     return (
                       <div key={entry.conn_id} className="border-b-2 border-zinc-700/40 last:border-b-0">
                         {/* Connection row */}
-                        <button
+                        <Button
+                          variant="ghost"
                           onClick={() => {
                             if (!isActive) { setConnId(entry.conn_id); setExpandedConns(p => ({ ...p, [entry.conn_id]: true })); }
                             else setExpandedConns(p => ({ ...p, [entry.conn_id]: !(p[entry.conn_id] ?? true) }));
                           }}
-                          className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/40 transition ${isActive ? "bg-zinc-800/30" : ""}`}>
+                          className={`w-full h-auto justify-start rounded-none font-normal gap-2 px-3 py-2 hover:bg-zinc-800/40 dark:hover:bg-zinc-800/40 transition ${isActive ? "bg-zinc-800/30" : ""} ${SVG_SIZE_AUTO}`}>
                           <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
                             className={`shrink-0 transition-transform duration-150 ${cOpen ? "rotate-90" : ""}`}>
                             <polyline points="2,1 6,4 2,7"/>
@@ -1825,7 +1840,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                           {dbIcon}
                           <span className={`aug-fs-sm font-semibold truncate ${isActive ? "text-zinc-100" : "text-zinc-300"}`}>{entry.name}</span>
                           {isActive && <span className="ml-auto aug-fs-xs text-blue-400 shrink-0">active</span>}
-                        </button>
+                        </Button>
 
                         {/* Active connection → full rich tree */}
                         {cOpen && isActive && (
@@ -1840,8 +1855,8 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     return (
                       <div key={schema.name} className="border-b border-zinc-700/25 last:border-b-0">
                         {/* Schema row */}
-                        <button onClick={()=>setExpandedSchemas(p=>({...p,[schema.name]: !(p[schema.name] ?? true)}))}
-                          className="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
+                        <Button variant="ghost" onClick={()=>setExpandedSchemas(p=>({...p,[schema.name]: !(p[schema.name] ?? true)}))}
+                          className={`w-full h-auto justify-start rounded-none font-normal gap-2 pl-3 pr-2 py-1.5 hover:bg-zinc-800/40 dark:hover:bg-zinc-800/40 transition ${SVG_SIZE_AUTO}`}>
                           <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
                             className={`shrink-0 transition-transform duration-150 ${sOpen?"rotate-90":""}`}>
                             <polyline points="2,1 6,4 2,7"/>
@@ -1850,7 +1865,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                             <path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/>
                           </svg>
                           <span className="aug-fs-xs font-semibold uppercase tracking-wide text-zinc-300 truncate">{schema.name}</span>
-                        </button>
+                        </Button>
 
                         {/* Tables under schema */}
                         {sOpen && visTables.map(tbl => {
@@ -1867,7 +1882,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                           return (
                             <div key={tbl} className={isResolved ? "bg-zinc-800/20" : ""}>
                               <div className="group/tbl w-full flex items-center gap-2 pl-7 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
-                                <button onClick={()=> {
+                                <Button variant="ghost" onClick={()=> {
                                     const willOpen = !(expandedTables[tbl] ?? isResolved);
                                     setExpandedTables(p=>({...p,[tbl]: willOpen}));
                                     if (willOpen && !(tableCols[tbl]?.length > 0) && !loadingTableCols.has(tbl)) {
@@ -1876,7 +1891,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                                       fetchTableColumns(tbl, schemaName);
                                     }
                                   }}
-                                  className="flex items-center gap-2 min-w-0 flex-1">
+                                  className={`h-auto justify-start font-normal p-0 gap-2 min-w-0 flex-1 hover:bg-transparent dark:hover:bg-transparent ${SVG_SIZE_AUTO}`}>
                                   <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
                                     className={`shrink-0 transition-transform duration-150 ${open?"rotate-90":""}`}>
                                     <polyline points="2,1 6,4 2,7"/>
@@ -1886,7 +1901,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                                   </svg>
                                   <span className={`aug-fs-sm font-mono truncate ${isResolved ? "text-zinc-100 font-semibold" : "text-zinc-200"}`}>{tbl}</span>
                                   {rc && <span className="aug-fs-xs text-zinc-500 shrink-0">{rc}</span>}
-                                </button>
+                                </Button>
                                 {deg > 0 && (
                                   <span title={`${deg} related table${deg>1?"s":""}`} className="hidden sm:flex items-center gap-0.5 aug-fs-xs text-zinc-500 shrink-0">
                                     ⋈{deg}
@@ -1900,10 +1915,10 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                                 ) : iso ? (
                                   <span title="No detected joins to other tables" className="aug-fs-xs text-zinc-500 shrink-0">isolated</span>
                                 ) : (
-                                  <button onClick={()=>ensureTable(tbl, schema.name)} title="Add to query (auto-join)"
-                                    className="opacity-0 group-hover/tbl:opacity-100 aug-fs-xs text-zinc-500 hover:text-blue-400 border border-zinc-700 hover:border-blue-500/50 rounded px-1.5 leading-tight transition shrink-0">
+                                  <Button variant="ghost" size="xs" onClick={()=>ensureTable(tbl, schema.name)} title="Add to query (auto-join)"
+                                    className="h-auto py-0 font-normal opacity-0 group-hover/tbl:opacity-100 aug-fs-xs text-zinc-500 hover:text-blue-400 hover:bg-transparent dark:hover:bg-transparent border-zinc-700 hover:border-blue-500/50 rounded px-1.5 leading-tight transition shrink-0">
                                     + add
-                                  </button>
+                                  </Button>
                                 )}
                               </div>
                               {open && (
@@ -1942,8 +1957,8 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                           const sOpen = q ? true : (expandedSchemas[sKey] ?? false);
                           return (
                             <div key={schema.name}>
-                              <button onClick={() => setExpandedSchemas(p => ({ ...p, [sKey]: !(p[sKey] ?? false) }))}
-                                className="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
+                              <Button variant="ghost" onClick={() => setExpandedSchemas(p => ({ ...p, [sKey]: !(p[sKey] ?? false) }))}
+                                className={`w-full h-auto justify-start rounded-none font-normal gap-2 pl-3 pr-2 py-1.5 hover:bg-zinc-800/40 dark:hover:bg-zinc-800/40 transition ${SVG_SIZE_AUTO}`}>
                                 <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
                                   className={`shrink-0 transition-transform duration-150 ${sOpen ? "rotate-90" : ""}`}>
                                   <polyline points="2,1 6,4 2,7"/>
@@ -1953,18 +1968,18 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                                 </svg>
                                 <span className="aug-fs-xs font-semibold uppercase tracking-wide text-zinc-400 truncate">{schema.name}</span>
                                 <span className="ml-auto aug-fs-xs text-zinc-500 shrink-0">{visT.length}</span>
-                              </button>
+                              </Button>
                               {sOpen && visT.map(t => (
-                                <button key={t.name} onClick={() => { setConnId(entry.conn_id); setExpandedConns(p => ({ ...p, [entry.conn_id]: true })); }}
+                                <Button variant="ghost" key={t.name} onClick={() => { setConnId(entry.conn_id); setExpandedConns(p => ({ ...p, [entry.conn_id]: true })); }}
                                   title={`Switch to ${entry.name} to query ${t.name}`}
-                                  className="group/pt w-full flex items-center gap-2 pl-7 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
+                                  className={`group/pt w-full h-auto justify-start rounded-none font-normal gap-2 pl-7 pr-2 py-1.5 hover:bg-zinc-800/40 dark:hover:bg-zinc-800/40 transition ${SVG_SIZE_AUTO}`}>
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--t2)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
                                     <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>
                                   </svg>
                                   <span className="aug-fs-sm font-mono text-zinc-300 truncate">{t.name}</span>
                                   {t.row_count != null && <span className="aug-fs-xs text-zinc-500 shrink-0">{fmtRows(String(t.row_count))}</span>}
                                   <span className="ml-auto opacity-0 group-hover/pt:opacity-100 aug-fs-xs text-blue-400 shrink-0">open →</span>
-                                </button>
+                                </Button>
                               ))}
                             </div>
                           );
@@ -1986,15 +2001,15 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
             style={controlsCollapsed ? undefined : { height: controlsH }}>
             <div className="flex items-center gap-1 px-4 pt-2 border-b border-zinc-700/40 shrink-0">
               {(["data","customize"] as const).map(tab => (
-                <button key={tab} onClick={()=>{ setRailTab(tab); if (controlsCollapsed) setControlsCollapsed(false); }}
-                  className={`aug-fs-sm font-semibold uppercase tracking-wide px-3 py-2 -mb-px border-b-2 transition ${railTab===tab ? "border-blue-500 text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-300"}`}>
+                <Button variant="ghost" key={tab} onClick={()=>{ setRailTab(tab); if (controlsCollapsed) setControlsCollapsed(false); }}
+                  className={`h-auto aug-fs-sm font-semibold uppercase tracking-wide px-3 py-2 -mb-px rounded-none border-0 border-b-2 hover:bg-transparent dark:hover:bg-transparent transition ${railTab===tab ? "border-blue-500 text-zinc-100 hover:text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-300"}`}>
                   {tab}
-                </button>
+                </Button>
               ))}
-              <button onClick={()=>setControlsCollapsed(c=>!c)} title={controlsCollapsed?"Expand panel":"Collapse panel"}
-                className="ml-auto text-zinc-500 hover:text-zinc-300 p-1.5">
+              <Button variant="ghost" size="icon-xs" onClick={()=>setControlsCollapsed(c=>!c)} title={controlsCollapsed?"Expand panel":"Collapse panel"}
+                className={`ml-auto size-auto text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent p-1.5 ${SVG_SIZE_AUTO}`}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${controlsCollapsed?"rotate-180":""}`}><polyline points="6 9 12 15 18 9"/></svg>
-              </button>
+              </Button>
             </div>
             {!controlsCollapsed && (<>
             <div className={`flex-1 overflow-y-auto px-5 py-3 space-y-3 ${railTab==="data"?"":"hidden"}`}>
@@ -2043,7 +2058,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
                   </svg>
                   <span className="font-mono">{joinHint}</span>
-                  <button onClick={()=>setJoinHint(null)} className="ml-auto opacity-60 hover:opacity-100 leading-none">×</button>
+                  <Button variant="ghost" size="xs" onClick={()=>setJoinHint(null)} className="h-auto p-0 font-normal ml-auto opacity-60 hover:opacity-100 leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
                 </div>
               )}
 
@@ -2100,7 +2115,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                             {TIME_PRESETS.filter(p=>p.id!=="custom").map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
                           </select>
                         </>)}
-                        <button onClick={()=>setDims(p=>p.filter(x=>x.id!==d.id))} className="opacity-50 hover:opacity-100 text-sm leading-none ml-0.5">×</button>
+                        <Button variant="ghost" size="xs" onClick={()=>setDims(p=>p.filter(x=>x.id!==d.id))} className="h-auto p-0 font-normal opacity-50 hover:opacity-100 text-sm leading-none ml-0.5 hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
                       </span>
                     ))}
                   </div>
@@ -2114,10 +2129,10 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     </div>
                     {metrics.length > 0 && (
                       <div className="relative">
-                        <button onClick={()=>setShowMetricsCatalog(v=>!v)}
-                          className="aug-fs-xs px-2.5 py-1 rounded-[var(--r3)] border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300 transition whitespace-nowrap">
+                        <Button variant="ghost" size="xs" onClick={()=>setShowMetricsCatalog(v=>!v)}
+                          className="h-auto font-normal aug-fs-xs px-2.5 py-1 rounded-[var(--r3)] border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent transition whitespace-nowrap">
                           📊 Catalog
-                        </button>
+                        </Button>
                         {showMetricsCatalog && (
                           <>
                             <div className="fixed inset-0 z-30" onClick={()=>setShowMetricsCatalog(false)}/>
@@ -2126,12 +2141,12 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                                 <p className="aug-fs-xs font-semibold text-zinc-400">Metrics Catalog</p>
                               </div>
                               {metrics.map(m => (
-                                <button key={m.name}
+                                <Button variant="ghost" key={m.name}
                                   onClick={()=>{setMeasures(p=>[...p,{id:uid(),col:"",table:primaryTable??"",agg:"CUSTOM",customExpr:m.sql,alias:m.name,fromMetric:m.name}]);setShowMetricsCatalog(false);}}
-                                  className="w-full text-left px-4 py-3 hover:bg-zinc-800/70 transition border-b border-zinc-700/30 last:border-0">
+                                  className="w-full h-auto flex-col items-start justify-start rounded-none font-normal whitespace-normal text-left px-4 py-3 hover:bg-zinc-800/70 dark:hover:bg-zinc-800/70 transition border-0 border-b border-zinc-700/30 last:border-0">
                                   <p className="aug-fs-sm font-semibold text-zinc-200">{m.label}</p>
-                                  <p className="aug-fs-xs font-mono text-zinc-500 truncate mt-0.5">{m.sql}</p>
-                                </button>
+                                  <p className="aug-fs-xs font-mono text-zinc-500 truncate mt-0.5 max-w-full">{m.sql}</p>
+                                </Button>
                               ))}
                             </div>
                           </>
@@ -2165,12 +2180,12 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                             <>
                               <span title={warn} className="text-amber-400 cursor-help">⚠</span>
                               {m.agg === "SUM" && (
-                                <button onClick={()=>fixGrainMeasure(m)} title={`Rewrite as SUM(${m.col} × quantity)`}
-                                  className="aug-fs-xs text-amber-300 hover:text-amber-100 underline decoration-dotted">fix</button>
+                                <Button variant="ghost" size="xs" onClick={()=>fixGrainMeasure(m)} title={`Rewrite as SUM(${m.col} × quantity)`}
+                                  className="h-auto p-0 font-normal aug-fs-xs text-amber-300 hover:text-amber-100 hover:bg-transparent dark:hover:bg-transparent underline decoration-dotted">fix</Button>
                               )}
                             </>
                           )}
-                          <button onClick={()=>{ setMeasures(p=>p.filter(x=>x.id!==m.id)); setHaving(h=>h.filter(x=>x.measureId!==m.id)); }} className="opacity-50 hover:opacity-100 text-sm leading-none">×</button>
+                          <Button variant="ghost" size="xs" onClick={()=>{ setMeasures(p=>p.filter(x=>x.id!==m.id)); setHaving(h=>h.filter(x=>x.measureId!==m.id)); }} className="h-auto p-0 font-normal opacity-50 hover:opacity-100 text-sm leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
                         </span>
                       );
                     })}
@@ -2181,14 +2196,14 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
               {/* Resolved joins — below metrics, collapsed by default */}
               {joinStatuses.length > 0 && (
                 <div className="rounded-md border border-zinc-700/50 bg-zinc-800/20">
-                  <button onClick={()=>setJoinsOpen(o=>!o)} className="w-full flex items-center gap-2 px-3 py-2 text-left">
+                  <Button variant="ghost" onClick={()=>setJoinsOpen(o=>!o)} className={`w-full h-auto justify-start rounded-none font-normal gap-2 px-3 py-2 text-left hover:bg-transparent dark:hover:bg-transparent ${SVG_SIZE_AUTO}`}>
                     <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`shrink-0 text-zinc-500 transition-transform ${joinsOpen?"rotate-90":""}`}><polyline points="2,1 6,4 2,7"/></svg>
                     <span className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500">Resolved joins · {allTables.length} tables</span>
                     {fanOutRisk && (
                       <span title="One-to-many joins can repeat rows from the parent table, inflating SUM/COUNT. Verify the aggregation grain."
                         className="ml-auto flex items-center gap-1 aug-fs-xs text-amber-400/90 border border-amber-500/30 bg-amber-500/5 rounded px-1.5 py-0.5">⚠ fan-out</span>
                     )}
-                  </button>
+                  </Button>
                   {joinsOpen && (
                     <div className="px-3 pb-2.5 space-y-1.5">
                       {joinStatuses.map(({table, join, pivot}) => (
@@ -2222,7 +2237,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                   {filters.map(f => (
                     <span key={f.id} className="inline-flex items-center gap-1.5 aug-fs-sm font-mono px-3 py-1 rounded-[var(--r3)] border bg-amber-500/10 border-amber-500/30 text-amber-300">
                       {NO_VAL_OPS.includes(f.op) ? `${qualify(f.col,f.table,isMulti)} ${f.op}` : `${qualify(f.col,f.table,isMulti)} ${f.op} ${f.val}`}
-                      <button onClick={()=>setFilters(p=>p.filter(x=>x.id!==f.id))} className="opacity-50 hover:opacity-100 text-sm leading-none">×</button>
+                      <Button variant="ghost" size="xs" onClick={()=>setFilters(p=>p.filter(x=>x.id!==f.id))} className="h-auto p-0 font-normal opacity-50 hover:opacity-100 text-sm leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
                     </span>
                   ))}
                   {showAddFilter ? (
@@ -2257,17 +2272,17 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                           )}
                         </>
                       )}
-                      <button onClick={commitFilter} className="px-3 py-1.5 aug-fs-sm rounded-[var(--r3)] bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium transition">Add</button>
-                      <button onClick={()=>setShowAddFilter(false)} className="aug-fs-sm text-zinc-500 hover:text-zinc-300 px-1.5 transition">Cancel</button>
+                      <Button variant="ghost" size="xs" onClick={commitFilter} className="h-auto px-3 py-1.5 aug-fs-sm rounded-[var(--r3)] bg-amber-500/20 text-amber-300 hover:text-amber-300 hover:bg-amber-500/30 dark:hover:bg-amber-500/30 font-medium transition">Add</Button>
+                      <Button variant="ghost" size="xs" onClick={()=>setShowAddFilter(false)} className="h-auto py-0 font-normal aug-fs-sm text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent px-1.5 transition">Cancel</Button>
                     </div>
                   ) : (
-                    <button onClick={()=>setShowAddFilter(true)}
-                      className="flex items-center gap-1.5 aug-fs-sm border border-dashed border-zinc-700 rounded-[var(--r3)] px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 transition">
+                    <Button variant="ghost" size="xs" onClick={()=>setShowAddFilter(true)}
+                      className={`h-auto font-normal gap-1.5 aug-fs-sm border-dashed border-zinc-700 rounded-[var(--r3)] px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent transition ${SVG_SIZE_AUTO}`}>
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                       </svg>
                       Add filter
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -2290,16 +2305,16 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                         </select>
                         <input value={h.val} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,val:e.target.value}:x))} placeholder="value"
                           className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-28 transition" />
-                        <button onClick={()=>setHaving(p=>p.filter(x=>x.id!==h.id))} className="text-zinc-500 hover:text-red-400 text-sm leading-none px-1">×</button>
+                        <Button variant="ghost" size="xs" onClick={()=>setHaving(p=>p.filter(x=>x.id!==h.id))} className="h-auto py-0 font-normal text-zinc-500 hover:text-red-400 hover:bg-transparent dark:hover:bg-transparent text-sm leading-none px-1">×</Button>
                       </div>
                     ))}
-                    <button onClick={()=>setHaving(p=>[...p,{id:uid(),measureId:measures[0].id,op:">",val:""}])}
-                      className="flex items-center gap-1.5 aug-fs-sm border border-dashed border-zinc-700 rounded-[var(--r3)] px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 transition">
+                    <Button variant="ghost" size="xs" onClick={()=>setHaving(p=>[...p,{id:uid(),measureId:measures[0].id,op:">",val:""}])}
+                      className={`h-auto font-normal gap-1.5 aug-fs-sm border-dashed border-zinc-700 rounded-[var(--r3)] px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent transition ${SVG_SIZE_AUTO}`}>
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                       </svg>
                       Add having
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -2331,10 +2346,10 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
               {(primaryTable || sql.trim()) && (
               <div className="border-t border-zinc-700/30 pt-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <button onClick={()=>setSqlOpen(o=>!o)} className="flex items-center gap-2">
+                  <Button variant="ghost" onClick={()=>setSqlOpen(o=>!o)} className={`h-auto p-0 font-normal gap-2 hover:bg-transparent dark:hover:bg-transparent ${SVG_SIZE_AUTO}`}>
                     <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`shrink-0 text-zinc-500 transition-transform ${sqlOpen?"rotate-90":""}`}><polyline points="2,1 6,4 2,7"/></svg>
                     <p className="aug-fs-ui font-semibold text-zinc-300">SQL</p>
-                  </button>
+                  </Button>
                   {!autoSql && (
                     <span className="aug-fs-xs text-amber-500/80 border border-amber-500/20 bg-amber-500/5 rounded-md px-1.5 py-0.5">
                       manually edited
@@ -2344,18 +2359,18 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     <div className="ml-auto flex items-center gap-2">
                       {importMsg && <span className="aug-fs-xs text-zinc-500 italic max-w-[220px] truncate" title={importMsg}>{importMsg}</span>}
                       <span className="aug-fs-xs text-zinc-500">⌘↵ to run</span>
-                      <button onClick={importSqlToBuilder} title="Reverse-compile this SQL into the visual builder's chips"
-                        className="aug-fs-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
+                      <Button variant="ghost" size="xs" onClick={importSqlToBuilder} title="Reverse-compile this SQL into the visual builder's chips"
+                        className="h-auto font-normal aug-fs-xs text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
                         Import → builder
-                      </button>
-                      <button onClick={()=>{ if (sql.trim()) { setSql(formatSql(sql)); setAutoSql(false); } }}
-                        className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
+                      </Button>
+                      <Button variant="ghost" size="xs" onClick={()=>{ if (sql.trim()) { setSql(formatSql(sql)); setAutoSql(false); } }}
+                        className="h-auto font-normal aug-fs-xs text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
                         Format
-                      </button>
-                      <button onClick={()=>navigator.clipboard.writeText(sql).catch(()=>{})}
-                        className="aug-fs-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
+                      </Button>
+                      <Button variant="ghost" size="xs" onClick={()=>navigator.clipboard.writeText(sql).catch(()=>{})}
+                        className="h-auto font-normal aug-fs-xs text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition">
                         Copy
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </div>

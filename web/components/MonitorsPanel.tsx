@@ -14,6 +14,7 @@ import {
   Metric,
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
+import { Button } from "@/components/ui/button";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -224,9 +225,11 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px 0", borderBottom: "1px solid var(--bg-3)" }}>
         <div style={{ display: "flex", gap: 2 }}>
           {(["list", "alerts", ...(view === "form" ? ["form"] : [])] as const).map(v => (
-            <button
+            <Button
+              variant="ghost"
               key={v}
               onClick={() => view !== "form" && setView(v as View)}
+              className="h-auto p-0"
               style={{
                 padding: "6px 14px",
                 background: view === v ? "var(--blue3)" : "transparent",
@@ -242,19 +245,19 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
               {v === "list"   ? "Monitors" :
                v === "alerts" ? <>Alerts {unackedCount > 0 && <span style={{ marginLeft: 4, background: "var(--r2)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 10 }}>{unackedCount}</span>}</> :
                "Configure"}
-            </button>
+            </Button>
           ))}
         </div>
         <div style={{ flex: 1 }} />
         {view === "list" && (
-          <button className="aug-btn" onClick={openCreate} style={{ fontSize: 12, padding: "5px 12px" }}>
+          <Button variant="ghost" className="aug-btn h-auto hover:text-current hover:bg-transparent dark:hover:bg-transparent" onClick={openCreate} style={{ fontSize: 12, padding: "5px 12px" }}>
             + New monitor
-          </button>
+          </Button>
         )}
         {view === "form" && (
-          <button onClick={() => setView("list")} style={{ background: "none", border: "none", color: "var(--t3)", cursor: "pointer", fontSize: 12 }}>
+          <Button variant="ghost" onClick={() => setView("list")} className="h-auto p-0 font-normal" style={{ background: "none", border: "none", color: "var(--t3)", cursor: "pointer", fontSize: 12 }}>
             ← Back
-          </button>
+          </Button>
         )}
       </div>
 
@@ -352,9 +355,11 @@ function MonitorCard({
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {/* Toggle */}
-        <button
+        <Button
+          variant="ghost"
           onClick={onToggle}
           title={monitor.enabled ? "Disable" : "Enable"}
+          className="h-auto p-0"
           style={{
             width: 32, height: 18, borderRadius: 9,
             background: monitor.enabled ? "var(--blue3)" : "var(--bg-3)",
@@ -366,7 +371,7 @@ function MonitorCard({
             width: 12, height: 12, borderRadius: "50%",
             background: "#fff", transition: "left .15s",
           }} />
-        </button>
+        </Button>
 
         {/* Name + type */}
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -391,11 +396,11 @@ function MonitorCard({
 
         {/* Actions */}
         <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={onRun} className="aug-btn" style={{ fontSize: 11, padding: "3px 9px", opacity: 0.85 }}>
+          <Button variant="ghost" onClick={onRun} className="aug-btn h-auto hover:text-current hover:bg-transparent dark:hover:bg-transparent" style={{ fontSize: 11, padding: "3px 9px", opacity: 0.85 }}>
             Run now
-          </button>
-          <button onClick={onEdit} style={ghostBtn}>Edit</button>
-          <button onClick={onDelete} style={{ ...ghostBtn, color: "var(--r2)" }}>Delete</button>
+          </Button>
+          <Button variant="ghost" onClick={onEdit} className="h-auto p-0 font-normal" style={ghostBtn}>Edit</Button>
+          <Button variant="ghost" onClick={onDelete} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--r2)" }}>Delete</Button>
         </div>
       </div>
 
@@ -446,7 +451,7 @@ function AlertRow({ alert, onAck }: { alert: MonitorAlert; onAck: () => void }) 
         <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 4 }}>{relTime(alert.triggered_at)}</div>
       </div>
       {!alert.acknowledged && (
-        <button onClick={onAck} style={ghostBtn}>Ack</button>
+        <Button variant="ghost" onClick={onAck} className="h-auto p-0 font-normal" style={ghostBtn}>Ack</Button>
       )}
     </div>
   );
@@ -497,10 +502,11 @@ function MonitorForm({
       <Field label="Metric">
         <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
           {(["catalog", "sql"] as const).map(s => (
-            <button key={s} onClick={() => setMetricSource(s)}
+            <Button variant="ghost" key={s} onClick={() => setMetricSource(s)}
+              className="h-auto p-0 font-normal"
               style={{ ...segBtn, background: metricSource === s ? "var(--blue3)" : "var(--bg-2)", color: metricSource === s ? "#fff" : "var(--t2)" }}>
               {s === "catalog" ? "From catalog" : "Custom SQL"}
-            </button>
+            </Button>
           ))}
         </div>
         {metricSource === "catalog" ? (
@@ -524,7 +530,8 @@ function MonitorForm({
       <Field label="Alert condition">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
           {ALERT_TYPES.map(at => (
-            <button key={at.value} onClick={() => setField("alert_on", at.value)}
+            <Button variant="ghost" key={at.value} onClick={() => setField("alert_on", at.value)}
+              className="h-auto p-0 font-normal whitespace-normal"
               style={{
                 ...segBtn,
                 background: alertOn === at.value ? "var(--vio3, #6366f1)" : "var(--bg-2)",
@@ -533,7 +540,7 @@ function MonitorForm({
               }}>
               <span style={{ fontWeight: 600, fontSize: 12 }}>{at.label}</span>
               <span style={{ fontSize: 10, opacity: 0.75, textAlign: "left" }}>{at.desc}</span>
-            </button>
+            </Button>
           ))}
         </div>
       </Field>
@@ -556,10 +563,11 @@ function MonitorForm({
           <Field label="Direction">
             <div style={{ display: "flex", gap: 6 }}>
               {(["below", "above"] as const).map(d => (
-                <button key={d} onClick={() => setField("threshold_direction", d)}
+                <Button variant="ghost" key={d} onClick={() => setField("threshold_direction", d)}
+                  className="h-auto p-0 font-normal whitespace-normal"
                   style={{ ...segBtn, background: form.threshold_direction === d ? "var(--blue3)" : "var(--bg-2)", color: form.threshold_direction === d ? "#fff" : "var(--t2)" }}>
                   {d === "below" ? "Alert when below (e.g. revenue)" : "Alert when above (e.g. error rate)"}
-                </button>
+                </Button>
               ))}
             </div>
           </Field>
@@ -631,7 +639,8 @@ function MonitorForm({
       <Field label="Schedule">
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
           {CRON_PRESETS.map(p => (
-            <button key={p.label} onClick={() => onCronPreset(p.cron)}
+            <Button variant="ghost" key={p.label} onClick={() => onCronPreset(p.cron)}
+              className="h-auto p-0 font-normal"
               style={{
                 ...segBtn,
                 background: (!isCustomCron && cronPreset === p.cron && p.label !== "Custom") || (isCustomCron && p.label === "Custom")
@@ -640,7 +649,7 @@ function MonitorForm({
                   ? "#fff" : "var(--t2)",
               }}>
               {p.label}
-            </button>
+            </Button>
           ))}
         </div>
         {isCustomCron && (
@@ -671,10 +680,11 @@ function MonitorForm({
       <Field label="Notification">
         <div style={{ display: "flex", gap: 6 }}>
           {(["in_app", "slack", "email"] as const).map(ch => (
-            <button key={ch} onClick={() => setField("notification_channel", ch as any)}
+            <Button variant="ghost" key={ch} onClick={() => setField("notification_channel", ch as any)}
+              className="h-auto p-0 font-normal"
               style={{ ...segBtn, background: form.notification_channel === ch ? "var(--blue3)" : "var(--bg-2)", color: form.notification_channel === ch ? "#fff" : "var(--t2)" }}>
               {ch === "in_app" ? "In-app" : ch.charAt(0).toUpperCase() + ch.slice(1)}
-            </button>
+            </Button>
           ))}
         </div>
       </Field>
@@ -684,10 +694,10 @@ function MonitorForm({
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-        <button className="aug-btn" onClick={onSave} disabled={saving} style={{ minWidth: 100 }}>
+        <Button variant="ghost" className="aug-btn h-auto hover:text-current hover:bg-transparent dark:hover:bg-transparent" onClick={onSave} disabled={saving} style={{ minWidth: 100 }}>
           {saving ? "Saving…" : isEdit ? "Update" : "Create monitor"}
-        </button>
-        <button onClick={onCancel} style={{ ...ghostBtn, padding: "6px 14px" }}>Cancel</button>
+        </Button>
+        <Button variant="ghost" onClick={onCancel} className="h-auto p-0 font-normal" style={{ ...ghostBtn, padding: "6px 14px" }}>Cancel</Button>
       </div>
     </div>
   );
@@ -734,7 +744,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       <div style={{ fontSize: 32, marginBottom: 12 }}>📡</div>
       <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No monitors yet</div>
       <div style={{ fontSize: 12, marginBottom: 20 }}>Set up a monitor to get alerted when metrics cross thresholds, drift, or go stale.</div>
-      <button className="aug-btn" onClick={onAdd}>Create first monitor</button>
+      <Button variant="ghost" className="aug-btn h-auto hover:text-current hover:bg-transparent dark:hover:bg-transparent" onClick={onAdd}>Create first monitor</Button>
     </div>
   );
 }

@@ -120,6 +120,40 @@ export interface ExplorationReport {
   verification?: VerificationManifest | null;   // Bet 0 — which guards ran + earned trust
 }
 
+// ── Overview mode types ──────────────────────────────────────────────────────
+// "Show me interesting facts about this schema" — a deterministic, notability-ranked
+// TOUR of diverse fact TYPES across the whole dataset (the Genie-style default
+// first-look). Mirrors aughor/overview/build.py exactly: OverviewReport → OverviewFact[].
+
+export type OverviewLens =
+  | "scale" | "concentration" | "outlier" | "distribution"
+  | "composition" | "coverage" | "relationship";
+
+export interface OverviewFact {
+  lens: OverviewLens;
+  headline: string;
+  stat: string;               // pre-rendered primary number ("95.3%" / "51.2×" / "273.9K")
+  stat_label: string;
+  why: string;                // one-sentence "why it's notable"
+  notability: number;         // 0..1
+  table: string;              // may be schema-qualified ("main.tickets")
+  measure: string | null;
+  dimension: string | null;
+  sql: string;                // exact probe SQL ("" for pure-profile facts like scale)
+  columns: string[];          // e.g. ["group", "value"]  (may be [])
+  rows: unknown[][];          // small (<=12), e.g. [["economy", 3571], …]  (may be [])
+  chart_type: "bar" | "line" | "none";
+  chart_config: Record<string, unknown> | null;   // {type,x_field,y_field,title}
+}
+
+export interface OverviewReport {
+  facts: OverviewFact[];
+  summary: string;            // "8 notable facts across 12 of 17 tables — …"
+  tables_seen: number;
+  tables_total: number;
+  generated_at: string;
+}
+
 // ── ADA types ────────────────────────────────────────────────────────────────
 
 export interface PhaseKeyNumber {

@@ -7,6 +7,7 @@
 // the metric for the run and is remembered per connection (the Ambiguity Ledger), so the same
 // question never re-asks.
 
+import { Button } from "@/components/ui/button";
 import type { ClarifyPending } from "@/lib/investigationStream";
 
 export function ClarifyGateCard({
@@ -19,7 +20,7 @@ export function ClarifyGateCard({
   return (
     <div
       className="flex flex-col gap-2 rounded-md p-3 my-1"
-      style={{ border: "1px solid var(--border, #2a3742)", background: "var(--panel, #101a24)" }}
+      style={{ border: "1px solid var(--b1)", background: "var(--bg-2)" }}
     >
       <div className="flex items-center justify-between">
         <span className="aug-text-xs uppercase tracking-wide" style={{ color: "var(--t3)" }}>
@@ -39,18 +40,19 @@ export function ClarifyGateCard({
       <ul className="flex flex-col gap-1">
         {clarify.options.map((opt, i) => (
           <li key={i}>
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => onChoose(opt)}
-              className="w-full text-left flex items-center justify-between gap-2 rounded px-2 py-1.5 transition-colors"
-              style={{ background: "var(--panel2, #16212c)" }}
+              className="w-full h-auto justify-between gap-2 px-2 py-1.5 text-left whitespace-normal"
             >
               <span className="aug-text-sm" style={{ color: "var(--t1)" }}>{opt}</span>
               {clarify.previews[i] && (
-                <span className="aug-text-xs font-mono shrink-0" style={{ color: "#4ade80" }}>
+                <span className="aug-text-xs font-mono shrink-0" style={{ color: "var(--grn4)" }}>
                   {clarify.previews[i]}
                 </span>
               )}
-            </button>
+            </Button>
           </li>
         ))}
       </ul>

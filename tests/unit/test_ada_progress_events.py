@@ -139,7 +139,8 @@ def test_progress_iterator_completes_when_graph_exhausts_with_pending_progress()
 # ── Flag gate: off → plain _aiter_sync (byte-identical stream) ─────────────────────
 
 def test_investigation_stream_is_plain_when_flag_off(monkeypatch):
-    monkeypatch.delenv("AUGHOR_ADA_PROGRESS_EVENTS", raising=False)
+    # ada.progress_events graduated to default-ON (CK-0.4, 2026-07-13); off = explicit "0"
+    monkeypatch.setenv("AUGHOR_ADA_PROGRESS_EVENTS", "0")
     out = _run(_collect(R._investigation_stream(iter([{"a": 1}, {"b": 2}]))))
     assert out == [{"a": 1}, {"b": 2}]        # no progress markers, no wrapping
 

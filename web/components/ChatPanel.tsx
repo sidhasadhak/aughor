@@ -2,15 +2,19 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import AtlasSendIcon      from "@atlaskit/icon/core/send";
-import VideoStopIcon      from "@atlaskit/icon/core/video-stop";
 import AngleBracketsIcon  from "@atlaskit/icon/core/angle-brackets";
 import CloseIcon          from "@atlaskit/icon/core/close";
 import ChevronDownIcon    from "@atlaskit/icon/core/chevron-down";
 import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
 import CommentIcon        from "@atlaskit/icon/core/comment";
 import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
+import CompassIcon        from "@atlaskit/icon/core/compass";
 import { uploadDocument, listUserAgents, type UserAgent } from "@/lib/api";
 import { useChat, type DebugEvent, type ChatTurn } from "@/lib/useChat";
+import { useStickToBottom } from "@/lib/useStickToBottom";
+import type { OverviewReport } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import { StatusChip } from "@/components/brief/StatusChip";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TrustReceipt } from "./TrustReceipt";
@@ -27,6 +31,13 @@ const FALLBACK_STARTERS = [
   { text: "What is driving an unexpected trend?",    mode: "investigate" as const },
   { text: "Diagnose an anomaly in the data",         mode: "investigate" as const },
 ];
+
+// The Genie-style default first-look — always the FIRST, featured starter on a
+// fresh chat. Auto mode routes it to the deterministic overview fact tour.
+const OVERVIEW_STARTER = {
+  text: "Show me interesting facts about this schema",
+  mode: "ask" as const,
+};
 
 type Starter = { text: string; mode: "ask" | "investigate" };
 
@@ -75,15 +86,19 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
 
   return (
     <div
-      className="rounded-md flex flex-col overflow-hidden"
+      className="flex flex-col overflow-hidden"
       style={{
-        background: "var(--bg-1)",
+        // A generous composer pill (CK-grade): soft corners, a surface one step up
+        // from the page, and shadow-only elevation — the border stays a whisper
+        // until focus lights the v2 accent ring.
+        borderRadius: "var(--r-composer)",
+        background: "var(--bg-2)",
         border: focused
-          ? "1px solid rgba(45,114,210,0.55)"
-          : "1px solid rgba(255,255,255,0.09)",
+          ? "1px solid var(--bfocus)"
+          : "1px solid var(--b1)",
         boxShadow: focused
-          ? "0 0 0 3px rgba(45,114,210,0.12), 0 6px 20px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset"
-          : "0 6px 20px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset",
+          ? "0 0 0 3px var(--acc-dim), var(--shadow-md), 0 1px 0 rgba(255,255,255,0.04) inset"
+          : "var(--shadow-md), 0 1px 0 rgba(255,255,255,0.04) inset",
         transition: "border-color .15s, box-shadow .15s",
       }}
     >
@@ -100,7 +115,9 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
             </svg>
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attachedFile.name}</span>
-            <button onClick={() => onAttach?.(null)} style={{ marginLeft: 2, opacity: .6, lineHeight: 1, background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 12 }}>×</button>
+            <Button variant="ghost" size="icon-xs" onClick={() => onAttach?.(null)} title="Remove attachment"
+              className="h-auto w-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
+              style={{ marginLeft: 2, opacity: .6, lineHeight: 1, color: "inherit", fontSize: 12 }}>×</Button>
           </div>
         </div>
       )}
@@ -183,9 +200,9 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             style={{
               marginLeft: 8, marginRight: "auto", padding: "3px 8px", fontSize: 11, fontWeight: 500,
               fontFamily: "var(--font-ui)", borderRadius: "var(--r1)",
-              background: agentId ? "var(--green1)" : "var(--bg-0)",
-              border: `1px solid ${agentId ? "var(--green2)" : "var(--b1)"}`,
-              color: agentId ? "var(--green5)" : "var(--t3)", cursor: "pointer",
+              background: agentId ? "var(--grn1)" : "var(--bg-0)",
+              border: `1px solid ${agentId ? "var(--grn2)" : "var(--b1)"}`,
+              color: agentId ? "var(--grn5)" : "var(--t3)", cursor: "pointer",
             }}
           >
             <option value="">No agent</option>
@@ -198,14 +215,16 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
         {/* Actions: clear · attach · send/stop */}
         <div className="flex items-center gap-1.5">
           {!multiline && !streaming && (
-            <button
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={onClear}
-              className="aug-fs-sm transition-colors px-1"
+              className="aug-fs-sm px-1"
               style={{ color: "var(--t3)" }}
               title="Clear conversation"
             >
               Clear
-            </button>
+            </Button>
           )}
 
           {/* Hidden file input */}
@@ -226,7 +245,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             style={{
               width: 30, height: 30,
               color: attachedFile ? "var(--blue4)" : "var(--t3)",
-              background: attachedFile ? "rgba(45,114,210,0.1)" : "transparent",
+              background: attachedFile ? "var(--acc-dim)" : "transparent",
             }}
             onMouseEnter={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t1)"; }}
             onMouseLeave={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t3)"; }}
@@ -236,29 +255,41 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             </svg>
           </button>
 
-          {/* Send / Stop */}
+          {/* Send ⇄ Stop — one solid circular button that morphs in place (CK-grade):
+              a filled interactive-blue disc with an up-arrow while composing, a filled
+              square while a run streams (kept enabled so Stop is always one click away). */}
           {streaming ? (
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={onStop}
               title="Stop"
-              className="rounded-[var(--r3)] bg-red-500/15 border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/25 transition"
-              style={{ width: 30, height: 30 }}
+              className="aug-pressable rounded-[var(--r-pill)] hover:bg-transparent dark:hover:bg-transparent"
+              style={{ width: 32, height: 32, background: "var(--t2)", color: "var(--bg-1)" }}
             >
-              <VideoStopIcon label="Stop" size="small" />
-            </button>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <rect x="5" y="5" width="14" height="14" rx="2.5" />
+              </svg>
+            </Button>
           ) : (
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => onSend()}
               disabled={!input.trim()}
               title="Send"
-              className="rounded-[var(--r3)] text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
-              style={{ width: 30, height: 30 }}
+              className="aug-pressable rounded-[var(--r-pill)] hover:bg-transparent dark:hover:bg-transparent disabled:opacity-100"
+              style={{
+                width: 32, height: 32,
+                background: input.trim() ? "var(--blue-solid)" : "var(--bg-3)",
+                color: input.trim() ? "#fff" : "var(--t3)",
+              }}
             >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
               </svg>
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -297,7 +328,7 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
         <span className="text-emerald-400"><AngleBracketsIcon label="Debug log" size="small" /></span>
         <span className="aug-fs-xs font-mono text-zinc-300 flex-1">SSE Event Log · {events.length} events</span>
         <span className="aug-fs-xs text-zinc-500 mr-2">⌘⇧L to close</span>
-        <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition"><CloseIcon label="Close" size="small" /></button>
+        <Button variant="ghost" size="icon-xs" onClick={onClose} className="text-zinc-500 hover:text-zinc-300 hover:bg-transparent"><CloseIcon label="Close" size="small" /></Button>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 font-mono aug-fs-xs">
         {events.length === 0 ? (
@@ -334,32 +365,31 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
   const r = turn.route;
   if (!r) return null;
   const deep = r.depth === "deep";
+  const overview = r.depth === "overview";
   const done = turn.status !== "loading";
   return (
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-      <span style={{
-        display: "inline-flex", alignItems: "center", gap: 5,
-        padding: "2px 9px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
-        fontFamily: "var(--font-ui)",
-        background: deep ? "var(--vio1)" : "var(--blue1)",
-        border: `1px solid ${deep ? "var(--vio2)" : "var(--blue2)"}`,
-        color: deep ? "var(--vio5)" : "var(--blue5)",
-      }}>
-        {deep ? <AiSparkleIcon label="" size="small" /> : <CommentIcon label="" size="small" />}
-        {deep ? "Deep analysis" : "Quick answer"}
-      </span>
+      <StatusChip
+        hue={deep ? "accent" : "info"}
+        icon={deep ? <AiSparkleIcon label="" size="small" /> : <CommentIcon label="" size="small" />}
+      >
+        {deep ? "Deep analysis" : overview ? "Overview" : "Quick answer"}
+      </StatusChip>
       <span style={{ fontSize: 11.5, color: "var(--t3)" }}>{r.why}</span>
       {r.downgradedFrom && (
         <span style={{ fontSize: 11, fontStyle: "italic", color: "var(--t3)" }}>· deep analysis needs an upgrade</span>
       )}
-      {done && (
-        <button
+      {done && !overview && (
+        <Button
+          variant="ghost"
+          size="xs"
           onClick={() => onRerun(deep ? "quick" : "deep")}
           title={deep ? "Re-run as a quick answer" : "Re-run as a deep investigation"}
-          style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+          className="h-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
+          style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500, color: "var(--blue4)" }}
         >
           {deep ? "Answer quickly instead →" : "Investigate instead →"}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -372,15 +402,9 @@ function AgentBadge({ turn }: { turn: ChatTurn }) {
   if (!a) return null;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-      <span style={{
-        display: "inline-flex", alignItems: "center", gap: 5,
-        padding: "2px 9px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
-        fontFamily: "var(--font-ui)",
-        background: "var(--green1)", border: "1px solid var(--green2)", color: "var(--green5)",
-      }}>
-        <AiSparkleIcon label="" size="small" />
+      <StatusChip hue="positive" icon={<AiSparkleIcon label="" size="small" />}>
         Answering as {a.name}
-      </span>
+      </StatusChip>
       {a.docCount > 0 && (
         <span style={{ fontSize: 11.5, color: "var(--t3)" }}>
           {a.docCount} bound document{a.docCount === 1 ? "" : "s"}
@@ -413,11 +437,12 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
       {c.options.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
           {c.options.map((o, i) => (
-            <button key={`${i}:${o}`} onClick={() => onClarify(o)}
-              style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1, fontSize: 12, fontWeight: 500, padding: "4px 10px", borderRadius: "var(--r1)", cursor: "pointer", background: "var(--bg-1)", border: "1px solid var(--blue2)", color: "var(--blue5)" }}>
+            <Button key={`${i}:${o}`} variant="outline" size="xs" onClick={() => onClarify(o)}
+              className="h-auto flex-col items-start gap-px whitespace-normal text-left"
+              style={{ fontSize: 12, fontWeight: 500, padding: "4px 10px", background: "var(--bg-1)", borderColor: "var(--blue2)", color: "var(--blue5)" }}>
               <span>{o}</span>
               {c.previews?.[i] && <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--t3)" }}>{c.previews[i]}</span>}
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -429,14 +454,16 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
           placeholder="Add the detail…"
           style={{ flex: 1, fontSize: 12, padding: "6px 10px", borderRadius: "var(--r1)", background: "var(--bg-1)", border: "1px solid var(--b2)", color: "var(--t1)", outline: "none" }}
         />
-        <button onClick={submit} disabled={!val.trim()}
-          style={{ fontSize: 12, fontWeight: 500, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer", padding: "6px 4px", opacity: val.trim() ? 1 : 0.4 }}>
+        <Button variant="ghost" size="xs" onClick={submit} disabled={!val.trim()}
+          className="h-auto hover:bg-transparent dark:hover:bg-transparent disabled:opacity-40"
+          style={{ fontSize: 12, fontWeight: 500, color: "var(--blue4)", padding: "6px 4px" }}>
           Send
-        </button>
-        <button onClick={onAnswerAnyway} title="Answer with a best guess"
-          style={{ fontSize: 11.5, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: "6px 4px" }}>
+        </Button>
+        <Button variant="ghost" size="xs" onClick={onAnswerAnyway} title="Answer with a best guess"
+          className="h-auto font-normal hover:bg-transparent dark:hover:bg-transparent"
+          style={{ fontSize: 11.5, color: "var(--t3)", padding: "6px 4px" }}>
           Answer anyway →
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -453,12 +480,15 @@ function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => v
                   padding: "8px 12px", borderRadius: "var(--r2)", background: "var(--vio1)", border: "1px solid var(--vio2)" }}>
       <span style={{ color: "var(--vio5)", display: "inline-flex" }}><AiSparkleIcon label="" size="small" /></span>
       <span style={{ fontSize: 12, color: "var(--t2)", flex: 1, minWidth: 180 }}>{e.reason}</span>
-      <button
+      <Button
+        variant="ghost"
+        size="xs"
         onClick={onEscalate}
-        style={{ fontSize: 12, fontWeight: 500, color: "var(--vio5)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+        className="h-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
+        style={{ fontSize: 12, fontWeight: 500, color: "var(--vio5)" }}
       >
         Investigate this →
-      </button>
+      </Button>
     </div>
   );
 }
@@ -477,7 +507,6 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const [feedbackDone, setFeedbackDone] = useState<Set<string>>(new Set());
   const [sourcePanel, setSourcePanel] = useState<SourcePanelData | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const scrollRef               = useRef<HTMLDivElement>(null);
   const turnTopRefs             = useRef<Map<string, HTMLElement>>(new Map());
   const textareaRef             = useRef<HTMLTextAreaElement>(null);
   const wasStreamingRef         = useRef(false);
@@ -515,7 +544,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     if (!restoreSessionId) return;
     fetch(`${BASE}/chat-sessions/${restoreSessionId}/turns`)
       .then(r => r.ok ? r.json() : [])
-      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null }[]) => {
+      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null; overview_report: OverviewReport | null }[]) => {
         if (!turns.length) return;
         restore(turns.map(t => ({
           id: t.id,
@@ -545,6 +574,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           exploreReport: null,
           dossierReport: null,
           dossierInsightId: null,
+          overviewReport: t.overview_report || null,
           queriesExecuted: [],
           latestScore: null,
           hypotheses: [],
@@ -563,6 +593,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           inspectWarning: null,
           playbookRefs: [],
           insight: t.insight || null,
+          insightStream: null,   // deltas are live-only; history restores the final insight
           clarifyingQuestions: [],
           clarifyingContext: "",
         })));
@@ -571,13 +602,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restoreSessionId]);
 
-  // ── Scroll: bottom during streaming, back to question on completion ─────────
+  // ── Scroll: follow the newest content while pinned to the bottom, release
+  //    the moment the user scrolls up to read, snap back on completion. ───────
   const streamingKey = state.turns.map(t => `${t.id}:${t.phases.length}:${t.statusText}`).join("|");
-  useEffect(() => {
-    if (!state.streaming) return;
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamingKey]);
+  const { scrollRef, pinned, scrollToBottom } = useStickToBottom(streamingKey, { active: state.streaming });
 
   useEffect(() => {
     if (wasStreamingRef.current && !state.streaming && state.turns.length > 0) {
@@ -661,7 +689,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
       {isEmpty ? (
         /* ── Empty state ── */
         <div className="flex-1 flex flex-col items-center justify-center py-10">
-          <div className="w-[90%] flex flex-col gap-5">
+          <div className="w-[90%] max-w-[var(--measure-chat)] flex flex-col gap-5">
 
             {capabilities}
 
@@ -691,12 +719,18 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-1.5">
-                  {starters.map((s) => (
+                  {[OVERVIEW_STARTER, ...starters.filter(s => s.text !== OVERVIEW_STARTER.text)].map((s) => {
+                    const isOverview = s.text === OVERVIEW_STARTER.text;
+                    return (
                     <button
                       key={s.text}
-                      onClick={() => handleSend(s.text, s.mode)}
-                      className="flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all"
-                      style={s.mode === "investigate" ? {
+                      onClick={() => handleSend(s.text, isOverview ? "auto" : s.mode)}
+                      className={`aug-pressable flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all${isOverview ? " col-span-2" : ""}`}
+                      style={isOverview ? {
+                        background: "var(--acc-dim)",
+                        border: "0.5px solid var(--blue2)",
+                        color: "var(--blue4)",
+                      } : s.mode === "investigate" ? {
                         background: "var(--bg-1)",
                         border: "0.5px solid var(--grn1)",
                         color: "var(--grn4)",
@@ -706,7 +740,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         color: "var(--t3)",
                       }}
                       onMouseEnter={e => {
-                        if (s.mode === "investigate") {
+                        if (isOverview) {
+                          (e.currentTarget as HTMLElement).style.borderColor = "var(--blue3)";
+                          (e.currentTarget as HTMLElement).style.color = "var(--blue5)";
+                        } else if (s.mode === "investigate") {
                           (e.currentTarget as HTMLElement).style.borderColor = "var(--grn2)";
                           (e.currentTarget as HTMLElement).style.color = "var(--grn4)";
                         } else {
@@ -715,7 +752,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         }
                       }}
                       onMouseLeave={e => {
-                        if (s.mode === "investigate") {
+                        if (isOverview) {
+                          (e.currentTarget as HTMLElement).style.borderColor = "var(--blue2)";
+                          (e.currentTarget as HTMLElement).style.color = "var(--blue4)";
+                        } else if (s.mode === "investigate") {
                           (e.currentTarget as HTMLElement).style.borderColor = "var(--grn1)";
                           (e.currentTarget as HTMLElement).style.color = "var(--grn4)";
                         } else {
@@ -724,14 +764,20 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         }
                       }}
                     >
-                      <span className="shrink-0 mt-0.5 opacity-70 aug-fs-ui">
-                        {s.mode === "investigate"
+                      <span className={`shrink-0 mt-0.5 aug-fs-ui${isOverview ? "" : " opacity-70"}`}>
+                        {isOverview
+                          ? <CompassIcon label="" size="small" />
+                          : s.mode === "investigate"
                           ? <AiSparkleIcon label="" size="small" />
                           : <CommentIcon label="" size="small" />}
                       </span>
-                      {s.text}
+                      <span className="min-w-0">
+                        {isOverview && <span className="font-medium">A great starting point · </span>}
+                        {s.text}
+                      </span>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -746,10 +792,11 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
             {/* Scrollable messages */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 h-full">
-              <div className="py-8 w-[90%] mx-auto">
+              <div className="py-8 w-[90%] max-w-[var(--measure-chat)] mx-auto">
                 {state.turns.map((turn, i) => (
                   <div
                     key={turn.id}
+                    className="aug-anim-up"
                     ref={el => {
                       if (el) turnTopRefs.current.set(turn.id, el);
                       else turnTopRefs.current.delete(turn.id);
@@ -832,12 +879,40 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               background: "linear-gradient(to bottom, transparent 0%, var(--bg-1) 68%)",
             }} />
 
+            {/* ── Jump to latest — shown only when the user has scrolled up off
+                 the newest content (stick-to-bottom released). ── */}
+            {!pinned && (
+              <div style={{
+                position: "absolute", bottom: 96, left: 0, right: 0,
+                zIndex: 3, display: "flex", justifyContent: "center", pointerEvents: "none",
+              }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => scrollToBottom()}
+                  title="Jump to latest"
+                  className="aug-pressable aug-anim-fade gap-1.5 rounded-[var(--r-pill)] h-auto"
+                  style={{
+                    pointerEvents: "all", padding: "5px 12px 5px 9px",
+                    fontSize: 11.5, fontWeight: 500, fontFamily: "var(--font-ui)",
+                    color: "var(--t2)", background: "var(--bg-3)", border: "1px solid var(--b2)",
+                    boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t1)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b3)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)"; }}
+                >
+                  <ChevronDownIcon label="" size="small" />
+                  Jump to latest
+                </Button>
+              </div>
+            )}
+
             {/* ── Floating input ── */}
             <div style={{
               position: "absolute", bottom: 20, left: 0, right: 0,
               zIndex: 2, pointerEvents: "none",
             }}>
-              <div className="w-[90%] mx-auto space-y-2" style={{ pointerEvents: "all" }}>
+              <div className="w-[90%] max-w-[var(--measure-chat)] mx-auto space-y-2" style={{ pointerEvents: "all" }}>
                 <InputBox {...inputBoxProps} />
                 <p className="aug-fs-sm text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
               </div>

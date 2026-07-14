@@ -118,11 +118,40 @@ def _add_kernel_org_ids(c: sqlite3.Connection) -> None:
     add_column_if_missing(c, "lineage", "org_id", "TEXT NOT NULL DEFAULT 'default'")
 
 
+def _create_task_history(c: sqlite3.Connection) -> None:
+    """The `task_history` spine (Rec 4 of the 2026-07-11 platform study, flag
+    `obs.task_table`): one append-only row per span, with Spice's exact shape, so
+    "what did the agent actually do" is a SELECT instead of a log grep. It is a
+    SINK for the span events telemetry already emits — the writer only fires under
+    the flag, so an unflagged DB keeps this table empty (byte-identical)."""
+    c.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS task_history (
+          span_id        TEXT PRIMARY KEY,
+          trace_id       TEXT,
+          parent_span_id TEXT,
+          task           TEXT NOT NULL,
+          input          TEXT,
+          captured_output TEXT,
+          start_time     TEXT NOT NULL,
+          end_time       TEXT,
+          duration_ms    REAL,
+          error_message  TEXT,
+          labels         TEXT,
+          org_id         TEXT NOT NULL DEFAULT 'default'
+        );
+        CREATE INDEX IF NOT EXISTS task_history_trace ON task_history(trace_id, start_time);
+        CREATE INDEX IF NOT EXISTS task_history_task ON task_history(task, start_time);
+        """
+    )
+
+
 # Schema evolution (DATA-05). The kernel tables in _SCHEMA are v1; changes are Migration(v>=2).
 _MIGRATIONS = [
     Migration(2, "per-run compute metering (jobs.metrics)",
               lambda c: add_column_if_missing(c, "jobs", "metrics", "TEXT")),
     Migration(3, "tenant key on jobs/artifacts/lineage", _add_kernel_org_ids),
+    Migration(4, "task_history spans-as-a-table (obs.task_table)", _create_task_history),
 ]
 
 
@@ -484,5 +513,66 @@ class Ledger:
                 "seq": seq, "at": at, "kind": k, "conn_id": c,
                 "canvas_id": cv, "job_id": j,
                 "payload": json.loads(p) if p else None,
+            })
+        return out
+
+    # ── task_history: spans as a queryable table (Rec 4, flag obs.task_table) ──
+
+    def task_history_insert(self, row: dict) -> None:
+        """Append one span row. Idempotent on ``span_id`` (INSERT OR REPLACE) so a
+        double-emit — a retried wave, a redelivered event — never duplicates. The
+        writer (``telemetry.span``) only calls this under the ``obs.task_table``
+        flag; an unflagged process leaves the table empty."""
+        labels = row.get("labels")
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO task_history "
+                "(span_id, trace_id, parent_span_id, task, input, captured_output, "
+                " start_time, end_time, duration_ms, error_message, labels, org_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    row["span_id"], row.get("trace_id"), row.get("parent_span_id"),
+                    row["task"], row.get("input"), row.get("captured_output"),
+                    row["start_time"], row.get("end_time"), row.get("duration_ms"),
+                    row.get("error_message"),
+                    json.dumps(labels, default=str) if labels is not None else None,
+                    row.get("org_id") or "default",
+                ),
+            )
+
+    def task_history(
+        self,
+        *,
+        trace_id: Optional[str] = None,
+        task: Optional[str] = None,
+        task_prefix: Optional[str] = None,
+        org_id: Optional[str] = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        """Read span rows, newest first. ``task_prefix`` matches a taxonomy family
+        (e.g. ``ada.node.`` or ``tool.``); ``task`` matches exactly."""
+        q = ("SELECT span_id, trace_id, parent_span_id, task, input, captured_output, "
+             "start_time, end_time, duration_ms, error_message, labels, org_id "
+             "FROM task_history WHERE 1=1")
+        args: list[Any] = []
+        if trace_id:
+            q += " AND trace_id=?"; args.append(trace_id)
+        if task:
+            q += " AND task=?"; args.append(task)
+        if task_prefix:
+            q += " AND task LIKE ?"; args.append(task_prefix.replace("%", r"\%") + "%")
+        if org_id:
+            q += " AND org_id=?"; args.append(org_id)
+        q += " ORDER BY start_time DESC, rowid DESC LIMIT ?"; args.append(int(limit))
+        with self._lock:
+            rows = self._conn.execute(q, args).fetchall()
+        out = []
+        for (sid, tid, pid, task_, inp, outp, st, et, dur, err, lbl, org) in rows:
+            out.append({
+                "span_id": sid, "trace_id": tid, "parent_span_id": pid,
+                "task": task_, "input": inp, "captured_output": outp,
+                "start_time": st, "end_time": et, "duration_ms": dur,
+                "error_message": err,
+                "labels": json.loads(lbl) if lbl else None, "org_id": org,
             })
         return out

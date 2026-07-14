@@ -32,8 +32,17 @@ def _clean(monkeypatch):
         clear_flag(n)
 
 
-def test_byte_identical_when_master_off():
-    assert flag_enabled(GUARD) is False        # unset auto-eligible guard, master off → off, as before
+def test_master_defaults_on_and_elevates(monkeypatch):
+    # 2026-07-13 capability graduation: the master defaults ON — an unset auto-eligible
+    # guard elevates out of the box (its deterministic trigger still gates per run).
+    assert flag_enabled(MASTER) is True
+    assert flag_enabled(GUARD) is True
+    assert flag_state(GUARD) == "auto"
+
+
+def test_byte_identical_when_master_explicitly_off(monkeypatch):
+    monkeypatch.setenv(_env(MASTER), "0")      # operator kill switch survives graduation
+    assert flag_enabled(GUARD) is False
     assert flag_state(GUARD) == "off"
 
 

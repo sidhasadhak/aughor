@@ -99,10 +99,36 @@ async def run_eval_endpoint(
 
 
 
+def _llm_readiness() -> dict:
+    """The active LLM binding + whether it can plausibly serve — resolved from
+    config only, NO network call (health must stay instant). `key_present` is
+    True when the backend needs no key (local: ollama/lmstudio) or a key is
+    configured (Settings → Inference runtime config, or env); `ready` mirrors
+    it. Never raises: a broken LLM config must degrade this field, not 500
+    the health probe."""
+    out: dict = {"backend": None, "model": None, "key_present": False, "ready": False}
+    try:
+        from aughor.llm import provider
+        backend, model, _base_url = provider.resolve_binding("coder")
+        out["backend"], out["model"] = backend, model
+        # provider._active_key is the same runtime-config→env key resolver the real
+        # client builders use; reached as a module attribute (no private cross-import).
+        key_present = backend not in provider.NEEDS_KEY or bool(provider._active_key(backend))
+        out["key_present"] = out["ready"] = key_present
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "health: LLM readiness resolution failed", counter="health.llm")
+    return out
+
+
 @router.get("/health")
 def health():
     from aughor.samples.setup import fixture_db_path
-    return {"status": "ok", "fixture_db": fixture_db_path().exists()}
+    return {
+        "status": "ok",
+        "fixture_db": fixture_db_path().exists(),
+        "llm": _llm_readiness(),
+    }
 
 
 @router.get("/capabilities")

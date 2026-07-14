@@ -3643,3 +3643,22 @@ export async function getTrustedAssets(connectionId?: string): Promise<TrustedAs
   if (!res.ok) return null;
   return res.json();
 }
+
+// ── Grounding-context receipt (Rec 5) ───────────────────────────────────────
+// The input-side twin of the Trust Receipt: the exact grounding blocks the SQL
+// writer was given for a question. See routers/investigations.py GET /ask/context.
+export interface GroundingBlock { key: string; title: string; present: boolean; content: string }
+export interface GroundingReceipt {
+  receipt: { question: string; connection_id: string; blocks: GroundingBlock[]; present_count: number };
+  markdown: string;
+}
+
+/** The grounding a question would receive on a connection. Null when the receipt
+ *  is disabled (flag ask.context_receipt off → 404) or on any failure — the
+ *  affordance simply hides. Fetched lazily on demand: it runs real retrievers. */
+export async function getGroundingContext(connectionId: string, question: string): Promise<GroundingReceipt | null> {
+  const qs = `?connection=${encodeURIComponent(connectionId)}&question=${encodeURIComponent(question)}`;
+  const res = await fetch(`${BASE}/ask/context${qs}`);
+  if (!res.ok) return null;
+  return res.json();
+}

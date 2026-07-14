@@ -21,6 +21,7 @@
  * label + value.
  */
 import { useEffect, useState } from "react";
+import NumberFlow, { type Format } from "@number-flow/react";
 import { getBusinessProfile, runDirectQuery, currencySymbol } from "@/lib/api";
 import { GroundedNumber } from "@/components/brief/GroundedNumber";
 import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
@@ -36,9 +37,23 @@ interface Trend {
   favorable: boolean | null;  // good move? (direction-aware); null when flat
   caption: string;            // "climbing" / "easing" / "holding steady" …
 }
+/** How to drive the <NumberFlow> odometer so it renders EXACTLY `display`: the value is
+ *  pre-rounded to the digits the display string shows (min === max fraction digits, no
+ *  grouping, en-US), so the formatter never re-rounds — the odometer's text is
+ *  byte-identical to the plain string. Unit glyphs (×/%/d/B/M/K) ride as `suffix`, the
+ *  currency symbol as `prefix`. Built only where the mapping is exact; a case that can't
+ *  be expressed this way omits `flow` and stays plain text. */
+export interface KpiFlow {
+  value: number;
+  format: Format;
+  prefix?: string;
+  suffix?: string;
+}
 export interface Kpi {
   name: string; display: string; sql: string; raw: number; color: string;
   trend: Trend | null;
+  /** Exact odometer mapping for `display`; absent → render the plain string. */
+  flow?: KpiFlow;
   /** Full chart_sql result, kept so a click can expand the card into a rich chart. */
   chart?: { columns: string[]; rows: unknown[][] } | null;
 }
@@ -50,35 +65,54 @@ export const KPI_ACCENTS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)"
 const isMultiplier = (name: string, unit: string) =>
   /\b(x|×|multiple|multiplier|roas|times)\b/i.test(unit) || /\broas\b|return on ad/i.test(name);
 
+// Odometer format presets (module-level so NumberFlow's memoized formatter is reused).
+// Fixed fraction digits + no grouping mirror what toFixed()/String() emit — the same
+// digits the display string carries — so the animated text can never drift from it.
+const FLOW_INT: Format = { maximumFractionDigits: 0, useGrouping: false };
+const FLOW_1DP: Format = { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false };
+const FLOW_2DP: Format = { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false };
+
 /** Format a raw scalar by its declared unit/range; gate out broken values. The business's
- *  currency symbol is used for money metrics — a €-company never shows '$'. */
-function formatMetric(v: number, unit: string, sym: string, name: string): { display: string; ok: boolean } {
+ *  currency symbol is used for money metrics — a €-company never shows '$'. Alongside the
+ *  display string, each branch emits the exact `flow` spec that reproduces it (see KpiFlow). */
+function formatMetric(v: number, unit: string, sym: string, name: string): { display: string; ok: boolean; flow?: KpiFlow } {
   const u = (unit || "").toLowerCase();
   let display: string;
+  let flow: KpiFlow | undefined;
   if (isMultiplier(name, u)) {
     if (v <= 0 || v > 1000) return { display: "", ok: false };
-    display = `${v.toFixed(2)}×`;
+    const s = v.toFixed(2);
+    display = `${s}×`;
+    flow = { value: Number(s), format: FLOW_2DP, suffix: "×" };
   } else if (/ratio|0-1|0\.\.1/.test(u) && !/0-100|0\.\.100/.test(u)) {
     if (v < -0.001 || v > 1.05) return { display: "", ok: false };   // broken bounded rate (>1)
     if (v >= 0.9995) return { display: "", ok: false };              // rounds to 100% — degenerate
-    display = `${(v * 100).toFixed(1)}%`;
+    const s = (v * 100).toFixed(1);
+    display = `${s}%`;
+    flow = { value: Number(s), format: FLOW_1DP, suffix: "%" };
   } else if (/percent|0-100|0\.\.100|%/.test(u)) {
     if (v < -0.5 || v > 105) return { display: "", ok: false };
     if (v >= 99.95) return { display: "", ok: false };
-    display = `${v.toFixed(1)}%`;
+    const s = v.toFixed(1);
+    display = `${s}%`;
+    flow = { value: Number(s), format: FLOW_1DP, suffix: "%" };
   } else if (/day/.test(u)) {
-    display = `${v.toFixed(1)}d`;
+    const s = v.toFixed(1);
+    display = `${s}d`;
+    flow = { value: Number(s), format: FLOW_1DP, suffix: "d" };
   } else {
     const a = Math.abs(v);
-    const s = a >= 1e9 ? `${(v / 1e9).toFixed(1)}B`
-            : a >= 1e6 ? `${(v / 1e6).toFixed(1)}M`
-            : a >= 1e3 ? `${(v / 1e3).toFixed(1)}K`
-            : Number.isInteger(v) ? String(v) : v.toFixed(2);
+    const [s, mag, fmt] = a >= 1e9 ? [(v / 1e9).toFixed(1), "B", FLOW_1DP] as const
+                        : a >= 1e6 ? [(v / 1e6).toFixed(1), "M", FLOW_1DP] as const
+                        : a >= 1e3 ? [(v / 1e3).toFixed(1), "K", FLOW_1DP] as const
+                        : Number.isInteger(v) ? [String(v), "", FLOW_INT] as const
+                        : [v.toFixed(2), "", FLOW_2DP] as const;
     const pre = /usd|eur|gbp|jpy|cny|inr|[$€£¥₹]|revenue|spend|cost|gmv|sales|value|price/.test(u) ? sym : "";
-    display = pre + s;
+    display = pre + s + mag;
+    flow = { value: Number(s), format: fmt, prefix: pre || undefined, suffix: mag || undefined };
   }
   if (Math.abs(parseFloat(display.replace(/[^0-9.eE-]/g, "")) || 0) === 0) return { display: "", ok: false };
-  return { display, ok: true };
+  return { display, ok: true, flow };
 }
 
 /** Period-over-period delta in the metric's own terms: pts for rates, × for multipliers,
@@ -129,7 +163,36 @@ export function buildKpi(args: {
       trend = { values: series, deltaText: d.text, sign: d.sign, favorable: fav, caption: trendCaption(d.sign, fav) };
     }
   }
-  return { name, display: f.display, sql, raw, color: accent, trend, chart };
+  return { name, display: f.display, sql, raw, color: accent, trend, flow: f.flow, chart };
+}
+
+/** The big KPI figure. The receipt affordance (GroundedNumber: click → the SQL + cell
+ *  behind the number) stays the in-flow element with its text made transparent — layout,
+ *  dashed underline, click target and tooltip are byte-identical to the static version and
+ *  the card never shifts while digits roll. The NumberFlow odometer paints exactly over it
+ *  (aria-hidden + pointer-events:none, top offset cancels its 0.25em mask padding). First
+ *  paint mounts at 0 and rolls to the live value; NumberFlow disables the animation for
+ *  prefers-reduced-motion users by default (respectMotionPreference), so they see the
+ *  final value immediately. */
+function KpiValue({ kpi }: { kpi: Kpi }) {
+  const flow = kpi.flow;
+  const [shown, setShown] = useState(0);
+  useEffect(() => { if (flow) setShown(flow.value); }, [flow?.value]);
+  const receipt = (
+    <GroundedNumber
+      token={kpi.display}
+      resolve={async () => ({ sql: kpi.sql, grounded: true, matchedCell: kpi.raw, note: "Live value — the result of this query." })}
+    />
+  );
+  if (!flow) return receipt;   // no exact odometer mapping → the plain string, exactly as before
+  return (
+    <span style={{ position: "relative", display: "inline-block" }}>
+      <span style={{ color: "transparent" }}>{receipt}</span>
+      <span aria-hidden style={{ position: "absolute", left: 0, top: "-0.25em", pointerEvents: "none", fontVariantNumeric: "tabular-nums" }}>
+        <NumberFlow value={shown} locales="en-US" format={flow.format} prefix={flow.prefix} suffix={flow.suffix} />
+      </span>
+    </span>
+  );
 }
 
 // ── Presentational view (no data fetching) — owns the expand/collapse UI state ──
@@ -183,10 +246,7 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
                 </span>
               )}
               <div style={{ fontSize: 25, color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1 }}>
-                <GroundedNumber
-                  token={k.display}
-                  resolve={async () => ({ sql: k.sql, grounded: true, matchedCell: k.raw, note: "Live value — the result of this query." })}
-                />
+                <KpiValue kpi={k} />
               </div>
               {k.trend && k.trend.sign !== 0 && (
                 <span style={{

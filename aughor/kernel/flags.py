@@ -43,6 +43,7 @@ FLAG_ENV = {
     "ada.progress_events": "AUGHOR_ADA_PROGRESS_EVENTS",
     "ada.clarify_gate": "AUGHOR_CLARIFY_GATE",
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
+    "ask.resolve_first": "AUGHOR_ASK_RESOLVE_FIRST",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
     "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
     "join.key_reconciliation": "AUGHOR_JOIN_KEY_RECONCILIATION",
@@ -53,6 +54,10 @@ FLAG_ENV = {
     "capability.contract": "AUGHOR_CAPABILITY_CONTRACT",
     "rbac.row_policy": "AUGHOR_RBAC_ROW_POLICY",
     "obs.mlflow": "AUGHOR_OBS_MLFLOW",
+    "obs.task_table": "AUGHOR_OBS_TASK_TABLE",
+    "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
+    "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
+    "ask.overview": "AUGHOR_ASK_OVERVIEW",
     "agents.user_defined": "AUGHOR_USER_AGENTS",
     "search.rrf": "AUGHOR_SEARCH_RRF",
     "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
@@ -81,6 +86,19 @@ FLAG_DEFAULT = {
     "trust.verify_live": True,     # AST read-only BLOCK on the deep-answer executor path
     "trust.e1_live": True,         # E1 function-semantics WARN caveats on live answers
     "trust.verify_facade": True,   # AST read-only gate on the /query/validate surface (additive field)
+    # Capability graduation (2026-07-13, agentic-platform unification). Policy: a capability that is
+    # (a) self-gating behind a deterministic runtime trigger, or (b) a pure observability/receipt
+    # surface with negligible cost, GRADUATES to default-on once BUILT→WIRED→TESTED. The platform
+    # decides per run; the operator can still force any flag off (env =0 / runtime override) — an
+    # explicit setting always wins over these defaults. This is E3 Phase 1 ("the flag system should
+    # decide, with receipts") made the default posture instead of an opt-in.
+    "capabilities.auto": True,     # master: self-gating guards elevate; their triggers gate per run
+    "capabilities.receipt": True,  # autonomy requires receipts — record which guard fired and why
+    "learning.receipt": True,      # learning visibility: reused/crystallized resolutions per answer
+    "ask.context_receipt": True,   # input-side trust: the exact grounding block, inspectable
+    "obs.task_table": True,        # the queryable spine — a sink over spans already emitted
+    "ada.progress_events": True,   # deep-run dead-air fix (CK-0.4): fine-grained progress beats
+    "ask.stream_text": True,       # CK-0.2 dual-emit insight deltas; terminal event stays authoritative
 }
 
 # Human-facing copy for the Settings UI.
@@ -88,6 +106,22 @@ FLAG_META = {
     "ai_sql": {
         "label": "In-SQL AI operators",
         "description": "Register the governed prompt()/embedding() UDFs and let the generator use them. Makes per-row LLM calls — enable deliberately.",
+    },
+    "ask.stream_text": {
+        "label": "Token-stream the answer narrative",
+        "description": "Stream the post-answer insight narrative as it is written (`insight_delta` SSE events carrying the partial text) instead of one late pop-in, then emit the existing full `insight` event as the authoritative terminal value (self-healing: a dropped delta costs nothing). Dual-emit and additive — old clients ignore the unknown delta events; off = byte-identical to the pre-streaming stream. Falls back to the blocking call on any streaming error. CK-0.2 of the CopilotKit/AG-UI adoption plan.",
+    },
+    "ask.overview": {
+        "label": "Interesting-facts overview tour (the default first-look)",
+        "description": "Answer the widest-possible question — \"show me interesting facts about this schema\" / \"tell me about this data\" — the way Genie offers by default: a DETERMINISTIC profile of the whole dataset ranked by notability and capped for diversity, not an investigation of one metric. Seven lenses (scale · concentration · outlier · distribution · composition · coverage · relationship) each run a cheap grounded probe (mostly one SUMMARIZE per table, no LLM), then a diverse top-N is selected so the tour spans many tables and fact types. Fires ONLY on an overview-phrased question with no metric/entity/time window named; graduated to Auto (on by default via `capabilities.auto`) because it is bounded and deterministic. An explicit env `=0` disables it.",
+    },
+    "ask.context_receipt": {
+        "label": "Grounding-context receipt (show what the model was grounded on)",
+        "description": "Expose the exact grounding block the SQL writer sees — the schema slice chosen, glossary entries, governed-metric bindings, ambiguity-ledger priors applied, value-index literal bindings, dialect rules, and active pack bindings — as JSON + rendered markdown via GET /ask/context and a \"Show grounding\" affordance on the answer. The input-side twin of the Trust Receipt (which covers the output). Assembly is centralised in a pure build_grounding_context() that the answer path and the endpoint share, so the receipt is exactly what the run used (no drift). Off by default = byte-identical (endpoint returns 404, no receipt section). Wave 1 · Rec 5 of the combined platform study.",
+    },
+    "obs.task_table": {
+        "label": "task_history — spans as a queryable table",
+        "description": "Sink the kernel ledger's node/tool span events into one append-only task_history table (trace_id, span_id, parent_span_id, task, input, captured_output, timing, error, labels) — the queryable spine of \"what the agent actually did.\" It is a SINK over the spans telemetry already emits, not new instrumentation: MLflow/Langfuse stay the rich-trace backends; this makes the same exhaust answerable with plain SQL, so evals recover generated SQL by querying the table (no log parsing) and Deep Analysis can investigate its own behaviour via the aughor_ops schema. Off by default = byte-identical (no rows written). Wave 2 · Rec 4 of the combined platform study.",
     },
     "search.rrf": {
         "label": "Reciprocal Rank Fusion (hybrid retrieval)",
@@ -217,6 +251,10 @@ FLAG_META = {
         "label": "Ask-vs-guess clarification",
         "description": "When a fresh question is materially ambiguous, ask ONE targeted clarifying question instead of guessing (deterministic under-spec + value-term detection; budget one ask per turn). ON by default — disable to always answer immediately.",
     },
+    "ask.resolve_first": {
+        "label": "Ground-first answer resolution",
+        "description": "Before the model writes SQL, decide ONCE and deterministically whether the question is answerable as asked: resolve the named entity against the data (bind the real value, or — if a bounded existence probe confirms it is absent — abstain honestly with what IS present, instead of running an empty filter and narrating around the emptiness), and reconcile the requested time grain against the finest grain the measure's table supports. The single verdict is handed to the generator as hard constraints (so it can't silently downgrade grain or guess a value) and drives one coherent caveat, replacing several post-hoc guards that each re-decide the same thing. Off by default = byte-identical (no resolution runs). The ground-first direction from the 2026-07-13 design discussion.",
+    },
     "closed_loop": {
         "label": "Closed-loop corrections",
         "description": "Read captured human corrections/verdicts and trusted queries back into the planner as priors, so a corrected mistake isn't repeated. Off by default until its delta is proven on your data.",
@@ -273,6 +311,14 @@ FLAG_META = {
 AUTO_ELIGIBLE: frozenset = frozenset({
     "ada.premise_check", "ada.clarify_gate", "ada.adversarial_high_stakes",
     "join.key_reconciliation", "capability.contract", "semops.guarded_extract",
+    # Graduated 2026-07-13 (agentic-platform unification): both are deterministic and fail-open —
+    # resolve() degrades to `answerable` when nothing binds; metric pinning requires a governed
+    # metric match AND a clean dry-run before it does anything.
+    "ask.resolve_first", "ada.pin_canonical_metric",
+    # Graduated 2026-07-14: the "interesting facts about this schema" tour is fully
+    # deterministic (no LLM), bounded, and fires ONLY on a metric/entity/time-free
+    # overview-phrased question — the great default first-look, on by default.
+    "ask.overview",
 })
 # Human description of each capability's deterministic trigger — surfaced in the flags API and (later) as
 # the "why" on an activation receipt.
@@ -283,6 +329,9 @@ CAPABILITY_TRIGGER: dict = {
     "join.key_reconciliation": "a join's key value-domains mismatch",
     "capability.contract": "a generated query fails on a native-SQL warehouse",
     "semops.guarded_extract": "a typed-field extraction fails",
+    "ask.resolve_first": "the question names an entity or time grain the schema resolves deterministically",
+    "ada.pin_canonical_metric": "a governed metric matches the question and its canonical SQL dry-runs clean",
+    "ask.overview": "the question asks for a broad overview with no metric, entity, or time window",
 }
 
 

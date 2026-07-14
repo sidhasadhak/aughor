@@ -114,7 +114,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                 {clearing ? "Clearing…" : "Clear all"}
               </button>
             )}
-            <span className="aug-fs-xs text-[--t3]">{items.length}</span>
+            <span className="aug-fs-xs text-[var(--t3)]">{items.length}</span>
           </div>
         </div>
         <input

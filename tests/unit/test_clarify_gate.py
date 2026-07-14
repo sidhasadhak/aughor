@@ -84,7 +84,8 @@ def test_strip_metric_alias():
 # ── no-fire conditions (proceed silently) ──────────────────────────────────────────
 
 def test_no_fire_when_flag_off(monkeypatch):
-    monkeypatch.delenv("AUGHOR_CLARIFY_GATE", raising=False)
+    # ada.clarify_gate is auto-elevated by default (2026-07-13 graduation); off = explicit "0"
+    monkeypatch.setenv("AUGHOR_CLARIFY_GATE", "0")
     monkeypatch.setattr("aughor.semantic.canonical.resolve_canonical_metrics", lambda *a, **k: [_GOVERNED])
     conn = _ProbeConn({"refunded_value": 18.8, "refund_id": 20.2})
     assert I._detect_metric_clarify(_intake(), "c1", "schema", conn, "q") is None

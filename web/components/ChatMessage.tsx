@@ -27,10 +27,14 @@ import {
   BriefMeta,
   type BriefMetric,
 } from "@/components/brief/Brief";
+import { safePartial } from "@/lib/useReveal";
+import { Button } from "@/components/ui/button";
+import { StatusChip } from "@/components/brief/StatusChip";
 import { ChatTurn } from "@/lib/useChat";
-import { validateQuery, sendChatFeedback, proposeLearnedSkill, saveLearnedSkill, type QueryValidation } from "@/lib/api";
+import { validateQuery, sendChatFeedback, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
+import { OverviewReportView } from "@/components/OverviewReport";
 import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
@@ -219,8 +223,33 @@ function computeSummary(columns: string[], rows: unknown[][], sql?: string | nul
     return `${label}: ${fmtVal(Number((rows[0] as unknown[])[numIdx]))}`;
   }
 
-  // No category — just a numeric summary
+  // No non-numeric category. If a TIME axis is present (including a numeric year/
+  // quarter), this is a SERIES — describe first→last and the net change, never SUM a
+  // level metric across periods ("3.8K total across 5 rows" for annual net sales is
+  // meaningless; fiscal_year is the time axis, not a category to total). A plain
+  // numeric list with no time axis still gets a total.
   if (catIdx < 0) {
+    const timeIdx = columns.findIndex((c, i) => i !== numIdx && granFromName(c) !== null);
+    if (timeIdx >= 0 && n >= 2) {
+      const seq = [...rows].sort((a, b) => {
+        const av = (a as unknown[])[timeIdx], bv = (b as unknown[])[timeIdx];
+        const an = Number(av), bn = Number(bv);
+        return (!isNaN(an) && !isNaN(bn))
+          ? an - bn
+          : String(av ?? "") < String(bv ?? "") ? -1 : String(av ?? "") > String(bv ?? "") ? 1 : 0;
+      });
+      const fv = Number((seq[0] as unknown[])[numIdx]);
+      const lv = Number((seq[n - 1] as unknown[])[numIdx]);
+      const fp = String((seq[0] as unknown[])[timeIdx]);
+      const lp = String((seq[n - 1] as unknown[])[timeIdx]);
+      if (!isNaN(fv) && !isNaN(lv)) {
+        const label = cleanLabel(numCol);
+        if (isShare) return `${label}: ${fmtVal(fv)} (${fp}) → ${fmtVal(lv)} (${lp}).`;
+        const pct = fv ? Math.round(((lv - fv) / Math.abs(fv)) * 100) : 0;
+        const chg = pct === 0 ? "flat" : pct > 0 ? `+${pct}%` : `${pct}%`;
+        return `${label}: ${fmtVal(fv)} (${fp}) → ${fmtVal(lv)} (${lp}), ${chg} over ${n} periods.`;
+      }
+    }
     const nums = rows.map((r) => Number((r as unknown[])[numIdx])).filter((v) => !isNaN(v));
     const total = nums.reduce((a, b) => a + b, 0);
     return isShare ? `avg ${fmtVal(total / nums.length)}` : `${fmtVal(total)} total across ${n} rows.`;
@@ -290,14 +319,40 @@ function computeSummary(columns: string[], rows: unknown[][], sql?: string | nul
 // ── Result figure — the framed block: inline metrics, a chart, or a table ─────
 // The ONLY framed object in an Insight brief. Single-row numbers render inline
 // (no frame); a chartable / tabular result renders inside one <BriefFigure>.
+// Shimmer placeholders for the scaffold-then-fill answer card (piece 4). Both
+// use the design-system `aug-shimmer` (its own gradient + animation, and it's
+// already covered by the prefers-reduced-motion block).
+function HeadlineSkeleton() {
+  return (
+    <div className="flex flex-col gap-2" aria-hidden>
+      <div className="aug-shimmer rounded-[var(--r2)]" style={{ height: 17, width: "70%" }} />
+      <div className="aug-shimmer rounded-[var(--r2)]" style={{ height: 17, width: "45%" }} />
+    </div>
+  );
+}
+
+function FigureSkeleton() {
+  return (
+    <div className="flex flex-col gap-2" aria-hidden>
+      <div className="aug-shimmer rounded-[var(--r2)]" style={{ height: 11, width: "38%" }} />
+      <div className="aug-shimmer rounded-[var(--r3)]" style={{ height: 176, width: "100%" }} />
+    </div>
+  );
+}
+
 function ResultFigure({
-  turn, onShowSource,
+  turn, onShowSource, streaming = false,
 }: {
   turn: ChatTurn;
   onShowSource?: (data: SourcePanelData) => void;
+  streaming?: boolean;
 }) {
   const { columns, rows, chartType } = turn;
-  if (!columns.length) return null;
+  if (!columns.length) return streaming ? <FigureSkeleton /> : null;
+  // Columns usually land a beat before rows — never flash an empty, headers-only
+  // table mid-stream; hold a shimmer until at least one row arrives. (A genuine
+  // zero-row result at done still renders its empty table, unchanged.)
+  if (rows.length === 0 && streaming) return <FigureSkeleton />;
 
   const source = deriveFigureSource(turn.sql, columns, rows);
   const isSingleRow = rows.length === 1;
@@ -305,10 +360,13 @@ function ResultFigure({
   const hasCat  = columns.some((c, i) => !isNumeric(rows[0]?.[i]));
   const hasNum  = columns.some((c, i) => isNumeric(rows[0]?.[i]) && !ORDINAL_COL.test(c));
 
+  // Only chart once every row is shaped to the column count — a half-streamed
+  // row would otherwise feed the chart malformed points.
+  const chartDataReady = rows.length > 0 && rows.every(r => Array.isArray(r) && r.length >= columns.length);
   const explicitChart = chartType && chartType !== "auto";
-  const showChart = explicitChart
+  const showChart = (explicitChart
     ? hasNum
-    : rows.length >= 3 && hasNum && (hasDate || hasCat);
+    : rows.length >= 3 && hasNum && (hasDate || hasCat)) && chartDataReady;
 
   const sourceTitle = inferSourceTitle(columns, rows);
 
@@ -332,13 +390,15 @@ function ResultFigure({
           <ResultChartCard columns={columns} rows={rows} chartType={chartType} chartConfig={turn.chartConfig} title={sourceTitle} />
         </BriefFigure>
         {onShowSource && (
-          <button
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={handleSourceClick}
-            className="self-end flex items-center gap-1.5 aug-text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="self-end h-auto gap-1.5 px-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
           >
             <TableIcon label="Table" size="small" />
             Source data
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -348,6 +408,32 @@ function ResultFigure({
     <BriefFigure caption={sourceTitle} source={source}>
       <SqlResultTable columns={columns} rows={rows} maxHeight={320} />
     </BriefFigure>
+  );
+}
+
+// ── Copy the whole answer (headline + narrative) — hover toolbar affordance ────
+// Mirrors the SQL-copy checkmark pattern: the icon flips to a green tick for 2s
+// with no toast and no layout shift (CK-grade in-place confirmation).
+function CopyAnswerButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  function handleCopy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <Button
+      variant="ghost"
+      size="xs"
+      onClick={handleCopy}
+      title={copied ? "Copied!" : "Copy answer"}
+      className="h-auto gap-1.5 px-1.5 py-1 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 dark:hover:bg-zinc-800/50"
+    >
+      {copied
+        ? <><span className="text-emerald-400 aug-check-pop"><CheckMarkIcon label="Copied" size="small" /></span>Copied</>
+        : <><CopyIcon label="Copy answer" size="small" />Copy</>}
+    </Button>
   );
 }
 
@@ -367,15 +453,17 @@ function SqlBlock({ sql }: { sql: string }) {
       <pre className="aug-fs-sm font-code text-zinc-400 rounded p-2.5 pr-10 overflow-x-auto whitespace-pre-wrap leading-relaxed" style={{ background: "var(--code-bg)" }}>
         {sql}
       </pre>
-      <button
+      <Button
+        variant="ghost"
+        size="icon-xs"
         onClick={handleCopy}
         title={copied ? "Copied!" : "Copy SQL"}
-        className="absolute top-2 right-2 w-6 h-6 rounded flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 transition opacity-0 group-hover/sql:opacity-100"
+        className="absolute top-2 right-2 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60 opacity-0 group-hover/sql:opacity-100"
       >
         {copied
           ? <span className="text-emerald-400"><CheckMarkIcon label="Copied" size="small" /></span>
           : <CopyIcon label="Copy SQL" size="small" />}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -394,11 +482,11 @@ function FormattedSql({ sql }: { sql: string }) {
       parts.push(<span key={`p${lastIdx}`}>{sql.slice(lastIdx, match.index)}</span>);
     const tok = match[0];
     if (tok.startsWith("`") || tok.startsWith('"'))
-      parts.push(<span key={`p${match.index}`} style={{ color: "#93c5fd" }}>{tok}</span>);
+      parts.push(<span key={`p${match.index}`} style={{ color: "var(--blue5)" }}>{tok}</span>);
     else if (tok.startsWith("'"))
-      parts.push(<span key={`p${match.index}`} style={{ color: "#fbbf24" }}>{tok}</span>);
+      parts.push(<span key={`p${match.index}`} style={{ color: "var(--amb4)" }}>{tok}</span>);
     else
-      parts.push(<span key={`p${match.index}`} style={{ color: "#60a5fa", fontWeight: 500 }}>{tok}</span>);
+      parts.push(<span key={`p${match.index}`} style={{ color: "var(--blue4)", fontWeight: 500 }}>{tok}</span>);
     lastIdx = match.index + tok.length;
   }
   if (lastIdx < sql.length) parts.push(<span key="tail">{sql.slice(lastIdx)}</span>);
@@ -434,7 +522,7 @@ export function SourcePanel({
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ background: "#0f1923" }}>
+    <div className="flex flex-col h-full" style={{ background: "var(--bg-1)" }}>
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700/60 flex-shrink-0">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -445,34 +533,36 @@ export function SourcePanel({
         </div>
         <div className="flex items-center gap-0.5 flex-shrink-0 ml-2">
           {/* Download CSV */}
-          <button
+          <Button
+            variant="ghost"
+            size="icon-xs"
             onClick={() => downloadCsv(columns, rows, title)}
             title="Download as CSV"
-            className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-700/60 text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60"
           >
             <DownloadIcon label="Download CSV" size="small" />
-          </button>
+          </Button>
           {/* Copy SQL */}
           {sql && (
-            <button onClick={handleCopySql} title={copied ? "Copied!" : "Copy SQL"}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-700/60 text-zinc-500 hover:text-zinc-300 transition-colors">
+            <Button variant="ghost" size="icon-xs" onClick={handleCopySql} title={copied ? "Copied!" : "Copy SQL"}
+              className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60">
               {copied
                 ? <span className="text-emerald-400"><CheckMarkIcon label="Copied" size="small" /></span>
                 : <CopyIcon label="Copy SQL" size="small" />}
-            </button>
+            </Button>
           )}
           {/* Close */}
-          <button onClick={onClose} title="Close"
-            className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-700/60 text-zinc-500 hover:text-zinc-300 transition-colors">
+          <Button variant="ghost" size="icon-xs" onClick={onClose} title="Close"
+            className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60">
             <CloseIcon label="Close" size="small" />
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Data table — scrollable */}
       <div className="flex-1 overflow-auto min-h-0">
         <table className="aug-fs-sm w-full">
-          <thead className="sticky top-0 z-10" style={{ background: "#0f1923" }}>
+          <thead className="sticky top-0 z-10" style={{ background: "var(--bg-1)" }}>
             <tr className="border-b border-zinc-700/60">
               {columns.map((c, ci) => (
                 <th key={ci} className="px-3 py-1.5 text-left text-zinc-400 whitespace-nowrap font-medium">
@@ -509,17 +599,19 @@ export function SourcePanel({
               <AngleBracketsIcon label="SQL" size="small" /> SQL
             </span>
             {openInBuilder && (
-              <button
+              <Button
+                variant="link"
+                size="xs"
                 onClick={() => openInBuilder(sql)}
                 title="Open this query in the Query Builder"
-                className="flex items-center gap-1 aug-fs-xs text-blue-400 hover:text-blue-300 transition-colors whitespace-nowrap"
+                className="h-auto gap-1 px-0 aug-fs-xs text-blue-400 hover:text-blue-300"
               >
                 Explore with Query Builder
                 <ArrowRightIcon label="" size="small" />
-              </button>
+              </Button>
             )}
           </div>
-          <div className="flex-1 overflow-auto min-h-0" style={{ background: "#0a1018" }}>
+          <div className="flex-1 overflow-auto min-h-0" style={{ background: "var(--code-bg)" }}>
             <FormattedSql sql={sql} />
           </div>
         </div>
@@ -535,13 +627,15 @@ function Section({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="mt-2">
-      <button
+      <Button
+        variant="ghost"
+        size="xs"
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 aug-fs-sm text-zinc-500 hover:text-zinc-400 transition-colors py-1"
+        className="h-auto justify-start gap-1 px-0 py-1 aug-fs-sm font-normal text-zinc-500 hover:text-zinc-400 hover:bg-transparent dark:hover:bg-transparent"
       >
         <span className={`transition-transform duration-150 inline-block ${open ? "rotate-90" : ""}`}>›</span>
         {label}
-      </button>
+      </Button>
       {open && <div className="mt-1.5">{children}</div>}
     </div>
   );
@@ -567,7 +661,7 @@ function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onD
       )}
       {onDeeper && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 2 }}>
-          <button onClick={onDeeper} style={{ padding: "6px 12px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>Investigate deeper →</button>
+          <Button variant="secondary" size="sm" onClick={onDeeper} className="aug-fs-sm border-[var(--b2)]">Investigate deeper →</Button>
           <span style={{ fontSize: 11, color: "var(--t4)" }}>Runs a fresh analysis, seeded with this trace.</span>
         </div>
       )}
@@ -707,10 +801,11 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
   };
 
   return (
-    <div className="mt-4 rounded-md border border-amber-700/30" style={{ background: "color-mix(in srgb, #f59e0b 5%, var(--bg-0))" }}>
-      <button
+    <div className="mt-4 rounded-md border border-amber-700/30" style={{ background: "color-mix(in srgb, var(--amb3) 5%, var(--bg-0))" }}>
+      <Button
+        variant="ghost"
         onClick={() => setOpen(v => !v)}
-        className="w-full px-3 py-2 border-b border-amber-700/20 flex items-center gap-2 text-left"
+        className="w-full h-auto justify-start gap-2 px-3 py-2 border-b border-amber-700/20 rounded-none text-left font-normal hover:bg-transparent dark:hover:bg-transparent"
       >
         <span className="shrink-0 text-amber-400/90">
           <WarningIcon label="Playbook" size="small" />
@@ -718,7 +813,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
         <span className="aug-fs-xs font-medium uppercase tracking-wide text-amber-400/90">Playbook referenced</span>
         <span className="aug-fs-xs text-zinc-500">— {items.length} item{items.length !== 1 ? "s" : ""}</span>
         <span className="ml-auto shrink-0 text-amber-600">{open ? "▲" : "▼"}</span>
-      </button>
+      </Button>
       {open && (
       <div className="divide-y divide-amber-700/15">
         {items.map(item => (
@@ -732,13 +827,13 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
                       value={draft}
                       onChange={e => setDraft(e.target.value)}
                       rows={2}
-                      className="w-full aug-fs-sm text-zinc-200 rounded border border-zinc-700 bg-[--bg-0] px-2 py-1.5 resize-none focus:outline-none focus:border-amber-600"
+                      className="w-full aug-fs-sm text-zinc-200 rounded border border-zinc-700 bg-[var(--bg-0)] px-2 py-1.5 resize-none focus:outline-none focus:border-amber-600"
                     />
                     <div className="flex gap-2">
-                      <button onClick={() => saveEdit(item.id)} disabled={busy === item.id}
-                        className="aug-fs-xs px-2 py-0.5 rounded bg-amber-600/20 border border-amber-600/40 text-amber-300 hover:bg-amber-600/30">Save</button>
-                      <button onClick={() => setEditing(null)}
-                        className="aug-fs-xs px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200">Cancel</button>
+                      <Button variant="ghost" size="xs" onClick={() => saveEdit(item.id)} disabled={busy === item.id}
+                        className="h-auto px-2 py-0.5 aug-fs-xs rounded bg-amber-600/20 border-amber-600/40 text-amber-300 hover:text-amber-300 hover:bg-amber-600/30 dark:hover:bg-amber-600/30">Save</Button>
+                      <Button variant="ghost" size="xs" onClick={() => setEditing(null)}
+                        className="h-auto px-2 py-0.5 aug-fs-xs rounded border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent">Cancel</Button>
                     </div>
                   </div>
                 ) : (
@@ -757,10 +852,10 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
               </div>
               {editing !== item.id && (
                 <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/pb:opacity-100 transition-opacity">
-                  <button onClick={() => { setEditing(item.id); setDraft(item.recommendation); }}
-                    className="aug-fs-xs px-1.5 py-0.5 rounded text-zinc-500 hover:text-zinc-200" title="Edit">Edit</button>
-                  <button onClick={() => remove(item.id)} disabled={busy === item.id}
-                    className="aug-fs-xs px-1.5 py-0.5 rounded text-zinc-500 hover:text-red-400" title="Remove from playbook">Remove</button>
+                  <Button variant="ghost" size="xs" onClick={() => { setEditing(item.id); setDraft(item.recommendation); }}
+                    className="h-auto px-1.5 py-0.5 aug-fs-xs text-zinc-500 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent" title="Edit">Edit</Button>
+                  <Button variant="ghost" size="xs" onClick={() => remove(item.id)} disabled={busy === item.id}
+                    className="h-auto px-1.5 py-0.5 aug-fs-xs text-zinc-500 hover:text-red-400 hover:bg-transparent dark:hover:bg-transparent" title="Remove from playbook">Remove</Button>
                 </div>
               )}
             </div>
@@ -787,9 +882,10 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
 
   return (
     <div className="mb-4 rounded-md border border-zinc-800/60" style={{ background: "var(--bg-0)" }}>
-      <button
+      <Button
+        variant="ghost"
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-3 py-2 group/trace"
+        className="w-full h-auto justify-between px-3 py-2 group/trace font-normal hover:bg-transparent dark:hover:bg-transparent"
       >
         <span className="flex items-center gap-2 aug-fs-xs font-medium uppercase tracking-wide text-violet-400/80">
           {running ? (
@@ -806,7 +902,7 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
           )}
         </span>
         <Chevron open={open} />
-      </button>
+      </Button>
       {open && (
         <div className="border-t border-zinc-800/60">
           <ThinkingTrace state={traceState} />
@@ -826,7 +922,7 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
 function ClarifyingQuestionsBanner({ questions, contextNote }: { questions: string[]; contextNote: string }) {
   if (!questions || questions.length === 0) return null;
   return (
-    <div className="mt-3 mb-3 rounded-[var(--r3)] border border-blue-700/30 p-3" style={{ background: 'color-mix(in srgb, #3b82f6 6%, transparent)' }}>
+    <div className="mt-3 mb-3 rounded-[var(--r3)] border border-blue-700/30 p-3" style={{ background: 'color-mix(in srgb, var(--blue3) 6%, transparent)' }}>
       <div className="flex items-center gap-2 mb-1.5">
         <span className="aug-fs-xs font-medium uppercase tracking-wide text-blue-400">Interpreting automatically</span>
       </div>
@@ -857,13 +953,25 @@ function InsightBrief({
   onFollowUp?: (q: string) => void;
   onRunFresh?: (q: string) => void;
 }) {
+  const streaming = turn.status === "loading";
   const proseText = turn.insight?.narrative?.trim() || computeSummary(turn.columns, turn.rows, turn.sql) || "";
   const anomalies = (turn.insight?.anomalies ?? []).filter(Boolean);
   const inspect = turn.inspectWarning;
   // The narrative + anomalies ride along the follow-ups narrator call (no extra cost),
   // but for a direct lookup they're noise — reveal them on demand via "Explain the data".
   const [explained, setExplained] = useState(false);
+  // CK-0.2 token streaming: while `insight_delta` frames arrive (and no final insight
+  // yet), the narrative is being written live — auto-reveal the prose section and ride
+  // the partial text. Once the terminal `insight` lands (insightStream clears), stay
+  // revealed rather than collapsing back behind the button.
+  const streamingProse = turn.insight == null ? turn.insightStream : null;
+  useEffect(() => {
+    if (turn.insightStream != null) setExplained(true);
+  }, [turn.insightStream]);
   const hasExplanation = !!(proseText || anomalies.length);
+  // Post-done arrival fade (uplift pattern) — live turns only; restored turns render
+  // instantly, and prefers-reduced-motion disables the CSS animation globally.
+  const fadeCls = turn.startedAt > 0 ? "aug-anim-fade" : "";
 
   return (
     <Brief>
@@ -875,13 +983,15 @@ function InsightBrief({
               ? <span key="cq" className="italic">originally: &ldquo;{turn.cachedQuestion}&rdquo;</span>
               : null,
             onRunFresh
-              ? <button key="rf" onClick={() => onRunFresh(turn.question)} className="text-zinc-400 hover:text-zinc-200 hover:underline underline-offset-2 transition-colors">Run fresh</button>
+              ? <Button key="rf" variant="ghost" size="xs" onClick={() => onRunFresh(turn.question)} className="h-auto p-0 aug-text-xs font-normal text-zinc-400 hover:text-zinc-200 hover:underline underline-offset-2 hover:bg-transparent dark:hover:bg-transparent">Run fresh</Button>
               : null,
           ]}
         />
       )}
 
-      {turn.headline && <BriefHeadline>{turn.headline}</BriefHeadline>}
+      {turn.headline
+        ? <BriefHeadline animate={turn.startedAt > 0}>{turn.headline}</BriefHeadline>
+        : streaming ? <HeadlineSkeleton /> : null}
 
       {inspect && inspect.issues.length > 0 && (
         <p className="aug-text-sm text-amber-400/90 leading-relaxed flex items-start gap-1.5">
@@ -893,44 +1003,67 @@ function InsightBrief({
         </p>
       )}
 
-      <ResultFigure turn={turn} onShowSource={onShowSource} />
+      <ResultFigure turn={turn} onShowSource={onShowSource} streaming={streaming} />
 
       {/* Explain the data — on-demand interpretation, so a direct lookup leads with
           the chart + numbers instead of unrequested narration. */}
-      {hasExplanation && !explained && (
-        <button
+      {!streaming && hasExplanation && !explained && (
+        <Button
+          variant="ghost"
+          size="xs"
           onClick={() => setExplained(true)}
-          className="self-start flex items-center gap-1.5 aug-text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent"
         >
           <InformationIcon label="" size="small" />
           Explain the data
-        </button>
+        </Button>
       )}
-      {explained && (
+      {!streaming && explained && (
         <>
-          {proseText && <BriefProse text={proseText} />}
-          {anomalies.length > 0 && <BriefBullets items={anomalies} />}
+          {/* One BriefProse for both phases (streaming partial → final narrative) so the
+              text swap never remounts; safePartial closes a dangling ** mid-stream. While
+              the partial is still arriving, trail a pulsing caret and settle the block in
+              with a one-time blur-lift; both vanish the instant the terminal insight lands. */}
+          {(streamingProse || proseText) && (
+            <BriefProse
+              className={`${fadeCls} ${streamingProse != null ? "aug-stream-in" : ""}`}
+              text={streamingProse != null ? safePartial(streamingProse) : proseText}
+              caret={streamingProse != null}
+            />
+          )}
+          {streamingProse == null && anomalies.length > 0 && <BriefBullets className={fadeCls} items={anomalies} />}
         </>
       )}
 
-      {turn.followups.length > 0 && (
-        <BriefSection label="Follow-ups">
+      {!streaming && turn.followups.length > 0 && (
+        <BriefSection className={fadeCls} label="Follow-ups">
           <div className="flex flex-col gap-1">
             {turn.followups.map((q, i) => (
-              <button
+              <Button
                 key={i}
+                variant="ghost"
+                size="xs"
                 onClick={() => onFollowUp?.(q)}
-                className="text-left flex items-start gap-1.5 aug-text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="aug-pressable h-auto items-start justify-start gap-1.5 p-0 text-left whitespace-normal aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
               >
                 <span className="shrink-0 text-zinc-500 mt-0.5"><ArrowRightIcon label="" size="small" /></span>
                 <span>{q}</span>
-              </button>
+              </Button>
             ))}
           </div>
         </BriefSection>
       )}
 
-      <InsightDetails turn={turn} connectionId={connectionId} onShowSource={onShowSource} />
+      {/* Hover toolbar (CK-grade): message actions stay invisible until the turn is
+          hovered, and never appear while the answer is still streaming. Copy the whole
+          answer (headline + narrative) with an in-place checkmark, no toast. */}
+      {!streaming && turn.headline && (
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity -ml-1.5">
+          <CopyAnswerButton text={[turn.headline, turn.insight?.narrative?.trim()].filter(Boolean).join("\n\n")} />
+        </div>
+      )}
+
+      {!streaming && <InsightDetails turn={turn} connectionId={connectionId} onShowSource={onShowSource} />}
     </Brief>
   );
 }
@@ -963,18 +1096,18 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
   return (
     <div className="flex flex-col gap-1.5 pt-1">
       <div className="flex items-center gap-2 aug-text-xs text-zinc-500">
-        <button onClick={runValidate} disabled={busy}
-          className="border border-zinc-700 rounded-md px-2 py-0.5 text-zinc-400 hover:text-zinc-200 transition disabled:opacity-50">
+        <Button variant="ghost" size="xs" onClick={runValidate} disabled={busy}
+          className="h-auto px-2 py-0.5 aug-text-xs font-normal border-zinc-700 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent">
           {busy ? "Validating…" : "Validate"}
-        </button>
+        </Button>
         <span className="text-zinc-700">·</span>
-        <button onClick={() => navigator.clipboard.writeText(sql).catch(() => {})}
-          className="text-zinc-500 hover:text-zinc-300 transition">Copy SQL</button>
+        <Button variant="ghost" size="xs" onClick={() => navigator.clipboard.writeText(sql).catch(() => {})}
+          className="h-auto p-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">Copy SQL</Button>
         <span className="text-zinc-700">·</span>
-        <button onClick={() => rate("helpful")}
-          className={`transition ${feedback === "helpful" ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Helpful">👍</button>
-        <button onClick={() => rate("unhelpful")}
-          className={`transition ${feedback === "unhelpful" ? "text-amber-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Not helpful">👎</button>
+        <Button variant="ghost" size="xs" onClick={() => rate("helpful")}
+          className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "helpful" ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Helpful">👍</Button>
+        <Button variant="ghost" size="xs" onClick={() => rate("unhelpful")}
+          className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "unhelpful" ? "text-amber-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Not helpful">👎</Button>
         {feedback && <span className="text-zinc-600 italic">thanks — noted</span>}
       </div>
       {verdict && (
@@ -994,6 +1127,60 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
   );
 }
 
+// ── Grounding receipt (Rec 5): the input-side twin of the Trust Receipt — the
+// exact blocks the SQL writer was grounded on. Fetched lazily on demand (the
+// endpoint runs real retrievers); hidden entirely when the flag is off (404 → null).
+function GroundingDetails({ connectionId, question }: { connectionId: string; question: string }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<GroundingReceipt | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setOpen(true);
+    if (data !== undefined) return;         // fetch once
+    setBusy(true);
+    try { setData(await getGroundingContext(connectionId, question)); }
+    finally { setBusy(false); }
+  };
+
+  if (!open) {
+    return (
+      <Button
+        variant="ghost"
+        size="xs"
+        onClick={load}
+        className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+      >
+        <InformationIcon label="" size="small" />
+        Show grounding
+      </Button>
+    );
+  }
+
+  const present = data?.receipt.blocks.filter(b => b.present) ?? [];
+  return (
+    <div className="flex flex-col gap-2">
+      <Button
+        variant="ghost"
+        size="xs"
+        onClick={() => setOpen(false)}
+        className="self-start h-auto px-0 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+      >
+        Hide grounding
+      </Button>
+      {busy && <p className="aug-text-sm text-zinc-500">Loading grounding…</p>}
+      {data === null && <p className="aug-text-sm text-zinc-500">Grounding receipt isn&rsquo;t available for this answer.</p>}
+      {data && present.length === 0 && <p className="aug-text-sm text-zinc-500">No grounding blocks fired for this question.</p>}
+      {present.map(b => (
+        <div key={b.key} className="flex flex-col gap-1">
+          <p className="aug-text-xs text-zinc-400 font-medium">{b.title}</p>
+          <pre className="aug-text-xs text-zinc-400 whitespace-pre-wrap break-words bg-zinc-900/40 rounded-md p-2 max-h-48 overflow-auto">{b.content}</pre>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Insight machinery — folded into one quiet disclosure ──────────────────────
 function InsightDetails({
   turn, connectionId, onShowSource,
@@ -1009,7 +1196,8 @@ function InsightDetails({
   const hasPlaybook = turn.playbookRefs.length > 0;
   const hasElapsed  = turn.elapsedMs != null;
   const hasActions  = !!(turn.sql && turn.sql.trim() && connectionId);
-  if (!(hasAnalysis || hasTables || hasContext || hasSource || hasPlaybook || hasElapsed || hasActions)) return null;
+  const hasGrounding = !!(connectionId && turn.question && turn.sql && turn.sql.trim());
+  if (!(hasAnalysis || hasTables || hasContext || hasSource || hasPlaybook || hasElapsed || hasActions || hasGrounding)) return null;
 
   return (
     <BriefDetails>
@@ -1021,6 +1209,11 @@ function InsightDetails({
       {hasActions && (
         <BriefDetailBlock label="Validate &amp; feedback">
           <InsightActions turn={turn} connectionId={connectionId} />
+        </BriefDetailBlock>
+      )}
+      {hasGrounding && (
+        <BriefDetailBlock label="Grounding">
+          <GroundingDetails connectionId={connectionId!} question={turn.question} />
         </BriefDetailBlock>
       )}
       {hasAnalysis && (
@@ -1048,18 +1241,20 @@ function InsightDetails({
       )}
 
       {hasSource && onShowSource && (
-        <button
+        <Button
+          variant="ghost"
+          size="xs"
           onClick={() => onShowSource({
             columns: turn.columns,
             rows: sortRowsForDisplay(turn.columns, turn.rows),
             sql: turn.sql,
             title: inferSourceTitle(turn.columns, turn.rows),
           })}
-          className="self-start flex items-center gap-1.5 aug-text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
         >
           <TableIcon label="Table" size="small" />
           View source data &amp; SQL
-        </button>
+        </Button>
       )}
 
       {hasPlaybook && <PlaybookRefs refs={turn.playbookRefs} />}
@@ -1098,6 +1293,11 @@ export function ChatMessage({
     ? !!(turn.adaReport ?? turn.report ?? turn.exploreReport ?? turn.dossierReport)
     : turn.status === "done";
   const isDone = turn.status === "done" || hasResult;
+  // Quick-mode scaffold-then-fill: the backend delivers a quick answer's data at
+  // `done` (not incrementally), so instead of bare thinking-dots we mount the
+  // Brief as a shimmer scaffold for the whole wait — a preview of the answer's
+  // shape (headline + figure) that fills in place when the result lands.
+  const quickScaffold = !isInvestigate && turn.status === "loading";
   // Show streaming ADA phases even while still loading (not for direct/explore routes)
   const showStreamingBody = isInvestigate && turn.status === "loading" && turn.phases.length > 0
     && turn.queryMode !== "direct";
@@ -1120,17 +1320,19 @@ export function ChatMessage({
       <div className="flex justify-end mb-4">
         <div className="flex items-start gap-2 max-w-[75%]">
           {isDone && (
-            <button
+            <Button
+              variant="ghost"
+              size="icon-xs"
               onClick={() => setCollapsed(v => !v)}
-              className="text-zinc-500 hover:text-zinc-500 transition-colors p-0.5 mt-2 opacity-0 group-hover:opacity-100 shrink-0"
+              className="h-auto w-auto p-0.5 mt-2 text-zinc-500 hover:text-zinc-500 opacity-0 group-hover:opacity-100 shrink-0 hover:bg-transparent dark:hover:bg-transparent"
               title={collapsed ? "Expand" : "Collapse"}
             >
               <Chevron open={!collapsed} />
-            </button>
+            </Button>
           )}
           <div
-            className="px-3 py-2 rounded-md aug-fs-sm font-semibold text-white leading-snug"
-            style={{ background: isInvestigate ? "#633D96" : "#05355D" }}
+            className="px-3.5 py-2 rounded-[var(--r3)] aug-fs-sm font-semibold text-white leading-snug"
+            style={{ background: isInvestigate ? "var(--vio-solid)" : "var(--blue-solid)" }}
           >
             {turn.question}
           </div>
@@ -1166,7 +1368,8 @@ export function ChatMessage({
           {isInvestigate && turn.clarifyingQuestions.length > 0 && (
             <ClarifyingQuestionsBanner questions={turn.clarifyingQuestions} contextNote={turn.clarifyingContext} />
           )}
-          {/* Quick (ask) mode has no multi-step trace — show the simple thinking dots */}
+          {/* Quick (ask) mode has no multi-step trace — a compact thinking cue
+              sits above the shimmer scaffold (rendered below) during the wait */}
           {!isInvestigate && (
             <div className="flex items-center gap-3 py-2">
               <span className="flex gap-1">
@@ -1196,10 +1399,9 @@ export function ChatMessage({
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <span className="aug-fs-sm text-zinc-500">Found relevant data</span>
           {turn.tablesUsed.map(t => (
-            <span key={t} className="inline-flex items-center gap-1 aug-fs-sm font-mono px-2 py-0.5 rounded-md border border-zinc-700/60 text-zinc-400" style={{ background: "#1e2d3d" }}>
-              <span className="shrink-0 text-zinc-500"><TableIcon label="Table" size="small" /></span>
+            <StatusChip key={t} hue="muted" icon={<TableIcon label="Table" size="small" />} className="font-mono">
               {t}
-            </span>
+            </StatusChip>
           ))}
         </div>
       )}
@@ -1207,8 +1409,16 @@ export function ChatMessage({
         <p className="aug-fs-xs text-zinc-500 mb-3">Completed in {formatElapsed(turn.elapsedMs)}</p>
       )}
 
-      {/* ── Insight — the final answer as a clean Brief ── */}
-      {!collapsed && isDone && !isInvestigate && (
+      {/* ── Overview — the "interesting facts" tour. A dedicated branch (the registry
+           is investigate-only, and the overview route stays in "ask" mode) so it wins
+           whenever overviewReport is set, regardless of turn.mode. ── */}
+      {!collapsed && turn.overviewReport && (
+        <OverviewReportView report={turn.overviewReport} onShowSource={onShowSource} />
+      )}
+
+      {/* ── Insight — the answer as a clean Brief; mounts as a shimmer scaffold
+           during the wait (fills in place) and completes at done. ── */}
+      {!collapsed && !isInvestigate && !turn.overviewReport && (isDone || quickScaffold) && (
         <InsightBrief
           turn={turn}
           connectionId={connectionId}
@@ -1219,7 +1429,7 @@ export function ChatMessage({
       )}
 
       {/* ── Deep Analysis — interim wrapping (Phase C rebuilds this on the Brief) ── */}
-      {!collapsed && isDone && isInvestigate && (
+      {!collapsed && isDone && isInvestigate && !turn.overviewReport && (
         <>
           {turn.fromCache && (
             <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded-[var(--r3)] bg-amber-950/30 border border-amber-800/40 aug-fs-xs text-amber-400 leading-snug">
@@ -1233,12 +1443,14 @@ export function ChatMessage({
                 )}
               </span>
               {onRunFresh && (
-                <button
+                <Button
+                  variant="ghost"
+                  size="xs"
                   onClick={() => onRunFresh(turn.question)}
-                  className="shrink-0 px-2 py-0.5 rounded bg-amber-800/50 hover:bg-amber-700/60 text-amber-200 hover:text-white transition-colors whitespace-nowrap"
+                  className="shrink-0 h-auto px-2 py-0.5 aug-fs-xs font-normal rounded bg-amber-800/50 hover:bg-amber-700/60 dark:hover:bg-amber-700/60 text-amber-200 hover:text-white"
                 >
                   Run fresh ↺
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -1249,16 +1461,18 @@ export function ChatMessage({
           {turn.followups.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-4">
               {turn.followups.map((q, i) => (
-                <button
+                <Button
                   key={i}
+                  variant="ghost"
+                  size="xs"
                   onClick={() => onFollowUp?.(q)}
-                  className="flex items-center gap-1 aug-fs-sm text-zinc-500 hover:text-zinc-200 border border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-pill)] px-2.5 py-[3px] transition-all"
+                  className="h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-500 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-pill)] whitespace-normal text-left hover:bg-transparent dark:hover:bg-transparent"
                 >
                   <span className="text-zinc-500 shrink-0">
                     <ArrowRightIcon label="" size="small" />
                   </span>
                   {q}
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -1297,13 +1511,15 @@ function SaveAsSkillButton({ invId, connectionId }: { invId: string; connectionI
   if (state === "saved")
     return <span className="aug-fs-xs text-emerald-400">✓ Saved as skill</span>;
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="xs"
       onClick={save}
       disabled={state === "saving"}
       title={msg || "Crystallize this investigation into a reusable, governed skill (Ontology ▸ Learned skills)"}
-      className="aug-fs-xs text-violet-400 hover:text-violet-300 border border-violet-500/30 rounded px-2.5 py-1 transition disabled:opacity-50"
+      className="h-auto px-2.5 py-1 aug-fs-xs font-normal text-violet-400 hover:text-violet-300 border-violet-500/30 rounded hover:bg-transparent dark:hover:bg-transparent"
     >
       {state === "saving" ? "Saving…" : state === "error" ? "Retry — not skill-worthy?" : "Save as skill"}
-    </button>
+    </Button>
   );
 }
