@@ -46,7 +46,8 @@ def test_quick_happy_path_order_and_run_finished_last():
         {"type": "rows", "rows": [[1]]},
         {"type": "headline", "headline": "One."},
         {"type": "chart_type", "chart_type": "bar"},
-        {"type": "done"},
+        {"type": "tables_used", "tables": ["t"]},   # NOTE: data field is `tables`, event type is `tables_used`
+        {"type": "done", "has_receipt": True, "inv_id": "inv1"},
         {"type": "insight", "narrative": "Because reasons.", "confidence": "high"},
         {"type": "followups", "questions": ["next?"]},
     ]
@@ -63,13 +64,17 @@ def test_quick_happy_path_order_and_run_finished_last():
     args = [e for e in ev if e["type"] == "TOOL_CALL_ARGS"]
     figure = json.loads(args[0]["delta"])
     assert figure["sql"] == "SELECT 1" and figure["columns"] == ["a"] and figure["chart_type"] == "bar"
+    assert figure["tables_used"] == ["t"]   # the tables_used event's `tables` list, keyed for round-trip
+    # the done receipt rides into RunFinished.result so the AG-UI path keeps the receipt affordance
+    finished = [e for e in ev if e["type"] == "RUN_FINISHED"][0]
+    assert finished["result"]["has_receipt"] is True and finished["result"]["inv_id"] == "inv1"
 
 
 def test_insight_delta_streams_into_one_message():
     frames = [
         {"type": "start"},
-        {"type": "insight_delta", "text": "Be"},
-        {"type": "insight_delta", "text": "cause"},
+        {"type": "insight_delta", "narrative": "Be"},
+        {"type": "insight_delta", "narrative": "cause"},
         {"type": "insight", "narrative": "Because.", "confidence": "high"},
         {"type": "done"},
     ]

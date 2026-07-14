@@ -54,8 +54,12 @@ from aughor.routers.investigations import AskRequest, ChatHistoryTurn, build_ask
 
 router = APIRouter()
 
-# Aughor "figure" frames accumulated into one render_answer ToolCall payload.
-_FIGURE_FIELDS = ("sql", "columns", "rows", "chart_type", "chart_config", "tables_used")
+# Aughor "figure" frames → one render_answer ToolCall payload. Maps each event type to the data
+# key ON that event — note the `tables_used` event carries its list under `tables`, not `tables_used`.
+_FIGURE_FIELDS = {
+    "sql": "sql", "columns": "columns", "rows": "rows",
+    "chart_type": "chart_type", "chart_config": "chart_config", "tables_used": "tables",
+}
 # Whole-payload report frames → the render_* tool the frontend adapter routes on.
 _REPORT_TOOLS = {
     "answer_report": "render_ada",
@@ -126,6 +130,7 @@ async def translate_ask_stream(
     figure: dict[str, Any] = {}
     ins_open = False
     figure_flushed = False
+    done_payload: dict | None = None   # the Aughor `done` event → carried into RunFinished.result
 
     def custom(name: str, ev: dict) -> str:
         return encoder.encode(CustomEvent(type=EventType.CUSTOM, name=f"aughor.{name}", value=ev))
@@ -157,10 +162,12 @@ async def translate_ask_stream(
             etype = ev.get("type")
 
             if etype in ("start", "done"):
-                # `start` is already framed as RunStarted; `done` is a no-op for RunFinished
-                # (emitted only at exhaustion) but is the natural point to flush the figure —
-                # all figure frames have landed by then.
+                # `start` is already framed as RunStarted. `done` is a no-op for RunFinished
+                # (emitted only at exhaustion, so post-`done` insight/followups land BEFORE it —
+                # the wart-fix) but is where the figure flushes and the done receipt is captured
+                # to ride into RunFinished.result (so the AG-UI path keeps the receipt affordance).
                 if etype == "done":
+                    done_payload = ev
                     for e in flush_figure():
                         yield e
                 continue
@@ -177,7 +184,7 @@ async def translate_ask_stream(
                 continue
 
             if etype == "insight_delta":
-                delta = ev.get("text", "")
+                delta = ev.get("narrative", "")   # the ask.stream_text delta frame carries `narrative`
                 if delta:
                     if not ins_open:
                         ins_open = True
@@ -206,7 +213,7 @@ async def translate_ask_stream(
                 continue
 
             if etype in _FIGURE_FIELDS:
-                figure[etype] = ev.get(etype)
+                figure[etype] = ev.get(_FIGURE_FIELDS[etype])
                 continue
 
             if etype in _REPORT_TOOLS:
@@ -234,7 +241,7 @@ async def translate_ask_stream(
         if ins_open:
             yield encoder.encode(TextMessageEndEvent(type=EventType.TEXT_MESSAGE_END, message_id=ins_id))
         yield encoder.encode(RunFinishedEvent(
-            type=EventType.RUN_FINISHED, thread_id=thread_id, run_id=run_id))
+            type=EventType.RUN_FINISHED, thread_id=thread_id, run_id=run_id, result=done_payload))
     except Exception as exc:  # a translation failure must still terminate the AG-UI run cleanly
         from aughor.kernel.errors import tolerate
         tolerate(exc, "AG-UI translation failed mid-stream; emitting RunError", counter="agui.translate_failed")
