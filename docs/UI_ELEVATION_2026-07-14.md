@@ -87,13 +87,33 @@ and lives off the chat surface — moved to Wave 3 so Wave 2 stays dependency-fr
 no bundle bloat). Code-block furnishing (`SqlBlock`) was already card-like (framed `--code-bg` +
 hover copy) — left as-is.
 
-## Wave 3 (later) — harvest expansion
+## Wave 3 — harvest expansion — SHIPPED (first slice)
 
-prompt-kit reasoning/chain-of-thought/tool/source cards for the deep path (ThinkingTrace
-upgrade); AI Elements inline-citation/context-meter; shadcn chat primitives
-(MessageScroller/Bubble) as they stabilize; icon convergence completion; QueryBuilder and the
-remaining raw-button hotspots; antd table replacement decision (keep antd 6 vs shadcn Table) —
-evidence-gated.
+- **NumberFlow KPI odometers** (`@number-flow/react@0.6.1`, exact-pinned, strict-`npm ci`-verified)
+  on the briefing scorecard: values roll odometer-style on change and on first paint. Rendering is
+  **byte-identical** to the legacy strings (pre-rounded values + fixed fraction digits + pinned
+  en-US locale — proven over a 1.24M-value replay harness, 0 mismatches), and the GroundedNumber
+  receipt affordance is fully preserved (it stays the in-flow layout/click layer; the odometer
+  paints over it aria-hidden — the card cannot shift while digits roll). Reduced-motion respected
+  by NumberFlow's default. Any future `formatMetric` branch must pre-round the same way or omit
+  `flow` to fall back to plain text.
+- **ThinkingTrace + TrustReceipt polish**: every unicode glyph (`PURPOSE_ICON` map, `◆ ⚡ ▸ ▾ ✓ ⚠
+  ✎ ✦ ▤`) replaced with @atlaskit/icon core icons (badge wording untouched — the "resolved
+  reading" signal keeps its exact text); the CK smooth-disclosure pattern landed as one
+  `.aug-disclose` utility (grid-template-rows 0fr→1fr, reduced-motion-gated) on the trace's
+  streamed-substeps region and the Trust Receipt's expanded panel — open/close animates height
+  instead of snapping; restored turns never animate on mount.
+- **Ratchet paydown**: all 91 raw `<button>`s in the four hotspots (QueryBuilder 45, CatalogScreen
+  18, MonitorsPanel 14, AddDataPanel 14) converted to `<Button>` with pixel-preserving overrides;
+  baseline **183 → 92**.
+
+### Wave 3 remainder (queued)
+
+prompt-kit reasoning/chain-of-thought/tool/source cards for the deep path; AI Elements
+inline-citation/context-meter; shadcn chat primitives (MessageScroller/Bubble) as they stabilize;
+icon convergence (lucide-vs-atlaskit decision — Wave 3 deliberately stayed on atlaskit, the chat
+surface's dominant set); the remaining ~92 raw buttons (next hotspots: app/page.tsx 20,
+ActivityLog 10, OntologyPanel 9); antd table replacement decision — evidence-gated.
 
 ## Rules for every copy-in
 

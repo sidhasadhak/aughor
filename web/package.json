@@ -17,6 +17,7 @@
   "dependencies": {
     "@atlaskit/icon": "^35.0.0",
     "@base-ui/react": "^1.4.1",
+    "@number-flow/react": "0.6.1",
     "@observablehq/plot": "^0.6.17",
     "@types/d3-format": "^3.0.4",
     "antd": "^6.4.3",

@@ -411,3 +411,22 @@ a:hover { color: var(--blue4); }
 /* ── Ontology canvas edge animations ─────────────────────────────────────── */
 @keyframes edge-flow         { to { stroke-dashoffset: -12; } }
 @keyframes edge-flow-verified { to { stroke-dashoffset: -33; } }
+
+/* ── Smooth disclosure (CK-style reasoning row, UI Wave 3) ─────────────────
+   Height-animated collapsible region via the grid-template-rows 0fr→1fr trick:
+   the wrapper is a one-row grid whose row grows from nothing to content size;
+   the single child supplies the min-height:0 + overflow:hidden context the
+   fr-track needs. Because this is a *transition* (not an animation), mounting
+   directly in the open state paints instantly — restored/inert turns don't
+   animate; only a live data-open flip (user toggle / streaming arrival) does. */
+.aug-disclose {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-norm) var(--ease-out);
+}
+.aug-disclose[data-open="true"] { grid-template-rows: 1fr; }
+.aug-disclose > * { min-height: 0; overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .aug-disclose { transition: none; }
+}
