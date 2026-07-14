@@ -76,9 +76,25 @@ enough that nobody would turn it off, the flag (and any code path it replaced) i
 Ground-first §Pending-2, now sequenced. When `ask.resolve_first` has held on real traffic
 (fixture + workspace canvases, no false abstains, constraints obeyed):
 
-1. `_stream_chat` guards the verdict subsumes — entity-column alignment, breakdown-grain,
-   id-arithmetic guard **and its duplicate backstop** (it runs twice today), ratio-of-sums,
-   measure-grain caveat, scope guard — deleted one per PR, each with a regression corpus run.
+**Grounded per-guard analysis (2026-07-14 — before cutting anything).** A close read of the
+`_stream_chat` guards found that most are NOT redundant with the resolution and must NOT be deleted
+outright — they are the safety net, and the "subsumed" claim holds only in the sub-case where the
+resolution actually bound the relevant thing. The honest classification:
+
+| Guard (line) | Verdict | Why |
+|---|---|---|
+| semantic `inspect` | **DELETED** (Phase 3) | The resolution re-decides the exact five things it checked. Done. |
+| `grain.feasibility` | **DELETED** (merge) | A genuine post-hoc duplicate of the resolution's grain verdict. Done. |
+| entity-column alignment (~1551) | **conditional skip only** | Overlaps `entity_bindings` but catches misalignments on entities the resolution did NOT bind (a second entity, a non-filter column). Skip only when bindings cover the question's entities. |
+| measure-grain caveat (~1790) | **conditional skip only** | The resolution's caveat goes to the **narrator**; this one caveats the **headline** — different surfaces. Skipping it when `_resolution.caveat` is present would strip the *headline's* honest caveat. |
+| id-arithmetic backstop (~1802) | **KEEP — not a duplicate** | It re-runs on the **post-repair** SQL to caveat honestly when repair could NOT eliminate a measure×key product. The pre-exec run (~1678) only *hints the repair*. Different jobs; deleting the backstop loses the fabricated-magnitude caveat when repair fails. |
+| breakdown-grain, ratio-of-sums, scope guard | **KEEP for now** | Detect SQL shapes (grouped-by-id, AVG(a/b), sibling-schema refs) the resolution does not model. Not subsumed. |
+
+So the remaining cuts are **conditional skips** (skip-when-resolution-bound), each needing its own
+regression corpus AND a real-traffic soak — one live session is not a soak. Sequence:
+
+1. Soak `ask.resolve_first` on real traffic; then land the two conditional skips (entity-column,
+   measure-grain) one PR each, gated on `_resolution` having bound the exact thing.
 2. The fan-out battery collapses into "emit the fan-out-safe shape from the resolved join topology".
 3. Deep-path adoption: thread the same Resolution through `build_data_understanding` /
    `grounding_block()` so ADA inherits the verdict and its intake validators unify with it.
