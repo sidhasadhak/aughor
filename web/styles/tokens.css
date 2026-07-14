@@ -118,10 +118,11 @@
   --accent:               var(--blue3);
   --accent-foreground:    #fff;
   --destructive:          var(--red3);
+  --destructive-foreground: #fff;
   --border:               var(--b1);
   --input:                var(--b2);
   --ring:                 var(--blue3);
-  --radius:               4px;
+  --radius:               var(--r1);  /* v2 control radius (was a stale hardcoded 4px) */
 
   /* Sidebar tokens (shadcn/ui compat) */
   --sidebar:              var(--bg-1);

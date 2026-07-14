@@ -35,7 +35,7 @@ function del(path: string)                   { return apiFetch(path, { method: "
 
 function TabBar({ tabs, active, onChange }: { tabs: string[]; active: string; onChange: (t: string) => void }) {
   return (
-    <div style={{ display: "flex", gap: 2, borderBottom: "1px solid var(--border-0, #2a2a2a)", paddingBottom: 0, marginBottom: 16 }}>
+    <div style={{ display: "flex", gap: 2, borderBottom: "1px solid var(--b0)", paddingBottom: 0, marginBottom: 16 }}>
       {tabs.map(t => (
         <button
           key={t}
@@ -77,7 +77,7 @@ function Btn({ children, onClick, variant = "default", disabled }: {
   const colors: Record<string, React.CSSProperties> = {
     default: { background: "var(--blue4, #3b82f6)", color: "#fff" },
     danger:  { background: "transparent", color: "var(--red4, #f87171)", border: "1px solid var(--red4, #f87171)" },
-    ghost:   { background: "transparent", color: "var(--t3, #888)", border: "1px solid var(--border-0, #2a2a2a)" },
+    ghost:   { background: "transparent", color: "var(--t3, #888)", border: "1px solid var(--b0)" },
   };
   return (
     <button
@@ -99,7 +99,7 @@ function Input({ value, onChange, placeholder, multiline, hint, mono, label }: {
 }) {
   const base: React.CSSProperties = {
     width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 5,
-    background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--border-0, #2a2a2a)",
+    background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--b0)",
     color: "var(--t1, #e5e5e5)", outline: "none", resize: "vertical",
     boxSizing: "border-box", fontFamily: mono ? "var(--font-mono)" : "inherit",
   };
@@ -119,7 +119,7 @@ function Input({ value, onChange, placeholder, multiline, hint, mono, label }: {
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
-      style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--border-0, #2a2a2a)", color: "var(--t1, #e5e5e5)", outline: "none" }}>
+      style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--b0)", color: "var(--t1, #e5e5e5)", outline: "none" }}>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );
@@ -248,7 +248,7 @@ function AnnotationsTab({ connId, scopeTable }: { connId: string; scopeTable: st
       />
 
       {/* Add new */}
-      <div style={{ background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--border-0, #2a2a2a)", borderRadius: 8, padding: 14, marginBottom: 20 }}>
+      <div style={{ background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--b0)", borderRadius: 8, padding: 14, marginBottom: 20 }}>
         <SectionHeader title="Add Annotation" />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
           <Input value={newTable} onChange={setNewTable} label="Table *" placeholder="e.g. subscriptions" hint="The table this description applies to" />
@@ -273,7 +273,7 @@ function AnnotationsTab({ connId, scopeTable }: { connId: string; scopeTable: st
       )}
 
       {tables.map(table => (
-        <div key={table} style={{ marginBottom: 16, border: "1px solid var(--border-0, #2a2a2a)", borderRadius: 8, overflow: "hidden" }}>
+        <div key={table} style={{ marginBottom: 16, border: "1px solid var(--b0)", borderRadius: 8, overflow: "hidden" }}>
           {/* Table row */}
           <div style={{ padding: "8px 12px", background: "var(--bg-1, #181818)", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "var(--t1)" }}>TABLE: {table}</span>
@@ -286,7 +286,7 @@ function AnnotationsTab({ connId, scopeTable }: { connId: string; scopeTable: st
 
           {/* Column rows */}
           {Object.entries(data[table]?.columns ?? {}).map(([col, colData]) => (
-            <div key={col} style={{ padding: "6px 12px 6px 24px", borderTop: "1px solid var(--border-0, #2a2a2a)", display: "flex", alignItems: "center", gap: 8 }}>
+            <div key={col} style={{ padding: "6px 12px 6px 24px", borderTop: "1px solid var(--b0)", display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 11, color: "var(--t2)", minWidth: 120 }}>{col}</span>
               <span style={{ fontSize: 11, color: "var(--t3)", flex: 1 }}>{colData.description}</span>
               <Btn variant="ghost" onClick={() => { setEditingTable(table); setEditingColumn(col); setEditDesc(colData.description ?? ""); }}>Edit</Btn>
@@ -300,7 +300,7 @@ function AnnotationsTab({ connId, scopeTable }: { connId: string; scopeTable: st
       {editingTable && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={e => { if (e.target === e.currentTarget) { setEditingTable(null); setEditingColumn(null); } }}>
-          <div style={{ background: "var(--bg-0, #111)", border: "1px solid var(--border-0, #2a2a2a)", borderRadius: 10, padding: 20, width: 420 }}>
+          <div style={{ background: "var(--bg-0, #111)", border: "1px solid var(--b0)", borderRadius: 10, padding: 20, width: 420 }}>
             <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "var(--t1)" }}>
               Edit {editingColumn ? `${editingTable}.${editingColumn}` : `TABLE: ${editingTable}`}
             </p>
@@ -434,7 +434,7 @@ function KnowledgeTab({ connId }: { connId: string }) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {entries.map(e => (
-          <div key={e.id} style={{ border: "1px solid var(--border-0, #2a2a2a)", borderRadius: 8, padding: "10px 14px" }}>
+          <div key={e.id} style={{ border: "1px solid var(--b0)", borderRadius: 8, padding: "10px 14px" }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
               <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, background: KIND_BADGE[e.kind] ?? "#6b7280", color: "#fff", fontWeight: 600, marginTop: 1, whiteSpace: "nowrap" }}>
                 {e.kind}
@@ -459,7 +459,7 @@ function KnowledgeTab({ connId }: { connId: string }) {
       {editId !== null && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={e => { if (e.target === e.currentTarget) setEditId(null); }}>
-          <div style={{ background: "var(--bg-0, #111)", border: "1px solid var(--border-0, #2a2a2a)", borderRadius: 10, padding: 20, width: 480 }}>
+          <div style={{ background: "var(--bg-0, #111)", border: "1px solid var(--b0)", borderRadius: 10, padding: 20, width: 480 }}>
             <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "var(--t1)" }}>
               {editId === "__new__" ? "New Knowledge Entry" : "Edit Entry"}
             </p>
@@ -633,7 +633,7 @@ function BenchmarksTab({ connId }: { connId: string }) {
           const res = resultMap[c.id];
           return (
             <div key={c.id} style={{
-              border: `1px solid ${res ? (res.passed ? "#10b98133" : "#f87171aa") : "var(--border-0, #2a2a2a)"}`,
+              border: `1px solid ${res ? (res.passed ? "#10b98133" : "#f87171aa") : "var(--b0)"}`,
               borderRadius: 8, padding: "10px 14px",
             }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
@@ -692,7 +692,7 @@ function BenchmarksTab({ connId }: { connId: string }) {
       {editId !== null && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={e => { if (e.target === e.currentTarget) setEditId(null); }}>
-          <div style={{ background: "var(--bg-0, #111)", border: "1px solid var(--border-0, #2a2a2a)", borderRadius: 10, padding: 20, width: 520 }}>
+          <div style={{ background: "var(--bg-0, #111)", border: "1px solid var(--b0)", borderRadius: 10, padding: 20, width: 520 }}>
             <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "var(--t1)" }}>
               {editId === "__new__" ? "New Benchmark Case" : "Edit Case"}
             </p>
@@ -831,7 +831,7 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
       <style>{`.sl-in::placeholder{color:var(--t4,#666);opacity:1}`}</style>
 
       {/* Header */}
-      <div style={{ padding: "16px 24px 0", borderBottom: "1px solid var(--border-0, #2a2a2a)" }}>
+      <div style={{ padding: "16px 24px 0", borderBottom: "1px solid var(--b0)" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", margin: 0 }}>Semantic Layer</h2>
           <span style={{ fontSize: 11, color: "var(--t4)" }}>The shared meaning the AI uses to read your data</span>

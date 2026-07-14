@@ -6,6 +6,7 @@
 // off-target sub-questions (a mis-scoped plan is corrected for ~$0) or reject it.
 
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { formatCount } from "@/lib/format";
 import type { PlanPending } from "@/lib/investigationStream";
 
@@ -42,7 +43,7 @@ export function PlanGateCard({
   return (
     <div
       className="flex flex-col gap-2 rounded-md p-3 my-1"
-      style={{ border: "1px solid var(--border, #2a3742)", background: "var(--panel, #101a24)" }}
+      style={{ border: "1px solid var(--b1)", background: "var(--bg-2)" }}
     >
       <div className="flex items-center justify-between">
         <span className="aug-text-xs uppercase tracking-wide" style={{ color: "var(--t3)" }}>
@@ -58,12 +59,13 @@ export function PlanGateCard({
           const on = kept.has(i);
           return (
             <li key={sq.id ?? i}>
-              <button
+              <Button
+                variant="ghost"
                 onClick={() => toggle(i)}
-                className="w-full text-left flex items-start gap-2 rounded px-2 py-1.5 transition-colors"
-                style={{ background: on ? "var(--panel2, #16212c)" : "transparent", opacity: on ? 1 : 0.45 }}
+                className="w-full h-auto items-start justify-start gap-2 rounded px-2 py-1.5 whitespace-normal text-left font-normal hover:bg-transparent dark:hover:bg-transparent"
+                style={{ background: on ? "var(--bg-3)" : "transparent", opacity: on ? 1 : 0.45 }}
               >
-                <span className="mt-0.5 aug-text-xs" style={{ color: on ? "#4ade80" : "var(--t4)" }}>
+                <span className="mt-0.5 aug-text-xs" style={{ color: on ? "var(--grn4)" : "var(--t4)" }}>
                   {on ? "✓" : "○"}
                 </span>
                 <span className="flex flex-col gap-0.5 min-w-0">
@@ -76,28 +78,32 @@ export function PlanGateCard({
                     {sq.expected_output ? ` — ${sq.expected_output}` : ""}
                   </span>
                 </span>
-              </button>
+              </Button>
             </li>
           );
         })}
       </ul>
 
       <div className="flex items-center gap-2 pt-1">
-        <button
+        <Button
+          variant="ghost"
+          size="xs"
           disabled={keptIdx.length === 0}
           onClick={() => onApprove(keptIdx)}
-          className="rounded px-2.5 py-1 aug-text-sm font-medium transition-colors disabled:opacity-40"
-          style={{ background: "#166534", color: "#dcfce7" }}
+          className="h-auto rounded px-2.5 py-1 aug-text-sm font-medium disabled:opacity-40 hover:bg-transparent dark:hover:bg-transparent"
+          style={{ background: "var(--grn2)", color: "var(--grn5)" }}
         >
           Run {keptIdx.length} step{keptIdx.length === 1 ? "" : "s"} →
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="xs"
           onClick={onReject}
-          className="rounded px-2.5 py-1 aug-text-sm transition-colors"
+          className="h-auto rounded px-2.5 py-1 aug-text-sm font-normal hover:bg-transparent dark:hover:bg-transparent"
           style={{ color: "var(--t3)" }}
         >
           Reject
-        </button>
+        </Button>
       </div>
     </div>
   );

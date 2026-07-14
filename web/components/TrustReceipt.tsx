@@ -11,6 +11,8 @@
  */
 import { useEffect, useState } from "react";
 import { getAnswerReceipt, type InsightReceipt, type LearningReceiptPayload } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { costSummary } from "@/lib/cost";
 import { formatTimestamp } from "@/lib/format";
 
@@ -32,19 +34,22 @@ function learningPhrases(l: LearningReceiptPayload): string[] {
 // "ada.premise_check" → "premise check"
 const capLabel = (c: string) => c.replace(/^[a-z]+\./, "").replace(/[._]/g, " ");
 
-function Badge({ tone, title, children }: { tone: "governed" | "drift" | "guard" | "propose" | "muted"; title?: string; children: React.ReactNode }) {
-  const c = {
-    governed: ["var(--blue1)", "var(--blue2)", "var(--blue4)"],
-    drift: ["var(--amb1)", "var(--amb2)", "var(--amb4)"],
-    guard: ["var(--grn1)", "var(--grn2)", "var(--grn4)"],
-    propose: ["var(--vio1)", "var(--vio2)", "var(--vio4)"],
-    muted: ["var(--bg-3)", "var(--b1)", "var(--t3)"],
-  }[tone];
+// Receipt tone → the ONE chip vocabulary (StatusChip, REC-U3). The old private Badge
+// carried its own style map and a sub-floor 10px font; StatusChip renders the same
+// semantics at the 11px legibility floor.
+const TONE_HUE: Record<"governed" | "drift" | "guard" | "propose" | "muted", ChipHue> = {
+  governed: "info",
+  drift: "caution",
+  guard: "positive",
+  propose: "accent",
+  muted: "muted",
+};
+
+function Badge({ tone, title, children }: { tone: keyof typeof TONE_HUE; title?: string; children: React.ReactNode }) {
   return (
-    <span title={title} style={{
-      fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
-      background: c[0], border: `1px solid ${c[1]}`, color: c[2],
-    }}>{children}</span>
+    <StatusChip hue={TONE_HUE[tone]} strength="soft" title={title} className="whitespace-nowrap font-normal">
+      {children}
+    </StatusChip>
   );
 }
 
@@ -79,15 +84,13 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
 
   return (
     <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 5 }}>
-      <button
+      <Button
+        variant="ghost"
         onClick={() => setOpen(o => !o)}
-        style={{
-          display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
-          background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left",
-        }}
+        className="h-auto w-full flex-wrap justify-start gap-1.5 p-0 whitespace-normal text-left font-normal hover:bg-transparent dark:hover:bg-transparent"
         aria-label="Trust receipt"
       >
-        <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
         {used.map((m, i) => <Badge key={`used:${i}:${m.ref}`} tone="governed" title={m.detail || ""}>{m.ref.replace("metric:", "")} · governed ✓</Badge>)}
         {drift.map((m, i) => <Badge key={`drift:${i}:${m.ref}`} tone="drift" title={m.detail || ""}>⚠ {m.ref.replace("metric:", "")} · non-governed</Badge>)}
         {proposed.map((m, i) => <Badge key={`prop:${i}:${m.ref}`} tone="propose" title={m.detail || "Define this metric in the Semantic Layer to enforce it"}>✎ define {m.ref.replace("metric:", "")}</Badge>)}
@@ -96,8 +99,8 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
         {learnedNew > 0 && learning && <Badge tone="governed" title="What the closed loop learned on this answer">✦ {[learning.resolutions_crystallized && `crystallized ${learning.resolutions_crystallized}`, learning.trusted_program_replayed && "trusted plan replayed"].filter(Boolean).join(" · ")}</Badge>}
         {activations.length > 0 && <Badge tone="guard" title="Self-gating capabilities whose trigger fired this run">⚡ {activations.length} capabilit{activations.length !== 1 ? "ies" : "y"}</Badge>}
         {used.length === 0 && drift.length === 0 && proposed.length === 0 && guards.length === 0 && resolved.length === 0 && learnedNew === 0 && activations.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
-        <span style={{ fontSize: 10, color: "var(--t4)" }}>{open ? "▾" : "▸"}</span>
-      </button>
+        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{open ? "▾" : "▸"}</span>
+      </Button>
 
       {open && (
         <div style={{
@@ -152,7 +155,7 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
           )}
           {inputs.length > 0 && (
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: 10, color: "var(--t3)" }}>inputs:</span>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>inputs:</span>
               {inputs.map((inp, idx) => <Badge key={`input:${idx}:${inp.ref}`} tone="muted">{inp.ref.replace("table:", "")}</Badge>)}
             </div>
           )}

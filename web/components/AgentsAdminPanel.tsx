@@ -335,7 +335,7 @@ export function AgentsAdminPanel() {
                 </div>
                 {evalResult && (
                   <div style={{ fontSize: 12, color: evalResult.passed === evalResult.total
-                                ? "var(--green5)" : "var(--amber5)" }}>
+                                ? "var(--grn5)" : "var(--amb5)" }}>
                     {evalResult.passed}/{evalResult.total} passing
                     {evalResult.per_question.filter(p => !p.passed).slice(0, 3).map(p => (
                       <div key={p.golden_id} style={{ color: "var(--t3)", fontSize: 11.5 }}>

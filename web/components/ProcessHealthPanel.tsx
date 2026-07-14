@@ -55,19 +55,19 @@ function MetricHealthCard({
 
       {/* Metric name */}
       <div>
-        <p className="aug-fs-ui font-medium text-[--t1]">{item.label}</p>
+        <p className="aug-fs-ui font-medium text-[var(--t1)]">{item.label}</p>
         {item.benchmark_source && (
-          <p className="aug-fs-xs mt-0.5 text-[--t4]">{item.benchmark_source}</p>
+          <p className="aug-fs-xs mt-0.5 text-[var(--t4)]">{item.benchmark_source}</p>
         )}
       </div>
 
       {/* Values */}
       <div className="flex items-end justify-between gap-2">
         <div>
-          <p className="aug-fs-display font-semibold font-mono leading-none text-[--t1]">
+          <p className="aug-fs-display font-semibold font-mono leading-none text-[var(--t1)]">
             {fmtValue(item.current, item.unit)}
           </p>
-          <p className="aug-fs-xs mt-1 font-mono text-[--t3]">
+          <p className="aug-fs-xs mt-1 font-mono text-[var(--t3)]">
             target {fmtValue(item.target, item.unit)}
             {item.variance !== null && (
               <span className="ml-1.5" style={{ color: item.variance < 0 ? "var(--red5)" : "var(--grn4)" }}>
@@ -138,7 +138,7 @@ export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealt
     <div>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
-          <p className="aug-fs-ui font-medium text-[--t1]">Business Health</p>
+          <p className="aug-fs-ui font-medium text-[var(--t1)]">Business Health</p>
           <div className="flex items-center gap-2">
             {redYellow.length > 0 && (
               <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-pill)] font-mono"

@@ -894,7 +894,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
         }}>no data</span>
       )}
       {shareMsg && (
-        <span style={{ fontSize: 10, color: shareMsg.includes("✓") ? "var(--green4, #2e8c63)" : "var(--t4)" }}>{shareMsg}</span>
+        <span style={{ fontSize: 10, color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t4)" }}>{shareMsg}</span>
       )}
     </div>
   );

@@ -18,6 +18,11 @@ import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
 import { inferChartType, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
+import { Button } from "@/components/ui/button";
+
+/** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
+ *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
+const SVG_SIZE_AUTO = "[&_svg:not([class*='size-'])]:size-auto";
 
 /** Client-side text-column detection mirroring aughor/semops/operators.py — the rows are already
  *  fetched, so the semantic-step UI can suggest operable columns without a server round-trip. */

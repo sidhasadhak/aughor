@@ -1186,8 +1186,8 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         {headerBar}
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="text-center space-y-3 max-w-sm">
-            <div className="w-10 h-10 rounded-[var(--r-pill)] bg-zinc-800 flex items-center justify-center mx-auto">
-              <NodeIcon label="" size="medium" color="var(--ds-icon-subtle)" />
+            <div className="w-10 h-10 rounded-[var(--r-pill)] bg-zinc-800 text-zinc-400 flex items-center justify-center mx-auto">
+              <NodeIcon label="" size="medium" color="currentColor" />
             </div>
             <p className="text-sm text-zinc-400">
               {error ?? "No ontology data available."}

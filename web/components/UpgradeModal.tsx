@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { onUpgradeRequired, type UpgradeInfo } from "@/lib/upsell";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 // What each plan adds — shown so the upsell explains the value, not just the lock.
 const PLAN_HIGHLIGHTS: Record<string, string[]> = {
@@ -27,32 +29,18 @@ export function UpgradeModal() {
 
   useEffect(() => onUpgradeRequired(setInfo), []);
 
-  useEffect(() => {
-    if (!info) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setInfo(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [info]);
-
   if (!info) return null;
 
   const highlights = PLAN_HIGHLIGHTS[info.requiredTier] ?? PLAN_HIGHLIGHTS.Pro;
   const close = () => setInfo(null);
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={e => { if (e.target === e.currentTarget) close(); }}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", backdropFilter: "blur(4px)",
-        zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-      }}
-    >
-      <div style={{
-        width: "100%", maxWidth: 380, background: "var(--bg-3)", border: "1px solid var(--b2)",
-        borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16,
-      }}>
+    <Dialog open onOpenChange={(open) => { if (!open) close(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="sm:max-w-[380px] gap-4 p-6"
+        style={{ background: "var(--bg-3)", border: "1px solid var(--b2)" }}
+      >
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
           <div style={{
             width: 36, height: 36, borderRadius: "var(--r2)", background: "var(--blue1)",
@@ -65,9 +53,9 @@ export function UpgradeModal() {
             </svg>
           </div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>
+            <DialogTitle style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>
               Unlock {info.feature}
-            </div>
+            </DialogTitle>
             <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3, lineHeight: 1.5 }}>
               {info.feature} isn&apos;t included in your{" "}
               <span style={{ color: "var(--t2)", textTransform: "capitalize" }}>{info.currentTier}</span>{" "}
@@ -80,7 +68,7 @@ export function UpgradeModal() {
           background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)",
           padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8,
         }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--t3)", letterSpacing: ".04em" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", letterSpacing: ".04em" }}>
             {info.requiredTier.toUpperCase()} PLAN INCLUDES
           </div>
           {highlights.map((h, i) => (
@@ -94,20 +82,16 @@ export function UpgradeModal() {
         </div>
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
-          <button onClick={close} className="aug-btn aug-btn-ghost">Maybe later</button>
-          <button
+          <Button variant="ghost" onClick={close} className="text-[color:var(--t2)]">Maybe later</Button>
+          <Button
+            variant="outline"
             onClick={close}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "5px 14px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 600,
-              background: "var(--blue1)", border: "1px solid var(--blue2)", color: "var(--blue4)",
-              cursor: "pointer", transition: "all .12s",
-            }}
+            className="gap-1.5 font-semibold bg-[var(--blue1)] border-[var(--blue2)] text-[color:var(--blue4)] hover:bg-[var(--blue1)] hover:text-[color:var(--blue4)] dark:bg-[var(--blue1)] dark:hover:bg-[var(--blue1)]"
           >
             See plans →
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

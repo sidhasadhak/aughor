@@ -53,7 +53,7 @@ function timeAgo(iso: string): string {
 function statusColor(s: string): string {
   if (s === "complete" || s === "completed") return "var(--grn4)";
   if (s === "failed" || s === "timed_out") return "var(--red4)";
-  if (s === "running") return "var(--amber4, var(--amb4))";
+  if (s === "running") return "var(--amb4)";
   return "var(--t4)";
 }
 

@@ -6,7 +6,12 @@
 @import "../aughor-v2/theme/elevation-motion.css";
 @import "../styles/type.css";
 
-@custom-variant dark (&:is(.dark *));
+/* The app stamps [data-theme="dark"|"light"] on <html> (app/page.tsx theme effect);
+   before the effect runs there is NO attribute and the app renders its default DARK
+   look. `dark:` therefore matches explicit dark AND the un-stamped default, and turns
+   off only when light is stamped. (The old `.dark *` variant matched nothing — the
+   class is never set — so every dark: utility in components/ui was dead.) */
+@custom-variant dark (&:is([data-theme="dark"] *, html:not([data-theme]) *));
 
 /* ── Font wiring (MLflow-informed: two families) ─────────────────────────────
    DM Sans carries the UI; IBM Plex Mono carries every figure, id, timestamp and
@@ -18,6 +23,39 @@
   --font-sans: var(--font-dm-sans), system-ui, sans-serif;
   --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
   --font-code: var(--font-ibm-plex-mono), 'Consolas', monospace;
+
+  /* ── shadcn semantic-variable bridge (UI Elevation Wave 1, move 5) ─────────
+     The aliases themselves live in styles/tokens.css (:root, both themes) and
+     point at tokens-v2 primitives; exposing them here makes the Tailwind
+     utilities (bg-background, border-border, text-muted-foreground, ring-ring,
+     bg-primary…) resolve — without this block every such class in
+     components/ui/* compiled to nothing. `--primary` is the INTERACTIVE blue
+     (--blue-solid via tokens-v2), never the chart/data blue. */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Radius scale for harvested shadcn code (rounded-sm/md utilities + the
+     min(var(--radius-md),…) clamps in components/ui) — seated on the v2 radius
+     vocabulary. rounded-lg/xl stay banned by lint:tokens; use rounded-[var(--r3)]. */
+  --radius-sm: var(--r1);
+  --radius-md: var(--r2);
 }
 
 /* ── Base reset ─────────────────────────────────────────────────────────── */

@@ -11,6 +11,7 @@
     "lint:tokens": "node scripts/check-design-tokens.mjs",
     "lint:format": "node scripts/check-formatting.mjs",
     "lint:elements": "node scripts/check-raw-elements.mjs",
+    "lint:vars": "node scripts/check-css-vars.mjs",
     "gen:api": "uv run --project .. python ../scripts/dump_openapi.py .openapi.gen.json && npx -y openapi-typescript@7.13.0 .openapi.gen.json -o lib/api.gen.ts && rm .openapi.gen.json"
   },
   "dependencies": {

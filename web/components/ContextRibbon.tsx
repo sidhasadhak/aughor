@@ -64,7 +64,7 @@ export function ContextRibbon({
             title={`Remove ${t} from the agent's context`}
             onClick={() => apply(kept.filter((x) => x !== t))}
             className="group inline-flex items-center gap-1 rounded px-1.5 py-0.5 aug-text-xs font-mono transition-colors"
-            style={{ background: "var(--panel2, #16212c)", color: "var(--t2)" }}
+            style={{ background: "var(--bg-3)", color: "var(--t2)" }}
           >
             {short(t)}
             <span className="opacity-40 group-hover:opacity-100" style={{ color: "#f87171" }}>
