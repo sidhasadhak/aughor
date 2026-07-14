@@ -34,6 +34,7 @@ import { ChatTurn } from "@/lib/useChat";
 import { validateQuery, sendChatFeedback, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
+import { OverviewReportView } from "@/components/OverviewReport";
 import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
@@ -1408,9 +1409,16 @@ export function ChatMessage({
         <p className="aug-fs-xs text-zinc-500 mb-3">Completed in {formatElapsed(turn.elapsedMs)}</p>
       )}
 
+      {/* ── Overview — the "interesting facts" tour. A dedicated branch (the registry
+           is investigate-only, and the overview route stays in "ask" mode) so it wins
+           whenever overviewReport is set, regardless of turn.mode. ── */}
+      {!collapsed && turn.overviewReport && (
+        <OverviewReportView report={turn.overviewReport} onShowSource={onShowSource} />
+      )}
+
       {/* ── Insight — the answer as a clean Brief; mounts as a shimmer scaffold
            during the wait (fills in place) and completes at done. ── */}
-      {!collapsed && !isInvestigate && (isDone || quickScaffold) && (
+      {!collapsed && !isInvestigate && !turn.overviewReport && (isDone || quickScaffold) && (
         <InsightBrief
           turn={turn}
           connectionId={connectionId}
@@ -1421,7 +1429,7 @@ export function ChatMessage({
       )}
 
       {/* ── Deep Analysis — interim wrapping (Phase C rebuilds this on the Brief) ── */}
-      {!collapsed && isDone && isInvestigate && (
+      {!collapsed && isDone && isInvestigate && !turn.overviewReport && (
         <>
           {turn.fromCache && (
             <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded-[var(--r3)] bg-amber-950/30 border border-amber-800/40 aug-fs-xs text-amber-400 leading-snug">

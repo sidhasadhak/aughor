@@ -356,6 +356,7 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
   const r = turn.route;
   if (!r) return null;
   const deep = r.depth === "deep";
+  const overview = r.depth === "overview";
   const done = turn.status !== "loading";
   return (
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
@@ -363,13 +364,13 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
         hue={deep ? "accent" : "info"}
         icon={deep ? <AiSparkleIcon label="" size="small" /> : <CommentIcon label="" size="small" />}
       >
-        {deep ? "Deep analysis" : "Quick answer"}
+        {deep ? "Deep analysis" : overview ? "Overview" : "Quick answer"}
       </StatusChip>
       <span style={{ fontSize: 11.5, color: "var(--t3)" }}>{r.why}</span>
       {r.downgradedFrom && (
         <span style={{ fontSize: 11, fontStyle: "italic", color: "var(--t3)" }}>· deep analysis needs an upgrade</span>
       )}
-      {done && (
+      {done && !overview && (
         <Button
           variant="ghost"
           size="xs"
