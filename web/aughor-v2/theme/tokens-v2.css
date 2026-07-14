@@ -62,6 +62,7 @@
   --r2: 8px;
   --r3: 12px;
   --r-pill: 9999px;  /* pills/avatars/dots — the one full-round exception (REC-U1). */
+  --r-composer: 22px; /* the chat composer pill — a soft, generous corner (UI Wave 2). */
 
   /* Layout — MLflow shell */
   --sidebar: 264px;

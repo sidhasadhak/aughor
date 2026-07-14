@@ -410,6 +410,32 @@ function ResultFigure({
   );
 }
 
+// ── Copy the whole answer (headline + narrative) — hover toolbar affordance ────
+// Mirrors the SQL-copy checkmark pattern: the icon flips to a green tick for 2s
+// with no toast and no layout shift (CK-grade in-place confirmation).
+function CopyAnswerButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  function handleCopy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <Button
+      variant="ghost"
+      size="xs"
+      onClick={handleCopy}
+      title={copied ? "Copied!" : "Copy answer"}
+      className="h-auto gap-1.5 px-1.5 py-1 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 dark:hover:bg-zinc-800/50"
+    >
+      {copied
+        ? <><span className="text-emerald-400 aug-check-pop"><CheckMarkIcon label="Copied" size="small" /></span>Copied</>
+        : <><CopyIcon label="Copy answer" size="small" />Copy</>}
+    </Button>
+  );
+}
+
 // ── SQL block with copy button ────────────────────────────────────────────────
 function SqlBlock({ sql }: { sql: string }) {
   const [copied, setCopied] = useState(false);
@@ -994,9 +1020,15 @@ function InsightBrief({
       {!streaming && explained && (
         <>
           {/* One BriefProse for both phases (streaming partial → final narrative) so the
-              text swap never remounts; safePartial closes a dangling ** mid-stream. */}
+              text swap never remounts; safePartial closes a dangling ** mid-stream. While
+              the partial is still arriving, trail a pulsing caret and settle the block in
+              with a one-time blur-lift; both vanish the instant the terminal insight lands. */}
           {(streamingProse || proseText) && (
-            <BriefProse className={fadeCls} text={streamingProse != null ? safePartial(streamingProse) : proseText} />
+            <BriefProse
+              className={`${fadeCls} ${streamingProse != null ? "aug-stream-in" : ""}`}
+              text={streamingProse != null ? safePartial(streamingProse) : proseText}
+              caret={streamingProse != null}
+            />
           )}
           {streamingProse == null && anomalies.length > 0 && <BriefBullets className={fadeCls} items={anomalies} />}
         </>
@@ -1019,6 +1051,15 @@ function InsightBrief({
             ))}
           </div>
         </BriefSection>
+      )}
+
+      {/* Hover toolbar (CK-grade): message actions stay invisible until the turn is
+          hovered, and never appear while the answer is still streaming. Copy the whole
+          answer (headline + narrative) with an in-place checkmark, no toast. */}
+      {!streaming && turn.headline && (
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity -ml-1.5">
+          <CopyAnswerButton text={[turn.headline, turn.insight?.narrative?.trim()].filter(Boolean).join("\n\n")} />
+        </div>
       )}
 
       {!streaming && <InsightDetails turn={turn} connectionId={connectionId} onShowSource={onShowSource} />}
@@ -1289,7 +1330,7 @@ export function ChatMessage({
             </Button>
           )}
           <div
-            className="px-3 py-2 rounded-md aug-fs-sm font-semibold text-white leading-snug"
+            className="px-3.5 py-2 rounded-[var(--r3)] aug-fs-sm font-semibold text-white leading-snug"
             style={{ background: isInvestigate ? "var(--vio-solid)" : "var(--blue-solid)" }}
           >
             {turn.question}

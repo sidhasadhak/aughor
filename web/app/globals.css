@@ -382,10 +382,29 @@ a:hover { color: var(--blue4); }
   background-size: 100% 10px;
   animation: aug-flow-y 0.65s linear infinite;
 }
+
+/* ── Streaming caret (CK-0.2 token stream, UI Wave 2) ──────────────────────────
+   A soft round dot that trails the last streamed block while the narrative is
+   being written, then vanishes when the terminal `insight` event lands. The
+   inline-block sizing keeps it on the text baseline; the pulse reuses the same
+   1.1s cadence as the trace dot so the surface breathes at one rhythm. */
+@keyframes aug-caret { 0%, 100% { opacity: 1; transform: scale(1) } 50% { opacity: 0.35; transform: scale(0.7) } }
+.aug-caret {
+  display: inline-block; width: 0.5em; height: 0.5em; margin-left: 0.15em;
+  vertical-align: baseline; border-radius: var(--r-pill);
+  background: currentColor; animation: aug-caret 1.05s ease-in-out infinite;
+}
+/* Streamed text settles in with a whisper of blur+lift the first time it mounts;
+   applied once to the prose container (not per word), so markdown re-renders on
+   each delta don't re-trigger it. */
+@keyframes aug-stream-in { from { opacity: 0; filter: blur(2px); transform: translateY(3px) } to { opacity: 1; filter: blur(0); transform: none } }
+.aug-stream-in { animation: aug-stream-in var(--dur-slow, .32s) var(--ease-out, ease-out) both; }
+
 @media (prefers-reduced-motion: reduce) {
-  .aug-step-in, .aug-check-pop, .aug-pulse-dot, .aug-flow-y,
+  .aug-step-in, .aug-check-pop, .aug-pulse-dot, .aug-flow-y, .aug-caret, .aug-stream-in,
   .aug-anim-blink, .aug-anim-up, .aug-anim-fade, .aug-anim-pop,
   .aug-shimmer { animation: none; }
+  .aug-caret { opacity: 0.6; }
   .aug-pressable:active { transform: none; }
 }
 

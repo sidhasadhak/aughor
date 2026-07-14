@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import AtlasSendIcon      from "@atlaskit/icon/core/send";
-import VideoStopIcon      from "@atlaskit/icon/core/video-stop";
 import AngleBracketsIcon  from "@atlaskit/icon/core/angle-brackets";
 import CloseIcon          from "@atlaskit/icon/core/close";
 import ChevronDownIcon    from "@atlaskit/icon/core/chevron-down";
@@ -78,14 +77,16 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
 
   return (
     <div
-      className="rounded-md flex flex-col overflow-hidden"
+      className="flex flex-col overflow-hidden"
       style={{
-        background: "var(--bg-1)",
-        // Focus ring rides the v2 accent tokens (the old rgba(45,114,210,…) was the
-        // retired v1 Blueprint blue, invisible to theme flips).
+        // A generous composer pill (CK-grade): soft corners, a surface one step up
+        // from the page, and shadow-only elevation — the border stays a whisper
+        // until focus lights the v2 accent ring.
+        borderRadius: "var(--r-composer)",
+        background: "var(--bg-2)",
         border: focused
           ? "1px solid var(--bfocus)"
-          : "1px solid var(--b2)",
+          : "1px solid var(--b1)",
         boxShadow: focused
           ? "0 0 0 3px var(--acc-dim), var(--shadow-md), 0 1px 0 rgba(255,255,255,0.04) inset"
           : "var(--shadow-md), 0 1px 0 rgba(255,255,255,0.04) inset",
@@ -245,17 +246,21 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             </svg>
           </button>
 
-          {/* Send / Stop */}
+          {/* Send ⇄ Stop — one solid circular button that morphs in place (CK-grade):
+              a filled interactive-blue disc with an up-arrow while composing, a filled
+              square while a run streams (kept enabled so Stop is always one click away). */}
           {streaming ? (
             <Button
               variant="ghost"
               size="icon-sm"
               onClick={onStop}
               title="Stop"
-              className="rounded-[var(--r3)] bg-red-500/15 border-red-500/30 text-red-400 hover:bg-red-500/25 hover:text-red-400"
-              style={{ width: 30, height: 30 }}
+              className="aug-pressable rounded-[var(--r-pill)] hover:bg-transparent dark:hover:bg-transparent"
+              style={{ width: 32, height: 32, background: "var(--t2)", color: "var(--bg-1)" }}
             >
-              <VideoStopIcon label="Stop" size="small" />
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <rect x="5" y="5" width="14" height="14" rx="2.5" />
+              </svg>
             </Button>
           ) : (
             <Button
@@ -264,12 +269,16 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               onClick={() => onSend()}
               disabled={!input.trim()}
               title="Send"
-              className="aug-pressable rounded-[var(--r3)] text-zinc-500 hover:text-zinc-100 disabled:opacity-25"
-              style={{ width: 30, height: 30 }}
+              className="aug-pressable rounded-[var(--r-pill)] hover:bg-transparent dark:hover:bg-transparent disabled:opacity-100"
+              style={{
+                width: 32, height: 32,
+                background: input.trim() ? "var(--blue-solid)" : "var(--bg-3)",
+                color: input.trim() ? "#fff" : "var(--t3)",
+              }}
             >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
               </svg>
             </Button>
           )}

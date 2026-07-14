@@ -58,13 +58,34 @@ Three design systems coexist on one good token spine; the fix is finishing the m
 10. Ratchet raw `<button>` down through the chat surface (ChatMessage/ChatPanel) and QueryBuilder;
     lower the lint:elements baseline with each conversion.
 
-## Wave 2 — CopilotKit-grade chat surface
+## Wave 2 — CopilotKit-grade chat surface — SHIPPED
 
-Composer pill + two-state grid + send⇄stop morph; bubble asymmetry + turn rhythm; hover
-toolbars + copy-confirm; streaming dot cursor + per-word reveal riding the CK-0.2 `insight_delta`
-stream; code-block cards; floating scroll-to-bottom over the existing stick-to-bottom hook;
-`@number-flow/react` on Brief KPis; tw-animate-css standardization + a global reduced-motion
-override.
+- **Composer pill** — soft `--r-composer` (22px) corner, surface one step up from the page,
+  shadow-only elevation, whisper border until the focus ring lights the v2 accent.
+- **Send ⇄ Stop morph** — one solid circular button in place: filled interactive-blue disc with an
+  up-arrow while composing → filled square while streaming (Stop always one click away).
+- **Streaming caret + stream-in** — a pulsing round `.aug-caret` trails the live narrative and
+  vanishes when the terminal `insight` lands; the prose block settles in once with `.aug-stream-in`
+  (blur-lift, applied to the container so per-delta markdown re-renders don't re-trigger it). Rides
+  the CK-0.2 `insight_delta` stream. Both reduced-motion-gated.
+- **User bubble** — softened to the `--r3` (12px) corner; assistant answers stay full-width prose
+  (no bubble) — the CK asymmetry the app already had.
+- **Hover toolbar + copy-confirm** — a `Copy` action that stays invisible until the turn is hovered
+  and never appears mid-stream; copies headline + narrative with an in-place green-tick (`aug-check-pop`),
+  no toast, no layout shift.
+- **Floating scroll-to-bottom** — the "Jump to latest" affordance (landed in Wave 1) over the
+  stick-to-bottom hook, shown only when the user scrolls up off the newest content.
+- **Motion** — no new dependency: the app's own `aug-anim-*` / `aug-*` vocabulary (already
+  reduced-motion-gated) is the standard; Wave 2 extends it with `aug-caret` / `aug-stream-in`.
+  `tw-animate-css` remains imported and available for future harvested components.
+
+**Deferred — `@number-flow/react` KPI odometers.** The chat-surface `BriefMetrics` renders
+already-formatted strings (`€177`, `57.8%`, `$3.00 avg/record`) — retrofitting an odometer there
+would mean parsing numerics back out of display strings (fragile). The clean target is the briefing
+**scorecard** (`IndustryKpiStrip`, which keeps `raw: Number(cell)`), but it adds an npm dependency
+and lives off the chat surface — moved to Wave 3 so Wave 2 stays dependency-free (no `npm ci` risk,
+no bundle bloat). Code-block furnishing (`SqlBlock`) was already card-like (framed `--code-bg` +
+hover copy) — left as-is.
 
 ## Wave 3 (later) — harvest expansion
 
