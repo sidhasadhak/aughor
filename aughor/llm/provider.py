@@ -519,59 +519,116 @@ class LLMProvider:
         return out
 
     @staticmethod
+    def _json_stream_instruction(response_model) -> str:
+        """A compact 'answer as this JSON object' instruction for the raw streaming
+        path (which bypasses instructor's own schema prompt). Field names + types
+        only — the terminal ``model_validate`` is the real contract, and a mismatch
+        falls back to the blocking instructor call."""
+        props = response_model.model_json_schema().get("properties", {})
+        fields = ", ".join(f'"{k}" ({v.get("type", "value")})' for k, v in props.items())
+        return (f"\n\nReturn ONLY a JSON object with fields: {fields}. "
+                "No markdown fences, no prose outside the JSON.")
+
+    @staticmethod
     def _stream_on(client, backend, model, system, user, response_model, temperature,
                    text_field, on_text, base_url: str = ""):
         from aughor.kernel import metering
         if backend == "anthropic":
-            endpoint = client.messages
+            # instructor's anthropic wrapper streams tool-mode JSON reliably.
+            create_partial = getattr(client.messages, "create_partial", None)
+            if create_partial is None:
+                raise RuntimeError("anthropic client has no create_partial — partial streaming unavailable")
             kwargs = dict(model=model, max_tokens=4096, system=system,
                           messages=[{"role": "user", "content": user}],
                           response_model=response_model)
-        else:
-            endpoint = client.chat.completions
-            kwargs = dict(model=model, temperature=temperature, response_model=response_model,
-                          messages=[{"role": "system", "content": system},
-                                    {"role": "user", "content": user}])
-        # instructor ≥1 exposes create_partial on both wrapper families; older
-        # clients simply don't stream — raise so the caller falls back to complete().
-        create_partial = getattr(endpoint, "create_partial", None)
-        if create_partial is None:
-            raise RuntimeError(f"{backend} client has no create_partial — partial streaming unavailable")
+
+            def _do():
+                # Drain the WHOLE stream inside the resilient closure: the per-endpoint
+                # semaphore is released the moment do() returns, so the slot must be
+                # held for the stream's entire life.
+                last, seen = None, ""
+                for partial in create_partial(**kwargs):
+                    last = partial
+                    text = getattr(partial, text_field, None)
+                    if isinstance(text, str) and len(text) > len(seen):
+                        seen = text
+                        try:
+                            on_text(text)   # full text so far — replace semantics
+                        except Exception:
+                            logger.debug("llm: on_text callback failed; delta dropped", exc_info=True)
+                if last is None:
+                    raise RuntimeError("partial stream yielded no objects")
+                return last, getattr(last, "_raw_response", None)
+
+            _t0 = time.monotonic()
+            last, raw_usage_src = _run_resilient(_do, base_url)
+            pt, ct = _extract_usage(raw_usage_src)
+            metering.record_llm(pt, ct, (time.monotonic() - _t0) * 1000.0)
+            metering.check_budget()
+            # Partial[...] objects skipped required-field validation mid-stream —
+            # re-validate the terminal one; a failure heals via the complete() fallback.
+            return response_model.model_validate(last.model_dump())
+
+        # OpenAI-compatible family (ollama/lmstudio/groq/together): stream RAW and
+        # parse the growing buffer ourselves. instructor's partial parser chokes the
+        # moment a model emits any preamble/fence before the JSON ("expected value at
+        # line 1 column 1" — observed live on glm via the ollama shim); scanning to
+        # the first '{' and partial-parsing with jiter tolerates that entire class,
+        # and stream_options.include_usage gives REAL token accounting.
+        import json as _json
+        import jiter as _jiter
+        raw_client = getattr(client, "client", None)   # instructor wrapper → underlying OpenAI client
+        if raw_client is None:
+            raise RuntimeError(f"{backend} instructor wrapper exposes no raw client — streaming unavailable")
+        sys_prompt = system + LLMProvider._json_stream_instruction(response_model)
+        base_kwargs = dict(model=model, temperature=temperature, stream=True,
+                           messages=[{"role": "system", "content": sys_prompt},
+                                     {"role": "user", "content": user}])
 
         def _do():
-            # Drain the WHOLE stream inside the resilient closure: the per-endpoint
-            # semaphore is released the moment do() returns, so the slot must be held
-            # for the stream's entire life (a generator escaping here would keep the
-            # HTTP connection open un-gated). Partials leave via on_text side effects.
-            last = None
-            seen = ""
-            for partial in create_partial(**kwargs):
-                last = partial
-                text = getattr(partial, text_field, None)
+            # Semaphore held for the stream's whole life (drained fully in here).
+            try:
+                stream = raw_client.chat.completions.create(
+                    stream_options={"include_usage": True}, **base_kwargs)
+            except Exception:
+                # Some OpenAI-compat shims reject stream_options — retry without.
+                stream = raw_client.chat.completions.create(**base_kwargs)
+            buf, seen, usage = "", "", None
+            for chunk in stream:
+                usage = getattr(chunk, "usage", None) or usage
+                if not (chunk.choices and chunk.choices[0].delta):
+                    continue
+                piece = chunk.choices[0].delta.content
+                if not piece:
+                    continue
+                buf += piece
+                start = buf.find("{")
+                if start < 0:
+                    continue   # still in a preamble/fence
+                try:
+                    obj = _jiter.from_json(buf[start:].encode(), partial_mode="trailing-strings")
+                except Exception:
+                    continue   # incomplete escape mid-chunk etc. — next chunk heals it
+                text = obj.get(text_field) if isinstance(obj, dict) else None
                 if isinstance(text, str) and len(text) > len(seen):
                     seen = text
                     try:
                         on_text(text)   # full text so far — replace semantics
                     except Exception:
-                        # A callback bug must never kill the stream (deltas are
-                        # best-effort by contract; the final object still returns).
                         logger.debug("llm: on_text callback failed; delta dropped", exc_info=True)
-            if last is None:
-                raise RuntimeError("partial stream yielded no objects")
-            return last
+            start, end = buf.find("{"), buf.rfind("}")
+            if start < 0 or end <= start:
+                raise RuntimeError("stream produced no JSON object")
+            return _json.loads(buf[start:end + 1]), usage
 
         _t0 = time.monotonic()
-        last = _run_resilient(_do, base_url)   # concurrency cap + transient-error retry/backoff
-        # Partial streams don't reliably carry usage — probe best-effort and record
-        # (0, 0) when absent (metering is honest, never guesses); wall-clock is real.
-        pt, ct = _extract_usage(getattr(last, "_raw_response", None))
+        final_dict, usage = _run_resilient(_do, base_url)
+        from types import SimpleNamespace
+        pt, ct = _extract_usage(SimpleNamespace(usage=usage))   # extractor reads .usage
         metering.record_llm(pt, ct, (time.monotonic() - _t0) * 1000.0)
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
-        # instructor yields Partial[response_model] objects (all fields optional, so
-        # required-field validation was skipped mid-stream). Re-validate the terminal
-        # partial into a plain, fully-validated response_model; a failure here means
-        # the stream ended incomplete — raise so the caller's complete() fallback heals it.
-        return response_model.model_validate(last.model_dump())
+        # Terminal validation is the contract; a mismatch heals via complete() fallback.
+        return response_model.model_validate(final_dict)
 
     def _fallback_client(self):
         """Lazily build (and cache) an Anthropic client for fallback, or None when
