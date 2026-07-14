@@ -3613,18 +3613,26 @@ def cancel_investigation_route(inv_id: str):
     return {"investigation_id": inv_id, "job_id": job_id, "cancelled": cancelled}
 
 
-@router.post("/investigations/{inv_id}/feedback")
-async def submit_feedback(inv_id: str, req: FeedbackRequest, request: Request):
-    stream = _stream_resume(inv_id, req.feedback, request, keep_subquestions=req.keep_subquestions,
-                            clarify_choice=req.clarify_choice)
-    # agents.user_defined — a deep run launched AS an agent resumes AS it: the
-    # persona persists in the run's checkpointed state (resume never passes
-    # through /ask). Fail-open: no persona → resume unchanged.
+def build_resume_stream(inv_id: str, request: "Request | None", *, feedback: str = "",
+                        keep_subquestions: "Optional[list[int]]" = None,
+                        clarify_choice: "Optional[str]" = None) -> AsyncGenerator[str, None]:
+    """The composed resume stream — shared by the legacy `/feedback` endpoint and the AG-UI
+    translator so both resume a paused investigation identically (incl. the agent-persona wrap)."""
+    stream = _stream_resume(inv_id, feedback, request, keep_subquestions=keep_subquestions,
+                            clarify_choice=clarify_choice)
+    # agents.user_defined — a deep run launched AS an agent resumes AS it: the persona persists in
+    # the run's checkpointed state (resume never passes through /ask). Fail-open: no persona → unchanged.
     persona = _persona_for_investigation(inv_id)
     if persona is not None:
         stream = _stream_as_agent(persona, stream)
+    return stream
+
+
+@router.post("/investigations/{inv_id}/feedback")
+async def submit_feedback(inv_id: str, req: FeedbackRequest, request: Request):
     return StreamingResponse(
-        stream,
+        build_resume_stream(inv_id, request, feedback=req.feedback,
+                            keep_subquestions=req.keep_subquestions, clarify_choice=req.clarify_choice),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -40,12 +40,6 @@ export interface AguiAskInput {
 
 type AughorEvent = { type: string } & Record<string, unknown>;
 
-// aughor `tables_used` event → figure key; note the event's list lives under `tables`.
-const FIGURE_KEYS: Record<string, string> = {
-  sql: "sql", columns: "columns", rows: "rows",
-  chart_type: "chart_type", chart_config: "chart_config", tables_used: "tables_used",
-};
-
 /**
  * Stateful mapper: one AG-UI event → zero-or-more Aughor events (the inverse of the backend §6
  * map). Tracks TextMessage roles (by messageId suffix) and ToolCall names/args across frames.
@@ -116,9 +110,15 @@ function makeAguiMapper() {
       }
       case "RUN_ERROR":
         return [{ type: "error", message: (ag.message as string) ?? "error" }];
-      case "RUN_FINISHED":
-        // the backend rode the aughor `done` payload (has_receipt/inv_id) here.
+      case "RUN_FINISHED": {
+        // An INTERRUPT outcome is a mid-run PAUSE, not a finish — the clarify/plan gate already
+        // arrived via Custom (→ CLARIFY_PENDING/PLAN_PENDING). Emit no `done` so the turn stays
+        // paused (parity with the native path, which ends the stream without a `done` at a gate).
+        const outcome = ag.outcome as { type?: string } | undefined;
+        if (outcome?.type === "interrupt") return [];
+        // otherwise the backend rode the aughor `done` payload (has_receipt/inv_id) in `result`.
         return [{ type: "done", ...((ag.result as Record<string, unknown>) ?? {}) }];
+      }
       case "RUN_STARTED":
       default:
         return [];

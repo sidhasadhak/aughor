@@ -111,6 +111,28 @@ def test_deep_report_maps_to_render_ada():
     assert _types(ev)[-1] == "RUN_FINISHED"
 
 
+def test_clarify_pending_becomes_interrupt_plus_custom():
+    frames = [
+        {"type": "start"},
+        {"type": "route", "depth": "deep"},
+        {"type": "clarify_pending", "investigation_id": "inv42", "question": "Which reading?",
+         "options": ["A", "B"], "metric_label": "refund rate"},
+        {"type": "done"},   # the translator returns AT the gate — this must never be reached
+    ]
+    ev = _run(frames)
+    t = _types(ev)
+    # the gate passes through as a lossless Custom (our adapter → CLARIFY_PENDING pause) ...
+    assert any(e["type"] == "CUSTOM" and e["name"] == "aughor.clarify_pending" for e in ev)
+    # ... AND the run finishes with a protocol-native INTERRUPT outcome (for ecosystem clients).
+    finished = [e for e in ev if e["type"] == "RUN_FINISHED"]
+    assert len(finished) == 1                      # returned at the gate — no second finish
+    outcome = finished[0]["outcome"]
+    assert outcome["type"] == "interrupt"
+    assert outcome["interrupts"][0]["id"] == "inv42"
+    assert outcome["interrupts"][0]["reason"] == "input_required"
+    assert t[-1] == "RUN_FINISHED" and "RUN_ERROR" not in t
+
+
 def test_unknown_event_is_lossless_custom():
     # the risk-register guarantee: an unmapped Aughor event survives as aughor.<type> Custom.
     ev = _run([{"type": "start"}, {"type": "playbook_refs", "refs": ["p1"]}, {"type": "done"}])

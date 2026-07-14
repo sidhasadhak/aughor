@@ -50,7 +50,9 @@ from ag_ui.core import (
 from ag_ui.encoder import EventEncoder
 
 from aughor.kernel.flags import flag_enabled
-from aughor.routers.investigations import AskRequest, ChatHistoryTurn, build_ask_stream
+from aughor.routers.investigations import (
+    AskRequest, ChatHistoryTurn, build_ask_stream, build_resume_stream,
+)
 
 router = APIRouter()
 
@@ -232,6 +234,21 @@ async def translate_ask_stream(
                     type=EventType.RUN_ERROR, message=ev.get("message", "error")))
                 return
 
+            if etype in ("clarify_pending", "plan_pending"):
+                # A mid-run gate (CK-1.3). Pass it through as Custom (our adapter → the existing
+                # CLARIFY_PENDING/PLAN_PENDING pause our reducer already renders) AND finish the run
+                # with a protocol-native INTERRUPT outcome, so an AG-UI ecosystem client can resume
+                # via `POST /agui/run` with a `resume[]`. The run pauses here — stop translating.
+                yield custom(etype, ev)
+                yield encoder.encode(RunFinishedEvent(
+                    type=EventType.RUN_FINISHED, thread_id=thread_id, run_id=run_id,
+                    outcome={"type": "interrupt", "interrupts": [{
+                        "id": ev.get("investigation_id") or run_id,
+                        "reason": "input_required" if etype == "clarify_pending" else "confirmation",
+                        "message": ev.get("question") or ev.get("subject") or "",
+                    }]}))
+                return
+
             if etype:  # everything else → lossless Custom passthrough
                 yield custom(etype, ev)
 
@@ -248,21 +265,46 @@ async def translate_ask_stream(
         yield encoder.encode(RunErrorEvent(type=EventType.RUN_ERROR, message=str(exc)))
 
 
+def _resume_field(item, *keys):
+    """Read a field off an AG-UI resume item, tolerating dict or model (snake/camel)."""
+    for k in keys:
+        if isinstance(item, dict):
+            if k in item:
+                return item[k]
+        elif hasattr(item, k):
+            return getattr(item, k)
+    return None
+
+
 @router.post("/agui/run")
 async def agui_run(inp: RunAgentInput, request: Request):
-    """AG-UI-protocol translator over the unified `/ask` stream. Additive + flag-gated."""
+    """AG-UI-protocol translator over the unified `/ask` stream (fresh run, or a resume from an
+    interrupt outcome). Additive + flag-gated."""
     if not flag_enabled("agui.endpoint"):
         raise HTTPException(status_code=404, detail="AG-UI endpoint is disabled")
-    if inp.resume:
-        # Mid-run clarify/plan interrupt resume is CK-1.3 — not yet wired.
-        raise HTTPException(status_code=501, detail="AG-UI resume is not yet supported (CK-1.3)")
 
     encoder = EventEncoder(accept=request.headers.get("accept"))
-    ask_req = ask_request_from(inp)
-    # Resolve connection/agent + apply bindings BEFORE streaming, so a binding conflict (409) or a
-    # missing/disabled agent (404/409) surfaces as an HTTP error rather than mid-SSE.
-    stream = build_ask_stream(ask_req, request)
     run_id = inp.run_id or uuid.uuid4().hex
+
+    if inp.resume:
+        # Resume a paused investigation from an interrupt (CK-1.3): the interruptId is the
+        # investigation id; the payload carries the clarify choice or the kept plan indices.
+        item = inp.resume[0]
+        inv_id = _resume_field(item, "interrupt_id", "interruptId") or ""
+        payload = _resume_field(item, "payload") or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        stream = build_resume_stream(
+            inv_id, request,
+            feedback=str(payload.get("feedback", "")),
+            keep_subquestions=payload.get("keep_subquestions"),
+            clarify_choice=payload.get("clarify_choice"),
+        )
+    else:
+        ask_req = ask_request_from(inp)
+        # Resolve connection/agent + apply bindings BEFORE streaming, so a binding conflict (409) or
+        # a missing/disabled agent (404/409) surfaces as an HTTP error rather than mid-SSE.
+        stream = build_ask_stream(ask_req, request)
 
     return StreamingResponse(
         translate_ask_stream(stream, encoder, thread_id=inp.thread_id or run_id, run_id=run_id),
