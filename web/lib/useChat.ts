@@ -59,7 +59,7 @@ export function useChat() {
     eventLogRef.current = [...eventLogRef.current.slice(-(MAX_LOG - 1)), e];
   }, []);
 
-  async function ask(question: string, connectionId: string, mode: "auto" | "ask" | "investigate" = "auto", opts: { skipCache?: boolean; canvasId?: string; insightId?: string; deep?: boolean; depth?: "quick" | "deep"; skipClarify?: boolean; clarifyReading?: string; clarifySubject?: string; clarifySource?: string; agentId?: string } = {}) {
+  async function ask(question: string, connectionId: string, mode: "auto" | "ask" | "investigate" = "auto", opts: { skipCache?: boolean; canvasId?: string; insightId?: string; seedSql?: string | null; seedContext?: string; deep?: boolean; depth?: "quick" | "deep"; skipClarify?: boolean; clarifyReading?: string; clarifySubject?: string; clarifySource?: string; agentId?: string } = {}) {
     const id = Math.random().toString(36).slice(2);
     // The turn's initial mode is corrected by the `route` event for auto turns
     // (deep → investigate, else ask); start auto as "ask" so the loading state is
@@ -96,7 +96,10 @@ export function useChat() {
           headers: { "Content-Type": "application/json" },
           // history: a follow-up in a canvas composes on the previous query (parity
           // with the quick /chat + /ask paths), not just the auto route.
-          body: JSON.stringify({ question, connection_id: connectionId, canvas_id: opts.canvasId ?? null, skip_cache: opts.skipCache ?? false, insight_id: opts.insightId ?? null, deep: opts.deep ?? false, history: chatHistory() }),
+          // seed_sql / seed_context: a drill seeded from a result (overview "explore this
+          // fact", or any raw-seed deeper) anchors ADA on the originating query/observation
+          // even without an insight_id — the backend's _build_origin_finding raw-seed fallback.
+          body: JSON.stringify({ question, connection_id: connectionId, canvas_id: opts.canvasId ?? null, skip_cache: opts.skipCache ?? false, insight_id: opts.insightId ?? null, seed_sql: opts.seedSql ?? null, seed_context: opts.seedContext ?? "", deep: opts.deep ?? false, history: chatHistory() }),
           signal,
         });
       } else if (mode === "auto") {

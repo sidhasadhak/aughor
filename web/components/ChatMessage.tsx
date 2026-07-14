@@ -1273,6 +1273,7 @@ export function ChatMessage({
   onRunFresh,
   onShowSource,
   onDeeper,
+  onExploreFact,
   onApprovePlan,
   onRejectPlan,
   onChooseClarify,
@@ -1283,6 +1284,8 @@ export function ChatMessage({
   onRunFresh?: (q: string) => void;
   onShowSource?: (data: SourcePanelData) => void;
   onDeeper?: (question: string, insightId: string | null) => void;
+  /** Drill an overview fact into a live seeded investigation (see OverviewReportView). */
+  onExploreFact?: (question: string, opts: { seedSql: string | null; seedContext: string }) => void;
   onApprovePlan?: (invId: string, keepIndices: number[]) => void;
   onRejectPlan?: (invId: string) => void;
   onChooseClarify?: (invId: string, option: string) => void;
@@ -1413,7 +1416,7 @@ export function ChatMessage({
            is investigate-only, and the overview route stays in "ask" mode) so it wins
            whenever overviewReport is set, regardless of turn.mode. ── */}
       {!collapsed && turn.overviewReport && (
-        <OverviewReportView report={turn.overviewReport} onShowSource={onShowSource} />
+        <OverviewReportView report={turn.overviewReport} onShowSource={onShowSource} onExploreFact={onExploreFact} />
       )}
 
       {/* ── Insight — the answer as a clean Brief; mounts as a shimmer scaffold
