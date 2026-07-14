@@ -29,6 +29,13 @@ export const CHANGE_METRIC_COL = /(change|delta|growth|mom|yoy|wow|qoq|pct_chang
 /** Ordinal / identifier columns — never abbreviate or treat as a measure. */
 export const ORDINAL_COL = /(year|month|day|week|rank|_id$|^id$)/i;
 
+/** A numeric-VALUED column whose NAME is a fiscal/calendar grain that `DATE_NAME`'s
+ *  anchored words miss — `fiscal_year`, `order_month`, `fy`, `qtr`. These are the
+ *  x-axis (a time/ordinal dimension), never a measure: without this a yearly series
+ *  like `[fiscal_year, net_sales]` has NO dimension left and the chart renders blank
+ *  (fiscal_year fell through to a measure because DATE_NAME only matches `^year$`). */
+export const TEMPORAL_GRAIN_COL = /^[a-z]+_(fy|year|quarter|qtr|month|week|half)$|^(fy|qtr)$/i;
+
 /** Pure identifier columns — excluded from measure selection. */
 export const SKIP_ID = /(_id$|^id$)/i;
 
@@ -107,7 +114,8 @@ export function classifyColumns(
   columns.forEach((col, i) => {
     if (isDeadColumn(rows, i)) return;
     const firstVal = firstNonNull(rows, i);
-    const isDate = DATE_NAME.test(col) || (typeof firstVal === "string" && DATE_VALUE_RE.test(firstVal));
+    const isDate = DATE_NAME.test(col) || TEMPORAL_GRAIN_COL.test(col)
+      || (typeof firstVal === "string" && DATE_VALUE_RE.test(firstVal));
     const numeric = !isDate && !isIdLike(col) && isNumeric(firstVal);
     if (isDate) dateIdxs.push(i);
     else if (numeric) numericIdxs.push(i);
