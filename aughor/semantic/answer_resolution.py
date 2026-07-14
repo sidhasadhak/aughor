@@ -92,6 +92,18 @@ _MEASURE_RX = re.compile(
     r"(sales|revenue|net_sales|gmv|amount|total|spend|cost|profit|margin|units?|qty|quantity|"
     r"orders?|count|volume|bookings?|turnover|ebitda|aov)", re.I)
 
+# ── grain-fallback vocabulary (the transactional finer-grain path) ────────────
+# A revenue-type question ("monthly sales") whose governed measure table is coarse
+# (financial_summary is yearly) can still be answered at the finer grain FROM the
+# transactional fact table — IF the schema has one carrying an ACTUAL revenue-family
+# measure + a fine time column + the same entity dimension. These regexes make that
+# substitution safe: exclude estimates/projections (est_gmv is not a sale), prefer a
+# canonical fact table, and demote indirect proxies (influenced/attributed/uplift).
+_REVENUE_FAMILY = re.compile(r"(revenue|sales|net_sales|gmv|turnover|amount|bookings|proceeds)", re.I)
+_EST_PREFIX = re.compile(r"^(est|estimated|projected|forecast|budget|target|planned|expected)_", re.I)
+_FACT_TABLE = re.compile(r"(^|_)(orders?|order_items?|line_items?|transactions?|txns?|sales|invoices?|payments?|bookings?|ledger|fact)(_|s?$)", re.I)
+_INDIRECT_MEASURE = re.compile(r"(influenced|attributed|uplift|potential|indirect|est_|projected)", re.I)
+
 # question tokens that are NEVER an entity filter (time, measure, glue words).
 _STOP = {
     "show", "me", "give", "get", "the", "a", "an", "of", "for", "in", "at", "by", "on", "to", "and",
@@ -119,6 +131,7 @@ class Resolution:
     requested_grain: Optional[str] = None
     available_grain: Optional[str] = None
     grain_feasible_via: Optional[str] = None               # a table serving the finer grain, else None
+    grain_note: str = ""                                   # honest note when the finer grain uses a different (transactional) measure
     measure_gap: Optional[str] = None                      # metric-class feasibility note
     what_is_available: str = ""
 
@@ -147,6 +160,8 @@ class Resolution:
                         f"to break it down by")
         if self.measure_gap:
             return self.measure_gap
+        if self.grain_note:                          # answerable via a finer transactional path — say which measure
+            return self.grain_note
         return ""
 
     @property
@@ -158,8 +173,11 @@ class Resolution:
             lines.append(f"- FILTER: for “{b.noun}”, use {b.table}.{b.column} = '{b.value}' "
                          f"(the resolved value — do not guess a different spelling).")
         if self.requested_grain and self.grain_feasible_via:
-            lines.append(f"- GRAIN: for a {self.requested_grain} breakdown, query "
-                         f"`{self.grain_feasible_via}` (it has the finer time column).")
+            via = (f"- GRAIN: for a {self.requested_grain} breakdown, query "
+                   f"`{self.grain_feasible_via}` (it has the finer time column).")
+            if self.grain_note:
+                via += f" NOTE: {self.grain_note}"
+            lines.append(via)
         elif (self.requested_grain and self.available_grain
               and _RANK[self.available_grain] > _RANK[self.requested_grain]):
             lines.append(f"- GRAIN: this measure exists only at {self.available_grain} grain; "
@@ -258,6 +276,10 @@ def _question_measures(question: str) -> list[str]:
 
 def _col_matches_measure(col: str, measures: list[str]) -> bool:
     c = col.lower()
+    if _EST_PREFIX.search(c):
+        return False            # an estimate/projection (est_gmv) is never the measure —
+        #                         this is what stops brand_collaborations' est_gmv_eur from
+        #                         re-latching the entity onto the decoy for a "gmv" question.
     for m in measures:
         if any(syn in c for syn in _MEASURE_SYNONYMS.get(m, (m,))):
             return True
@@ -368,20 +390,69 @@ def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] 
 
 def _available_grain(tables: dict, measure_tables: set, requested: str):
     """(available_grain, feasible_via) for the asked-for measure at the requested
-    grain. Scans ONLY the tables that carry that measure: if any has a time column
-    at least as fine as requested, that's a genuine finer path; otherwise the finest
-    measure-table grain is the ceiling (→ answer-at-coarser caveat)."""
+    grain. Scans ONLY the tables that carry that measure. Among those that can serve
+    the requested grain it picks DETERMINISTICALLY — a canonical fact table over a
+    niche/indirect one (orders' order_date beats clienteling's interaction_date), not
+    whichever the set happened to yield first; otherwise the finest measure-table grain
+    is the ceiling (→ answer-at-coarser caveat)."""
     want = _RANK[requested]
     finest = None
+    servers = []  # (is_fact, -rank, table)
     for tname in measure_tables:
-        tg = _columns_grain(tables.get(tname, []))
+        cols = tables.get(tname, [])
+        tg = _columns_grain(cols)
         if tg is None:
             continue
         if _RANK[tg] <= want:
-            return tg, tname                       # a finer path exists → repair
+            servers.append((bool(_FACT_TABLE.search(tname)), -_RANK[tg], tname))
         if finest is None or _RANK[tg] < _RANK[finest]:
             finest = tg
+    if servers:
+        servers.sort(reverse=True)                 # fact table first, then finest grain
+        best = servers[0][2]
+        return _columns_grain(tables.get(best, [])), best
     return finest, None
+
+
+def _finer_grain_fallback(tables: dict, requested: str, measures: list[str],
+                          entity_dim_col: Optional[str]):
+    """When the governed measure's own table is too coarse for the requested grain,
+    find the TRANSACTIONAL fact table that can serve it: an ACTUAL (non-estimated)
+    revenue-family measure column + a time column at least as fine as requested +
+    (the entity's filter dimension, when one was bound, so the filter transfers).
+    Prefers a canonical fact table over a niche/indirect proxy. Returns
+    ``(table, measure_col, grain)`` or ``None``.
+
+    This is the antidote to the FALSE 'monthly is impossible' the strict measure-table
+    scan produces when — e.g. — net_sales is a yearly summary but order_date exists on
+    the orders fact. Gated to revenue-type questions (or no named measure); the
+    est_-prefix + indirect-proxy exclusions keep an estimate table (est_gmv by
+    launch_date) from hijacking the answer the way the measure-first design already
+    guards entity binding."""
+    if measures and not any(_REVENUE_FAMILY.search(m) for m in measures):
+        return None                                 # only revenue asks have this proxy
+    want = _RANK[requested]
+    best = None  # (is_fact, -rank_penalty, table, measure_col, grain) — higher is better
+    for t, cols in tables.items():
+        tg = _columns_grain(cols)
+        if tg is None or _RANK[tg] > want:
+            continue                                # can't serve the requested grain
+        if entity_dim_col and entity_dim_col not in cols:
+            continue                                # the entity filter can't transfer
+        actual = [c for c in cols if _REVENUE_FAMILY.search(c) and not _EST_PREFIX.search(c)]
+        if not actual:
+            continue                                # no real revenue measure here
+        direct = [c for c in actual if not _INDIRECT_MEASURE.search(c)]
+        measure_col = (direct or actual)[0]
+        is_fact = bool(_FACT_TABLE.search(t))
+        is_direct = bool(direct)
+        # rank: canonical fact table first, then a direct (non-proxy) measure, then finer grain
+        key = (is_fact, is_direct, -_RANK[tg])
+        if best is None or key > best[0]:
+            best = (key, t, measure_col, tg)
+    if best is None:
+        return None
+    return best[1], best[2], best[3]
 
 
 def resolve(question: str, *, schema: str = "", db=None, connection_id: str = "",
@@ -418,12 +489,38 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
             r.what_is_available = sample
 
         # ── time-grain resolution — over the measure's table(s) only ──
+        # (skip entirely on an abstain — a not-found entity needs no grain verdict.)
         req = requested_time_grain(question)
-        if req is not None:
+        if req is not None and not r.not_found:
             r.requested_grain = req
             avail, via = _available_grain(tables, mtables, req)
             r.available_grain = avail
             r.grain_feasible_via = via
+            # The governed measure's own table can't serve the finer grain (via is None
+            # and the finest available is coarser). Before declaring the grain
+            # impossible, look for the transactional fact path (order_date exists!) and
+            # answer FROM it — noting the measure may be transactional.
+            coarse = (avail is not None and _RANK[avail] > _RANK[req])
+            if via is None and (coarse or avail is None):
+                entity_dim = r.entity_bindings[0].column if r.entity_bindings else None
+                fb = _finer_grain_fallback(tables, req, measures, entity_dim)
+                if fb is not None:
+                    fb_table, fb_measure, fb_grain = fb
+                    r.grain_feasible_via = fb_table
+                    r.available_grain = fb_grain
+                    # If the fallback measure differs from the governed one, say so.
+                    gov = next((c for t in mtables for c in tables.get(t, [])
+                                if _col_matches_measure(c, measures or [])), None)
+                    if gov and gov.lower() != fb_measure.lower():
+                        r.grain_note = (f"{req} figures use `{fb_table}.{fb_measure}` (transaction-level); "
+                                        f"the governed `{gov}` is only summarized at {avail or 'a coarser'} grain")
+            # Unify: whenever a finer table serves the grain, the entity FILTER and the
+            # GRAIN must name ONE table — rebind the filter onto the grain table (same
+            # dimension column, verified present) so the generator can't split them.
+            if r.grain_feasible_via:
+                for b in r.entity_bindings:
+                    if b.table != r.grain_feasible_via and b.column in tables.get(r.grain_feasible_via, []):
+                        b.table = r.grain_feasible_via
 
         # ── metric-class feasibility ──
         try:

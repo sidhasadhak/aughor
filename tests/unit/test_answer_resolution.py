@@ -139,3 +139,78 @@ def test_never_raises_on_garbage():
     assert R.resolve(None, schema=None).feasibility == "answerable"
     assert R.resolve("monthly sales {{{", schema="not a schema").feasibility in (
         "answerable", "answerable_with_caveat")
+
+
+# ── finer-grain fallback: the transactional fact path (order_date exists) ──────
+# The REAL luxexperience shape: governed net_sales is YEARLY (financial_summary), but
+# an `orders` fact carries gmv_eur at order_date (daily) on the same platform dim — so
+# "monthly sales" IS answerable from orders. brand_collaborations (est_gmv + launch_date)
+# and clienteling_interactions (gmv_influenced + interaction_date) are traps: an estimate
+# and an indirect proxy must never win over the orders fact.
+_LUX_TXN = """\
+TABLE: luxexperience.financial_summary  (25 rows)
+  net_sales_eur_m  DOUBLE
+  gmv_eur_m  BIGINT
+  platform  VARCHAR  -- [NET-A-PORTER, Mytheresa, YOOX]
+  fiscal_year  BIGINT
+TABLE: luxexperience.brand_collaborations  (40 rows)
+  platform  VARCHAR  -- [Mytheresa, NET-A-PORTER]
+  launch_date  DATE
+  est_gmv_eur  DOUBLE
+TABLE: luxexperience.clienteling_interactions  (900 rows)
+  platform  VARCHAR  -- [Mytheresa, YOOX]
+  interaction_date  DATE
+  gmv_influenced_eur  DOUBLE
+TABLE: luxexperience.orders  (120000 rows)
+  order_id  VARCHAR
+  platform  VARCHAR  -- [Mytheresa, YOOX, NET-A-PORTER]
+  order_date  DATE
+  fiscal_year  BIGINT
+  gmv_eur  DOUBLE
+"""
+
+
+def test_monthly_sales_uses_transactional_fact_when_summary_is_annual():
+    # net_sales is yearly-only, but orders.order_date exists → monthly IS answerable
+    # from the orders fact (NOT a false "monthly unavailable").
+    r = R.resolve("Show me month wise sales for mytheresa", schema=_LUX_TXN)
+    assert r.feasibility == "answerable"
+    assert r.grain_feasible_via == "luxexperience.orders"
+    # the entity FILTER is rebound onto the grain table so FILTER + GRAIN name ONE table
+    assert r.entity_bindings and r.entity_bindings[0].table == "luxexperience.orders"
+    assert "orders.platform = 'Mytheresa'" in r.prompt_constraints
+    assert "query `luxexperience.orders`" in r.prompt_constraints
+    # honest about the measure swap (gmv, not the governed net_sales)
+    assert "gmv_eur" in r.grain_note and "net_sales_eur_m" in r.grain_note
+    # the decoy + the indirect proxy are never chosen
+    assert "brand_collaborations" not in r.prompt_constraints
+    assert "clienteling" not in r.prompt_constraints
+
+
+def test_gmv_question_ignores_estimate_decoy_and_prefers_the_fact():
+    # est_gmv matches the "gmv" synonym literally, but an ESTIMATE must never anchor the
+    # entity or serve the grain — orders (actual gmv_eur, a fact table) wins over both
+    # the estimate decoy and the indirect clienteling proxy.
+    r = R.resolve("weekly gmv for mytheresa", schema=_LUX_TXN)
+    assert r.feasibility == "answerable"
+    assert r.grain_feasible_via == "luxexperience.orders"
+    assert r.entity_bindings[0].table == "luxexperience.orders"
+    assert "brand_collaborations" not in r.prompt_constraints
+    assert "clienteling" not in r.prompt_constraints
+
+
+def test_fallback_does_not_invent_a_path_when_none_exists():
+    # Regression: with NO fact table (only the annual summary + est decoy), the honest
+    # "monthly unavailable" caveat still stands — the fallback must not fabricate a path.
+    r = R.resolve("month wise sales for mytheresa", schema=_LUX)
+    assert r.grain_feasible_via is None
+    assert r.grain_note == ""
+    assert r.feasibility == "answerable_with_caveat"
+    assert "only reported at yearly grain" in r.caveat
+
+
+def test_non_revenue_measure_has_no_transactional_substitute():
+    # The fallback is scoped to revenue-type asks; a "customers" question does NOT get
+    # silently answered from a gmv fact (that would be a wrong-measure answer).
+    r = R.resolve("monthly customers for mytheresa", schema=_LUX_TXN)
+    assert r.grain_feasible_via is None  # no customers measure at a finer grain here
