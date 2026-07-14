@@ -3177,6 +3177,103 @@ async def _stream_program(pr, conn_id: str) -> AsyncGenerator[str, None]:
     yield _sse("done", {})
 
 
+# ── Overview / "interesting facts about this schema" (the default first-look) ──
+# The widest-possible question answered the Genie way: a deterministic profile of the
+# whole dataset, not an investigation of one metric. Detection is a phrasing regex AND
+# the ABSENCE of a named metric/entity/time window — so a specific question still routes
+# normally. Fully deterministic (no LLM) → graduated to Auto (flag `ask.overview`).
+_OVERVIEW_RE = re.compile(
+    r"\b(interesting facts?|tell me about|what'?s (notable|interesting|here|in "
+    r"(this|the))|describe (this|the) (data|schema|dataset|tables?)|summar(y|ize|ise)"
+    r"|overview of|show me around|what can i ask|explore (this|the) (data|schema|dataset)"
+    r"|get to know|first look|what'?s in (this|the) (data|schema|dataset))\b", re.I)
+
+
+_OVERVIEW_GENERIC = re.compile(
+    r"\b(this|that|the|these|those|my|our|data|dataset|datasets|schema|table|tables|"
+    r"here|about|me|show|give|tell|please|some|any)\b", re.I)
+
+
+def _is_overview_question(question: str) -> bool:
+    q = (question or "").strip()
+    if not _OVERVIEW_RE.search(q):
+        return False
+    # signal-absence guard: strip the overview phrasing + generic dataset nouns, then
+    # require NO leftover metric/entity/time — so "tell me about REVENUE" (a real ask)
+    # still routes normally while "what's notable in this dataset" stays an overview.
+    residual = _OVERVIEW_GENERIC.sub(" ", _OVERVIEW_RE.sub(" ", q))
+    from aughor.semantic.answer_resolution import (
+        entity_candidates, question_measures, requested_time_grain)
+    return (not question_measures(residual) and not entity_candidates(residual)
+            and requested_time_grain(residual) is None)
+
+
+def _overview_eligible(req) -> bool:
+    """Whether a ``/ask`` turn is a widest-scope overview ask. A fresh auto turn (may be
+    in a canvas — that's the schema scope) whose phrasing asks for an overview and names
+    no metric/entity/time window. Flag-gated on ``ask.overview`` (graduated to Auto)."""
+    from aughor.kernel.flags import flag_enabled
+    return bool(
+        flag_enabled("ask.overview") and req.depth == "auto"
+        and not req.deep and not req.insight_id and not req.history and not req.skip_clarify
+        and _is_overview_question(req.question)
+    )
+
+
+async def _stream_overview(question: str, conn_id: str, req) -> AsyncGenerator[str, None]:
+    """Stream the deterministic interesting-facts tour as ``/ask`` events. Resolves the
+    canvas/connection scope exactly like ``_stream_chat`` (so tables + eff_schema are
+    right), builds the fact tour off the event loop, and emits one ``overview_report``.
+    No LLM, no metering — bounded and deterministic. Any failure degrades to an honest
+    headline, never a dead-ended turn."""
+    from aughor.canvas.scope import resolve_execution_scope
+    from aughor.tools.schema import build_canvas_schema_context, parse_schema_tables
+    yield _sse("route", {
+        "depth": "overview", "mode": "overview", "tier": "overview",
+        "score": 1.0, "confidence": 1.0, "ambiguous": False,
+        "why": "a broad overview — profiling the whole dataset for its most notable facts",
+        "alternatives": ["quick", "deep"], "forced": None, "downgraded_from": None,
+    })
+    try:
+        _es = resolve_execution_scope(conn_id, req.canvas_id,
+                                      schema_context_builder=build_canvas_schema_context)
+        cid = _es.connection_id
+        eff_schema = _es.eff_schema or ""
+        db = _es.open()
+    except Exception as e:
+        yield _sse("headline", {"headline": f"Couldn't open the connection for an overview: {e}"})
+        yield _sse("done", {})
+        return
+
+    # scoped table set: the canvas's tables, else every table in the effective schema.
+    tables = [t.split(".")[-1] for t in _es.tables] if (_es.tables and not _es.is_full_schema) else []
+    if not tables:
+        try:
+            sch = await asyncio.to_thread(_get_schema_cached, cid, db)
+            tables = [t.split(".")[-1] for t in parse_schema_tables(sch).keys()]
+        except Exception:
+            tables = []
+
+    rep = None
+    try:
+        from aughor.overview import build_overview
+        rep = await asyncio.to_thread(build_overview, db, cid, tables,
+                                      schema=eff_schema, entity_hint="rows", limit=8)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "overview fact tour is best-effort; degrading to an honest headline",
+                 counter="ask.overview_failed")
+
+    if rep is not None and rep.facts:
+        yield _sse("overview_report", {"overview_report": rep.to_dict()})
+        yield _sse("headline", {"headline": rep.summary})
+    else:
+        yield _sse("headline", {"headline": (
+            "I couldn't surface overview facts for this dataset — try asking about a "
+            "specific measure, or open a table in the catalog.")})
+    yield _sse("done", {})
+
+
 async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> AsyncGenerator[str, None]:
     """The unified door: decide depth, emit the `route` receipt, then delegate to the
     existing quick (Insight) or deep (ADA/explore) body unchanged.
@@ -3212,6 +3309,14 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # Budget is one ask/turn — the user's answer comes back with skip_clarify set.
     # Flag `ask.clarify` (env AUGHOR_ASK_CLARIFY) is the rare DEFAULT-ON flag.
     from aughor.kernel.flags import flag_enabled
+
+    # Overview / "interesting facts about this schema" — the widest-scope ask. Checked
+    # BEFORE the clarify gate on purpose: an under-specified "tell me about this data" is
+    # exactly the case where an overview IS the answer, not a clarifying question.
+    if _overview_eligible(req):
+        async for _ev in _stream_overview(req.question, conn_id, req):
+            yield _ev
+        return
 
     if (req.depth == "auto" and not req.deep and not req.insight_id and not req.skip_clarify
             and flag_enabled("ask.clarify")):

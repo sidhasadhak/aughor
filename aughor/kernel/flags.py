@@ -57,6 +57,7 @@ FLAG_ENV = {
     "obs.task_table": "AUGHOR_OBS_TASK_TABLE",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
     "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
+    "ask.overview": "AUGHOR_ASK_OVERVIEW",
     "agents.user_defined": "AUGHOR_USER_AGENTS",
     "search.rrf": "AUGHOR_SEARCH_RRF",
     "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
@@ -109,6 +110,10 @@ FLAG_META = {
     "ask.stream_text": {
         "label": "Token-stream the answer narrative",
         "description": "Stream the post-answer insight narrative as it is written (`insight_delta` SSE events carrying the partial text) instead of one late pop-in, then emit the existing full `insight` event as the authoritative terminal value (self-healing: a dropped delta costs nothing). Dual-emit and additive — old clients ignore the unknown delta events; off = byte-identical to the pre-streaming stream. Falls back to the blocking call on any streaming error. CK-0.2 of the CopilotKit/AG-UI adoption plan.",
+    },
+    "ask.overview": {
+        "label": "Interesting-facts overview tour (the default first-look)",
+        "description": "Answer the widest-possible question — \"show me interesting facts about this schema\" / \"tell me about this data\" — the way Genie offers by default: a DETERMINISTIC profile of the whole dataset ranked by notability and capped for diversity, not an investigation of one metric. Seven lenses (scale · concentration · outlier · distribution · composition · coverage · relationship) each run a cheap grounded probe (mostly one SUMMARIZE per table, no LLM), then a diverse top-N is selected so the tour spans many tables and fact types. Fires ONLY on an overview-phrased question with no metric/entity/time window named; graduated to Auto (on by default via `capabilities.auto`) because it is bounded and deterministic. An explicit env `=0` disables it.",
     },
     "ask.context_receipt": {
         "label": "Grounding-context receipt (show what the model was grounded on)",
@@ -310,6 +315,10 @@ AUTO_ELIGIBLE: frozenset = frozenset({
     # resolve() degrades to `answerable` when nothing binds; metric pinning requires a governed
     # metric match AND a clean dry-run before it does anything.
     "ask.resolve_first", "ada.pin_canonical_metric",
+    # Graduated 2026-07-14: the "interesting facts about this schema" tour is fully
+    # deterministic (no LLM), bounded, and fires ONLY on a metric/entity/time-free
+    # overview-phrased question — the great default first-look, on by default.
+    "ask.overview",
 })
 # Human description of each capability's deterministic trigger — surfaced in the flags API and (later) as
 # the "why" on an activation receipt.
@@ -322,6 +331,7 @@ CAPABILITY_TRIGGER: dict = {
     "semops.guarded_extract": "a typed-field extraction fails",
     "ask.resolve_first": "the question names an entity or time grain the schema resolves deterministically",
     "ada.pin_canonical_metric": "a governed metric matches the question and its canonical SQL dry-runs clean",
+    "ask.overview": "the question asks for a broad overview with no metric, entity, or time window",
 }
 
 
