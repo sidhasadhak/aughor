@@ -6,7 +6,7 @@
 // place that interprets the /investigate (and /chat) event stream, so the two
 // hooks can never drift.
 
-import type { AnswerReport, ExplorationReport, Hypothesis, InvestigationPhase, SubQuestion, SubQuestionAnswer } from "@/lib/types";
+import type { AnswerReport, ExplorationReport, Hypothesis, InvestigationPhase, OverviewReport, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import type { PlaybookRef, FindingDossier } from "@/lib/api";
 import { API_BASE } from "./config";
 
@@ -76,8 +76,8 @@ export interface ChatTurn {
   // depth banner with a one-click re-run (auto + transparency). Null on legacy
   // (explicit Insight/Deep) and restored turns, which never carry a route event.
   route: {
-    depth: "quick" | "deep";
-    mode: string;            // door intent: direct | investigate | explore | final_text
+    depth: "quick" | "deep" | "overview";
+    mode: string;            // door intent: direct | investigate | explore | final_text | overview
     tier: string;            // simple | moderate | complex
     why: string;
     ambiguous: boolean;
@@ -127,6 +127,13 @@ export interface ChatTurn {
   // instead of a fresh ADA run when drilling into a known finding.
   dossierReport: FindingDossier | null;
   dossierInsightId: string | null;
+
+  // Overview (interesting-facts tour) — the deterministic schema profile served for
+  // an "overview" route: a diverse, notability-ranked grid of fact cards. Terminal,
+  // like the dossier/explore reports (renders regardless of turn.mode). Optional so
+  // the manual restore literal in ChatPanel (which enumerates fields, not EMPTY_TURN)
+  // keeps compiling; EMPTY_TURN still seeds it to null for every live turn.
+  overviewReport?: OverviewReport | null;
 
   // Real-time investigation progress
   queriesExecuted: { sql: string; row_count: number; error: string | null }[];
@@ -207,6 +214,7 @@ export type ChatAction =
   | { type: "ADA_REPORT";   report: AnswerReport; queryMode: string; investigationId: string | null }
   | { type: "EXPLORE_REPORT"; report: ExplorationReport; subQuestions: SubQuestion[]; subqAnswers: SubQuestionAnswer[]; investigationId: string | null }
   | { type: "DOSSIER_REPORT"; dossier: FindingDossier; insightId: string | null }
+  | { type: "OVERVIEW_REPORT"; report: OverviewReport }
   | { type: "REPORT";       report: Record<string, unknown>; queryMode: string; investigationId: string | null }
   | { type: "QUERY_MODE";   queryMode: string }
   | { type: "TABLES_USED";  tables: string[] }
@@ -249,6 +257,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
   dossierReport: null, dossierInsightId: null,
+  overviewReport: null,
   queriesExecuted: [], latestScore: null,
   hypotheses: [], investigationId: null, receiptId: null, publicReceiptId: null,
   tablesUsed: [], contextManifest: null, planPending: null, clarifyPending: null, followups: [], analysis: null, error: null,
@@ -345,6 +354,11 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...updateLast(state, t => finish({ ...t, status: "done", adaReport: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
     case "DOSSIER_REPORT":
       return { ...updateLast(state, t => finish({ ...t, status: "done", dossierReport: action.dossier, dossierInsightId: action.insightId, queryMode: "dossier", statusText: null })), streaming: false };
+    case "OVERVIEW_REPORT":
+      // Terminal, like the dossier. Leave `mode` untouched (ROUTE set it to "ask" for an
+      // overview depth) so the turn renders via the dedicated overview branch, not the
+      // investigate registry; queryMode marks it for history/debug.
+      return { ...updateLast(state, t => finish({ ...t, status: "done", overviewReport: action.report, queryMode: "overview", statusText: null })), streaming: false };
     case "EXPLORE_REPORT":
       return { ...updateLast(state, t => finish({ ...t, status: "done", exploreReport: action.report, subQuestions: action.subQuestions, subqAnswers: action.subqAnswers, queryMode: "explore", statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
     case "REPORT":
@@ -372,6 +386,7 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "answer_report":
     case "ada_report":     return `headline: ${String(((p.answer_report ?? p.ada_report) as { headline?: string })?.headline ?? "").slice(0, 60)}`;
     case "explore_report": return `narrative: ${String((p.explore_report as { narrative?: string })?.narrative ?? "").slice(0, 60)}`;
+    case "overview_report": return `${(p.overview_report as { facts?: unknown[] })?.facts?.length ?? 0} facts`;
     case "route":          return `${p.depth ?? "?"} · ${String(p.why ?? "").slice(0, 40)}`;
     case "clarify":        return `${p.source ?? "?"} · ${String(p.question ?? "").slice(0, 40)}`;
     case "escalate":       return `${p.signal ?? "?"} · ${String(p.reason ?? "").slice(0, 40)}`;
@@ -439,7 +454,7 @@ export async function consumeStream(
               break;
             case "route":
               dispatch({ type: "ROUTE", route: {
-                depth: (p.depth as "quick" | "deep") ?? "quick",
+                depth: (p.depth as "quick" | "deep" | "overview") ?? "quick",
                 mode: (p.mode as string) ?? "",
                 tier: (p.tier as string) ?? "",
                 why: (p.why as string) ?? "",
@@ -513,6 +528,9 @@ export async function consumeStream(
               break;
             case "dossier_report":
               dispatch({ type: "DOSSIER_REPORT", dossier: p.dossier as FindingDossier, insightId: (p.insight_id as string) ?? null });
+              break;
+            case "overview_report":
+              dispatch({ type: "OVERVIEW_REPORT", report: p.overview_report as OverviewReport });
               break;
             case "report": {
               const qMode = (p.query_mode as string) ?? "investigate";

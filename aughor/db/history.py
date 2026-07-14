@@ -256,6 +256,7 @@ def save_chat_turn(
     approach: list | None = None,
     canvas_id: str | None = None,
     insight: dict | None = None,
+    overview_report: dict | None = None,
 ) -> str:
     """Persist a completed chat turn as a history row, linked to a session and
     (when run inside a Canvas) tagged with its canvas_id so Canvas history can
@@ -275,6 +276,7 @@ def save_chat_turn(
         "intent":      intent or "",
         "approach":    approach or [],
         "insight":     insight or None,
+        "overview_report": overview_report or None,   # the interesting-facts tour, when this was one
     }
     c.execute(
         """INSERT INTO investigations
@@ -436,6 +438,7 @@ def get_session_turns(session_id: str) -> list[dict]:
         d["intent"]      = report.get("intent", "")
         d["approach"]    = report.get("approach", [])
         d["insight"]     = report.get("insight", None)
+        d["overview_report"] = report.get("overview_report", None)
         result.append(d)
     return result
 

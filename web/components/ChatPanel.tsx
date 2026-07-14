@@ -8,9 +8,11 @@ import ChevronDownIcon    from "@atlaskit/icon/core/chevron-down";
 import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
 import CommentIcon        from "@atlaskit/icon/core/comment";
 import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
+import CompassIcon        from "@atlaskit/icon/core/compass";
 import { uploadDocument, listUserAgents, type UserAgent } from "@/lib/api";
 import { useChat, type DebugEvent, type ChatTurn } from "@/lib/useChat";
 import { useStickToBottom } from "@/lib/useStickToBottom";
+import type { OverviewReport } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
@@ -29,6 +31,13 @@ const FALLBACK_STARTERS = [
   { text: "What is driving an unexpected trend?",    mode: "investigate" as const },
   { text: "Diagnose an anomaly in the data",         mode: "investigate" as const },
 ];
+
+// The Genie-style default first-look — always the FIRST, featured starter on a
+// fresh chat. Auto mode routes it to the deterministic overview fact tour.
+const OVERVIEW_STARTER = {
+  text: "Show me interesting facts about this schema",
+  mode: "ask" as const,
+};
 
 type Starter = { text: string; mode: "ask" | "investigate" };
 
@@ -356,6 +365,7 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
   const r = turn.route;
   if (!r) return null;
   const deep = r.depth === "deep";
+  const overview = r.depth === "overview";
   const done = turn.status !== "loading";
   return (
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
@@ -363,13 +373,13 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
         hue={deep ? "accent" : "info"}
         icon={deep ? <AiSparkleIcon label="" size="small" /> : <CommentIcon label="" size="small" />}
       >
-        {deep ? "Deep analysis" : "Quick answer"}
+        {deep ? "Deep analysis" : overview ? "Overview" : "Quick answer"}
       </StatusChip>
       <span style={{ fontSize: 11.5, color: "var(--t3)" }}>{r.why}</span>
       {r.downgradedFrom && (
         <span style={{ fontSize: 11, fontStyle: "italic", color: "var(--t3)" }}>· deep analysis needs an upgrade</span>
       )}
-      {done && (
+      {done && !overview && (
         <Button
           variant="ghost"
           size="xs"
@@ -534,7 +544,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     if (!restoreSessionId) return;
     fetch(`${BASE}/chat-sessions/${restoreSessionId}/turns`)
       .then(r => r.ok ? r.json() : [])
-      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null }[]) => {
+      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null; overview_report: OverviewReport | null }[]) => {
         if (!turns.length) return;
         restore(turns.map(t => ({
           id: t.id,
@@ -564,6 +574,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           exploreReport: null,
           dossierReport: null,
           dossierInsightId: null,
+          overviewReport: t.overview_report || null,
           queriesExecuted: [],
           latestScore: null,
           hypotheses: [],
@@ -708,12 +719,18 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-1.5">
-                  {starters.map((s) => (
+                  {[OVERVIEW_STARTER, ...starters.filter(s => s.text !== OVERVIEW_STARTER.text)].map((s) => {
+                    const isOverview = s.text === OVERVIEW_STARTER.text;
+                    return (
                     <button
                       key={s.text}
-                      onClick={() => handleSend(s.text, s.mode)}
-                      className="aug-pressable flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all"
-                      style={s.mode === "investigate" ? {
+                      onClick={() => handleSend(s.text, isOverview ? "auto" : s.mode)}
+                      className={`aug-pressable flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all${isOverview ? " col-span-2" : ""}`}
+                      style={isOverview ? {
+                        background: "var(--acc-dim)",
+                        border: "0.5px solid var(--blue2)",
+                        color: "var(--blue4)",
+                      } : s.mode === "investigate" ? {
                         background: "var(--bg-1)",
                         border: "0.5px solid var(--grn1)",
                         color: "var(--grn4)",
@@ -723,7 +740,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         color: "var(--t3)",
                       }}
                       onMouseEnter={e => {
-                        if (s.mode === "investigate") {
+                        if (isOverview) {
+                          (e.currentTarget as HTMLElement).style.borderColor = "var(--blue3)";
+                          (e.currentTarget as HTMLElement).style.color = "var(--blue5)";
+                        } else if (s.mode === "investigate") {
                           (e.currentTarget as HTMLElement).style.borderColor = "var(--grn2)";
                           (e.currentTarget as HTMLElement).style.color = "var(--grn4)";
                         } else {
@@ -732,7 +752,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         }
                       }}
                       onMouseLeave={e => {
-                        if (s.mode === "investigate") {
+                        if (isOverview) {
+                          (e.currentTarget as HTMLElement).style.borderColor = "var(--blue2)";
+                          (e.currentTarget as HTMLElement).style.color = "var(--blue4)";
+                        } else if (s.mode === "investigate") {
                           (e.currentTarget as HTMLElement).style.borderColor = "var(--grn1)";
                           (e.currentTarget as HTMLElement).style.color = "var(--grn4)";
                         } else {
@@ -741,14 +764,20 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         }
                       }}
                     >
-                      <span className="shrink-0 mt-0.5 opacity-70 aug-fs-ui">
-                        {s.mode === "investigate"
+                      <span className={`shrink-0 mt-0.5 aug-fs-ui${isOverview ? "" : " opacity-70"}`}>
+                        {isOverview
+                          ? <CompassIcon label="" size="small" />
+                          : s.mode === "investigate"
                           ? <AiSparkleIcon label="" size="small" />
                           : <CommentIcon label="" size="small" />}
                       </span>
-                      {s.text}
+                      <span className="min-w-0">
+                        {isOverview && <span className="font-medium">A great starting point · </span>}
+                        {s.text}
+                      </span>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

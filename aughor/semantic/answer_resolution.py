@@ -198,6 +198,18 @@ def requested_time_grain(question: str) -> Optional[str]:
     return best
 
 
+def question_measures(question: str) -> list:
+    """Public: the measure nouns a question names (``[]`` if none) — the metric-presence
+    signal reused by the overview router to detect a metric-free, widest-scope ask."""
+    return _question_measures(question)
+
+
+def entity_candidates(question: str) -> list:
+    """Public: the filter-entity nouns a question names (``[]`` if none) — the
+    entity-presence signal reused by the overview router."""
+    return _entity_candidates(question)
+
+
 def _col_grain(col: str) -> Optional[str]:
     for grain, rx in _COL:
         if rx.search(str(col)):
