@@ -3265,8 +3265,21 @@ async def _stream_overview(question: str, conn_id: str, req) -> AsyncGenerator[s
                  counter="ask.overview_failed")
 
     if rep is not None and rep.facts:
-        yield _sse("overview_report", {"overview_report": rep.to_dict()})
+        _report = rep.to_dict()
+        yield _sse("overview_report", {"overview_report": _report})
         yield _sse("headline", {"headline": rep.summary})
+        # Persist the tour so it survives reload + appears in canvas History (the turn is
+        # otherwise ephemeral — the reason the cards vanished on refresh). Best-effort.
+        try:
+            await asyncio.to_thread(lambda: save_chat_turn(
+                question=question, connection_id=cid, headline=rep.summary[:2000],
+                sql="", session_id=getattr(req, "session_id", "") or "",
+                columns=[], rows=[], chart_type="none", tables_used=[], intent="",
+                approach=[], canvas_id=req.canvas_id, overview_report=_report))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "overview turn save is best-effort; the tour was already streamed",
+                     counter="ask.overview_save")
     else:
         yield _sse("headline", {"headline": (
             "I couldn't surface overview facts for this dataset — try asking about a "

@@ -11,6 +11,7 @@ import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
 import { uploadDocument, listUserAgents, type UserAgent } from "@/lib/api";
 import { useChat, type DebugEvent, type ChatTurn } from "@/lib/useChat";
 import { useStickToBottom } from "@/lib/useStickToBottom";
+import type { OverviewReport } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
@@ -535,7 +536,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     if (!restoreSessionId) return;
     fetch(`${BASE}/chat-sessions/${restoreSessionId}/turns`)
       .then(r => r.ok ? r.json() : [])
-      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null }[]) => {
+      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null; overview_report: OverviewReport | null }[]) => {
         if (!turns.length) return;
         restore(turns.map(t => ({
           id: t.id,
@@ -565,6 +566,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           exploreReport: null,
           dossierReport: null,
           dossierInsightId: null,
+          overviewReport: t.overview_report || null,
           queriesExecuted: [],
           latestScore: null,
           hypotheses: [],
