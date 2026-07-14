@@ -24,8 +24,12 @@ Highlights: capability graduation (`capabilities.auto` + receipts + `obs.task_ta
 explicit `=0`/override still wins everywhere); the superseded `grain.feasibility` post-hoc verdict
 REMOVED; CK-0.1 feel branch merged; CK-0.2 insight token streaming (`ask.stream_text`,
 `insight_delta` dual-emit + `LLMProvider.complete_streaming`); `aughor up` one-command setup +
-/health LLM readiness. **NEXT:** live-verify streaming + resolve-first on a responsive LLM, then
-the staged guard deletions; CK-1 AG-UI seam; P7 decision run.
+/health LLM readiness. **2026-07-14 LIVE-PROVEN** on the real workspace connection (glm-5.2:cloud,
+isolated stack): the Mytheresa month-wise question binds the right table at the honest grain with no
+fiscal_month invention (found-entity path ✓), and the insight streams as 21 `insight_delta` frames
+(after fixing instructor-partial's preamble fragility with raw first-brace jiter streaming — commit
+`5a7022d`). **NEXT:** guard deletions after a real-traffic soak of the resolution verdict; CK-1
+AG-UI seam; P7 decision run.
 
 ### 🧭 Session handoff — 2026-07-13 (answer-quality / the "Mytheresa disconnects")
 
