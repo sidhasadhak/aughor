@@ -40,8 +40,8 @@ def preflight_repair(conn, sql: str, schema: Optional[str] = None, *, max_retrie
     }
 
     Never raises. Idempotent on already-valid SQL (dry-run passes, nothing changes)."""
-    receipt = {"identifiers_repaired": False, "filter_bound": False, "dry_run_ok": None,
-               "fixed": False, "error_class": ""}
+    receipt = {"identifiers_repaired": False, "filter_bound": False, "aliases_uniquified": False,
+               "dry_run_ok": None, "fixed": False, "error_class": ""}
     if not sql or not sql.strip():
         return sql, receipt
     out = sql
@@ -76,6 +76,24 @@ def preflight_repair(conn, sql: str, schema: Optional[str] = None, *, max_retrie
         except Exception as _e:
             from aughor.kernel.errors import tolerate
             tolerate(_e, "preflight: filter binding skipped", counter="sql_safety.filter_bind_error")
+
+        # 1.7 — Unique output-column aliases. LLM SQL often emits colliding output names
+        #        (`SELECT a.id, b.id`, or a reused `AS total`); the engine returns two
+        #        identically-named columns and every name-keyed consumer downstream (chart
+        #        column selection, the renderer, column guards) silently keeps only one.
+        #        Rename the later duplicates. Dry-run-gated so a rewrite is never adopted
+        #        unless it still binds (renaming output aliases doesn't affect binding, but
+        #        the gate keeps the invariant uniform with every other step here).
+        try:
+            from aughor.sql.aliases import uniquify_output_columns
+            _aliased = uniquify_output_columns(out, dialect=getattr(conn, "dialect", "duckdb"))
+            if _aliased and _aliased.strip() != out.strip() and conn.dry_run(_aliased)[0]:
+                out = _aliased
+                receipt["aliases_uniquified"] = True
+                _bump("sql_safety.aliases_uniquified")
+        except Exception as _e:
+            from aughor.kernel.errors import tolerate
+            tolerate(_e, "preflight: output-alias uniquify skipped", counter="sql_safety.alias_error")
 
         # 2 — Dry-run. If it binds, we are done (the common, happy path).
         try:
