@@ -40,7 +40,8 @@ def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:
     parts = sorted(f"{t}:{n}" for t, n in table_col_counts.items())
     # Version prefix — bump when the profile schema changes so stale caches that
     # lack new stats (distributions, period density) are rebuilt.
-    raw = "v3-grain|" + "|".join(parts)
+    # v4: adds high-cardinality entity value_sample (R5) — a rebuild populates it.
+    raw = "v4-valsample|" + "|".join(parts)
     return hashlib.md5(raw.encode()).hexdigest()[:16]
 
 
@@ -86,6 +87,31 @@ def load_profiles(
         return table_profiles, column_profiles
     except Exception:
         return None
+
+
+def load_value_samples(connection_id: str) -> dict[tuple[str, str], list[str]]:
+    """Every persisted high-cardinality entity value sample for a connection, keyed
+    (table, column), merged across all cached schema fingerprints. Read-only — never
+    builds or writes. Returns {} when nothing is cached.
+
+    Feeds offline entity binding (answer_resolution): a value already in the warmed
+    sample resolves without a live warehouse probe (Databricks Genie warms the same
+    thing at composer-open)."""
+    out: dict[tuple[str, str], list[str]] = {}
+    try:
+        cache = _load()
+    except Exception:
+        return out
+    prefix = f"{connection_id}:"
+    for k, entry in cache.items():
+        if not k.startswith(prefix):
+            continue
+        for d in (entry.get("columns") or {}).values():
+            vs = d.get("value_sample")
+            tbl, col = d.get("table"), d.get("column")
+            if vs and tbl and col:
+                out.setdefault((tbl, col), vs)
+    return out
 
 
 def save_profiles(
