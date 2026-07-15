@@ -25,6 +25,7 @@ FLAG_ENV = {
     "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
+    "ontology.autodoc": "AUGHOR_ONTOLOGY_AUTODOC",
     "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
     "ada.parallel_phases": "AUGHOR_ADA_PARALLEL_PHASES",
     "ada.why_where_interaction": "AUGHOR_ADA_WHY_WHERE_INTERACTION",
@@ -184,6 +185,10 @@ FLAG_META = {
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
         "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single Deep-Analysis investigation. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay investigations. Unlocks the already-built explore wave from /ask. Off by default.",
+    },
+    "ontology.autodoc": {
+        "label": "Compile ontology docs as a build artifact",
+        "description": "After the ontology is built, project it into a persisted, Merkle-checksummed doc tree (column→table→schema→connection) with per-table analyst questions — understanding compiled once and re-read cheaply, rebuilt incrementally as the schema moves. Deterministic (no model); also available on demand via the `aughor ontology-docs` CLI. Off by default — see docs/DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md (R8).",
     },
     "ada.parallel_lenses": {
         "label": "Parallel Deep-Analysis lenses",

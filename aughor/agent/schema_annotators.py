@@ -120,6 +120,19 @@ def _intelligence(conn, base: str) -> str:
             from aughor.ontology.store import overlay_human_overrides
             graph = overlay_human_overrides(graph, cid, graph.schema_name)
             conn._ontology = graph
+            # R8 — compile the ontology into a persisted, Merkle-checksummed doc-tree artifact
+            # (understanding as a build artifact). Flag-gated (default-off) + best-effort: a
+            # doc-tree hiccup must never break the schema build. Reuses tp for row-count/date facts.
+            from aughor.kernel.flags import flag_enabled
+            if flag_enabled("ontology.autodoc"):
+                try:
+                    from aughor.ontology.doctree import build_and_persist, table_stats_from_profiles
+                    build_and_persist(cid, graph.schema_name, graph=graph,
+                                      table_stats=table_stats_from_profiles(tp))
+                except Exception as _doc_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_doc_exc, "ontology doc-tree build is best-effort",
+                             counter="ontology.autodoc", conn_id=cid or None)
             onto_block = render_ontology_annotations(graph)
             if onto_block:
                 base += "\n\n" + onto_block
