@@ -40,6 +40,7 @@ import re
 import threading
 import shutil
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import duckdb
@@ -87,7 +88,37 @@ _ALLOWED_CAST_TYPES = {
 # Tighter types we probe for, in preference order, when a column is VARCHAR.
 _PROBE_TYPES = ["BIGINT", "DOUBLE", "BOOLEAN", "DATE", "TIMESTAMP"]
 
+# DuckDB scalar types we'll TRY_CAST to when reproducing a pinned schema contract
+# on reload. Complex types (STRUCT/LIST/MAP/UNION) are deliberately excluded so a
+# parquet/JSON column with a nested type passes through untouched — those formats
+# carry their own schema and are already deterministic, and their type strings
+# contain nested identifiers we must never interpolate into SQL.
+_PINNABLE_BASE_TYPES = {
+    "BIGINT", "INTEGER", "SMALLINT", "TINYINT", "HUGEINT",
+    "UBIGINT", "UINTEGER", "USMALLINT", "UTINYINT", "UHUGEINT",
+    "DOUBLE", "FLOAT", "REAL", "DECIMAL", "NUMERIC",
+    "VARCHAR", "TEXT", "STRING", "CHAR", "BLOB",
+    "BOOLEAN", "BOOL", "DATE", "TIME", "TIMESTAMP",
+    "TIMESTAMP WITH TIME ZONE", "TIMESTAMP_S", "TIMESTAMP_MS",
+    "TIMESTAMP_NS", "TIME WITH TIME ZONE", "UUID",
+}
+
+# A bare scalar type name plus an optional numeric precision — e.g. BIGINT,
+# VARCHAR, DECIMAL(18,3), TIMESTAMP WITH TIME ZONE. Anything with quotes, letters
+# inside parens, or nested parens (STRUCT(a INT), col[]) fails to match and is
+# passed through rather than cast. Defence in depth: contract types come from
+# DuckDB's own DESCRIBE, not user input, but interpolation stays allow-listed.
+_PINNABLE_TYPE_RE = re.compile(r"^[A-Z][A-Z0-9 ]*(\(\s*\d+\s*(,\s*\d+\s*)?\))?$")
+
 _SIDECAR_SUFFIX = ".import.json"
+
+
+def _is_pinnable_type(t: str) -> bool:
+    """True when ``t`` is a DuckDB scalar type safe to reproduce via TRY_CAST on reload."""
+    s = str(t).strip().upper()
+    if not _PINNABLE_TYPE_RE.match(s):
+        return False
+    return s.split("(", 1)[0].strip() in _PINNABLE_BASE_TYPES
 
 
 def _is_data_file(f: Path) -> bool:
@@ -434,17 +465,41 @@ class LocalUploadConnection(Connector):
         table_name = _safe_ident(table_name or file_path.stem)
         clean_types = self._clean_types(column_types)
 
-        # Persist the import config as a sidecar so reload is deterministic.
+        # Materialize the table first (applying any user overrides), THEN pin the
+        # result: DESCRIBE the created table to capture the full effective
+        # {column: type} contract — Databricks' schemaHints analog. On reload we
+        # reproduce these exact types instead of re-sniffing the file, which can
+        # drift across DuckDB versions / sampling and silently re-type a column.
+        self._register_file(dest, table_name, schema, clean_types)
+        contract = self._describe_contract(schema, table_name)
+
+        # Persist the import config + the pinned contract + provenance, so reload
+        # is deterministic and the table's origin is inspectable (surfaced by
+        # list_files → the ontology / Hub).
         (sdir / f"{file_path.name}{_SIDECAR_SUFFIX}").write_text(
             json.dumps({
                 "table_name": table_name,
                 "schema": schema,
                 "column_types": clean_types,
+                "schema_contract": contract,
+                "source_file": file_path.name,
+                "format": ext.lstrip("."),
+                "created_by": "upload",
+                "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             }, indent=2)
         )
-
-        self._register_file(dest, table_name, schema, clean_types)
         return table_name
+
+    def _describe_contract(self, schema: str, table_name: str) -> dict:
+        """The effective ``{column: duckdb_type}`` of a just-created table — the
+        pinned schema contract. Best-effort: returns ``{}`` on any failure, in
+        which case reload falls back to re-sniffing (today's behavior)."""
+        try:
+            desc = self._duckdb.execute(
+                f'DESCRIBE "{schema}"."{table_name}"').fetchall()
+            return {str(r[0]): str(r[1]) for r in desc}
+        except Exception:
+            return {}
 
     @staticmethod
     def _clean_types(column_types: dict | None) -> dict:
@@ -463,11 +518,12 @@ class LocalUploadConnection(Connector):
         table_name: str,
         schema: str = DEFAULT_SCHEMA,
         column_types: dict | None = None,
+        schema_contract: dict | None = None,
     ) -> None:
         ext = path.suffix.lower()
         reader = _SUPPORTED_EXTENSIONS.get(ext, "read_csv_auto")
         src = f"{reader}('{path.as_posix()}')"
-        select_sql = self._build_select(src, column_types)
+        select_sql = self._build_select(src, column_types, schema_contract)
         fq = f'"{schema}"."{table_name}"'
         try:
             self._duckdb.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
@@ -478,9 +534,25 @@ class LocalUploadConnection(Connector):
                 f"Failed to load {path.name} as table '{schema}.{table_name}': {e}"
             ) from e
 
-    def _build_select(self, src: str, column_types: dict | None) -> str:
-        """Build a SELECT that TRY_CASTs only the overridden columns."""
-        if not column_types:
+    def _build_select(
+        self,
+        src: str,
+        column_types: dict | None = None,
+        schema_contract: dict | None = None,
+    ) -> str:
+        """Build the SELECT that materializes a file into a table.
+
+        Two regimes, chosen by which map is supplied:
+        • ``schema_contract`` (reload): TRY_CAST every column whose pinned type is a
+          safe scalar back to that exact type — reproduces the ingest-time schema
+          deterministically, immune to ``read_*_auto`` re-sniffing drift. Columns
+          with a complex/non-scalar pinned type pass through unchanged.
+        • ``column_types`` (ingest): TRY_CAST only the user-overridden columns; the
+          rest keep the reader's freshly-inferred type. (Original behavior.)
+        """
+        strict = bool(schema_contract)
+        pin = schema_contract if strict else (column_types or {})
+        if not pin:
             return f"SELECT * FROM {src}"
         con = self._duckdb
         try:
@@ -491,9 +563,15 @@ class LocalUploadConnection(Connector):
         parts = []
         for name in cols:
             esc = name.replace('"', '""')
-            t = column_types.get(name)
-            if t and t in _ALLOWED_CAST_TYPES:
-                parts.append(f'TRY_CAST("{esc}" AS {t}) AS "{esc}"')
+            t = pin.get(name)
+            cast_to = None
+            if t:
+                if strict:
+                    cast_to = str(t) if _is_pinnable_type(t) else None
+                elif str(t).upper() in _ALLOWED_CAST_TYPES:
+                    cast_to = str(t).upper()
+            if cast_to:
+                parts.append(f'TRY_CAST("{esc}" AS {cast_to}) AS "{esc}"')
             else:
                 parts.append(f'"{esc}"')
         return f"SELECT {', '.join(parts)} FROM {src}"
@@ -514,8 +592,12 @@ class LocalUploadConnection(Connector):
                 cfg = self._read_sidecar(f)
                 table_name = cfg.get("table_name") or _safe_ident(f.stem)
                 column_types = cfg.get("column_types") or {}
+                # Prefer the pinned full contract (deterministic reload); old
+                # sidecars without one fall back to overrides-only re-sniffing.
+                schema_contract = cfg.get("schema_contract") or None
                 try:
-                    self._register_file(f, table_name, schema, column_types)
+                    self._register_file(f, table_name, schema, column_types,
+                                        schema_contract=schema_contract)
                 except Exception:
                     pass  # never break startup on one bad file
 
@@ -547,6 +629,10 @@ class LocalUploadConnection(Connector):
                     "size_bytes": f.stat().st_size,
                     "extension": f.suffix.lower(),
                     "column_types": cfg.get("column_types") or {},
+                    "schema_contract": cfg.get("schema_contract") or {},
+                    "created_by": cfg.get("created_by"),
+                    "created_at": cfg.get("created_at"),
+                    "source_file": cfg.get("source_file"),
                 })
         return result
 

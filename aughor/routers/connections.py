@@ -717,6 +717,25 @@ def _stage_upload(file: UploadFile):
     return tmp_dir, tmp_path
 
 
+def _rearm_exploration_after_upload(conn_id: str, schema: str | None) -> bool:
+    """Re-arm background schema-exploration after new tables land via upload.
+
+    On-connect exploration (create_connection) fires *before* any file is
+    uploaded, so a file connection's first real data never triggered intelligence
+    — profiling, join inference, ontology and BusinessProfile materialized only
+    lazily on the first question. This closes that gap: every upload re-arms
+    Scout, scoped to the schema that received the tables. ``auto=True`` keeps it
+    under Scout governance and self-skips when a run for that schema is already
+    active, so a burst of uploads can't stack runs. Best-effort — a re-arm
+    failure never fails the ingest that already succeeded.
+    """
+    try:
+        return _kickoff_exploration(conn_id, schema_name=schema or None, auto=True)
+    except Exception:
+        logger.warning("upload: explorer re-arm failed for %s", conn_id, exc_info=True)
+        return False
+
+
 @router.post("/connections/{conn_id}/files/analyze")
 async def analyze_connection_file(conn_id: str, file: UploadFile = File(...)):
     """Inspect a file (columns, inferred types, type-mismatch suggestions, preview)
@@ -772,11 +791,13 @@ async def upload_file_to_connection(
         # not at TTL expiry. Without this, the quick /ask path answered from a
         # snapshot that predated the upload and silently dropped the new tables.
         _invalidate_schema_cache(conn_id)
+        rearmed = _rearm_exploration_after_upload(conn_id, schema_name or "main")
         return {
             "table_name": tname,
             "schema": schema_name or "main",
             "filename": tmp_path.name,
             "message": "File ingested",
+            "exploring": rearmed,
         }
     except TypeError:
         # Connector without the extended signature — fall back to plain ingest.
@@ -784,7 +805,9 @@ async def upload_file_to_connection(
             None, lambda: db.ingest_file(tmp_path, table_name=(table_name or None))
         )
         _invalidate_schema_cache(conn_id)
-        return {"table_name": tname, "filename": tmp_path.name, "message": "File ingested"}
+        rearmed = _rearm_exploration_after_upload(conn_id, schema_name or "main")
+        return {"table_name": tname, "filename": tmp_path.name,
+                "message": "File ingested", "exploring": rearmed}
     except Exception:
         logger.exception("file ingestion failed")
         raise HTTPException(status_code=400, detail="Ingestion failed")
@@ -829,15 +852,21 @@ async def bulk_upload_files_to_connection(
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     added = sum(1 for r in results if r["status"] == "ok")
+    rearmed = False
     if added:
         # New tables landed → drop the conn-keyed schema snapshot immediately
         # (same staleness class as the single-file upload above).
         _invalidate_schema_cache(conn_id)
+        # One re-arm for the whole batch (not per file) — the self-skip in
+        # kickoff_exploration would collapse duplicates anyway, but debouncing
+        # here keeps a 50-file bulk import from spawning 50 kickoff tasks.
+        rearmed = _rearm_exploration_after_upload(conn_id, target)
     return {
         "schema": target,
         "results": results,
         "added": added,
         "failed": len(results) - added,
+        "exploring": rearmed,
     }
 
 
