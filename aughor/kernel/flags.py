@@ -24,6 +24,7 @@ FLAG_ENV = {
     "explorer.synthesis_incremental": "AUGHOR_SYNTHESIS_INCREMENTAL",
     "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
+    "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
     "ada.parallel_phases": "AUGHOR_ADA_PARALLEL_PHASES",
     "ada.why_where_interaction": "AUGHOR_ADA_WHY_WHERE_INTERACTION",
@@ -179,6 +180,10 @@ FLAG_META = {
     "explore.parallel_subq": {
         "label": "Parallel explore sub-questions",
         "description": "Run independent explore sub-questions concurrently in dependency-respecting waves (map-reduce over the operator.add state) instead of one-at-a-time. Cuts wall-clock on multi-cut investigations; multiplies concurrent LLM calls (bounded by the fan-out width cap + the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
+    },
+    "explore.route_wide": {
+        "label": "Route wide questions to the explore wave",
+        "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single Deep-Analysis investigation. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay investigations. Unlocks the already-built explore wave from /ask. Off by default.",
     },
     "ada.parallel_lenses": {
         "label": "Parallel Deep-Analysis lenses",

@@ -2313,6 +2313,7 @@ async def _stream_investigation(
     insight_id: Optional[str] = None,
     deep: bool = False,
     history: Optional[list] = None,
+    requested_mode: str = "investigate",
 ) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
 
@@ -2561,12 +2562,15 @@ async def _stream_investigation(
             "max_iterations": int(os.getenv("AUGHOR_MAX_ITER", "6")),
             "report": None, "hitl_enabled": hitl, "human_feedback": None,
             "query_mode": None, "route_reasoning": None, "route_confidence": None, "replan_decision": None,
-            # /investigate IS the explicit Deep Analysis surface — the user chose depth.
-            # route_question honors this and never lets the LLM classifier downgrade the
-            # run to a 'direct' lookup (live incident: "Where are we losing money?" ran as
-            # 3 flat queries with a fake 'direct' hypothesis, zero decomposition). The /ask
-            # auto-router doesn't set it, so auto-depth behavior is unchanged.
-            "requested_mode": "investigate",
+            # Deep-path mode. Defaults to "investigate" so /investigate — the explicit Deep
+            # Analysis surface — stays pinned: route_question honors it and never lets the LLM
+            # classifier downgrade the run to a 'direct' lookup (live incident: "Where are we
+            # losing money?" ran as 3 flat queries with a fake 'direct' hypothesis, zero
+            # decomposition). /ask now passes its route verdict through here — normally
+            # "investigate", or "explore" when the deterministic wide-question detector fires
+            # under explore.route_wide (R9) — reaching the already-built explore wave with no
+            # graph change (route_question honors requested_mode ∈ {investigate, explore}).
+            "requested_mode": requested_mode,
             "sub_questions": [], "current_subq_idx": 0, "subq_answers": [], "explore_report": None,
             "investigation_phases": [], "answer_report": None, "_ada_intake": None,
             "canvas_id": canvas_id, "canvas_schema_context": canvas_schema_context,
@@ -3063,6 +3067,7 @@ async def _investigation_job_streamed(
     insight_id: Optional[str] = None,
     deep: bool = False,
     history: Optional[list] = None,
+    requested_mode: str = "investigate",
 ) -> AsyncGenerator[str, None]:
     """Run the investigation as a first-class supervised kernel job (K1).
 
@@ -3085,6 +3090,7 @@ async def _investigation_job_streamed(
                 hitl=hitl, skip_cache=skip_cache, canvas_id=canvas_id,
                 schema_scope=schema_scope, seed_sql=seed_sql, seed_context=seed_context,
                 insight_id=insight_id, deep=deep, history=history,
+                requested_mode=requested_mode,
             ):
                 await queue.put(sse)
         finally:
@@ -3504,6 +3510,10 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             schema_scope=req.schema_name, seed_sql=req.seed_sql,
             seed_context=req.seed_context, insight_id=req.insight_id, deep=req.deep,
             history=req.history,  # follow-up composition on the deep path (parity with quick)
+            # R9 — carry the route verdict's mode so a wide question reaches the explore wave.
+            # Normally "investigate"; "explore" only when the deterministic wide detector fired
+            # under explore.route_wide. (depth=="deep" ⇒ mode ∈ {investigate, explore}.)
+            requested_mode=route.mode,
         ):
             yield sse
     else:
