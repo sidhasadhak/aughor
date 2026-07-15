@@ -14,6 +14,34 @@
 
 ## 0 · Immediate next action ⏭️
 
+### 🧭 Session handoff — 2026-07-16 · Databricks-HAR program (R1–R15)
+
+**Wave A+B MERGED to `main` (`f42ced4`):** R1/R2 (upload birth), R3 (ground-once/run), R5 (value index),
+R6 (stream deep report), R7 (unique-alias compile) — squash-merged PRs #163–166, CI green. **Shipped
+2026-07-16 (open PRs):** **R9** (route wide→explore wave; flag `explore.route_wide`) = **PR #167, CI green**;
+**R8** (ontology docs as a Merkle-checksummed build artifact; `ontology/doctree.py` + `aughor ontology-docs`
+CLI + flag `ontology.autodoc`) = **PR #168, stacked on #167** (both edit `kernel/flags.py` — merge #167
+first). **R6** dogfood = wiring verified (live eyeball deferred to the user). **R4 moot.**
+
+**NEW — Wire study #2 (canvas-birth + 2 Deep-Research runs on our airline dataset) →
+[`docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md`](docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md).**
+Databricks turns "pick tables" into a documented/profiled/indexed/curated space in ~40 s *before* the first
+question. Five new recommendations:
+- **R11 · Per-column `{visible, sample, index}` config** (their `column-configs`, 17 KB persisted). Highest
+  leverage — unifies R5 (their `is_indexing` == our `_ENTITY_DIM_RE` gate) + R8 + nao overrides + **column
+  pruning** (hide noise columns from the prompt = DB-info compression). `ontology/column_config.py`.
+- **R12 · Canvas birth = ONE observable "knowledge-mining" job** (their `knowledge/start-mining`). Unify R1
+  re-arm + ontology build + R8 doc-tree + R11 config + R13 questions into one K1/`obs.task_table` job.
+- **R13 · Named research-starter playbooks** (their `curated-questions` + `research_agent_outliers` starter):
+  `outlier_entities` / `where_are_we_losing_money` one-click, routing via R9/R10. Deep-research sibling of overview.
+- **R14 · Popularity/usage as a unified notability signal** (their `TableMetadataPreviewPopularityData`):
+  `query_log_miner` + `obs.task_table` → per-table/column score feeding R11 visibility, R8 ranking, overview priority.
+- **R15 · Decision-grade output lenses:** opportunity-cost/benchmark ($ gap × volume) + named-outlier-entity
+  lens (surface extreme entities by ID + hedged "potential causes"). Extends ADA lenses + overview.
+
+Sequence: R11 → R12 → R14 → R13 → R15 (R11 the structural keystone; R11 & R15 highest leverage). **DON'T adopt:**
+polling transport, the 13.8 s silent LLM column-config spend (do R11 deterministically first), empty `instructions`.
+
 ### 🧭 Session handoff — 2026-07-13 (later) · branch `agentic-platform` — the unification wave
 
 The two branches below (plus `2026-07-08-ui-ux-uplift`) are now **CONSOLIDATED onto one branch,
