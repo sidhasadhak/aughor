@@ -368,19 +368,41 @@ def _string_dim_columns(schema: str) -> list[tuple[str, str]]:
 
 
 def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] = None,
-                   max_cols: int = 8):
+                   max_cols: int = 8, value_samples: Optional[dict] = None):
     """Bounded, injection-safe existence probe: is ``token`` a value in any string
     dimension column? Returns (table, col, value) on the first hit, "absent" when
     every probed column is confirmed to lack it, or None when we couldn't tell
     (no db / no candidate columns) — in which case the caller must NOT abstain.
-    Measure-bearing tables are probed first so a found value binds to the right one."""
-    if db is None:
-        return None
+    Measure-bearing tables are probed first so a found value binds to the right one.
+
+    ``value_samples`` (R5) is the warmed {(table, col): distinct-values} map: a token
+    already present there binds OFFLINE, skipping the live warehouse probe entirely.
+    A sample MISS still falls through to the live probe below — the persisted set can
+    lag the data, and the ground-first contract forbids declaring a value absent
+    without live DB confirmation."""
     cols = _string_dim_columns(schema)
     if prefer_tables:
         cols = sorted(cols, key=lambda tc: tc[0] not in prefer_tables)
     cols = cols[:max_cols]
     if not cols:
+        return None
+
+    # Offline first: bind from the warmed high-card value sample when we can.
+    if value_samples:
+        from aughor.sql.value_index import ValueIndex
+        low = token.lower()
+        for table, col in cols:
+            sample = value_samples.get((table, col))
+            if not sample:
+                continue
+            for v in sample:
+                if str(v).lower() == low:
+                    return (table, col, str(v))
+            m = ValueIndex(sample).best_match(token, cutoff=0.9)
+            if m is not None:
+                return (table, col, m)
+
+    if db is None:
         return None
     lit = token.replace("'", "''")  # SQL-literal escape; the read-only gate blocks non-SELECT
     checked = 0
@@ -482,13 +504,25 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
         mtables = _measure_tables(tables, measures)
 
         # ── entity resolution — bind to a MEASURE-bearing table when possible ──
-        for token in _entity_candidates(question):
+        candidates = _entity_candidates(question)
+        # Warmed high-card value samples (R5) — loaded once, read-only. Lets an
+        # entity that exists in the data bind offline instead of live-probing the
+        # warehouse per token; empty when nothing is cached → live probe as before.
+        value_samples: dict = {}
+        if candidates and connection_id:
+            try:
+                from aughor.tools.profile_cache import load_value_samples
+                value_samples = load_value_samples(connection_id)
+            except Exception:
+                value_samples = {}
+        for token in candidates:
             matches = _annotation_matches(token, domains)
             if matches:
                 t, c, v, conf = _pick(matches, mtables)
                 r.entity_bindings.append(EntityBinding(token, t, c, v, conf))
                 continue
-            probe = _db_find_value(db, schema, token, prefer_tables=mtables)
+            probe = _db_find_value(db, schema, token, prefer_tables=mtables,
+                                   value_samples=value_samples)
             if isinstance(probe, tuple):
                 r.entity_bindings.append(EntityBinding(token, probe[0], probe[1], probe[2], 0.95))
             elif probe == "absent":

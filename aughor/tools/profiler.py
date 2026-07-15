@@ -254,6 +254,7 @@ class ColumnProfile:
         "value_interpretation",  # "fraction 0-1", "currency", "count", "duration_days"
         "unit",               # "percent_fraction", "USD", "count", "days"
         "top_values",         # for dimensions: most frequent values
+        "value_sample",       # high-card entity dims (30<distinct≤cap): the distinct set, for offline binding
         "is_fk",
     )
 
@@ -270,6 +271,7 @@ class ColumnProfile:
         value_interpretation: Optional[str] = None,
         unit: Optional[str] = None,
         top_values: Optional[list[str]] = None,
+        value_sample: Optional[list[str]] = None,
         is_fk: bool = False,
         mean: Optional[float] = None,
         stddev: Optional[float] = None,
@@ -293,6 +295,7 @@ class ColumnProfile:
         self.value_interpretation = value_interpretation
         self.unit = unit
         self.top_values = top_values
+        self.value_sample = value_sample
         self.is_fk = is_fk
 
     def to_dict(self) -> dict:
@@ -514,6 +517,22 @@ _LARGE_TABLE_THRESHOLD = 500_000   # rows above which we skip full-scan queries
 _COMPOSITE_GRAIN_MAX_ROWS = 5_000_000
 _COMPOSITE_GRAIN_MAX_PROBES = 4
 _SAMPLE_PCT            = 5          # % to sample for top-values on large tables
+
+# ── High-cardinality entity-value samples (R5) ────────────────────────────────
+# Low-card (≤30 distinct) dimensions get their values via top_values above. The
+# "Mytheresa"-class entity columns (brands/merchants/categories) sit ABOVE that
+# cap, so entity resolution used to live-probe the warehouse on every question.
+# We persist the distinct set for string dimensions plausibly holding an entity
+# NAME with 30 < distinct ≤ cap, so binding can happen offline. Columns above the
+# cap (customer names, SKUs, free text) stay live-probe — the sample stays bounded.
+_VALUE_SAMPLE_MAX_DISTINCT = 2000   # only persist a column's values when it has this many or fewer
+_VALUE_SAMPLE_MAX_COLS     = 8      # cap entity-dim columns sampled per table (matches resolve's max_cols)
+_ENTITY_DIM_RE = re.compile(
+    r"(name|platform|brand|franchise|company|merchant|vendor|segment|category|"
+    r"channel|region|country|city|store|entity|product|customer|owner|type|status|label)",
+    re.IGNORECASE,
+)
+
 
 def _q(name: str) -> str:
     """Quote an identifier."""
@@ -1218,6 +1237,32 @@ def build_column_profiles(
         if not r.error and r.rows:
             top_values_map[col] = [str(row[0]) for row in r.rows if row[0] is not None]
 
+    # ── High-cardinality entity-value samples (R5) ────────────────────────────
+    # For string dimensions plausibly holding an entity name with 30 < distinct ≤
+    # cap, persist the distinct set so entity resolution can bind offline. The
+    # distinct GATE (from raw_stats) bounds the scan; LIMIT cap+1 + the len check
+    # drops any column that turns out larger than the cap (kept as live-probe only).
+    value_sample_map: dict[str, list[str]] = {}
+    highcard_dims = [
+        col for col, dtype in columns
+        if _TEXT_TYPES.search(dtype)
+        and not _KEY_PATTERN.search(col.lower())
+        and _ENTITY_DIM_RE.search(col.lower())
+        and 30 < raw_stats.get(col, {}).get("distinct", 0) <= _VALUE_SAMPLE_MAX_DISTINCT
+    ][:_VALUE_SAMPLE_MAX_COLS]
+    for col in highcard_dims:
+        qc = _q(col)
+        sample_clause = f" USING SAMPLE {_SAMPLE_PCT} PERCENT" if large else ""
+        r = conn.execute(
+            "__profiler__",
+            f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {qt}{sample_clause} "
+            f"WHERE {qc} IS NOT NULL LIMIT {_VALUE_SAMPLE_MAX_DISTINCT + 1}",
+        )
+        if not r.error and r.rows and len(r.rows) <= _VALUE_SAMPLE_MAX_DISTINCT:
+            vals = [str(row[0]) for row in r.rows if row[0] is not None]
+            if vals:
+                value_sample_map[col] = vals
+
     # ── Assemble ColumnProfile objects ────────────────────────────────────────
     profiles: list[ColumnProfile] = []
     for col, dtype in columns:
@@ -1248,6 +1293,7 @@ def build_column_profiles(
             value_interpretation=interp,
             unit=unit,
             top_values=top_values_map.get(col),
+            value_sample=value_sample_map.get(col),
             is_fk=is_fk,
             mean=dist.get("mean"),
             stddev=dist.get("stddev"),
