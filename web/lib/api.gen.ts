@@ -557,6 +557,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ask/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ask Context Endpoint
+         * @description The grounding-context receipt (flag ``ask.context_receipt``) — the exact
+         *     grounding blocks the SQL writer would be given for this question on this
+         *     connection: schema slice, glossary, governed-metric bindings, ambiguity-ledger
+         *     priors, dialect rules, trusted templates, and the active agent/pack brief.
+         *
+         *     The input-side twin of the Trust Receipt. Read-only, deterministic (re-derives
+         *     the same blocks the answer path assembles from the same producers). 404 when
+         *     the flag is off, so the default path is byte-identical.
+         */
+        get: operations["ask_context_endpoint_ask_context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/briefs/subscriptions": {
         parameters: {
             query?: never;
@@ -7993,6 +8020,40 @@ export interface operations {
                 "application/json": components["schemas"]["AskRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_context_endpoint_ask_context_get: {
+        parameters: {
+            query: {
+                /** @description connection id */
+                connection: string;
+                /** @description the question to ground */
+                question: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
