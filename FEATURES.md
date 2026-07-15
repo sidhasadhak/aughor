@@ -60,6 +60,15 @@ On top of the depths, the conversational agent (the unified-answer-path arc, PR 
 - **Progressive escalation (ITS)** — a quick answer that's inconclusive (errored, empty on an analytical
   question, or a "why" answered by a single figure) **offers** a deeper investigation rather than leaving
   a thin answer (`aughor/agent/escalate.py`).
+- **Wide questions route to the explore wave** (`explore.route_wide`, default-off) — a genuinely BROAD
+  "characterize / profile / map how X varies across the business" question routes to the **multi-cut explore
+  subgraph** (decompose → dependency-respecting parallel waves → synthesis) instead of a single investigation.
+  The detector is deterministic (no model in the routing path) and **yields to causal/driver "why" questions**,
+  which stay investigations; locked by a routing eval (`evals/route_wide_eval.py`: wide 1.0, poached 0.0).
+- **The deep report streams as it's written** — ada_synthesize's executive summary token-streams to the
+  canvas (`report_delta` SSE → live prose above the phase cards), so a multi-minute deep run isn't silent
+  between the last phase and the final report; the terminal report stays authoritative (rides
+  `ada.progress_events`, default-on; self-heals to the blocking call).
 - **Measured discipline** — every interaction feature is gated by the interactive eval harness
   (`evals/interactive.py`, `evals/ambiguity_eval.py`, `evals/its_structural.py`): built and measured
   before it ships (the SOMA build was justified by a measured 0/6 detection gap + a 0/3→3/3 asking gain).
@@ -98,6 +107,13 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   the same entity in a different format (`bid_123` ↔ `bref_123`) — in-source and across sources (DataAgentBench GAP-3).
 - **Filter-literal binding** — a guessed enum/literal that matches no row is bound to its confirmed stored
   value (`'cancelled' → 'canceled'`), including a CHESS-style trigram value index for high-cardinality columns.
+- **Persisted high-cardinality value index** — the profiler captures bounded distinct-value samples for
+  entity-dimension columns (brands/merchants — the 30<distinct≤2000 class) into the profile store, and
+  ground-first entity resolution consults them **offline first** (exact→fuzzy), skipping the live probe on a
+  hit and still probing on a miss — staleness-safe ("never false-absent" holds).
+- **Unique output-column aliasing** — a pure sqlglot compile pass in `preflight_repair` renames duplicate
+  top-level output names (`id, id_1`) on every NL2SQL path, dry-run-gated with an `aliases_uniquified` receipt,
+  so downstream renderers/exports never see colliding columns.
 - **Measure-additivity layer** — per-unit vs per-line grain, ratio-of-sums (never AVG of per-row ratios).
 - **Semantic compiler** — typed intent IR → deterministic SQL for the well-specified core.
 - **Result-trust checks (CIDR-E1)** — flag function-semantics footguns (timestamp vs date-literal boundary,
@@ -228,6 +244,13 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
 - **Join inference & fingerprinting**, **FK-neighbour expansion**, value-verified join edges + "DO NOT JOIN" hints.
 - **Schema linking & compression** — trim wide schemas to the relevant tables; collapse sharded/dated table families.
 - **Query-log mining** — learn real join paths, value domains, and business formulas from past queries.
+- **Ontology docs as a build artifact** (`ontology.autodoc`, default-off; CLI `aughor ontology-docs`) — the
+  built ontology compiles into a **persisted, Merkle-checksummed doc tree** (column→table→schema→connection;
+  file-per-node YAML under `data/ontology_docs/`) where every parent folds its children's *summaries* —
+  understanding compiled once and re-read cheaply. Incremental rebuild reuses unchanged subtrees (cache hits
+  are counted, not assumed); per-table **"3 analyst questions"** seed suggestion chips; ignore-globs skip
+  pipeline scaffolding (`tmp_%`, `_airbyte_%`, `dbt_%` — logged, never silent); **estimate-then-confirm**
+  dry-runs the identical pipeline before any spend. Deterministic — no model in the core.
 - **Vector search over schema** + semantic suggestions cache (Qdrant); ER diagram; rich schema-card UI; data catalog.
 
 ## 6. Connections & data ingestion
@@ -236,6 +259,11 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   Fernet-encrypted DSNs, exclusive-checkout pool, health checks.
 - **Add data** — new connectors, **bulk-CSV import** (with catalog-delete intelligence cascade), workspace
   file uploads (size-capped), **document ingestion** as a context layer.
+- **Upload birth rite** — new data is studied the moment it arrives: an upload into an existing connection
+  **re-arms exploration** on the touched schema (all upload paths, bulk debounced-once; the response carries
+  an `exploring` flag), and ingest **pins the inferred schema contract** (full column types + provenance:
+  source file, creator, format) into the file's sidecar — reloads TRY_CAST from the pinned contract, immune
+  to re-sniff drift, surfaced in `list_files`.
 - **Integrations** — dbt (manifest-driven glossary/metrics), Superset (ECharts engine + per-dialect rules).
 
 ## 7. Briefings & proactive monitors

@@ -152,7 +152,7 @@ The unit of intelligence is **(connection, schema)**, not the connection. A work
 <details>
 <summary>🧠 <strong>Auto-built business ontology</strong> — queryable, human-editable, version-controlled</summary>
 
-An ontology built from your data, not docs you write: **entities** (table + grain + domain), **relationships** (inferred cardinality + join paths), **metrics** (formulas with owner, SLA, quality tests, lineage), **lifecycle states** (terminal vs active, false-positive-guarded), and deterministic **actions** — rendered as an interactive canvas that refreshes automatically. It's **human-editable and version-controlled**: overrides apply with override-wins semantics, survive re-builds, and round-trip through a version-controllable file tree, with self-improving recommendations on the board.
+An ontology built from your data, not docs you write: **entities** (table + grain + domain), **relationships** (inferred cardinality + join paths), **metrics** (formulas with owner, SLA, quality tests, lineage), **lifecycle states** (terminal vs active, false-positive-guarded), and deterministic **actions** — rendered as an interactive canvas that refreshes automatically. It's **human-editable and version-controlled**: overrides apply with override-wins semantics, survive re-builds, and round-trip through a version-controllable file tree, with self-improving recommendations on the board. And it **compiles into documentation**: an opt-in build artifact (`aughor ontology-docs`) projects the ontology into a persisted, Merkle-checksummed doc tree — column → table → schema → connection, each parent folding its children's summaries, rebuilt incrementally as the schema moves — with three auto-derived analyst questions per table.
 
 </details>
 
