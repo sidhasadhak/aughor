@@ -633,5 +633,58 @@ def _print_final_report(state: Any, elapsed: float):
     console.print()
 
 
+@cli.command(name="ontology-docs")
+@click.argument("connection_id")
+@click.option("--schema", default="", help="Schema to document (default: the connection's cached ontology schema)")
+@click.option("--confirm", is_flag=True, help="Build and persist the doc tree (default: estimate only)")
+@click.option("--full", is_flag=True, help="Full rebuild — ignore the prior tree's Merkle cache")
+def ontology_docs(connection_id: str, schema: str, confirm: bool, full: bool):
+    """Compile the ontology into a persisted doc-tree artifact (R8).
+
+    Estimate-then-confirm: without --confirm this only reports what a build would touch (no
+    writes). Deterministic — no model. Requires the connection's ontology to already be built.
+    """
+    from aughor.ontology.doctree import (build_and_persist, estimate_doc_build,
+                                          load_doc_tree)
+    from aughor.ontology.store import load_latest_ontology
+
+    graph = load_latest_ontology(connection_id, schema or None)
+    if graph is None:
+        console.print(f"[red]No ontology found for[/red] {connection_id} (schema={schema or 'any'}).")
+        console.print("Build intelligence first (open/explore the connection), then retry.")
+        sys.exit(1)
+
+    eff_schema = graph.schema_name or schema or ""
+    prior = None if full else load_doc_tree(connection_id, eff_schema)
+    est = estimate_doc_build(graph, prior=prior)
+
+    console.print()
+    console.print(Panel(
+        f"[bold]{connection_id}[/bold]  schema=[cyan]{eff_schema or '(default)'}[/cyan]\n"
+        f"nodes: [bold]{est['nodes']}[/bold]  ({est['tables']} tables, {est['columns']} columns)\n"
+        f"would rebuild: [yellow]{est['would_rebuild']}[/yellow]   "
+        f"reuse (Merkle cache): [green]{est['would_reuse']}[/green]\n"
+        f"skipped (ignore-globs): {len(est['skipped_tables'])}   "
+        f"LLM tokens: {est['llm_tokens']} (deterministic)",
+        title="[bold cyan]Ontology docs — estimate[/bold cyan]", border_style="cyan", padding=(1, 2),
+    ))
+
+    if not confirm:
+        console.print("\n[dim]Dry run. Re-run with [bold]--confirm[/bold] to build and persist.[/dim]\n")
+        return
+
+    tree = build_and_persist(connection_id, eff_schema, graph=graph, incremental=not full)
+    console.print(
+        f"\n[green]Built[/green] doc tree — root checksum [bold]{tree.root_checksum}[/bold] "
+        f"(reused {tree.stats['cache_hits']}, rebuilt {tree.stats['rebuilt']}).")
+    console.print(f"[dim]Persisted under data/ontology_docs/{connection_id}/{eff_schema or 'default'}/[/dim]\n")
+
+    for node in tree.tables()[:8]:
+        console.print(f"[bold]{node.fqn}[/bold] — {node.summary}")
+        for q in node.questions:
+            console.print(f"    [cyan]?[/cyan] {q}")
+    console.print()
+
+
 if __name__ == "__main__":
     cli()
