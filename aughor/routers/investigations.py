@@ -1516,11 +1516,67 @@ async def _stream_chat(
         _cx = assess_complexity(question)
         # Run the (blocking) LLM call in a worker thread so the event loop stays
         # free to serve other pages (catalog/inbox/home) while the query runs.
-        answer: _ChatAnswer = await asyncio.to_thread(
-            lambda: get_provider("coder").complete(
-                system=CHAT_SQL_SYSTEM, user=prompt, response_model=_ChatAnswer,
+        # CK-0.2: token-stream the coder's `headline` field as it is written, filling the
+        # otherwise-dead SQL-generation wait with the answer's headline typing in. The deltas
+        # are the RAW (pre-grounding) headline; the terminal grounded `headline` event below is
+        # authoritative and overwrites the stream (self-healing, mirroring the `insight` stream).
+        # Flag off = the exact pre-streaming blocking call, byte-identical.
+        from aughor.kernel.flags import flag_enabled as _hl_stream_flag
+        if _hl_stream_flag("ask.stream_text"):
+            import queue as _hq_mod
+            import threading as _hthreading
+            import time as _htime
+            _hl_q = _hq_mod.Queue()
+            _hl_result: dict = {}
+
+            def _hl_worker() -> None:
+                # complete_streaming falls back to blocking complete() on any streaming failure,
+                # so "exc" only means BOTH paths failed — re-raised below, exactly as today.
+                try:
+                    _hl_result["ans"] = get_provider("coder").complete_streaming(
+                        system=CHAT_SQL_SYSTEM, user=prompt, response_model=_ChatAnswer,
+                        text_field="headline", on_text=_hl_q.put,
+                    )
+                except Exception as worker_exc:
+                    _hl_result["exc"] = worker_exc
+                finally:
+                    _hl_q.put(None)   # sentinel: the stream is over
+
+            _hl_thread = _hthreading.Thread(target=_hl_worker, daemon=True, name="headline-stream")
+            _hl_thread.start()
+            # Drain partials → SSE deltas, throttled (grew ≥6 chars or >120ms) — a headline is
+            # short, so a tighter throttle than insight keeps it typing smoothly.
+            _hl_last_len, _hl_last_ts = 0, _htime.monotonic()
+            _HL_EMPTY = object()
+
+            def _hl_poll():
+                try:
+                    return _hl_q.get(True, 0.25)
+                except _hq_mod.Empty:
+                    return _HL_EMPTY
+
+            while True:
+                _hitem = await asyncio.to_thread(_hl_poll)
+                if _hitem is _HL_EMPTY:
+                    continue
+                if _hitem is None:
+                    break
+                if not isinstance(_hitem, str):
+                    continue
+                _hnow = _htime.monotonic()
+                if len(_hitem) - _hl_last_len >= 6 or _hnow - _hl_last_ts > 0.120:
+                    _hl_last_len, _hl_last_ts = len(_hitem), _hnow
+                    yield _sse("headline_delta", {"headline": _hitem})
+            await asyncio.to_thread(_hl_thread.join)
+            if "exc" in _hl_result:
+                raise _hl_result["exc"]
+            answer: _ChatAnswer = _hl_result["ans"]
+        else:
+            answer = await asyncio.to_thread(
+                lambda: get_provider("coder").complete(
+                    system=CHAT_SQL_SYSTEM, user=prompt, response_model=_ChatAnswer,
+                )
             )
-        )
 
         final_sql = answer.sql
         # Trust-receipt provenance signals — recorded ONLY when a guard

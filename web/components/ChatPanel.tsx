@@ -563,6 +563,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           columns: t.columns || [],
           rows: t.rows || [],
           headline: t.headline || null,
+          headlineStream: null,   // restored turns never carry deltas (inert, startedAt 0)
           chartType: t.chart_type || null,
           statusText: null,
           phases: [],
