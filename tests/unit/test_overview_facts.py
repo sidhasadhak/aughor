@@ -11,7 +11,7 @@ import re
 
 import pytest
 
-from aughor.overview.build import build_overview
+from aughor.overview.build import OverviewFact, _select, build_overview
 
 # The exact key set every OverviewFact.to_dict() must expose (frontend contract).
 FACT_KEYS = {
@@ -225,3 +225,61 @@ def test_build_overview_on_raising_connection_returns_empty_never_raises():
 def test_build_overview_on_error_returning_connection_returns_empty():
     rep = build_overview(_ErrConn(), "c", ["tickets"], schema="s", limit=8)
     assert rep.facts == []
+
+
+# ── source-diversity caps: no one table / schema monopolises the tour ─────────
+
+def _mk(lens, table, nb, dim=None):
+    """A minimal OverviewFact for exercising _select's diversity caps directly."""
+    return OverviewFact(lens=lens, headline=f"{lens} on {table}", stat="1",
+                        stat_label="x", why="", notability=nb, table=table, dimension=dim)
+
+
+def test_select_caps_facts_per_table_when_many_tables_available():
+    # s.t1 alone could supply four distinct-lens facts; the per-table cap (2) must spread
+    # the tour across other tables instead of letting one table take half the cards.
+    facts = [
+        _mk("concentration", "s.t1", 0.95, "t1_a"), _mk("outlier", "s.t1", 0.94, "t1_b"),
+        _mk("distribution", "s.t1", 0.93), _mk("composition", "s.t1", 0.92, "t1_c"),
+        _mk("relationship", "s.t2", 0.85, "t2_a"), _mk("coverage", "s.t2", 0.84),
+        _mk("concentration", "s.t3", 0.80, "t3_a"), _mk("outlier", "s.t3", 0.79, "t3_b"),
+        _mk("distribution", "s.t4", 0.75), _mk("composition", "s.t4", 0.74, "t4_a"),
+        _mk("relationship", "s.t5", 0.70, "t5_a"), _mk("coverage", "s.t5", 0.69),
+    ]
+    from collections import Counter
+    per_table = Counter(f.table for f in _select(facts, limit=8))
+    assert sum(per_table.values()) == 8                 # the tour still fills
+    assert max(per_table.values()) <= 2, dict(per_table)  # …but no table monopolises
+    assert len(per_table) >= 4                           # spread across ≥4 tables
+
+
+def test_select_caps_facts_per_schema_when_pool_spans_two_schemas():
+    # schema 'a' could supply all eight cards; the per-schema cap must reserve slots so the
+    # minority schema 'b' still appears — the full-connection, multi-schema overview case.
+    facts = [
+        _mk("concentration", "a.a1", 0.95, "a1_a"), _mk("outlier", "a.a1", 0.94, "a1_b"),
+        _mk("distribution", "a.a2", 0.93), _mk("composition", "a.a2", 0.92, "a2_a"),
+        _mk("relationship", "a.a3", 0.91, "a3_a"), _mk("coverage", "a.a3", 0.90),
+        _mk("concentration", "a.a4", 0.89, "a4_a"), _mk("outlier", "a.a4", 0.88, "a4_b"),
+        _mk("distribution", "b.b1", 0.70), _mk("composition", "b.b1", 0.69, "b1_a"),
+        _mk("relationship", "b.b2", 0.68, "b2_a"), _mk("coverage", "b.b2", 0.67),
+    ]
+    from collections import Counter
+    per_schema = Counter(f.table.split(".")[0] for f in _select(facts, limit=8))
+    assert sum(per_schema.values()) == 8
+    assert per_schema["a"] <= 6                          # dominant schema can't take all 8
+    assert per_schema["b"] >= 2                          # …minority schema is represented
+
+
+def test_select_narrow_schema_still_fills_via_relaxed_source_cap():
+    # Only two tables, one productive: the per-table cap would cap the tour at 3 — but the
+    # fill pass relaxes the SOURCE cap (keeping the semantic lens cap) so it still reaches 8.
+    facts = [_mk(lens, "s.hot", 0.9 - i * 0.02, f"d{i}")
+             for i, lens in enumerate(
+                 ["concentration", "concentration", "outlier", "outlier", "distribution",
+                  "distribution", "composition", "composition", "relationship"])]
+    facts.append(_mk("coverage", "s.cold", 0.5))
+    chosen = _select(facts, limit=8)
+    from collections import Counter
+    assert len(chosen) == 8                              # fills despite only 2 tables
+    assert max(Counter(f.lens for f in chosen).values()) <= 2  # semantic cap still holds

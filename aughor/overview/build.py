@@ -469,27 +469,57 @@ def _lens_coverage(by_table: dict, tprofiles: dict, touched_tables: set) -> list
 
 _MAX_PER_LENS = 2      # keep the tour diverse — never N variations of one lens
 _MAX_PER_CUT = 2       # a (table, dimension) may show at most its "where" + its "per-unit" angle
+_MAX_PER_TABLE = 2     # …and no single TABLE monopolises the tour (airline `tickets` took 3/8)
+
+
+def _schema_of(f) -> str:
+    """Owning schema of a fact's schema-qualified table ('' when unqualified)."""
+    t = f.table or ""
+    return t.split(".")[0] if "." in t else ""
 
 
 def _select(facts: list, limit: int) -> list:
     facts = [f for f in facts if f.notability >= _MIN_NOTABILITY]
     facts.sort(key=lambda f: f.notability, reverse=True)
+    # A per-schema cap only binds when the pool actually spans >1 schema (a full-connection
+    # overview on a multi-schema connection); on a scoped/single-schema tour it must never
+    # starve the one schema, so leave it unbounded there. Reserve ≥2 slots for other schemas.
+    multi_schema = len({s for s in (_schema_of(f) for f in facts) if s}) > 1
+    max_per_schema = max(_MAX_PER_TABLE, limit - 2) if multi_schema else limit
+
     chosen: list = []
     lens_ct: dict = {}
     cut_ct: dict = {}
+    table_ct: dict = {}
+    schema_ct: dict = {}
 
     def _cut(f):
         return (f.table, f.dimension) if f.dimension else None
 
-    def _ok(f) -> bool:
+    def _semantic_ok(f) -> bool:
+        # Semantic-repetition caps (lens, table+dimension cut) — enforced in EVERY pass:
+        # even when filling, the tour must never become N variations of one lens or one cut.
         if lens_ct.get(f.lens, 0) >= _MAX_PER_LENS:
             return False
         c = _cut(f)
         return not (c and cut_ct.get(c, 0) >= _MAX_PER_CUT)
 
+    def _source_ok(f) -> bool:
+        # Source-diversity caps (table, schema) — RELAXED in the final fill pass so a narrow
+        # schema (few fact-producing tables) still fills the tour instead of starving.
+        if f.table and table_ct.get(f.table, 0) >= _MAX_PER_TABLE:
+            return False
+        sch = _schema_of(f)
+        return not (sch and schema_ct.get(sch, 0) >= max_per_schema)
+
     def _take(f):
         chosen.append(f)
         lens_ct[f.lens] = lens_ct.get(f.lens, 0) + 1
+        if f.table:
+            table_ct[f.table] = table_ct.get(f.table, 0) + 1
+        sch = _schema_of(f)
+        if sch:
+            schema_ct[sch] = schema_ct.get(sch, 0) + 1
         c = _cut(f)
         if c:
             cut_ct[c] = cut_ct.get(c, 0) + 1
@@ -497,15 +527,24 @@ def _select(facts: list, limit: int) -> list:
     # pass 1 — the single most-notable fact of each lens (guarantees breadth of TYPES)
     seen_lens: set = set()
     for f in facts:
-        if f.lens in seen_lens or not _ok(f):
+        if f.lens in seen_lens or not (_semantic_ok(f) and _source_ok(f)):
             continue
         _take(f)
         seen_lens.add(f.lens)
         if len(chosen) >= limit:
             return chosen
-    # pass 2 — fill by score under the per-lens + per-cut caps
+    # pass 2 — fill by score under ALL caps (semantic + source diversity)
     for f in facts:
-        if f in chosen or not _ok(f):
+        if f in chosen or not (_semantic_ok(f) and _source_ok(f)):
+            continue
+        _take(f)
+        if len(chosen) >= limit:
+            return chosen
+    # pass 3 — a narrow schema can't satisfy the source caps; fill the remaining slots by
+    # score under the SEMANTIC caps only, so the tour still reaches `limit` rather than
+    # returning a stub. (On a wide schema passes 1–2 already filled it, so this is a no-op.)
+    for f in facts:
+        if f in chosen or not _semantic_ok(f):
             continue
         _take(f)
         if len(chosen) >= limit:
