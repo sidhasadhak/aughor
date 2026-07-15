@@ -49,6 +49,7 @@ from ag_ui.core import (
 )
 from ag_ui.encoder import EventEncoder
 
+from aughor.kernel.errors import tolerate
 from aughor.kernel.flags import flag_enabled
 from aughor.routers.investigations import (
     AskRequest, ChatHistoryTurn, build_ask_stream, build_resume_stream,
@@ -97,8 +98,9 @@ def ask_request_from(inp: RunAgentInput) -> AskRequest:
     for h in raw_hist:
         try:
             history.append(ChatHistoryTurn(**h) if isinstance(h, dict) else h)
-        except Exception:
-            continue
+        except Exception as exc:
+            tolerate(exc, "AG-UI forwardedProps carried a malformed history item; skipping it",
+                     counter="agui.bad_history_item")
     return AskRequest(
         question=_latest_user_question(inp),
         connection_id=_forwarded(inp, "connection_id") or "",
@@ -159,7 +161,9 @@ async def translate_ask_stream(
                 continue
             try:
                 ev = json.loads(raw[6:])
-            except Exception:
+            except Exception as exc:
+                tolerate(exc, "AG-UI: non-JSON SSE frame from the ask stream; skipping it",
+                         counter="agui.bad_frame")
                 continue
             etype = ev.get("type")
 
@@ -260,7 +264,6 @@ async def translate_ask_stream(
         yield encoder.encode(RunFinishedEvent(
             type=EventType.RUN_FINISHED, thread_id=thread_id, run_id=run_id, result=done_payload))
     except Exception as exc:  # a translation failure must still terminate the AG-UI run cleanly
-        from aughor.kernel.errors import tolerate
         tolerate(exc, "AG-UI translation failed mid-stream; emitting RunError", counter="agui.translate_failed")
         yield encoder.encode(RunErrorEvent(type=EventType.RUN_ERROR, message=str(exc)))
 
