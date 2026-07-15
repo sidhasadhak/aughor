@@ -119,8 +119,10 @@ def build_data_catalog(conn: "DatabaseConnection", tables: list[str]) -> str:
                     ["FOREIGN KEY JOINS (use these exact keys to join the tables above):"]
                     + [f"  {j['t1']}.{j['c1']} = {j['t2']}.{j['c2']}" for j in jmap["joins"]])
             catalog += "\n\n" + block
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "FK-join enrichment is best-effort; the catalog omits join hints on failure",
+                 counter="catalog.join_map", conn_id=conn_id or None)
 
     # Surrogate-key guidance: if any table exposes a *_date_sk / *_time_sk column,
     # tell the model these are DIMENSION keys, not literal dates. Without this the
@@ -137,8 +139,10 @@ def build_data_catalog(conn: "DatabaseConnection", tables: list[str]) -> str:
                 "use its columns (year, month, day, hour) — NEVER compare a _sk column to a "
                 "literal date, timestamp, or number."
             )
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "surrogate-key guidance is best-effort; omitted on failure",
+                 counter="catalog.surrogate_key", conn_id=conn_id or None)
 
     _cache[key] = (time.time(), catalog)
     return catalog
