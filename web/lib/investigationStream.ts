@@ -68,6 +68,9 @@ export interface ChatTurn {
   columns: string[];
   rows: unknown[][];
   headline: string | null;
+  // CK-0.2: the growing partial headline while `headline_delta` frames arrive (replace
+  // semantics). Cleared when the authoritative `headline` lands; null on restored turns.
+  headlineStream: string | null;
   chartType: string | null;
   // MindsDB-style: chart config from backend (Vega-Lite spec subset)
   chartConfig?: Record<string, unknown> | null;
@@ -206,6 +209,7 @@ export type ChatAction =
   | { type: "COLUMNS";      columns: string[] }
   | { type: "ROWS";         rows: unknown[][] }
   | { type: "HEADLINE";     headline: string }
+  | { type: "HEADLINE_DELTA"; headline: string }
   | { type: "PUBLIC_RECEIPT"; receiptId: string }
   | { type: "CHART_TYPE";   chartType: string }
   | { type: "CHART_CONFIG"; chartConfig: Record<string, unknown> }
@@ -253,7 +257,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   agent: null,
   clarify: null,
   escalate: null,
-  sql: null, columns: [], rows: [], headline: null, chartType: null,
+  sql: null, columns: [], rows: [], headline: null, headlineStream: null, chartType: null,
   statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
   dossierReport: null, dossierInsightId: null,
@@ -301,7 +305,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "SQL":        return updateLast(state, t => ({ ...t, sql: action.sql }));
     case "COLUMNS":    return updateLast(state, t => ({ ...t, columns: action.columns }));
     case "ROWS":       return updateLast(state, t => ({ ...t, rows: action.rows }));
-    case "HEADLINE":   return updateLast(state, t => ({ ...t, headline: action.headline }));
+    case "HEADLINE":   return updateLast(state, t => ({ ...t, headline: action.headline, headlineStream: null }));
+    case "HEADLINE_DELTA": return updateLast(state, t => ({ ...t, headlineStream: action.headline }));
     case "PUBLIC_RECEIPT": return updateLast(state, t => ({ ...t, publicReceiptId: action.receiptId }));
     case "CHART_TYPE": return updateLast(state, t => ({ ...t, chartType: action.chartType }));
     case "CHART_CONFIG": return updateLast(state, t => ({ ...t, chartConfig: action.chartConfig }));
@@ -394,6 +399,7 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "error":          return `message: ${p.message}`;
     case "insight":        return String(p.narrative ?? "").slice(0, 40);
     case "insight_delta":  return `partial: ${String(p.narrative ?? "").slice(0, 32)}`;
+    case "headline_delta": return `partial: ${String(p.headline ?? "").slice(0, 40)}`;
     case "clarifying_questions": return String((p.questions as string[])?.length ?? 0) + " questions";
     case "start":          return `inv: ${p.investigation_id ?? "new"}`;
     default:               return Object.keys(p).slice(0, 3).join(", ");
@@ -482,6 +488,7 @@ export async function consumeStream(
             case "columns":      dispatch({ type: "COLUMNS",    columns:   p.columns as string[] }); break;
             case "rows":         dispatch({ type: "ROWS",       rows:      p.rows as unknown[][] }); break;
             case "headline":     dispatch({ type: "HEADLINE",   headline:  p.headline as string }); break;
+            case "headline_delta": dispatch({ type: "HEADLINE_DELTA", headline: (p.headline as string) ?? "" }); break;
             case "receipt_id":   dispatch({ type: "PUBLIC_RECEIPT", receiptId: p.receipt_id as string }); break;
             case "answer":       dispatch({ type: "HEADLINE",   headline:  (p.text ?? p.answer) as string }); break;
             case "chart_type":   dispatch({ type: "CHART_TYPE", chartType: p.chart_type as string }); break;

@@ -965,6 +965,9 @@ function InsightBrief({
   // the partial text. Once the terminal `insight` lands (insightStream clears), stay
   // revealed rather than collapsing back behind the button.
   const streamingProse = turn.insight == null ? turn.insightStream : null;
+  // CK-0.2: while `headline_delta` frames arrive (and no terminal headline yet), type the
+  // partial headline in place of the skeleton — the authoritative `headline` overwrites it.
+  const streamingHeadline = turn.headline == null ? turn.headlineStream : null;
   useEffect(() => {
     if (turn.insightStream != null) setExplained(true);
   }, [turn.insightStream]);
@@ -991,7 +994,9 @@ function InsightBrief({
 
       {turn.headline
         ? <BriefHeadline animate={turn.startedAt > 0}>{turn.headline}</BriefHeadline>
-        : streaming ? <HeadlineSkeleton /> : null}
+        : streamingHeadline != null
+          ? <BriefHeadline animate={false} className="aug-stream-in">{safePartial(streamingHeadline)}</BriefHeadline>
+          : streaming ? <HeadlineSkeleton /> : null}
 
       {inspect && inspect.issues.length > 0 && (
         <p className="aug-text-sm text-amber-400/90 leading-relaxed flex items-start gap-1.5">
