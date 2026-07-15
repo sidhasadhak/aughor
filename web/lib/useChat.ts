@@ -10,7 +10,8 @@ import {
   type DebugEvent,
 } from "./investigationStream";
 
-import { API_BASE as BASE } from "./config";
+import { API_BASE as BASE, AUGHOR_AGUI } from "./config";
+import { runAskViaAgui } from "./aguiTransport";
 
 // Re-export so existing imports from useChat keep working
 export type { ChatTurn, DebugEvent } from "./investigationStream";
@@ -101,6 +102,21 @@ export function useChat() {
         });
       } else if (mode === "auto") {
         // Unified door: the router picks quick vs deep and emits a `route` receipt.
+        if (AUGHOR_AGUI) {
+          // CK-1: drive the SAME turn through the AG-UI protocol seam (POST /agui/run). The
+          // adapter re-frames AG-UI events into the SAME reducer dispatches (identical turn) and
+          // owns its own consumeStream call (with WP-2 drop-recovery), so this path returns here.
+          await runAskViaAgui({
+            question, connectionId, canvasId: opts.canvasId ?? null,
+            sessionId: sessionIdRef.current, history: chatHistory(),
+            depth: opts.depth ?? "auto", agentId: opts.agentId,
+            skipClarify: opts.skipClarify, clarifyReading: opts.clarifyReading,
+            clarifySubject: opts.clarifySubject, clarifySource: opts.clarifySource,
+            insightId: opts.insightId, deep: opts.deep,
+          }, dispatch, signal, logEvent);
+          abortRef.current = null;
+          return;
+        }
         res = await fetch(`${BASE}/ask`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

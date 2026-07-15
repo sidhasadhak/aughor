@@ -3414,6 +3414,26 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             yield sse
 
 
+def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGenerator[str, None]:
+    """The composed `/ask` event generator — the ONE source of the ask stream, shared by the
+    legacy `ask_endpoint` and the AG-UI `/agui/run` translator so both stay byte-identical.
+
+    Resolves the connection + optional user-agent and applies the agent's conn/schema bindings
+    (which mutates ``req.schema_name`` and may raise ``HTTPException`` 409) BEFORE building the
+    generator — exactly as the endpoint always did — so those surface as HTTP errors, not as
+    mid-stream SSE. ``request`` is threaded only for ``_stream_ask``'s signature parity; nothing
+    on the path dereferences it (a caller with no HTTP request may pass ``None``)."""
+    conn_id = _resolve_conn(req)
+    agent = _resolve_ask_agent(req)
+    if agent is not None:
+        conn_id = _apply_agent_bindings(req, agent, conn_id)
+    stream = _stream_ask(req, request, conn_id)
+    stream = _stream_with_session(req.session_id, stream)  # ambient session → trace attribution
+    if agent is not None:
+        stream = _stream_as_agent(agent, stream)
+    return stream
+
+
 @router.post("/ask")
 async def ask_endpoint(req: AskRequest, request: Request):
     """One conversational entry — the router picks quick vs deep (auto+transparency).
@@ -3424,16 +3444,8 @@ async def ask_endpoint(req: AskRequest, request: Request):
     """
     if os.getenv("AUGHOR_UNIFIED_ASK", "1").lower() in ("0", "false", "no", "off"):
         raise HTTPException(status_code=404, detail="unified /ask is disabled")
-    conn_id = _resolve_conn(req)
-    agent = _resolve_ask_agent(req)
-    if agent is not None:
-        conn_id = _apply_agent_bindings(req, agent, conn_id)
-    stream = _stream_ask(req, request, conn_id)
-    stream = _stream_with_session(req.session_id, stream)  # ambient session → trace attribution
-    if agent is not None:
-        stream = _stream_as_agent(agent, stream)
     return StreamingResponse(
-        stream,
+        build_ask_stream(req, request),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -3601,18 +3613,26 @@ def cancel_investigation_route(inv_id: str):
     return {"investigation_id": inv_id, "job_id": job_id, "cancelled": cancelled}
 
 
-@router.post("/investigations/{inv_id}/feedback")
-async def submit_feedback(inv_id: str, req: FeedbackRequest, request: Request):
-    stream = _stream_resume(inv_id, req.feedback, request, keep_subquestions=req.keep_subquestions,
-                            clarify_choice=req.clarify_choice)
-    # agents.user_defined — a deep run launched AS an agent resumes AS it: the
-    # persona persists in the run's checkpointed state (resume never passes
-    # through /ask). Fail-open: no persona → resume unchanged.
+def build_resume_stream(inv_id: str, request: "Request | None", *, feedback: str = "",
+                        keep_subquestions: "Optional[list[int]]" = None,
+                        clarify_choice: "Optional[str]" = None) -> AsyncGenerator[str, None]:
+    """The composed resume stream — shared by the legacy `/feedback` endpoint and the AG-UI
+    translator so both resume a paused investigation identically (incl. the agent-persona wrap)."""
+    stream = _stream_resume(inv_id, feedback, request, keep_subquestions=keep_subquestions,
+                            clarify_choice=clarify_choice)
+    # agents.user_defined — a deep run launched AS an agent resumes AS it: the persona persists in
+    # the run's checkpointed state (resume never passes through /ask). Fail-open: no persona → unchanged.
     persona = _persona_for_investigation(inv_id)
     if persona is not None:
         stream = _stream_as_agent(persona, stream)
+    return stream
+
+
+@router.post("/investigations/{inv_id}/feedback")
+async def submit_feedback(inv_id: str, req: FeedbackRequest, request: Request):
     return StreamingResponse(
-        stream,
+        build_resume_stream(inv_id, request, feedback=req.feedback,
+                            keep_subquestions=req.keep_subquestions, clarify_choice=req.clarify_choice),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

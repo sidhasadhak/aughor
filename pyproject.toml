@@ -46,6 +46,7 @@ dependencies = [
     "python-pptx>=1.0.2",
     "matplotlib>=3.11.0",
     "mcp>=1.28.0",
+    "ag-ui-protocol==0.1.19",
 ]
 
 [project.optional-dependencies]

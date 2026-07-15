@@ -609,6 +609,7 @@ from aughor.routers import (  # noqa: E402
     roles as roles_router,
     packs as packs_router,
     receipt as receipt_router,
+    agui,
 )
 
 app.include_router(system.router)
@@ -642,3 +643,4 @@ app.include_router(learning.router)
 app.include_router(packs_router.router)
 app.include_router(roles_router.router)
 app.include_router(receipt_router.router)
+app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
