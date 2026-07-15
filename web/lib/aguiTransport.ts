@@ -135,23 +135,36 @@ function aguiToAughorStream(src: ReadableStream<Uint8Array>): ReadableStream<Uin
   let buffer = "";
   const frame = (ev: AughorEvent) => encoder.encode(`data: ${JSON.stringify(ev)}\n\n`);
 
+  const emit = (controller: ReadableStreamDefaultController<Uint8Array>, chunk: string) => {
+    if (!chunk.startsWith("data: ")) return;
+    let ag: Record<string, unknown>;
+    try { ag = JSON.parse(chunk.slice(6)); } catch { return; }
+    for (const aughorEv of map(ag)) controller.enqueue(frame(aughorEv));
+  };
+
+  // A `start` PUMP (not `pull`): drive the source reads in one loop and enqueue as we go.
+  // A `pull`-based transform DEADLOCKS here — a pull whose source read maps to ZERO Aughor
+  // frames (RUN_STARTED, TextMessage Start/Content, ToolCall Start/Args all map to nothing)
+  // is not reliably re-driven, so the reframed stream stalls before the first frame and the
+  // turn hangs on "Thinking…" forever (found via browser dogfooding). The pump owns its
+  // cadence; enqueue still respects backpressure, and a drop/abort still surfaces to
+  // consumeStream's reader (the SAME WP-2 recovery / abort→DONE as the native path).
   return new ReadableStream<Uint8Array>({
-    async pull(controller) {
+    async start(controller) {
       try {
-        const { done, value } = await reader.read();
-        if (done) { controller.close(); return; }
-        buffer += decoder.decode(value, { stream: true });
-        const chunks = buffer.split("\n\n");
-        buffer = chunks.pop()!;
-        for (const chunk of chunks) {
-          if (!chunk.startsWith("data: ")) continue;
-          let ag: Record<string, unknown>;
-          try { ag = JSON.parse(chunk.slice(6)); } catch { continue; }
-          for (const aughorEv of map(ag)) controller.enqueue(frame(aughorEv));
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) {
+            if (buffer.startsWith("data: ")) emit(controller, buffer);   // flush a final unterminated frame
+            controller.close();
+            return;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const chunks = buffer.split("\n\n");
+          buffer = chunks.pop()!;
+          for (const chunk of chunks) emit(controller, chunk);
         }
       } catch (err) {
-        // A drop/abort on the AG-UI source surfaces to consumeStream's reader, which then runs
-        // the SAME WP-2 recovery (recoverAfterDrop) / abort→DONE it does on the native path.
         controller.error(err);
       }
     },
