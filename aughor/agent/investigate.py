@@ -6038,18 +6038,31 @@ def ada_synthesize(state: AgentState) -> dict:
     import concurrent.futures as _cf
     _synth_timeout = float(_os.getenv("AUGHOR_SYNTH_TIMEOUT_S", "120"))
     _synth_ex = _cf.ThreadPoolExecutor(max_workers=1)
+    _synth_system = (
+        "You are a senior data analyst writing a board-level investigation report. "
+        "Every number must trace to the evidence log. No fabrication. "
+        "Be definitive where evidence is strong; honest about uncertainty where it isn't."
+    )
+    # R6 — stream the report prose (executive_summary) to the client as the narrator
+    # writes it, so a multi-minute deep run isn't silent between phase_complete and the
+    # final report. Capture the sink emitter HERE (node body, sink visible) so the closure
+    # still works inside the plain synthesis executor thread. None when ada.progress_events
+    # is off → blocking .complete(), byte-identical to before. complete_streaming self-heals
+    # to .complete() on any streaming failure; the terminal answer_report stays authoritative.
+    from aughor.agent.progress import report_delta_emitter
+    _emit_report = report_delta_emitter()
+
+    def _run_synth():
+        prov = _provider("narrator")
+        if _emit_report is not None:
+            return prov.complete_streaming(
+                system=_synth_system, user=synth_prompt, response_model=ADASynthesisModel,
+                text_field="executive_summary", on_text=_emit_report)
+        return prov.complete(system=_synth_system, user=synth_prompt,
+                             response_model=ADASynthesisModel)
+
     try:
-        _synth_fut = _synth_ex.submit(
-            lambda: _provider("narrator").complete(
-                system=(
-                    "You are a senior data analyst writing a board-level investigation report. "
-                    "Every number must trace to the evidence log. No fabrication. "
-                    "Be definitive where evidence is strong; honest about uncertainty where it isn't."
-                ),
-                user=synth_prompt,
-                response_model=ADASynthesisModel,
-            )
-        )
+        _synth_fut = _synth_ex.submit(_run_synth)
         synth: ADASynthesisModel = _synth_fut.result(timeout=_synth_timeout)
     except Exception as e:
         synth = None

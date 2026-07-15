@@ -556,18 +556,22 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
 export function InvestigationReportView({
   report,
   streamingPhases,
+  streamingReport,
   onShowSource,
 }: {
   report?: AnswerReport;
   streamingPhases?: InvestigationPhase[];
+  streamingReport?: string;
   onShowSource?: ShowSource;
 }) {
-  // While streaming: progressive phase cards (the live state, unchanged)
+  // While streaming: progressive phase cards + the report prose as the narrator writes
+  // it (R6), so the synthesis phase isn't silent. The terminal report replaces both.
   if (!report) {
     const phases = streamingPhases ?? [];
-    if (!phases.length) return null;
+    if (!phases.length && !streamingReport) return null;
     return (
       <div className="flex flex-col gap-4 pt-1">
+        {streamingReport && <BriefProse text={streamingReport} />}
         {phases.map(phase => <StreamingPhaseCard key={phase.phase_id} phase={phase} />)}
       </div>
     );

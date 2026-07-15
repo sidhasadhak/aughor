@@ -186,6 +186,7 @@ export interface ChatTurn {
   // frames, replace semantics). Cleared when the authoritative `insight` lands.
   // Always null on restored turns (history never carries deltas).
   insightStream: string | null;
+  reportStream: string | null;   // R6: live ada_synthesize prose, before the terminal adaReport lands
 
   // Clarifying questions surfaced before deep analysis starts
   clarifyingQuestions: string[];
@@ -238,6 +239,7 @@ export type ChatAction =
   | { type: "ERROR";            message: string }
   | { type: "INSIGHT";           narrative: string; anomalies: string[]; trend: string; confidence: string }
   | { type: "INSIGHT_DELTA";     narrative: string }
+  | { type: "REPORT_DELTA";      text: string }
   | { type: "CLARIFYING_QUESTIONS"; questions: string[]; contextNote: string }
   | { type: "DONE"; receiptId?: string | null }
   | { type: "CLEAR" }
@@ -271,6 +273,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   playbookRefs: [],
   insight: null,
   insightStream: null,
+  reportStream: null,
   clarifyingQuestions: [],
   clarifyingContext: '',
 };
@@ -353,10 +356,13 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "INSIGHT_DELTA":
       // Growing partial narrative (replace semantics — each frame carries the full text so far).
       return updateLast(state, t => ({ ...t, insightStream: action.narrative }));
+    case "REPORT_DELTA":
+      // Growing deep-report prose (replace semantics); the terminal ADA_REPORT clears it and wins.
+      return updateLast(state, t => ({ ...t, reportStream: action.text }));
     case "PHASE":
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
     case "ADA_REPORT":
-      return { ...updateLast(state, t => finish({ ...t, status: "done", adaReport: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
+      return { ...updateLast(state, t => finish({ ...t, status: "done", adaReport: action.report, reportStream: null, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
     case "DOSSIER_REPORT":
       return { ...updateLast(state, t => finish({ ...t, status: "done", dossierReport: action.dossier, dossierInsightId: action.insightId, queryMode: "dossier", statusText: null })), streaming: false };
     case "OVERVIEW_REPORT":
@@ -399,6 +405,7 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "error":          return `message: ${p.message}`;
     case "insight":        return String(p.narrative ?? "").slice(0, 40);
     case "insight_delta":  return `partial: ${String(p.narrative ?? "").slice(0, 32)}`;
+    case "report_delta":   return `partial: ${String(p.executive_summary ?? "").slice(0, 40)}`;
     case "headline_delta": return `partial: ${String(p.headline ?? "").slice(0, 40)}`;
     case "clarifying_questions": return String((p.questions as string[])?.length ?? 0) + " questions";
     case "start":          return `inv: ${p.investigation_id ?? "new"}`;
@@ -583,6 +590,7 @@ export async function consumeStream(
             case "playbook_refs": dispatch({ type: "PLAYBOOK_REFS", items: (p.items as PlaybookRef[]) ?? [] }); break;
             case "insight":      dispatch({ type: "INSIGHT", narrative: (p.narrative as string) ?? "", anomalies: (p.anomalies as string[]) ?? [], trend: (p.trend as string) ?? "stable", confidence: (p.confidence as string) ?? "medium" }); break;
             case "insight_delta": dispatch({ type: "INSIGHT_DELTA", narrative: (p.narrative as string) ?? "" }); break;
+            case "report_delta":  dispatch({ type: "REPORT_DELTA", text: (p.executive_summary as string) ?? "" }); break;
             case "clarifying_questions": dispatch({ type: "CLARIFYING_QUESTIONS", questions: (p.questions as string[]) ?? [], contextNote: (p.context_note as string) ?? "" }); break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
             case "done":         dispatch({ type: "DONE", receiptId: (p.has_receipt ? (p.inv_id as string) : null) }); break;

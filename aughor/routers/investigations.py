@@ -405,7 +405,13 @@ async def _aiter_sync_with_progress(sync_iter, progress_q, ctx):
             done, _pending = await asyncio.wait(
                 {next_graph, next_prog}, return_when=asyncio.FIRST_COMPLETED)
             if next_prog in done:
-                yield {"__ada_progress__": next_prog.result()}
+                _p = next_prog.result()
+                # Two payload types share the sink queue: a report-delta (R6, already
+                # self-tagged) passes through verbatim; a phase-progress marker is wrapped.
+                if isinstance(_p, dict) and "__report_delta__" in _p:
+                    yield _p
+                else:
+                    yield {"__ada_progress__": _p}
                 next_prog = asyncio.ensure_future(progress_q.get())
             if next_graph in done:
                 item = next_graph.result()
@@ -2586,6 +2592,9 @@ async def _stream_investigation(
             if time.monotonic() > deadline:
                 timed_out = True
                 break
+            if "__report_delta__" in event:            # R6 live synthesis prose (flag-gated via the sink)
+                yield _sse("report_delta", {"executive_summary": event["__report_delta__"]})
+                continue
             if "__ada_progress__" in event:            # P2 live per-dimension progress (flag-gated)
                 yield _sse("phase_progress", event["__ada_progress__"])
                 continue
@@ -2921,6 +2930,9 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
                 yield _sse("error", {"message": "Timed out waiting for synthesis."})
                 fail_investigation(inv_id, status="timed_out")
                 return
+            if "__report_delta__" in event:            # R6 live synthesis prose (flag-gated via the sink)
+                yield _sse("report_delta", {"executive_summary": event["__report_delta__"]})
+                continue
             if "__ada_progress__" in event:            # P2 live per-dimension progress (flag-gated)
                 yield _sse("phase_progress", event["__ada_progress__"])
                 continue
