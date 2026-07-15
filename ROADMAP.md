@@ -16,12 +16,15 @@
 
 ### 🧭 Session handoff — 2026-07-16 · Databricks-HAR program (R1–R15)
 
-**Wave A+B MERGED to `main` (`f42ced4`):** R1/R2 (upload birth), R3 (ground-once/run), R5 (value index),
-R6 (stream deep report), R7 (unique-alias compile) — squash-merged PRs #163–166, CI green. **Shipped
-2026-07-16 (open PRs):** **R9** (route wide→explore wave; flag `explore.route_wide`) = **PR #167, CI green**;
-**R8** (ontology docs as a Merkle-checksummed build artifact; `ontology/doctree.py` + `aughor ontology-docs`
-CLI + flag `ontology.autodoc`) = **PR #168, stacked on #167** (both edit `kernel/flags.py` — merge #167
-first). **R6** dogfood = wiring verified (live eyeball deferred to the user). **R4 moot.**
+**R1–R9 ALL MERGED to `main`** (squash-merged PRs #163–166 → `f42ced4`, then **R9** #167 `0958ce2`, study-#2
+docs #169 `9595f4f`, **R8** #168 `6bb659c`; CI green): R1/R2 (upload birth rite), R3 (ground-once/run),
+R5 (persisted value index), R6 (stream the deep report; wiring verified — live eyeball still open),
+R7 (unique-alias compile), R8 (ontology docs as a Merkle-checksummed build artifact: `ontology/doctree.py`
++ `aughor ontology-docs` CLI + flag `ontology.autodoc`), R9 (route wide→explore wave; flag
+`explore.route_wide`). **R4 moot.** Both new flags default-off.
+
+**⏭️ NEXT UP: R11 (the structural keystone — per-column config, deterministic-first), then R12 → R14 → R13
+→ R15 per the sequence below. Also open: R10; R7/R5 deferred follow-ons; the conftest store-isolation chip.**
 
 **NEW — Wire study #2 (canvas-birth + 2 Deep-Research runs on our airline dataset) →
 [`docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md`](docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md).**
