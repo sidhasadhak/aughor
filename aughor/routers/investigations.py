@@ -3318,8 +3318,12 @@ async def _stream_overview(question: str, conn_id: str, req) -> AsyncGenerator[s
     rep = None
     try:
         from aughor.overview import build_overview
+        from aughor.overview.drills import load_priors
+        # Learned per-connection prior: fold this connection's "explore this fact" drill
+        # history into the ranking so the tour surfaces the lenses/tables this user explores.
+        _priors = await asyncio.to_thread(load_priors, cid)
         rep = await asyncio.to_thread(build_overview, db, cid, tables,
-                                      schema=eff_schema, entity_hint="rows", limit=8)
+                                      schema=eff_schema, entity_hint="rows", limit=8, priors=_priors)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "overview fact tour is best-effort; degrading to an honest headline",
@@ -3346,6 +3350,31 @@ async def _stream_overview(question: str, conn_id: str, req) -> AsyncGenerator[s
             "I couldn't surface overview facts for this dataset — try asking about a "
             "specific measure, or open a table in the catalog.")})
     yield _sse("done", {})
+
+
+class OverviewDrillRequest(BaseModel):
+    """Capture signal for the learned overview prior: the user clicked "explore this fact"
+    on an overview card. ``lens``/``table`` are the card's coordinates; the connection (a
+    canvas pins its own) scopes the prior read back by the next tour."""
+    connection_id: str = ""
+    canvas_id: Optional[str] = None
+    lens: str = ""
+    table: str = ""
+
+
+@router.post("/overview/drill", status_code=204)
+async def record_overview_drill(req: OverviewDrillRequest) -> None:
+    """Record an overview "explore this fact" drill so this connection's next tour learns
+    which lenses/tables the user explores (``overview.drills`` → ``build_overview`` priors).
+    Fire-and-forget from the client; best-effort and never raises. Resolves the connection
+    the same way ``_stream_overview`` does, so capture and read-back share one key."""
+    from aughor.canvas.scope import resolve_execution_scope
+    from aughor.overview.drills import record_drill
+    try:
+        cid = resolve_execution_scope(req.connection_id, req.canvas_id).connection_id
+    except Exception:
+        cid = req.connection_id
+    await asyncio.to_thread(record_drill, cid, req.lens, req.table)
 
 
 async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> AsyncGenerator[str, None]:

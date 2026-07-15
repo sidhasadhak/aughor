@@ -185,6 +185,29 @@ export async function cancelInvestigation(invId: string): Promise<void> {
   await fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/cancel`, { method: "POST" });
 }
 
+/** Best-effort capture: the user drilled ("explore this fact") an overview card. Feeds the
+ *  per-connection notability prior the next tour reads back (backend overview.drills).
+ *  Fire-and-forget — a failed capture must never disrupt the drill it accompanies. */
+export function recordOverviewDrill(
+  connectionId: string,
+  opts: { canvasId?: string; lens?: string; table?: string } = {},
+): void {
+  try {
+    void fetch(`${BASE}/overview/drill`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        connection_id: connectionId,
+        canvas_id: opts.canvasId ?? null,
+        lens: opts.lens ?? "",
+        table: opts.table ?? "",
+      }),
+    }).catch(() => {});
+  } catch {
+    /* ignore — capture is best-effort */
+  }
+}
+
 /** Action-approval audit + allowlist (P4, AI-FDE Pillar B). */
 export interface ApprovalAuditEvent {
   seq?: number; at?: string; action: string; risk: string; decision: string;

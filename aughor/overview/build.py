@@ -478,6 +478,35 @@ def _schema_of(f) -> str:
     return t.split(".")[0] if "." in t else ""
 
 
+# ── learned prior: a bounded nudge from how often the user drilled each lens / table ──
+_PRIOR_CAP = 0.15   # a prior promotes a fact in CLOSE calls; it never buries a notable one
+
+
+def _prior_boost(lens_ct: int, table_ct: int) -> float:
+    """A bounded, saturating notability nudge from the per-connection drill counts (see
+    ``overview.drills``). Each source saturates (≈3 drills → half its 0.10 weight) and the
+    sum is capped at ``_PRIOR_CAP``, so a well-liked lens/table rises in a tie but a genuinely
+    notable deterministic fact still wins."""
+    lens_b = 0.10 * (lens_ct / (lens_ct + 3.0)) if lens_ct > 0 else 0.0
+    table_b = 0.10 * (table_ct / (table_ct + 3.0)) if table_ct > 0 else 0.0
+    return min(_PRIOR_CAP, lens_b + table_b)
+
+
+def _apply_priors(candidates: list, priors: Optional[dict]) -> None:
+    """Fold the per-connection drill priors into each candidate's notability, in place. A
+    no-op when there is no prior, so the tour stays byte-identical until a user drills."""
+    if not priors:
+        return
+    lens_p = priors.get("lens") or {}
+    table_p = priors.get("table") or {}
+    if not lens_p and not table_p:
+        return
+    for f in candidates:
+        b = _prior_boost(lens_p.get(f.lens, 0), table_p.get(f.table, 0))
+        if b:
+            f.notability = min(1.0, f.notability + b)
+
+
 def _select(facts: list, limit: int) -> list:
     facts = [f for f in facts if f.notability >= _MIN_NOTABILITY]
     facts.sort(key=lambda f: f.notability, reverse=True)
@@ -554,14 +583,19 @@ def _select(facts: list, limit: int) -> list:
 
 def build_overview(conn, connection_id: str, tables: list, *, schema: str = "",
                    entity_hint: str = "rows", limit: int = 8,
-                   now: Optional[str] = None) -> OverviewReport:
+                   now: Optional[str] = None, priors: Optional[dict] = None) -> OverviewReport:
     """Profile the scoped tables and return a diverse, notability-ranked fact tour.
 
     Deterministic and bounded: one ``SUMMARIZE`` per table (zero further SQL for the
     scale / distribution / coverage lenses) plus at most ``_MAX_PROBES`` group-by scans
     for concentration/outlier/composition/relationship. ``tables`` are bare names;
     ``schema`` qualifies them for SQL. Never raises — a failed probe degrades to fewer
-    facts, never an error on the answer path."""
+    facts, never an error on the answer path.
+
+    ``priors`` (``{"lens": {name: n}, "table": {name: n}}`` from ``overview.drills``) folds
+    the connection's drill history into a BOUNDED notability nudge before selection, so the
+    tour learns which facts this user explores. Omit it (the default) for the pure
+    deterministic tour."""
     def _qual(t: str) -> str:
         return t if ("." in t or not schema) else f"{schema}.{t}"
     qualified = [_qual(t) for t in tables]
@@ -599,6 +633,7 @@ def build_overview(conn, connection_id: str, tables: list, *, schema: str = "",
 
     candidates += _lens_coverage(by_table, tprofiles, touched)
 
+    _apply_priors(candidates, priors)     # learned per-connection nudge (no-op without a prior)
     facts = _select(candidates, limit)
     return OverviewReport(
         facts=facts,

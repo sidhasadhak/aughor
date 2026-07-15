@@ -4187,6 +4187,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/overview/drill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Overview Drill
+         * @description Record an overview "explore this fact" drill so this connection's next tour learns
+         *     which lenses/tables the user explores (``overview.drills`` → ``build_overview`` priors).
+         *     Fire-and-forget from the client; best-effort and never raises. Resolves the connection
+         *     the same way ``_stream_overview`` does, so capture and read-back share one key.
+         */
+        post: operations["record_overview_drill_overview_drill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs": {
         parameters: {
             query?: never;
@@ -6375,6 +6398,31 @@ export interface components {
             rec_text: string;
             /** Status */
             status: string;
+        };
+        /**
+         * OverviewDrillRequest
+         * @description Capture signal for the learned overview prior: the user clicked "explore this fact"
+         *     on an overview card. ``lens``/``table`` are the card's coordinates; the connection (a
+         *     canvas pins its own) scopes the prior read back by the next tour.
+         */
+        OverviewDrillRequest: {
+            /** Canvas Id */
+            canvas_id?: string | null;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Lens
+             * @default
+             */
+            lens: string;
+            /**
+             * Table
+             * @default
+             */
+            table: string;
         };
         /** PlaybookEntryRequest */
         PlaybookEntryRequest: {
@@ -15259,6 +15307,37 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_overview_drill_overview_drill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverviewDrillRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

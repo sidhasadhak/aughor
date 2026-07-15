@@ -283,3 +283,42 @@ def test_select_narrow_schema_still_fills_via_relaxed_source_cap():
     from collections import Counter
     assert len(chosen) == 8                              # fills despite only 2 tables
     assert max(Counter(f.lens for f in chosen).values()) <= 2  # semantic cap still holds
+
+
+# ── learned per-connection prior: a bounded nudge from drill history ───────────
+
+def test_prior_boost_is_bounded_and_saturating():
+    from aughor.overview.build import _PRIOR_CAP, _prior_boost
+    assert _prior_boost(0, 0) == 0.0                       # no drills → no nudge
+    assert 0 < _prior_boost(1, 0) < _prior_boost(5, 0)     # monotonic in drill count
+    assert _prior_boost(10_000, 10_000) <= _PRIOR_CAP      # capped, never runaway
+    assert _prior_boost(3, 0) == pytest.approx(0.10 * 3 / 6)   # ≈half the 0.10 lens weight at 3
+
+
+def test_priors_reorder_the_tour_toward_the_drilled_lens():
+    from aughor.overview.build import _apply_priors, _select
+    # b (0.55) out-ranks a (0.50) with no prior…
+    assert _select([_mk("concentration", "s.t1", 0.50, "d1"),
+                    _mk("outlier", "s.t2", 0.55, "d2")], limit=1)[0].lens == "outlier"
+    # …but a strong drill history on 'concentration' nudges a above b.
+    facts = [_mk("concentration", "s.t1", 0.50, "d1"), _mk("outlier", "s.t2", 0.55, "d2")]
+    _apply_priors(facts, {"lens": {"concentration": 50}, "table": {}})
+    assert _select(facts, limit=1)[0].lens == "concentration"
+
+
+def test_priors_are_a_no_op_when_absent_or_empty():
+    from aughor.overview.build import _apply_priors
+    facts = [_mk("coverage", "s.t", 0.4)]
+    _apply_priors(facts, None)
+    _apply_priors(facts, {"lens": {}, "table": {}})
+    assert facts[0].notability == 0.4                       # untouched → deterministic tour
+
+
+def test_build_overview_applies_priors_to_rank(report):
+    # Same fixture, but a heavy 'coverage' prior lifts the coverage facts' notability.
+    boosted = build_overview(FakeConn(), "c", ["tickets", "baggage"], schema="s", limit=8,
+                             priors={"lens": {"coverage": 100}, "table": {}})
+
+    def _max_cov(facts):
+        return max((f.notability for f in facts if f.lens == "coverage"), default=0.0)
+    assert _max_cov(boosted.facts) > _max_cov(report.facts)

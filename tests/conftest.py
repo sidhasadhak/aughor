@@ -48,6 +48,7 @@ for _env, _file in (
     ("AUGHOR_IDEMPOTENCY_DB", "idempotency.db"),
     ("AUGHOR_RBAC_DB", "rbac.db"),
     ("AUGHOR_AGENTS_DB", "agents.db"),
+    ("AUGHOR_OVERVIEW_DRILLS_DB", "overview_drills.db"),
     # WP-4 — matcache had NO env override and was hardcoded to data/mat_cache.duckdb, so
     # any test touching the result cache wrote the developer's live file (a non-hermetic
     # hole; the same class that once emptied the live registry).
