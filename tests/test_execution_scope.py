@@ -42,6 +42,28 @@ def test_unqualified_table_names_do_not_derive_a_schema():
     assert s.eff_schema is None
 
 
+# ── CanvasScope adopts a single owning schema at construction (persisted hardening) ──────
+
+def test_canvas_scope_adopts_single_owning_schema():
+    s = CanvasScope(connection_id="c", tables=["lux.brands", "lux.orders"])
+    assert s.schema_name == "lux"              # persisted (model_dump), not only derived at read
+
+
+def test_canvas_scope_leaves_multi_schema_list_unconstrained():
+    s = CanvasScope(connection_id="c", tables=["a.orders", "b.orders"])
+    assert s.schema_name is None               # genuinely ambiguous → pin nothing
+
+
+def test_canvas_scope_leaves_bare_names_unconstrained():
+    s = CanvasScope(connection_id="c", tables=["orders", "customers"])
+    assert s.schema_name is None               # no schema qualifier → can't derive one
+
+
+def test_canvas_scope_keeps_explicit_schema_even_over_mixed_tables():
+    s = CanvasScope(connection_id="c", schema_name="main", tables=["main.t", "other.u"])
+    assert s.schema_name == "main"             # an explicit declaration is never overwritten
+
+
 # ── resolve_execution_scope: canvas precedence ───────────────────────────────────────────
 
 def _canvas(monkeypatch, canvas):
@@ -60,15 +82,18 @@ def test_resolve_pins_canvas_connection_schema_and_tables(monkeypatch):
     assert s.eff_schema == "missimi"
 
 
-def test_resolve_derives_schema_when_canvas_declares_none(monkeypatch):
+def test_resolve_hardens_schema_when_canvas_declares_none(monkeypatch):
     # The exact salvage/resume gap: schema_name=None but a schema-qualified table list.
+    # CanvasScope's validator now ADOPTS the single owning schema at construction, so the
+    # scope is explicitly declared (hardened across every path, not only those that re-derive
+    # it). declared_schema is therefore the owning schema, not None.
     cv = Canvas(id="cv2", name="Missimi",
                 scopes=[CanvasScope(connection_id="conn", schema_name=None,
                                     tables=["missimi.orders", "missimi.line_items"])])
     _canvas(monkeypatch, cv)
     s = resolve_execution_scope("conn", "cv2")
-    assert s.declared_schema is None
-    assert s.eff_schema == "missimi"           # would have been None before the consolidation
+    assert s.declared_schema == "missimi"      # adopted at CanvasScope construction (was None)
+    assert s.eff_schema == "missimi"
 
 
 def test_resolve_non_canvas_honours_schema_scope():
