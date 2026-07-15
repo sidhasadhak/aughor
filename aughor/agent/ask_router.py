@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Literal, Optional
 
-from aughor.agent.complexity import assess_complexity
+from aughor.agent.complexity import ComplexityVerdict, assess_complexity
 
 Depth = Literal["quick", "deep"]
 
@@ -82,6 +82,53 @@ def _default_classifier(question: str) -> tuple:
     return classify_question(question)
 
 
+# ── Wide / landscape detection → the explore wave (R9) ────────────────────────
+# A genuinely BROAD question — "characterize / profile / map the landscape / how does X
+# vary across …" — is answered best by the multi-cut explore subgraph (independent cuts of
+# one landscape), not a single ADA investigation. This is a DETERMINISTIC signal (no model
+# in the routing decision — the R4 ablation lesson) and it YIELDS to causal/driver questions,
+# which are investigations, so it never poaches a real "why". Gated behind `explore.route_wide`
+# (default-off); the already-built explore subgraph is simply unreachable from /ask without it.
+_WIDE_MARKERS = (
+    "overview of", "an overview", "give an overview", "high-level view", "high level view",
+    "landscape", "lay of the land",
+    "characteristics of", "characteristic of", "characterize", "characterise",
+    "profile of", "profile the", "a profile of",
+    "what patterns", "patterns in", "any patterns",
+    "explore the", "explore our", "explore how", "exploring the", "explore ",
+    "map out", "map of the",
+    "vary with", "varies with", "vary across", "varies across",
+    "segment the", "segment our", "customer segments", "what segments", "which segments",
+    "what factors", "which factors", "factors that",
+    "optimal ", "sweet spot", "break-even", "break even", "what is a good",
+)
+
+
+def is_wide_question(question: str, verdict: ComplexityVerdict) -> bool:
+    """Deterministically decide whether a question is a broad *landscape* scan best served by
+    the explore wave. Yields to causal/driver questions (a ``why`` / ``cause`` / ``driver`` is an
+    investigation, never a landscape scan), so a real investigation is never re-routed away."""
+    q = (question or "").strip().lower()
+    if not q:
+        return False
+    if verdict.signals.get("causal", 0) > 0:
+        return False
+    # Imperative "Profile our / characterize the …" — the leading verb IS the landscape ask.
+    if q.startswith(("profile ", "characterize ", "characterise ")):
+        return True
+    return any(m in q for m in _WIDE_MARKERS)
+
+
+def _route_wide_enabled() -> bool:
+    """Runtime read of the ``explore.route_wide`` flag, fail-safe to OFF — mirrors the graph's
+    ``_explore_parallel_enabled`` idiom. Only consulted when a question already looks wide."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("explore.route_wide")
+    except Exception:
+        return False
+
+
 def decide_ask_route(
     question: str,
     *,
@@ -90,6 +137,7 @@ def decide_ask_route(
     insight_id: Optional[str] = None,
     has_deep: bool = True,
     classifier: Optional[Classifier] = None,
+    route_wide: Optional[bool] = None,
 ) -> AskRoute:
     """Decide whether a ``/ask`` turn runs the quick body or the deep body.
 
@@ -98,7 +146,8 @@ def decide_ask_route(
     ``insight_id`` (without ``deep_flag``) is a dossier drill. ``has_deep`` is the
     resolved ``DEEP_ANALYSIS`` capability — a deep route degrades to quick when it is
     False. ``classifier`` is injected for testing; it defaults to ``classify_question``
-    and is consulted only for borderline questions.
+    and is consulted only for borderline questions. ``route_wide`` forces the R9
+    wide→explore gate on/off (tests/evals); ``None`` reads the ``explore.route_wide`` flag.
     """
     verdict = assess_complexity(question or "")
 
@@ -134,6 +183,16 @@ def decide_ask_route(
 
     # 2) Auto — deterministic-first. The obvious cases never touch the model. ──────
     causal = verdict.signals.get("causal", 0) > 0
+
+    # 2a) Wide / landscape scan → the explore wave (R9, deterministic, flag-gated). A broad
+    #     "characterize / map the landscape / how does X vary across …" question fans out
+    #     better than one ADA investigation. is_wide_question already excludes causal 'why's,
+    #     and the flag is read only AFTER the (pure) wide check matches — so a normal question
+    #     never touches the flag store. Degrades to quick with no capability via ``_route``.
+    if is_wide_question(question, verdict) and (
+            route_wide if route_wide is not None else _route_wide_enabled()):
+        return _route("deep", "explore", "mapping this out as a landscape scan")
+
     if causal or verdict.tier == "complex":
         return _route("deep", "investigate",
                       "this asks for a cause or a multi-step breakdown")
