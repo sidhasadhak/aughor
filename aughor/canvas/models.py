@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CanvasScope(BaseModel):
@@ -14,6 +14,23 @@ class CanvasScope(BaseModel):
     connection_id: str
     schema_name: Optional[str] = None          # override the connection's default schema
     tables: List[str] = Field(default_factory=list)  # empty = all tables
+
+    @model_validator(mode="after")
+    def _adopt_single_owning_schema(self) -> "CanvasScope":
+        """When a table-list scope names tables from exactly ONE schema but declares no
+        schema, adopt that schema explicitly. This is the owning-schema derivation
+        ``ExecutionScope.eff_schema`` already does at read time — but PERSISTED, so EVERY
+        path that pins ``search_path`` (the overview tour, plus the crash-salvage / resume
+        paths that skip the re-derivation and could otherwise leak a bare ``FROM orders`` to
+        a sibling schema) sees the scope, not only the ones that re-derive it. A bare
+        (unqualified) or multi-schema table list is genuinely unconstrained → left as-is.
+        Fires on construction AND on load (``_row_to_canvas``), so existing canvases harden
+        with no migration."""
+        if not self.schema_name and self.tables:
+            owners = {t.split(".")[0] for t in self.tables if "." in t}
+            if len(owners) == 1:
+                self.schema_name = next(iter(owners))
+        return self
 
     @property
     def is_full_schema(self) -> bool:

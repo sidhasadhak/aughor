@@ -9,7 +9,7 @@ import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
 import CommentIcon        from "@atlaskit/icon/core/comment";
 import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
 import CompassIcon        from "@atlaskit/icon/core/compass";
-import { uploadDocument, listUserAgents, type UserAgent } from "@/lib/api";
+import { uploadDocument, listUserAgents, recordOverviewDrill, type UserAgent } from "@/lib/api";
 import { useChat, type DebugEvent, type ChatTurn } from "@/lib/useChat";
 import { useStickToBottom } from "@/lib/useStickToBottom";
 import type { OverviewReport } from "@/lib/types";
@@ -820,7 +820,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         onRunFresh={(q) => handleSend(q, "investigate", { skipCache: true })}
                         onShowSource={setSourcePanel}
                         onDeeper={(q, insightId) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, insightId: insightId ?? undefined, deep: true })}
-                        onExploreFact={(q, o) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, seedSql: o.seedSql, seedContext: o.seedContext, deep: true })}
+                        onExploreFact={(q, o) => { recordOverviewDrill(connectionId, { canvasId: canvasId ?? undefined, lens: o.lens, table: o.table }); ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, seedSql: o.seedSql, seedContext: o.seedContext, deep: true }); }}
                         onApprovePlan={(invId, keep) => resumePlan(invId, keep)}
                         onRejectPlan={(invId) => rejectPlan(invId)}
                         onChooseClarify={(invId, opt) => resumeClarify(invId, opt)}

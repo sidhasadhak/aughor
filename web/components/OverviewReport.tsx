@@ -188,8 +188,9 @@ export function OverviewReportView({
 }: {
   report: OverviewReport;
   onShowSource?: (data: SourcePanelData) => void;
-  /** Drill a fact into a live investigation — seeded from the fact (see factSeed). */
-  onExploreFact?: (question: string, opts: { seedSql: string | null; seedContext: string }) => void;
+  /** Drill a fact into a live investigation — seeded from the fact (see factSeed). lens+table
+   *  ride along so the parent can record the drill as a per-connection notability prior. */
+  onExploreFact?: (question: string, opts: { seedSql: string | null; seedContext: string; lens: string; table: string }) => void;
 }) {
   const facts = report.facts ?? [];
 
@@ -212,7 +213,7 @@ export function OverviewReportView({
               key={`${f.lens}-${f.table}-${f.dimension ?? "_"}-${i}`}
               fact={f}
               onShowSource={onShowSource}
-              onExplore={onExploreFact ? () => { const s = factSeed(f); onExploreFact(s.question, { seedSql: s.seedSql, seedContext: s.seedContext }); } : undefined}
+              onExplore={onExploreFact ? () => { const s = factSeed(f); onExploreFact(s.question, { seedSql: s.seedSql, seedContext: s.seedContext, lens: f.lens, table: f.table }); } : undefined}
             />
           ))}
         </div>

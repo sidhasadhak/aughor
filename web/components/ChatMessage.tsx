@@ -1290,7 +1290,7 @@ export function ChatMessage({
   onShowSource?: (data: SourcePanelData) => void;
   onDeeper?: (question: string, insightId: string | null) => void;
   /** Drill an overview fact into a live seeded investigation (see OverviewReportView). */
-  onExploreFact?: (question: string, opts: { seedSql: string | null; seedContext: string }) => void;
+  onExploreFact?: (question: string, opts: { seedSql: string | null; seedContext: string; lens: string; table: string }) => void;
   onApprovePlan?: (invId: string, keepIndices: number[]) => void;
   onRejectPlan?: (invId: string) => void;
   onChooseClarify?: (invId: string, option: string) => void;
