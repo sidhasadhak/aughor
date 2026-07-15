@@ -707,6 +707,7 @@ export const TURN_RENDERERS: TurnRenderer[] = [
       <InvestigationReportView
         report={t.adaReport ?? undefined}
         streamingPhases={t.adaReport ? undefined : t.phases}
+        streamingReport={t.adaReport ? undefined : (t.reportStream ?? undefined)}
         onShowSource={p.onShowSource}
       />
     ),

@@ -56,3 +56,39 @@ def emit_phase_progress(phase_id: str, done: int, total: int, current: str = "")
         from aughor.kernel.errors import tolerate
         tolerate(exc, "progress emit is disposable telemetry; a closed loop / full queue is fine",
                  counter="ada.progress_emit")
+
+
+# Coalesce token-stream partials to ~word-group granularity so ada_synthesize's prose
+# stream doesn't flood the sink queue (the terminal answer_report is authoritative anyway).
+_REPORT_DELTA_MIN_CHARS = 24
+
+
+def report_delta_emitter():
+    """Capture the active progress sink as a ``callable(full_text_so_far)`` for
+    streaming ada_synthesize's report prose to the client as the narrator writes it.
+
+    Call this in the NODE body (where the ContextVar sink is visible); the returned
+    closure captures ``(loop, queue)`` so it keeps working from the synthesis worker
+    thread — ada_synthesize runs ``.complete_streaming`` inside a PLAIN ThreadPoolExecutor
+    that does not copy the context, so an emitter that re-read the ContextVar there would
+    see nothing. Returns ``None`` when no sink is bound (``ada.progress_events`` off), so
+    the caller falls back to blocking ``.complete()`` and the default path is unchanged.
+    Light-throttled + fail-safe: a closed loop / full queue silently drops the delta."""
+    sink = _PROGRESS_SINK.get()
+    if sink is None:
+        return None
+    loop, queue = sink
+    last = {"n": 0}
+
+    def _emit(text: str) -> None:
+        if not text or (len(text) - last["n"]) < _REPORT_DELTA_MIN_CHARS:
+            return
+        last["n"] = len(text)
+        try:
+            loop.call_soon_threadsafe(queue.put_nowait, {"__report_delta__": text})
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "report delta is disposable telemetry; a closed loop / full queue is fine",
+                     counter="ada.report_delta_emit")
+
+    return _emit

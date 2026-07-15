@@ -3201,6 +3201,26 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     except Exception:
         analysis_ledger = ""
 
+    # R3 — build the phase-planner grounding block ONCE, here, for the whole run.
+    # baseline / decompose / dimensional / behavioral all ground from the SAME
+    # (connection, ledger+filtered_schema, question); building it per phase re-ran
+    # measure-grain probing + trusted-query retrieval ~4× for a byte-identical result
+    # (build_data_understanding has no internal cache). Compute it against the EXACT
+    # schema the phases pass (_with_ledger over filtered_schema) and stash it on
+    # _ada_intake; run_analysis_phase reuses it verbatim. No-op safe — on failure the
+    # key is absent and each phase falls back to building it itself (prior behavior).
+    try:
+        from aughor.semantic.data_understanding import build_data_understanding
+        _phase_schema = _with_ledger({"analysis_ledger": analysis_ledger}, filtered_schema)
+        intake_dict["data_understanding_block"] = build_data_understanding(
+            conn, connection_id=state.get("connection_id", ""),
+            schema=_phase_schema, question=question,
+        ).grounding_block()
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "shared data-understanding grounding is advisory; phases build it "
+                       "per-phase when the shared block is absent", counter="ada.plan_grounding")
+
     # Orchestrator: declare the phase path the deterministic routers will execute, so the
     # Analyst's autonomy is legible (a plan of record, not emergent gate-by-gate routing).
     # Derived from the SAME signals the routers key on — it can't disagree with what runs.
@@ -3274,6 +3294,41 @@ class _PhaseRun:
         self.fanout_caveat = fanout_caveat
 
 
+def _phase_grounding(
+    grounding_block: Optional[str], conn, *,
+    connection_id: str, schema: Optional[str], question: str,
+) -> str:
+    """The data-understanding grounding text for a phase planner (measure-grain
+    PREVENTION + trusted-query reuse).
+
+    ``grounding_block`` is the block ada_intake built ONCE for the whole run (R3):
+    when it is not None it is reused verbatim — including an empty string, which
+    means intake determined there is nothing to ground, so we must NOT rebuild.
+    Only when it is None (callers that don't thread it, e.g. the cross-section
+    lenses, which vary the question) do we build it here. No-op safe — returns ""
+    and never raises."""
+    from aughor.stats import stats as _s
+    if grounding_block is not None:
+        # Reused the block ada_intake built once — the R3 dedupe working. Counting it
+        # makes the optimization observable on real runs: reused ≫ built per phase means
+        # the shared block is threading through; a spike in "built" means it isn't.
+        _s.inc("ada.grounding_reused")
+        return grounding_block
+    if not schema:
+        return ""
+    _s.inc("ada.grounding_built")
+    try:
+        from aughor.semantic.data_understanding import build_data_understanding
+        return build_data_understanding(
+            conn, connection_id=connection_id, schema=schema, question=question
+        ).grounding_block() or ""
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "data-understanding grounding block is advisory; planner prompt "
+                       "unchanged", counter="ada.plan_grounding")
+        return ""
+
+
 def run_analysis_phase(
     conn, *, phase_id: str, title: str, emoji: str,
     plan_system: str, plan_user: str,
@@ -3288,6 +3343,7 @@ def run_analysis_phase(
     question: str = "",
     connection_id: str = "",
     interpret_max_rows: int = 12,
+    grounding_block: Optional[str] = None,
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
@@ -3300,25 +3356,19 @@ def run_analysis_phase(
     fan-out) are then skipped, since re-planning would defeat the reuse."""
     from aughor.agent.prompts_investigate import PhasePlan, PhaseInterpretation
 
-    # R4 (mode cross-pollination) — ground the phase planner with the SHARED data-understanding bundle
-    # (R5 measure-grain PREVENTION + R3 trusted-query reuse), built once behind one module so the
-    # assembly never drifts across modes. Grain prevents SUM-at-wrong-grain by construction; trusted
-    # patterns let the planner reuse known-correct join/aggregation shapes instead of re-deriving them
-    # (and re-risking the fan-outs the library already solved). No-op safe — an empty bundle leaves the
-    # planner prompt unchanged.
+    # Ground the phase planner with the SHARED data-understanding bundle (measure-grain
+    # PREVENTION + trusted-query reuse), built once behind one module so the assembly never
+    # drifts across modes. Grain prevents SUM-at-wrong-grain by construction; trusted patterns
+    # let the planner reuse known-correct join/aggregation shapes instead of re-deriving them
+    # (and re-risking the fan-outs the library already solved). The block is built ONCE in
+    # ada_intake and threaded in via grounding_block (R3) — baseline/decompose/dimensional/
+    # behavioral share identical grounding, so each phase no longer re-runs grain probing +
+    # trusted retrieval for the same result. No-op safe — an empty bundle leaves the prompt as-is.
     plan_system_eff = plan_system
-    if schema:
-        try:
-            from aughor.semantic.data_understanding import build_data_understanding
-            _block = build_data_understanding(
-                conn, connection_id=connection_id, schema=schema, question=question
-            ).grounding_block()
-            if _block:
-                plan_system_eff = f"{plan_system}\n\n{_block}"
-        except Exception as _exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(_exc, "data-understanding grounding block is advisory; planner prompt "
-                           "unchanged", counter="ada.plan_grounding")
+    _block = _phase_grounding(
+        grounding_block, conn, connection_id=connection_id, schema=schema, question=question)
+    if _block:
+        plan_system_eff = f"{plan_system}\n\n{_block}"
 
     # Step 1 — plan (or reuse a preplanned, grain-correct query).
     _preplanned = bool(preplanned is not None and getattr(preplanned, "queries", None))
@@ -3623,6 +3673,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         exec_error_msg="All baseline queries failed to execute.",
         question=question, connection_id=state.get("connection_id", ""),
         exec_skipped_reason="No queries produced results.",
+        grounding_block=intake_data.get("data_understanding_block"),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -3912,6 +3963,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         plan_error_msg="Could not plan decomposition queries.",
         exec_error_msg="Decomposition queries failed.",
         question=question, connection_id=state.get("connection_id", ""),
+        grounding_block=intake_data.get("data_understanding_block"),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -4021,6 +4073,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         plan_error_msg="Could not plan dimensional queries.",
         exec_error_msg="Dimensional queries failed.",
         question=question, connection_id=state.get("connection_id", ""),
+        grounding_block=intake_data.get("data_understanding_block"),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -4135,6 +4188,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         exec_error_msg="Behavioral/operational tables not available in this schema.",
         question=question, connection_id=state.get("connection_id", ""),
         exec_skipped_reason="Required tables (sessions, refunds, etc.) not in schema.",
+        grounding_block=intake_data.get("data_understanding_block"),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -5984,18 +6038,31 @@ def ada_synthesize(state: AgentState) -> dict:
     import concurrent.futures as _cf
     _synth_timeout = float(_os.getenv("AUGHOR_SYNTH_TIMEOUT_S", "120"))
     _synth_ex = _cf.ThreadPoolExecutor(max_workers=1)
+    _synth_system = (
+        "You are a senior data analyst writing a board-level investigation report. "
+        "Every number must trace to the evidence log. No fabrication. "
+        "Be definitive where evidence is strong; honest about uncertainty where it isn't."
+    )
+    # R6 — stream the report prose (executive_summary) to the client as the narrator
+    # writes it, so a multi-minute deep run isn't silent between phase_complete and the
+    # final report. Capture the sink emitter HERE (node body, sink visible) so the closure
+    # still works inside the plain synthesis executor thread. None when ada.progress_events
+    # is off → blocking .complete(), byte-identical to before. complete_streaming self-heals
+    # to .complete() on any streaming failure; the terminal answer_report stays authoritative.
+    from aughor.agent.progress import report_delta_emitter
+    _emit_report = report_delta_emitter()
+
+    def _run_synth():
+        prov = _provider("narrator")
+        if _emit_report is not None:
+            return prov.complete_streaming(
+                system=_synth_system, user=synth_prompt, response_model=ADASynthesisModel,
+                text_field="executive_summary", on_text=_emit_report)
+        return prov.complete(system=_synth_system, user=synth_prompt,
+                             response_model=ADASynthesisModel)
+
     try:
-        _synth_fut = _synth_ex.submit(
-            lambda: _provider("narrator").complete(
-                system=(
-                    "You are a senior data analyst writing a board-level investigation report. "
-                    "Every number must trace to the evidence log. No fabrication. "
-                    "Be definitive where evidence is strong; honest about uncertainty where it isn't."
-                ),
-                user=synth_prompt,
-                response_model=ADASynthesisModel,
-            )
-        )
+        _synth_fut = _synth_ex.submit(_run_synth)
         synth: ADASynthesisModel = _synth_fut.result(timeout=_synth_timeout)
     except Exception as e:
         synth = None
