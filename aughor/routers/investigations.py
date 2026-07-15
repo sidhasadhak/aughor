@@ -3245,12 +3245,17 @@ async def _stream_overview(question: str, conn_id: str, req) -> AsyncGenerator[s
         yield _sse("done", {})
         return
 
-    # scoped table set: the canvas's tables, else every table in the effective schema.
-    tables = [t.split(".")[-1] for t in _es.tables] if (_es.tables and not _es.is_full_schema) else []
+    # scoped table set: the canvas's tables, else every table across the connection's schema(s).
+    # Keep names schema-QUALIFIED — on a multi-schema connection (a workspace with `main` +
+    # `luxexperience`) stripping the qualifier and profiling bare names either collides same-named
+    # tables across schemas or fails to resolve non-default-schema tables, fixating the tour on one
+    # schema. build_overview._qual passes qualified names through untouched, so every schema is
+    # profiled and each fact card carries its true `schema.table`.
+    tables = list(_es.tables) if (_es.tables and not _es.is_full_schema) else []
     if not tables:
         try:
             sch = await asyncio.to_thread(_get_schema_cached, cid, db)
-            tables = [t.split(".")[-1] for t in parse_schema_tables(sch).keys()]
+            tables = list(parse_schema_tables(sch).keys())
         except Exception:
             tables = []
 

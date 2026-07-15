@@ -40,13 +40,37 @@ function lensHue(lens: string): ChipHue {
   return LENS_HUE[lens as OverviewLens] ?? "muted";
 }
 
+// Build a grounded investigation seed from a fact — the "explore this fact" drill.
+// seedSql anchors ADA on the exact probe when the fact has one; seedContext always
+// carries the headline + why + location, so pure-profile facts (scale / distribution /
+// coverage — no SQL) still seed a real drill via the backend's raw-seed origin-finding
+// fallback (_build_origin_finding needs only a non-empty seed_context OR seed_sql).
+export function factSeed(fact: OverviewFact): { question: string; seedSql: string | null; seedContext: string } {
+  const loc = [
+    fact.table && `table ${fact.table}`,
+    fact.measure && `measure ${fact.measure}`,
+    fact.dimension && `dimension ${fact.dimension}`,
+  ].filter(Boolean).join(", ");
+  const why = fact.why ? ` ${fact.why}` : "";
+  return {
+    question: `Investigate this: ${fact.headline}`,
+    seedSql: fact.sql || null,
+    seedContext:
+      `SEED FACT (from the schema overview — the observation to investigate): ${fact.headline}.${why}` +
+      (loc ? ` [${loc}]` : ""),
+  };
+}
+
 // ── One fact card ─────────────────────────────────────────────────────────────
 function FactCard({
   fact,
   onShowSource,
+  onExplore,
 }: {
   fact: OverviewFact;
   onShowSource?: (data: SourcePanelData) => void;
+  /** Drill this fact into a live ADA investigation seeded with its probe/context. */
+  onExplore?: () => void;
 }) {
   const [sqlOpen, setSqlOpen] = useState(false);
   const hasChart = fact.chart_type !== "none" && fact.columns.length > 0 && fact.rows.length > 0;
@@ -100,12 +124,25 @@ function FactCard({
         />
       )}
 
-      {/* SQL — the probe behind the fact. With a source panel wired, one click opens the
-          richer drawer (formatted SQL + sortable data); otherwise a self-contained inline
-          toggle. Pure-profile facts (scale / distribution / coverage) carry no SQL. */}
-      {fact.sql && (
-        <div className="mt-auto pt-0.5">
-          {onShowSource ? (
+      {/* Actions — "Explore this fact" drills into a live ADA investigation; "View SQL"
+          opens the probe behind the fact. Explore shows for EVERY fact (even the pure-profile
+          scale / distribution / coverage facts that carry no SQL): its seed carries
+          table/measure/dimension so ADA still anchors. With a source panel wired, View SQL
+          opens the richer drawer; otherwise it toggles an inline block. */}
+      {(onExplore || fact.sql) && (
+        <div className="mt-auto flex items-center gap-3 flex-wrap pt-0.5">
+          {onExplore && (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={onExplore}
+              className="h-auto gap-1 px-0 aug-fs-xs font-medium hover:bg-transparent dark:hover:bg-transparent"
+              style={{ color: "var(--blue4, #6aa3ff)" }}
+            >
+              Explore this fact →
+            </Button>
+          )}
+          {fact.sql && (onShowSource ? (
             <Button
               variant="ghost"
               size="xs"
@@ -118,27 +155,26 @@ function FactCard({
               View SQL &amp; data
             </Button>
           ) : (
-            <>
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={() => setSqlOpen((o) => !o)}
-                className="h-auto gap-1 px-0 aug-fs-xs font-normal hover:bg-transparent dark:hover:bg-transparent"
-                style={{ color: "var(--t3)" }}
-              >
-                <span className="inline-block w-2">{sqlOpen ? "▼" : "▶"}</span> SQL
-              </Button>
-              {sqlOpen && (
-                <pre
-                  className="mt-1.5 aug-fs-sm font-code overflow-x-auto whitespace-pre-wrap leading-relaxed rounded-[var(--r2)] p-2.5"
-                  style={{ background: "var(--code-bg)", color: "var(--t2)" }}
-                >
-                  {fact.sql}
-                </pre>
-              )}
-            </>
-          )}
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => setSqlOpen((o) => !o)}
+              className="h-auto gap-1 px-0 aug-fs-xs font-normal hover:bg-transparent dark:hover:bg-transparent"
+              style={{ color: "var(--t3)" }}
+            >
+              <span className="inline-block w-2">{sqlOpen ? "▼" : "▶"}</span> SQL
+            </Button>
+          ))}
         </div>
+      )}
+      {/* Inline SQL body — only when there's no source drawer to open it richly. */}
+      {fact.sql && !onShowSource && sqlOpen && (
+        <pre
+          className="aug-fs-sm font-code overflow-x-auto whitespace-pre-wrap leading-relaxed rounded-[var(--r2)] p-2.5"
+          style={{ background: "var(--code-bg)", color: "var(--t2)" }}
+        >
+          {fact.sql}
+        </pre>
       )}
     </div>
   );
@@ -148,9 +184,12 @@ function FactCard({
 export function OverviewReportView({
   report,
   onShowSource,
+  onExploreFact,
 }: {
   report: OverviewReport;
   onShowSource?: (data: SourcePanelData) => void;
+  /** Drill a fact into a live investigation — seeded from the fact (see factSeed). */
+  onExploreFact?: (question: string, opts: { seedSql: string | null; seedContext: string }) => void;
 }) {
   const facts = report.facts ?? [];
 
@@ -169,7 +208,12 @@ export function OverviewReportView({
         // Backend order is authoritative (notability-ranked + diversity-selected) — never re-sort.
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {facts.map((f, i) => (
-            <FactCard key={`${f.lens}-${f.table}-${f.dimension ?? "_"}-${i}`} fact={f} onShowSource={onShowSource} />
+            <FactCard
+              key={`${f.lens}-${f.table}-${f.dimension ?? "_"}-${i}`}
+              fact={f}
+              onShowSource={onShowSource}
+              onExplore={onExploreFact ? () => { const s = factSeed(f); onExploreFact(s.question, { seedSql: s.seedSql, seedContext: s.seedContext }); } : undefined}
+            />
           ))}
         </div>
       )}

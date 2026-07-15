@@ -12,21 +12,34 @@ _schema_cache: dict[str, tuple[float, str]] = {}
 _SCHEMA_CACHE_TTL = 300.0  # seconds
 
 
+def _schema_cache_key(conn_id: str, db) -> str:
+    # Keyed on (conn_id, schema-SCOPE). Permission-independent still holds — the RBAC row policy
+    # filters ROWS not schema, and there is no column-level security — so this stays a raw shared
+    # key (unlike matcache, which caches post-RLS rows and folds in tenancy). But a schema-SCOPED
+    # connection (open_connection_for_with_schema pins ._schema_name) returns a NARROWER
+    # get_schema() than the full connection, so the scope IS part of the cached value's identity.
+    # Keying on conn_id alone let a single-schema op (e.g. a canvas scoped to `main`) poison the
+    # cache with a one-schema view that a later full-connection consumer (the overview tour)
+    # inherited — silently dropping every other schema on a multi-schema connection.
+    scope = getattr(db, "_schema_name", None) or getattr(db, "schema_name", None) or ""
+    return f"{conn_id}\x00{scope}"
+
+
 def get_schema_cached(conn_id: str, db) -> str:
-    # Keyed on conn_id ALONE by design — audited against the RBAC row policy: this caches the connection's
-    # *schema* (table/column structure), which is identical for every principal. The row policy filters ROWS,
-    # not schema, and there is no column-level security — so this is permission-independent and correctly uses
-    # a raw shared key (unlike matcache, which caches post-RLS result rows and folds in tenancy).
-    cached = _schema_cache.get(conn_id)
+    key = _schema_cache_key(conn_id, db)
+    cached = _schema_cache.get(key)
     if cached and (_time.monotonic() - cached[0]) < _SCHEMA_CACHE_TTL:
         return cached[1]
     schema = db.get_schema()
-    _schema_cache[conn_id] = (_time.monotonic(), schema)
+    _schema_cache[key] = (_time.monotonic(), schema)
     return schema
 
 
 def invalidate_schema_cache(conn_id: str) -> None:
-    _schema_cache.pop(conn_id, None)
+    # Drop every schema-scope variant cached for this connection (keys are "conn_id\x00scope").
+    prefix = f"{conn_id}\x00"
+    for k in [k for k in _schema_cache if k.startswith(prefix)]:
+        _schema_cache.pop(k, None)
     # A schema change (file add/delete, type override, manual refresh) means any
     # pooled physical connection is stale — evict so the next open re-reads.
     try:

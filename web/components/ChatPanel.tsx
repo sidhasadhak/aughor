@@ -819,6 +819,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         onRunFresh={(q) => handleSend(q, "investigate", { skipCache: true })}
                         onShowSource={setSourcePanel}
                         onDeeper={(q, insightId) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, insightId: insightId ?? undefined, deep: true })}
+                        onExploreFact={(q, o) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, seedSql: o.seedSql, seedContext: o.seedContext, deep: true })}
                         onApprovePlan={(invId, keep) => resumePlan(invId, keep)}
                         onRejectPlan={(invId) => rejectPlan(invId)}
                         onChooseClarify={(invId, opt) => resumeClarify(invId, opt)}
