@@ -1,12 +1,13 @@
-"""CK-0.2 insight token-streaming on the REAL /chat runtime (flag ask.stream_text).
+"""CK-0.2 quick-answer token-streaming on the REAL /chat runtime (flag ask.stream_text).
 
 Hermetic: coder AND narrator providers are stubbed (no LLM). Drives the actual
 `_stream_chat` SSE endpoint via the TestClient and asserts the dual-emit contract:
-  flag ON  → `insight_delta` frames (growing partial narrative, replace semantics)
-             strictly BEFORE the authoritative terminal `insight` event; `followups`
+  flag ON  → `headline_delta` frames (the coder's raw headline typing in during SQL
+             generation) AND `insight_delta` frames (growing partial narrative, replace
+             semantics), each strictly BEFORE its authoritative terminal event; `followups`
              after — the pre-existing order untouched.
-  flag OFF → zero `insight_delta` frames; the core event-type sequence is otherwise
-             identical (byte-identical blocking path).
+  flag OFF → zero delta frames; the core event-type sequence is otherwise identical
+             (byte-identical blocking path).
 """
 from __future__ import annotations
 
@@ -25,6 +26,16 @@ _PARTIALS = [
 ]
 _FINAL = _PARTIALS[-1]
 _QUESTIONS = ["How does B compare monthly?", "Which SKU drives A?", "What changed last week?"]
+
+# CK-0.2 also token-streams the coder's `headline` under the same flag. These grow ≥6
+# chars each (the headline call-site throttle threshold) so every partial deterministically
+# emits as its own `headline_delta` frame regardless of timing.
+_HL_PARTIALS = [
+    "Group **A** leads",
+    "Group **A** leads with **57%**",
+    "Group **A** leads with **57%** of the total value",
+]
+_HL_FINAL = _HL_PARTIALS[-1]
 
 
 def _stream_events(client, conn_id, question, *, timeout=60):
@@ -56,8 +67,19 @@ def _stub_providers(monkeypatch):
         def complete(self, system=None, user=None, response_model=None, temperature=0.1, **kw):
             if response_model is _ChatAnswer:
                 return _ChatAnswer(sql="SELECT * FROM (VALUES (1, 2), (3, 4)) AS t(x, y)",
-                                   headline="stub answer")
+                                   headline=_HL_FINAL)
             return response_model()   # any auxiliary call: benign defaults
+
+        def complete_streaming(self, *, system, user, response_model, temperature=0.0,
+                               text_field, on_text):
+            # CK-0.2: the coder's `headline` streams under ask.stream_text too. Emit the
+            # growing (raw, pre-grounding) partials through on_text, then return exactly
+            # what complete() would — SQL/rows/insight downstream stay byte-identical to
+            # the blocking path. Mirrors the real provider's contract (see provider.py).
+            assert text_field == "headline"
+            for p in _HL_PARTIALS:
+                on_text(p)
+            return self.complete(system=system, user=user, response_model=response_model)
 
     class FakeNarrator:
         def complete(self, system=None, user=None, response_model=None, temperature=0.1, **kw):
@@ -97,6 +119,12 @@ def test_flag_on_dual_emits_deltas_before_terminal_insight(client: TestClient, b
     events = _stream_events(client, builtin_conn_id, "total value split by group")
     types = [e["type"] for e in events]
     assert "error" not in types, events
+
+    # The coder's headline typed in as growing `headline_delta` frames, in order, and
+    # all BEFORE the answer is done (they fill the otherwise-dead SQL-generation wait).
+    hdeltas = [e for e in events if e["type"] == "headline_delta"]
+    assert [d["headline"] for d in hdeltas] == _HL_PARTIALS
+    assert all(i < types.index("done") for i, t in enumerate(types) if t == "headline_delta"), types
 
     # Every partial made it out as a parseable delta frame, in order, growing.
     deltas = [e for e in events if e["type"] == "insight_delta"]
