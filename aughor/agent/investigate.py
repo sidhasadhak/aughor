@@ -6047,11 +6047,10 @@ def ada_synthesize(state: AgentState) -> dict:
     import concurrent.futures as _cf
     _synth_timeout = float(_os.getenv("AUGHOR_SYNTH_TIMEOUT_S", "120"))
     _synth_ex = _cf.ThreadPoolExecutor(max_workers=1)
-    _synth_system = (
-        "You are a senior data analyst writing a board-level investigation report. "
-        "Every number must trace to the evidence log. No fabrication. "
-        "Be definitive where evidence is strong; honest about uncertainty where it isn't."
-    )
+    # R16 P2 — the narrator's system prompt lives with the other prompts; under
+    # `report.argument_style` it carries the Genie-study writing contract.
+    from aughor.agent.prompts_investigate import synthesis_system_prompt
+    _synth_system = synthesis_system_prompt()
     # R6 — stream the report prose (executive_summary) to the client as the narrator
     # writes it, so a multi-minute deep run isn't silent between phase_complete and the
     # final report. Capture the sink emitter HERE (node body, sink visible) so the closure
