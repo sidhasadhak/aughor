@@ -76,12 +76,13 @@ def test_fix_xsec_extreme_key_numbers_is_scale_aware_when_pct():
     assert got["Lowest"] == "27.0% (a)"
 
 
-def test_fix_xsec_extreme_non_pct_unchanged_behaviour():
-    # A non-percent metric keeps the legacy 2dp formatting (no accidental scaling).
+def test_fix_xsec_extreme_non_pct_compact_behaviour():
+    # A non-percent metric formats COMPACT, matching the chart axis beside it —
+    # an integer stays clean ("340", never "340.00"), a magnitude scales ("1.95M").
     f = {"columns": ["region", "metric_total"], "rows": [["n", 120.0], ["s", 340.0]],
          "key_numbers": [{"label": "Highest", "value": "340"}]}
     I._fix_xsec_extreme_key_numbers(f, is_pct=False)
-    assert f["key_numbers"][0]["value"] == "340.00 (s)"
+    assert f["key_numbers"][0]["value"] == "340 (s)"
 
 
 # ── column_units unit hint ───────────────────────────────────────────────────────
