@@ -470,8 +470,12 @@ export function scatterOption(i: BuildInput): EChartsOption {
       },
     },
     legend: groups.length > 1 ? { data: groups } : undefined,
-    xAxis: { type: "value", name: fieldLabel(xf), nameLocation: "middle", nameGap: 28, axisLabel: { formatter: (v: number) => fx(v) } },
-    yAxis: { type: "value", name: fieldLabel(yf), axisLabel: { formatter: (v: number) => fy(v) } },
+    // With a legend row on top, drop the grid so the y-axis name doesn't collide with it.
+    ...(groups.length > 1 ? { grid: { left: 8, right: 12, top: 44, bottom: 8, containLabel: true } } : {}),
+    // `scale: true`: a scatter's story lives in the data's own range — anchoring at 0
+    // squashes a 13–17min delay cloud into the top tenth of an empty plot.
+    xAxis: { type: "value", scale: true, name: fieldLabel(xf), nameLocation: "middle", nameGap: 28, axisLabel: { formatter: (v: number) => fx(v) } },
+    yAxis: { type: "value", scale: true, name: fieldLabel(yf), axisLabel: { formatter: (v: number) => fy(v) } },
     series: series as EChartsOption["series"],
   };
 }

@@ -85,12 +85,22 @@ export function refMarkLine(
     symbol: "none",
     animation: false,
     lineStyle: { type: "dashed", width: 1.25 },
+    // A vertical (xAxis) markLine runs top→bottom, so "start" floats the label above the
+    // grid top; a horizontal (yAxis) line's "end" floats it right of the grid. rotate 0
+    // keeps the text horizontal — the inside positions rotate it along a vertical line,
+    // which is unreadable. Per-line distances stagger neighbouring labels so two close
+    // reference values (peer median beside the global average) can't overprint.
     label: {
-      position: axis === "x" ? "insideEndTop" : "insideEndTop",
+      position: axis === "x" ? "start" : "end",
+      rotate: 0,
       fontSize: 10,
       formatter: (p: { data?: { name?: string }; value?: unknown }) =>
         `${p.data?.name ?? ""} ${fmt(p.value)}`.trim(),
     },
-    data: data.map((l) => (axis === "x" ? { name: l.label, xAxis: l.value } : { name: l.label, yAxis: l.value })),
+    data: data.map((l, k) => ({
+      name: l.label,
+      ...(axis === "x" ? { xAxis: l.value } : { yAxis: l.value }),
+      ...(axis === "x" ? { label: { distance: 4 + k * 13 } } : {}),
+    })),
   };
 }
