@@ -495,7 +495,9 @@ def validate_join_path(from_table: str, to_table: str, schema_str: str) -> tuple
     )
 
 
-def inject_value_annotations(schema_str: str, column_profiles: dict) -> str:
+def inject_value_annotations(
+    schema_str: str, column_profiles: dict, sample_disabled: set[str] | None = None
+) -> str:
     """
     Enrich TABLE: column lines with actual enumerated values from profiler cache.
 
@@ -506,6 +508,9 @@ def inject_value_annotations(schema_str: str, column_profiles: dict) -> str:
     Skips lines that already carry a `-- [` annotation (from build_schema_context's
     first-run sampling) to avoid duplication.  Profile-backed values are richer
     (frequency-ordered, complete) so they overwrite the first-run annotation when present.
+
+    ``sample_disabled`` (R11 per-column config): "table.column" keys (bare table
+    name) whose values must NOT be enumerated — those lines pass through untouched.
     """
     if not column_profiles:
         return schema_str
@@ -535,6 +540,9 @@ def inject_value_annotations(schema_str: str, column_profiles: dict) -> str:
             col_m = re.match(r'^\s{2}(\w+)\s+', line)
             if col_m:
                 col_name = col_m.group(1)
+                if sample_disabled and f"{current_table.split('.')[-1]}.{col_name}" in sample_disabled:
+                    result.append(line)
+                    continue
                 cp = column_profiles.get(f"{current_table}.{col_name}")
                 if cp is not None:
                     top_values = getattr(cp, 'top_values', None)
@@ -564,6 +572,7 @@ def apply_schema_enrichment(
     connection_id: str | None = None,
     profile_annotation: str = "",
     query_log_annotation: str = "",
+    schema_name: str | None = None,
 ) -> str:
     """The AGENT enrichment tail of :func:`build_schema_context`, applied on top of a
     raw schema (``aughor.db.schema_render.render_raw_schema``): seed missing tables,
@@ -578,6 +587,25 @@ def apply_schema_enrichment(
     from aughor.semantic.autoseed import seed_missing_tables
     from aughor.semantic.metrics import build_metrics_block
     from aughor.semantic.retriever import build_schema_index
+    # R11 — prune per-column-config-hidden columns (and sample-disabled value
+    # enumerations) from the schema text FIRST, so every downstream reader — join
+    # hints, metrics filtering, schema linking, the coder prompt — sees the pruned
+    # schema. Flag-gated; the store is empty until the intelligence phase persists
+    # defaults, and an empty config is a byte-identical no-op.
+    from aughor.kernel.flags import flag_enabled
+    if connection_id and flag_enabled("ontology.column_config"):
+        try:
+            from aughor.ontology.column_config import (
+                apply_column_config_to_schema,
+                load_column_configs,
+            )
+            _col_cfg = load_column_configs(connection_id, schema_name or "default")
+            if _col_cfg:
+                raw = apply_column_config_to_schema(raw, _col_cfg)
+        except Exception as _cc_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_cc_exc, "column-config schema pruning is best-effort",
+                     counter="ontology.column_config", conn_id=connection_id)
     seed_missing_tables(raw)
     enriched = apply_glossary(raw)
     build_schema_index()  # best-effort; keeps vector index fresh after glossary changes
@@ -630,7 +658,7 @@ def build_schema_context(
     raw = render_raw_schema(conn, schema_name, connection_id)
     return apply_schema_enrichment(
         raw, connection_id=connection_id, profile_annotation=profile_annotation,
-        query_log_annotation=query_log_annotation)
+        query_log_annotation=query_log_annotation, schema_name=schema_name)
 
 
 # ── Canvas-scoped schema helpers ──────────────────────────────────────────────

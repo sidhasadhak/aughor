@@ -25,7 +25,11 @@ FLAG_ENV = {
     "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
+    "starters.library": "AUGHOR_STARTERS_LIBRARY",
+    "lens.decision_grade": "AUGHOR_LENS_DECISION_GRADE",
     "ontology.autodoc": "AUGHOR_ONTOLOGY_AUTODOC",
+    "ontology.column_config": "AUGHOR_ONTOLOGY_COLUMN_CONFIG",
+    "birth.job": "AUGHOR_BIRTH_JOB",
     "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
     "ada.parallel_phases": "AUGHOR_ADA_PARALLEL_PHASES",
     "ada.why_where_interaction": "AUGHOR_ADA_WHY_WHERE_INTERACTION",
@@ -57,6 +61,7 @@ FLAG_ENV = {
     "rbac.row_policy": "AUGHOR_RBAC_ROW_POLICY",
     "obs.mlflow": "AUGHOR_OBS_MLFLOW",
     "obs.task_table": "AUGHOR_OBS_TASK_TABLE",
+    "obs.popularity": "AUGHOR_OBS_POPULARITY",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
     "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
     "ask.overview": "AUGHOR_ASK_OVERVIEW",
@@ -130,6 +135,10 @@ FLAG_META = {
         "label": "task_history — spans as a queryable table",
         "description": "Sink the kernel ledger's node/tool span events into one append-only task_history table (trace_id, span_id, parent_span_id, task, input, captured_output, timing, error, labels) — the queryable spine of \"what the agent actually did.\" It is a SINK over the spans telemetry already emits, not new instrumentation: MLflow/Langfuse stay the rich-trace backends; this makes the same exhaust answerable with plain SQL, so evals recover generated SQL by querying the table (no log parsing) and Deep Analysis can investigate its own behaviour via the aughor_ops schema. Off by default = byte-identical (no rows written). Wave 2 · Rec 4 of the combined platform study.",
     },
+    "obs.popularity": {
+        "label": "Query popularity as a shared notability signal",
+        "description": "Mine real query history (the SQL-examples store + task_history span inputs) into a persisted per-table and per-column usage counter, and let one signal feed four consumers: column-config default protection (a queried column is never default-hidden), doc-tree table facts + ranking, the overview's learned-prior boost, and a most-queried-tables block in /suggestions. Mining runs inside the R12 birth job; deterministic (sqlglot, no model). Off by default = byte-identical — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R14).",
+    },
     "search.rrf": {
         "label": "Reciprocal Rank Fusion (hybrid retrieval)",
         "description": "Fuse the vector and lexical (BM25) rankings in hybrid_rerank by Reciprocal Rank Fusion (rank-based, k=60) instead of the min-max α-blend. Rank-based fusion is robust to the score-scale mismatch between Qdrant cosine and BM25 that α-blending is sensitive to; it preserves vector order when there is no lexical signal, so it is a safe A/B on the KB-retrieval evals. Off by default = byte-identical (α-blend). Rec 6 of the combined platform study.",
@@ -186,9 +195,25 @@ FLAG_META = {
         "label": "Route wide questions to the explore wave",
         "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single Deep-Analysis investigation. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay investigations. Unlocks the already-built explore wave from /ask. Off by default.",
     },
+    "lens.decision_grade": {
+        "label": "Decision-grade output lenses",
+        "description": "Two deterministic output moves borrowed from the Genie reports' strongest habits: (1) the opportunity-cost lens — for a weak segment in a dimensional scan, benchmark it against its best material peer and quantify gap × volume as one hedged key number ('closing the gap ≈ N', a ceiling not a forecast); (2) the named-outlier-entity lens — the overview tour surfaces the single entity BY ID that towers over its top-10 peers, with a mini-profile and honest 'potential causes' (data artifact vs real whale) plus the drill SQL to verify. No model in the loop; both compute from rows already fetched (plus one bounded probe per table for the entity lens). Off by default = byte-identical — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R15).",
+    },
+    "starters.library": {
+        "label": "Named research-starter playbooks",
+        "description": "Surface a library of named, deterministic research playbooks (interesting outlier entities, where are we losing money, data quality scan) plus per-space curated questions from the ontology doc tree as one-click starters on /suggestions. Each starter declares its route up front (deep investigation or the explore landscape wave) and carries a purpose tag on the route receipt — templates, no model in the loop. Off by default: /suggestions stays LLM-generated-only — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R13).",
+    },
     "ontology.autodoc": {
         "label": "Compile ontology docs as a build artifact",
         "description": "After the ontology is built, project it into a persisted, Merkle-checksummed doc tree (column→table→schema→connection) with per-table analyst questions — understanding compiled once and re-read cheaply, rebuilt incrementally as the schema moves. Deterministic (no model); also available on demand via the `aughor ontology-docs` CLI. Off by default — see docs/DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md (R8).",
+    },
+    "birth.job": {
+        "label": "Connection/canvas birth as one observable job",
+        "description": "Run the 'understand this data' rite as ONE supervised kernel job at connection creation, upload re-arm, and canvas creation: eager intelligence first (profiles → ontology → doc tree → column config), then the exploration handoff — each step a birth.step event on the event spine, governed by the Curator agent's charter. Off by default: exploration alone kicks off and intelligence stays lazy (built on the first question), exactly as before — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R12).",
+    },
+    "ontology.column_config": {
+        "label": "Per-column visibility / sampling / indexing config",
+        "description": "A persisted, human-editable per-column config with three flags: visible (render the column into agent prompt schemas at all — hiding prunes noise columns from the context), sample (enumerate the column's values in the schema context), and index (build the offline value index over it). Deterministic defaults come from the profiler — entity dimensions index+sample, dead all-null columns and free-text blobs hide; a human edit always wins and survives schema rebuilds. No model in the loop. Off by default — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R11).",
     },
     "ada.parallel_lenses": {
         "label": "Parallel Deep-Analysis lenses",

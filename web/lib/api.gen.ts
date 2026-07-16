@@ -3575,6 +3575,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/column-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Column Config
+         * @description The persisted per-column config, grouped per table. Readable regardless of
+         *     the `ontology.column_config` flag (the flag gates runtime consumption, not the
+         *     artifact); `enabled` tells the caller whether edits will take effect.
+         */
+        get: operations["get_column_config_ontology_column_config_get"];
+        /**
+         * Put Column Config
+         * @description Apply a human edit to one column's config — override-wins, rebuild-proof.
+         *     Invalidates the schema cache so pruning changes reach the next prompt.
+         */
+        put: operations["put_column_config_ontology_column_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/duplicate-entities": {
         parameters: {
             query?: never;
@@ -5536,6 +5563,13 @@ export interface components {
             hitl: boolean;
             /** Insight Id */
             insight_id?: string | null;
+            /** Mode */
+            mode?: ("investigate" | "explore") | null;
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
             /** Question */
             question: string;
             /** Schema */
@@ -6965,6 +6999,28 @@ export interface components {
             turn_id: string;
             /** Verdict */
             verdict: string;
+        };
+        /**
+         * _ColumnConfigEdit
+         * @description One human edit to one column's {visible, sample, index} config (R11).
+         *     Only the flags present in the body change; the entry becomes source=human.
+         */
+        _ColumnConfigEdit: {
+            /** Column */
+            column: string;
+            /** Index */
+            index?: boolean | null;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Sample */
+            sample?: boolean | null;
+            /** Table */
+            table: string;
+            /** Visible */
+            visible?: boolean | null;
         };
         /** _ComputedPropertyOverride */
         _ComputedPropertyOverride: {
@@ -14234,6 +14290,74 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_column_config_ontology_column_config_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_column_config_ontology_column_config_put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_ColumnConfigEdit"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

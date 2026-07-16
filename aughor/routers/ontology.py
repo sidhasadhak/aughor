@@ -38,6 +38,17 @@ class _MergeEntitiesRequest(BaseModel):
     canonical_id: str         # the survivor — others are merged into it
 
 
+class _ColumnConfigEdit(BaseModel):
+    """One human edit to one column's {visible, sample, index} config (R11).
+    Only the flags present in the body change; the entry becomes source=human."""
+    table: str
+    column: str
+    visible: Optional[bool] = None
+    sample: Optional[bool] = None
+    index: Optional[bool] = None
+    note: str = ""
+
+
 class _ComputedPropertyOverride(BaseModel):
     label: Optional[str] = None
     formula_sql: Optional[str] = None
@@ -546,6 +557,55 @@ def import_ontology_tree(
     finally:
         close()
     return {"imported": len(saved), "overrides": saved}
+
+
+# ── R11: per-column {visible, sample, index} config ─────────────────────────
+
+@router.get("/ontology/column-config")
+def get_column_config(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """The persisted per-column config, grouped per table. Readable regardless of
+    the `ontology.column_config` flag (the flag gates runtime consumption, not the
+    artifact); `enabled` tells the caller whether edits will take effect."""
+    from aughor.kernel.flags import flag_enabled
+    from aughor.ontology.column_config import load_column_configs
+    effective = _resolve_schema(connection_id, schema_name)
+    tables: dict[str, dict[str, dict]] = {}
+    for (table, column), fl in sorted(load_column_configs(connection_id, effective).items()):
+        tables.setdefault(table, {})[column] = fl.model_dump()
+    return {
+        "connection_id": connection_id,
+        "schema": effective,
+        "enabled": flag_enabled("ontology.column_config"),
+        "tables": tables,
+    }
+
+
+@router.put("/ontology/column-config", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def put_column_config(
+    body: _ColumnConfigEdit,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Apply a human edit to one column's config — override-wins, rebuild-proof.
+    Invalidates the schema cache so pruning changes reach the next prompt."""
+    if body.visible is None and body.sample is None and body.index is None:
+        raise HTTPException(status_code=422, detail="pass at least one of visible/sample/index")
+    from aughor.ontology.column_config import set_column_flags
+    effective = _resolve_schema(connection_id, schema_name)
+    flags = set_column_flags(
+        connection_id, effective, body.table, body.column,
+        visible=body.visible, sample=body.sample, index=body.index, note=body.note,
+    )
+    _invalidate_schema_cache(connection_id)
+    return {
+        "saved": True,
+        "table": body.table,
+        "column": body.column,
+        "flags": flags.model_dump(),
+    }
 
 
 @router.post("/ontology/entities/merge", dependencies=[gate(Capability.ONTOLOGY_EDIT)])

@@ -23,8 +23,35 @@ R7 (unique-alias compile), R8 (ontology docs as a Merkle-checksummed build artif
 + `aughor ontology-docs` CLI + flag `ontology.autodoc`), R9 (route wide→explore wave; flag
 `explore.route_wide`). **R4 moot.** Both new flags default-off.
 
-**⏭️ NEXT UP: R11 (the structural keystone — per-column config, deterministic-first), then R12 → R14 → R13
-→ R15 per the sequence below. Also open: R10; R7/R5 deferred follow-ons; the conftest store-isolation chip.**
+**✅ R11–R15 ALL BUILT (2026-07-16, branch `2026-07-16-r11-column-config`, 6 commits, NOT pushed / no PR yet).**
+Sequence ran R11 → R12 → R14 → R13 → R15; every feature flag-gated default-off / byte-identical when off;
+each committed with its tests green + swallow/private-import ratchets at baseline. New flags:
+`ontology.column_config` · `birth.job` · `obs.popularity` · `starters.library` · `lens.decision_grade`.
+- **R11** `10f2108` — `ontology/column_config.py`: persisted+editable per-column `{visible,sample,index}`
+  YAML tree (fingerprint-independent, human-wins), deterministic defaults (index == the R5 gate); consumed
+  by schema-prune (`apply_schema_enrichment`), `inject_value_annotations`, the profiler capture gate,
+  `answer_resolution` sample-retire, R8 doc-tree marks; `GET/PUT /ontology/column-config`.
+- **R12** `d8ab2dd` — birth as ONE observable kernel job (kind `profile`; the Curator charter GRADUATED
+  from reserved, budgeted): `run_birth`/`spawn_birth` in `routers/_shared.py` — eager intelligence →
+  exploration handoff, `birth.step`/`birth.done` on the K2 spine; elevation at the `kickoff_exploration`
+  chokepoint (connect + upload re-arms) AND canvas creation (previously triggered nothing).
+- **R14** `5c5cc4e` — `sql/popularity.py`: query history (SQL-examples store + task_history inputs) mined
+  once into a persisted per-table/column counter (birth-job `popularity` step); one signal, four consumers
+  (R11 visible-protect · R8 doc-tree facts+rank · overview prior fold · /suggestions block).
+- **R13** `32d1d56` — `aughor/starters.py`: named deterministic playbooks (outlier_entities /
+  where_are_we_losing_money / data_quality_scan) + per-space curated questions from R8 doc-tree analyst
+  questions (popularity-ranked, round-robin); `AskRequest.mode` ("investigate"|"explore") honored FIRST in
+  `decide_ask_route` + `purpose` tag on the route receipt; explore starters PHRASED wide so R9 routes them
+  even without the field (test-locked); surfaced via /suggestions `starters` + web chips.
+- **R15** `b6ab9e6` — decision-grade lenses: `agent/opportunity.py` benchmark-gap × volume key number on
+  cross-section findings (materiality floors, ratio-aware, hedged "ceiling not forecast") + the overview
+  named-outlier-ENTITY probe (whale by ID, "potential causes" hedge, drill SQL, existing card styling).
+
+**⏭️ NEXT: push branch + PR(s) (git push needs the user — auto-mode denies it); a live flags-on
+verification pass (flip the five flags on a real canvas: birth job → column-config tree → popularity →
+starters → lenses); then the still-open items: R10 (purpose-tags/auto-title/THUMBS→priors — R13's
+`purpose` field is the seam), R7/R5/R8 deferred follow-ons, R6 live visual eyeball, AG-UI seam mode
+threading (R13 web follow-up), and the order-dependent task_history-recovery test flake (chip filed).**
 
 **NEW — Wire study #2 (canvas-birth + 2 Deep-Research runs on our airline dataset) →
 [`docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md`](docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md).**

@@ -29,7 +29,9 @@ def _cid(conn) -> str:
 
 def _enrichment(conn, base: str) -> str:
     from aughor.tools.schema import apply_schema_enrichment
-    return apply_schema_enrichment(base, connection_id=_cid(conn))
+    return apply_schema_enrichment(
+        base, connection_id=_cid(conn),
+        schema_name=getattr(conn, "_schema_name", None) or "default")
 
 
 def _exploration(conn, base: str) -> str:
@@ -61,7 +63,30 @@ def _intelligence(conn, base: str) -> str:
     _stage = "profiling"
     try:
         tp, cp = get_or_build_profiles(conn, cid, tables, fk_hints)
-        base = inject_value_annotations(base, cp)
+        # R11 — refresh the persisted per-column {visible,sample,index} config from
+        # the fresh profiles (defaults recomputed, human edits win) and honour
+        # `sample=false` when enumerating values. Flag-gated + best-effort: a config
+        # hiccup must never break the schema build.
+        _sample_off: set[str] = set()
+        from aughor.kernel.flags import flag_enabled
+        if flag_enabled("ontology.column_config"):
+            try:
+                from aughor.ontology.column_config import ensure_column_configs, sample_disabled
+                # R14 — mined query counts protect actually-queried columns from
+                # the default-hide policy. Empty until the popularity store fills.
+                _col_pop: dict[str, int] = {}
+                if flag_enabled("obs.popularity"):
+                    from aughor.sql.popularity import load_popularity
+                    _col_pop = load_popularity(cid).get("column", {})
+                _col_cfg = ensure_column_configs(
+                    cid, getattr(conn, "_schema_name", None) or "default", cp,
+                    column_popularity=_col_pop or None)
+                _sample_off = {f"{t}.{c}" for (t, c) in sample_disabled(_col_cfg)}
+            except Exception as _cc_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_cc_exc, "column-config refresh is best-effort",
+                         counter="ontology.column_config", conn_id=cid or None)
+        base = inject_value_annotations(base, cp, sample_disabled=_sample_off)
         annotation = render_profile_annotations(tp, cp)
         if annotation:
             base += "\n\n" + annotation
@@ -123,7 +148,6 @@ def _intelligence(conn, base: str) -> str:
             # R8 — compile the ontology into a persisted, Merkle-checksummed doc-tree artifact
             # (understanding as a build artifact). Flag-gated (default-off) + best-effort: a
             # doc-tree hiccup must never break the schema build. Reuses tp for row-count/date facts.
-            from aughor.kernel.flags import flag_enabled
             if flag_enabled("ontology.autodoc"):
                 try:
                     from aughor.ontology.doctree import build_and_persist, table_stats_from_profiles

@@ -233,10 +233,29 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
 
     fingerprint = schema_fingerprint(schema_summary)
 
+    # R13 — the named research-starter playbooks + per-space curated questions
+    # (deterministic templates, no model). Computed before the cache check so they
+    # ride cache hits too; the key is absent entirely when the flag is off.
+    from aughor.kernel.flags import flag_enabled as _flag_enabled
+    _starters: list[dict] | None = None
+    if _flag_enabled("starters.library"):
+        try:
+            from aughor.starters import starter_payload
+            _starters = await loop.run_in_executor(
+                None, lambda: starter_payload(connection_id))
+        except Exception as _st_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_st_exc, "starter library is best-effort",
+                     counter="starters.library", conn_id=connection_id or None)
+            _starters = []
+
     try:
         cached = get_cached(connection_id, fingerprint)
         if cached:
-            return {"suggestions": cached, "cached": True}
+            out = {"suggestions": cached, "cached": True}
+            if _starters is not None:
+                out["starters"] = _starters
+            return out
     except Exception:
         pass
 
@@ -255,6 +274,18 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
             enrichment += f"\n\n{_mb}"
     except Exception:
         pass
+    # R14 — what people actually query steers the starters toward the live tables.
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("obs.popularity"):
+        try:
+            from aughor.sql.popularity import most_queried_block
+            _pop = most_queried_block(connection_id)
+            if _pop:
+                enrichment += f"\n\n{_pop}"
+        except Exception as _pop_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_pop_exc, "popularity suggestions block is best-effort",
+                     counter="obs.popularity", conn_id=connection_id or None)
 
     _system = (
         "You are a data analyst assistant. Given a database schema and any domain intelligence, "
@@ -286,7 +317,10 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
     except Exception:
         pass
 
-    return {"suggestions": suggestions, "cached": False}
+    out = {"suggestions": suggestions, "cached": False}
+    if _starters is not None:
+        out["starters"] = _starters
+    return out
 
 
 @router.get("/connectors/types")

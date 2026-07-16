@@ -98,6 +98,31 @@ def create_canvas_endpoint(req: CreateCanvasRequest,
     scope = CanvasScope(connection_id=req.connection_id, schema_name=req.schema_name, tables=req.tables)
     canvas = create_canvas(name=req.name, scopes=[scope], description=req.description)
     remember("canvas", idempotency_key, canvas.id)
+    # R12 — canvas birth: kick off the "understand this data" job for the canvas
+    # scope (eager intelligence → exploration handoff, one observable kernel job).
+    # This endpoint is sync (threadpool), so bridge onto the captured app loop the
+    # way scheduler ticks do; no loop (unit test / pre-startup) → skip quietly.
+    # Flag-gated + best-effort: a birth hiccup never fails the create.
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("birth.job"):
+        try:
+            from aughor.kernel.jobs import main_loop
+            from . import _shared
+            loop = main_loop()
+            if loop is not None and loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    _shared.spawn_birth(
+                        scope.connection_id,
+                        schema_name=scope.schema_name or None,
+                        canvas_id=canvas.id,
+                        tables_filter=scope.tables or None,
+                    ),
+                    loop,
+                )
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "canvas birth kickoff is best-effort",
+                     counter="birth.job", conn_id=scope.connection_id)
     return canvas.model_dump()
 
 
