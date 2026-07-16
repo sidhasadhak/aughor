@@ -74,6 +74,20 @@ class DocNode(BaseModel):
     checksum: str = ""                          # Merkle: hash(content_hash + sorted child checksums)
     child_checksums: dict = Field(default_factory=dict)  # child fqn → checksum (for incremental diff)
     provenance: dict = Field(default_factory=dict)
+    # R8b — the optional LLM polish, a DECORATION over the deterministic summary
+    # (never replaces it; hashing stays model-free). `enriched_hash` records the
+    # content_hash the polish was computed FOR: staleness is a plain equality
+    # check, and the Merkle rebuild invalidates exactly the touched nodes —
+    # an unchanged node keeps its polish through `_emit` reuse for free.
+    enriched_summary: str = ""
+    enriched_hash: str = ""
+
+    def best_summary(self) -> str:
+        """The enriched prose when it is CURRENT for this node's content, else the
+        deterministic summary — consumers never read a stale polish."""
+        if self.enriched_summary and self.enriched_hash == self.content_hash:
+            return self.enriched_summary
+        return self.summary
 
 
 class DocTree(BaseModel):
@@ -456,6 +470,99 @@ def estimate_doc_build(
         "llm_tokens": 0,          # deterministic core — enrichment is a deferred, gated layer
         "deterministic": True,
     }
+
+
+# ── R8b: per-node LLM enrichment (estimate-then-confirm, width-routed) ──────
+#
+# The deterministic tree is the artifact; this is the OPTIONAL polish pass —
+# never run silently (the Databricks 13.8s lesson): the CLI shows the token
+# estimate first, and only `--confirm` spends. Width-routing sends small
+# tables to the "fast" provider and wide ones to "coder".
+
+_ENRICH_SYSTEM = (
+    "You polish database table documentation for analysts. Given deterministic "
+    "facts about one table (its grain, measures, dimensions, relationships and "
+    "column summaries), write a crisp 2-4 sentence summary an analyst would "
+    "actually read: what the table records, at what grain, and what it is good "
+    "for. Concrete and faithful to the facts — never invent columns or numbers."
+)
+_ENRICH_WIDTH_TOKENS = 1_200    # prompt wider than this routes to the coder tier
+_ENRICH_COMPLETION_EST = 120    # output allowance per node, for the estimate
+
+
+def _enrichment_prompt(node: DocNode, tree: DocTree) -> str:
+    parts = [f"Table: {node.title}", node.summary]
+    facts = {k: v for k, v in node.facts.items() if v not in (None, "", [], {})}
+    if facts:
+        parts.append("Facts: " + "; ".join(f"{k}={v}" for k, v in sorted(facts.items(),
+                                                                          key=lambda kv: kv[0])))
+    parts += [tree.nodes[c].summary for c in node.children if c in tree.nodes]
+    if node.questions:
+        parts.append("Analyst questions: " + " · ".join(node.questions))
+    return "\n".join(parts)
+
+
+def _needs_enrichment(node: DocNode) -> bool:
+    return node.kind == "table" and (
+        not node.enriched_summary or node.enriched_hash != node.content_hash)
+
+
+def estimate_enrichment(tree: DocTree, *, only_stale: bool = True) -> dict:
+    """Dry-run the enrichment pass — nodes it would touch + the token estimate,
+    BEFORE any spend (the R8 estimate-then-confirm gate, extended to the LLM layer)."""
+    from aughor.llm.context_budget import estimate_tokens
+    targets = [n for n in tree.tables() if (not only_stale) or _needs_enrichment(n)]
+    fast = coder = tokens = 0
+    for n in targets:
+        w = estimate_tokens(_ENRICH_SYSTEM + _enrichment_prompt(n, tree))
+        tokens += w + _ENRICH_COMPLETION_EST
+        if w > _ENRICH_WIDTH_TOKENS:
+            coder += 1
+        else:
+            fast += 1
+    return {"nodes": len(targets), "est_tokens": tokens, "fast": fast, "coder": coder}
+
+
+def enrich_tree(tree: DocTree, *, provider_factory=None, only_stale: bool = True,
+                persist: bool = False) -> dict:
+    """LLM-polish the stale table summaries in place. Per-node fail-open: a node
+    whose call fails keeps its deterministic summary (and stays stale, so the next
+    pass retries it). ``provider_factory(tier)`` is injectable for tests; the
+    default is the platform provider registry."""
+    from pydantic import BaseModel as _BM
+
+    class _NodeDoc(_BM):
+        summary: str
+
+    if provider_factory is None:
+        from aughor.llm.provider import get_provider as provider_factory  # noqa: F811
+    from aughor.llm.context_budget import estimate_tokens
+
+    enriched = failed = 0
+    routed = {"fast": 0, "coder": 0}
+    for node in tree.tables():
+        if only_stale and not _needs_enrichment(node):
+            continue
+        prompt = _enrichment_prompt(node, tree)
+        tier = "coder" if estimate_tokens(_ENRICH_SYSTEM + prompt) > _ENRICH_WIDTH_TOKENS else "fast"
+        try:
+            doc = provider_factory(tier).complete(
+                system=_ENRICH_SYSTEM, user=prompt, response_model=_NodeDoc,
+                temperature=0.2)
+            text = (getattr(doc, "summary", "") or "").strip()
+            if text:
+                node.enriched_summary = text[:2_000]
+                node.enriched_hash = node.content_hash
+                enriched += 1
+                routed[tier] += 1
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, f"doc enrichment is per-node best-effort ({node.fqn})",
+                     counter="ontology.doc_enrich", conn_id=tree.connection_id or None)
+            failed += 1
+    if persist and enriched:
+        save_doc_tree(tree)
+    return {"enriched": enriched, "failed": failed, "routed": routed}
 
 
 # ── file-per-node persistence (mirrors recommendations.py / overrides.py) ────

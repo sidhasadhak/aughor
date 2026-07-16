@@ -638,13 +638,18 @@ def _print_final_report(state: Any, elapsed: float):
 @click.option("--schema", default="", help="Schema to document (default: the connection's cached ontology schema)")
 @click.option("--confirm", is_flag=True, help="Build and persist the doc tree (default: estimate only)")
 @click.option("--full", is_flag=True, help="Full rebuild — ignore the prior tree's Merkle cache")
-def ontology_docs(connection_id: str, schema: str, confirm: bool, full: bool):
+@click.option("--enrich", is_flag=True,
+              help="R8b: also LLM-polish stale table summaries (estimated first; spends only with --confirm)")
+def ontology_docs(connection_id: str, schema: str, confirm: bool, full: bool, enrich: bool):
     """Compile the ontology into a persisted doc-tree artifact (R8).
 
     Estimate-then-confirm: without --confirm this only reports what a build would touch (no
-    writes). Deterministic — no model. Requires the connection's ontology to already be built.
+    writes). The core is deterministic — no model; --enrich adds the OPTIONAL per-table LLM
+    polish (R8b), estimated up front and width-routed (small tables → fast, wide → coder).
+    Requires the connection's ontology to already be built.
     """
-    from aughor.ontology.doctree import (build_and_persist, estimate_doc_build,
+    from aughor.ontology.doctree import (build_and_persist, enrich_tree,
+                                          estimate_doc_build, estimate_enrichment,
                                           load_doc_tree)
     from aughor.ontology.store import load_latest_ontology
 
@@ -658,6 +663,16 @@ def ontology_docs(connection_id: str, schema: str, confirm: bool, full: bool):
     prior = None if full else load_doc_tree(connection_id, eff_schema)
     est = estimate_doc_build(graph, prior=prior)
 
+    # R8b — the enrichment spend is estimated on the tree the build WOULD produce
+    # (prior-aware), so the number shown is the number --confirm would pay.
+    llm_line = f"LLM tokens: {est['llm_tokens']} (deterministic)"
+    if enrich:
+        from aughor.ontology.doctree import build_doc_tree
+        _preview = build_doc_tree(graph, prior=prior)
+        enr_est = estimate_enrichment(_preview)
+        llm_line = (f"LLM tokens (--enrich): ~[yellow]{enr_est['est_tokens']:,}[/yellow] across "
+                    f"{enr_est['nodes']} stale tables (fast {enr_est['fast']} / coder {enr_est['coder']})")
+
     console.print()
     console.print(Panel(
         f"[bold]{connection_id}[/bold]  schema=[cyan]{eff_schema or '(default)'}[/cyan]\n"
@@ -665,7 +680,7 @@ def ontology_docs(connection_id: str, schema: str, confirm: bool, full: bool):
         f"would rebuild: [yellow]{est['would_rebuild']}[/yellow]   "
         f"reuse (Merkle cache): [green]{est['would_reuse']}[/green]\n"
         f"skipped (ignore-globs): {len(est['skipped_tables'])}   "
-        f"LLM tokens: {est['llm_tokens']} (deterministic)",
+        f"{llm_line}",
         title="[bold cyan]Ontology docs — estimate[/bold cyan]", border_style="cyan", padding=(1, 2),
     ))
 
@@ -677,10 +692,17 @@ def ontology_docs(connection_id: str, schema: str, confirm: bool, full: bool):
     console.print(
         f"\n[green]Built[/green] doc tree — root checksum [bold]{tree.root_checksum}[/bold] "
         f"(reused {tree.stats['cache_hits']}, rebuilt {tree.stats['rebuilt']}).")
+    if enrich:
+        enr = enrich_tree(tree, persist=True)
+        console.print(
+            f"[green]Enriched[/green] {enr['enriched']} table summaries "
+            f"(fast {enr['routed']['fast']} / coder {enr['routed']['coder']}"
+            + (f", [yellow]{enr['failed']} failed[/yellow] — kept deterministic" if enr['failed'] else "")
+            + ").")
     console.print(f"[dim]Persisted under data/ontology_docs/{connection_id}/{eff_schema or 'default'}/[/dim]\n")
 
     for node in tree.tables()[:8]:
-        console.print(f"[bold]{node.fqn}[/bold] — {node.summary}")
+        console.print(f"[bold]{node.fqn}[/bold] — {node.best_summary()}")
         for q in node.questions:
             console.print(f"    [cyan]?[/cyan] {q}")
     console.print()

@@ -198,7 +198,8 @@ def index_doc_tree(tree, *, connection_id: str, schema: str = "") -> dict:
 
     chunks: list[DocumentChunk] = []
     for i, node in enumerate(tree.tables()):
-        parts = [node.summary]
+        # best_summary (R8b): the LLM-polished prose when current, else deterministic.
+        parts = [node.best_summary() if hasattr(node, "best_summary") else node.summary]
         parts += [tree.nodes[c].summary for c in node.children if c in tree.nodes]
         if node.questions:
             parts.append("Questions this table can answer: " + " · ".join(node.questions))
