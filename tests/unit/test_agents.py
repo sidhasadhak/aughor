@@ -48,12 +48,15 @@ class TestRegistry:
         assert {"scout", "analyst", "watcher", "briefer", "curator"} <= ids
         scout = get_charter("scout")
         assert scout.lane == "background" and scout.reserved is False
-        # WP-7: Watcher/Briefer are now WIRED to the metered monitor/brief cron (non-reserved,
-        # with real budgets); only Curator (profile refresh) stays reserved.
+        # WP-7: Watcher/Briefer are WIRED to the metered monitor/brief cron (non-reserved,
+        # with real budgets); R12 wired Curator to the birth job ("profile" kind), so the
+        # whole roster is now live — nothing stays reserved.
         watcher, briefer = get_charter("watcher"), get_charter("briefer")
         assert watcher.reserved is False and watcher.default_budget.time_budget_s
         assert briefer.reserved is False and briefer.default_budget.token_budget
-        assert get_charter("curator").reserved is True   # defined, not yet wired
+        curator = get_charter("curator")
+        assert curator.reserved is False and curator.default_budget.token_budget
+        assert "profile" in curator.job_kinds   # the R12 birth job's kind
 
     def test_insight_charter_backs_the_chat_budget(self):
         c = get_charter("insight")
