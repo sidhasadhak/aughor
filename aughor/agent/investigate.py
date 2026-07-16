@@ -4517,6 +4517,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # large numerator/denominator aggregates; for an additive metric, plot the magnitude not its share.
     from aughor.kernel.flags import flag_enabled as _flag_enabled
     _decision_grade = _flag_enabled("lens.decision_grade")
+    _exhibit_grammar = _flag_enabled("chart.exhibit_grammar")
     for f in findings:
         if is_ratio:
             _chart_ratio_primary(f)
@@ -4537,6 +4538,12 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             from aughor.agent.opportunity import annotate_opportunity
             annotate_opportunity(f, metric_label=metric_label, is_ratio=is_ratio,
                                  is_percent=_metric_is_pct)
+        # Chart-grammar exhibit — severity ramp for a rate ranking + deterministic
+        # reference lines (segment-weighted average; the R15 best-peer benchmark),
+        # computed from this finding's own rows. No model, no extra query; fail-open.
+        if _exhibit_grammar:
+            from aughor.agent.exhibit import exhibit_for_cross_section
+            exhibit_for_cross_section(f, is_ratio=is_ratio, is_percent=_metric_is_pct)
 
     # Numeric fan-out backstop — the AST chasm detectors miss some join shapes and the coder can
     # reinterpret the metric, so verify the NUMBERS on the RAW results (all columns present). Two
@@ -5537,7 +5544,8 @@ def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", wh
         tolerate(_exc, "benchmark lens best-effort; skipped", counter="ada.benchmark_lens")
         return None
     return _lens_phase_from_run(_run, "reason_benchmark", "Reason Benchmark — Is the Cause Abnormal?",
-                                "📊", "benchmark", metric_label, "Reason benchmark computed.")
+                                "📊", "benchmark", metric_label, "Reason benchmark computed.",
+                                peer_median_ref=True)
 
 
 def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_summary: str) -> Optional[dict]:
@@ -5591,7 +5599,8 @@ def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_su
 
 
 def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: str,
-                         metric_label: str, empty_summary: str) -> Optional[dict]:
+                         metric_label: str, empty_summary: str,
+                         peer_median_ref: bool = False) -> Optional[dict]:
     """Shared tail for the forward-chained WHY lenses (benchmark/drill): assemble findings from a
     completed `run_analysis_phase`, tag percent/share columns, and wrap as a phase. Mirrors the
     composition lens's tail. Returns the error phase on failure, None only if there's nothing."""
@@ -5612,9 +5621,16 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
         ]
         summary = empty_summary
     _tag_percent_columns(findings, re.compile(r"share|pct|percent|_of_total", re.I))
+    from aughor.kernel.flags import flag_enabled as _fe
+    _grammar = _fe("chart.exhibit_grammar")
     for _f in findings:
         _normalize_pct_key_numbers(_f)
         _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+        # Chart-grammar exhibit: severity ramp on the share ranking; the benchmark
+        # lens also draws the peer median its whole point is to compare against.
+        if _grammar:
+            from aughor.agent.exhibit import exhibit_for_lens
+            exhibit_for_lens(_f, peer_median=peer_median_ref)
     return _phase_result(
         phase_id, title, emoji,
         "complete" if any(not f["error"] for f in findings) else "partial", summary, findings,

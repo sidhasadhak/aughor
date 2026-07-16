@@ -1112,7 +1112,7 @@ async def _stream_chat(
     _cur_sym = _resolve_currency_symbol(connection_id, canvas_scope_eff_schema)
 
     try:
-        from aughor.agent.prompts import CHAT_PROMPT, CHAT_SQL_SYSTEM
+        from aughor.agent.prompts import CHAT_PROMPT
         from aughor.llm.provider import get_provider
         # Shared grounding producers (Rec 5): the same block functions the
         # `GET /ask/context` receipt calls, so the receipt shows exactly what the
@@ -1536,6 +1536,11 @@ async def _stream_chat(
         # authoritative and overwrites the stream (self-healing, mirroring the `insight` stream).
         # Flag off = the exact pre-streaming blocking call, byte-identical.
         from aughor.kernel.flags import flag_enabled as _hl_stream_flag
+        # Chart-grammar: under `chart.exhibit_grammar` the system prompt no longer offers
+        # the combo chart (one measure per exhibit; the renderer's deterministic dual-axis
+        # gate is the only door). Flag off = the legacy prompt byte-for-byte.
+        from aughor.agent.prompts import chat_sql_system as _chat_sql_system
+        _chat_system = _chat_sql_system(_hl_stream_flag("chart.exhibit_grammar"))
         if _hl_stream_flag("ask.stream_text"):
             import queue as _hq_mod
             import threading as _hthreading
@@ -1548,7 +1553,7 @@ async def _stream_chat(
                 # so "exc" only means BOTH paths failed — re-raised below, exactly as today.
                 try:
                     _hl_result["ans"] = get_provider("coder").complete_streaming(
-                        system=CHAT_SQL_SYSTEM, user=prompt, response_model=_ChatAnswer,
+                        system=_chat_system, user=prompt, response_model=_ChatAnswer,
                         text_field="headline", on_text=_hl_q.put,
                     )
                 except Exception as worker_exc:
@@ -1588,7 +1593,7 @@ async def _stream_chat(
         else:
             answer = await asyncio.to_thread(
                 lambda: get_provider("coder").complete(
-                    system=CHAT_SQL_SYSTEM, user=prompt, response_model=_ChatAnswer,
+                    system=_chat_system, user=prompt, response_model=_ChatAnswer,
                 )
             )
 
@@ -1924,6 +1929,14 @@ async def _stream_chat(
                 logger.debug("chat E1 checks are best-effort; skipped: %s", _e)
         # Deterministic concentration→pareto (the renderer never sees the question).
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
+        # Chart-grammar exhibit for the quick answer — computed from the result grid alone
+        # (severity ramp for a single-rate ranking; point labels for a scatter). Rides inside
+        # chart_config so no new event/persistence surface is needed; flag off = absent.
+        if _hl_stream_flag("chart.exhibit_grammar"):
+            from aughor.agent.exhibit import quick_exhibit
+            _exh = quick_exhibit(result.columns, result.rows, answer.chart_type)
+            if _exh:
+                answer.chart_config = {**(answer.chart_config or {}), "exhibit": _exh}
         yield _sse("columns", {"columns": result.columns})
         yield _sse("rows", {"rows": result.rows[:10000]})
         _grounded_headline = _apply_currency(_grounded_headline, _cur_sym)

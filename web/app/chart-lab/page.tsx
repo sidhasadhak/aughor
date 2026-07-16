@@ -61,6 +61,29 @@ const priceRating: Row[] = Array.from({ length: 18 }, (_, i) => ({
 const autoCols = ["order_date", "orders"];
 const autoRows = MONTHS.map((m, i) => [m, 800 + i * 120 + (i % 2) * 60]);
 
+// ── Chart-grammar exhibits (flag chart.exhibit_grammar) — the Genie-report semantics ──
+// Severity-ramped rate ranking + reference lines (the "lowest load factors" exhibit).
+const loadFactors: Row[] = ([
+  ["GVA-DEL", 65.2], ["ZRH-EZE", 67.4], ["ZRH-BOS", 67.7], ["GVA-EZE", 68.1],
+  ["ZRH-BKK", 68.9], ["ZRH-BOM", 69.4], ["ZRH-HKG", 71.0], ["ZRH-SIN", 72.9],
+] as [string, number][]).map(([route, load_factor_pct]) => ({ route, load_factor_pct }));
+
+// Cost-like metric (delay) → the severity ramp switches to the red family.
+const routeDelays: Row[] = ([
+  ["ZRH-LCY", 15.6], ["GVA-LHR", 13.9], ["ZRH-CDG", 12.4], ["ZRH-FRA", 11.2],
+  ["GVA-AMS", 10.1], ["ZRH-VIE", 8.9], ["ZRH-MAD", 7.4],
+] as [string, number][]).map(([route, avg_delay_min]) => ({ route, avg_delay_min }));
+
+// Entity scatter: identity labels (id column) + hue = aircraft type + quadrant dividers.
+const delayScatter: Row[] = ([
+  ["HB-JBF", "A320", 22, 16.9], ["HB-JBE", "A320", 20, 15.8], ["HB-JAT", "A220-300", 10, 16.1],
+  ["HB-JDK", "A350-900", 7, 15.6], ["HB-JBN", "A320", 20, 14.0], ["HB-JDO", "B777-300ER", 15, 13.8],
+  ["HB-JAW", "A220-300", 21, 13.9], ["HB-JCH", "A321", 5, 13.6], ["HB-JCL", "A321", 7, 13.5],
+  ["HB-JCJ", "A330-300", 10, 13.6], ["HB-JBJ", "A320", 17, 13.5], ["HB-JCE", "B777-300ER", 46, 13.6],
+] as [string, string, number, number][]).map(
+  ([aircraft_id, aircraft_type, flight_count, avg_delay_min]) =>
+    ({ aircraft_id, aircraft_type, flight_count, avg_delay_min }));
+
 function Card({ title, height = 300, children }: { title: string; height?: number; children: React.ReactNode }) {
   return (
     <div style={{ background: "var(--bg-1)", border: "1px solid var(--chart-axis)", borderRadius: 10, padding: 14 }}>
@@ -145,6 +168,34 @@ export default function ChartLab() {
             <EChart option={auto.option} height={270} />
           </Card>
         )}
+        <Card title="Exhibit grammar — severity ramp (rate) + benchmark ref lines" height={400}>
+          <Chart
+            {...toTable(loadFactors, ["route", "load_factor_pct"])}
+            chartType="bar_horizontal" chrome={false} showLabels
+            columnUnits={{ load_factor_pct: "percent" }}
+            exhibit={{
+              color: { mode: "severity" },
+              ref_lines: [
+                { value: 74.5, label: "Long-haul avg", kind: "global_avg" },
+                { value: 71.0, label: "Peer median", kind: "peer_median" },
+              ],
+            }}
+          />
+        </Card>
+        <Card title="Exhibit grammar — cost metric → red severity family" height={370}>
+          <Chart
+            {...toTable(routeDelays, ["route", "avg_delay_min"])}
+            chartType="bar_horizontal" chrome={false} showLabels
+            exhibit={{ color: { mode: "severity" } }}
+          />
+        </Card>
+        <Card title="Exhibit grammar — entity scatter: labels + type hue + quadrant" height={340}>
+          <Chart
+            {...toTable(delayScatter, ["aircraft_id", "aircraft_type", "flight_count", "avg_delay_min"])}
+            chartType="scatter" chrome={false}
+            exhibit={{ label_points: true, quadrant: { x: 20, y: 14.5 } }}
+          />
+        </Card>
       </div>
 
       <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>

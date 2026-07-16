@@ -12,6 +12,7 @@ import type { EChartsOption } from "echarts";
 import { compactNumber, pct, cleanLabel, detectGranularity, fmtDate, normDateStr, type Gran } from "@/lib/format";
 import { SHARE_COL } from "@/components/charts/columnRoles";
 import { effectiveCurrencySymbol, isMoneyColumn } from "@/lib/orgSettings";
+import { type ExhibitSpec, severityRamp, refMarkLine } from "@/components/charts/exhibit";
 
 export type Row = Record<string, unknown>;
 
@@ -19,11 +20,17 @@ export interface BuildInput {
   rows: Row[];
   x: string;             // x-axis field (date or category)
   ys: string[];          // measure field(s)
-  color?: string;        // series/stack group field (multi-line, stacked-bar)
+  color?: string;        // series/stack group field (multi-line, stacked-bar, scatter)
   xKind?: "time" | "category";
   title?: string;
   labels?: boolean;      // draw value labels on marks
   units?: Record<string, string>;  // authoritative per-column unit hint from the backend finding
+  /** Optional backend exhibit spec (semantic color / reference lines / point labels).
+   *  Absent → byte-identical legacy rendering. */
+  exhibit?: ExhibitSpec | null;
+  /** Field naming each scatter point (the entity id/name column) — enables
+   *  exhibit.label_points and the identity line in the tooltip. */
+  pointLabel?: string;
 }
 
 // ── formatting helpers ───────────────────────────────────────────────────────
@@ -111,7 +118,7 @@ export function lineOption(i: BuildInput, area = false): EChartsOption {
       axisLabel: i.xKind === "time" ? { formatter: dateAxisLabel(i.rows, i.x), hideOverlap: true } : { hideOverlap: true },
     },
     yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
-    series: i.ys.map((y) => ({
+    series: i.ys.map((y, k) => ({
       name: fieldLabel(y),
       type: "line",
       data: cats.map((c) => { const r = byX.get(c); return r == null ? null : num(r[y]); }),
@@ -121,6 +128,8 @@ export function lineOption(i: BuildInput, area = false): EChartsOption {
       emphasis: { focus: "series" },
       label: i.labels ? { show: true, position: "top", fontSize: 11, formatter: (p: { value: unknown }) => fmt(p.value) } : undefined,
       labelLayout: i.labels ? { hideOverlap: true } : undefined,
+      // Reference lines (peer median / global average / benchmark) ride the first series.
+      markLine: k === 0 ? refMarkLine(i.exhibit?.ref_lines ?? [], "y", fmt) : undefined,
     })),
   };
 }
@@ -249,9 +258,17 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
   const label = i.labels
     ? { show: true, fontSize: 11, distance: 5, position: (style.horizontal ? "right" : "top") as "right" | "top", formatter: (p: { value: unknown }) => fmt(p.value) }
     : undefined;
-  const itemStyle = style.diverging
-    ? { color: (p: { value: number }) => (p.value >= 0 ? "#2EC87B" : "#E64848") }
-    : undefined;
+  // Semantic color: sign-diverging keeps precedence (a change metric's sign IS its meaning);
+  // otherwise a "severity" exhibit ramps the bars by their own value — the redundant
+  // encoding that makes a worst-N ranking read at a glance.
+  let itemStyle: { color: (p: { value: number }) => string } | undefined;
+  if (style.diverging) {
+    itemStyle = { color: (p: { value: number }) => (p.value >= 0 ? "#2EC87B" : "#E64848") };
+  } else if (i.exhibit?.color?.mode === "severity" && values.length >= 3) {
+    const finite = values.filter((v) => isFinite(v));
+    const ramp = severityRamp(Math.min(...finite), Math.max(...finite), y);
+    itemStyle = { color: (p: { value: number }) => ramp(p.value) };
+  }
 
   return {
     ...withTitle(i.title),
@@ -266,6 +283,8 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
       // Drop any data label that would collide instead of overprinting a neighbour.
       labelLayout: i.labels ? { hideOverlap: true } : undefined,
       itemStyle: itemStyle as unknown as undefined,
+      // Reference lines: on a horizontal bar the VALUE axis is x, so the line is vertical.
+      markLine: refMarkLine(i.exhibit?.ref_lines ?? [], style.horizontal ? "x" : "y", fmt),
     }],
   };
 }
@@ -365,23 +384,95 @@ export function pieOption(i: BuildInput): EChartsOption {
   };
 }
 
-/** Two numerics, correlation / outlier detection. */
+// Point labels stay legible only while the plot is sparse; past this they overprint.
+const _SCATTER_LABEL_MAX = 40;
+// One hue per group stays readable up to the palette's brand range; beyond, group into "Other".
+const _SCATTER_GROUP_MAX = 8;
+
+/** Two numerics, correlation / outlier detection. Optionally: `color` groups the
+ *  points into per-category series (hue + legend = a third dimension), `pointLabel`
+ *  names each point, and the exhibit spec labels points / draws quadrant dividers —
+ *  the "which entities are out there" read an outlier scatter exists for. */
 export function scatterOption(i: BuildInput): EChartsOption {
   const [xf, yf] = [i.x, i.ys[0]];
   const fx = valueFormatter(i.rows, xf, i.units);
   const fy = valueFormatter(i.rows, yf, i.units);
+  const showPointLabels = !!i.exhibit?.label_points && !!i.pointLabel && i.rows.length <= _SCATTER_LABEL_MAX;
+  const pointOf = (r: Row) => ({
+    value: [num(r[xf]), num(r[yf])] as [number, number],
+    name: i.pointLabel ? String(r[i.pointLabel]) : "",
+  });
+  const label = showPointLabels
+    ? { show: true, position: "top" as const, fontSize: 10, formatter: (p: { name?: string }) => p.name ?? "" }
+    : undefined;
+
+  // Group into one series per category value (hue + legend); overflow → "Other" so a
+  // long-tail dimension can't explode the legend.
+  let series: Record<string, unknown>[];
+  let groups: string[] = [];
+  if (i.color) {
+    const byGroup = new Map<string, Row[]>();
+    for (const r of i.rows) {
+      const g = String(r[i.color]);
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g)!.push(r);
+    }
+    const ranked = [...byGroup.entries()].sort((a, b) => b[1].length - a[1].length);
+    const kept = ranked.slice(0, _SCATTER_GROUP_MAX);
+    const rest = ranked.slice(_SCATTER_GROUP_MAX).flatMap(([, rs]) => rs);
+    const entries: [string, Row[]][] = rest.length ? [...kept, ["Other", rest]] : kept;
+    groups = entries.map(([g]) => g);
+    series = entries.map(([g, rs]) => ({
+      name: g, type: "scatter", symbolSize: 9, data: rs.map(pointOf),
+      label, labelLayout: showPointLabels ? { hideOverlap: true } : undefined,
+      emphasis: { focus: "series" },
+    }));
+  } else {
+    series = [{
+      type: "scatter", symbolSize: 9, data: i.rows.map(pointOf),
+      label, labelLayout: showPointLabels ? { hideOverlap: true } : undefined,
+      emphasis: { focus: "series" },
+    }];
+  }
+
+  // Quadrant dividers (means/medians from the exhibit) + y-axis reference lines
+  // ride the first series as silent dashed markLines.
+  const q = i.exhibit?.quadrant;
+  const qLines: Record<string, unknown>[] = [];
+  if (q?.x != null && isFinite(Number(q.x))) qLines.push({ xAxis: Number(q.x) });
+  if (q?.y != null && isFinite(Number(q.y))) qLines.push({ yAxis: Number(q.y) });
+  const refs = refMarkLine(i.exhibit?.ref_lines ?? [], "y", fy);
+  const markData = [...qLines, ...((refs?.data as Record<string, unknown>[]) ?? [])];
+  if (markData.length && series.length) {
+    series[0].markLine = {
+      silent: true, symbol: "none", animation: false,
+      lineStyle: { type: "dashed", width: 1.25 },
+      label: {
+        fontSize: 10,
+        formatter: (p: { data?: { name?: string }; value?: unknown }) => {
+          const name = p.data?.name;
+          return name ? `${name} ${fy(p.value)}` : "";
+        },
+      },
+      data: markData,
+    };
+  }
+
   return {
     ...withTitle(i.title),
     tooltip: {
       trigger: "item",
       formatter: (p: unknown) => {
-        const v = (p as { value: [number, number] }).value;
-        return `${fieldLabel(xf)}: ${fx(v[0])}<br/>${fieldLabel(yf)}: ${fy(v[1])}`;
+        const o = p as { value: [number, number]; name?: string; seriesName?: string };
+        const who = o.name || (i.color ? o.seriesName : "");
+        const head = who ? `<b>${who}</b><br/>` : "";
+        return `${head}${fieldLabel(xf)}: ${fx(o.value[0])}<br/>${fieldLabel(yf)}: ${fy(o.value[1])}`;
       },
     },
+    legend: groups.length > 1 ? { data: groups } : undefined,
     xAxis: { type: "value", name: fieldLabel(xf), nameLocation: "middle", nameGap: 28, axisLabel: { formatter: (v: number) => fx(v) } },
     yAxis: { type: "value", name: fieldLabel(yf), axisLabel: { formatter: (v: number) => fy(v) } },
-    series: [{ type: "scatter", symbolSize: 9, data: i.rows.map((r) => [num(r[xf]), num(r[yf])]), emphasis: { focus: "series" } }],
+    series: series as EChartsOption["series"],
   };
 }
 

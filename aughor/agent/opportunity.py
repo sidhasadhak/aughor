@@ -59,18 +59,18 @@ def _fmt(v: float, *, is_percent: bool = False) -> str:
     return f"{v:,.2f}" if a != int(a) else f"{int(v):,}"
 
 
-def compute_opportunity(
+def segment_rates(
     columns: list, rows: list, *, is_ratio: bool = False
-) -> Optional[dict]:
-    """The gap × volume computation over one finding's result grid. Pure.
+) -> Optional[list[tuple[str, float, float]]]:
+    """Parse a cross-section result grid into per-segment ``(label, rate, n)``. Pure.
 
     Expects the cross-section template shape: a segment label column, a count
     column named ``n`` (or ``count``/``records``), and either ``avg_per_record``
     or ``metric_total``. For a ratio metric ``metric_total`` IS the per-segment
     rate; for an additive metric the rate is ``metric_total / n``. Returns None
-    whenever the shape, materiality, or gap thresholds don't hold — silence is
-    the correct output for a grid this lens can't read honestly."""
-    if not columns or not rows or len(rows) < 3:
+    when the grid doesn't carry that shape. Shared by the R15 opportunity lens
+    and the chart-grammar exhibit builder (aughor/agent/exhibit.py)."""
+    if not columns or not rows:
         return None
     low = [str(c).lower() for c in columns]
 
@@ -106,7 +106,20 @@ def compute_opportunity(
         if rate is None:
             continue
         segs.append((str(r[seg_i]), rate, n))
-    if len(segs) < 3:
+    return segs or None
+
+
+def compute_opportunity(
+    columns: list, rows: list, *, is_ratio: bool = False
+) -> Optional[dict]:
+    """The gap × volume computation over one finding's result grid. Pure.
+
+    Returns None whenever the shape, materiality, or gap thresholds don't hold —
+    silence is the correct output for a grid this lens can't read honestly."""
+    if not columns or not rows or len(rows) < 3:
+        return None
+    segs = segment_rates(columns, rows, is_ratio=is_ratio)
+    if not segs or len(segs) < 3:
         return None
 
     total_n = sum(n for _, _, n in segs)

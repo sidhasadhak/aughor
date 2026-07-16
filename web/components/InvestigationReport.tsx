@@ -61,6 +61,7 @@ interface InvestigationFinding {
   is_significant: boolean;
   trust_caveat?: string | null;   // advisory from the trust battery — surfaced, never blocking
   column_units?: Record<string, string> | null;  // per-column display unit ({metric_total:"percent"})
+  exhibit?: import("@/components/charts/exhibit").ExhibitSpec | null;  // chart-grammar semantics
 }
 
 interface InvestigationPhase {
@@ -190,7 +191,7 @@ function EvidenceBlock({ finding, onShowSource, sourceNo }: { finding: Investiga
       {/* Chart — the framed figure */}
       {hasChart && (
         <BriefFigure caption={finding.title}>
-          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} columnUnits={finding.column_units} showLabels />
+          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit} showLabels />
         </BriefFigure>
       )}
 

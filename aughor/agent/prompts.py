@@ -66,7 +66,7 @@ ANSWER_SHAPE_RULES = (
     "When in doubt, fewer columns that exactly match the ask beat more columns that add unrequested context."
 )
 
-CHAT_SQL_SYSTEM = (
+_CSS_HEAD = (
     "You are a concise data analyst. "
     "Write exactly one correct SELECT statement to answer the question. "
     "Answer EXACTLY what the user asks — do NOT add implicit status filters or exclude rows the user didn't ask to exclude. "
@@ -114,7 +114,20 @@ CHAT_SQL_SYSTEM = (
     "NEVER use an identifier column as the measure or y_field: ids/keys/codes (order_id, franchiseID, "
     "sku_code) are labels, not quantities — summing or averaging them produces meaningless numbers. "
     "Return a short, specific headline (one sentence, max 14 words) naming the subject and measure — no filler openers like 'Here is' or 'This shows'. "
+)
+
+# Chart-type vocabulary. The exhibit-grammar variant (flag `chart.exhibit_grammar`) removes
+# 'combo': the model never CHOOSES a dual axis — the renderer's deterministic scoreDualAxis
+# gate (unit mismatch / ≥25× scale) stays the only door to one, so two same-unit measures can
+# no longer arrive pre-shaped as a combo. See docs/CHART_SELECTION_GUIDE.md.
+_CHART_VOCAB_LEGACY = (
     "Also return chart_type — one of: 'auto', 'bar', 'bar_horizontal', 'bar_vertical', 'line', 'multi_line', 'area', 'stacked_bar', 'scatter', 'pie', 'pareto', 'treemap', 'heatmap', 'combo'. "
+)
+_CHART_VOCAB_GRAMMAR = (
+    "Also return chart_type — one of: 'auto', 'bar', 'bar_horizontal', 'bar_vertical', 'line', 'multi_line', 'area', 'stacked_bar', 'scatter', 'pie', 'pareto', 'treemap', 'heatmap'. "
+)
+
+_CSS_MID = (
     "Also return intent — one sentence starting with 'You want to see' that restates the user's goal in plain English (no SQL, no jargon). "
     "Also return approach — a list of 3-6 concise plain-English steps (max 15 words each) describing how the answer is calculated. "
     "Steps describe the logic, not the SQL syntax. Example step: 'Calculate total revenue per state per month by summing price and freight.' "
@@ -139,12 +152,26 @@ CHAT_SQL_SYSTEM = (
     "    Example: MoM % change by state (27 states) → multi_line, X=month, Y=mom_change_pct, color=state. "
     "  'area' — same as line but fills below the curve. Use when cumulative volume is the point (e.g. total users over time). "
     ""
+)
+
+_CHART_MULTI_LEGACY = (
 "MULTIPLE METRICS (two different measures for the same categories): "
 "  'combo' — 1 categorical + 2 numerics with DIFFERENT units or scales. Renders bars for the primary metric and a line for the secondary metric on a separate y-axis. "
 "    Example: state-wise sales AND AOV → combo, bars=sales (left axis), line=AOV (right axis). "
 "    Use ONLY when the metrics have different units or wildly different scales. Do NOT use for two counts or two monetary values of similar magnitude. "
 "    SQL shape: SELECT category_col, metric1_col, metric2_col — exactly 3 columns. "
 ""
+)
+_CHART_MULTI_GRAMMAR = (
+"MULTIPLE METRICS (two different measures for the same categories): "
+"  Return ONE measure per chart — the measure the question actually asks for; do NOT add a second "
+"    measure column for context. When the user EXPLICITLY asks for two measures ('sales AND AOV by "
+"    state'), return both columns with chart_type 'auto' — the renderer decides deterministically "
+"    whether the pair can honestly share a chart. Never pick a dual-axis presentation yourself. "
+""
+)
+
+_CSS_TAIL = (
     "COMPOSITION (how parts make up a whole): "
     "  'pie' — 1 categorical + 1 numeric, STRICTLY ≤ 6 categories summing to a meaningful whole. Use for share/proportion questions. "
     "  'treemap' — 1 categorical + 1 numeric, > 6 categories. Proportional area tiles — better than pie when there are many slices. "
@@ -206,6 +233,19 @@ CHAT_SQL_SYSTEM = (
     "    chart_type for single-period category×dimension grid → 'heatmap' (not multi_line — there is no time axis). "
     + ANSWER_SHAPE_RULES
 )
+
+
+def chat_sql_system(exhibit_grammar: bool = False) -> str:
+    """The quick-path SQL system prompt. `exhibit_grammar=True` (flag `chart.exhibit_grammar`)
+    swaps the chart vocabulary/rules to the one-measure-per-exhibit grammar — combo is no longer
+    offered, so a dual axis can only come from the renderer's deterministic gate. False composes
+    the exact legacy prompt byte-for-byte (`CHAT_SQL_SYSTEM`)."""
+    if exhibit_grammar:
+        return _CSS_HEAD + _CHART_VOCAB_GRAMMAR + _CSS_MID + _CHART_MULTI_GRAMMAR + _CSS_TAIL
+    return _CSS_HEAD + _CHART_VOCAB_LEGACY + _CSS_MID + _CHART_MULTI_LEGACY + _CSS_TAIL
+
+
+CHAT_SQL_SYSTEM = chat_sql_system(False)
 
 CHAT_PROMPT = """\
 DATABASE SCHEMA:
