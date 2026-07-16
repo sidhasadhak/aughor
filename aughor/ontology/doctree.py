@@ -123,7 +123,7 @@ def _pct(x: float) -> str:
     return f"{round(x * 100)}%"
 
 
-def _column_facts(prop) -> dict:
+def _column_facts(prop, config_flags=None) -> dict:
     f = {
         "data_type": prop.data_type or "",
         "semantic_type": prop.semantic_type or "",
@@ -140,6 +140,14 @@ def _column_facts(prop) -> dict:
         v = getattr(prop, k, None)
         if v not in (None, ""):
             f[k] = v
+    # R11 — stamp the per-column config into the facts (docs describe hidden
+    # columns rather than dropping them). Folding into the facts means the values
+    # flow into the node's content_hash, so a config edit Merkle-invalidates
+    # exactly the touched column node on the next incremental build.
+    if config_flags is not None:
+        f["visible"] = bool(getattr(config_flags, "visible", True))
+        f["sample"] = bool(getattr(config_flags, "sample", True))
+        f["index"] = bool(getattr(config_flags, "index", False))
     return f
 
 
@@ -161,6 +169,8 @@ def _column_summary(prop, facts: dict) -> str:
         tail.append("foreign key")
     if facts["null_rate"] > 0:
         tail.append(f"{_pct(facts['null_rate'])} null")
+    if facts.get("visible") is False:
+        tail.append("hidden from agent prompts")
     if facts.get("sample_values"):
         tail.append("e.g. " + ", ".join(str(v) for v in facts["sample_values"][:4]))
     if tail:
@@ -272,6 +282,7 @@ def build_doc_tree(
     table_stats: Optional[dict[str, dict]] = None,
     ignore: tuple[str, ...] = _DEFAULT_IGNORE,
     prior: Optional[DocTree] = None,
+    column_config: Optional[dict] = None,   # R11: {(table, column): ColumnFlags}
 ) -> DocTree:
     """Project ``graph`` (+ optional per-table ``table_stats``) into a Merkle-checksummed doc tree.
 
@@ -321,7 +332,11 @@ def build_doc_tree(
         # ── column nodes (leaves) ──
         for prop in entity.properties.values():
             col_fqn = f"{table_fqn}.{prop.name}"
-            cfacts = _column_facts(prop)
+            cflags = None
+            if column_config:
+                cflags = (column_config.get((primary_table, prop.name))
+                          or column_config.get((entity.id, prop.name)))
+            cfacts = _column_facts(prop, cflags)
             ch = _hash(sorted(cfacts.items(), key=lambda kv: kv[0]))
             col = DocNode(
                 kind="column", fqn=col_fqn, title=prop.name,
@@ -550,7 +565,18 @@ def build_and_persist(
             raise ValueError(f"no ontology built for {conn}/{schema!r} — run intelligence first")
     eff_schema = graph.schema_name or schema or ""
     prior = load_doc_tree(conn, eff_schema) if incremental else None
-    tree = build_doc_tree(graph, table_stats=table_stats or {}, prior=prior)
+    # R11 — mark each column doc with its {visible,sample,index} config when the
+    # feature is on (best-effort; docs build fine without it).
+    column_config = None
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("ontology.column_config"):
+        try:
+            from aughor.ontology.column_config import load_column_configs
+            column_config = load_column_configs(conn, eff_schema or "default") or None
+        except Exception:
+            column_config = None
+    tree = build_doc_tree(graph, table_stats=table_stats or {}, prior=prior,
+                          column_config=column_config)
     if persist:
         save_doc_tree(tree)
     return tree

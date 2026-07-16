@@ -68,6 +68,13 @@ for _env, _file in (
 for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR"):
     os.environ.setdefault(_dir_env, _test_stores_dir)
 
+# R11 — the per-column config store is a YAML file tree (data/ontology_column_config/)
+# written by the intelligence build when `ontology.column_config` is on; isolate it so
+# the suite never mutates the live tree (born hermetic, unlike the older data/ stores).
+os.environ.setdefault(
+    "AUGHOR_COLUMN_CONFIG_ROOT", os.path.join(_test_stores_dir, "ontology_column_config")
+)
+
 # The glossary + metrics catalog are file stores (YAML/JSON, not SQLite) with real content — and the
 # autoseed / knowledge-sync path WRITES them with no path, so the suite mutated the live
 # data/glossary.yaml (task_213affac: it leaked into two commits). Point each at a throwaway temp

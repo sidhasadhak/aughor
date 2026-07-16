@@ -1076,6 +1076,7 @@ def build_column_profiles(
     fk_cols: set[str],
     row_count: int,
     fast_stats: Optional[dict] = None,   # pre-fetched catalog stats for this table
+    index_config: Optional[dict[str, bool]] = None,   # R11 per-column `index` decisions
 ) -> list[ColumnProfile]:
     """
     Compute column profiles.
@@ -1243,11 +1244,22 @@ def build_column_profiles(
     # distinct GATE (from raw_stats) bounds the scan; LIMIT cap+1 + the len check
     # drops any column that turns out larger than the cap (kept as live-probe only).
     value_sample_map: dict[str, list[str]] = {}
+
+    def _index_eligible(col: str) -> bool:
+        # R11: an explicit per-column config entry wins (human `index: true` can
+        # widen past the name gate; `false` excludes); otherwise the deterministic
+        # R5 gate — entity-name-ish and not key-like. The cardinality band below
+        # stays a hard capture constraint either way (the sample must stay bounded).
+        if index_config is not None and col in index_config:
+            return index_config[col]
+        return bool(
+            not _KEY_PATTERN.search(col.lower()) and _ENTITY_DIM_RE.search(col.lower())
+        )
+
     highcard_dims = [
         col for col, dtype in columns
         if _TEXT_TYPES.search(dtype)
-        and not _KEY_PATTERN.search(col.lower())
-        and _ENTITY_DIM_RE.search(col.lower())
+        and _index_eligible(col)
         and 30 < raw_stats.get(col, {}).get("distinct", 0) <= _VALUE_SAMPLE_MAX_DISTINCT
     ][:_VALUE_SAMPLE_MAX_COLS]
     for col in highcard_dims:
@@ -1330,6 +1342,22 @@ def profile_connection(
     column_profiles: dict[str, ColumnProfile] = {}
     dialect = getattr(conn, "dialect", "")
 
+    # R11 — when the per-column config exists, its `index` flag decides value-sample
+    # eligibility (human override wins; defaults mirror the R5 gate, so an unedited
+    # config changes nothing). Flag-gated + lazy import so the profiler stays
+    # import-light; any hiccup falls back to the built-in gate.
+    index_cfg: dict[str, dict[str, bool]] = {}
+    try:
+        from aughor.kernel.flags import flag_enabled
+        if flag_enabled("ontology.column_config"):
+            from aughor.ontology.column_config import load_column_configs
+            _cc_conn = getattr(conn, "_connection_id", None) or "fixture"
+            _cc_schema = getattr(conn, "_schema_name", None) or "default"
+            for (_t, _c), _fl in load_column_configs(_cc_conn, _cc_schema).items():
+                index_cfg.setdefault(_t, {})[_c] = bool(_fl.index)
+    except Exception:
+        index_cfg = {}
+
     # ── Pre-fetch catalog stats for ALL tables (cheap, no full scans) ─────────
     # {table_name: (row_count, {col: {...stats...}})}
     all_catalog: dict[str, tuple[Optional[int], dict]] = {}
@@ -1372,6 +1400,7 @@ def profile_connection(
         col_profs = build_column_profiles(
             conn, table, cols, fk_cols, tp.row_count,
             fast_stats=fast_stats,
+            index_config=index_cfg.get(table),
         )
         for cp in col_profs:
             column_profiles[f"{table}.{cp.column}"] = cp

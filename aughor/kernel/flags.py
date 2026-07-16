@@ -26,6 +26,7 @@ FLAG_ENV = {
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "ontology.autodoc": "AUGHOR_ONTOLOGY_AUTODOC",
+    "ontology.column_config": "AUGHOR_ONTOLOGY_COLUMN_CONFIG",
     "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
     "ada.parallel_phases": "AUGHOR_ADA_PARALLEL_PHASES",
     "ada.why_where_interaction": "AUGHOR_ADA_WHY_WHERE_INTERACTION",
@@ -189,6 +190,10 @@ FLAG_META = {
     "ontology.autodoc": {
         "label": "Compile ontology docs as a build artifact",
         "description": "After the ontology is built, project it into a persisted, Merkle-checksummed doc tree (column→table→schema→connection) with per-table analyst questions — understanding compiled once and re-read cheaply, rebuilt incrementally as the schema moves. Deterministic (no model); also available on demand via the `aughor ontology-docs` CLI. Off by default — see docs/DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md (R8).",
+    },
+    "ontology.column_config": {
+        "label": "Per-column visibility / sampling / indexing config",
+        "description": "A persisted, human-editable per-column config with three flags: visible (render the column into agent prompt schemas at all — hiding prunes noise columns from the context), sample (enumerate the column's values in the schema context), and index (build the offline value index over it). Deterministic defaults come from the profiler — entity dimensions index+sample, dead all-null columns and free-text blobs hide; a human edit always wins and survives schema rebuilds. No model in the loop. Off by default — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R11).",
     },
     "ada.parallel_lenses": {
         "label": "Parallel Deep-Analysis lenses",
