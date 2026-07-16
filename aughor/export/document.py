@@ -87,11 +87,12 @@ def _round_cell(v):
     return v
 
 
-def _chart_or_table(columns, rows, chart_type, title) -> list[Block]:
+def _chart_or_table(columns, rows, chart_type, title, units=None, exhibit=None) -> list[Block]:
     """Render a chart if the data supports it; always include the data table too
     (capped) so the document carries the underlying numbers."""
     out: list[Block] = []
-    png = render_chart(columns or [], rows or [], chart_type or "auto", title)
+    png = render_chart(columns or [], rows or [], chart_type or "auto", title,
+                       units=units, exhibit=exhibit)
     if png:
         out.append(Block("chart", png=png, caption=title))
     if columns and rows:
@@ -100,7 +101,7 @@ def _chart_or_table(columns, rows, chart_type, title) -> list[Block]:
     return out
 
 
-def _exhibit_argument(columns, rows, chart_type, title) -> list[Block]:
+def _exhibit_argument(columns, rows, chart_type, title, units=None, exhibit=None) -> list[Block]:
     """R16 P1 — ONE exhibit per claim, and only when it informs.
 
     A degenerate result (fewer than two rows: the 1-bar chart, the single-point
@@ -111,7 +112,7 @@ def _exhibit_argument(columns, rows, chart_type, title) -> list[Block]:
     if not columns or len(rows) < 2:
         return []
     if (chart_type or "auto") != "none":
-        png = render_chart(columns, rows, chart_type or "auto", title)
+        png = render_chart(columns, rows, chart_type or "auto", title, units=units, exhibit=exhibit)
         if png:
             return [Block("chart", png=png, caption=title)]
     table_rows = [[_round_cell(v) for v in row] for row in rows[:8]]
@@ -224,10 +225,16 @@ def _build_ada(inv: dict) -> ExportDoc:
                     KeyNumber(_nm(k.get("label", "")), _nm(k.get("value", "")), _nm(k.get("delta")) or None, _nm(k.get("context")) or None)
                     for k in kns
                 ]))
+            # The finding's own display contract travels with it: `column_units` so a rate
+            # prints "74.5%" in the PDF exactly as on screen, and the chart-grammar `exhibit`
+            # (severity ramp · reference lines · point labels). Both absent → unchanged output.
+            _u, _x = f.get("column_units"), f.get("exhibit")
             if _argument:
-                blocks.extend(_exhibit_argument(f.get("columns"), f.get("rows"), f.get("chart_type"), f.get("title") or ""))
+                blocks.extend(_exhibit_argument(f.get("columns"), f.get("rows"), f.get("chart_type"),
+                                                f.get("title") or "", units=_u, exhibit=_x))
             else:
-                blocks.extend(_chart_or_table(f.get("columns"), f.get("rows"), f.get("chart_type"), f.get("title") or ""))
+                blocks.extend(_chart_or_table(f.get("columns"), f.get("rows"), f.get("chart_type"),
+                                              f.get("title") or "", units=_u, exhibit=_x))
 
     # R16 P1 — the decision paragraph: gap-to-benchmark × volume, in prose,
     # right where a reader decides (before Recommendations).
@@ -244,10 +251,14 @@ def _build_ada(inv: dict) -> ExportDoc:
     wf = rep.get("attribution_waterfall") or []
     if wf:
         blocks.append(_h("Attribution"))
+        # A waterfall entry's share is SIGNED (what pushed the metric up vs down), and the
+        # web already colours it by sign — the PDF used to flatten every cause to one hue,
+        # so a reader couldn't tell a driver from an offset without reading the bullets.
         png = render_chart(
             ["cause", "share"],
             [[w.get("cause", ""), w.get("pct_of_total", 0)] for w in wf],
             "bar", "Share of total change",
+            units={"share": "percent"}, exhibit={"color": {"mode": "sign"}},
         )
         if png:
             blocks.append(Block("chart", png=png, caption="Share of the total change, by cause"))

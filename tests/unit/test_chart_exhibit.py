@@ -1,11 +1,13 @@
 """Chart-grammar exhibit spec (flag `chart.exhibit_grammar`) — deterministic tests.
 
-Covers the three legs of the grammar wave:
+Covers the four legs of the grammar wave:
   W1 — the quick-path prompt no longer OFFERS combo under the flag (and the
        legacy constant stays byte-identical when it's off);
   W2 — the semantic color policy (severity ramp only for rate/percent rankings);
   W3 — reference lines (segment-weighted average, R15 benchmark, peer median),
-       range-clipped so an out-of-range line can't distort the axis.
+       range-clipped so an out-of-range line can't distort the axis;
+  W4 — the PRINT renderer speaks the same grammar: aughor/export/charts.py must
+       honour the same exhibit + column_units, and stay byte-identical without them.
 """
 from __future__ import annotations
 
@@ -18,6 +20,7 @@ from aughor.agent.exhibit import (
 )
 from aughor.agent.opportunity import compute_opportunity, segment_rates
 from aughor.agent.prompts import CHAT_SQL_SYSTEM, chat_sql_system
+from aughor.export.charts import _fmt_for, _severity_ramp, render_chart
 
 
 # ── W1: prompt variants ──────────────────────────────────────────────────────
@@ -175,6 +178,82 @@ def test_quick_exhibit_scatter_requests_point_labels():
 def test_quick_exhibit_needs_enough_rows():
     assert quick_exhibit(["state", "return_rate"], [["CA", 0.1], ["TX", 0.2]],
                          "bar_horizontal") is None
+
+
+# ── W4: the export (print) renderer speaks the same grammar ──────────────────
+
+_RANKING = (["route", "load_factor_pct"],
+            [["GVA-DEL", 65.2], ["ZRH-EZE", 67.4], ["ZRH-BOS", 67.7], ["ZRH-BKK", 68.9]])
+
+
+def test_export_severity_ramp_mirrors_the_web_ramp():
+    # Same contract as web/components/charts/exhibit.ts severityRamp(): 3 stops,
+    # ends anchored, degenerate range → the middle stop.
+    ramp = _severity_ramp(0.0, 10.0, "load_factor")
+    assert ramp(0.0) != ramp(10.0)
+    assert ramp(5.0) == ramp(5.0)
+    assert _severity_ramp(5.0, 5.0, "x")(5.0) == _severity_ramp(0.0, 10.0, "x")(5.0)
+
+
+def test_export_cost_metric_ramps_red_others_blue():
+    # A cost-like name (delay) ramps in the red family; a neutral one in blue.
+    hot_cost = _severity_ramp(0.0, 10.0, "avg_delay_min")(10.0)
+    hot_neutral = _severity_ramp(0.0, 10.0, "load_factor_pct")(10.0)
+    assert hot_cost[0] > hot_cost[2]      # red channel dominates blue
+    assert hot_neutral[2] > hot_neutral[0]
+
+
+def test_export_percent_units_are_honoured_and_scale_aware():
+    # The one contract that made the PDF contradict the app: a typed percent.
+    pct = _fmt_for("metric_total", {"metric_total": "percent"})
+    assert pct(0.745) == "74.5%"          # fraction → ×100
+    assert pct(74.5) == "74.5%"           # already scaled → left alone
+    assert _fmt_for("revenue", None)(1500) == "1.5K"        # no hint → legacy compact
+    assert _fmt_for("revenue", {"other": "percent"})(1500) == "1.5K"
+
+
+def test_export_without_exhibit_is_byte_identical():
+    # The flag needs no check in the export: an absent payload IS the gate.
+    cols, rows = _RANKING
+    assert render_chart(cols, rows, "bar", "t") == render_chart(cols, rows, "bar", "t",
+                                                                units=None, exhibit=None)
+
+
+def test_export_exhibit_actually_reaches_the_canvas():
+    # A ramp/ref-line that silently no-ops would still return a valid PNG — so assert
+    # the PIXELS differ from the plain render, not merely that it didn't raise.
+    cols, rows = _RANKING
+    plain = render_chart(cols, rows, "bar", "t")
+    ramped = render_chart(cols, rows, "bar", "t", exhibit={"color": {"mode": "severity"}})
+    reffed = render_chart(cols, rows, "bar", "t",
+                          exhibit={"ref_lines": [{"value": 67.0, "label": "Peer median"}]})
+    signed = render_chart(cols, rows, "bar", "t", exhibit={"color": {"mode": "sign"}})
+    assert plain and ramped and reffed and signed
+    assert ramped != plain and reffed != plain and signed != plain
+
+
+def test_export_percent_units_change_the_render():
+    cols, rows = _RANKING
+    assert render_chart(cols, rows, "bar", "t",
+                        units={"load_factor_pct": "percent"}) != render_chart(cols, rows, "bar", "t")
+
+
+def test_export_scatter_labels_and_quadrant_render():
+    cols = ["aircraft_id", "aircraft_type", "flight_count", "avg_delay_min"]
+    rows = [["HB-JBF", "A320", 22, 16.9], ["HB-JAT", "A220", 10, 16.1],
+            ["HB-JCE", "B777", 46, 13.6], ["HB-JBJ", "A320", 17, 13.5]]
+    plain = render_chart(cols, rows, "scatter", "t")
+    rich = render_chart(cols, rows, "scatter", "t",
+                        exhibit={"label_points": True, "quadrant": {"x": 20, "y": 14.5}})
+    assert plain and rich and rich != plain
+
+
+def test_export_survives_a_malformed_exhibit():
+    # Fail-open: a spec this renderer can't read must never break the document.
+    cols, rows = _RANKING
+    for bad in ({"ref_lines": [{"value": "abc", "label": None}]}, {"color": None},
+                {"quadrant": {"x": "nope"}}, {"ref_lines": "not-a-list"}):
+        assert render_chart(cols, rows, "bar", "t", exhibit=bad) is not None
 
 
 # ── flag default ─────────────────────────────────────────────────────────────
