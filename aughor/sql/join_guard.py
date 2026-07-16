@@ -608,13 +608,15 @@ def _extract_filter_literals(sql: str) -> list[tuple[str, str, str, str]]:
 
 def _persisted_value_sample(conn: "DatabaseConnection", t: str, c: str) -> "list[str]":
     """The R5 persisted entity-value sample for (table, column), [] when absent.
-    Read-only (never builds); keyed by the bare table name like the profiler."""
+    Read through the kernel registry seam (the agent registers the profiler's
+    loader at bootstrap — no Platform→Agent import); keyed by the bare table
+    name like the profiler. Read-only; never builds."""
     try:
         cid = getattr(conn, "_connection_id", "") or ""
         if not cid:
             return []
-        from aughor.tools.profile_cache import load_value_samples
-        return load_value_samples(cid).get((t.split(".")[-1], c)) or []
+        from aughor.kernel.registries.value_samples import load_value_samples_for
+        return load_value_samples_for(cid).get((t.split(".")[-1], c)) or []
     except Exception:
         return []
 

@@ -7,7 +7,20 @@ kernel for the endpoint.
 """
 from __future__ import annotations
 
+import pytest
+
+from aughor.kernel.registries import value_samples as vs_registry
 from aughor.sql.join_guard import _highcard_bind_warnings
+
+
+@pytest.fixture()
+def samples():
+    """Register a fake value-sample loader through the boundary seam (the way the
+    agent's bootstrap registers the real profiler loader); clean up after."""
+    def _install(mapping: dict):
+        vs_registry.register_value_sample_loader(lambda cid: mapping)
+    yield _install
+    vs_registry.clear()
 
 
 class _Res:
@@ -35,9 +48,8 @@ class _FakeConn:
         raise AssertionError(f"unexpected probe {label}")
 
 
-def test_offline_sample_binds_without_a_warehouse_scan(monkeypatch):
-    monkeypatch.setattr("aughor.tools.profile_cache.load_value_samples",
-                        lambda cid: {("sales", "brand"): ["Mytheresa", "Zalando"]})
+def test_offline_sample_binds_without_a_warehouse_scan(samples):
+    samples({("sales", "brand"): ["Mytheresa", "Zalando"]})
     conn = _FakeConn(existing={"Mytheresa"}, live_sample=["SHOULD-NOT-BE-SCANNED"])
     warns = _highcard_bind_warnings(conn, "main.sales", "brand", {("Mytheresea", "=")})
     assert len(warns) == 1
@@ -45,12 +57,11 @@ def test_offline_sample_binds_without_a_warehouse_scan(monkeypatch):
     assert "__filter_highcard_sample__" not in conn.labels   # zero-scan bind
 
 
-def test_stale_offline_suggestion_falls_back_to_live(monkeypatch):
+def test_stale_offline_suggestion_falls_back_to_live(samples):
     # The persisted sample fuzzy-matches the typo to a value that NO LONGER EXISTS
     # ("Mytheresaa", a ghost from before the last refresh) → the guard must verify
     # and fall through to the live domain instead of binding to the ghost.
-    monkeypatch.setattr("aughor.tools.profile_cache.load_value_samples",
-                        lambda cid: {("sales", "brand"): ["Mytheresaa"]})
+    samples({("sales", "brand"): ["Mytheresaa"]})
     conn = _FakeConn(existing={"Mytheresa"}, live_sample=["Mytheresa", "Zalando"])
     warns = _highcard_bind_warnings(conn, "sales", "brand", {("Mytheresea", "=")})
     assert "__filter_highcard_sample__" in conn.labels       # live fallback ran
@@ -58,18 +69,16 @@ def test_stale_offline_suggestion_falls_back_to_live(monkeypatch):
     assert warns[0].suggestion == "Mytheresa"                 # the real value, not the ghost
 
 
-def test_no_offline_sample_behaves_exactly_as_before(monkeypatch):
-    monkeypatch.setattr("aughor.tools.profile_cache.load_value_samples",
-                        lambda cid: {})
+def test_no_offline_sample_behaves_exactly_as_before(samples):
+    samples({})
     conn = _FakeConn(existing=set(), live_sample=["Womenswear", "Menswear"])
     warns = _highcard_bind_warnings(conn, "sales", "category", {("Womenswar", "=")})
     assert "__filter_highcard_sample__" in conn.labels
     assert len(warns) == 1 and warns[0].suggestion == "Womenswear"
 
 
-def test_existing_literal_is_never_second_guessed(monkeypatch):
-    monkeypatch.setattr("aughor.tools.profile_cache.load_value_samples",
-                        lambda cid: {("sales", "brand"): ["Mytheresa"]})
+def test_existing_literal_is_never_second_guessed(samples):
+    samples({("sales", "brand"): ["Mytheresa"]})
     conn = _FakeConn(existing={"Zalando"}, live_sample=[])
     warns = _highcard_bind_warnings(conn, "sales", "brand", {("Zalando", "=")})
     assert warns == []

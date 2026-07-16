@@ -25,7 +25,20 @@ def register_agent_plugins() -> None:
     _register_schema_annotators()
     _register_execution_hooks()
     _register_authz_resolvers()
+    _register_value_sample_loader()
     _REGISTERED = True
+
+
+def _register_value_sample_loader() -> None:
+    """R5 — the profiler's persisted entity-value samples, readable by the platform's
+    filter guard through the registry seam (no Platform→Agent import)."""
+    from aughor.kernel.registries.value_samples import register_value_sample_loader
+
+    def _load(connection_id: str) -> dict:
+        from aughor.tools.profile_cache import load_value_samples
+        return load_value_samples(connection_id)
+
+    register_value_sample_loader(_load)
 
 
 # ── Authz resolvers (Pattern C) — invert security/authz's reach into agent stores ─
