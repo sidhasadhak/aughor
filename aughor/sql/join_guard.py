@@ -619,6 +619,14 @@ def _persisted_value_sample(conn: "DatabaseConnection", t: str, c: str) -> "list
         return []
 
 
+# Public alias (stable cross-module interface — keeps the "no cross-module private
+# imports" ratchet satisfied; the R7 grounded-literal contract reads it).
+def extract_filter_literals(sql: str) -> "list[tuple[str, str, str, str]]":
+    """Public: (table, column, literal, op) for every WHERE/HAVING string-literal
+    equality/IN predicate in ``sql`` (alias-resolved, ON-clause nodes excluded)."""
+    return _extract_filter_literals(sql)
+
+
 def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,
                             litops: "set[tuple[str, str]]") -> list[FilterDomainWarning]:
     """Bind a guessed literal on a HIGH-cardinality text column (names/SKUs/cities) to its nearest

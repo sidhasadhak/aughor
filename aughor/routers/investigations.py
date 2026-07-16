@@ -1790,6 +1790,25 @@ async def _stream_chat(
             except Exception as _e:
                 logger.debug("chat pre-flight validation is best-effort; skipped: %s", _e)
 
+        # R7 — the grounded-literal contract: a value entity resolution BOUND (verified
+        # present in the data) must reach the SQL verbatim; a re-spelled drift of the
+        # SAME entity is repaired deterministically, dry-run-vetted. Self-gating —
+        # `_resolution` exists only when ask.resolve_first ran. Fail-open.
+        if final_sql and _resolution is not None and _resolution.entity_bindings:
+            try:
+                from aughor.sql.grounded_literals import enforce_grounded_literals
+                final_sql, _gl_repairs = await asyncio.to_thread(
+                    enforce_grounded_literals, final_sql, _resolution.entity_bindings,
+                    getattr(db, "dialect", "duckdb"), db.dry_run,
+                )
+                if _gl_repairs:
+                    from aughor.stats import stats as _gl_stats
+                    _gl_stats.inc("grounded_literal_repairs")
+                    logger.info("grounded-literal contract repaired %d literal(s): %s",
+                                len(_gl_repairs), _gl_repairs)
+            except Exception as _gl_exc:
+                logger.debug("grounded-literal enforcement skipped: %s", _gl_exc)
+
         yield _sse("sql", {"sql": final_sql})
         result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
