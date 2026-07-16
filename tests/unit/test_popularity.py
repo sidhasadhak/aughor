@@ -81,6 +81,12 @@ def test_refresh_replaces_stale_counts(popdb):
 def test_refresh_popularity_uses_history_sources(popdb, monkeypatch):
     monkeypatch.setattr("aughor.sql.query_log_miner.collect_logged_sql",
                         lambda cid, limit=5000: list(_CORPUS))
+    # The task_history fallback source must be stubbed too: obs.task_table is
+    # default-ON, so under the full suite's ordering earlier tests leave real
+    # executed SQL in the hermetic ledger and it would leak into the counts
+    # (caught in CI — the local ordering happened to leave it empty).
+    monkeypatch.setattr("aughor.sql.popularity._sqls_from_task_history",
+                        lambda cid, limit: [])
     sig = refresh_popularity("c1")
     assert sig.table_counts["sales"] == 2
     assert load_popularity("c1")["table"]["sales"] == 2

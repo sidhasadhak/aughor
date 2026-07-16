@@ -34,9 +34,9 @@ const FALLBACK_STARTERS = [
 
 // The Genie-style default first-look — always the FIRST, featured starter on a
 // fresh chat. Auto mode routes it to the deterministic overview fact tour.
-const OVERVIEW_STARTER = {
+const OVERVIEW_STARTER: Starter = {
   text: "Show me interesting facts about this schema",
-  mode: "ask" as const,
+  mode: "ask",
 };
 
 // requestMode/purpose (R13): a named research starter's declared route — sent on

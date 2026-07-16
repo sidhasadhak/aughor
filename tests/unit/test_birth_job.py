@@ -124,6 +124,10 @@ async def test_run_birth_mines_popularity_when_flag_on(monkeypatch, tmp_path):
     monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
     monkeypatch.setattr("aughor.sql.query_log_miner.collect_logged_sql",
                         lambda cid, limit=5000: ["SELECT brand FROM sales"])
+    # Stub the task_history fallback source — under full-suite ordering the
+    # hermetic ledger carries earlier tests' executed SQL (CI caught the leak).
+    monkeypatch.setattr("aughor.sql.popularity._sqls_from_task_history",
+                        lambda cid, limit: [])
 
     async def _fake_spawn(conn_id, **kw):
         return {"ok": True, "reason": None, "job_id": "j"}
