@@ -47,11 +47,26 @@ each committed with its tests green + swallow/private-import ratchets at baselin
   cross-section findings (materiality floors, ratio-aware, hedged "ceiling not forecast") + the overview
   named-outlier-ENTITY probe (whale by ID, "potential causes" hedge, drill SQL, existing card styling).
 
-**⏭️ NEXT: push branch + PR(s) (git push needs the user — auto-mode denies it); a live flags-on
-verification pass (flip the five flags on a real canvas: birth job → column-config tree → popularity →
-starters → lenses); then the still-open items: R10 (purpose-tags/auto-title/THUMBS→priors — R13's
-`purpose` field is the seam), R7/R5/R8 deferred follow-ons, R6 live visual eyeball, AG-UI seam mode
-threading (R13 web follow-up), and the order-dependent task_history-recovery test flake (chip filed).**
+**✅ R-PROGRAM LEFTOVERS ALL CLOSED (2026-07-16 later, branch `2026-07-16-r-leftovers`, stacked on the
+wave branch — 6 commits).** AG-UI mode/purpose threading `4c800b1` (+ a latent R13 tsc fix) · **R8a**
+`3df8c19` doc tree → knowledge store with FQN provenance (DocumentChunk gains fqn/kind/source_url — the
+inert `index_text(source_url=)` gap fixed; `index_doc_tree` deterministic-doc_id replace-on-rebuild;
+formatter cites the ontology node; registry env-isolated) · **R5 deferreds** `42a52c8` (filter guard
+binds OFFLINE from the persisted value sample with a 1-row ghost-check + live fallback; `POST
+/connections/{id}/prewarm` = composer-open warm as an idempotent Curator job, ChatPanel fires it) ·
+**R10** `493189a` (purpose → run row Migration-4 + job payload; deterministic canvas auto-name on empty
+name; THUMBS→priors: /chat/feedback helpful → drills table prior + web 👍/👎 on quick answers) · **R8b**
+`1032162` (per-node LLM polish as a content_hash-keyed DECORATION — Merkle invalidates it for free;
+width-routed fast/coder; `aughor ontology-docs --enrich` estimate-then-confirm; R8a embeds the polish) ·
+**R7 deferred** `1e058dc` (the grounded-literal contract enforced post-generation: near-miss re-spellings
+of a BOUND value rewritten to the verified value, dry-run-vetted, self-gating on ask.resolve_first —
+true named-param execution deliberately rejected: every adapter for no added safety).
+
+**⏭️ NEXT: user pushes BOTH branches + PRs (wave branch first, then the stacked leftovers — remember the
+stacked-PR rebase gotcha). R6 live eyeball = the ONE open R-item (user-side, ~5 min): with the dev stack
+running and `ada.progress_events` on (default), ask any deep question and watch the report prose stream
+token-by-token into the InvestigationReport card before the final report lands. Then: the live flags-on
+pass for the five wave flags; the task_history-recovery flake chip.**
 
 **NEW — Wire study #2 (canvas-birth + 2 Deep-Research runs on our airline dataset) →
 [`docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md`](docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md).**
