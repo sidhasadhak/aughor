@@ -95,9 +95,17 @@ def _migrate_v3(c: sqlite3.Connection) -> None:
     add_column_if_missing(c, "investigations", "agent_id", "TEXT NOT NULL DEFAULT ''")
 
 
+def _migrate_v4(c: sqlite3.Connection) -> None:
+    """R10 — persist the request's purpose tag (a named starter's provenance,
+    the Databricks request_purpose analog) on the run row, so runs are queryable
+    per purpose the same way they are per agent. '' = a free-typed question."""
+    add_column_if_missing(c, "investigations", "purpose", "TEXT NOT NULL DEFAULT ''")
+
+
 _MIGRATIONS = [
     Migration(2, "additive columns + backfills (through 2026-07)", _migrate_v2),
     Migration(3, "add agent_id (per-agent run history)", _migrate_v3),
+    Migration(4, "add purpose (starter provenance)", _migrate_v4),
 ]
 
 
@@ -128,19 +136,22 @@ def create_investigation(
     connection_id: str,
     canvas_id: Optional[str] = None,
     agent_id: str = "",
+    purpose: str = "",
 ) -> str:
     """Insert a new in-progress row and return its ID.
 
     ``agent_id`` records the active user-agent (persona) the run executed under
     ('' when none), so the Agent Workspace can join run history per agent.
+    ``purpose`` (R10) is the named starter's purpose tag ('' for a free-typed
+    question) — the run's provenance, queryable like the agent.
     """
     inv_id = uuid.uuid4().hex[:8]
     c = _conn()
     _ensure_schema(c)
     c.execute(
-        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (inv_id, question, connection_id, canvas_id, _now(), "running", current_org_id(), agent_id),
+        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id, purpose) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (inv_id, question, connection_id, canvas_id, _now(), "running", current_org_id(), agent_id, purpose or ""),
     )
     c.commit()
     c.close()
@@ -257,10 +268,12 @@ def save_chat_turn(
     canvas_id: str | None = None,
     insight: dict | None = None,
     overview_report: dict | None = None,
+    purpose: str = "",
 ) -> str:
     """Persist a completed chat turn as a history row, linked to a session and
     (when run inside a Canvas) tagged with its canvas_id so Canvas history can
-    scope to the specific Canvas rather than the whole connection."""
+    scope to the specific Canvas rather than the whole connection.
+    ``purpose`` (R10) — the named starter's tag when this turn was one."""
     inv_id = uuid.uuid4().hex[:8]
     sid = session_id or uuid.uuid4().hex[:12]
     now = _now()
@@ -282,12 +295,12 @@ def save_chat_turn(
         """INSERT INTO investigations
            (id, question, connection_id, canvas_id, started_at, completed_at,
             status, hypothesis_count, query_count, headline,
-            report_json, kind, session_id, org_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            report_json, kind, session_id, org_id, purpose)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (inv_id, question, connection_id, canvas_id, now, now,
          "complete", 0, 1, headline,
          json.dumps(report),
-         "chat", sid, current_org_id()),
+         "chat", sid, current_org_id(), purpose or ""),
     )
     c.commit()
     c.close()

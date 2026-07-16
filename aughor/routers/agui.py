@@ -101,6 +101,10 @@ def ask_request_from(inp: RunAgentInput) -> AskRequest:
         except Exception as exc:
             tolerate(exc, "AG-UI forwardedProps carried a malformed history item; skipping it",
                      counter="agui.bad_history_item")
+    # R13 — a named starter's declared route; anything but the two valid modes
+    # (including a malformed forwardedProps value) degrades to auto routing
+    # rather than 422-ing the run.
+    _mode = _forwarded(inp, "mode")
     return AskRequest(
         question=_latest_user_question(inp),
         connection_id=_forwarded(inp, "connection_id") or "",
@@ -109,6 +113,8 @@ def ask_request_from(inp: RunAgentInput) -> AskRequest:
         history=history,
         schema=_forwarded(inp, "schema"),
         depth=_forwarded(inp, "depth") or "auto",
+        mode=_mode if _mode in ("investigate", "explore") else None,
+        purpose=str(_forwarded(inp, "purpose") or ""),
         agent_id=_forwarded(inp, "agent_id"),
         skip_clarify=bool(_forwarded(inp, "skip_clarify", False)),
         clarify_reading=_forwarded(inp, "clarify_reading") or "",

@@ -105,11 +105,12 @@ def test_list_investigations_for_agent_filters(hist_db):
 
 
 def test_migration_is_idempotent(hist_db):
-    history.create_investigation("q", "conn1")  # builds + migrates to v3
+    history.create_investigation("q", "conn1")  # builds + migrates to the head version
     c = tune(sqlite3.connect(str(hist_db)))
     before = c.execute("PRAGMA user_version").fetchone()[0]
     run_migrations(c, history._MIGRATIONS, store="history")  # no-op second pass
     after = c.execute("PRAGMA user_version").fetchone()[0]
     c.close()
-    assert before == after == 3
+    assert before == after == history._MIGRATIONS[-1].version  # head (v4: purpose, R10)
     assert "agent_id" in _columns(hist_db)
+    assert "purpose" in _columns(hist_db)

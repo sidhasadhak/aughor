@@ -102,3 +102,28 @@ def test_agui_run_deep_clarify_pause_then_resume(client: TestClient, monkeypatch
     # …and the resumed run translated + finished cleanly, carrying the resolved headline.
     assert [e["type"] for e in ev2][-1] == "RUN_FINISHED"
     assert any(e["type"] == "TEXT_MESSAGE_CONTENT" and "18.8%" in e.get("delta", "") for e in ev2)
+
+
+def test_agui_run_carries_starter_mode_and_purpose(client: TestClient, monkeypatch):
+    """R13 parity — a named starter's declared route + purpose tag ride forwardedProps
+    into the real AskRequest; a malformed mode degrades to auto instead of 422-ing."""
+    monkeypatch.setenv("AUGHOR_AGUI_ENDPOINT", "1")
+    captured: dict = {}
+
+    async def fake_ask(req, request):
+        captured["mode"] = req.mode
+        captured["purpose"] = req.purpose
+        yield 'data: {"type": "done"}\n\n'
+
+    monkeypatch.setattr("aughor.routers.agui.build_ask_stream",
+                        lambda req, request: fake_ask(req, request))
+
+    r = client.post("/agui/run", json=_fresh_input(forwardedProps={
+        "connection_id": "c", "mode": "explore", "purpose": "outlier_scan"}))
+    assert r.status_code == 200, r.text
+    assert captured == {"mode": "explore", "purpose": "outlier_scan"}
+
+    r = client.post("/agui/run", json=_fresh_input(forwardedProps={
+        "connection_id": "c", "mode": "not-a-mode", "purpose": ""}))
+    assert r.status_code == 200, r.text
+    assert captured == {"mode": None, "purpose": ""}    # degraded, not rejected

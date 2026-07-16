@@ -158,6 +158,68 @@ async def test_connection(conn_id: str):
         return {"ok": False, "message": str(e)}
 
 
+def _warm_profiles(conn_id: str) -> dict:
+    """The profiling stage of the heavy intelligence build, alone — parse tables,
+    infer FK hints the same way `_intelligence` does (so the cached profiles are
+    byte-identical to what the heavy build would produce and it cache-hits later),
+    then build-or-hit the profile cache, which persists the R5 entity-value
+    samples. Deterministic, no LLM."""
+    from aughor.tools.profile_cache import get_or_build_profiles
+    from aughor.tools.schema import compute_join_map, parse_schema_tables
+    from aughor.tools.table_names import bare
+    db = open_connection_for(conn_id)
+    try:
+        base = db.get_schema()
+        table_cols = parse_schema_tables(base)
+        tables = [bare(t) for t in table_cols]
+        jmap = compute_join_map(table_cols)
+        fk_hints: dict[str, set] = {t: set() for t in tables}
+        for j in jmap.get("joins", []):
+            fk_hints.setdefault(j["t1"], set()).add(j["c1"])
+        tp, cp = get_or_build_profiles(db, conn_id, tables, fk_hints)
+        return {"tables": len(tp), "columns": len(cp)}
+    finally:
+        try:
+            db.close()
+        except Exception:
+            logger.debug("prewarm: connection close failed", exc_info=True)
+
+
+@router.post("/connections/{conn_id}/prewarm", status_code=202)
+async def prewarm_connection(conn_id: str):
+    """R5 deferred (closed) — the composer-open warm, the Databricks
+    value-index/preload-cache analog: build the profiles (and the persisted
+    entity-value samples entity resolution + the filter guard bind from) BEFORE
+    the first question. Runs as one supervised kernel job (kind `profile`, the
+    Curator charter) with an idempotency key, so composer-open spam can't stack
+    builds and a fresh cache makes the job a fast no-op. Skips (200-shaped 202)
+    when the Curator agent is disabled for the workspace — governance, not a flag.
+    """
+    try:
+        get_dsn(conn_id)   # raises KeyError for unknown ids; handles the builtins
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    from aughor.kernel.agents import is_enabled
+    from aughor.workspace.store import workspace_for_connection
+    if not is_enabled("curator", workspace_for_connection(conn_id)):
+        return {"submitted": False, "reason": "curator_disabled"}
+
+    import asyncio as _asyncio
+    from aughor.kernel.jobs import kernel
+
+    async def _job():
+        return await _asyncio.get_running_loop().run_in_executor(
+            None, lambda: _warm_profiles(conn_id))
+
+    job_id = await kernel().submit(
+        "profile", _job, conn_id=conn_id,
+        idempotency_key=f"prewarm:{conn_id}",
+        payload={"prewarm": True},
+    )
+    return {"submitted": True, "job_id": job_id}
+
+
 @router.delete("/connections/{conn_id}", status_code=204)
 def remove_connection(conn_id: str):
     # P4: connection delete triggers a cascade purge (profiles, investigations,

@@ -151,8 +151,19 @@ def _intelligence(conn, base: str) -> str:
             if flag_enabled("ontology.autodoc"):
                 try:
                     from aughor.ontology.doctree import build_and_persist, table_stats_from_profiles
-                    build_and_persist(cid, graph.schema_name, graph=graph,
-                                      table_stats=table_stats_from_profiles(tp))
+                    _tree = build_and_persist(cid, graph.schema_name, graph=graph,
+                                              table_stats=table_stats_from_profiles(tp))
+                    # R8a — embed the compiled docs into the knowledge store with FQN
+                    # provenance (the retrieval consumer). Its own best-effort gate: no
+                    # embedder/Qdrant → the YAML artifact alone, exactly as before.
+                    try:
+                        from aughor.knowledge.indexer import index_doc_tree
+                        index_doc_tree(_tree, connection_id=cid,
+                                       schema=graph.schema_name or "default")
+                    except Exception as _idx_exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_idx_exc, "doc-tree knowledge embedding is best-effort",
+                                 counter="ontology.autodoc", conn_id=cid or None)
                 except Exception as _doc_exc:
                     from aughor.kernel.errors import tolerate
                     tolerate(_doc_exc, "ontology doc-tree build is best-effort",

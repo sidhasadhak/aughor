@@ -1073,6 +1073,7 @@ async def _stream_chat(
     session_id: str = "",
     canvas_id: Optional[str] = None,
     skip_clarify: bool = False,
+    purpose: str = "",
 ) -> AsyncGenerator[str, None]:
     # Resolve canvas scope so table names resolve correctly AND the model only
     # sees in-scope tables. Multi-dataset connections (local_upload) expose every
@@ -1789,6 +1790,25 @@ async def _stream_chat(
             except Exception as _e:
                 logger.debug("chat pre-flight validation is best-effort; skipped: %s", _e)
 
+        # R7 — the grounded-literal contract: a value entity resolution BOUND (verified
+        # present in the data) must reach the SQL verbatim; a re-spelled drift of the
+        # SAME entity is repaired deterministically, dry-run-vetted. Self-gating —
+        # `_resolution` exists only when ask.resolve_first ran. Fail-open.
+        if final_sql and _resolution is not None and _resolution.entity_bindings:
+            try:
+                from aughor.sql.grounded_literals import enforce_grounded_literals
+                final_sql, _gl_repairs = await asyncio.to_thread(
+                    enforce_grounded_literals, final_sql, _resolution.entity_bindings,
+                    getattr(db, "dialect", "duckdb"), db.dry_run,
+                )
+                if _gl_repairs:
+                    from aughor.stats import stats as _gl_stats
+                    _gl_stats.inc("grounded_literal_repairs")
+                    logger.info("grounded-literal contract repaired %d literal(s): %s",
+                                len(_gl_repairs), _gl_repairs)
+            except Exception as _gl_exc:
+                logger.debug("grounded-literal enforcement skipped: %s", _gl_exc)
+
         yield _sse("sql", {"sql": final_sql})
         result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
@@ -1939,7 +1959,7 @@ async def _stream_chat(
                     rows=result.rows, chart_type=answer.chart_type,
                     tables_used=_extract_tables(final_sql or ""),
                     intent=answer.intent, approach=answer.approach,
-                    canvas_id=canvas_id,
+                    canvas_id=canvas_id, purpose=purpose,
                 )
             )
         except Exception as exc:
@@ -2321,6 +2341,7 @@ async def _stream_investigation(
     deep: bool = False,
     history: Optional[list] = None,
     requested_mode: str = "investigate",
+    purpose: str = "",
 ) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
 
@@ -2390,7 +2411,8 @@ async def _stream_investigation(
             yield _sse("done", {})
             return
 
-    inv_id = create_investigation(question, connection_id, canvas_id=canvas_id, agent_id=_current_agent_id())
+    inv_id = create_investigation(question, connection_id, canvas_id=canvas_id,
+                                  agent_id=_current_agent_id(), purpose=purpose)
     from aughor import telemetry as _telemetry
     trace_id = _telemetry.new_trace(inv_id, question, connection_id)
     yield _sse("start", {"question": question, "connection_id": connection_id, "investigation_id": inv_id, "trace_id": trace_id})
@@ -3075,6 +3097,7 @@ async def _investigation_job_streamed(
     deep: bool = False,
     history: Optional[list] = None,
     requested_mode: str = "investigate",
+    purpose: str = "",
 ) -> AsyncGenerator[str, None]:
     """Run the investigation as a first-class supervised kernel job (K1).
 
@@ -3097,7 +3120,7 @@ async def _investigation_job_streamed(
                 hitl=hitl, skip_cache=skip_cache, canvas_id=canvas_id,
                 schema_scope=schema_scope, seed_sql=seed_sql, seed_context=seed_context,
                 insight_id=insight_id, deep=deep, history=history,
-                requested_mode=requested_mode,
+                requested_mode=requested_mode, purpose=purpose,
             ):
                 await queue.put(sse)
         finally:
@@ -3107,7 +3130,9 @@ async def _investigation_job_streamed(
     job_id = await kernel().submit(
         "investigation", _drive,
         conn_id=connection_id, canvas_id=canvas_id,
-        payload={"question": question[:200]},
+        # R10 — the starter's purpose tag rides the job row (the Databricks
+        # request_purpose analog), so Fleet/jobs are queryable per purpose.
+        payload={"question": question[:200], **({"purpose": purpose} if purpose else {})},
     )
     logger.debug("investigation job %s submitted", job_id)
     while True:
@@ -3536,13 +3561,14 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             # Normally "investigate"; "explore" only when the deterministic wide detector fired
             # under explore.route_wide. (depth=="deep" ⇒ mode ∈ {investigate, explore}.)
             requested_mode=route.mode,
+            purpose=req.purpose,  # R10 — starter provenance on the job row + run record
         ):
             yield sse
     else:
         async for sse in _metered_stream(
             _stream_chat(req.question, conn_id, req.history, request,
                          session_id=req.session_id, canvas_id=req.canvas_id,
-                         skip_clarify=req.skip_clarify),
+                         skip_clarify=req.skip_clarify, purpose=req.purpose),
             budget=_insight_budget(conn_id),
         ):
             yield sse
