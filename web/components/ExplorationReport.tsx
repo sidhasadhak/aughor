@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ExplorationReport as ExplorationReportType, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
-import { BriefDetails, BriefDetailBlock } from "@/components/brief/Brief";
+import { BriefDetails, BriefDetailBlock, renderEmphasis } from "@/components/brief/Brief";
 import { recordVerdict } from "@/lib/api";
 
 interface Props {
@@ -71,7 +71,7 @@ function SubQuestionCard({
 
           {/* Answer takeaway */}
           {answer.answer && (
-            <p className="aug-fs-ui text-zinc-100 leading-relaxed">{answer.answer}</p>
+            <p className="aug-fs-ui text-zinc-100 leading-relaxed">{renderEmphasis(answer.answer)}</p>
           )}
 
           {/* Evidence — chart with grain-aware controls + chart⇄table toggle */}
@@ -89,7 +89,7 @@ function SubQuestionCard({
           {answer.insight && answer.insight !== answer.answer && (
             <p className="aug-fs-sm text-zinc-400 leading-relaxed border-t border-zinc-800/60 pt-2">
               <span className="text-zinc-500 uppercase tracking-wide aug-fs-xs mr-1.5">Insight</span>
-              {answer.insight}
+              {renderEmphasis(answer.insight)}
             </p>
           )}
 
@@ -234,12 +234,13 @@ export function ExplorationReportView({ report, subqAnswers, queryCount, connect
         <p className="aug-fs-h2 font-medium text-zinc-100 leading-snug">{report.headline}</p>
       </div>
 
-      {/* Summary — conclusion + narrative merged into one block */}
+      {/* Summary — conclusion + narrative merged into one block. The wave narrator writes
+          markdown **emphasis** around its key numbers — render it, never print asterisks. */}
       {(report.conclusion || showNarrative) && (
         <div className="border-t border-zinc-800/60 pt-4 space-y-2">
           <SectionLabel>Summary</SectionLabel>
-          {report.conclusion && <p className="leading-relaxed">{report.conclusion}</p>}
-          {showNarrative && <p className="leading-relaxed text-zinc-400">{report.narrative}</p>}
+          {report.conclusion && <p className="leading-relaxed">{renderEmphasis(report.conclusion)}</p>}
+          {showNarrative && <p className="leading-relaxed text-zinc-400">{renderEmphasis(report.narrative!)}</p>}
         </div>
       )}
 

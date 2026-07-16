@@ -247,17 +247,22 @@ function EvidenceBlock({ finding, onShowSource, sourceNo }: { finding: Investiga
 
 // ── Phase — a flat narrative section (no accordion, no chevron, no indent) ─────
 
-function PhaseSection({ phase, onShowSource, sourceNos }: { phase: InvestigationPhase; onShowSource?: ShowSource; sourceNos?: Map<string, number> }) {
+function PhaseSection({ phase, onShowSource, sourceNos, execSummary }: { phase: InvestigationPhase; onShowSource?: ShowSource; sourceNos?: Map<string, number>; execSummary?: string }) {
   if (phase.status === "skipped") return null;
   const findings = phase.findings.filter(f => f.interpretation || f.columns.length > 0 || f.error);
   if (!phase.summary && findings.length === 0) return null;
+  // The deterministic synthesis fallback STITCHES the phase summaries into the executive
+  // summary — re-printing this phase's summary below it reads the same paragraph twice
+  // (three times counting the headline). Skip a summary the head already carries.
+  const _norm = (s: string) => s.replace(/\*+/g, "").replace(/\s+/g, " ").trim();
+  const summaryRedundant = !!phase.summary && !!execSummary && _norm(execSummary).includes(_norm(phase.summary));
 
   return (
     // Clean-output policy (Genie-style): no phase-machinery header ("CROSS-SECTIONAL
     // SCAN", "TEMPORAL TREND — WHEN") — the reader gets a continuous, confident
     // narrative; which internal phase produced a finding is process, not insight.
     <BriefSection>
-      {phase.summary && <BriefProse text={phase.summary} />}
+      {phase.summary && !summaryRedundant && <BriefProse text={phase.summary} />}
       {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} sourceNo={sourceNos?.get(f.finding_id)} />)}
     </BriefSection>
   );
@@ -623,7 +628,10 @@ export function InvestigationReportView({
   return (
     <Brief>
       <BriefHeadline>{report.headline}</BriefHeadline>
-      {report.executive_summary && <BriefProse text={report.executive_summary} />}
+      {/* Skip a summary that only restates the headline (the fallback path can emit both
+          from the same sentence) — one text, rendered once. */}
+      {report.executive_summary && report.executive_summary.trim() !== report.headline?.trim()
+        && <BriefProse text={report.executive_summary} />}
 
       <BriefMeta
         items={[
@@ -649,7 +657,7 @@ export function InvestigationReportView({
             .map((f, i) => [f.finding_id, i + 1] as const),
         );
         return analysisPhases.map(phase => (
-          <PhaseSection key={phase.phase_id} phase={phase} onShowSource={onShowSource} sourceNos={sourceNos} />
+          <PhaseSection key={phase.phase_id} phase={phase} onShowSource={onShowSource} sourceNos={sourceNos} execSummary={report.executive_summary} />
         ));
       })()}
 

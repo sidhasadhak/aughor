@@ -8,6 +8,7 @@ renderer. The two never touch each other.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -243,7 +244,11 @@ def _build_ada(inv: dict) -> ExportDoc:
         if _argument and (ph.get("phase_id") or "") == "intake":
             continue
         blocks.append(_h(str(ph.get("phase_name") or ph.get("phase_id") or "Phase").strip()))
-        if ph.get("summary"):
+        # The deterministic synthesis fallback STITCHES phase summaries into the executive
+        # summary — re-printing one here reads the same paragraph twice. Skip what the head
+        # already carries (whitespace/emphasis-insensitive containment).
+        _n = lambda s: re.sub(r"\s+", " ", re.sub(r"\*+", "", s or "")).strip()
+        if ph.get("summary") and _n(ph["summary"]) not in _n(rep.get("executive_summary") or ""):
             blocks.append(_p(ph["summary"]))
         for f in ph["findings"]:
             if f.get("error"):

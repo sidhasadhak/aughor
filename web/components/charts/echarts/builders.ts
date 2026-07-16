@@ -48,11 +48,23 @@ export function isShareField(rows: Row[], f: string, units?: Record<string, stri
   return SHARE_COL.test(f) && maxAbs(rows, f) <= 1.0001;
 }
 
+// Symbols for the SOURCE-currency unit hint ("currency:CHF"). Codes with no compact
+// symbol print as a code prefix ("CHF 1.9M") — honest beats pretty.
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", INR: "₹",
+  AUD: "A$", CAD: "C$", SGD: "S$", CHF: "CHF ", BRL: "R$", ZAR: "R",
+};
+
 export function valueFormatter(rows: Row[], f: string, units?: Record<string, string>): (v: unknown) => string {
   const share = isShareField(rows, f, units);
-  // Money fields carry the effective reporting currency symbol (override-wins), so a
-  // chart's values read in the org's currency — matching the KPI cards + tables.
-  const sym = !share && isMoneyColumn(f) ? effectiveCurrencySymbol() : "";
+  // The backend's SOURCE-currency unit ("currency:CHF", read from the metric SQL) is
+  // authoritative and beats the org display symbol — a € axis over CHF data is a lie.
+  // Absent that hint, money fields carry the effective reporting currency symbol
+  // (override-wins), matching the KPI cards + tables.
+  const srcCur = units?.[f]?.startsWith("currency:") ? units[f].slice("currency:".length) : null;
+  const sym = share ? ""
+    : srcCur ? (CURRENCY_SYMBOLS[srcCur] ?? `${srcCur} `)
+    : isMoneyColumn(f) ? effectiveCurrencySymbol() : "";
   return (v) => {
     const n = num(v);
     if (v == null || isNaN(n)) return "—";

@@ -1327,6 +1327,32 @@ def _chart_type_for_finding(finding: dict, intent: str) -> str:
     return finding.get("chart_type") or "auto"
 
 
+# The metric SQL names its source column (SUM(tickets.fare_chf)) — the currency code
+# embedded there is the DATA's currency, which no display preference may overwrite.
+_SRC_CURRENCY_RE = re.compile(r"_(chf|usd|eur|gbp|jpy|cny|inr|aud|cad|sgd|brl|zar)\b", re.I)
+_MONEYISH_COL_RE = re.compile(r"(revenue|fare|amount|cost|price|spend|gmv|sales|value|profit|total)", re.I)
+
+
+def _tag_currency_columns(finding: dict, metric_sql: str) -> None:
+    """Carry the metric's SOURCE currency (fare_chf → CHF) on `column_units` as
+    "currency:CHF", so no surface relabels CHF data with the org's display symbol
+    (the live A/B showed a €2.0M axis beside "CHF" prose). Additive — an existing
+    unit (percent) always wins; no currency token in the SQL → no-op."""
+    m = _SRC_CURRENCY_RE.search(metric_sql or "")
+    if not m:
+        return
+    code = m.group(1).upper()
+    units = dict(finding.get("column_units") or {})
+    changed = False
+    for c in finding.get("columns") or []:
+        name = str(c)
+        if name not in units and _MONEYISH_COL_RE.search(name) and not _SHARE_COL_RE.search(name):
+            units[name] = f"currency:{code}"
+            changed = True
+    if changed:
+        finding["column_units"] = units
+
+
 def _tag_percent_columns(findings: list, match) -> None:
     """Mark every finding column whose name matches `match` (a compiled regex) as a percent on the
     finding's `column_units`, so the UI formats it the one consistent way. Additive; idempotent."""
@@ -1390,22 +1416,50 @@ def _normalize_pct_key_numbers(finding: dict) -> None:
         kn["value"] = approx + _fmt_pct(num) + tail
 
 
+def _fallback_headline(summary: str) -> str:
+    """First sentence of a phase summary as a headline, cut at a WORD boundary when
+    over length — the raw [:160] slice used to shear mid-clause ("…while the
+    lowest-ranked individual"), which read as a rendering bug in the report head."""
+    first = re.split(r"(?<=[.!?])\s", summary or "")[0].strip()
+    if len(first) <= 160:
+        return first
+    return first[:160].rsplit(" ", 1)[0].rstrip(" ,;:—-") + "…"
+
+
+def _fmt_compact_num(v: float) -> str:
+    """1951747 → '1.95M' — the compact scale every chart axis already speaks; a key
+    number sitting beside that chart must not read '1951747.00'."""
+    a = abs(v)
+    if a >= 1e9:
+        return f"{v / 1e9:.2f}B"
+    if a >= 1e6:
+        return f"{v / 1e6:.2f}M"
+    if a >= 1e3:
+        return f"{v / 1e3:.1f}K"
+    return f"{v:,.2f}" if a != int(a) else f"{int(v):,}"
+
+
+_AVG_COL_RE = re.compile(r"avg|average|per[\s_/-]|mean", re.I)
+_COUNT_COL_RE = re.compile(r"^(n|count|records|n_records|row_count)$", re.I)
+
+
 def _fix_xsec_extreme_key_numbers(finding: dict, is_pct: bool = False) -> None:
     """F4 — make the 'lowest'/'highest' key numbers agree with the finding's OWN charted rows.
     The interpret LLM occasionally reports an extreme that is not the actual min/max of the result
     set (e.g. 'highest 42.68%' when the top bar in the very same chart is 43.07%). Recompute both
-    extremes deterministically from the rows so a key number can never contradict the chart beside
-    it. Runs AFTER chart trimming, so columns are [dimension, metric]. Also strips the misleading
-    '(top N)' parenthetical — the scan is weakest-first, so these are the LOWEST values, not the top."""
+    extremes deterministically from the rows so a key number can never contradict the chart.
+
+    A cross-section grid carries TWO measures — a total (metric_total) and a per-record average —
+    so a tile is routed to its OWN column by label: an 'avg/per' tile reads the average column, a
+    'total' tile the total column. Getting this wrong is what stamped a total's extreme onto the
+    avg tile ('Poland avg/ticket: 1951747.00 (Egypt)') and left the total unformatted. Magnitudes
+    format compact (1.95M) to match the axis; the '(top N)' parenthetical is stripped (weakest-first
+    ⇒ these are the LOWEST)."""
     cols = finding.get("columns") or []
     rows = finding.get("rows") or []
     kns = finding.get("key_numbers") or []
     if len(cols) < 2 or not rows or not kns:
         return
-    midx = next((i for i, c in enumerate(cols) if _RATIO_METRIC_COL_RE.search(c)), None)
-    if midx is None:
-        midx = len(cols) - 1  # trimmed cross-section findings are [dimension, metric]
-    dim_idx = 1 if midx == 0 else 0
 
     def _num(v):
         try:
@@ -1413,28 +1467,51 @@ def _fix_xsec_extreme_key_numbers(finding: dict, is_pct: bool = False) -> None:
         except Exception:
             return None
 
-    vals = [(_num(r[midx]), r[dim_idx]) for r in rows
-            if midx < len(r) and dim_idx < len(r) and _num(r[midx]) is not None]
-    if not vals:
-        return
-    lo = min(vals, key=lambda x: x[0])
-    hi = max(vals, key=lambda x: x[0])
+    # Identify the dimension (first non-numeric), the PRIMARY total metric, and the AVG column.
+    def _is_numeric_col(i):
+        return any(_num(r[i]) is not None for r in rows[:20] if i < len(r))
+    numeric = [i for i in range(len(cols)) if _is_numeric_col(i)]
+    dim_idx = next((i for i in range(len(cols)) if i not in numeric), 0)
+    measures = [i for i in numeric if not _COUNT_COL_RE.match(str(cols[i]).strip())]
+    avg_idx = next((i for i in measures if _AVG_COL_RE.search(str(cols[i]))), None)
+    total_idx = next((i for i in measures if i != avg_idx), None)
+    # Ratio/percent metric: the total IS the rate; there is no separate avg tile.
+    ratio_idx = next((i for i in measures if _RATIO_METRIC_COL_RE.search(str(cols[i]))), None)
+    if ratio_idx is not None:
+        total_idx, avg_idx = ratio_idx, None
+
+    def _extremes(midx):
+        if midx is None:
+            return None, None
+        vals = [(_num(r[midx]), r[dim_idx]) for r in rows
+                if midx < len(r) and dim_idx < len(r) and _num(r[midx]) is not None]
+        if not vals:
+            return None, None
+        return min(vals, key=lambda x: x[0]), max(vals, key=lambda x: x[0])
+
+    total_lo, total_hi = _extremes(total_idx)
+    avg_lo, avg_hi = _extremes(avg_idx)
 
     def _reformat(template: str, num: float, dim) -> str:
-        """Replace the numeric part of the LLM's value string, preserving its unit (% / €), and
-        keep/refresh a trailing '(dimension)' so value and label stay self-consistent. For a percent
-        metric the number is formatted scale-aware (0.4096 → "41.0%"), so it can't disagree with the
-        chart, whose axis now formats the same column the same way."""
+        """Replace the numeric part of the LLM's value string, preserving its unit (% / €) and a
+        trailing '(dimension)' so value and label stay self-consistent. A percent is scale-aware
+        (0.4096 → '41.0%'); a magnitude is compact (1.95M) — matching the chart's axis, never a
+        raw '1951747.00'."""
         t = template or ""
         if is_pct:
             return f"{_fmt_pct(num)} ({dim})"
         unit = "%" if "%" in t else ""
-        return f"{num:.2f}{unit} ({dim})"
+        return f"{_fmt_compact_num(num)}{unit} ({dim})"
 
     for kn in kns:
         lbl = (kn.get("label") or "")
         low = lbl.lower()
         kn["label"] = re.sub(r"\s*\(top\s*\d+\)", "", lbl).strip()  # weakest-first ⇒ not "top"
+        # Route the tile to its own measure — an avg/per label reads the avg column, else the total.
+        is_avg_tile = bool(_AVG_COL_RE.search(low))
+        lo, hi = (avg_lo, avg_hi) if (is_avg_tile and avg_lo is not None) else (total_lo, total_hi)
+        if lo is None:
+            continue
         if any(w in low for w in ("lowest", "weakest", "min")):
             kn["value"] = _reformat(kn.get("value", ""), lo[0], lo[1])
         elif any(w in low for w in ("highest", "strongest", "max", "best", "top")):
@@ -4531,6 +4608,9 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         _fix_xsec_extreme_key_numbers(f, is_pct=_metric_is_pct)
         # Tag % columns + canonicalise every key number's scale/precision (no-op for non-% metrics).
         _apply_percent_formatting(f, _metric_is_pct)
+        # Tag money columns with the metric's SOURCE currency (fare_chf → "currency:CHF") so the
+        # chart axis can't say € over CHF data. Percent units win; token-less SQL is a no-op.
+        _tag_currency_columns(f, metric_sql)
         # R15 — decision-grade opportunity framing: benchmark-gap × volume, computed
         # deterministically from this finding's own segment rows (no model, no extra
         # query). Flag-gated; a grid the lens can't read honestly annotates nothing.
@@ -6330,7 +6410,7 @@ def ada_synthesize(state: AgentState) -> dict:
                       if p.get("phase_id") != "intake"
                       and p.get("status") not in ("skipped", "error")
                       and _clean(p.get("summary"))]
-        _headline = re.split(r"(?<=[.!?])\s", _summaries[0])[0][:160] if _summaries \
+        _headline = _fallback_headline(_summaries[0]) if _summaries \
             else "Investigation complete — see the phase findings below."
         _exec = (" ".join(_summaries))[:900] or "See the individual phase findings below for details."
         answer_report = AnswerReport(

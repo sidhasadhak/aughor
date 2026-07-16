@@ -83,13 +83,23 @@ def _severity_ramp(lo: float, hi: float, field: str) -> Callable[[float], tuple]
     return _at
 
 
+_CURRENCY_SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "CNY": "¥",
+                     "INR": "₹", "AUD": "A$", "CAD": "C$", "SGD": "S$", "CHF": "CHF ",
+                     "BRL": "R$", "ZAR": "R"}
+
+
 def _fmt_for(field: str, units: Optional[dict]) -> Callable[[float], str]:
     """Per-field value formatter. An explicit `{col: "percent"}` unit is authoritative
     and scale-aware — a fraction (0.745) is ×100, an already-scaled percent (74.5) is
-    left — so the PDF reads "74.5%" exactly where the app does. Mirrors the web's
-    valueFormatter (builders.ts); absent a hint this is the legacy `_compact`."""
-    if units and units.get(field) == "percent":
+    left — so the PDF reads "74.5%" exactly where the app does; a `"currency:CHF"`
+    unit prefixes the SOURCE currency's symbol. Mirrors the web's valueFormatter
+    (builders.ts); absent a hint this is the legacy `_compact`."""
+    u = (units or {}).get(field)
+    if u == "percent":
         return lambda n: (f"{n * 100:.1f}%" if abs(n) <= 1.0001 else f"{n:.1f}%")
+    if isinstance(u, str) and u.startswith("currency:"):
+        sym = _CURRENCY_SYMBOLS.get(u[len("currency:"):], u[len("currency:"):] + " ")
+        return lambda n: sym + _compact(n)
     return _compact
 
 
