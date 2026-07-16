@@ -154,6 +154,20 @@ def _build_chat(inv: dict) -> ExportDoc:
     return ExportDoc(title=headline, subtitle=inv.get("question") or "", meta=meta, kind="chat", blocks=blocks)
 
 
+def _strip_planner_notes(text: str) -> str:
+    """Strip the explore wave's internal planner directives from reader-facing prose:
+    paragraphs/lines beginning with "→" are forward-chaining notes to the NEXT question
+    ("→ Q5 should investigate…") — process, not analysis. Mirrors web/lib/format.ts."""
+    kept = []
+    for p in re.split(r"\n{2,}", text or ""):
+        if p.strip().startswith("→"):
+            continue        # a directive paragraph goes whole, wrapped lines included
+        lines = [ln for ln in p.split("\n") if not ln.strip().startswith("→")]
+        if "\n".join(lines).strip():
+            kept.append("\n".join(lines))
+    return "\n\n".join(kept).strip()
+
+
 def _build_explore(inv: dict) -> ExportDoc:
     """The explore-wave 'landscape' report (R9/R13: narrative → one section per
     sub-question with its own evidence → conclusion → actions).
@@ -177,13 +191,13 @@ def _build_explore(inv: dict) -> ExportDoc:
     blocks: list[Block] = []
     if rep.get("narrative"):
         blocks.append(_h("What the exploration found"))
-        blocks.append(_p(rep["narrative"]))
+        blocks.append(_p(_strip_planner_notes(rep["narrative"])))
     for a in answers:
         if a.get("error"):
             continue
         title = (a.get("question") or "").strip() or "Exploration step"
         blocks.append(_h(title))
-        prose = (a.get("insight") or a.get("answer") or "").strip()
+        prose = _strip_planner_notes((a.get("insight") or a.get("answer") or "").strip())
         if prose:
             blocks.append(_p(prose))
         blocks.extend(_exhibits(a.get("columns"), a.get("rows"), a.get("chart_type") or "auto",

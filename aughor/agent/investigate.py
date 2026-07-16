@@ -1507,9 +1507,11 @@ def _fix_xsec_extreme_key_numbers(finding: dict, is_pct: bool = False) -> None:
         lbl = (kn.get("label") or "")
         low = lbl.lower()
         kn["label"] = re.sub(r"\s*\(top\s*\d+\)", "", lbl).strip()  # weakest-first ⇒ not "top"
-        # Route the tile to its own measure — an avg/per label reads the avg column, else the total.
+        # Route the tile to its own measure — an avg/per label reads the avg column, else the
+        # total. An avg tile with NO avg column in the grid is left alone: falling back to the
+        # total would stamp the total's extreme onto it — the exact bug this routing exists to fix.
         is_avg_tile = bool(_AVG_COL_RE.search(low))
-        lo, hi = (avg_lo, avg_hi) if (is_avg_tile and avg_lo is not None) else (total_lo, total_hi)
+        lo, hi = (avg_lo, avg_hi) if is_avg_tile else (total_lo, total_hi)
         if lo is None:
             continue
         if any(w in low for w in ("lowest", "weakest", "min")):

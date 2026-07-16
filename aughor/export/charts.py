@@ -276,12 +276,20 @@ def render_chart(
     # Stats-grid gate: ≥3 numeric columns named like summary statistics → table fallback.
     if sum(1 for i in num_idx if _STAT_COL_RE.match((columns[i] or "").strip())) >= 3:
         return None
+    # Wide-profile gate: ≥4 measures — a chart cannot say four things about one row.
+    if len(num_idx) >= 4 and not date_idx:
+        return None
     # Entity-profile gate: an ID-labelled grid with ≥3 measures is a PROFILE (the
     # Genie reports render these as tables — "Top 3 Customers — Profile Analysis").
     # Grouped bars over 3+ heterogeneous per-entity measures have no single message.
     if (not date_idx and len(num_idx) >= 3 and cat_idx
             and all(_id_like(columns[i] or "") for i in cat_idx
                     if len({str(r[i]) for r in rows if i < len(r)}) > 2)):
+        return None
+    # Degenerate-x gate: >1 rows but every category column holds ONE value — a chart
+    # with a single x position is one lying bar (mirrors the web's isUngraphableGrid).
+    if (not date_idx and cat_idx and len(rows) > 1
+            and all(len({str(r[i]) for r in rows if i < len(r)}) <= 1 for i in cat_idx)):
         return None
 
     try:

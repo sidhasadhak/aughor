@@ -295,10 +295,21 @@ export function Chart({
     if (!option && hint === "auto" && _isChangeMetric && catCol && dateCol) { option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
     // 8. Stacked bar (explicit, or auto date/cat with ≤6 series). A SHARE measure → 100%-stacked
     //    (composition shift over time); an absolute measure stacks by volume.
+    //    A stack needs ≥2 x positions: one stacked column is a single lying bar (the
+    //    "loyalty_members at 100%" exhibit), so a degenerate x falls through to the
+    //    categorical branch below. 100%-stacked additionally demands share-like VALUES —
+    //    the name test alone let `award_miles_fraction` (values to 309) normalise
+    //    incomparable measures into a fake composition.
     if (!option && (hint === "stacked_bar" || (hint === "auto" && catCol && (catCol2 || dateCol) && !_isChangeMetric && _stackUnique <= 6))) {
       const x = dateCol ?? catCol;
       const color = dateCol ? catCol : catCol2;
-      if (x && color) { option = stackedBarOption({ rows: data, units: columnUnits ?? undefined, x, ys: [numCol], color, xKind: dateCol ? "time" : "category" }, SHARE_COL.test(numCol)); defaultH = 280; }
+      const xUnique = x ? new Set(data.map((d) => d[x])).size : 0;
+      if (x && color && xUnique >= 2) {
+        const shareVals = data.map((d) => Number(d[numCol])).filter((v) => !isNaN(v));
+        const asPercent = SHARE_COL.test(numCol) && shareVals.length > 0 && shareVals.every((v) => Math.abs(v) <= 1.0001);
+        option = stackedBarOption({ rows: data, units: columnUnits ?? undefined, x, ys: [numCol], color, xKind: dateCol ? "time" : "category" }, asPercent);
+        defaultH = 280;
+      }
     }
     // 8b. Small multiples — a many-group trend (auto date/cat with >6 series, or explicit): a grid of
     //     mini lines beats a spaghetti multi-line. Explicit hint always; auto only past the stack cap.

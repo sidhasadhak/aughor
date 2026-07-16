@@ -120,6 +120,20 @@ const ABBREVS = /^(usd|id|uk|us|eu|vat|sku|url|api|crm|gmv|mrr|arr|ltv|cac|ctr|a
  *   "payment_method" → "Payment Method"
  * Known acronyms are upper-cased; every other word is title-cased.
  */
+/** Strip the explore wave's internal planner directives from reader-facing prose.
+ *  Paragraphs/lines beginning with "→" are forward-chaining notes to the NEXT
+ *  question ("→ Q5 should investigate…") — process, not analysis; a reader never
+ *  sees the machine's to-do list. */
+export function stripPlannerNotes(text: string): string {
+  return (text || "")
+    .split(/\n{2,}/)
+    .filter((p) => !p.trim().startsWith("→"))   // a directive paragraph goes whole
+    .map((p) => p.split("\n").filter((l) => !l.trim().startsWith("→")).join("\n"))
+    .filter((p) => p.trim())
+    .join("\n\n")
+    .trim();
+}
+
 export function cleanLabel(s: string): string {
   return (s ?? "")
     .replace(/_/g, " ")

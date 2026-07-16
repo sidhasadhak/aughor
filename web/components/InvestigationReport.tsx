@@ -33,7 +33,6 @@ import {
   BriefDetailBlock,
   renderEmphasis,
 } from "@/components/brief/Brief";
-import { SignificanceBadge } from "@/components/brief/StatBadge";
 import { TrendStrip } from "@/components/brief/Sparkline";
 import { useOpenInBuilder } from "@/lib/openInBuilder";
 
@@ -115,12 +114,6 @@ export interface AnswerReport {
   // T4-1 — plain-language receipt of how the metric was computed (formula + interpretation).
   metric_definition?: string | null;
 }
-
-const CONF_TXT: Record<AnswerReport["confidence"], string> = {
-  HIGH:   "text-emerald-400",
-  MEDIUM: "text-amber-400",
-  LOW:    "text-red-400",
-};
 
 // ── Collapsible data table — quiet, only when a finding has no chart ───────────
 
@@ -217,9 +210,10 @@ function EvidenceBlock({ finding, onShowSource, sourceNo }: { finding: Investiga
       {finding.interpretation && <BriefProse text={finding.interpretation} muted />}
 
       {/* Significance verdict — "Significant" / "Within noise" + raw stat note */}
-      {(finding.stat_note || finding.is_significant) && (
-        <SignificanceBadge significant={finding.is_significant} note={finding.stat_note} />
-      )}
+      {/* Clean-output policy: the significance verdict + stat note are VERIFICATION
+          machinery — they live in the Trust Receipt / Details, never in the body.
+          A reader gets conclusions; "Within noise · Only 2 rows returned" is the
+          machine talking to itself. */}
 
       {/* Trust advisory — the result computed, but the trust battery distrusts it (impossible
           magnitude, fan-out artifact, vacuous CASE…). Surfaced, never suppressed. */}
@@ -581,9 +575,6 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
             )}
             {f.key_numbers?.length > 0 && <KeyNumbersInline metrics={f.key_numbers} />}
             {f.interpretation && <BriefProse text={f.interpretation} muted />}
-            {(f.stat_note || f.is_significant) && (
-              <SignificanceBadge significant={f.is_significant} note={f.stat_note} />
-            )}
           </div>
         );
       })}
@@ -639,9 +630,9 @@ export function InvestigationReportView({
             ? <span key="tc" className={`font-mono ${!/\d/.test(report.total_change_label) ? "text-zinc-400" : report.total_change_label.trim().startsWith("-") ? "text-red-400" : "text-emerald-400"}`}>{report.total_change_label}</span>
             : null,
           periodStr || null,
-          report.confidence
-            ? <span key="conf" className={CONF_TXT[report.confidence]}>{report.confidence.charAt(0) + report.confidence.slice(1).toLowerCase()} confidence</span>
-            : null,
+          // Clean-output policy: the confidence verdict + justification live in the
+          // Details disclosure (they already render there) — the body states findings,
+          // not a hedge banner across the top of every answer.
         ]}
       />
 

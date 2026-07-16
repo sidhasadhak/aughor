@@ -312,6 +312,30 @@ def test_export_entity_profile_grid_is_a_table_not_a_chart():
                         [[f"MM{i:07d}", 100 - i] for i in range(6)], "auto", "t") is not None
 
 
+def test_export_wide_profile_and_degenerate_x_are_tables():
+    # ≥4 measures — a chart can't say four things about one row (the flagged-thresholds grid).
+    wide = (["source_table", "derived_measure", "threshold_value", "flagged_count", "max_ratio", "min_ratio"],
+            [["loyalty_members", "award_miles_fraction", 1.0, 1136, 309.46, 1.0],
+             ["loyalty_members", "lifetime_miles_per_year", 2378896.9, 256, 2997198.0, 2379332.0]])
+    assert render_chart(*wide, "auto", "t") is None
+    # Degenerate x: >1 rows, every category column constant → one lying bar.
+    degen = (["source_table", "flagged_count"],
+             [["loyalty_members", 1136], ["loyalty_members", 256], ["loyalty_members", 269]])
+    assert render_chart(*degen, "bar", "t") is None
+
+
+def test_export_strips_planner_notes_from_explore_prose():
+    from aughor.export.document import _strip_planner_notes
+    text = ("The gap between p99 and max is extreme for several columns.\n\n"
+            "→ Q2 (threshold drill-down) should use p99 as the outlier cutoff\n"
+            "for right-skewed monetary columns rather than mean+3σ.")
+    out = _strip_planner_notes(text)
+    assert "p99 and max is extreme" in out
+    # The whole directive paragraph goes — including its wrapped continuation lines.
+    assert "→" not in out and "Q2" not in out and "right-skewed" not in out
+    assert _strip_planner_notes("→ only a directive") == ""
+
+
 def test_export_survives_a_malformed_exhibit():
     # Fail-open: a spec this renderer can't read must never break the document.
     cols, rows = _RANKING
