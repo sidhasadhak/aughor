@@ -153,6 +153,55 @@ def _build_chat(inv: dict) -> ExportDoc:
     return ExportDoc(title=headline, subtitle=inv.get("question") or "", meta=meta, kind="chat", blocks=blocks)
 
 
+def _build_explore(inv: dict) -> ExportDoc:
+    """The explore-wave 'landscape' report (R9/R13: narrative → one section per
+    sub-question with its own evidence → conclusion → actions).
+
+    This shape had NO builder — it fell through to `_build_chat`, which reads only
+    inv-level columns/rows (absent on a wave), so the export dropped every chart and
+    shipped a 2-page text note. Found by the W5 chart-grammar A/B: the outlier-entities
+    starter routes here, and its Databricks reference report is exactly this shape."""
+    rep = inv.get("report") or {}
+    headline = rep.get("headline") or inv.get("question") or "Exploration"
+    answers = rep.get("subq_answers") or []
+    meta = [m for m in (
+        inv.get("connection_id") or "",
+        _date(inv.get("completed_at") or inv.get("started_at")),
+        f"{len(answers)} questions explored" if answers else "",
+    ) if m]
+    from aughor.kernel.flags import flag_enabled
+    _argument = flag_enabled("report.argument_style")
+    _exhibits = _exhibit_argument if _argument else _chart_or_table
+
+    blocks: list[Block] = []
+    if rep.get("narrative"):
+        blocks.append(_h("What the exploration found"))
+        blocks.append(_p(rep["narrative"]))
+    for a in answers:
+        if a.get("error"):
+            continue
+        title = (a.get("question") or "").strip() or "Exploration step"
+        blocks.append(_h(title))
+        prose = (a.get("insight") or a.get("answer") or "").strip()
+        if prose:
+            blocks.append(_p(prose))
+        blocks.extend(_exhibits(a.get("columns"), a.get("rows"), a.get("chart_type") or "auto",
+                                title, units=a.get("column_units"), exhibit=a.get("exhibit")))
+    if rep.get("conclusion"):
+        blocks.append(_h("Conclusion"))
+        blocks.append(_p(rep["conclusion"]))
+    if rep.get("recommended_actions"):
+        blocks.append(_h("Recommended actions"))
+        blocks.append(Block("recs", recs=[{"action": a} for a in rep["recommended_actions"]]))
+    dq = rep.get("data_quality_notes") or []
+    if dq:
+        blocks.append(_h("Data quality notes"))
+        blocks.append(_bul([str(n) if not isinstance(n, dict)
+                            else f"{n.get('table') or ''}: {n.get('issue') or ''}" for n in dq]))
+    return ExportDoc(title=headline, subtitle=inv.get("question") or "", meta=meta,
+                     kind="explore", blocks=blocks)
+
+
 def _build_ada(inv: dict) -> ExportDoc:
     """The structured 'Deep Analysis' report (ADA: metric → phases → findings →
     attribution → recommendations). Charts live right on each finding."""
@@ -344,6 +393,8 @@ def build_export_doc(inv: dict, *, narrate: bool = False) -> ExportDoc:
     rep = inv.get("report") or {}
     if rep.get("_report_type") == "investigate" or "phases" in rep:
         builder = _build_ada
+    elif rep.get("_report_type") == "explore" or "subq_answers" in rep:
+        builder = _build_explore
     elif "verdict" in rep or "key_findings" in rep:
         builder = _build_analysis
     elif (inv.get("kind") or "chat") == "chat":

@@ -289,12 +289,79 @@ def test_export_scatter_labels_and_quadrant_render():
     assert plain and rich and rich != plain
 
 
+def test_export_stats_grid_is_a_table_not_a_chart():
+    # A summary-statistics profile grid must fall back to the table — grouped
+    # micro-bars over min/max/mean/std say nothing (caught by the W5 A/B).
+    cols = ["tbl", "col", "min_val", "max_val", "mean_val", "std_val", "p1", "p99"]
+    rows = [["flights", "delay_minutes", 0, 98, 10.2, 11.7, 0, 49.2],
+            ["tickets", "fare_chf", 6, 19719, 312.7, 741.5, 18, 3851.2]]
+    assert render_chart(cols, rows, "auto", "t") is None
+    # …but a 2-measure comparison grid still charts (the gate is stats-specific).
+    assert render_chart(["region", "revenue", "profit"],
+                        [["N", 10, 2], ["S", 20, 3], ["E", 30, 4]], "auto", "t") is not None
+
+
+def test_export_entity_profile_grid_is_a_table_not_a_chart():
+    # An ID-labelled record grid with 3+ heterogeneous measures is a PROFILE —
+    # the reference reports render these as tables ("… — Profile Analysis").
+    cols = ["member_id", "award_miles_balance", "lifetime_miles", "join_year_num"]
+    rows = [[f"MM{i:07d}", 1000 + i, 50000 + i, 2000 + i] for i in range(6)]
+    assert render_chart(cols, rows, "auto", "t") is None
+    # …but an ID-labelled RANKING (one measure) still charts — Genie's top-15 bar.
+    assert render_chart(["member_id", "ticket_count"],
+                        [[f"MM{i:07d}", 100 - i] for i in range(6)], "auto", "t") is not None
+
+
 def test_export_survives_a_malformed_exhibit():
     # Fail-open: a spec this renderer can't read must never break the document.
     cols, rows = _RANKING
     for bad in ({"ref_lines": [{"value": "abc", "label": None}]}, {"color": None},
                 {"quadrant": {"x": "nope"}}, {"ref_lines": "not-a-list"}):
         assert render_chart(cols, rows, "bar", "t", exhibit=bad) is not None
+
+
+# ── the explore-wave report exports its evidence ─────────────────────────────
+
+def _explore_inv() -> dict:
+    return {
+        "question": "Profile the most unusual entities",
+        "connection_id": "workspace",
+        "kind": "investigation",
+        "report": {
+            "_report_type": "explore",
+            "headline": "Several extreme entities stand out",
+            "narrative": "The landscape scan surfaced concentrated outliers.",
+            "conclusion": "Three measures carry all the extremes.",
+            "recommended_actions": ["Verify the top outlier records"],
+            "subq_answers": [
+                {"question": "Which routes have the lowest load factors?",
+                 "insight": "GVA-DEL is weakest.",
+                 "columns": ["route", "load_factor_pct"],
+                 "rows": [["GVA-DEL", 65.2], ["ZRH-EZE", 67.4], ["ZRH-BOS", 67.7]],
+                 "sql": "select 1", "error": None},
+                {"question": "A failed step", "insight": "", "columns": [], "rows": [],
+                 "sql": "", "error": "boom"},
+            ],
+        },
+    }
+
+
+def test_explore_report_dispatches_to_its_own_builder_and_charts():
+    from aughor.export.document import build_export_doc
+    doc = build_export_doc(_explore_inv())
+    assert doc.kind == "explore"
+    kinds = [b.kind for b in doc.blocks]
+    assert "chart" in kinds          # the evidence is IN the export (was: text-only)
+    # the errored step contributes nothing
+    assert sum(1 for b in doc.blocks if b.kind == "heading") >= 3
+    joined = " ".join(b.text or "" for b in doc.blocks if b.kind == "prose")
+    assert "GVA-DEL is weakest." in joined
+
+
+def test_explore_export_produces_a_valid_pdf():
+    from aughor.export import export_report
+    data, fname, media = export_report(_explore_inv(), "pdf")
+    assert data[:4] == b"%PDF" and fname.endswith(".pdf")
 
 
 # ── flag default ─────────────────────────────────────────────────────────────

@@ -54,6 +54,10 @@ _SIGN_POS, _SIGN_NEG = "#2EC87B", "#E64848"
 # Point labels stay legible only while the plot is sparse; past this they overprint.
 _SCATTER_LABEL_MAX = 40
 _MIN_SEVERITY_ROWS = 3
+# A summary-statistics PROFILE grid (min/max/mean/std/p1…p99 per column) is a table,
+# never a chart — charting 6 stat measures as grouped bars produces an unreadable
+# micro-legend that says nothing (the W5 outlier-report A/B caught exactly this).
+_STAT_COL_RE = re.compile(r"^(min|max|mean|avg|std|stddev|median|p\d{1,2})(_val(ue)?)?$", re.I)
 
 
 def _hex_to_rgb(h: str) -> tuple[float, float, float]:
@@ -258,6 +262,16 @@ def render_chart(
 
     date_idx, num_idx, cat_idx = _classify(columns, rows)
     if not num_idx:
+        return None
+    # Stats-grid gate: ≥3 numeric columns named like summary statistics → table fallback.
+    if sum(1 for i in num_idx if _STAT_COL_RE.match((columns[i] or "").strip())) >= 3:
+        return None
+    # Entity-profile gate: an ID-labelled grid with ≥3 measures is a PROFILE (the
+    # Genie reports render these as tables — "Top 3 Customers — Profile Analysis").
+    # Grouped bars over 3+ heterogeneous per-entity measures have no single message.
+    if (not date_idx and len(num_idx) >= 3 and cat_idx
+            and all(_id_like(columns[i] or "") for i in cat_idx
+                    if len({str(r[i]) for r in rows if i < len(r)}) > 2)):
         return None
 
     try:
