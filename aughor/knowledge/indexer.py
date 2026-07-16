@@ -5,6 +5,7 @@ Also holds the document metadata registry (data/documents.json).
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -17,17 +18,26 @@ _REGISTRY_PATH = Path(__file__).parent.parent.parent / "data" / "documents.json"
 
 # ── Registry (metadata store) ─────────────────────────────────────────────────
 
+def _registry_path() -> Path:
+    """Registry file; ``AUGHOR_DOCUMENTS_REGISTRY`` overrides (test hermeticity —
+    the suite must never mutate the live data/documents.json)."""
+    env = os.environ.get("AUGHOR_DOCUMENTS_REGISTRY")
+    return Path(env) if env else _REGISTRY_PATH
+
+
 def _load_registry() -> list[dict]:
-    if not _REGISTRY_PATH.exists():
+    path = _registry_path()
+    if not path.exists():
         return []
-    with open(_REGISTRY_PATH) as f:
+    with open(path) as f:
         data = json.load(f)
     return data if isinstance(data, list) else []
 
 
 def _save_registry(docs: list[dict]) -> None:
-    _REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(_REGISTRY_PATH, "w") as f:
+    path = _registry_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
         json.dump(docs, f, indent=2)
 
 
@@ -115,6 +125,7 @@ def index_text(
         title=title,
         filename=filename,
         uploaded_at=uploaded_at,
+        source_url=source_url,
     )
     if not chunks:
         return {"doc_id": doc_id, "chunk_count": 0}
@@ -165,6 +176,53 @@ def delete_document(doc_id: str) -> bool:
     return _deregister(doc_id)
 
 
+def index_doc_tree(tree, *, connection_id: str, schema: str = "") -> dict:
+    """R8a — embed the ontology doc tree into the knowledge store with FQN provenance.
+
+    The R8 doc tree compiles understanding into YAML; this is its retrieval
+    consumer: one chunk per TABLE node (the table summary + its column summaries
+    + the analyst questions — the embed-worthy prose), stamped ``fqn`` /
+    ``kind="schema_doc"`` so a retrieved chunk cites the exact ontology node it
+    came from. The doc_id is deterministic per (connection, schema), so a rebuild
+    REPLACES the previous embedding instead of accumulating stale chunks.
+
+    Raises on a dead embedder/Qdrant like ``index_text`` — the autodoc hook
+    wraps it best-effort (no infra → the YAML artifact alone, exactly as before).
+    """
+    import datetime
+
+    schema_label = schema or "default"
+    doc_id = f"doctree::{connection_id}::{schema_label}"
+    uploaded_at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    filename = f"schema-docs/{connection_id}/{schema_label}"
+
+    chunks: list[DocumentChunk] = []
+    for i, node in enumerate(tree.tables()):
+        parts = [node.summary]
+        parts += [tree.nodes[c].summary for c in node.children if c in tree.nodes]
+        if node.questions:
+            parts.append("Questions this table can answer: " + " · ".join(node.questions))
+        text = "\n".join(p for p in parts if p)[:6_000]
+        if len(text.strip()) < 50:
+            continue
+        chunks.append(DocumentChunk(
+            doc_id=doc_id, chunk_index=i, text=text,
+            filename=filename, title=node.title, uploaded_at=uploaded_at,
+            fqn=node.fqn, kind="schema_doc",
+        ))
+    if not chunks:
+        return {"doc_id": doc_id, "chunk_count": 0}
+
+    _ensure_collection()
+    # Replace, don't accumulate: a shrunk schema must not leave orphan chunks.
+    _delete_doc_chunks(doc_id)
+    _upsert_chunks(chunks)
+    _register(doc_id, filename,
+              f"Schema documentation — {connection_id}/{schema_label}",
+              len(chunks), uploaded_at)
+    return {"doc_id": doc_id, "chunk_count": len(chunks)}
+
+
 def search_documents(query: str, top_k: int = 4) -> list[dict]:
     """
     Semantic search over indexed documents.
@@ -186,6 +244,8 @@ def search_documents(query: str, top_k: int = 4) -> list[dict]:
                 "title": p.get("title", ""),
                 "doc_id": p.get("doc_id", ""),
                 "chunk_index": p.get("chunk_index", 0),
+                "fqn": p.get("fqn", ""),           # R8a — ontology-node provenance
+                "source_url": p.get("source_url", ""),
                 "score": h["score"],
             })
         return results
@@ -217,7 +277,10 @@ def build_external_context_section(query: str, top_k: int = 4) -> str:
               "EXTERNAL CONTEXT (from uploaded documents — use where relevant):")
     lines = [header]
     for h in hits:
-        lines.append(f"\n── {h['title']} ({h['filename']}) ──")
+        # R8a — a compiled schema doc cites its ontology node (the FQN) so the
+        # model can name exactly where a fact came from; uploads keep the filename.
+        provenance = h.get("fqn") or h.get("filename", "")
+        lines.append(f"\n── {h['title']} ({provenance}) ──")
         lines.append(h["text"])
     return "\n".join(lines)
 

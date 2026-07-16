@@ -23,6 +23,14 @@ class DocumentChunk:
     filename: str
     title: str
     uploaded_at: str
+    # Provenance (R8a) — where this knowledge CAME FROM. `fqn` is the ontology
+    # doc-tree node (schema.table) for compiled schema docs; `kind` distinguishes
+    # uploaded documents ("") from generated ones ("schema_doc"); `source_url`
+    # is the connector origin (Confluence/Notion page) — previously accepted by
+    # index_text but silently dropped before reaching the payload.
+    fqn: str = ""
+    kind: str = ""
+    source_url: str = ""
 
     def embed_text(self) -> str:
         return f"{self.title}\n\n{self.text}"
@@ -35,6 +43,9 @@ class DocumentChunk:
             "filename": self.filename,
             "title": self.title,
             "uploaded_at": self.uploaded_at,
+            "fqn": self.fqn,
+            "kind": self.kind,
+            "source_url": self.source_url,
         }
 
     def point_id(self) -> str:
@@ -138,6 +149,7 @@ def chunk_text(
     title: str = "Document",
     filename: str = "api_sync",
     uploaded_at: str | None = None,
+    source_url: str = "",
 ) -> list[DocumentChunk]:
     """Chunk raw text string directly — no file I/O. Used by API knowledge connectors."""
     import datetime
@@ -152,6 +164,7 @@ def chunk_text(
             filename=filename,
             title=title,
             uploaded_at=uploaded_at,
+            source_url=source_url,
         )
         for i, t in enumerate(texts)
     ]

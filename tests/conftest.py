@@ -76,6 +76,11 @@ for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR
 os.environ.setdefault(
     "AUGHOR_COLUMN_CONFIG_ROOT", os.path.join(_test_stores_dir, "ontology_column_config")
 )
+# R8a — the documents registry (data/documents.json) is written by every index/delete;
+# isolate it so suite-driven indexing can never mutate the live registry.
+os.environ.setdefault(
+    "AUGHOR_DOCUMENTS_REGISTRY", os.path.join(_test_stores_dir, "documents.json")
+)
 
 # The glossary + metrics catalog are file stores (YAML/JSON, not SQLite) with real content — and the
 # autoseed / knowledge-sync path WRITES them with no path, so the suite mutated the live
