@@ -28,7 +28,6 @@ import {
   BriefProse,
   BriefSection,
   BriefMeta,
-  BriefMetrics,
   BriefFigure,
   BriefDetails,
   BriefDetailBlock,
@@ -147,6 +146,41 @@ function FindingTable({ columns, rows, label }: { columns: string[]; rows: (stri
 
 // ── Single finding — evidence block (flows inside a phase section) ─────────────
 
+/* R16 P1 — numbers live in the sentence, not in tiles (the Genie report study:
+   a claim reads "**long-haul load factor: 74.5%** (-2.7pt)", it doesn't stack
+   stat cards under every chart). One quiet inline line per finding; the R15
+   "Opportunity:" key number keeps its hedged context sentence — it IS the
+   decision, so it earns the extra clause. Values arrive pre-formatted from the
+   backend (no client-side number formatting). */
+function KeyNumbersInline({ metrics }: { metrics: PhaseKeyNumber[] }) {
+  const clean = (s?: string | null) => (s || "").replace(/\*/g, "");
+  const opportunity = metrics.filter(m => clean(m.label).startsWith("Opportunity:"));
+  const ordinary = metrics.filter(m => !clean(m.label).startsWith("Opportunity:"));
+  if (!metrics.length) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      {ordinary.length > 0 && (
+        <p className="aug-fs-sm leading-relaxed text-zinc-400">
+          {ordinary.map((m, i) => (
+            <span key={i}>
+              {i > 0 && <span className="text-zinc-600"> · </span>}
+              <strong className="text-zinc-200 font-semibold">{clean(m.label)}: {clean(m.value)}</strong>
+              {m.delta && <span className="text-zinc-500"> ({clean(m.delta)})</span>}
+            </span>
+          ))}
+        </p>
+      )}
+      {opportunity.map((m, i) => (
+        <p key={`opp-${i}`} className="aug-fs-sm leading-relaxed text-zinc-400">
+          <strong className="text-zinc-200 font-semibold">{clean(m.label)}: {clean(m.value)}</strong>
+          {m.delta && <span className="text-zinc-500"> ({clean(m.delta)})</span>}
+          {m.context && <span className="text-zinc-500">. {clean(m.context)}</span>}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function EvidenceBlock({ finding, onShowSource, sourceNo }: { finding: InvestigationFinding; onShowSource?: ShowSource; sourceNo?: number }) {
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
@@ -175,8 +209,8 @@ function EvidenceBlock({ finding, onShowSource, sourceNo }: { finding: Investiga
       {/* Trend strip — sparkline + period-over-period % (time-series findings only) */}
       <TrendStrip columns={finding.columns} rows={finding.rows} />
 
-      {/* Key numbers — inline metrics, no card */}
-      {finding.key_numbers.length > 0 && <BriefMetrics metrics={finding.key_numbers} />}
+      {/* Key numbers — one inline prose line, not a tile row (R16 P1) */}
+      {finding.key_numbers.length > 0 && <KeyNumbersInline metrics={finding.key_numbers} />}
 
       {/* Interpretation narrative */}
       {finding.interpretation && <BriefProse text={finding.interpretation} muted />}
@@ -539,7 +573,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
                 <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} columnUnits={f.column_units} showLabels />
               </div>
             )}
-            {f.key_numbers?.length > 0 && <BriefMetrics metrics={f.key_numbers} />}
+            {f.key_numbers?.length > 0 && <KeyNumbersInline metrics={f.key_numbers} />}
             {f.interpretation && <BriefProse text={f.interpretation} muted />}
             {(f.stat_note || f.is_significant) && (
               <SignificanceBadge significant={f.is_significant} note={f.stat_note} />
