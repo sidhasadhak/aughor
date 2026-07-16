@@ -58,6 +58,8 @@ for _env, _file in (
     # contention with a running app; same class as the registry incident).
     ("AUGHOR_FIXTURE_DB", "aughor.duckdb"),
     ("AUGHOR_SAMPLES_DB", "samples.duckdb"),
+    # R14 — the query-popularity counter store (born hermetic like the R11 tree).
+    ("AUGHOR_POPULARITY_DB", "popularity.db"),
 ):
     os.environ.setdefault(_env, os.path.join(_test_stores_dir, _file))
 

@@ -238,7 +238,10 @@ def _table_facts(entity: OntologyEntity, stats: Optional[dict], rel_summ: list[s
     if entity.lifecycle_column:
         f["lifecycle_column"] = entity.lifecycle_column
     if stats:
-        for k in ("row_count", "date_range", "time_grain", "primary_timestamp", "grain_columns"):
+        # query_popularity (R14): mined usage count — Merkle-tracked like every fact,
+        # so a popularity shift re-documents exactly the touched table node.
+        for k in ("row_count", "date_range", "time_grain", "primary_timestamp",
+                  "grain_columns", "query_popularity"):
             v = stats.get(k)
             if v not in (None, "", []):
                 f[k] = v
@@ -417,7 +420,10 @@ def _entity_names(graph: OntologyGraph) -> list[str]:
 
 def _schema_summary(schema: str, nodes: dict, table_checks: dict, graph: OntologyGraph) -> str:
     tables = [nodes[fqn] for fqn in table_checks]
-    tables.sort(key=lambda n: n.facts.get("row_count") or 0, reverse=True)
+    # Rank by real usage first (R14 query_popularity; 0 everywhere until mined —
+    # the sort then falls through to row_count, the pre-R14 order, unchanged).
+    tables.sort(key=lambda n: (n.facts.get("query_popularity") or 0,
+                               n.facts.get("row_count") or 0), reverse=True)
     top = ", ".join(t.title for t in tables[:5])
     label = schema or "(default schema)"
     bits = [f"{label}: {len(table_checks)} tables, {len(graph.relationships)} relationships"]
@@ -575,7 +581,19 @@ def build_and_persist(
             column_config = load_column_configs(conn, eff_schema or "default") or None
         except Exception:
             column_config = None
-    tree = build_doc_tree(graph, table_stats=table_stats or {}, prior=prior,
+    table_stats = dict(table_stats or {})
+    # R14 — fold mined query popularity into the per-table facts (best-effort).
+    if flag_enabled("obs.popularity"):
+        try:
+            from aughor.sql.popularity import load_popularity
+            for t, n in load_popularity(conn).get("table", {}).items():
+                table_stats.setdefault(t, {})
+                table_stats[t] = {**table_stats[t], "query_popularity": n}
+        except Exception as _pop_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_pop_exc, "popularity fold into doc tree is best-effort",
+                     counter="obs.popularity", conn_id=conn or None)
+    tree = build_doc_tree(graph, table_stats=table_stats, prior=prior,
                           column_config=column_config)
     if persist:
         save_doc_tree(tree)

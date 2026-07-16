@@ -59,6 +59,7 @@ FLAG_ENV = {
     "rbac.row_policy": "AUGHOR_RBAC_ROW_POLICY",
     "obs.mlflow": "AUGHOR_OBS_MLFLOW",
     "obs.task_table": "AUGHOR_OBS_TASK_TABLE",
+    "obs.popularity": "AUGHOR_OBS_POPULARITY",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
     "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
     "ask.overview": "AUGHOR_ASK_OVERVIEW",
@@ -131,6 +132,10 @@ FLAG_META = {
     "obs.task_table": {
         "label": "task_history — spans as a queryable table",
         "description": "Sink the kernel ledger's node/tool span events into one append-only task_history table (trace_id, span_id, parent_span_id, task, input, captured_output, timing, error, labels) — the queryable spine of \"what the agent actually did.\" It is a SINK over the spans telemetry already emits, not new instrumentation: MLflow/Langfuse stay the rich-trace backends; this makes the same exhaust answerable with plain SQL, so evals recover generated SQL by querying the table (no log parsing) and Deep Analysis can investigate its own behaviour via the aughor_ops schema. Off by default = byte-identical (no rows written). Wave 2 · Rec 4 of the combined platform study.",
+    },
+    "obs.popularity": {
+        "label": "Query popularity as a shared notability signal",
+        "description": "Mine real query history (the SQL-examples store + task_history span inputs) into a persisted per-table and per-column usage counter, and let one signal feed four consumers: column-config default protection (a queried column is never default-hidden), doc-tree table facts + ranking, the overview's learned-prior boost, and a most-queried-tables block in /suggestions. Mining runs inside the R12 birth job; deterministic (sqlglot, no model). Off by default = byte-identical — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R14).",
     },
     "search.rrf": {
         "label": "Reciprocal Rank Fusion (hybrid retrieval)",

@@ -72,8 +72,15 @@ def _intelligence(conn, base: str) -> str:
         if flag_enabled("ontology.column_config"):
             try:
                 from aughor.ontology.column_config import ensure_column_configs, sample_disabled
+                # R14 — mined query counts protect actually-queried columns from
+                # the default-hide policy. Empty until the popularity store fills.
+                _col_pop: dict[str, int] = {}
+                if flag_enabled("obs.popularity"):
+                    from aughor.sql.popularity import load_popularity
+                    _col_pop = load_popularity(cid).get("column", {})
                 _col_cfg = ensure_column_configs(
-                    cid, getattr(conn, "_schema_name", None) or "default", cp)
+                    cid, getattr(conn, "_schema_name", None) or "default", cp,
+                    column_popularity=_col_pop or None)
                 _sample_off = {f"{t}.{c}" for (t, c) in sample_disabled(_col_cfg)}
             except Exception as _cc_exc:
                 from aughor.kernel.errors import tolerate

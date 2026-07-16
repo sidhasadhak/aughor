@@ -116,6 +116,40 @@ async def test_run_birth_schema_scoped_open(monkeypatch):
     assert opened["schema"] == "sales_schema"
 
 
+@pytest.mark.anyio
+async def test_run_birth_mines_popularity_when_flag_on(monkeypatch, tmp_path):
+    monkeypatch.setenv("AUGHOR_OBS_POPULARITY", "1")
+    monkeypatch.setenv("AUGHOR_POPULARITY_DB", str(tmp_path / "pop.db"))
+    db = _FakeDB()
+    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+    monkeypatch.setattr("aughor.sql.query_log_miner.collect_logged_sql",
+                        lambda cid, limit=5000: ["SELECT brand FROM sales"])
+
+    async def _fake_spawn(conn_id, **kw):
+        return {"ok": True, "reason": None, "job_id": "j"}
+
+    monkeypatch.setattr(_shared, "spawn_explorer", _fake_spawn)
+    summary = await _shared.run_birth("connPop")
+    assert _step(summary, "popularity") == ["started", "done"]
+
+    from aughor.sql.popularity import load_popularity
+    assert load_popularity("connPop")["table"] == {"sales": 1}
+
+
+@pytest.mark.anyio
+async def test_run_birth_skips_popularity_when_flag_off(monkeypatch):
+    monkeypatch.delenv("AUGHOR_OBS_POPULARITY", raising=False)
+    db = _FakeDB()
+    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+
+    async def _fake_spawn(conn_id, **kw):
+        return {"ok": True, "reason": None, "job_id": "j"}
+
+    monkeypatch.setattr(_shared, "spawn_explorer", _fake_spawn)
+    summary = await _shared.run_birth("connNoPop")
+    assert _step(summary, "popularity") == []              # byte-identical rite when off
+
+
 # ── kickoff elevation: flag off → explorer, flag on → birth ──────────────────
 
 @pytest.mark.anyio

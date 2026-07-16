@@ -255,6 +255,18 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
             enrichment += f"\n\n{_mb}"
     except Exception:
         pass
+    # R14 — what people actually query steers the starters toward the live tables.
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("obs.popularity"):
+        try:
+            from aughor.sql.popularity import most_queried_block
+            _pop = most_queried_block(connection_id)
+            if _pop:
+                enrichment += f"\n\n{_pop}"
+        except Exception as _pop_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_pop_exc, "popularity suggestions block is best-effort",
+                     counter="obs.popularity", conn_id=connection_id or None)
 
     _system = (
         "You are a data analyst assistant. Given a database schema and any domain intelligence, "

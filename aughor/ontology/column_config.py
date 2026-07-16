@@ -107,6 +107,7 @@ def default_flags(
     semantic_type: str = "",
     is_fk: bool = False,
     null_rate: float = 0.0,
+    popularity: int = 0,
 ) -> ColumnFlags:
     """The deterministic per-column policy (no model, no I/O).
 
@@ -116,6 +117,9 @@ def default_flags(
              cardinality moves with the data; its nature doesn't.)
     sample — true categorical dimensions only (the inject_value_annotations gate).
     visible — everything except dead (all-null) columns and free-text blobs.
+             ``popularity`` (R14, query count from real history) only ever
+             PROTECTS: a column people actually query is never default-hidden;
+             zero popularity changes nothing (a fresh connection has no history).
     """
     lname = (name or "").lower()
     index = bool(
@@ -124,20 +128,25 @@ def default_flags(
         and _ENTITY_RE.search(lname)
     )
     sample = bool(semantic_type in ("dimension", "flag", "ordinal") and not is_fk)
-    visible = not (
+    visible = (popularity or 0) > 0 or not (
         (null_rate or 0.0) >= _DEAD_NULL_RATE
         or (semantic_type == "text" and _FREETEXT_RE.search(lname))
     )
     return ColumnFlags(visible=visible, sample=sample, index=index)
 
 
-def defaults_from_profiles(column_profiles: dict) -> dict[str, dict[str, ColumnFlags]]:
+def defaults_from_profiles(
+    column_profiles: dict,
+    column_popularity: Optional[dict[str, int]] = None,
+) -> dict[str, dict[str, ColumnFlags]]:
     """Compute the default config for every profiled column.
 
     ``column_profiles`` is the profiler cache shape — ``{"table.column":
     ColumnProfile}`` — duck-typed (attrs or dict) like doctree's adapter, so this
-    stays decoupled from the profiler class."""
+    stays decoupled from the profiler class. ``column_popularity`` (R14) is the
+    mined query count per "table.column" key; it feeds the protect-only rule."""
     out: dict[str, dict[str, ColumnFlags]] = {}
+    pop = column_popularity or {}
     for key, cp in (column_profiles or {}).items():
         def g(attr: str, default: Any = None, _cp=cp):
             return _cp.get(attr, default) if isinstance(_cp, dict) else getattr(_cp, attr, default)
@@ -151,6 +160,7 @@ def defaults_from_profiles(column_profiles: dict) -> dict[str, dict[str, ColumnF
             semantic_type=g("semantic_type", "") or "",
             is_fk=bool(g("is_fk", False)),
             null_rate=float(g("null_rate", 0.0) or 0.0),
+            popularity=int(pop.get(f"{table}.{column}", 0) or 0),
         )
     return out
 
@@ -221,7 +231,8 @@ def load_column_configs(conn: str, schema: str) -> dict[tuple[str, str], ColumnF
 
 
 def ensure_column_configs(
-    conn: str, schema: str, column_profiles: dict
+    conn: str, schema: str, column_profiles: dict,
+    column_popularity: Optional[dict[str, int]] = None,
 ) -> dict[tuple[str, str], ColumnFlags]:
     """Refresh persisted defaults from fresh profiles and return the effective config.
 
@@ -231,7 +242,7 @@ def ensure_column_configs(
     in the profiles (unprofiled tables, prior fingerprints) are kept. Never raises.
     """
     try:
-        defaults = defaults_from_profiles(column_profiles)
+        defaults = defaults_from_profiles(column_profiles, column_popularity)
         effective: dict[tuple[str, str], ColumnFlags] = {}
         for table, cols in defaults.items():
             stored = load_table_config(conn, schema, table)

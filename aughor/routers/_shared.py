@@ -244,6 +244,22 @@ async def run_birth(
                  counter="birth.job", conn_id=conn_id)
         _emit("intelligence", "failed", error=str(exc)[:300])
 
+    # R14 — mine query popularity while the understanding is fresh (deterministic,
+    # sqlglot only). Own flag; a mining hiccup never dents the rite.
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("obs.popularity"):
+        _emit("popularity", "started")
+        try:
+            from aughor.sql.popularity import refresh_popularity
+            sig = await loop.run_in_executor(None, lambda: refresh_popularity(conn_id))
+            _emit("popularity", "done", n_queries=sig.n_queries,
+                  tables=len(sig.table_counts))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "birth popularity step is best-effort",
+                     counter="obs.popularity", conn_id=conn_id)
+            _emit("popularity", "failed", error=str(exc)[:300])
+
     _emit("exploration", "started")
     exploration_ok = False
     try:
