@@ -60,12 +60,13 @@ export function useChat() {
     eventLogRef.current = [...eventLogRef.current.slice(-(MAX_LOG - 1)), e];
   }, []);
 
-  async function ask(question: string, connectionId: string, mode: "auto" | "ask" | "investigate" = "auto", opts: { skipCache?: boolean; canvasId?: string; insightId?: string; seedSql?: string | null; seedContext?: string; deep?: boolean; depth?: "quick" | "deep"; skipClarify?: boolean; clarifyReading?: string; clarifySubject?: string; clarifySource?: string; agentId?: string } = {}) {
+  async function ask(question: string, connectionId: string, mode: "auto" | "ask" | "investigate" = "auto", opts: { skipCache?: boolean; canvasId?: string; insightId?: string; seedSql?: string | null; seedContext?: string; deep?: boolean; depth?: "quick" | "deep"; skipClarify?: boolean; clarifyReading?: string; clarifySubject?: string; clarifySource?: string; agentId?: string; requestMode?: "investigate" | "explore"; purpose?: string } = {}) {
     const id = Math.random().toString(36).slice(2);
     // The turn's initial mode is corrected by the `route` event for auto turns
     // (deep → investigate, else ask); start auto as "ask" so the loading state is
     // the lightweight one until the router's verdict lands (it arrives first).
-    const initialMode: "ask" | "investigate" = mode === "investigate" ? "investigate" : "ask";
+    // A starter's requestMode always routes deep, so start those as "investigate".
+    const initialMode: "ask" | "investigate" = mode === "investigate" || opts.requestMode ? "investigate" : "ask";
     dispatch({ type: "ASK", id, question, mode: initialMode });
 
     // Cancel any in-flight request
@@ -140,6 +141,10 @@ export function useChat() {
             clarify_source: opts.clarifySource ?? "",
             insight_id: opts.insightId ?? null,
             deep: opts.deep ?? false,
+            // R13 — a named starter's declared route (investigate | explore) + its
+            // purpose tag; the router honors mode deterministically (no classifier).
+            mode: opts.requestMode ?? null,
+            purpose: opts.purpose ?? "",
           }),
           signal,
         });

@@ -39,7 +39,9 @@ const OVERVIEW_STARTER = {
   mode: "ask" as const,
 };
 
-type Starter = { text: string; mode: "ask" | "investigate" };
+// requestMode/purpose (R13): a named research starter's declared route — sent on
+// /ask so the router pins investigate|explore deterministically; chips style deep.
+type Starter = { text: string; mode: "ask" | "investigate"; requestMode?: "investigate" | "explore"; purpose?: string };
 
 interface Props {
   connectionId: string;
@@ -534,7 +536,16 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           text: s.text,
           mode: (s.mode === "investigate" ? "investigate" : "ask") as "ask" | "investigate",
         }));
-        if (suggestions.length > 0) setStarters(suggestions);
+        // R13 — named research-starter playbooks (flag `starters.library`): lead the
+        // grid, styled as deep chips, carrying their declared route + purpose tag.
+        const library: Starter[] = (data.starters ?? []).map((s: { text: string; mode: string; purpose?: string }) => ({
+          text: s.text,
+          mode: "investigate" as const,
+          requestMode: (s.mode === "explore" ? "explore" : "investigate") as "investigate" | "explore",
+          purpose: s.purpose,
+        }));
+        const merged = [...library, ...suggestions].slice(0, 9);
+        if (merged.length > 0) setStarters(merged);
       })
       .catch(() => {})
       .finally(() => setLoadingStarters(false));
@@ -637,7 +648,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuestion]);
 
-  const handleSend = useCallback(async (q?: string, m?: "auto" | "ask" | "investigate", opts?: { skipCache?: boolean }) => {
+  const handleSend = useCallback(async (q?: string, m?: "auto" | "ask" | "investigate", opts?: { skipCache?: boolean; requestMode?: "investigate" | "explore"; purpose?: string }) => {
     const question = (q ?? input).trim();
     if (!question || state.streaming) return;
     setInput("");
@@ -726,7 +737,13 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     return (
                     <button
                       key={s.text}
-                      onClick={() => handleSend(s.text, isOverview ? "auto" : s.mode)}
+                      onClick={() => handleSend(
+                        s.text,
+                        // A starter with a declared route goes through /ask ("auto") so the
+                        // backend's deterministic mode override routes it (R13).
+                        isOverview || s.requestMode ? "auto" : s.mode,
+                        s.requestMode ? { requestMode: s.requestMode, purpose: s.purpose } : undefined,
+                      )}
                       className={`aug-pressable flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all${isOverview ? " col-span-2" : ""}`}
                       style={isOverview ? {
                         background: "var(--acc-dim)",

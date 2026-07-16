@@ -138,6 +138,7 @@ def decide_ask_route(
     has_deep: bool = True,
     classifier: Optional[Classifier] = None,
     route_wide: Optional[bool] = None,
+    mode_override: Optional[str] = None,
 ) -> AskRoute:
     """Decide whether a ``/ask`` turn runs the quick body or the deep body.
 
@@ -148,6 +149,9 @@ def decide_ask_route(
     False. ``classifier`` is injected for testing; it defaults to ``classify_question``
     and is consulted only for borderline questions. ``route_wide`` forces the R9
     wide→explore gate on/off (tests/evals); ``None`` reads the ``explore.route_wide`` flag.
+    ``mode_override`` (R13) is a named starter's declared path — ``investigate`` pins the
+    deep investigation, ``explore`` pins the landscape wave; deterministic, no model call,
+    and unlike the R9 gate it needs no flag (it is explicit per request).
     """
     verdict = assess_complexity(question or "")
 
@@ -168,6 +172,9 @@ def decide_ask_route(
         )
 
     # 1) Explicit overrides — deterministic, no model call. ───────────────────────
+    if mode_override in ("investigate", "explore"):
+        return _route("deep", mode_override,
+                      "running the starter's chosen research path", forced="mode")
     if insight_id and not deep_flag:
         return _route("deep", "investigate", "opening the saved finding's investigation",
                       forced="dossier")

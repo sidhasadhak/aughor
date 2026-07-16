@@ -233,10 +233,29 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
 
     fingerprint = schema_fingerprint(schema_summary)
 
+    # R13 — the named research-starter playbooks + per-space curated questions
+    # (deterministic templates, no model). Computed before the cache check so they
+    # ride cache hits too; the key is absent entirely when the flag is off.
+    from aughor.kernel.flags import flag_enabled as _flag_enabled
+    _starters: list[dict] | None = None
+    if _flag_enabled("starters.library"):
+        try:
+            from aughor.starters import starter_payload
+            _starters = await loop.run_in_executor(
+                None, lambda: starter_payload(connection_id))
+        except Exception as _st_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_st_exc, "starter library is best-effort",
+                     counter="starters.library", conn_id=connection_id or None)
+            _starters = []
+
     try:
         cached = get_cached(connection_id, fingerprint)
         if cached:
-            return {"suggestions": cached, "cached": True}
+            out = {"suggestions": cached, "cached": True}
+            if _starters is not None:
+                out["starters"] = _starters
+            return out
     except Exception:
         pass
 
@@ -298,7 +317,10 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
     except Exception:
         pass
 
-    return {"suggestions": suggestions, "cached": False}
+    out = {"suggestions": suggestions, "cached": False}
+    if _starters is not None:
+        out["starters"] = _starters
+    return out
 
 
 @router.get("/connectors/types")

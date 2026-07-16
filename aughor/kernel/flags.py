@@ -25,6 +25,7 @@ FLAG_ENV = {
     "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
+    "starters.library": "AUGHOR_STARTERS_LIBRARY",
     "ontology.autodoc": "AUGHOR_ONTOLOGY_AUTODOC",
     "ontology.column_config": "AUGHOR_ONTOLOGY_COLUMN_CONFIG",
     "birth.job": "AUGHOR_BIRTH_JOB",
@@ -192,6 +193,10 @@ FLAG_META = {
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
         "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single Deep-Analysis investigation. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay investigations. Unlocks the already-built explore wave from /ask. Off by default.",
+    },
+    "starters.library": {
+        "label": "Named research-starter playbooks",
+        "description": "Surface a library of named, deterministic research playbooks (interesting outlier entities, where are we losing money, data quality scan) plus per-space curated questions from the ontology doc tree as one-click starters on /suggestions. Each starter declares its route up front (deep investigation or the explore landscape wave) and carries a purpose tag on the route receipt — templates, no model in the loop. Off by default: /suggestions stays LLM-generated-only — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R13).",
     },
     "ontology.autodoc": {
         "label": "Compile ontology docs as a build artifact",

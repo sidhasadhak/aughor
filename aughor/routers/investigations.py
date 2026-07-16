@@ -675,6 +675,13 @@ class AskRequest(BaseModel):
     clarify_reading: str = ""
     clarify_subject: str = ""
     clarify_source: str = ""
+    # R13 — a named research starter's declared path: "investigate" pins the deep
+    # investigation, "explore" pins the landscape wave (both bypass the router's
+    # classifier — deterministic, explicit per request). None = auto routing.
+    mode: Optional[Literal["investigate", "explore"]] = None
+    # R13/R10 seam — the starter's purpose tag; pure provenance (carried on the
+    # route receipt so a starter run is legible as one).
+    purpose: str = ""
     # Pass-throughs preserved from the investigate path.
     deep: bool = False
     insight_id: Optional[str] = None
@@ -3511,8 +3518,12 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         decide_ask_route, req.question,
         depth_override=req.depth, deep_flag=req.deep,
         insight_id=req.insight_id, has_deep=has_deep,
+        mode_override=req.mode,   # R13 — a named starter's declared path
     )
-    yield _sse("route", route.to_event())
+    _route_ev = route.to_event()
+    if req.purpose:
+        _route_ev["purpose"] = req.purpose   # R13/R10 — starter provenance on the receipt
+    yield _sse("route", _route_ev)
 
     if route.depth == "deep":
         async for sse in _investigation_job_streamed(
