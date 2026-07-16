@@ -38,7 +38,10 @@ def _load_canvas_instructions() -> dict:
 
 
 class CreateCanvasRequest(BaseModel):
-    name: str
+    # R10 — name is now optional (the Databricks generate_space_name:true analog):
+    # an empty name is derived DETERMINISTICALLY from the scope server-side. The
+    # richer LLM naming (/canvases/suggest-name) stays the optional client path.
+    name: str = ""
     description: str = ""
     connection_id: str
     schema_name: Optional[str] = None
@@ -86,6 +89,19 @@ def get_canvases(include_legacy: bool = True, workspace_id: str | None = None):
     return out
 
 
+def _derive_canvas_name(scope) -> str:
+    """R10 — deterministic auto-name from the scope (no model): the first scoped
+    table, else the schema, else the generic fallback. 'flight_bookings' →
+    'Flight Bookings Canvas'."""
+    def _title(raw: str) -> str:
+        return raw.split(".")[-1].replace("_", " ").strip().title()
+    if scope.tables:
+        return f"{_title(scope.tables[0])} Canvas"
+    if scope.schema_name:
+        return f"{_title(scope.schema_name)} Canvas"
+    return "New Canvas"
+
+
 @router.post("/canvases", status_code=201)
 def create_canvas_endpoint(req: CreateCanvasRequest,
                            idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key")):
@@ -96,7 +112,8 @@ def create_canvas_endpoint(req: CreateCanvasRequest,
     if prior and (existing := get_canvas(prior)):
         return existing.model_dump()
     scope = CanvasScope(connection_id=req.connection_id, schema_name=req.schema_name, tables=req.tables)
-    canvas = create_canvas(name=req.name, scopes=[scope], description=req.description)
+    name = (req.name or "").strip() or _derive_canvas_name(scope)
+    canvas = create_canvas(name=name, scopes=[scope], description=req.description)
     remember("canvas", idempotency_key, canvas.id)
     # R12 — canvas birth: kick off the "understand this data" job for the canvas
     # scope (eager intelligence → exploration handoff, one observable kernel job).

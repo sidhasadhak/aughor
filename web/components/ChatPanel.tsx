@@ -507,6 +507,8 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const [loadingStarters, setLoadingStarters] = useState(false);
   const [showDebug, setShowDebug]   = useState(false);
   const [feedbackDone, setFeedbackDone] = useState<Set<string>>(new Set());
+  // R10 — thumbs on quick answers: turn receiptId → the verdict sent (one per turn).
+  const [thumbsDone, setThumbsDone] = useState<Map<string, "helpful" | "unhelpful">>(new Map());
   const [sourcePanel, setSourcePanel] = useState<SourcePanelData | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const turnTopRefs             = useRef<Map<string, HTMLElement>>(new Map());
@@ -671,6 +673,17 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   }, [input, state.streaming, ask, connectionId, canvasId, mode, attachedFile, agentId]);
 
   const isEmpty = state.turns.length === 0;
+
+  // R10 — THUMBS→priors: a helpful verdict teaches the learned table prior
+  // (the same counter overview drills + query popularity feed). Fire-and-forget.
+  const handleThumbs = useCallback((turnId: string, verdict: "helpful" | "unhelpful") => {
+    setThumbsDone(prev => new Map(prev).set(turnId, verdict));
+    fetch(`${BASE}/chat/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conn_id: connectionId, turn_id: turnId, verdict }),
+    }).catch(() => {});
+  }, [connectionId]);
 
   // ── Feedback submission ───────────────────────────────────────────────────────
   async function handleFeedbackSubmit(invId: string, feedback: string) {
@@ -866,7 +879,26 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         a chat answer (receiptId) or an agentic ADA report
                         (investigationId). */}
                     {turn.status === "done" && turn.receiptId && (
-                      <TrustReceipt connectionId={connectionId} receiptId={turn.receiptId} />
+                      <div className="flex items-center gap-1.5">
+                        <TrustReceipt connectionId={connectionId} receiptId={turn.receiptId} />
+                        {/* R10 — thumbs: helpful teaches the learned table prior */}
+                        {thumbsDone.has(turn.receiptId) ? (
+                          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+                            {thumbsDone.get(turn.receiptId) === "helpful" ? "Thanks — noted 👍" : "Noted 👎"}
+                          </span>
+                        ) : (
+                          <>
+                            <Button variant="ghost" size="icon-xs" aria-label="Helpful"
+                                    onClick={() => handleThumbs(turn.receiptId!, "helpful")}>
+                              👍
+                            </Button>
+                            <Button variant="ghost" size="icon-xs" aria-label="Not helpful"
+                                    onClick={() => handleThumbs(turn.receiptId!, "unhelpful")}>
+                              👎
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     )}
                     {turn.status === "done" && turn.adaReport && turn.investigationId && (
                       <TrustReceipt connectionId={connectionId} receiptId={turn.investigationId} kind="ada" />

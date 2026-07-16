@@ -869,7 +869,13 @@ class _ChatFeedbackRequest(BaseModel):
 @router.post("/chat/feedback")
 def chat_feedback(body: _ChatFeedbackRequest):
     """Record a helpful/unhelpful signal (and optional note) on a chat answer. Journaled to
-    the ledger as a ``chat.feedback`` event so it rides the audit trail; fail-open."""
+    the ledger as a ``chat.feedback`` event so it rides the audit trail; fail-open.
+
+    R10 (THUMBS→priors) — a HELPFUL verdict closes the loop: the turn's tables bump
+    the same learned per-connection prior the overview drills and R14 query
+    popularity feed, so thumbs teach ranking through the one existing signal path.
+    Monotone by design: counters only grow — an unhelpful verdict journals the
+    event (audit + future consumers) but never decrements a prior."""
     from aughor.kernel.errors import tolerate
     try:
         from aughor.kernel.ledger import Ledger
@@ -880,6 +886,17 @@ def chat_feedback(body: _ChatFeedbackRequest):
         )
     except Exception as exc:
         tolerate(exc, "chat feedback journal", counter="chat.feedback")
+    if body.verdict == "helpful" and body.turn_id:
+        try:
+            from aughor.db.history import get_investigation
+            from aughor.overview.drills import record_drill
+            turn = get_investigation(body.turn_id)
+            tables = ((turn or {}).get("report") or {}).get("tables_used") or []
+            for t in tables[:8]:
+                record_drill(body.conn_id, table=str(t).split(".")[-1])
+        except Exception as exc:
+            tolerate(exc, "thumbs→prior bump is best-effort; the verdict is already journaled",
+                     counter="chat.feedback")
     return {"ok": True}
 
 
