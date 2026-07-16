@@ -1,0 +1,18 @@
+# Keep the serverless bundle to the API runtime only. The Next.js frontend in
+# web/ deploys as its OWN Vercel project (Root Directory = web); everything
+# else here is tests/docs/dev tooling that bloats or confuses the builder —
+# the FastAPI entrypoint detector was matching `app` variables in test files.
+tests/
+evals/
+docs/
+design-mockups/
+scripts/
+web/
+data/
+*.md
+!README.md
+docker-compose.yml
+start.sh
+agents.db
+*.duckdb
+*.db
