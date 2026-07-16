@@ -27,6 +27,7 @@ FLAG_ENV = {
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "starters.library": "AUGHOR_STARTERS_LIBRARY",
     "lens.decision_grade": "AUGHOR_LENS_DECISION_GRADE",
+    "report.argument_style": "AUGHOR_REPORT_ARGUMENT_STYLE",
     "ontology.autodoc": "AUGHOR_ONTOLOGY_AUTODOC",
     "ontology.column_config": "AUGHOR_ONTOLOGY_COLUMN_CONFIG",
     "birth.job": "AUGHOR_BIRTH_JOB",
@@ -194,6 +195,10 @@ FLAG_META = {
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
         "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single Deep-Analysis investigation. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay investigations. Unlocks the already-built explore wave from /ask. Off by default.",
+    },
+    "report.argument_style": {
+        "label": "Argument-style report composition",
+        "description": "Compose exported deep-analysis reports the way a human analyst argues (the Genie report study): one exhibit per claim (chart OR a small table, never both), no degenerate exhibits (a 1-bar chart or single-point trend becomes a sentence), key numbers bold inline in the prose instead of stat-tile rows, the Question-Intake machinery out of the body (it stays in the Trust Receipt), and the R15 opportunity number promoted to its own Financial impact section. Deterministic re-composition of the SAME report data — no model. Off by default = byte-identical exports — see docs/REPORT_STYLE_STUDY_2026-07-16.md (R16 P1).",
     },
     "lens.decision_grade": {
         "label": "Decision-grade output lenses",
