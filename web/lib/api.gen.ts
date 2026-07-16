@@ -981,6 +981,12 @@ export interface paths {
          * Chat Feedback
          * @description Record a helpful/unhelpful signal (and optional note) on a chat answer. Journaled to
          *     the ledger as a ``chat.feedback`` event so it rides the audit trail; fail-open.
+         *
+         *     R10 (THUMBS→priors) — a HELPFUL verdict closes the loop: the turn's tables bump
+         *     the same learned per-connection prior the overview drills and R14 query
+         *     popularity feed, so thumbs teach ranking through the one existing signal path.
+         *     Monotone by design: counters only grow — an unhelpful verdict journals the
+         *     event (audit + future consumers) but never decrements a prior.
          */
         post: operations["chat_feedback_chat_feedback_post"];
         delete?: never;
@@ -1308,6 +1314,32 @@ export interface paths {
         get: operations["connection_measure_grains_endpoint_connections__conn_id__measure_grains_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connections/{conn_id}/prewarm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prewarm Connection
+         * @description R5 deferred (closed) — the composer-open warm, the Databricks
+         *     value-index/preload-cache analog: build the profiles (and the persisted
+         *     entity-value samples entity resolution + the filter guard bind from) BEFORE
+         *     the first question. Runs as one supervised kernel job (kind `profile`, the
+         *     Curator charter) with an idempotency key, so composer-open spam can't stack
+         *     builds and a fresh cache makes the job a fast no-op. Skips (200-shaped 202)
+         *     when the Curator agent is disabled for the workspace — governance, not a flag.
+         */
+        post: operations["prewarm_connection_connections__conn_id__prewarm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5849,7 +5881,10 @@ export interface components {
              * @default
              */
             description: string;
-            /** Name */
+            /**
+             * Name
+             * @default
+             */
             name: string;
             /** Schema Name */
             schema_name?: string | null;
@@ -10114,6 +10149,37 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prewarm_connection_connections__conn_id__prewarm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
