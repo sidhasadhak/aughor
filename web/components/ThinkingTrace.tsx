@@ -259,35 +259,39 @@ function deriveSteps(state: InvestigationState): Step[] {
   return steps;
 }
 
-function StepDot({ status, verdict }: { status: StepStatus; verdict?: Verdict }) {
+// R16 P3 — the Genie-trace study: a thinking trace is a quiet, structured text
+// tree, not a status dashboard. Monochrome markers (no colored pills, no check
+// pop): running = a soft pulsing dot, done = a filled dot, error keeps the one
+// muted red × (failure must stay visible). Verdict nuance lives in the sublabel
+// text, not the marker.
+function StepDot({ status }: { status: StepStatus; verdict?: Verdict }) {
   if (status === "running") {
     return (
       <span className="relative flex h-3.5 w-3.5 items-center justify-center shrink-0">
-        <span className="absolute inline-flex h-full w-full rounded-[var(--r-pill)] bg-amber-400/50 animate-ping" />
-        <span className="relative inline-flex rounded-[var(--r-pill)] h-3 w-3 bg-amber-400 aug-pulse-dot" />
-      </span>
-    );
-  }
-  if (status === "done") {
-    const tone = verdict === "refuted" ? "text-red-400 border-red-500/40"
-      : verdict === "inconclusive" ? "text-amber-400 border-amber-500/40"
-      : "text-emerald-400 border-emerald-500/40";
-    return (
-      <span className={`flex h-3.5 w-3.5 items-center justify-center rounded-[var(--r-pill)] border bg-zinc-900 shrink-0 aug-check-pop ${tone}`}>
-        <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor"
-          strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+        <span className="relative inline-flex rounded-[var(--r-pill)] h-2 w-2 bg-zinc-400 aug-pulse-dot" />
       </span>
     );
   }
   if (status === "error") {
     return (
-      <span className="flex h-3.5 w-3.5 items-center justify-center rounded-[var(--r-pill)] border border-red-500/40 bg-zinc-900 text-red-400 shrink-0">
+      <span className="flex h-3.5 w-3.5 items-center justify-center text-red-400/80 shrink-0">
         <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor"
           strokeWidth="3.5" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </span>
     );
   }
-  return <span className="h-3.5 w-3.5 rounded-[var(--r-pill)] border border-zinc-600/70 bg-zinc-800/50 shrink-0" />;
+  if (status === "done") {
+    return (
+      <span className="flex h-3.5 w-3.5 items-center justify-center shrink-0">
+        <span className="inline-flex rounded-[var(--r-pill)] h-1.5 w-1.5 bg-zinc-500" />
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-3.5 w-3.5 items-center justify-center shrink-0">
+      <span className="inline-flex rounded-[var(--r-pill)] h-1.5 w-1.5 border border-zinc-600/70" />
+    </span>
+  );
 }
 
 interface Props {
@@ -296,25 +300,12 @@ interface Props {
 
 export function ThinkingTrace({ state }: Props) {
   const steps = deriveSteps(state);
-  const total = steps.length;
-  const doneCount = steps.filter(s => s.status === "done").length;
-  const hasRunning = steps.some(s => s.status === "running");
-  const pct = total ? Math.round((doneCount / total) * 100) : 0;
 
   return (
     <div className="px-4 py-3">
-      {/* Header — live position + animated progress bar */}
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-violet-400/70 uppercase tracking-wide font-mono">Analysis</p>
-        <span className="aug-fs-xs text-zinc-500 font-mono tabular-nums">
-          {hasRunning ? `step ${Math.min(doneCount + 1, total)} of ${total}` : `${doneCount} of ${total}`}
-        </span>
-      </div>
-      <div className="h-1 rounded-[var(--r-pill)] bg-violet-500/10 overflow-hidden mb-3">
-        <div className="h-full rounded-[var(--r-pill)] bg-gradient-to-r from-violet-500 to-emerald-400 transition-[width] duration-700 ease-out"
-          style={{ width: `${pct}%` }} />
-      </div>
-
+      {/* R16 P3 — no dashboard chrome: the tree itself is the progress display.
+          (The wrapper's label carries running/complete; a step counter and a
+          gradient bar read as status theater, not thinking.) */}
       {/* Stepper rail */}
       <div>
         {steps.map((step, i) => {
@@ -326,18 +317,14 @@ export function ThinkingTrace({ state }: Props) {
               <div className="flex flex-col items-center w-3.5 shrink-0 pt-0.5">
                 <StepDot status={step.status} verdict={step.verdict} />
                 {!isLast && (
-                  <span className={`flex-1 w-0.5 my-0.5 min-h-[16px] rounded-[var(--r-pill)] ${
-                    step.status === "done" ? "bg-emerald-500/40"
-                    : step.status === "running" ? "aug-flow-y"
-                    : "bg-violet-500/15"
-                  }`} />
+                  <span className="flex-1 w-px my-0.5 min-h-[16px] bg-zinc-700/60" />
                 )}
               </div>
               {/* Content */}
               <div className="min-w-0 pb-3 flex-1">
                 <p className={`text-xs leading-snug transition-colors duration-300 flex items-start gap-1.5 ${
                   step.status === "pending" ? "text-zinc-500"
-                  : step.status === "running" ? "text-amber-200 font-medium"
+                  : step.status === "running" ? "text-zinc-100 font-medium"
                   : step.status === "error" ? "text-red-300"
                   : "text-zinc-300"
                 }`}>
@@ -359,10 +346,10 @@ export function ThinkingTrace({ state }: Props) {
                 <div className="aug-disclose" data-open={!!step.substeps}>
                   <div>
                     {step.substeps && (
-                      <div className="mt-1.5 ml-0.5 border-l border-violet-500/15 pl-2.5 space-y-1">
+                      <div className="mt-1.5 ml-0.5 border-l border-zinc-700/60 pl-2.5 space-y-1">
                         {step.substeps.map((s, j) => (
                           <p key={j} className="aug-fs-xs leading-snug text-zinc-400 flex items-start gap-1.5 aug-anim-fade">
-                            <span className="text-violet-400/60 shrink-0 mt-px" aria-hidden><DatabaseIcon label="" size="small" /></span>
+                            <span className="text-zinc-500 shrink-0 mt-px" aria-hidden><DatabaseIcon label="" size="small" /></span>
                             <span className="min-w-0">{s.length > 76 ? s.slice(0, 76) + "…" : s}</span>
                           </p>
                         ))}
