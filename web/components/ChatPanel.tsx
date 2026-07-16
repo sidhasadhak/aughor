@@ -529,6 +529,11 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     if (!restoreSessionId) clear();
     setStarters(FALLBACK_STARTERS);
     setLoadingStarters(true);
+    // R5 — composer-open prewarm (the Databricks preload analog): warm the profile
+    // cache + entity-value samples before the first question. Fire-and-forget; the
+    // backend job is supervised, idempotent, and Curator-governance-gated.
+    fetch(`${BASE}/connections/${encodeURIComponent(connectionId)}/prewarm`, { method: "POST" })
+      .catch(() => {});
     fetch(`${BASE}/suggestions?connection_id=${encodeURIComponent(connectionId)}`)
       .then(r => r.json())
       .then(data => {

@@ -606,18 +606,38 @@ def _extract_filter_literals(sql: str) -> list[tuple[str, str, str, str]]:
     return out
 
 
+def _persisted_value_sample(conn: "DatabaseConnection", t: str, c: str) -> "list[str]":
+    """The R5 persisted entity-value sample for (table, column), [] when absent.
+    Read-only (never builds); keyed by the bare table name like the profiler."""
+    try:
+        cid = getattr(conn, "_connection_id", "") or ""
+        if not cid:
+            return []
+        from aughor.tools.profile_cache import load_value_samples
+        return load_value_samples(cid).get((t.split(".")[-1], c)) or []
+    except Exception:
+        return []
+
+
 def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,
                             litops: "set[tuple[str, str]]") -> list[FilterDomainWarning]:
     """Bind a guessed literal on a HIGH-cardinality text column (names/SKUs/cities) to its nearest
     real value — but ONLY when the literal is execution-confirmed absent and a close neighbour exists
-    in a bounded sample of the live domain. Positive predicates only (=, IN): never weaken a negation
-    by rewriting it. CHESS-style: trigram-blocked value index over a distinct sample."""
+    in the column's value domain. Positive predicates only (=, IN): never weaken a negation
+    by rewriting it. CHESS-style: trigram-blocked value index over a distinct sample.
+
+    Sample source (R5 deferred, closed): the PERSISTED entity-value sample from the
+    profiler is consulted first — an offline bind costs zero warehouse scans. Only
+    when it is absent or yields no neighbour does the live bounded SELECT DISTINCT
+    run (staleness-safe: a value newer than the last profile still binds)."""
     from aughor.sql.value_index import ValueIndex
     out: list[FilterDomainWarning] = []
     positives = [(lit, op) for lit, op in litops if op in ("=", "IN")]
     if not positives:
         return out
     qt, qc = _quote_table(t), f'"{c}"'
+    offline: "ValueIndex | None" = None
+    offline_loaded = False
     index: "ValueIndex | None" = None
     for lit, op in positives:
         safe = lit.replace("'", "''")
@@ -627,15 +647,31 @@ def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,
         )
         if exists and exists.rows:
             continue  # the literal is a real value — do not second-guess it
-        if index is None:  # build the index once per column, lazily (only when a literal is absent)
-            res = conn.execute(
-                "__filter_highcard_sample__",
-                f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {qt} "
-                f"WHERE {qc} IS NOT NULL LIMIT {_HIGHCARD_SAMPLE}",
+        if not offline_loaded:  # warmed profiler sample, loaded once per column
+            offline_loaded = True
+            sample = _persisted_value_sample(conn, t, c)
+            offline = ValueIndex(sample) if sample else None
+        best = offline.best_match(lit, cutoff=_HIGHCARD_CUTOFF) if offline else None
+        if best is not None:
+            # The sample may predate the last data refresh — a 1-row probe confirms the
+            # suggestion still exists before it can drive a rewrite (never bind to a ghost).
+            _bsafe = best.replace("'", "''")
+            _bexists = conn.execute(
+                "__filter_highcard_exists__",
+                f"SELECT 1 FROM {qt} WHERE LOWER(CAST({qc} AS VARCHAR)) = LOWER('{_bsafe}') LIMIT 1",
             )
-            sample = [r[0] for r in res.rows if r and r[0] is not None] if res and res.rows else []
-            index = ValueIndex(sample)
-        best = index.best_match(lit, cutoff=_HIGHCARD_CUTOFF)
+            if not (_bexists and _bexists.rows):
+                best = None
+        if best is None:
+            if index is None:  # live fallback, built once per column, only when needed
+                res = conn.execute(
+                    "__filter_highcard_sample__",
+                    f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {qt} "
+                    f"WHERE {qc} IS NOT NULL LIMIT {_HIGHCARD_SAMPLE}",
+                )
+                sample = [r[0] for r in res.rows if r and r[0] is not None] if res and res.rows else []
+                index = ValueIndex(sample)
+            best = index.best_match(lit, cutoff=_HIGHCARD_CUTOFF)
         if best and best.lower() != lit.lower():
             out.append(FilterDomainWarning(t, c, lit, [best], best, op))
     return out
