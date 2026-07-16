@@ -100,6 +100,24 @@ def _chart_or_table(columns, rows, chart_type, title) -> list[Block]:
     return out
 
 
+def _exhibit_argument(columns, rows, chart_type, title) -> list[Block]:
+    """R16 P1 — ONE exhibit per claim, and only when it informs.
+
+    A degenerate result (fewer than two rows: the 1-bar chart, the single-point
+    "trend") renders NOTHING — the finding's sentence carries it. Otherwise the
+    chart wins; a compact table (≤8 rows) is the fallback when no chart renders.
+    Never both — the full grid lives behind the drill/receipt, not in the body."""
+    rows = rows or []
+    if not columns or len(rows) < 2:
+        return []
+    if (chart_type or "auto") != "none":
+        png = render_chart(columns, rows, chart_type or "auto", title)
+        if png:
+            return [Block("chart", png=png, caption=title)]
+    table_rows = [[_round_cell(v) for v in row] for row in rows[:8]]
+    return [Block("table", columns=columns, rows=table_rows, caption=title)]
+
+
 # ── Parsers ───────────────────────────────────────────────────────────────────
 
 def _build_chat(inv: dict) -> ExportDoc:
@@ -159,8 +177,20 @@ def _build_ada(inv: dict) -> ExportDoc:
     if glance:
         blocks.append(Block("prose", text="   ·   ".join(str(g) for g in glance), tag="At a glance"))
 
+    # R16 P1 (flag `report.argument_style`) — compose the body the way an analyst
+    # argues: intake machinery out (it stays in the Trust Receipt), key numbers
+    # bold inline in prose instead of tile rows, one informative exhibit per
+    # claim, and the R15 opportunity number promoted to a Financial impact
+    # section. Flag off → the legacy composition, byte-identical.
+    from aughor.kernel.flags import flag_enabled
+    _argument = flag_enabled("report.argument_style")
+    _nm = lambda s: (s or "").replace("*", "")  # noqa: E731 — strip model markdown
+    opportunities: list[dict] = []
+
     for ph in rep.get("phases") or []:
         if ph.get("status") == "skipped" or not ph.get("findings"):
+            continue
+        if _argument and (ph.get("phase_id") or "") == "intake":
             continue
         blocks.append(_h(str(ph.get("phase_name") or ph.get("phase_id") or "Phase").strip()))
         if ph.get("summary"):
@@ -175,15 +205,41 @@ def _build_ada(inv: dict) -> ExportDoc:
                 tag=(f.get("stat_note") or "") if f.get("is_significant") else "",
             ))
             kns = f.get("key_numbers") or []
-            if kns:
+            if kns and _argument:
+                # Numbers live in the sentence, not in tiles. The R15 opportunity
+                # key number is held back for its own Financial impact section.
+                opportunities += [k for k in kns
+                                  if _nm(k.get("label", "")).startswith("Opportunity:")]
+                inline = [k for k in kns
+                          if not _nm(k.get("label", "")).startswith("Opportunity:")]
+                if inline:
+                    blocks.append(_p("   ·   ".join(
+                        f"**{_nm(k.get('label', ''))}: {_nm(k.get('value', ''))}**"
+                        + (f" ({_nm(k.get('delta'))})" if k.get("delta") else "")
+                        for k in inline)))
+            elif kns:
                 # Strip any **markdown** the model wrapped a figure in — the export renders these as
                 # plain text, so "**57.8%**" would otherwise print literal asterisks.
-                _nm = lambda s: (s or "").replace("*", "")
                 blocks.append(Block("keynums", keynums=[
                     KeyNumber(_nm(k.get("label", "")), _nm(k.get("value", "")), _nm(k.get("delta")) or None, _nm(k.get("context")) or None)
                     for k in kns
                 ]))
-            blocks.extend(_chart_or_table(f.get("columns"), f.get("rows"), f.get("chart_type"), f.get("title") or ""))
+            if _argument:
+                blocks.extend(_exhibit_argument(f.get("columns"), f.get("rows"), f.get("chart_type"), f.get("title") or ""))
+            else:
+                blocks.extend(_chart_or_table(f.get("columns"), f.get("rows"), f.get("chart_type"), f.get("title") or ""))
+
+    # R16 P1 — the decision paragraph: gap-to-benchmark × volume, in prose,
+    # right where a reader decides (before Recommendations).
+    if _argument and opportunities:
+        blocks.append(_h("Financial impact"))
+        for k in opportunities:
+            line = f"**{_nm(k.get('label', ''))}: {_nm(k.get('value', ''))}**"
+            if k.get("delta"):
+                line += f" ({_nm(k.get('delta'))})"
+            if k.get("context"):
+                line += f". {_nm(k.get('context'))}"
+            blocks.append(_p(line))
 
     wf = rep.get("attribution_waterfall") or []
     if wf:

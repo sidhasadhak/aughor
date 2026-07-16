@@ -888,18 +888,19 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
         onClick={() => setOpen(o => !o)}
         className="w-full h-auto justify-between px-3 py-2 group/trace font-normal hover:bg-transparent dark:hover:bg-transparent"
       >
-        <span className="flex items-center gap-2 aug-fs-xs font-medium uppercase tracking-wide text-violet-400/80">
+        {/* R16 P3 — the Genie-trace shape: a quiet monochrome label ("Thinking…" /
+            "Thinking complete"), no violet chrome, no status dot theater. */}
+        <span className="flex items-center gap-2 aug-fs-xs font-medium text-zinc-400">
           {running ? (
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-[var(--r-pill)] bg-violet-400 opacity-60" />
-              <span className="relative inline-flex rounded-[var(--r-pill)] h-2 w-2 bg-violet-400" />
+            <span className="relative flex h-2 w-2 items-center justify-center">
+              <span className="relative inline-flex rounded-[var(--r-pill)] h-1.5 w-1.5 bg-zinc-400 aug-pulse-dot" />
             </span>
           ) : (
-            <span className="inline-flex h-2 w-2 rounded-[var(--r-pill)] bg-emerald-500" />
+            <span className="inline-flex h-1.5 w-1.5 rounded-[var(--r-pill)] bg-zinc-500" />
           )}
-          Agent trace
+          {running ? "Thinking…" : "Thinking complete"}
           {!running && !open && (
-            <span className="text-zinc-500 normal-case tracking-normal font-normal">· {traceState.investigationPhases?.length || traceState.subQuestions?.length || traceState.hypotheses?.length || 0} steps</span>
+            <span className="text-zinc-500 font-normal">· {traceState.investigationPhases?.length || traceState.subQuestions?.length || traceState.hypotheses?.length || 0} steps</span>
           )}
         </span>
         <Chevron open={open} />

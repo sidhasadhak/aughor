@@ -811,3 +811,34 @@ class ADASynthesisModel(BaseModel):
         default_factory=list,
         description="Directional cause→effect pairs identified in this investigation. Only include links with clear evidence.",
     )
+
+
+# R16 P2 — the argument-style writing contract (flag `report.argument_style`).
+# Distilled from the Genie report study (docs/REPORT_STYLE_STUDY_2026-07-16.md):
+# the strongest analyst reports ARGUE in prose — a verdict first, numbers bold
+# inline in sentences, entities named by their identifiers, causes hedged
+# honestly. Appended to the synthesis system prompt only when the flag is on.
+ARGUMENT_STYLE_ADDENDUM = """WRITING STYLE — argue like an analyst, not a dashboard:
+- Every figure that matters appears **bold inline** in a sentence ("operates at **74.5%** capacity vs **77.2%** on short-haul"). Never assume the UI will surface a number for you.
+- Name entities by their identifier exactly as they appear in the data (route GVA-DEL, customer CU0036204). When ranking, list at most three as compact bullets: "**GVA-DEL**: 65.2% load factor (168K CHF per flight)".
+- executive_summary: the verdict sentence FIRST, then one sentence per major claim, each carrying its own bolded number. 3-5 sentences total — length discipline is credibility.
+- recommendations: imperative verb + **bold lever**, one line each; quantify expected_impact when the evidence supports a number, otherwise omit the number rather than invent one.
+- Causes are hypotheses until proven: hedge honestly ("likely", "consistent with", "operationally impossible → points to a data-quality issue"). Never present a hypothesis as a finding."""
+
+
+def synthesis_system_prompt() -> str:
+    """The narrator's system prompt. R16 P2 (flag `report.argument_style`): the
+    argument-style writing contract above is appended, so the prose argues like
+    an analyst instead of pointing at a dashboard. Flag off → byte-identical to
+    the pre-R16 prompt. Lives here (not investigate.py) both because it is a
+    prompt and because module-level functions in investigate.py are auto-wrapped
+    by the node-span instrumentation, which expects a `state` argument."""
+    base = (
+        "You are a senior data analyst writing a board-level investigation report. "
+        "Every number must trace to the evidence log. No fabrication. "
+        "Be definitive where evidence is strong; honest about uncertainty where it isn't."
+    )
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("report.argument_style"):
+        return base + "\n\n" + ARGUMENT_STYLE_ADDENDUM
+    return base
