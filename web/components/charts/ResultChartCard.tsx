@@ -28,6 +28,7 @@ import { Chart, type ChartCustom } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
 import { classifyColumns, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
+import type { ExhibitSpec } from "@/components/charts/exhibit";
 import { cleanLabel } from "@/lib/format";
 import { applyPostproc, type PostprocOp } from "@/lib/api";
 
@@ -121,6 +122,13 @@ const selectStyle = { borderColor: "var(--chart-grid)", color: "var(--t2)" } as 
 export function ResultChartCard({ columns, rows, title, chartType, chartConfig, custom, heightScale, onSelect }: Props) {
   const { numericIdxs, catIdxs, dateIdxs } = useMemo(() => classifyColumns(columns, rows), [columns, rows]);
   const chartTypes = useMemo(() => availableChartTypes(columns, rows), [columns, rows]);
+  // The exhibit spec (semantic colour / reference lines) rides inside chart_config on the quick
+  // path, but it is NOT field-role config: it must survive the user choosing a chart type, which
+  // nulls chartConfig below. Lift it out so a Display switch can't silently drop the grammar.
+  const exhibit = useMemo(
+    () => (chartConfig?.exhibit as ExhibitSpec | undefined) ?? null,
+    [chartConfig],
+  );
 
   const metricCols = useMemo(() => numericIdxs.map((i) => columns[i]), [numericIdxs, columns]);
   const dimCols = useMemo(
@@ -287,6 +295,7 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
           rows={effData.rows}
           chartType={hint}
           chartConfig={userChoseChart ? null : chartConfig}
+          exhibit={exhibit}
           custom={custom}
           title={title}
           chrome={false}

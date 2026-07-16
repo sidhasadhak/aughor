@@ -571,7 +571,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
           <div key={f.finding_id} className="space-y-1.5 pl-2">
             {hasChart && (
               <div className="rounded-md border border-zinc-800/60 overflow-hidden p-2" style={{ background: "var(--bg-0)" }}>
-                <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} columnUnits={f.column_units} showLabels />
+                <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} columnUnits={f.column_units} exhibit={f.exhibit} showLabels />
               </div>
             )}
             {f.key_numbers?.length > 0 && <KeyNumbersInline metrics={f.key_numbers} />}

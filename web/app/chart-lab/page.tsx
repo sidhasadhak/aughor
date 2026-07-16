@@ -300,6 +300,23 @@ export default function ChartLab() {
         />
       </div>
 
+      <p style={{ fontSize: 12, color: "var(--t3)", margin: "16px 0 8px", fontFamily: "var(--font-ui)" }}>
+        Exhibit survival: the spec rides inside <code>chart_config</code> on the quick path, and choosing a
+        Display nulls that config — the ramp + ref line must SURVIVE the switch (they are semantics, not field roles).
+      </p>
+      <div style={{ background: "var(--bg-1)", border: "1px solid var(--chart-axis)", borderRadius: 10, padding: 14, maxWidth: 720 }}>
+        <ResultChartCard
+          title="Load factor by route (exhibit inside chart_config)"
+          {...toTable(loadFactors, ["route", "load_factor_pct"])}
+          chartConfig={{
+            exhibit: {
+              color: { mode: "severity" },
+              ref_lines: [{ value: 74.5, label: "Long-haul avg", kind: "global_avg" }],
+            },
+          }}
+        />
+      </div>
+
       <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
         &lt;KpiStripView&gt; — key-metrics scorecard (semantic deltas + sparklines)
       </h2>

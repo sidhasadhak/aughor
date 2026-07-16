@@ -71,6 +71,12 @@ export function severityRamp(min: number, max: number, field: string): (v: numbe
 
 // ── markLine helper ──────────────────────────────────────────────────────────
 
+// A reference line is axis FURNITURE, not data: it must not claim a categorical hue from
+// the palette (ECharts would otherwise inherit the series colour — which reads as another
+// series, and would vanish outright into a same-family severity ramp). The tick colour is
+// the same neutral the axis labels use, and it reads on both themes.
+const REF_LINE_COLOR = "#9DA1A8";
+
 /** Build the ECharts markLine block for the given reference lines. `axis` picks
  *  which axis carries the VALUE dimension ("x" for horizontal bars, "y" else). */
 export function refMarkLine(
@@ -84,7 +90,7 @@ export function refMarkLine(
     silent: true,
     symbol: "none",
     animation: false,
-    lineStyle: { type: "dashed", width: 1.25 },
+    lineStyle: { type: "dashed", width: 1.25, color: REF_LINE_COLOR },
     // A vertical (xAxis) markLine runs top→bottom, so "start" floats the label above the
     // grid top; a horizontal (yAxis) line's "end" floats it right of the grid. rotate 0
     // keeps the text horizontal — the inside positions rotate it along a vertical line,
@@ -94,6 +100,7 @@ export function refMarkLine(
       position: axis === "x" ? "start" : "end",
       rotate: 0,
       fontSize: 10,
+      color: REF_LINE_COLOR,
       formatter: (p: { data?: { name?: string }; value?: unknown }) =>
         `${p.data?.name ?? ""} ${fmt(p.value)}`.trim(),
     },
