@@ -26,6 +26,7 @@ FLAG_ENV = {
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "starters.library": "AUGHOR_STARTERS_LIBRARY",
+    "lens.decision_grade": "AUGHOR_LENS_DECISION_GRADE",
     "ontology.autodoc": "AUGHOR_ONTOLOGY_AUTODOC",
     "ontology.column_config": "AUGHOR_ONTOLOGY_COLUMN_CONFIG",
     "birth.job": "AUGHOR_BIRTH_JOB",
@@ -193,6 +194,10 @@ FLAG_META = {
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
         "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single Deep-Analysis investigation. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay investigations. Unlocks the already-built explore wave from /ask. Off by default.",
+    },
+    "lens.decision_grade": {
+        "label": "Decision-grade output lenses",
+        "description": "Two deterministic output moves borrowed from the Genie reports' strongest habits: (1) the opportunity-cost lens — for a weak segment in a dimensional scan, benchmark it against its best material peer and quantify gap × volume as one hedged key number ('closing the gap ≈ N', a ceiling not a forecast); (2) the named-outlier-entity lens — the overview tour surfaces the single entity BY ID that towers over its top-10 peers, with a mini-profile and honest 'potential causes' (data artifact vs real whale) plus the drill SQL to verify. No model in the loop; both compute from rows already fetched (plus one bounded probe per table for the entity lens). Off by default = byte-identical — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R15).",
     },
     "starters.library": {
         "label": "Named research-starter playbooks",

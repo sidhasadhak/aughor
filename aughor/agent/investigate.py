@@ -4515,6 +4515,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
 
     # Make the bar plot the metric itself: for a ratio, plot metric_total (the %/rate) and drop the
     # large numerator/denominator aggregates; for an additive metric, plot the magnitude not its share.
+    from aughor.kernel.flags import flag_enabled as _flag_enabled
+    _decision_grade = _flag_enabled("lens.decision_grade")
     for f in findings:
         if is_ratio:
             _chart_ratio_primary(f)
@@ -4528,6 +4530,13 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         _fix_xsec_extreme_key_numbers(f, is_pct=_metric_is_pct)
         # Tag % columns + canonicalise every key number's scale/precision (no-op for non-% metrics).
         _apply_percent_formatting(f, _metric_is_pct)
+        # R15 — decision-grade opportunity framing: benchmark-gap × volume, computed
+        # deterministically from this finding's own segment rows (no model, no extra
+        # query). Flag-gated; a grid the lens can't read honestly annotates nothing.
+        if _decision_grade:
+            from aughor.agent.opportunity import annotate_opportunity
+            annotate_opportunity(f, metric_label=metric_label, is_ratio=is_ratio,
+                                 is_percent=_metric_is_pct)
 
     # Numeric fan-out backstop — the AST chasm detectors miss some join shapes and the coder can
     # reinterpret the metric, so verify the NUMBERS on the RAW results (all columns present). Two

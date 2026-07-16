@@ -383,6 +383,86 @@ def _lens_group_probes(conn, table: str, cols: list, tprofile) -> list:
     return facts
 
 
+def _lens_named_outlier(conn, table: str, cols: list, tprofile) -> list:
+    """R15 — the named-outlier-ENTITY lens (flag ``lens.decision_grade``): surface the
+    single most extreme entity BY ID — the `research_agent_outliers` output shape
+    ("customer CU0036204: 2,423 tickets ≈ 6 flights/day"). Where the group lens cuts by
+    a SMALL dimension, this cuts by the table's high-cardinality entity column (customer
+    id, aircraft registration) and names the record that towers over its top-10 peers.
+    One probe per table; the "potential causes" hedge is honest by construction — a
+    dominance this extreme is either a data artifact or a real whale, and the drill
+    (the attached SQL) is how you find out."""
+    facts: list = []
+    row_count = float(getattr(tprofile, "row_count", 0) or 0)
+    if row_count < 100:
+        return facts
+
+    # The entity column: a repeated identifier — high-card but NOT row-unique (a
+    # per-row id like ticket_id aggregates to nothing). Most-repeated wins: that is
+    # the id whose top entity means the most events/records per entity.
+    def _entity_col(c) -> bool:
+        st = (getattr(c, "semantic_type", "") or "").lower()
+        dc = float(getattr(c, "distinct_count", 0) or 0)
+        return (st in ("key", "dimension", "text")
+                and not _is_coord(getattr(c, "column", ""))
+                and 30 <= dc <= 0.9 * row_count)
+
+    entities = sorted((c for c in cols if _entity_col(c)),
+                      key=lambda c: float(getattr(c, "distinct_count", 0) or 1))
+    if not entities:
+        return facts
+    ent = entities[0].column
+    ent_label = _clean_label(ent)
+
+    def _nonneg(c) -> bool:
+        vr = getattr(c, "value_range", None)
+        return not (vr and _f(vr[0]) is not None and _f(vr[0]) < 0)
+    additive = [c for c in cols if _is_additive(c) and _nonneg(c)]
+    measure = additive[0].column if additive else None
+
+    if measure:
+        sql = (f"SELECT {ent} AS grp, COUNT(*) AS n, ROUND(SUM({measure}), 2) AS val "
+               f"FROM {table} WHERE {ent} IS NOT NULL GROUP BY 1 ORDER BY val DESC LIMIT 10")
+        mlabel = _clean_label(measure)
+    else:
+        sql = (f"SELECT {ent} AS grp, COUNT(*) AS n FROM {table} "
+               f"WHERE {ent} IS NOT NULL GROUP BY 1 ORDER BY n DESC LIMIT 10")
+        mlabel = "records"
+    colnames, rows = _probe(conn, sql)
+    if not rows or len(rows) < 5:
+        return facts
+    groups = [str(r[0]) for r in rows]
+    counts = [(_f(r[1]) or 0.0) for r in rows]
+    values = [(_f(r[2]) if len(r) > 2 else _f(r[1])) or 0.0 for r in rows]
+
+    peers = sorted(values[1:])
+    med = peers[len(peers) // 2]
+    if med <= 0 or values[0] <= 0:
+        return facts
+    dev = (values[0] - med) / med
+    if dev < 1.0:          # the leader must at least DOUBLE its top-10 peer median
+        return facts
+
+    chart_rows = [[g, v] for g, v in zip(groups, values)]
+    facts.append(OverviewFact(
+        lens="outlier",
+        headline=(f"{ent_label.capitalize()} {groups[0]} towers over its peers — "
+                  f"{_fmt(values[0])} {mlabel}"),
+        stat=_fmt(values[0]), stat_label=f"{mlabel} for {groups[0]}",
+        why=(f"{groups[0]} carries {_fmt(values[0])} {mlabel} across {_fmt(counts[0])} records "
+             f"vs ~{_fmt(med)} for its top-10 peers ({_fmt(dev, 'pct')} above). Potential causes: "
+             f"a data-quality artifact (duplicated or mis-keyed records) or a genuinely dominant "
+             f"{ent_label} — drill this fact to verify which"),
+        notability=min(0.92, 0.12 + M.notability_deviation(dev)),
+        table=table, measure=(measure or None), dimension=ent,
+        sql=sql, columns=["group", "value"], rows=chart_rows,
+        chart_type="bar",
+        chart_config={"type": "bar", "x_field": "group", "y_field": "value",
+                      "title": f"top {ent_label} by {mlabel}"},
+    ))
+    return facts
+
+
 def _lens_distribution(by_table: dict) -> list:
     """Shape-of-the-numbers facts from cached moments (skew, span) — no SQL."""
     facts: list = []
@@ -617,6 +697,11 @@ def build_overview(conn, connection_id: str, tables: list, *, schema: str = "",
     candidates += _lens_scale(tprofiles, entity_hint)
     candidates += _lens_distribution(by_table)
 
+    # R15 — the named-outlier-entity lens rides the same probe budget (one extra
+    # probe per table). Flag read once; off = byte-identical tour.
+    from aughor.kernel.flags import flag_enabled
+    _decision_grade = flag_enabled("lens.decision_grade")
+
     probes = 0
     touched: set = set()
     for table, tp in ranked:
@@ -630,6 +715,12 @@ def build_overview(conn, connection_id: str, tables: list, *, schema: str = "",
             touched.add(table)
             candidates += got
         probes += min(_MAX_DIMS_PER_TABLE, len(_material_dims(cols)))
+        if _decision_grade and probes < _MAX_PROBES:
+            named = _lens_named_outlier(conn, table, cols, tp)
+            if named:
+                touched.add(table)
+                candidates += named
+            probes += 1
 
     candidates += _lens_coverage(by_table, tprofiles, touched)
 
