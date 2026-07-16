@@ -28,6 +28,7 @@ import { Chart, type ChartCustom } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
 import { classifyColumns, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
+import { isUngraphableGrid } from "@/components/charts/columnRoles";
 import type { ExhibitSpec } from "@/components/charts/exhibit";
 import { cleanLabel } from "@/lib/format";
 import { applyPostproc, type PostprocOp } from "@/lib/api";
@@ -136,7 +137,10 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
     [dateIdxs, catIdxs, columns],
   );
 
-  const [view, setView] = useState<"chart" | "table" | "pivot">(chartTypes.length ? "chart" : "table");
+  // Chart-grammar gate: a stats/entity-profile grid opens on the TABLE (its honest
+  // form — the chart toggle stays available); everything else opens on the chart.
+  const [view, setView] = useState<"chart" | "table" | "pivot">(
+    chartTypes.length && !isUngraphableGrid(columns, rows) ? "chart" : "table");
   const [typeSel, setTypeSel] = useState<ChartType | "auto">("auto");
   const [metricSel, setMetricSel] = useState<string | null>(null);
   const [dimSel, setDimSel] = useState<string | null>(null);

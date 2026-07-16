@@ -30,7 +30,7 @@ import {
 } from "@/components/charts/echarts/builders";
 import {
   SHARE_COL, CHANGE_METRIC_COL, TIME_LABEL_COL, INSTRUMENTATION_COL, PREFER_COL, classifyColumns,
-  isIdLike,
+  isIdLike, isUngraphableGrid,
 } from "@/components/charts/columnRoles";
 import { scoreDualAxis } from "@/components/charts/chartTypeInference";
 import type { ExhibitSpec } from "@/components/charts/exhibit";
@@ -175,6 +175,9 @@ export function Chart({
   // data / type / labels / custom / org settings change. userH & heightScale affect height only.
   const built = useMemo<{ option: EChartsOption; defaultH: number } | null>(() => {
     if (!rows.length || !columns.length) return null;
+    // Chart-grammar gate: a stats/entity-profile grid has no honest chart — render
+    // nothing and let the surface's table view carry it (mirrors the export).
+    if (isUngraphableGrid(columns, rows)) return null;
 
     const data: Record<string, unknown>[] = rows.map((r) =>
       Object.fromEntries(columns.map((c, i) => [c, (r as unknown[])[i]])),
@@ -323,6 +326,16 @@ export function Chart({
         exhibit: exhibitEff, pointLabel: scatterLabel, color: scatterColor,
       });
       defaultH = 300;
+    }
+    // 14a. Explicit RANKING hint (bar / bar_horizontal) on a categorical result — the backend's
+    //      intent-driven chart_type is authoritative: plot the PRIMARY measure as one sorted
+    //      horizontal bar. Without this branch the hint fell through to the data-shape gate
+    //      below, which turned a [dim, metric, n, avg] ranking finding into a dual-axis COMBO
+    //      of metric vs row-count — second-guessing the backend and discarding exhibit.order.
+    if (!option && catCol && (hint === "bar" || hint === "bar_horizontal")) {
+      option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff },
+                         { horizontal: true, diverging: _isChangeMetric });
+      defaultH = Math.max(110, nCats * 46 + 44);
     }
     // 14. Categorical default → combo / grouped / change-bar / horizontal bar
     if (!option && catCol) {

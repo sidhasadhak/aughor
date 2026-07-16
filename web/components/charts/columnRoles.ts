@@ -103,6 +103,28 @@ export function isDeadColumn(rows: unknown[][], colIdx: number): boolean {
  *  used by both `inferChartType` (type selection) and `Chart.tsx` (rendering), so the two can't drift.
  *  A date is a date-NAME or a date-VALUE prefix; a numeric is a non-date, non-id numeric value; every
  *  other non-dead column is a category. */
+// ── ungraphable grid shapes (chart-grammar gates; mirror aughor/export/charts.py) ──
+// A summary-statistics PROFILE grid (min/max/mean/std/p1…p99 per column) and an
+// ID-labelled record grid with 3+ heterogeneous measures are TABLES, never charts —
+// stacked/grouped bars over them say nothing (the W5 A/B caught both live).
+const STAT_COL_RE = /^(min|max|mean|avg|std|stddev|median|p\d{1,2})(_val(ue)?)?$/i;
+
+/** True when the grid is a stats profile or an entity-profile record grid — the
+ *  two shapes the chart grammar sends to a TABLE. Shared by inference (auto path),
+ *  the renderer, and the answer card (which flips its default view to table). */
+export function isUngraphableGrid(columns: string[], rows: unknown[][]): boolean {
+  const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows);
+  const statCols = numericIdxs.filter((i) => STAT_COL_RE.test((columns[i] || "").trim()));
+  if (statCols.length >= 3) return true;
+  if (dateIdxs.length === 0 && numericIdxs.length >= 3 && catIdxs.length > 0) {
+    // Entity profile: every DISTINGUISHING label column is id-like (a near-constant
+    // flag column doesn't count as a real label).
+    const labelish = catIdxs.filter((i) => new Set(rows.map((r) => String((r as unknown[])[i]))).size > 2);
+    if (labelish.length > 0 && labelish.every((i) => isIdLike(columns[i] || ""))) return true;
+  }
+  return false;
+}
+
 export function classifyColumns(
   columns: string[],
   rows: unknown[][],
