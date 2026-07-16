@@ -62,6 +62,18 @@ def test_export_formatter_prefixes_the_source_currency():
     assert fmt_usd(1500.0) == "$1.5K"
 
 
+def test_export_money_symbol_fallback_matches_the_web():
+    # No unit hint: a money-named column carries the connection's effective symbol
+    # (the web's behavior) — the PDF axis can no longer read bare "34.7M" while the
+    # app shows "CHF 34.7M". Source-currency units still beat the fallback; a
+    # non-money column stays bare.
+    fmt = _fmt_for("net revenue", None, money_symbol="CHF ")
+    assert fmt(34741777.0) == "CHF 34.7M"
+    assert _fmt_for("records", None, money_symbol="CHF ")(77281) == "77.3K"
+    assert _fmt_for("net revenue", {"net revenue": "currency:USD"},
+                    money_symbol="CHF ")(1500.0) == "$1.5K"
+
+
 # ── 2 · fallback headline word-boundary cut ──────────────────────────────────
 
 def test_fallback_headline_short_sentence_kept_whole():

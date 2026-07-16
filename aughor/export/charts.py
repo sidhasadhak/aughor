@@ -87,19 +87,39 @@ _CURRENCY_SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "CNY": 
                      "INR": "₹", "AUD": "A$", "CAD": "C$", "SGD": "S$", "CHF": "CHF ",
                      "BRL": "R$", "ZAR": "R"}
 
+# Money-column name test — mirrors web/lib/orgSettings.ts MONEY_RE/NOT_MONEY_RE, so the
+# PDF and the app agree on WHICH figures carry a currency symbol (parity, not taste).
+_MONEY_COL_RE = re.compile(
+    r"(?<![a-z])(?:revenues?|sales|gmv|prices?|pricing|costs?|amounts?|spend|spent|profits?"
+    r"|payments?|fees?|charges?|balances?|budget|income|expenses?|turnover|takings|payout"
+    r"|aov|arpu|mrr|arr|ltv|cac|gross)(?![a-z])"
+    r"|(?:usd|eur|gbp|chf|jpy|cny|inr|aud|cad|sek|nok|dkk|sgd|hkd|nzd|brl|zar|mxn|pln|aed)$"
+    r"|net_(?:sales|revenue|profit)", re.I)
+_NOT_MONEY_COL_RE = re.compile(
+    r"(?<![a-z])(?:counts?|qty|quantity|numbers?|num|rate|ratio|pct|percent|share|proportion"
+    r"|rank|index|score|days?|months?|years?|weeks?|hours?|minutes?|age|id)(?![a-z])", re.I)
 
-def _fmt_for(field: str, units: Optional[dict]) -> Callable[[float], str]:
+
+def _is_money_col(name: str) -> bool:
+    return bool(_MONEY_COL_RE.search(name or "")) and not _NOT_MONEY_COL_RE.search(name or "")
+
+
+def _fmt_for(field: str, units: Optional[dict], money_symbol: str = "") -> Callable[[float], str]:
     """Per-field value formatter. An explicit `{col: "percent"}` unit is authoritative
     and scale-aware — a fraction (0.745) is ×100, an already-scaled percent (74.5) is
     left — so the PDF reads "74.5%" exactly where the app does; a `"currency:CHF"`
-    unit prefixes the SOURCE currency's symbol. Mirrors the web's valueFormatter
-    (builders.ts); absent a hint this is the legacy `_compact`."""
+    unit prefixes the SOURCE currency's symbol. Absent a unit, a money-named column
+    carries `money_symbol` (the connection's effective currency — the same fallback
+    the web applies), so the PDF's axis can't read bare while the app shows a symbol.
+    Mirrors the web's valueFormatter (builders.ts)."""
     u = (units or {}).get(field)
     if u == "percent":
         return lambda n: (f"{n * 100:.1f}%" if abs(n) <= 1.0001 else f"{n:.1f}%")
     if isinstance(u, str) and u.startswith("currency:"):
         sym = _CURRENCY_SYMBOLS.get(u[len("currency:"):], u[len("currency:"):] + " ")
         return lambda n: sym + _compact(n)
+    if money_symbol and _is_money_col(field):
+        return lambda n: money_symbol + _compact(n)
     return _compact
 
 
@@ -144,9 +164,11 @@ def _draw_ref_lines(ax, exhibit: Optional[dict], axis: str, fmt: Callable[[float
         v, text = line["value"], f"{line['label']} {fmt(line['value'])}".strip()
         if axis == "x":
             ax.axvline(v, color=_MUTED, linestyle="--", linewidth=0.9, zorder=1)
+            # Inside the axes, hanging below the top edge — labels above the axes
+            # collide with the figure title (seen live on an exported report).
             ax.annotate(text, xy=(v, 1.0), xycoords=("data", "axes fraction"),
-                        xytext=(2, 3 + k * 9), textcoords="offset points",
-                        fontsize=6.5, color=_MUTED, ha="left", va="bottom")
+                        xytext=(2, -4 - k * 9), textcoords="offset points",
+                        fontsize=6.5, color=_MUTED, ha="left", va="top")
         else:
             ax.axhline(v, color=_MUTED, linestyle="--", linewidth=0.9, zorder=1)
             ax.annotate(text, xy=(1.0, v), xycoords=("axes fraction", "data"),
@@ -254,6 +276,7 @@ def render_chart(
     height: float = 3.4,
     units: Optional[dict] = None,
     exhibit: Optional[dict] = None,
+    money_symbol: str = "",
 ) -> Optional[bytes]:
     """Render a finding's result to a PNG, honouring the stored chart_type hint.
 
@@ -296,30 +319,30 @@ def render_chart(
         # ── time series: date x-axis ──────────────────────────────────────────
         if date_idx and ct in ("line", "multi_line", "area", "auto", "combo"):
             return _render_timeseries(columns, rows, date_idx[0], num_idx, cat_idx, ct, title,
-                                      width, height, units, exhibit)
+                                      width, height, units, exhibit, money_symbol)
         # ── scatter: two numerics, no category ───────────────────────────────
         if ct == "scatter" and len(num_idx) >= 2:
-            return _render_scatter(columns, rows, num_idx, cat_idx, title, width, height, units, exhibit)
+            return _render_scatter(columns, rows, num_idx, cat_idx, title, width, height, units, exhibit, money_symbol)
         # ── pie: one category + one measure ──────────────────────────────────
         if ct in ("pie", "treemap") and cat_idx:
             return _render_pie(columns, rows, cat_idx[0], num_idx[0], title, width, height)
         # ── default: categorical bar / grouped / stacked / combo ─────────────
         if cat_idx:
-            return _render_bar(columns, rows, cat_idx[0], num_idx, ct, title, width, height, units, exhibit)
+            return _render_bar(columns, rows, cat_idx[0], num_idx, ct, title, width, height, units, exhibit, money_symbol)
         # numerics only, no category, no date → scatter if 2, else single bar of values
         if len(num_idx) >= 2:
-            return _render_scatter(columns, rows, num_idx, cat_idx, title, width, height, units, exhibit)
-        return _render_bar(columns, rows, None, num_idx, ct, title, width, height, units, exhibit)
+            return _render_scatter(columns, rows, num_idx, cat_idx, title, width, height, units, exhibit, money_symbol)
+        return _render_bar(columns, rows, None, num_idx, ct, title, width, height, units, exhibit, money_symbol)
     except Exception:
         # Never let a render failure break the document — fall back to a table.
         plt.close("all")
         return None
 
 
-def _render_timeseries(columns, rows, dx, num_idx, cat_idx, ct, title, w, h, units=None, exhibit=None):
+def _render_timeseries(columns, rows, dx, num_idx, cat_idx, ct, title, w, h, units=None, exhibit=None, money_symbol=""):
     fig, ax = plt.subplots(figsize=(w, h))
     _style(ax)
-    _fmt = _fmt_for(columns[num_idx[0]] if num_idx and num_idx[0] < len(columns) else "", units)
+    _fmt = _fmt_for(columns[num_idx[0]] if num_idx and num_idx[0] < len(columns) else "", units, money_symbol)
     # category present → one line per series (multi_line)
     if cat_idx and ct in ("multi_line", "auto", "line") and len(num_idx) >= 1:
         cx, vy = cat_idx[0], num_idx[0]
@@ -366,7 +389,7 @@ def _render_timeseries(columns, rows, dx, num_idx, cat_idx, ct, title, w, h, uni
     return _finish(fig)
 
 
-def _render_bar(columns, rows, cx, num_idx, ct, title, w, h, units=None, exhibit=None):
+def _render_bar(columns, rows, cx, num_idx, ct, title, w, h, units=None, exhibit=None, money_symbol=""):
     # Top-N by the first measure for readability.
     vy = num_idx[0]
     data = []
@@ -430,7 +453,7 @@ def _render_bar(columns, rows, cx, num_idx, ct, title, w, h, units=None, exhibit
     ax.set_yticks(list(y_pos))
     ax.set_yticklabels([l[:28] for l in labels], fontsize=8)
     ax.invert_yaxis()
-    _fmt = _fmt_for(columns[vy] if vy < len(columns) else "", units)
+    _fmt = _fmt_for(columns[vy] if vy < len(columns) else "", units, money_symbol)
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: _fmt(v)))
     if not multi:
         for i, d in enumerate(data):
@@ -466,7 +489,7 @@ def _render_pie(columns, rows, cx, vy, title, w, h):
 
 
 def _render_scatter(columns, rows, num_idx, cat_idx=None, title="", w=7.0, h=3.4,
-                    units=None, exhibit=None):
+                    units=None, exhibit=None, money_symbol=""):
     """Two numerics, correlation / outlier detection. An entity scatter (the exhibit
     grammar) additionally NAMES each point by its id-like column and colours the points
     by a low-cardinality second dimension — three dimensions plus identity in one
@@ -526,7 +549,7 @@ def _render_scatter(columns, rows, num_idx, cat_idx=None, title="", w=7.0, h=3.4
             if label:
                 ax.annotate(label[:14], (x, y), xytext=(0, 5), textcoords="offset points",
                             fontsize=6, color=_FG, ha="center")
-    fx, fy = _fmt_for(columns[xi], units), _fmt_for(columns[yi], units)
+    fx, fy = _fmt_for(columns[xi], units, money_symbol), _fmt_for(columns[yi], units, money_symbol)
     ax.set_xlabel(_pretty(columns[xi]), fontsize=8, color=_MUTED)
     ax.set_ylabel(_pretty(columns[yi]), fontsize=8, color=_MUTED)
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: fx(v)))

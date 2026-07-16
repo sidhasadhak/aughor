@@ -2875,6 +2875,17 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         events_section=events_section,
         origin_finding_section=origin_finding_section,
     )
+    # Loss-intent questions get a deterministic directive naming the loss signals THIS
+    # schema carries (contra-revenue / capacity columns) — a revenue ranking cannot find
+    # losses, and the live A/B showed it concluding "no losses" over 2.4M of refund
+    # leakage. Prepended so it is the topmost instruction the intake sees. Flag-gated;
+    # '' when the question/schema don't apply, so the prompt is byte-identical otherwise.
+    from aughor.kernel.flags import flag_enabled as _loss_flag
+    if _loss_flag("intake.loss_signals"):
+        from aughor.agent.loss_signals import loss_signal_directive
+        _directive = loss_signal_directive(question, schema)
+        if _directive:
+            prompt = _directive + "\n" + prompt
 
     try:
         intake: IntakeOutput = _provider("coder").complete(

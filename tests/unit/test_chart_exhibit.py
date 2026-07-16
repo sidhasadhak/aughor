@@ -216,6 +216,21 @@ def test_cross_section_without_a_bottom_n_query_has_no_order():
     assert "order" not in f["exhibit"]
 
 
+def test_avg_scale_refs_are_clipped_on_a_totals_chart():
+    # The full cross-section grid [dim, metric_total, n, avg_per_record], ADDITIVE metric:
+    # the chart plots the TOTAL, the benchmark/wavg refs are per-record scale (~460) —
+    # they must be clipped, not stamped across a 35M axis (seen live on an exported
+    # report: "Benchmark: call_center 462.06" printed over the title of a totals chart).
+    f = {
+        "columns": ["channel", "metric_total", "n", "avg_per_record"],
+        "rows": [["web", 34741777.0, 77281, 449.55], ["app", 20327801.0, 44195, 459.96],
+                 ["travel_agency", 14699179.0, 32843, 447.56], ["corporate", 8461941.0, 18618, 454.50],
+                 ["call_center", 5041580.0, 10911, 462.06]],
+    }
+    exhibit_for_cross_section(f, is_ratio=False, is_percent=False)
+    assert not (f.get("exhibit") or {}).get("ref_lines")
+
+
 # ── W4: the export (print) renderer speaks the same grammar ──────────────────
 
 _RANKING = (["route", "load_factor_pct"],

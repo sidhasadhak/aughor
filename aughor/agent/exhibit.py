@@ -50,23 +50,35 @@ def _num(v: Any) -> Optional[float]:
 
 
 def _metric_index(finding: dict) -> Optional[int]:
-    """Index of the plotted measure: prefer the cross-section template names, else
-    the LAST column that parses numeric and isn't a count/id column."""
+    """Index of the PLOTTED measure — this must mirror the renderers' primary-measure
+    choice (the FIRST real measure), because ref-line clipping validates against it.
+    Scanning from the back picked the per-record AVG column on the full cross-section
+    grid ([dim, total, n, avg]) while the chart plots the TOTAL — so avg-scale ref
+    lines (~462) passed the clip and printed onto a totals axis (~35M), stamping
+    garbage labels across the title. Prefer the template names; else the first
+    numeric column that isn't a count/id/avg; else any first numeric non-count."""
     cols = [str(c) for c in (finding.get("columns") or [])]
     rows = finding.get("rows") or []
     if not cols or not rows:
         return None
     low = [c.lower() for c in cols]
+
+    def _numeric(i: int) -> bool:
+        vals = [x for x in (_num(r[i]) for r in rows if i < len(r)) if x is not None]
+        return len(vals) >= max(1, len(rows) // 2)
+
     named = next((i for i, c in enumerate(low)
                   if c in ("metric_total", "value", "val", "avg_per_record")), None)
-    candidates = [named] if named is not None else [
-        i for i in range(len(cols) - 1, -1, -1)
-        if low[i] not in _COUNT_COL_NAMES and not _ID_COL_RE.search(cols[i])
-    ]
-    for i in candidates:
-        vals = [x for x in (_num(r[i]) for r in rows if i < len(r)) if x is not None]
-        if len(vals) >= max(1, len(rows) // 2):
-            return i
+    if named is not None and _numeric(named):
+        return named
+    for avg_ok in (False, True):    # first pass skips avg/per-record columns
+        for i in range(len(cols)):
+            if low[i] in _COUNT_COL_NAMES or _ID_COL_RE.search(cols[i]):
+                continue
+            if not avg_ok and re.search(r"avg|average|per[\s_/-]|mean", low[i]):
+                continue
+            if _numeric(i):
+                return i
     return None
 
 
@@ -80,20 +92,27 @@ def _metric_values(finding: dict) -> list[float]:
 
 
 def clip_ref_lines(ref_lines: list[dict], values: list[float]) -> list[dict]:
-    """Keep only reference lines near the plotted range — a line far outside it
-    stretches the axis and buries the data (worse than no context)."""
+    """Keep only reference lines that read on the plotted axis. Two rejections:
+    a line far OUTSIDE the range stretches the axis and buries the data; a line
+    on a wildly smaller SCALE (a per-record 462 on a 35M totals axis) renders
+    indistinguishable from the axis line — a label floating over nothing. A ref
+    outside the data range must still be visually distinct: ≥2% of the axis top."""
     finite = [v for v in values if v is not None]
     if not finite:
         return []
     lo, hi = min(finite), max(finite)
     span = (hi - lo) or (abs(hi) or 1.0)
     lo_ok, hi_ok = lo - _REF_SPAN_MARGIN * span, hi + _REF_SPAN_MARGIN * span
+    scale = max(abs(lo), abs(hi), 1e-12)
     out = []
     for line in ref_lines or []:
         v = _num(line.get("value"))
-        if v is not None and lo_ok <= v <= hi_ok:
-            out.append({"value": v, "label": str(line.get("label") or ""),
-                        "kind": line.get("kind")})
+        if v is None or not (lo_ok <= v <= hi_ok):
+            continue
+        if not (lo <= v <= hi) and abs(v) < 0.02 * scale:
+            continue
+        out.append({"value": v, "label": str(line.get("label") or ""),
+                    "kind": line.get("kind")})
     return out
 
 

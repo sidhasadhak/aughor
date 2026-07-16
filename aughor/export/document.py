@@ -88,12 +88,29 @@ def _round_cell(v):
     return v
 
 
-def _chart_or_table(columns, rows, chart_type, title, units=None, exhibit=None) -> list[Block]:
+def _effective_money_symbol(inv: dict) -> str:
+    """The connection's effective currency symbol (org/workspace override-wins, else the
+    inferred profile currency) — the SAME fallback the web's effectiveCurrencySymbol
+    applies, so the PDF's axes can't read bare (or a different symbol) while the app
+    shows one. Best-effort: '' on any failure — a bare number beats a wrong symbol."""
+    try:
+        from aughor.knowledge.triage import currency_symbol
+        from aughor.orgsettings import resolve_currency
+        from aughor.profile import store as _pstore
+        prof = _pstore.load(inv.get("connection_id") or "", inv.get("schema_name"))
+        code = resolve_currency(getattr(prof, "currency_code", None) or "")
+        return currency_symbol(code)
+    except Exception:
+        return ""
+
+
+def _chart_or_table(columns, rows, chart_type, title, units=None, exhibit=None,
+                    money_symbol: str = "") -> list[Block]:
     """Render a chart if the data supports it; always include the data table too
     (capped) so the document carries the underlying numbers."""
     out: list[Block] = []
     png = render_chart(columns or [], rows or [], chart_type or "auto", title,
-                       units=units, exhibit=exhibit)
+                       units=units, exhibit=exhibit, money_symbol=money_symbol)
     if png:
         out.append(Block("chart", png=png, caption=title))
     if columns and rows:
@@ -102,7 +119,8 @@ def _chart_or_table(columns, rows, chart_type, title, units=None, exhibit=None) 
     return out
 
 
-def _exhibit_argument(columns, rows, chart_type, title, units=None, exhibit=None) -> list[Block]:
+def _exhibit_argument(columns, rows, chart_type, title, units=None, exhibit=None,
+                      money_symbol: str = "") -> list[Block]:
     """R16 P1 — ONE exhibit per claim, and only when it informs.
 
     A degenerate result (fewer than two rows: the 1-bar chart, the single-point
@@ -113,7 +131,8 @@ def _exhibit_argument(columns, rows, chart_type, title, units=None, exhibit=None
     if not columns or len(rows) < 2:
         return []
     if (chart_type or "auto") != "none":
-        png = render_chart(columns, rows, chart_type or "auto", title, units=units, exhibit=exhibit)
+        png = render_chart(columns, rows, chart_type or "auto", title, units=units,
+                           exhibit=exhibit, money_symbol=money_symbol)
         if png:
             return [Block("chart", png=png, caption=title)]
     table_rows = [[_round_cell(v) for v in row] for row in rows[:8]]
@@ -187,6 +206,7 @@ def _build_explore(inv: dict) -> ExportDoc:
     from aughor.kernel.flags import flag_enabled
     _argument = flag_enabled("report.argument_style")
     _exhibits = _exhibit_argument if _argument else _chart_or_table
+    _money_sym = _effective_money_symbol(inv)
 
     blocks: list[Block] = []
     if rep.get("narrative"):
@@ -201,7 +221,8 @@ def _build_explore(inv: dict) -> ExportDoc:
         if prose:
             blocks.append(_p(prose))
         blocks.extend(_exhibits(a.get("columns"), a.get("rows"), a.get("chart_type") or "auto",
-                                title, units=a.get("column_units"), exhibit=a.get("exhibit")))
+                                title, units=a.get("column_units"), exhibit=a.get("exhibit"),
+                                money_symbol=_money_sym))
     if rep.get("conclusion"):
         blocks.append(_h("Conclusion"))
         blocks.append(_p(rep["conclusion"]))
@@ -249,6 +270,7 @@ def _build_ada(inv: dict) -> ExportDoc:
     # section. Flag off → the legacy composition, byte-identical.
     from aughor.kernel.flags import flag_enabled
     _argument = flag_enabled("report.argument_style")
+    _money_sym = _effective_money_symbol(inv)
     _nm = lambda s: (s or "").replace("*", "")  # noqa: E731 — strip model markdown
     opportunities: list[dict] = []
 
@@ -299,10 +321,12 @@ def _build_ada(inv: dict) -> ExportDoc:
             _u, _x = f.get("column_units"), f.get("exhibit")
             if _argument:
                 blocks.extend(_exhibit_argument(f.get("columns"), f.get("rows"), f.get("chart_type"),
-                                                f.get("title") or "", units=_u, exhibit=_x))
+                                                f.get("title") or "", units=_u, exhibit=_x,
+                                                money_symbol=_money_sym))
             else:
                 blocks.extend(_chart_or_table(f.get("columns"), f.get("rows"), f.get("chart_type"),
-                                              f.get("title") or "", units=_u, exhibit=_x))
+                                              f.get("title") or "", units=_u, exhibit=_x,
+                                              money_symbol=_money_sym))
 
     # R16 P1 — the decision paragraph: gap-to-benchmark × volume, in prose,
     # right where a reader decides (before Recommendations).
