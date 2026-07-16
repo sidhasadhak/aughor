@@ -54,7 +54,8 @@ class AgentCharter:
 
 # The roster. Scout + Analyst + Insight run interactive/background work today; Watcher +
 # Briefer are wired to the metered monitor/brief cron (WP-7, flag `ops.metered_monitors`);
-# only Curator (profile refresh) stays reserved until it moves under the kernel.
+# Curator runs the R12 birth job (kind "profile" — eager intelligence at connection/canvas
+# birth, flag `birth.job`), moved under the kernel per its original Phase-3 reservation.
 AGENTS: tuple[AgentCharter, ...] = (
     AgentCharter(
         id="scout", name="Scout", role="Autonomous data explorer",
@@ -96,7 +97,11 @@ AGENTS: tuple[AgentCharter, ...] = (
         id="curator", name="Curator", role="Semantic-layer keeper",
         goal="Keep the profile, ontology, and metrics fresh and governed.",
         lane="background", job_kinds=("profile",), tools=("inference", "override-merge"),
-        icon="folder", reserved=True),
+        icon="folder",
+        # R12: the birth job's intelligence step includes ONE ontology-enrichment LLM
+        # pass (+ deterministic profiling/validation SQL) — a modest token ceiling with
+        # generous time for slow warehouses. Exploration runs under Scout's own budget.
+        default_budget=Budget(token_budget=200_000, time_budget_s=900)),
 )
 
 _BY_ID: dict[str, AgentCharter] = {a.id: a for a in AGENTS}

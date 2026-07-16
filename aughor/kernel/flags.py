@@ -27,6 +27,7 @@ FLAG_ENV = {
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "ontology.autodoc": "AUGHOR_ONTOLOGY_AUTODOC",
     "ontology.column_config": "AUGHOR_ONTOLOGY_COLUMN_CONFIG",
+    "birth.job": "AUGHOR_BIRTH_JOB",
     "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
     "ada.parallel_phases": "AUGHOR_ADA_PARALLEL_PHASES",
     "ada.why_where_interaction": "AUGHOR_ADA_WHY_WHERE_INTERACTION",
@@ -190,6 +191,10 @@ FLAG_META = {
     "ontology.autodoc": {
         "label": "Compile ontology docs as a build artifact",
         "description": "After the ontology is built, project it into a persisted, Merkle-checksummed doc tree (column→table→schema→connection) with per-table analyst questions — understanding compiled once and re-read cheaply, rebuilt incrementally as the schema moves. Deterministic (no model); also available on demand via the `aughor ontology-docs` CLI. Off by default — see docs/DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md (R8).",
+    },
+    "birth.job": {
+        "label": "Connection/canvas birth as one observable job",
+        "description": "Run the 'understand this data' rite as ONE supervised kernel job at connection creation, upload re-arm, and canvas creation: eager intelligence first (profiles → ontology → doc tree → column config), then the exploration handoff — each step a birth.step event on the event spine, governed by the Curator agent's charter. Off by default: exploration alone kicks off and intelligence stays lazy (built on the first question), exactly as before — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R12).",
     },
     "ontology.column_config": {
         "label": "Per-column visibility / sampling / indexing config",
