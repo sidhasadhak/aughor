@@ -61,9 +61,10 @@ class PopularitySignal:
 # ── store (the overview_drills pattern: tiny, keyed, replace-on-refresh) ─────
 
 def _connect() -> sqlite3.Connection:
+    from aughor.db.sqlite_util import tune
     path = _db_path()
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(path, timeout=5)
+    con = tune(sqlite3.connect(path, timeout=5))
     con.execute(
         "CREATE TABLE IF NOT EXISTS popularity ("
         " connection_id TEXT NOT NULL,"
