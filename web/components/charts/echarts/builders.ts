@@ -242,7 +242,12 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
   if (order === "time") {
     rows.sort((a, b) => new Date(normDateStr(String(a[i.x]))).getTime() - new Date(normDateStr(String(b[i.x]))).getTime());
   } else if (order === "value") {
-    rows.sort((a, b) => style.diverging ? Math.abs(num(b[y])) - Math.abs(num(a[y])) : num(b[y]) - num(a[y]));
+    // Largest-first by default; an "asc" exhibit means the QUERY asked for the bottom of
+    // the ranking (ORDER BY <measure> ASC LIMIT N), so lead with the row it led with
+    // instead of burying it at the far end of the chart.
+    const asc = i.exhibit?.order === "asc" && !style.diverging;
+    rows.sort((a, b) => style.diverging ? Math.abs(num(b[y])) - Math.abs(num(a[y]))
+      : (asc ? num(a[y]) - num(b[y]) : num(b[y]) - num(a[y])));
   } // "keep" → preserve incoming order (already-aggregated time labels)
   const gran: Gran | null = i.xKind === "time" ? detectGranularity(i.x, i.rows.map((r) => r[i.x])) : null;
   const labels = rows.map((r) => (gran ? fmtDate(String(r[i.x]), gran) : String(r[i.x])));

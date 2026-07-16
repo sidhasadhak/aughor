@@ -16,6 +16,7 @@ from aughor.agent.exhibit import (
     clip_ref_lines,
     exhibit_for_cross_section,
     exhibit_for_lens,
+    order_from_sql,
     quick_exhibit,
 )
 from aughor.agent.opportunity import compute_opportunity, segment_rates
@@ -180,6 +181,41 @@ def test_quick_exhibit_needs_enough_rows():
                          "bar_horizontal") is None
 
 
+# ── ordering: the SQL decides which end of the ranking leads ─────────────────
+
+def test_order_asc_when_the_query_asked_for_the_bottom_n():
+    sql = "SELECT route, load_factor FROM f GROUP BY route ORDER BY load_factor ASC LIMIT 15"
+    assert order_from_sql(sql, "load_factor") == "asc"
+
+
+def test_order_none_for_a_top_n_or_an_unbounded_scan():
+    top = "SELECT route, load_factor FROM f ORDER BY load_factor DESC LIMIT 15"
+    unbounded = "SELECT route, load_factor FROM f ORDER BY load_factor ASC"   # no LIMIT
+    other_col = "SELECT route, load_factor FROM f ORDER BY route ASC LIMIT 15"
+    assert order_from_sql(top, "load_factor") is None
+    assert order_from_sql(unbounded, "load_factor") is None
+    assert order_from_sql(other_col, "load_factor") is None
+
+
+def test_order_is_silent_on_unparseable_sql():
+    assert order_from_sql("NOT SQL AT ALL ;;", "x") is None
+    assert order_from_sql("", "x") is None
+
+
+def test_cross_section_carries_the_query_order():
+    f = _xsec_finding()
+    f["sql"] = "SELECT segment, metric_total, n FROM t GROUP BY segment ORDER BY metric_total ASC LIMIT 10"
+    exhibit_for_cross_section(f, is_ratio=True, is_percent=True)
+    assert f["exhibit"]["order"] == "asc"
+
+
+def test_cross_section_without_a_bottom_n_query_has_no_order():
+    f = _xsec_finding()
+    f["sql"] = "SELECT segment, metric_total, n FROM t GROUP BY segment ORDER BY metric_total DESC"
+    exhibit_for_cross_section(f, is_ratio=True, is_percent=True)
+    assert "order" not in f["exhibit"]
+
+
 # ── W4: the export (print) renderer speaks the same grammar ──────────────────
 
 _RANKING = (["route", "load_factor_pct"],
@@ -230,6 +266,11 @@ def test_export_exhibit_actually_reaches_the_canvas():
     signed = render_chart(cols, rows, "bar", "t", exhibit={"color": {"mode": "sign"}})
     assert plain and ramped and reffed and signed
     assert ramped != plain and reffed != plain and signed != plain
+
+
+def test_export_order_asc_leads_with_the_worst():
+    cols, rows = _RANKING
+    assert render_chart(cols, rows, "bar", "t", exhibit={"order": "asc"}) != render_chart(cols, rows, "bar", "t")
 
 
 def test_export_percent_units_change_the_render():

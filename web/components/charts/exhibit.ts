@@ -35,6 +35,10 @@ export interface ExhibitSpec {
   ref_lines?: ExhibitRefLine[] | null;
   label_points?: boolean | null;
   quadrant?: { x?: number | null; y?: number | null } | null;
+  /** "asc" = the query asked for the BOTTOM of the ranking (ORDER BY measure ASC
+   *  LIMIT N), so lead with the row it led with instead of burying it at the far
+   *  end. Absent → the largest-first default. */
+  order?: "asc" | "desc" | null;
 }
 
 // ── severity ramp ────────────────────────────────────────────────────────────

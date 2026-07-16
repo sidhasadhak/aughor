@@ -12,6 +12,7 @@ fetched — no model, no extra query — and attaches it as one additive payload
         "ref_lines":   [{"value": 74.5, "label": "Avg (all segments)", "kind": "global_avg"}],
         "label_points": true,          # scatter: name each point (entity identity)
         "quadrant":    {"x": ..., "y": ...},
+        "order":       "asc",          # lead with the row the QUERY led with (bottom-N)
     }
 
 The web renderer (web/components/charts/exhibit.ts) treats an absent spec as
@@ -48,13 +49,13 @@ def _num(v: Any) -> Optional[float]:
         return None
 
 
-def _metric_values(finding: dict) -> list[float]:
-    """The plotted measure's values: prefer the cross-section template names,
-    else the LAST column that parses numeric and isn't a count/id column."""
+def _metric_index(finding: dict) -> Optional[int]:
+    """Index of the plotted measure: prefer the cross-section template names, else
+    the LAST column that parses numeric and isn't a count/id column."""
     cols = [str(c) for c in (finding.get("columns") or [])]
     rows = finding.get("rows") or []
     if not cols or not rows:
-        return []
+        return None
     low = [c.lower() for c in cols]
     named = next((i for i, c in enumerate(low)
                   if c in ("metric_total", "value", "val", "avg_per_record")), None)
@@ -65,8 +66,17 @@ def _metric_values(finding: dict) -> list[float]:
     for i in candidates:
         vals = [x for x in (_num(r[i]) for r in rows if i < len(r)) if x is not None]
         if len(vals) >= max(1, len(rows) // 2):
-            return vals
-    return []
+            return i
+    return None
+
+
+def _metric_values(finding: dict) -> list[float]:
+    """The plotted measure's values."""
+    i = _metric_index(finding)
+    if i is None:
+        return []
+    return [x for x in (_num(r[i]) for r in (finding.get("rows") or []) if i < len(r))
+            if x is not None]
 
 
 def clip_ref_lines(ref_lines: list[dict], values: list[float]) -> list[dict]:
@@ -87,10 +97,42 @@ def clip_ref_lines(ref_lines: list[dict], values: list[float]) -> list[dict]:
     return out
 
 
+def order_from_sql(sql: str, measure: str) -> Optional[str]:
+    """``"asc"`` when the query deliberately asked for the BOTTOM of the ranking —
+    ``ORDER BY <measure> ASC`` with a ``LIMIT``. Otherwise None (the renderers'
+    largest-first default stands).
+
+    A "worst 15 routes" query answers a question whose subject is the FIRST row;
+    both renderers sort largest-first regardless, which buries that row at the far
+    end of the chart and leads with the least interesting one. The SQL is the
+    authority on which end of the ranking was asked for — not the prose, and not a
+    guess about whether high is good. Deterministic; None on any parse failure."""
+    if not sql or not measure:
+        return None
+    try:
+        import sqlglot
+        from sqlglot import expressions as exp
+        tree = sqlglot.parse_one(sql)
+        if not tree or not tree.find(exp.Limit):
+            return None
+        order = tree.find(exp.Order)
+        if not order:
+            return None
+        for o in order.find_all(exp.Ordered):
+            col = o.this
+            name = col.name if isinstance(col, (exp.Column, exp.Alias)) else str(col)
+            if str(name).lower() == measure.lower():
+                return "asc" if not o.args.get("desc") else None
+    except Exception:
+        return None
+    return None
+
+
 def attach_exhibit(finding: dict, *, severity: bool = False,
                    ref_lines: Optional[list[dict]] = None,
                    label_points: Optional[bool] = None,
-                   quadrant: Optional[dict] = None) -> None:
+                   quadrant: Optional[dict] = None,
+                   order: Optional[str] = None) -> None:
     """Merge the given semantics into ``finding["exhibit"]`` (in place). Ref
     lines are clipped against the finding's own plotted values; an empty spec
     is not written at all, so a no-signal finding stays byte-identical."""
@@ -108,8 +150,19 @@ def attach_exhibit(finding: dict, *, severity: bool = False,
         spec["label_points"] = bool(label_points)
     if quadrant:
         spec["quadrant"] = quadrant
+    if order:
+        spec["order"] = order
     if spec:
         finding["exhibit"] = spec
+
+
+def _order_for(finding: dict) -> Optional[str]:
+    """The finding's own SQL decides which end of the ranking leads."""
+    i = _metric_index(finding)
+    if i is None:
+        return None
+    cols = [str(c) for c in (finding.get("columns") or [])]
+    return order_from_sql(str(finding.get("sql") or ""), cols[i])
 
 
 def _rate_column_share(finding: dict) -> Optional[str]:
@@ -150,7 +203,8 @@ def exhibit_for_cross_section(finding: dict, *, is_ratio: bool, is_percent: bool
         n_rows = len(finding.get("rows") or [])
         attach_exhibit(finding,
                        severity=is_percent and n_rows >= _MIN_SEVERITY_ROWS,
-                       ref_lines=refs)
+                       ref_lines=refs,
+                       order=_order_for(finding))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "chart-grammar exhibit is best-effort", counter="chart.exhibit")

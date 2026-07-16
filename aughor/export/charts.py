@@ -345,7 +345,11 @@ def _render_bar(columns, rows, cx, num_idx, ct, title, w, h, units=None, exhibit
             data.append((label, [(_to_num(r[i] if i < len(r) else None) or 0.0) for i in num_idx]))
     if not data:
         return None
-    data.sort(key=lambda d: d[1][0], reverse=True)
+    # Largest-first by default; an "asc" exhibit means the QUERY asked for the bottom of
+    # the ranking (ORDER BY <measure> ASC LIMIT N), so the chart leads with the row the
+    # query led with instead of burying it at the far end.
+    _asc = isinstance(exhibit, dict) and exhibit.get("order") == "asc"
+    data.sort(key=lambda d: d[1][0], reverse=not _asc)
     data = data[:20]
     # Scale-sanity for multi-series: only series within 25x of the primary share an
     # axis honestly (a 3M series next to a 0.02 share flattens everything else), and
