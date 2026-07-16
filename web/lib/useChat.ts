@@ -117,6 +117,7 @@ export function useChat() {
             skipClarify: opts.skipClarify, clarifyReading: opts.clarifyReading,
             clarifySubject: opts.clarifySubject, clarifySource: opts.clarifySource,
             insightId: opts.insightId, deep: opts.deep,
+            requestMode: opts.requestMode, purpose: opts.purpose,   // R13 starter route parity
           }, dispatch, signal, logEvent);
           abortRef.current = null;
           return;

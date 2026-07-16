@@ -36,6 +36,9 @@ export interface AguiAskInput {
   deep?: boolean;
   seedSql?: string | null;
   seedContext?: string;
+  // R13 — a named starter's declared route + purpose tag (parity with the native /ask body).
+  requestMode?: "investigate" | "explore";
+  purpose?: string;
 }
 
 type AughorEvent = { type: string } & Record<string, unknown>;
@@ -203,6 +206,8 @@ export async function runAskViaAgui(
       seed_sql: input.seedSql ?? null,
       seed_context: input.seedContext ?? "",
       history: input.history ?? [],
+      mode: input.requestMode ?? null,
+      purpose: input.purpose ?? "",
     },
   };
 
