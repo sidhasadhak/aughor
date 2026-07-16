@@ -3863,7 +3863,10 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
     if fmt not in ("pdf", "pptx"):
         raise HTTPException(status_code=400, detail="format must be 'pdf' or 'pptx'")
     try:
-        data, filename, media_type = export_report(inv, fmt, narrate=narrate)
+        # The router resolves the effective currency (org override → profile) and injects
+        # it — the platform-side export must not import agent-side settings itself.
+        _sym = _resolve_currency_symbol(inv.get("connection_id") or "", inv.get("schema_name"))
+        data, filename, media_type = export_report(inv, fmt, narrate=narrate, money_symbol=_sym)
     except Exception:  # never leak a stack trace to the client
         logger.exception("export failed for %s", inv_id)
         raise HTTPException(status_code=500, detail="export failed")

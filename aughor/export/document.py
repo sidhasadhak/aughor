@@ -88,22 +88,6 @@ def _round_cell(v):
     return v
 
 
-def _effective_money_symbol(inv: dict) -> str:
-    """The connection's effective currency symbol (org/workspace override-wins, else the
-    inferred profile currency) — the SAME fallback the web's effectiveCurrencySymbol
-    applies, so the PDF's axes can't read bare (or a different symbol) while the app
-    shows one. Best-effort: '' on any failure — a bare number beats a wrong symbol."""
-    try:
-        from aughor.knowledge.triage import currency_symbol
-        from aughor.orgsettings import resolve_currency
-        from aughor.profile import store as _pstore
-        prof = _pstore.load(inv.get("connection_id") or "", inv.get("schema_name"))
-        code = resolve_currency(getattr(prof, "currency_code", None) or "")
-        return currency_symbol(code)
-    except Exception:
-        return ""
-
-
 def _chart_or_table(columns, rows, chart_type, title, units=None, exhibit=None,
                     money_symbol: str = "") -> list[Block]:
     """Render a chart if the data supports it; always include the data table too
@@ -187,7 +171,7 @@ def _strip_planner_notes(text: str) -> str:
     return "\n\n".join(kept).strip()
 
 
-def _build_explore(inv: dict) -> ExportDoc:
+def _build_explore(inv: dict, money_symbol: str = "") -> ExportDoc:
     """The explore-wave 'landscape' report (R9/R13: narrative → one section per
     sub-question with its own evidence → conclusion → actions).
 
@@ -206,7 +190,7 @@ def _build_explore(inv: dict) -> ExportDoc:
     from aughor.kernel.flags import flag_enabled
     _argument = flag_enabled("report.argument_style")
     _exhibits = _exhibit_argument if _argument else _chart_or_table
-    _money_sym = _effective_money_symbol(inv)
+    _money_sym = money_symbol
 
     blocks: list[Block] = []
     if rep.get("narrative"):
@@ -238,7 +222,7 @@ def _build_explore(inv: dict) -> ExportDoc:
                      kind="explore", blocks=blocks)
 
 
-def _build_ada(inv: dict) -> ExportDoc:
+def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
     """The structured 'Deep Analysis' report (ADA: metric → phases → findings →
     attribution → recommendations). Charts live right on each finding."""
     rep = inv.get("report") or {}
@@ -270,7 +254,7 @@ def _build_ada(inv: dict) -> ExportDoc:
     # section. Flag off → the legacy composition, byte-identical.
     from aughor.kernel.flags import flag_enabled
     _argument = flag_enabled("report.argument_style")
-    _money_sym = _effective_money_symbol(inv)
+    _money_sym = money_symbol
     _nm = lambda s: (s or "").replace("*", "")  # noqa: E731 — strip model markdown
     opportunities: list[dict] = []
 
@@ -428,7 +412,7 @@ def _build_analysis(inv: dict) -> ExportDoc:
     return ExportDoc(title=headline, subtitle=inv.get("question") or "", meta=meta, kind="investigation", blocks=blocks)
 
 
-def build_export_doc(inv: dict, *, narrate: bool = False) -> ExportDoc:
+def build_export_doc(inv: dict, *, narrate: bool = False, money_symbol: str = "") -> ExportDoc:
     """Dispatch on the report's actual shape → an ExportDoc.
 
     The stored `kind` is a coarse hint; the report dict's own `_report_type` /
@@ -444,7 +428,10 @@ def build_export_doc(inv: dict, *, narrate: bool = False) -> ExportDoc:
         builder = _build_chat
     else:
         builder = _build_chat
-    doc = builder(inv)
+    # `money_symbol` (caller-resolved: the connection's effective currency, matching the
+    # web's fallback) reaches only the builders that render charts — the platform-side
+    # export never resolves it itself (Platform must not import Agent; the caller injects).
+    doc = builder(inv, money_symbol) if builder in (_build_ada, _build_explore) else builder(inv)
     if narrate:
         summary = _llm_executive_summary(inv, doc)
         if summary:
