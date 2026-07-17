@@ -366,3 +366,24 @@ def test_named_outlier_skips_row_unique_ids_and_small_tables():
     # tiny tables never probe
     assert _lens_named_outlier(c, "tickets", cols,
                                SimpleNamespace(table="tickets", row_count=50)) == []
+
+
+# ── the alias-humanizer must not relabel a lens's own measure ─────────────────
+
+def test_lens_findings_keep_their_own_measure_label():
+    """The soak shipped a load-factor chart whose axis read "refund leakage rate": the
+    terminal alias pass stamps the INTAKE's metric onto every phase, and a forward-chained
+    lens measures something else. Each lens records its own label; only phases that ran the
+    primary metric may take the primary label."""
+    from aughor.agent.investigate import _lens_phase_from_run
+    from types import SimpleNamespace
+    run = SimpleNamespace(
+        ok=True,
+        results=[(SimpleNamespace(title="q", chart_type="bar_horizontal"),
+                  SimpleNamespace(sql="SELECT 1", columns=["segment", "metric_total", "n"],
+                                  rows=[["long", 77.7, 65_639], ["short", 79.4, 280_695]],
+                                  row_count=2, error=None))],
+        interpretation=None, error_phase=None)
+    ph = _lens_phase_from_run(run, "loss_utilization", "Capacity Utilization", "🪑",
+                              "utilization", "utilization", "computed.")
+    assert ph["metric_label"] == "utilization"      # not the run's primary metric

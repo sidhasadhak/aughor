@@ -266,11 +266,19 @@ def lens_specs(sig: dict | None, primary_metric_blob: str) -> list[dict]:
                 "Which segments run the lowest utilization (paid units vs available capacity), "
                 "and what is the overall level? "
                 f"CAPACITY COLUMNS PRESENT: {cols}."),
+            # The old text told the model the opportunity was "supplied as a key number —
+            # cite it, never recompute it". That was FALSE: the deterministic annotation is
+            # appended AFTER interpretation, so the model never saw it, dutifully computed
+            # its own, and the report shipped two opportunity key numbers that disagreed
+            # (~1,136 seats beside 1,135). It cannot cite what it has not been given — so
+            # tell it to leave the arithmetic alone instead.
             "interpret_system": (
                 "Interpret a utilization scan. Lead with the weakest segments and the gap to "
-                "the best segment. The gap × volume opportunity is computed for you and "
-                "supplied as a key number — cite it, never recompute it. Utilization is not "
-                "profit — never claim 'profitable' or 'no losses'."),
+                "the best segment, in percentage points. Do NOT compute, estimate or state a "
+                "gap × volume / opportunity / 'seats that could be filled' figure yourself: "
+                "one is appended deterministically from these same rows, and a second "
+                "hand-computed one contradicts it. Utilization is not profit — never claim "
+                "'profitable' or 'no losses'."),
             # This grid's `n` IS the rate's own denominator (capacity), so gap × volume is
             # unit-correct and deterministic: (79.4% − 77.7%) × capacity = empty seats.
             # Higher utilization is better, so the laggard is the emptiest segment.

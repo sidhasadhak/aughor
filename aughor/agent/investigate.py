@@ -5764,10 +5764,14 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
         if _grammar:
             from aughor.agent.exhibit import exhibit_for_lens
             exhibit_for_lens(_f, peer_median=peer_median_ref)
-    return _phase_result(
+    _ph = _phase_result(
         phase_id, title, emoji,
         "complete" if any(not f["error"] for f in findings) else "partial", summary, findings,
     )
+    # This lens measures its OWN thing, not the run's primary metric. Record the label so
+    # the terminal alias-humanizer can't stamp "refund leakage rate" on a load-factor grid.
+    _ph["metric_label"] = metric_label
+    return _ph
 
 
 def _probe_lifecycle_values(conn, cols: list) -> dict:
@@ -5833,12 +5837,18 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                 _run = run_analysis_phase(
                     conn, phase_id=spec["phase_id"], title=spec["title"], emoji=spec["emoji"],
                     cap=2, schema=schema,
-                    plan_system=spec["plan_system"] + _ADA_SQL_GROUNDING,
-                    # Only the lens whose metric is DEFINED by consumption gets the
-                    # lifecycle rule — see the leakage spec for what handing it to the
-                    # wrong lens costs.
+                    # The lifecycle rule rides in plan_SYSTEM, next to the grouping rule.
+                    # Live evidence (inv 0db3a6db): in ONE run the grouping constraint —
+                    # in plan_system — was obeyed ("utilization by haul type"), while this
+                    # rule, then in plan_user, was ignored and the SQL came back with no
+                    # status filter at all. plan_user competes with _ADA_SQL_GROUNDING and
+                    # the grounding block's trusted-query shapes; plan_system does not.
+                    # Only the lens whose metric is DEFINED by consumption gets it — see
+                    # the leakage spec for what handing it to the wrong lens costs.
+                    plan_system=(spec["plan_system"]
+                                 + (f"\n{_lifecycle}" if spec.get("lifecycle_filter") else "")
+                                 + _ADA_SQL_GROUNDING),
                     plan_user=(f"QUESTION: {question}\n\nSCHEMA:\n{schema}\n\n"
-                               f"{_lifecycle if spec.get('lifecycle_filter') else ''}"
                                f"{spec['plan_ask']}"),
                     interpret_system=spec["interpret_system"],
                     interpret_user_fn=(lambda results_text, _t=spec["title"]:
@@ -6507,15 +6517,28 @@ def ada_synthesize(state: AgentState) -> dict:
             "n": "records",
             "pct_of_total": "% of total",
         }
+        # A forward-chained LENS measures something else entirely, so the run's primary
+        # label is a lie on its grid: the soak shipped a load-factor chart whose axis read
+        # "refund leakage rate" (inv 0db3a6db) because this pass stamps the intake's metric
+        # onto every phase. Each lens names its own measure; only phases that actually ran
+        # the primary metric may take the primary label.
+        _lens_labels = {p.get("phase_id"): (p.get("metric_label") or "").strip()
+                        for p in phases if p.get("metric_label")}
         for _p in phases:
+            _own = _lens_labels.get(_p.get("phase_id"))
+            _map = dict(_alias_map)
+            if _own and _own != _mlabel:
+                _map["metric_total"] = _own
+                _map["metric_value"] = _own
+                _map["avg_per_record"] = f"{_own} per record"
             for _f in (_p.get("findings") or []):
                 _cols = _f.get("columns") or []
-                if not any(c in _alias_map for c in _cols):
+                if not any(c in _map for c in _cols):
                     continue
-                _f["columns"] = [_alias_map.get(c, c) for c in _cols]
+                _f["columns"] = [_map.get(c, c) for c in _cols]
                 _units = _f.get("column_units") or {}
                 if _units:
-                    _f["column_units"] = {_alias_map.get(k, k): v for k, v in _units.items()}
+                    _f["column_units"] = {_map.get(k, k): v for k, v in _units.items()}
 
     if synth:
         waterfall = [
