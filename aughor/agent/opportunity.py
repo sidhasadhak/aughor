@@ -176,6 +176,7 @@ def segment_rates(
 def compute_opportunity(
     columns: list, rows: list, *, is_ratio: bool = False, is_percent: bool = False,
     lower_is_better: bool = False, volume_is_denominator: bool = False,
+    volume_is_money: bool = False,
 ) -> Optional[dict]:
     """The gap × volume computation over one finding's result grid. Pure.
 
@@ -190,6 +191,12 @@ def compute_opportunity(
 
     `volume_is_denominator` declares `n` to be the rate's own denominator — a true
     proportion — which swaps the flat rate floor for the gap's own sampling error.
+
+    `volume_is_money` declares that denominator to be an AMOUNT rather than a count of
+    units. It still makes gap × volume unit-correct (a leakage rate over its own gross
+    yields money), but it disqualifies the sampling-error test: sqrt(p(1-p)/n) counts
+    Bernoulli trials, and 20M CHF is not 20M trials — it would claim absurd precision and
+    wave every gap through. Money falls back to the flat relative floor.
 
     Returns None whenever the shape, materiality, or gap thresholds don't hold —
     silence is the correct output for a grid this lens can't read honestly."""
@@ -218,7 +225,7 @@ def compute_opportunity(
         return None
     gap = abs(laggard[1] - benchmark[1])
     relative_gap = gap / abs(benchmark[1])
-    if volume_is_denominator:
+    if volume_is_denominator and not volume_is_money:
         if not _proportion_gap_is_signal(laggard, benchmark):
             return None
     elif relative_gap < _MIN_RELATIVE_GAP:
@@ -249,6 +256,7 @@ def annotate_opportunity(
     finding: dict, *, metric_label: str = "", is_ratio: bool = False,
     is_percent: bool = False, lower_is_better: bool = False,
     volume_label: str = "records", volume_is_denominator: bool = False,
+    volume_is_money: bool = False,
 ) -> bool:
     """Append the benchmark-gap key number (+ a hedged note) to one finding,
     in place. Returns True when it annotated. Never raises — a finding this
@@ -270,21 +278,24 @@ def annotate_opportunity(
         gap = compute_opportunity(
             finding.get("columns") or [], rows,
             is_ratio=is_ratio, is_percent=is_percent, lower_is_better=lower_is_better,
-            volume_is_denominator=volume_is_denominator)
+            volume_is_denominator=volume_is_denominator, volume_is_money=volume_is_money)
         if not gap:
             return False
         label = metric_label or "the metric"
         per = "" if is_ratio else " per record"
         unit = volume_label if is_ratio else label
-        # A ratio's opportunity is a COUNT of the volume's own unit, and a count reads
-        # as "1,135 seats" — compacting it to "1.1K seats" throws away the precision
-        # that makes the number decision-grade. Money keeps the compact form.
-        value = (f"{gap['opportunity']:,.0f}" if is_ratio
+        # A ratio's opportunity carries the volume's unit. A COUNT reads as "1,135 seats"
+        # — compacting it to "1.1K seats" throws away the precision that makes the number
+        # decision-grade — while money reads better compact ("480K CHF" over "480,000").
+        value = (f"{gap['opportunity']:,.0f}" if (is_ratio and not volume_is_money)
                  else _fmt(gap["opportunity"], is_percent=False))
+        # The volume reads the same way its opportunity does: "38.0M CHF", "65,397 seats".
+        volume = (_fmt(gap["worst_n"], is_percent=False) if volume_is_money
+                  else f"{gap['worst_n']:,.0f}")
         context = (
             f"{gap['worst_segment']} runs {_fmt(gap['worst_rate'], is_percent=is_percent)} "
             f"vs {gap['best_segment']}'s {_fmt(gap['best_rate'], is_percent=is_percent)}"
-            f"{per}; closing that gap across {gap['worst_n']:,.0f} {volume_label} ≈ {value} "
+            f"{per}; closing that gap across {volume} {volume_label} ≈ {value} "
             f"{unit}. A ceiling computed from peers, not a forecast."
         )
         finding.setdefault("key_numbers", []).append({

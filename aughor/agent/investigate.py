@@ -5757,7 +5757,8 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
                                  lower_is_better=bool(_opp.get("lower_is_better")),
                                  volume_label=_opp.get("volume_label") or "records",
                                  volume_is_denominator=bool(
-                                     _opp.get("volume_is_denominator")))
+                                     _opp.get("volume_is_denominator")),
+                                 volume_is_money=bool(_opp.get("volume_is_money")))
         # Chart-grammar exhibit: severity ramp on the share ranking; the benchmark
         # lens also draws the peer median its whole point is to compare against.
         if _grammar:
@@ -5833,8 +5834,12 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                     conn, phase_id=spec["phase_id"], title=spec["title"], emoji=spec["emoji"],
                     cap=2, schema=schema,
                     plan_system=spec["plan_system"] + _ADA_SQL_GROUNDING,
+                    # Only the lens whose metric is DEFINED by consumption gets the
+                    # lifecycle rule — see the leakage spec for what handing it to the
+                    # wrong lens costs.
                     plan_user=(f"QUESTION: {question}\n\nSCHEMA:\n{schema}\n\n"
-                               f"{_lifecycle}{spec['plan_ask']}"),
+                               f"{_lifecycle if spec.get('lifecycle_filter') else ''}"
+                               f"{spec['plan_ask']}"),
                     interpret_system=spec["interpret_system"],
                     interpret_user_fn=(lambda results_text, _t=spec["title"]:
                                        f"QUESTION: {question}\n\n{_t.upper()}:\n{results_text}\n\n"

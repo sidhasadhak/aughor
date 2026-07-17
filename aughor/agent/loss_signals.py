@@ -137,6 +137,20 @@ UTILIZATION_METRIC_RE = re.compile(
 _CAPACITY_UNIT_RE = re.compile(r"(seat|room|slot|bed|table|spot|unit)", re.I)
 
 
+# A currency token on the amount column — the leakage opportunity is MONEY, so its
+# sentence should say "480K CHF", not "480K of gross".
+_MONEY_UNIT_RE = re.compile(r"_(chf|usd|eur|gbp|jpy|cad|aud|sek|nok|dkk|inr|brl|mxn)\b", re.I)
+
+
+def _money_unit(cols: list) -> str:
+    """The currency the contra columns are denominated in, or an honest generic."""
+    for c in cols or []:
+        m = _MONEY_UNIT_RE.search(str(c))
+        if m:
+            return m.group(1).upper()
+    return "of gross"
+
+
 def _capacity_unit(cols: list) -> str:
     """The noun the capacity columns count, or an honest generic when they don't say."""
     for c in cols or []:
@@ -159,6 +173,12 @@ def lens_specs(sig: dict | None, primary_metric_blob: str) -> list[dict]:
         cols = ", ".join(sig["contra_revenue"])
         specs.append({
             "kind": "leakage",
+            # NO lifecycle filter, and the A/B is why: this lens's numerator IS the
+            # cancelled population — every one of the 6,907 refunds sits on a cancelled
+            # ticket. Handing it the utilization rule ("keep 'flown'") filters away all
+            # 2.38M CHF of leakage and reports a 0.0% rate with a straight face. The rule
+            # defines which units consumed CAPACITY; it says nothing about which units
+            # leaked money.
             "phase_id": "loss_leakage",
             "title": "Revenue Leakage — Where Money Walks Back Out",
             "emoji": "💸",
@@ -168,16 +188,22 @@ def lens_specs(sig: dict | None, primary_metric_blob: str) -> list[dict]:
             "plan_system": (
                 "You are planning a revenue-LEAKAGE scan: money that walks back out "
                 "(refunds, chargebacks, discounts). Plan AT MOST 2 queries. "
-                "(1) The leakage RATE by the single most decision-relevant segment: for each "
-                "segment value, 100.0 * SUM(<contra amount>) / NULLIF(SUM(<gross amount>), 0) "
-                "AS metric_total, plus COUNT(*) AS n. Aggregate the contra side and the gross "
-                "side EACH AT ITS OWN GRAIN before combining (ratio of sums — never AVG of "
-                "per-row ratios, and never a join that duplicates either side). ORDER BY "
-                "metric_total DESC (the fastest leak first). Return exactly three columns: "
-                "the segment, metric_total, n. "
-                "(2) The overall picture: total contra-revenue and 100.0 * SUM(contra) / "
-                "NULLIF(SUM(gross), 0) AS metric_total, with the contra reason/category as the "
-                "segment when one exists. Do NOT plan a plain revenue ranking."),
+                "(1) THE CLAIM — the leakage RATE by a LOW-CARDINALITY grouping: a categorical "
+                "column with a HANDFUL of distinct values naming a class of business (cabin, "
+                "fare brand, tier, channel, region). NEVER group the claim by a "
+                "high-cardinality identifier (booking id, customer, SKU) — no single one of "
+                "thousands is material enough to act on. For each group: 100.0 * SUM(<contra "
+                "amount>) / NULLIF(SUM(<gross amount>), 0) AS metric_total, plus SUM(<gross "
+                "amount>) AS n — n MUST be the same gross that is the rate's denominator, "
+                "never a row count: the opportunity is money, so the volume has to be the "
+                "money the rate is a share of. Aggregate the contra side and the gross side "
+                "EACH AT ITS OWN GRAIN before combining (ratio of sums — never AVG of per-row "
+                "ratios, and never a join that duplicates either side). ORDER BY metric_total "
+                "DESC (the fastest leak first). Return exactly three columns: the group, "
+                "metric_total, n. "
+                "(2) THE EVIDENCE — the contra reason/category breakdown: total contra-revenue "
+                "and 100.0 * SUM(contra) / NULLIF(SUM(gross), 0) AS metric_total by the reason "
+                "or type column when one exists. Do NOT plan a plain revenue ranking."),
             "plan_ask": (
                 "Where does contra-revenue leak fastest — which segments have the highest "
                 "leakage RATE (contra as a share of gross), and what is the total? "
@@ -187,11 +213,18 @@ def lens_specs(sig: dict | None, primary_metric_blob: str) -> list[dict]:
                 "gross, then where the leakage RATE concentrates (segments above the overall "
                 "rate) and the dominant reason if present. These are contra-revenue rates, not "
                 "profit — never claim segments are 'profitable' or that there are 'no losses'."),
-            # No deterministic opportunity: this grid's `n` is COUNT(*), but the leakage
-            # rate's denominator is SUM(gross). gap × records would be a number with no
-            # unit — so the lens stays silent rather than ship a confident one. Wiring it
-            # means changing the SQL to return the gross as the volume, which moves a
-            # live-validated prompt and needs its own A/B.
+            # `n` is now the gross the rate is a share of, so gap × volume is money the
+            # business kept rather than a unitless count: bring the worst-leaking group to
+            # its cleanest material peer's rate and that is the CHF that stops walking out.
+            # Higher leakage is worse, so the laggard is the biggest number — benchmarking
+            # upward would name the worst leaker as the target. The volume is an AMOUNT,
+            # which disqualifies the sampling-error test (CHF are not Bernoulli trials).
+            "opportunity": {
+                "lower_is_better": True,
+                "volume_label": _money_unit(sig.get("contra_revenue") or []),
+                "volume_is_denominator": True,
+                "volume_is_money": True,
+            },
         })
     if sig.get("capacity") and not UTILIZATION_METRIC_RE.search(blob):
         cols = ", ".join(sig["capacity"])
@@ -241,6 +274,9 @@ def lens_specs(sig: dict | None, primary_metric_blob: str) -> list[dict]:
             # This grid's `n` IS the rate's own denominator (capacity), so gap × volume is
             # unit-correct and deterministic: (79.4% − 77.7%) × capacity = empty seats.
             # Higher utilization is better, so the laggard is the emptiest segment.
+            # This lens counts units that CONSUMED capacity, so the probed lifecycle rule
+            # ("keep 'flown', drop 'cancelled'/'no_show'") is exactly its definition.
+            "lifecycle_filter": True,
             "opportunity": {
                 "lower_is_better": False,
                 "volume_label": _capacity_unit(sig.get("capacity") or []),

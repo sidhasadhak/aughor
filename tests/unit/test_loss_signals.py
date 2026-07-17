@@ -156,7 +156,37 @@ def test_utilization_spec_declares_a_sound_opportunity_and_leakage_does_not():
     assert util["volume_is_denominator"] is True
     assert util["lower_is_better"] is False
     assert util["volume_label"] == "seats"          # derived from `total_seats`
-    assert "opportunity" not in specs["leakage"]
+    assert not util.get("volume_is_money")          # seats are counted units → z-test applies
+
+
+def test_lifecycle_filter_is_scoped_to_the_consumption_lens():
+    """Caught by the A/B, and it was silent: every refund sits on a CANCELLED ticket, so
+    handing the leakage lens the utilization rule ("keep 'flown'") filters away all 2.38M
+    CHF of leakage and reports 0.0% with a straight face. The rule defines which units
+    consumed CAPACITY — it says nothing about which units leaked money."""
+    specs = {s["kind"]: s for s in lens_specs(
+        {"contra_revenue": ["refund_chf"], "capacity": ["total_seats"]}, "net revenue")}
+    assert specs["utilization"].get("lifecycle_filter") is True
+    assert not specs["leakage"].get("lifecycle_filter")
+
+
+def test_leakage_opportunity_is_money_and_benchmarks_downward():
+    """Its `n` is now the gross the rate is a share of, so gap x volume is CHF. Higher
+    leakage is worse, and the volume is an amount — not Bernoulli trials."""
+    specs = {s["kind"]: s for s in lens_specs(
+        {"contra_revenue": ["refund_chf"], "capacity": ["total_seats"]}, "load factor")}
+    leak = specs["leakage"]
+    assert "SUM(<gross amount>) AS n" in leak["plan_system"]
+    assert "never a row count" in leak["plan_system"]
+    assert "LOW-CARDINALITY" in leak["plan_system"]
+    opp = leak["opportunity"]
+    assert opp["lower_is_better"] is True
+    assert opp["volume_is_denominator"] is True and opp["volume_is_money"] is True
+    assert opp["volume_label"] == "CHF"             # derived from `refund_chf`
+    # No currency token in the column names ⇒ an honest generic, never a guessed symbol.
+    generic = [s for s in lens_specs({"contra_revenue": ["discount_value"]}, "load factor")
+               if s["kind"] == "leakage"][0]
+    assert generic["opportunity"]["volume_label"] == "of gross"
 
 
 def test_directive_demands_the_lenses_and_forbids_the_verdict():

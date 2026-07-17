@@ -179,6 +179,44 @@ def test_cost_like_annotation_reads_above_benchmark():
     assert "above benchmark" in f["key_numbers"][-1]["delta"]
 
 
+# The leakage grid: the rate is contra/gross, so its volume is the GROSS — money, not a
+# count of anything. Shaped like the real one (cabin, CHF).
+_LEAK_COLS = ["cabin", "metric_total", "n"]
+_LEAK_ROWS = [
+    ["business", 3.22, 38_013_111],        # the laggard
+    ["premium_economy", 2.78, 20_000_000],
+    ["economy", 2.22, 25_000_000],         # the cleanest material peer
+]
+
+
+def test_money_volume_yields_money_and_reads_compact():
+    """gap x gross = the CHF that stops walking out. Both the volume and the opportunity
+    read compact — "38.0M CHF" / "381K CHF", never "38,013,111"."""
+    f = {"columns": _LEAK_COLS, "rows": _LEAK_ROWS, "row_count": 3,
+         "key_numbers": [], "stat_note": None}
+    assert annotate_opportunity(f, metric_label="leakage rate", is_ratio=True,
+                                is_percent=True, lower_is_better=True, volume_label="CHF",
+                                volume_is_denominator=True, volume_is_money=True) is True
+    ctx = f["key_numbers"][-1]["context"]
+    assert "38.01M CHF" in ctx and "38,013,111" not in ctx
+    assert "380.1K CHF" in ctx            # (3.22-2.22)/100 * 38,013,111
+    assert "business runs 3.2% vs economy's 2.2%" in ctx
+
+
+def test_money_volume_never_uses_the_binomial_significance_test():
+    """sqrt(p(1-p)/n) counts Bernoulli trials, and 38M CHF is not 38M trials — it would
+    claim absurd precision and wave a trivial gap through. Money uses the flat floor: a
+    2% relative gap is silent as money, where the same shape passes as counted units."""
+    rows = [["a", 3.00, 38_000_000], ["b", 2.94, 25_000_000], ["c", 2.96, 20_000_000]]
+    assert compute_opportunity(_LEAK_COLS, rows, is_ratio=True, is_percent=True,
+                               lower_is_better=True, volume_is_denominator=True,
+                               volume_is_money=True) is None
+    # Same numbers as unit COUNTS: the sampling error says this is real signal.
+    assert compute_opportunity(_LEAK_COLS, rows, is_ratio=True, is_percent=True,
+                               lower_is_better=True,
+                               volume_is_denominator=True) is not None
+
+
 def test_gap_times_volume_against_best_material_peer():
     gap = compute_opportunity(_COLS, _ROWS)
     assert gap is not None
