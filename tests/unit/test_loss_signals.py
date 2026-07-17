@@ -10,6 +10,7 @@ from __future__ import annotations
 from aughor.agent.loss_signals import (
     LOSS_INTENT_RE,
     detect_loss_signals,
+    lens_specs,
     loss_signal_directive,
 )
 
@@ -42,6 +43,44 @@ def test_detect_is_silent_without_intent_or_signals():
     assert detect_loss_signals("revenue by region", _SCHEMA) is None
     assert detect_loss_signals("Where are we losing money?",
                                "orders(order_id, region, revenue)") is None
+
+
+def test_optimization_phrasings_reach_the_same_lenses():
+    """The flip question. "Where are we losing money?" and "where can we optimise?" ask
+    the same thing of the same columns — a revenue ranking answers neither."""
+    for q in (
+        "Where can we optimise?",
+        "What's our biggest opportunity to improve margins?",
+        "Where should we focus to do better?",
+        "Which routes are underutilised?",
+        "Is there headroom in our capacity?",
+        "What's being left on the table?",
+    ):
+        assert detect_loss_signals(q, _SCHEMA) is not None, q
+
+
+def test_ordinary_temporal_questions_are_not_hijacked():
+    """Deliberately tight: bare "improve"/"efficiency" read as ordinary questions the
+    loss lenses would distort."""
+    for q in (
+        "Did our load factor improve last quarter?",
+        "How has efficiency changed since January?",
+        "Which route has the highest revenue?",
+    ):
+        assert detect_loss_signals(q, _SCHEMA) is None, q
+
+
+def test_utilization_spec_declares_a_sound_opportunity_and_leakage_does_not():
+    """The utilization grid's `n` IS its rate's denominator, so gap x volume is
+    unit-correct. The leakage grid's `n` is COUNT(*) while the denominator is gross —
+    it must stay silent rather than ship a number with no unit."""
+    specs = {s["kind"]: s for s in lens_specs(
+        {"contra_revenue": ["refund_amount"], "capacity": ["total_seats"]}, "net revenue")}
+    util = specs["utilization"]["opportunity"]
+    assert util["volume_is_denominator"] is True
+    assert util["lower_is_better"] is False
+    assert util["volume_label"] == "seats"          # derived from `total_seats`
+    assert "opportunity" not in specs["leakage"]
 
 
 def test_directive_demands_the_lenses_and_forbids_the_verdict():

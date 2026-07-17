@@ -25,6 +25,20 @@ LOSS_INTENT_RE = re.compile(
     r"|wast(?:e|ing)\b|unprofitab|underperform|margin (?:erosion|pressure|squeeze)"
     r"|cost overrun|money (?:pit|sink))", re.I)
 
+# The same question, asked from the other side. "Where are we losing money?" is a flip
+# question — it asks where the business could be doing better, and the honest answer
+# ("long-haul flies 77.7% full against short-haul's 79.4%") is an OPPORTUNITY framed as
+# a loss. So "where can we optimise?" must reach the same lenses over the same columns;
+# only this gate was loss-worded, while the signal scan below is already intent-agnostic.
+# Deliberately tight: bare "improve"/"efficiency" also read as ordinary temporal
+# questions ("did load factor improve?"), which these lenses would distort.
+OPPORTUNITY_INTENT_RE = re.compile(
+    r"(optimi[sz](?:e|ing|ation)|biggest opportunit|opportunit(?:y|ies) (?:to|for|in)"
+    r"|where (?:can|could|should) we (?:improve|focus|do better|gain)"
+    r"|room (?:to|for) (?:grow|improv)|head ?room|upside\b|untapped"
+    r"|left on the table|low[- ]hanging|under[- ]?utili[sz]|under[- ]?fill"
+    r"|idle (?:capacity|time|asset)|capacity gap|efficiency gap)", re.I)
+
 # Contra-revenue: money that walks back out. Word-token scan over the schema text.
 CONTRA_REVENUE_RE = re.compile(
     r"\b([a-z0-9_]*(?:refund|chargeback|discount|rebate|writeoff|write_off"
@@ -37,9 +51,11 @@ CAPACITY_RE = re.compile(
 
 
 def detect_loss_signals(question: str, schema_text: str) -> dict | None:
-    """The loss signals THIS schema carries, or None when the question isn't a loss
-    question / the schema carries none. Pure text scan — deterministic, no model."""
-    if not LOSS_INTENT_RE.search(question or ""):
+    """The loss signals THIS schema carries, or None when the question asks neither
+    side of the loss/opportunity question / the schema carries none. Pure text scan —
+    deterministic, no model."""
+    q = question or ""
+    if not (LOSS_INTENT_RE.search(q) or OPPORTUNITY_INTENT_RE.search(q)):
         return None
     contra = sorted({m.group(1).lower() for m in CONTRA_REVENUE_RE.finditer(schema_text or "")})
     capacity = sorted({m.group(1).lower() for m in CAPACITY_RE.finditer(schema_text or "")})
@@ -54,6 +70,19 @@ LEAKAGE_METRIC_RE = re.compile(
     r"refund|chargeback|discount|rebate|leakage|writeoff|write_off|clawback|penalt", re.I)
 UTILIZATION_METRIC_RE = re.compile(
     r"load[ _-]?factor|utili[sz]ation|occupancy|capacity|fill[ _-]?rate|seats?\b", re.I)
+
+# What a capacity column COUNTS. The utilization gap is dimensionless, so gap × capacity
+# carries this noun ("1,135 seats") — the sentence the whole lens exists to produce.
+_CAPACITY_UNIT_RE = re.compile(r"(seat|room|slot|bed|table|spot|unit)", re.I)
+
+
+def _capacity_unit(cols: list) -> str:
+    """The noun the capacity columns count, or an honest generic when they don't say."""
+    for c in cols or []:
+        m = _CAPACITY_UNIT_RE.search(str(c))
+        if m:
+            return m.group(1).lower() + "s"
+    return "units of capacity"
 
 
 def lens_specs(sig: dict | None, primary_metric_blob: str) -> list[dict]:
@@ -97,6 +126,11 @@ def lens_specs(sig: dict | None, primary_metric_blob: str) -> list[dict]:
                 "gross, then where the leakage RATE concentrates (segments above the overall "
                 "rate) and the dominant reason if present. These are contra-revenue rates, not "
                 "profit — never claim segments are 'profitable' or that there are 'no losses'."),
+            # No deterministic opportunity: this grid's `n` is COUNT(*), but the leakage
+            # rate's denominator is SUM(gross). gap × records would be a number with no
+            # unit — so the lens stays silent rather than ship a confident one. Wiring it
+            # means changing the SQL to return the gross as the volume, which moves a
+            # live-validated prompt and needs its own A/B.
         })
     if sig.get("capacity") and not UTILIZATION_METRIC_RE.search(blob):
         cols = ", ".join(sig["capacity"])
@@ -125,9 +159,20 @@ def lens_specs(sig: dict | None, primary_metric_blob: str) -> list[dict]:
                 f"CAPACITY COLUMNS PRESENT: {cols}."),
             "interpret_system": (
                 "Interpret a utilization scan. Lead with the weakest segments and the gap to "
-                "the best segment; if volume is present, size the opportunity as gap × volume, "
-                "hedged as a ceiling. Utilization is not profit — never claim 'profitable' or "
-                "'no losses'."),
+                "the best segment. The gap × volume opportunity is computed for you and "
+                "supplied as a key number — cite it, never recompute it. Utilization is not "
+                "profit — never claim 'profitable' or 'no losses'."),
+            # This grid's `n` IS the rate's own denominator (capacity), so gap × volume is
+            # unit-correct and deterministic: (79.4% − 77.7%) × capacity = empty seats.
+            # Higher utilization is better, so the laggard is the emptiest segment.
+            "opportunity": {
+                "lower_is_better": False,
+                "volume_label": _capacity_unit(sig.get("capacity") or []),
+                # sold/capacity over the capacity IS a proportion → the gap is tested
+                # against its own sampling error, not a flat floor that a thin-margin
+                # capacity gap (77.7 vs 79.4) could never clear.
+                "volume_is_denominator": True,
+            },
         })
     return specs
 
@@ -142,7 +187,8 @@ def directive_from_signals(sig: dict | None) -> str:
     if sig.get("capacity"):
         lines.append(f"  Capacity/utilization signals: {', '.join(sig['capacity'])}.")
     lines.append(
-        "  A 'losing money' question is NOT a revenue ranking — segment revenue is never "
+        "  A 'losing money' / 'where can we do better' question is NOT a revenue ranking "
+        "— segment revenue is never "
         "negative, so a revenue ranking can only ever conclude 'no losses'. Frame the "
         "metric around the STRONGEST loss signal instead: "
         "(1) LEAKAGE — the contra-revenue amount as a RATE of gross per segment (which "

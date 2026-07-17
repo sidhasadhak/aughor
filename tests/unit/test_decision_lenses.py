@@ -31,6 +31,85 @@ _ROWS = [
 ]
 
 
+# The utilization lens's real grid shape: `100.0 * SUM(sold) / SUM(capacity)` — a
+# PERCENT-scaled rate whose `n` is the rate's own denominator (the capacity).
+_PCT_COLS = ["haul", "metric_total", "n"]
+_PCT_ROWS = [
+    ["long_haul", 77.7, 66_764],       # the emptiest — 77.7% of 66,764 seats
+    ["short_haul", 79.4, 120_000],     # the benchmark
+    ["regional", 78.9, 40_000],
+]
+
+
+def test_percent_scaled_rate_is_normalised_before_gap_times_volume():
+    """The 100x guard. A percent-scaled grid (77.7) must become a fraction before
+    gap x volume, or 1.7 percentage-points x 66,764 seats reads as 113,499 seats."""
+    gap = compute_opportunity(_PCT_COLS, _PCT_ROWS, is_ratio=True, is_percent=True,
+                              volume_is_denominator=True)
+    assert gap is not None
+    # (79.4 - 77.7) / 100 * 66,764 = ~1,135 empty seats — the ground-truth number.
+    assert abs(gap["opportunity"] - 1_135.0) < 2.0
+    assert gap["worst_segment"] == "long_haul" and gap["best_segment"] == "short_haul"
+
+
+def test_fraction_scaled_rate_is_left_alone():
+    """Below the 1.5 threshold the grid is already a fraction — never rescale it."""
+    rows = [["long", 0.777, 66_764], ["short", 0.794, 120_000], ["reg", 0.789, 40_000]]
+    gap = compute_opportunity(_PCT_COLS, rows, is_ratio=True, is_percent=True,
+                              volume_is_denominator=True)
+    assert gap is not None and abs(gap["opportunity"] - 1_135.0) < 2.0
+
+
+def test_real_capacity_gap_survives_the_flat_rate_floor():
+    """The regression this wiring exists for: 77.7 vs 79.4 is a 2.1% relative gap —
+    UNDER _MIN_RELATIVE_GAP — but it is 1,135 seats measured over 66,764. A flat floor
+    silences it; its own sampling error (~8 sigma) does not."""
+    assert compute_opportunity(_PCT_COLS, _PCT_ROWS, is_ratio=True,
+                               is_percent=True) is None          # flat floor: silent
+    assert compute_opportunity(_PCT_COLS, _PCT_ROWS, is_ratio=True, is_percent=True,
+                               volume_is_denominator=True) is not None
+
+
+def test_same_gap_over_tiny_volume_is_noise():
+    """The floor still has to bite: the identical 1.7pp gap over ~200 seats is noise."""
+    rows = [["long", 77.7, 200], ["short", 79.4, 300], ["reg", 78.9, 250]]
+    assert compute_opportunity(_PCT_COLS, rows, is_ratio=True, is_percent=True,
+                               volume_is_denominator=True) is None
+
+
+def test_cost_like_metric_benchmarks_downward_not_upward():
+    """A leakage rate's laggard is the HIGHEST segment. Benchmarking it upward would
+    name the worst leaker as the target and invert the claim."""
+    rows = [["first", 3.56, 20_000], ["economy", 1.20, 90_000], ["corp", 3.41, 30_000]]
+    gap = compute_opportunity(_PCT_COLS, rows, is_ratio=True, is_percent=True,
+                              lower_is_better=True)
+    assert gap is not None
+    assert gap["worst_segment"] == "first"      # highest leak = the one to fix
+    assert gap["best_segment"] == "economy"     # lowest leak = the benchmark
+    # Left at the default the read inverts — economy would become the "worst".
+    naive = compute_opportunity(_PCT_COLS, rows, is_ratio=True, is_percent=True)
+    assert naive["worst_segment"] == "economy"
+
+
+def test_direction_and_volume_reach_the_annotated_key_number():
+    f = {"columns": _PCT_COLS, "rows": _PCT_ROWS, "key_numbers": [], "stat_note": None}
+    assert annotate_opportunity(f, metric_label="utilization", is_ratio=True,
+                                is_percent=True, volume_label="seats",
+                                volume_is_denominator=True) is True
+    kn = f["key_numbers"][-1]
+    assert "77.7%" in kn["context"] and "79.4%" in kn["context"]
+    assert "seats" in kn["context"] and "below benchmark" in kn["delta"]
+    assert "1,135 seats" in kn["context"]        # the unit is the volume's, not "utilization"
+
+
+def test_cost_like_annotation_reads_above_benchmark():
+    rows = [["first", 3.56, 20_000], ["economy", 1.20, 90_000], ["corp", 3.41, 30_000]]
+    f = {"columns": _PCT_COLS, "rows": rows, "key_numbers": [], "stat_note": None}
+    assert annotate_opportunity(f, metric_label="leakage rate", is_ratio=True,
+                                is_percent=True, lower_is_better=True) is True
+    assert "above benchmark" in f["key_numbers"][-1]["delta"]
+
+
 def test_gap_times_volume_against_best_material_peer():
     gap = compute_opportunity(_COLS, _ROWS)
     assert gap is not None

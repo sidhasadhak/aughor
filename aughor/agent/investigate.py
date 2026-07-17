@@ -4635,9 +4635,14 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         # deterministically from this finding's own segment rows (no model, no extra
         # query). Flag-gated; a grid the lens can't read honestly annotates nothing.
         if _decision_grade:
-            from aughor.agent.opportunity import annotate_opportunity
+            from aughor.agent.opportunity import annotate_opportunity, metric_lower_is_better
+            # Orient the benchmark: for a cost-like metric (refund rate, cancellations)
+            # the laggard is the HIGHEST segment, so benchmarking upward would invert the
+            # claim. The renderers already derive this to pick a red ramp; the math is the
+            # consumer the signal never reached.
             annotate_opportunity(f, metric_label=metric_label, is_ratio=is_ratio,
-                                 is_percent=_metric_is_pct)
+                                 is_percent=_metric_is_pct,
+                                 lower_is_better=metric_lower_is_better(metric_label, metric_sql))
         # Chart-grammar exhibit — severity ramp for a rate ranking + deterministic
         # reference lines (segment-weighted average; the R15 best-peer benchmark),
         # computed from this finding's own rows. No model, no extra query; fail-open.
@@ -5707,10 +5712,16 @@ def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_su
 
 def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: str,
                          metric_label: str, empty_summary: str,
-                         peer_median_ref: bool = False) -> Optional[dict]:
+                         peer_median_ref: bool = False,
+                         opportunity: Optional[dict] = None) -> Optional[dict]:
     """Shared tail for the forward-chained WHY lenses (benchmark/drill): assemble findings from a
     completed `run_analysis_phase`, tag percent/share columns, and wrap as a phase. Mirrors the
-    composition lens's tail. Returns the error phase on failure, None only if there's nothing."""
+    composition lens's tail. Returns the error phase on failure, None only if there's nothing.
+
+    `opportunity` (a lens spec's block) opts the phase into the R15 gap × volume key number,
+    computed deterministically from the lens's own rows. Only a lens whose `n` IS its rate's
+    denominator may pass it — see loss_signals.lens_specs. Without it the phase is unchanged,
+    which is why the leakage lens (n = COUNT(*), denominator = gross) stays silent."""
     if not _run.ok:
         return _run.error_phase
     results, interp = _run.results, _run.interpretation
@@ -5730,9 +5741,23 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
     _tag_percent_columns(findings, re.compile(r"share|pct|percent|_of_total", re.I))
     from aughor.kernel.flags import flag_enabled as _fe
     _grammar = _fe("chart.exhibit_grammar")
+    # R15 on the lens path. The utilization lens plans exactly R15's grid (segment,
+    # metric_total, n) and then ASKED THE MODEL to "size the opportunity as gap ×
+    # volume" — the one number the whole lens exists for, left to prose. Compute it.
+    _opp = opportunity if (opportunity and _fe("lens.decision_grade")) else None
     for _f in findings:
         _normalize_pct_key_numbers(_f)
         _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+        if _opp:
+            from aughor.agent.opportunity import annotate_opportunity
+            # The lens's rate is a percent-scaled ratio by SQL construction
+            # (`100.0 * SUM(x) / SUM(y)`), which the scale normalisation expects.
+            annotate_opportunity(_f, metric_label=metric_label, is_ratio=True,
+                                 is_percent=True,
+                                 lower_is_better=bool(_opp.get("lower_is_better")),
+                                 volume_label=_opp.get("volume_label") or "records",
+                                 volume_is_denominator=bool(
+                                     _opp.get("volume_is_denominator")))
         # Chart-grammar exhibit: severity ramp on the share ranking; the benchmark
         # lens also draws the peer median its whole point is to compare against.
         if _grammar:
@@ -5793,7 +5818,8 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                 continue
             ph = _lens_phase_from_run(_run, spec["phase_id"], spec["title"], spec["emoji"],
                                       spec["fprefix"], spec["metric_label"],
-                                      f"{spec['title']} computed.")
+                                      f"{spec['title']} computed.",
+                                      opportunity=spec.get("opportunity"))
             if ph:
                 phases.append(ph)
         return phases
