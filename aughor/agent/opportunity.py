@@ -26,11 +26,15 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
-# Materiality floor for a segment to anchor either side of the benchmark —
-# the same shape as _detect_anomalous_period's gate (≥30 records and ≥3% of
-# the scanned volume), so a boutique segment can't headline the opportunity.
+# Materiality floor for a segment to anchor either side of the benchmark, so a
+# boutique segment can't headline the opportunity. Measured against the TYPICAL
+# segment rather than the scanned total, because a share-of-total floor is
+# scale-dependent: with N segments the mean share is 1/N, so a >33-segment grid
+# has NO segment above 3% and becomes structurally unreadable — which is exactly
+# where the story tends to live (84 routes spanning 68.6%–87.7% load factor, all
+# of them silenced). Against the typical segment the rule holds at any grain.
 _MIN_SEGMENT_N = 30.0
-_MIN_SEGMENT_SHARE = 0.03
+_MIN_SEGMENT_OF_TYPICAL = 0.25
 # Below this relative rate gap the difference is measurement noise — silence.
 _MIN_RELATIVE_GAP = 0.03
 # ... and the gap × volume itself must be material vs the whole scanned pie.
@@ -38,6 +42,15 @@ _MIN_OPPORTUNITY_SHARE = 0.005
 # When the grid is a TRUE proportion the sampling error replaces the flat rate floor:
 # a gap must clear this many standard errors to be signal rather than noise.
 _MIN_GAP_Z = 3.0
+
+
+def _median(vals: list) -> float:
+    """The typical value — robust to the one giant segment that would drag a mean."""
+    s = sorted(vals)
+    if not s:
+        return 0.0
+    m = len(s) // 2
+    return s[m] if len(s) % 2 else (s[m - 1] + s[m]) / 2.0
 
 
 def _proportion_gap_is_signal(laggard: tuple, benchmark: tuple) -> bool:
@@ -180,16 +193,20 @@ def compute_opportunity(
 
     Returns None whenever the shape, materiality, or gap thresholds don't hold —
     silence is the correct output for a grid this lens can't read honestly."""
-    if not columns or not rows or len(rows) < 3:
+    # A true proportion needs only its one peer to benchmark against: "long-haul flies
+    # 77.7% full against short-haul's 79.4%" is the whole claim, and a ≥3 rule cannot
+    # express it. Every other grid still needs a peer GROUP for "best peer" to mean
+    # anything.
+    min_segs = 2 if volume_is_denominator else 3
+    if not columns or not rows or len(rows) < min_segs:
         return None
     segs = segment_rates(columns, rows, is_ratio=is_ratio)
-    if not segs or len(segs) < 3:
+    if not segs or len(segs) < min_segs:
         return None
     if is_ratio and is_percent:
         segs = _as_fractions(segs)
 
-    total_n = sum(n for _, _, n in segs)
-    floor = max(_MIN_SEGMENT_N, _MIN_SEGMENT_SHARE * total_n)
+    floor = max(_MIN_SEGMENT_N, _MIN_SEGMENT_OF_TYPICAL * _median([n for _, _, n in segs]))
     material = [s for s in segs if s[2] >= floor]
     if len(material) < 2:
         return None
@@ -207,8 +224,17 @@ def compute_opportunity(
     elif relative_gap < _MIN_RELATIVE_GAP:
         return None
     opportunity = gap * laggard[2]
-    material_total = sum(rate * n for _, rate, n in material)
-    if material_total <= 0 or opportunity < _MIN_OPPORTUNITY_SHARE * material_total:
+    if volume_is_denominator:
+        # Material against what the opportunity would MOVE, not against the whole pie.
+        # A 1,290-seat gain measured against 273,878 sold seats reads as 0.47% and
+        # vanishes; measured against the 72,456 EMPTY seats it is 1.8% of the gap that
+        # is actually addressable. For a cost-like rate the addressable side flips: it
+        # is the leaked amount, not the clean remainder.
+        base = sum(((rate if lower_is_better else (1.0 - rate)) * n)
+                   for _, rate, n in material)
+    else:
+        base = sum(rate * n for _, rate, n in material)
+    if base <= 0 or opportunity < _MIN_OPPORTUNITY_SHARE * base:
         return None
 
     return {

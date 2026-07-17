@@ -70,6 +70,58 @@ def test_real_capacity_gap_survives_the_flat_rate_floor():
                                volume_is_denominator=True) is not None
 
 
+# A fleet grid shaped like the real one: the laggard is 1,292 seats behind its
+# benchmark, which is 0.47% of the seats SOLD but 1.8% of the seats left EMPTY.
+_FLEET_COLS = ["aircraft", "metric_total", "n"]
+_FLEET_ROWS = [
+    ["A350-900", 73.1, 17_000],                                   # the laggard
+    ["A320neo", 79.0, 20_000], ["A321", 79.0, 25_000],
+    ["B777-300", 79.0, 30_000], ["A220", 79.0, 40_000],
+    ["B737", 79.0, 60_000], ["E190", 79.0, 70_000],
+    ["A330-300", 80.7, 84_334],                                   # the benchmark
+]
+
+
+def test_opportunity_is_material_against_what_it_would_move():
+    """The addressable base. Measured against seats SOLD, 1,292 seats reads as 0.47%
+    and dies under the floor; against the empty seats it would actually fill it is
+    1.8%. The pie for a capacity gap is the gap, not the business."""
+    gap = compute_opportunity(_FLEET_COLS, _FLEET_ROWS, is_ratio=True, is_percent=True,
+                              volume_is_denominator=True)
+    assert gap is not None
+    assert gap["worst_segment"] == "A350-900" and gap["best_segment"] == "A330-300"
+    assert abs(gap["opportunity"] - 1_292.0) < 5.0
+
+
+def test_significant_but_trivial_gap_is_still_silent():
+    """Significance is not materiality. 0.1pp over 5M seats is ~40 sigma — the z-test
+    waves it through — and it is still only 5,000 seats against 3M empty. The
+    addressable floor is what has to stop it, and does."""
+    rows = [["a", 79.9, 5_000_000], ["b", 80.0, 5_000_000], ["c", 80.0, 5_000_000]]
+    assert compute_opportunity(_FLEET_COLS, rows, is_ratio=True, is_percent=True,
+                               volume_is_denominator=True) is None
+
+
+def test_fine_grained_grid_stays_readable():
+    """A share-of-TOTAL floor is scale-dependent: across 40 routes no segment can hold
+    3% of the total, so the grid the story lives in goes silent (all 84 real routes
+    did). Measured against the typical segment, the rule holds at any grain."""
+    rows = [[f"route_{i}", 80.0, 1_000] for i in range(40)]
+    rows[0] = ["route_worst", 70.0, 1_000]
+    gap = compute_opportunity(_FLEET_COLS, rows, is_ratio=True, is_percent=True,
+                              volume_is_denominator=True)
+    assert gap is not None and gap["worst_segment"] == "route_worst"
+
+
+def test_boutique_segment_still_cannot_anchor_the_benchmark():
+    """The floor's original job survives the rewrite: a 12-seat charter at 99% is not
+    the benchmark long-haul should be measured against."""
+    rows = [["long", 77.7, 66_764], ["short", 79.4, 120_000], ["charter", 99.0, 12]]
+    gap = compute_opportunity(_FLEET_COLS, rows, is_ratio=True, is_percent=True,
+                              volume_is_denominator=True)
+    assert gap is not None and gap["best_segment"] == "short"
+
+
 def test_same_gap_over_tiny_volume_is_noise():
     """The floor still has to bite: the identical 1.7pp gap over ~200 seats is noise."""
     rows = [["long", 77.7, 200], ["short", 79.4, 300], ["reg", 78.9, 250]]
