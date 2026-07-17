@@ -259,8 +259,16 @@ def annotate_opportunity(
     (79.4% − 77.7%) × 66,764 seats is seats. For an additive metric the rate is
     already per-record, so the opportunity carries the metric's own unit."""
     try:
+        rows = finding.get("rows") or []
+        # A finding carries at most the first 50 rows. The benchmark is the BEST peer in
+        # the grid, so on a truncated ORDER BY … ASC scan (84 routes → the 50 emptiest)
+        # the real benchmark was cut and the "gap" would be measured against whatever
+        # survived — a confident, quietly wrong number. Silence is the honest output.
+        row_count = finding.get("row_count")
+        if isinstance(row_count, (int, float)) and row_count > len(rows):
+            return False
         gap = compute_opportunity(
-            finding.get("columns") or [], finding.get("rows") or [],
+            finding.get("columns") or [], rows,
             is_ratio=is_ratio, is_percent=is_percent, lower_is_better=lower_is_better,
             volume_is_denominator=volume_is_denominator)
         if not gap:

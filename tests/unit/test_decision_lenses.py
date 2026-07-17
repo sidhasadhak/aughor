@@ -154,6 +154,23 @@ def test_direction_and_volume_reach_the_annotated_key_number():
     assert "1,135 seats" in kn["context"]        # the unit is the volume's, not "utilization"
 
 
+def test_truncated_grid_never_benchmarks_against_the_survivors():
+    """A finding carries 50 rows. The live utilization lens scanned 84 routes ORDER BY
+    ASC, so the true best peer was cut — benchmarking against the 50th-worst would be a
+    confident wrong number. row_count > len(rows) ⇒ silence."""
+    f = {"columns": _PCT_COLS, "rows": _PCT_ROWS, "row_count": 84,
+         "key_numbers": [], "stat_note": None}
+    assert annotate_opportunity(f, metric_label="utilization", is_ratio=True,
+                                is_percent=True, volume_label="seats",
+                                volume_is_denominator=True) is False
+    assert f["key_numbers"] == []
+    # The same grid, whole, still annotates.
+    f2 = dict(f, row_count=len(_PCT_ROWS), key_numbers=[])
+    assert annotate_opportunity(f2, metric_label="utilization", is_ratio=True,
+                                is_percent=True, volume_label="seats",
+                                volume_is_denominator=True) is True
+
+
 def test_cost_like_annotation_reads_above_benchmark():
     rows = [["first", 3.56, 20_000], ["economy", 1.20, 90_000], ["corp", 3.41, 30_000]]
     f = {"columns": _PCT_COLS, "rows": rows, "key_numbers": [], "stat_note": None}
