@@ -65,12 +65,15 @@ export function valueFormatter(rows: Row[], f: string, units?: Record<string, st
   const sym = share ? ""
     : srcCur ? (CURRENCY_SYMBOLS[srcCur] ?? `${srcCur} `)
     : isMoneyColumn(f) ? effectiveCurrencySymbol() : "";
+  // Fraction-vs-percent is decided ONCE from the column's data, never per value: axis ticks
+  // span from 0, so deciding per tick renders "0.0% 50.0% 100.0% 1.5% 2.0%…" on any
+  // percent-scaled axis (ticks ≤1 individually read as fractions and get ×100 — the
+  // flags-on soak, every narrow-range chart). Mirrors export charts.py `_fmt_for`.
+  const shareIsFraction = share && maxAbs(rows, f) <= 1.0001;
   return (v) => {
     const n = num(v);
     if (v == null || isNaN(n)) return "—";
-    // Scale-aware percent: a fraction (0.4096) is ×100; an already-scaled percent (40.96) is left —
-    // so the axis, the data labels, and the backend key numbers all read "41.0%".
-    if (share) return Math.abs(n) <= 1.0001 ? pct(n, 1) : `${n.toFixed(1)}%`;
+    if (share) return shareIsFraction ? pct(n, 1) : `${n.toFixed(1)}%`;
     return sym + compactNumber(n);
   };
 }

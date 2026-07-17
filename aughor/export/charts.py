@@ -53,7 +53,7 @@ _RED_RAMP = ("#F5C0A0", "#E64848", "#8E1E1E")
 _SIGN_POS, _SIGN_NEG = "#2EC87B", "#E64848"
 # Point labels stay legible only while the plot is sparse; past this they overprint.
 _SCATTER_LABEL_MAX = 40
-_MIN_SEVERITY_ROWS = 3
+_MIN_SEVERITY_ROWS = 2   # mirror aughor/agent/exhibit.py — one metric, one colour story
 # A summary-statistics PROFILE grid (min/max/mean/std/p1…p99 per column) is a table,
 # never a chart — charting 6 stat measures as grouped bars produces an unreadable
 # micro-legend that says nothing (the W5 outlier-report A/B caught exactly this).
@@ -104,16 +104,26 @@ def _is_money_col(name: str) -> bool:
     return bool(_MONEY_COL_RE.search(name or "")) and not _NOT_MONEY_COL_RE.search(name or "")
 
 
-def _fmt_for(field: str, units: Optional[dict], money_symbol: str = "") -> Callable[[float], str]:
+def _fmt_for(field: str, units: Optional[dict], money_symbol: str = "",
+             values: Optional[list] = None) -> Callable[[float], str]:
     """Per-field value formatter. An explicit `{col: "percent"}` unit is authoritative
     and scale-aware — a fraction (0.745) is ×100, an already-scaled percent (74.5) is
     left — so the PDF reads "74.5%" exactly where the app does; a `"currency:CHF"`
     unit prefixes the SOURCE currency's symbol. Absent a unit, a money-named column
     carries `money_symbol` (the connection's effective currency — the same fallback
     the web applies), so the PDF's axis can't read bare while the app shows a symbol.
-    Mirrors the web's valueFormatter (builders.ts)."""
+    Mirrors the web's valueFormatter (builders.ts) — keep the fraction rule in sync.
+
+    `values` (the column's data) pins the fraction-vs-percent decision ONCE per axis.
+    Decided per tick, an axis spanning 0→3.5 over percent-scaled data (2.6…3.4) reads
+    "0.0% 50.0% 100.0% 1.5% 2.0%…" — ticks at ≤1 individually looked like fractions
+    and got ×100 (the flags-on soak, every narrow-range chart in both renderers)."""
     u = (units or {}).get(field)
     if u == "percent":
+        nums = [abs(x) for x in (_to_num(v) for v in (values or [])) if x is not None]
+        if nums:
+            is_fraction = max(nums) <= 1.0001
+            return (lambda n: f"{n * 100:.1f}%") if is_fraction else (lambda n: f"{n:.1f}%")
         return lambda n: (f"{n * 100:.1f}%" if abs(n) <= 1.0001 else f"{n:.1f}%")
     if isinstance(u, str) and u.startswith("currency:"):
         sym = _CURRENCY_SYMBOLS.get(u[len("currency:"):], u[len("currency:"):] + " ")
@@ -342,7 +352,8 @@ def render_chart(
 def _render_timeseries(columns, rows, dx, num_idx, cat_idx, ct, title, w, h, units=None, exhibit=None, money_symbol=""):
     fig, ax = plt.subplots(figsize=(w, h))
     _style(ax)
-    _fmt = _fmt_for(columns[num_idx[0]] if num_idx and num_idx[0] < len(columns) else "", units, money_symbol)
+    _fmt = _fmt_for(columns[num_idx[0]] if num_idx and num_idx[0] < len(columns) else "", units, money_symbol,
+                    values=[r[num_idx[0]] for r in rows if num_idx and len(r) > num_idx[0]])
     # category present → one line per series (multi_line)
     if cat_idx and ct in ("multi_line", "auto", "line") and len(num_idx) >= 1:
         cx, vy = cat_idx[0], num_idx[0]
@@ -453,7 +464,8 @@ def _render_bar(columns, rows, cx, num_idx, ct, title, w, h, units=None, exhibit
     ax.set_yticks(list(y_pos))
     ax.set_yticklabels([l[:28] for l in labels], fontsize=8)
     ax.invert_yaxis()
-    _fmt = _fmt_for(columns[vy] if vy < len(columns) else "", units, money_symbol)
+    _fmt = _fmt_for(columns[vy] if vy < len(columns) else "", units, money_symbol,
+                    values=[d[1][0] for d in data])
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: _fmt(v)))
     if not multi:
         for i, d in enumerate(data):
@@ -549,7 +561,8 @@ def _render_scatter(columns, rows, num_idx, cat_idx=None, title="", w=7.0, h=3.4
             if label:
                 ax.annotate(label[:14], (x, y), xytext=(0, 5), textcoords="offset points",
                             fontsize=6, color=_FG, ha="center")
-    fx, fy = _fmt_for(columns[xi], units, money_symbol), _fmt_for(columns[yi], units, money_symbol)
+    fx = _fmt_for(columns[xi], units, money_symbol, values=[p[0] for p in pts])
+    fy = _fmt_for(columns[yi], units, money_symbol, values=[p[1] for p in pts])
     ax.set_xlabel(_pretty(columns[xi]), fontsize=8, color=_MUTED)
     ax.set_ylabel(_pretty(columns[yi]), fontsize=8, color=_MUTED)
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: fx(v)))

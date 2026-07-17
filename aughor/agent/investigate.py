@@ -1113,6 +1113,24 @@ def _suppress_fanned_ratio(findings: list, metric_label: str, eff_caveat: str) -
             "grain-correct recompute is needed).")
 
 
+_VERDICT_PREFIX_RE = re.compile(r"^\s*VERDICT\s*:\s*", re.I)
+
+
+def _strip_verdict_prefix(text: str) -> str:
+    """'VERDICT: UNIFORM. The leading reason…' → 'Uniform. The leading reason…'.
+
+    Drops the machinery label and sentence-cases the ALL-CAPS token that followed it
+    ('AT the peer range' → 'At the peer range'). Prose without the label is untouched."""
+    if not _VERDICT_PREFIX_RE.match(text or ""):
+        return text
+    rest = _VERDICT_PREFIX_RE.sub("", text)
+    m = re.match(r"([A-Z][A-Z ]+?)(\b)", rest)
+    if m and len(m.group(1)) >= 2:
+        word = m.group(1)
+        rest = word.capitalize() + rest[len(word):]
+    return rest
+
+
 def _scrub_suppressed_metric_everywhere(phases: list, suppressed: dict) -> int:
     """A suppressed ratio is corrupt at the METRIC level, so every phase that renders it is
     corrupt — but only the cross-section phase ran the guard. Walk every phase and neutralise
@@ -1391,6 +1409,13 @@ def _chart_type_for_finding(finding: dict, intent: str) -> str:
     has_date = any(_FINDING_DATE_RE.search(c) for c in cols)
     has_change = any(_FINDING_CHANGE_RE.search(c) for c in cols)
     if intent == "composition":
+        # Chart grammar: a composition is a RANKED BAR, never a donut — the reference
+        # reports use three forms (ranked h-bar, labeled scatter, table) and zero pies;
+        # a 60.7/39.3 split reads faster as two sorted bars with data labels than as
+        # arc angles. Flag-off keeps the legacy pie byte-identical.
+        from aughor.kernel.flags import flag_enabled as _fe
+        if _fe("chart.exhibit_grammar"):
+            return "bar_horizontal"
         return "pie" if 2 <= n <= _PIE_MAX_SLICES else "bar_horizontal"
     if intent == "relationship":
         return "scatter"
@@ -6613,6 +6638,19 @@ def ada_synthesize(state: AgentState) -> dict:
             return s
         core = re.sub(r"^[+\-]\s*", "", s)
         return ("-" + core) if pct < 0 else core
+
+    # Clean-output: the interpret prompts ask lens narrators to "lead with the verdict",
+    # and the model obliges LITERALLY — "VERDICT: UNIFORM. The leading reason…" is
+    # analysis-machinery speak in the reader's body text (flags-on soak). Strip the label
+    # and un-shout the word it modified; the sentence that follows already carries it.
+    for _p in phases:
+        _ps = _p.get("summary")
+        if _ps:
+            _p["summary"] = _strip_verdict_prefix(_ps)
+        for _f in (_p.get("findings") or []):
+            _fi = _f.get("interpretation")
+            if _fi:
+                _f["interpretation"] = _strip_verdict_prefix(_fi)
 
     # Humanize the scan template's internal SQL aliases at the LAST touch before the
     # report ships — charts/tooltips were labelling series "Metric Total" and "Avg Per

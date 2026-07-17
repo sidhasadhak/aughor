@@ -37,7 +37,10 @@ _COUNT_COL_NAMES = {"n", "count", "records", "n_records", "row_count"}
 _ID_COL_RE = re.compile(r"(^|_)(id|key|sk|pk|code|uuid|guid|hash)$", re.I)
 # A ref line must sit within the data span ± this margin (of the span) to be drawn.
 _REF_SPAN_MARGIN = 0.5
-_MIN_SEVERITY_ROWS = 3
+# 2, not 3: the flags-on soak rendered the same leakage metric as a red severity ramp at
+# 4+ segments and neutral BLUE at 2 (trip type, haul) — one metric, two colour stories on
+# one page. Two rows are still a ranking of a rate; the ramp reads fine as dark/light.
+_MIN_SEVERITY_ROWS = 2
 
 
 def _num(v: Any) -> Optional[float]:

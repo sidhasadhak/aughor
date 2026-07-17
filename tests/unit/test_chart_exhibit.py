@@ -176,8 +176,12 @@ def test_quick_exhibit_scatter_requests_point_labels():
     assert spec == {"label_points": True}
 
 
-def test_quick_exhibit_needs_enough_rows():
+def test_quick_exhibit_ramps_two_rows_but_not_one():
+    """2 rows ramp (the soak drew the SAME leakage metric red at 4 segments and neutral
+    blue at 2 — one metric, two colour stories on a page); a single bar has no ranking."""
     assert quick_exhibit(["state", "return_rate"], [["CA", 0.1], ["TX", 0.2]],
+                         "bar_horizontal") == {"color": {"mode": "severity"}}
+    assert quick_exhibit(["state", "return_rate"], [["CA", 0.1]],
                          "bar_horizontal") is None
 
 
@@ -409,3 +413,47 @@ def test_exhibit_grammar_flag_defaults_off():
     from aughor.kernel.flags import FLAG_ENV, flag_enabled
     assert "chart.exhibit_grammar" in FLAG_ENV
     assert flag_enabled("chart.exhibit_grammar") is False
+
+
+# ── P2 presentation cluster (flags-on soak, 2026-07-17) ──────────────────────
+
+def test_composition_is_a_ranked_bar_under_the_grammar(monkeypatch):
+    """The grammar's three forms are ranked bar, scatter, table — zero donuts. A 2-part
+    composition (full 60.7 / taxes_only 39.3) reads as two sorted bars; flag-off keeps
+    the legacy pie byte-identical."""
+    from aughor.agent.investigate import _chart_type_for_finding
+    f = {"columns": ["refund_type", "pct_of_total"],
+         "rows": [["full", 60.7], ["taxes_only", 39.3]]}
+    monkeypatch.setenv("AUGHOR_CHART_EXHIBIT_GRAMMAR", "1")
+    assert _chart_type_for_finding(f, "composition") == "bar_horizontal"
+    monkeypatch.setenv("AUGHOR_CHART_EXHIBIT_GRAMMAR", "0")
+    assert _chart_type_for_finding(f, "composition") == "pie"
+
+
+def test_percent_axis_scale_is_decided_once_from_the_data():
+    """The broken axis: ticks span from 0, so a per-tick fraction test renders
+    "0.0% 50.0% 100.0% 1.5% 2.0%…" over percent-scaled data (2.6…3.4). The column's
+    values pin the scale ONCE: percent-scaled data leaves every tick as-is."""
+    fmt = _fmt_for("leakage_rate", {"leakage_rate": "percent"}, values=[2.6, 3.4, 2.8])
+    assert fmt(0.5) == "0.5%"           # was "50.0%" — the defect
+    assert fmt(1.0) == "1.0%"           # was "100.0%"
+    assert fmt(3.0) == "3.0%"
+    # Fraction-scaled data still reads as percent on every tick.
+    fmt2 = _fmt_for("share", {"share": "percent"}, values=[0.61, 0.39])
+    assert fmt2(0.5) == "50.0%"
+    # No values (legacy callers): the old per-value heuristic is the honest fallback.
+    fmt3 = _fmt_for("share", {"share": "percent"})
+    assert fmt3(0.5) == "50.0%" and fmt3(74.5) == "74.5%"
+
+
+def test_verdict_prefix_is_stripped_and_unshouted():
+    from aughor.agent.investigate import _strip_verdict_prefix
+    assert _strip_verdict_prefix(
+        "VERDICT: UNIFORM. The leading reason shows a 100% share in every segment."
+    ) == "Uniform. The leading reason shows a 100% share in every segment."
+    assert _strip_verdict_prefix(
+        "VERDICT: AT the peer range — brand-wide baseline, not subject-specific."
+    ) == "At the peer range — brand-wide baseline, not subject-specific."
+    # Prose without the label is byte-identical.
+    for s in ("Uniform shares across segments.", "The verdict is clear: leakage.", ""):
+        assert _strip_verdict_prefix(s) == s
