@@ -1191,11 +1191,12 @@ def _repair_conditioned_ratio(findings: list, conn, metric_sql: str, metric_labe
             f["sql"] = plan["sql"]             # the drill shows the CORRECT query
             f["key_numbers"] = []
             f["error"] = None
-            top, bottom = rows[0], rows[-1]
+            # The chart already shows the per-segment ranking; the interpretation adds only
+            # what the chart can't — the whole-population level the ranking is measured
+            # against — not a restatement of "X highest, Y lowest across N segments".
             f["interpretation"] = (
-                f"Recomputed at the correct grain: overall {metric_label} is {gstr}. "
-                f"{top[0]} ranks highest at {_fmt(float(top[1]))} and {bottom[0]} lowest at "
-                f"{_fmt(float(bottom[1]))} across {len(rows)} segments.")
+                f"Recomputed at the correct grain against a whole-population {metric_label} "
+                f"of {gstr}.")
             # Transparency without tripping the prompt's fan-out damper: this data is
             # now correct and MAY be cited as exact.
             f["trust_caveat"] = (
@@ -1301,6 +1302,102 @@ def _dedupe_repeated_caveats(phases: list) -> None:
                     f["interpretation"] = "See the note above — the same computation caveat applies."
                 else:
                     seen_interps.add(interp)
+
+
+# The plotted measure in a ranking finding (the rate/share/metric column, not the count
+# or the segment label). Used to test whether a ranking actually discriminates.
+_MEASURE_COL_RE = re.compile(
+    r"(share|rate|pct|percent|metric_total|metric_value|_of_total|factor|ratio|utili[sz])", re.I)
+
+
+def _measure_col_index(cols: list) -> Optional[int]:
+    for i, c in enumerate(cols):
+        if _MEASURE_COL_RE.search(str(c)):
+            return i
+    return None
+
+
+def _as_float(v) -> Optional[float]:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None                  # assignment-fallback, not a silent pass
+
+
+def _is_zero_variance_ranking(f: dict) -> bool:
+    """A ranking whose measure is IDENTICAL across every segment — the '100% in every
+    booking channel' shape. No spread means nothing to rank and nothing to act on, so the
+    chart and its 'Uniform…' prose add no signal. A single-row finding is a stated fact,
+    not a ranking, and is left alone."""
+    rows = f.get("rows") or []
+    if len(rows) < 2:
+        return False
+    idx = _measure_col_index(f.get("columns") or [])
+    if idx is None:
+        return False
+    vals = [_as_float(r[idx]) for r in rows if idx < len(r)]
+    vals = [v for v in vals if v is not None]
+    return len(vals) >= 2 and (max(vals) - min(vals)) < 1e-9
+
+
+def _has_opportunity_number(f: dict) -> bool:
+    return any((k.get("label", "") or "").startswith("Opportunity")
+               for k in (f.get("key_numbers") or []))
+
+
+def _finding_earns_place(f: dict) -> bool:
+    """A finding earns a place in the report only if it can move the reader toward a
+    conclusion. The classes that cannot, and are dropped:
+      • a suppressed metric — a failed computation teaches the reader nothing;
+      • a zero-variance ranking — identical everywhere ⇒ no discrimination, no action;
+      • a self-declared-inconclusive finding — one that reaches no conclusion by its own
+        admission ("Inconclusive — no peer range…"), unless it still carries a material
+        opportunity number that stands on its own.
+    A recomputed-and-validated finding always earns its place."""
+    if f.get("_grain_repaired"):
+        return True
+    if f.get("_suppressed"):
+        return False
+    interp = (f.get("interpretation") or "").strip().lower()
+    if (interp.startswith("inconclusive") or "no peer range" in interp
+            or "cannot be validated or refuted" in interp) and not _has_opportunity_number(f):
+        return False
+    if _is_zero_variance_ranking(f):
+        return False
+    return True
+
+
+def _phase_materiality(ph: dict) -> int:
+    """A decision-impact score for ordering. The R15 opportunity number (gap × volume) is
+    the only real magnitude of impact, so a phase carrying one leads; significance and
+    key-number density break ties. Deterministic; higher = more material."""
+    score = 0
+    for f in ph.get("findings") or []:
+        if _has_opportunity_number(f):
+            score += 100
+        if f.get("is_significant"):
+            score += 5
+        score += min(len(f.get("key_numbers") or []), 3)
+    return score
+
+
+def _prune_and_rank_phases(phases: list) -> list:
+    """Deliver only what's relevant, most-material first. Drops findings that can't move the
+    reader (see _finding_earns_place), hides a phase left with nothing to say, and re-orders
+    so the phase carrying the decision (the opportunity gap) leads instead of trailing —
+    the Databricks 'what → why → how' shape. Findings are dropped, phases are only HIDDEN
+    (a flag the renderers honour), so the 'phases run' count and plan reconciliation stay
+    intact. Returns the re-ranked list; mutates findings in place."""
+    for ph in phases or []:
+        ph["findings"] = [f for f in (ph.get("findings") or []) if _finding_earns_place(f)]
+        # A phase with no surviving finding has nothing to show — its summary was the noise
+        # ("Uniform…"). Hide it from render; keep the object so the counter doesn't desync.
+        if not ph["findings"]:
+            ph["_hidden"] = True
+    # Stable sort: visible phases first (most-material leading), hidden phases retained at
+    # the end. Only the opportunity-bearing phase jumps forward; ties keep narrative order.
+    return sorted(phases or [],
+                  key=lambda ph: (1 if ph.get("_hidden") else 0, -_phase_materiality(ph)))
 
 
 # ── Global-ratio plausibility guard (conditioned-denominator / implausible-magnitude) ─────────
@@ -1752,6 +1849,8 @@ def _detect_phase_contradictions(phases: list[InvestigationPhaseResult]) -> str:
 def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
     lines = []
     for p in phases:
+        if p.get("_hidden"):
+            continue                 # pruned to nothing — its summary was the noise
         lines.append(f"[{p['phase_name']}] {p['summary']}")
         for f in p["findings"]:
             if not f["error"] and f["interpretation"]:
@@ -1776,6 +1875,8 @@ def _one_phase_evidence(p: InvestigationPhaseResult) -> str:
     A SUPPRESSED finding's rows are the corrupt artifact, so they are redacted from the evidence:
     the synthesis model kept citing them (a single-period "58.04%" in the exec summary) even under
     the hard don't-cite instruction. The SQL + caveat stay so it knows what was attempted."""
+    if p.get("_hidden"):
+        return ""                    # pruned as irrelevant — nothing for the narrator to cite
     lines = [f"\n=== {p['phase_name']} ==="]
     for f in p["findings"]:
         if f["sql"]:
@@ -6491,9 +6592,16 @@ def ada_synthesize(state: AgentState) -> dict:
                 + "Do not let a suppressed number appear anywhere in the headline or executive summary.")
     _dedupe_repeated_caveats(phases)
 
+    # Relevance + ranking (deliver only what moves the reader, most-material first). Runs
+    # BEFORE the evidence log / narrator prompt below, so the LLM neither writes about the
+    # dropped noise (uniform / inconclusive / suppressed cuts) nor buries the decision — it
+    # sees the opportunity-bearing phase first and leads with it. `phase_ids` (early-stop)
+    # is computed from the full set first, so a hidden phase can't misfire the Tier-0 label.
+    phase_ids = {p["phase_id"] for p in phases}
+    phases = _prune_and_rank_phases(phases)
+
     # Detect early-stop: if only baseline (and intake) phases exist, the Tier-0
     # gate fired and we should label this as a "no anomaly" report.
-    phase_ids = {p["phase_id"] for p in phases}
     early_stop = phase_ids <= {"intake", "baseline"}
     sigma = state.get("_baseline_sigma")
     early_stop_note = ""

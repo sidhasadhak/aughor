@@ -71,6 +71,7 @@ interface InvestigationPhase {
   summary: string;
   findings: InvestigationFinding[];
   skipped_reason?: string;
+  _hidden?: boolean;   // pruned by the relevance pass (nothing that moves the reader) — don't render
 }
 
 interface WaterfallEntry {
@@ -215,14 +216,10 @@ function EvidenceBlock({ finding, onShowSource, sourceNo }: { finding: Investiga
           A reader gets conclusions; "Within noise · Only 2 rows returned" is the
           machine talking to itself. */}
 
-      {/* Trust advisory — the result computed, but the trust battery distrusts it (impossible
-          magnitude, fan-out artifact, vacuous CASE…). Surfaced, never suppressed. */}
-      {finding.trust_caveat && (
-        <div className="rounded-md border border-amber-700/40 bg-amber-900/15 px-2.5 py-1.5">
-          <span className="aug-text-xs font-semibold uppercase tracking-wide text-amber-400">Trust advisory</span>
-          <p className="aug-text-xs text-amber-200/90 mt-0.5">{finding.trust_caveat}</p>
-        </div>
-      )}
+      {/* The Trust advisory box is gone from the body — it restated the finding's own
+          interpretation (a suppressed finding is now dropped entirely; a repaired one says
+          "recomputed against 2.8%" in its interpretation already). It added space, not
+          value. The trust caveat still rides the finding for the Details / trust receipt. */}
 
       {/* Error */}
       {finding.error && (
@@ -601,7 +598,7 @@ export function InvestigationReportView({
     // Intake is setup, not thinking — users don't value the "QUESTION INTAKE" dump of the
     // run's raw framing (it streamed a wall of join-path reasoning). The final report already
     // pulls intake out of the analysis phases; mirror that while streaming.
-    const phases = (streamingPhases ?? []).filter(p => p.phase_id !== "intake");
+    const phases = (streamingPhases ?? []).filter(p => p.phase_id !== "intake" && !p._hidden);
     if (!phases.length && !streamingReport) return null;
     return (
       <div className="flex flex-col gap-4 pt-1">
@@ -612,7 +609,7 @@ export function InvestigationReportView({
   }
 
   const intakePhase = report.phases.find(p => p.phase_id === "intake");
-  const analysisPhases = report.phases.filter(p => p.phase_id !== "intake" && p.status !== "skipped");
+  const analysisPhases = report.phases.filter(p => p.phase_id !== "intake" && p.status !== "skipped" && !p._hidden);
 
   const periodStr = [
     report.observation_period,
