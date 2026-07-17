@@ -4745,8 +4745,12 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         if _why_phase:
             result_phases = result_phases + [_why_phase]
     # Loss-playbook lenses (flag intake.loss_signals) — mirror of the multilens path, so
-    # the leakage/utilization stories run whichever cross-section variant is live.
-    result_phases = result_phases + _run_loss_lens_phases(state, conn)
+    # the leakage/utilization stories run whichever cross-section variant is live. Only
+    # on the ROOT invocation: the multilens node calls this function once per partitioned
+    # lens (dims_override set) and appends the loss phases itself at merge time — running
+    # them here too duplicated the phase in the report (seen live, run b59f9bcd).
+    if dims_override is None:
+        result_phases = result_phases + _run_loss_lens_phases(state, conn)
     return {"investigation_phases": result_phases, "_cross_section_summary": summary}
 
 
@@ -5977,6 +5981,8 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     # primary metric left uncovered — independent of the WHY chain, appended last so the
     # narrative reads scan → causes → the other loss stories.
     for _lp in _run_loss_lens_phases(state, conn):
+        if any(p.get("phase_id") == _lp.get("phase_id") for p in merged):
+            continue    # defensive: never show the same loss story twice
         merged.append(_lp)
         _extras.append(_lp.get("phase_id", "loss"))
 
