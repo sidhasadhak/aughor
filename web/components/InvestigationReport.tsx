@@ -598,7 +598,10 @@ export function InvestigationReportView({
   // While streaming: progressive phase cards + the report prose as the narrator writes
   // it (R6), so the synthesis phase isn't silent. The terminal report replaces both.
   if (!report) {
-    const phases = streamingPhases ?? [];
+    // Intake is setup, not thinking — users don't value the "QUESTION INTAKE" dump of the
+    // run's raw framing (it streamed a wall of join-path reasoning). The final report already
+    // pulls intake out of the analysis phases; mirror that while streaming.
+    const phases = (streamingPhases ?? []).filter(p => p.phase_id !== "intake");
     if (!phases.length && !streamingReport) return null;
     return (
       <div className="flex flex-col gap-4 pt-1">
