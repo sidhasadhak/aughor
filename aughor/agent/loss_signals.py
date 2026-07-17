@@ -49,6 +49,63 @@ CAPACITY_RE = re.compile(
     r"\b([a-z0-9_]*(?:total_seats|capacity|occupancy|utilization|utilisation"
     r"|load_factor|slots_available)[a-z0-9_]*)\b", re.I)
 
+# Lifecycle/status columns — whether a unit actually consumed (or offered) capacity.
+# Anchored on word parts so `real_estate` doesn't read as a state column.
+LIFECYCLE_COL_RE = re.compile(r"(^|_)(status|state|lifecycle)($|_)", re.I)
+
+# Values meaning the unit never consumed/offered the capacity it was counted against.
+NOT_CONSUMED_RE = re.compile(
+    r"(cancel|void|refund|no.?show|missed|abandon|fail|reject|return|deleted|expired)", re.I)
+
+
+def _table_columns(schema_text: str) -> list:
+    """(table, column) pairs off the schema block's `TABLE: name` / indented `col TYPE`
+    shape. Deterministic parse — the lifecycle rule has to name a real table.column."""
+    out: list = []
+    table = None
+    for line in (schema_text or "").splitlines():
+        m = re.match(r"\s*TABLE:\s+([A-Za-z0-9_.\"]+)", line)
+        if m:
+            table = m.group(1).strip('"')
+            continue
+        if table and line[:1] in (" ", "\t"):
+            m2 = re.match(r"\s+([A-Za-z0-9_]+)\s+\S", line)
+            if m2:
+                out.append((table, m2.group(1)))
+    return out
+
+
+def lifecycle_directive(probed: dict) -> str:
+    """Pin which units count, from values probed off THIS data ('' when nothing to pin).
+
+    The A/B moved the same claim between 77.7/79.4 and 78.0/80.8 across runs because
+    "paid units" was never defined — the planner silently decided whether refunded and
+    no-show tickets counted, and it cannot see values in the schema block, so telling it
+    to "exclude cancelled" in prose just makes it invent the literal. Reading the values
+    off the data and naming them removes the choice. The pinned reading (units that
+    actually flew, over capacity that actually operated) is the industry load factor and
+    reproduces the reference report's 74.5% / 77.2% exactly."""
+    lines = ["LIFECYCLE FILTER (values probed from THIS data — filter on them literally):"]
+    pinned = False
+    for qualified, vals in (probed or {}).items():
+        drop = [v for v in vals if NOT_CONSUMED_RE.search(str(v))]
+        keep = [v for v in vals if v not in drop]
+        if not drop or not keep:
+            continue                    # nothing to exclude, or everything — no rule
+        pinned = True
+        lines.append(f"  {qualified}: KEEP {', '.join(repr(str(v)) for v in keep)}"
+                     f" — EXCLUDE {', '.join(repr(str(v)) for v in drop)}.")
+    if not pinned:
+        return ""
+    lines.append(
+        "  Apply each filter on ITS OWN table at its own grain. A unit belongs in the "
+        "NUMERATOR only if it actually consumed the capacity — it flew, was occupied, was "
+        "delivered; a cancelled or no-show unit did not, however it was paid for. Capacity "
+        "belongs in the DENOMINATOR only if it was actually offered — a cancelled carrier "
+        "unit offered none. Cancelled units are the LEAKAGE lens's story: counting them "
+        "here double-counts them.")
+    return "\n".join(lines) + "\n"
+
 
 def detect_loss_signals(question: str, schema_text: str) -> dict | None:
     """The loss signals THIS schema carries, or None when the question asks neither
@@ -61,7 +118,11 @@ def detect_loss_signals(question: str, schema_text: str) -> dict | None:
     capacity = sorted({m.group(1).lower() for m in CAPACITY_RE.finditer(schema_text or "")})
     if not contra and not capacity:
         return None
-    return {"contra_revenue": contra[:12], "capacity": capacity[:8]}
+    # Qualified, because the lifecycle rule filters a specific table at its own grain.
+    lifecycle = sorted({f"{t}.{c}" for t, c in _table_columns(schema_text)
+                        if LIFECYCLE_COL_RE.search(c)})
+    return {"contra_revenue": contra[:12], "capacity": capacity[:8],
+            "lifecycle": lifecycle[:4]}
 
 
 # Which loss CLASS a metric already covers — used to decide which forward-chained

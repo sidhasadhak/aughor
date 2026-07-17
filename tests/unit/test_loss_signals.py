@@ -11,6 +11,7 @@ from aughor.agent.loss_signals import (
     LOSS_INTENT_RE,
     detect_loss_signals,
     lens_specs,
+    lifecycle_directive,
     loss_signal_directive,
 )
 
@@ -68,6 +69,66 @@ def test_ordinary_temporal_questions_are_not_hijacked():
         "Which route has the highest revenue?",
     ):
         assert detect_loss_signals(q, _SCHEMA) is None, q
+
+
+# The real schema block's shape (`TABLE: name` + indented `col TYPE`) — the lifecycle
+# rule names a table.column, so the parse has to survive this format exactly.
+_SCHEMA_BLOCK = """
+TABLE: flights  (1,981 rows)
+  flight_id  VARCHAR
+  haul  VARCHAR
+  total_seats  BIGINT
+  status  VARCHAR
+TABLE: tickets  (273,878 rows)
+  ticket_id  VARCHAR
+  flight_id  VARCHAR
+  refund_amount  DOUBLE
+  segment_status  VARCHAR
+TABLE: sales_customers  (500 rows)
+  customer_id  VARCHAR
+  state  VARCHAR
+"""
+
+
+def test_lifecycle_columns_are_detected_qualified():
+    """The rule filters a specific table at its own grain, so the column must arrive
+    qualified. `state` on a customers table is a US state — detected here, but the
+    probe declines to pin it because no value reads as cancelled."""
+    sig = detect_loss_signals("Where are we losing money?", _SCHEMA_BLOCK)
+    assert sig is not None
+    assert "tickets.segment_status" in sig["lifecycle"]
+    assert "flights.status" in sig["lifecycle"]
+    assert "sales_customers.state" in sig["lifecycle"]
+    assert lifecycle_directive({"sales_customers.state": ["CA", "NY"]}) == ""
+
+
+def test_lifecycle_column_scan_ignores_words_that_merely_contain_state():
+    from aughor.agent.loss_signals import LIFECYCLE_COL_RE
+    for col in ("status", "segment_status", "order_state", "lifecycle_stage"):
+        assert LIFECYCLE_COL_RE.search(col), col
+    for col in ("real_estate", "estate_id", "statement_date"):
+        assert not LIFECYCLE_COL_RE.search(col), col
+
+
+def test_lifecycle_directive_pins_the_reading_off_probed_values():
+    """The whole point: 'paid units' was the planner's call and moved the claim between
+    77.7/79.4 and 78.0/80.8. Naming the values removes the choice."""
+    d = lifecycle_directive({
+        "tickets.segment_status": ["cancelled", "flown", "no_show"],
+        "flights.status": ["cancelled", "scheduled"],
+    })
+    assert "tickets.segment_status: KEEP 'flown'" in d
+    assert "EXCLUDE 'cancelled', 'no_show'" in d
+    assert "flights.status: KEEP 'scheduled' — EXCLUDE 'cancelled'" in d
+    assert "double-counts" in d          # the leakage overlap is stated, not implied
+
+
+def test_lifecycle_directive_is_silent_when_it_would_pin_nothing():
+    """No cancel-like value ⇒ no rule (a `state` column of US states). All values
+    cancel-like ⇒ no rule either — an empty numerator is not a reading."""
+    assert lifecycle_directive({"c.state": ["CA", "NY", "TX"]}) == ""
+    assert lifecycle_directive({"t.status": ["cancelled", "voided"]}) == ""
+    assert lifecycle_directive({}) == ""
 
 
 def test_utilization_claim_is_pinned_to_a_low_cardinality_grouping():

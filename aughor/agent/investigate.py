@@ -5769,6 +5769,35 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
     )
 
 
+def _probe_lifecycle_values(conn, cols: list) -> dict:
+    """Distinct values of each lifecycle/status column — read-only, bounded, fail-open.
+
+    Ground-first, and the reason this exists: the schema block gives the planner
+    `segment_status VARCHAR` and no values, so a prose rule ("exclude cancelled") makes
+    it INVENT the literal it filters on — and a literal that matches nothing silently
+    yields a 0% rate. Probe the column, name the values, remove the guess."""
+    out: dict = {}
+    for qualified in (cols or [])[:4]:
+        table, _, col = qualified.rpartition(".")
+        if not table or not col:
+            continue
+        try:
+            r = conn.execute_bounded(
+                "loss_lifecycle_probe",
+                f'SELECT DISTINCT "{col}" AS v FROM {table} WHERE "{col}" IS NOT NULL LIMIT 25',
+                25)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, f"lifecycle probe '{qualified}' best-effort; skipped",
+                     counter="ada.loss_lifecycle_probe")
+            continue
+        vals = [str(row[0]) for row in (r.rows or []) if row and row[0] is not None]
+        # One value pins nothing; 25 means it isn't a lifecycle column at all.
+        if 1 < len(vals) < 25:
+            out[qualified] = sorted(vals)
+    return out
+
+
 def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list[dict]:
     """Forward-chained LOSS lenses (flag `intake.loss_signals`): one investigation
     carries ONE primary metric, so a 'losing money' run that (correctly) picked
@@ -5785,11 +5814,15 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
         sig = intake_data.get("loss_signals") or {}
         if not sig:
             return []
-        from aughor.agent.loss_signals import lens_specs
+        from aughor.agent.loss_signals import lens_specs, lifecycle_directive
         blob = f"{intake_data.get('metric_label', '')} {intake_data.get('metric_sql', '')}"
         specs = lens_specs(sig, blob)
         if not specs:
             return []
+        # Pin which units count BEFORE planning: without the probed values "paid units"
+        # is the planner's call, and the same claim moved 77.7/79.4 → 78.0/80.8 across
+        # runs depending on whether it silently counted refunded and no-show tickets.
+        _lifecycle = lifecycle_directive(_probe_lifecycle_values(conn, sig.get("lifecycle") or []))
         question = state["question"]
         schema = _with_ledger(state, intake_data.get("filtered_schema")
                               or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
@@ -5800,7 +5833,8 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                     conn, phase_id=spec["phase_id"], title=spec["title"], emoji=spec["emoji"],
                     cap=2, schema=schema,
                     plan_system=spec["plan_system"] + _ADA_SQL_GROUNDING,
-                    plan_user=(f"QUESTION: {question}\n\nSCHEMA:\n{schema}\n\n{spec['plan_ask']}"),
+                    plan_user=(f"QUESTION: {question}\n\nSCHEMA:\n{schema}\n\n"
+                               f"{_lifecycle}{spec['plan_ask']}"),
                     interpret_system=spec["interpret_system"],
                     interpret_user_fn=(lambda results_text, _t=spec["title"]:
                                        f"QUESTION: {question}\n\n{_t.upper()}:\n{results_text}\n\n"
