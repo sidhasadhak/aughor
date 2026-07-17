@@ -1113,6 +1113,75 @@ def _suppress_fanned_ratio(findings: list, metric_label: str, eff_caveat: str) -
             "grain-correct recompute is needed).")
 
 
+def _scrub_suppressed_metric_everywhere(phases: list, suppressed: dict) -> int:
+    """A suppressed ratio is corrupt at the METRIC level, so every phase that renders it is
+    corrupt — but only the cross-section phase ran the guard. Walk every phase and neutralise
+    any finding that displays the same metric (its label appears as a result COLUMN or in a
+    key-number label): drop the chart, clear the metric key numbers, carry the caveat. This is
+    what stopped the temporal 'June 2024 Refund Leakage Rate: 58.8%' tile + line chart shipping
+    beside a report that elsewhere calls the metric an artifact. Deterministic; returns the count
+    scrubbed."""
+    label = (suppressed or {}).get("metric_label") or ""
+    caveat = (suppressed or {}).get("caveat") or ""
+    if not label:
+        return 0
+    norm = _norm_measure(label)
+    scrubbed = 0
+    for ph in phases or []:
+        for f in ph.get("findings") or []:
+            if f.get("chart_type") == "none" and not (f.get("key_numbers") or []):
+                continue                                    # already suppressed at source
+            cols = [_norm_measure(c) for c in (f.get("columns") or [])]
+            kn_labels = [_norm_measure(k.get("label", "")) for k in (f.get("key_numbers") or [])]
+            renders_metric = norm in cols or any(norm and norm in kl for kl in kn_labels)
+            if not renders_metric:
+                continue
+            f["chart_type"] = "none"
+            # Drop only the key numbers that quote THIS metric; a co-located record count stays.
+            f["key_numbers"] = [k for k in (f.get("key_numbers") or [])
+                                if norm not in _norm_measure(k.get("label", ""))]
+            f["is_significant"] = False
+            f["trust_caveat"] = f.get("trust_caveat") or caveat
+            # The interpretation prose quotes the artifact ("...is 58.83%..."); replace it so the
+            # number appears nowhere the reader can mistake for a fact. Dedupe collapses the repeat.
+            f["interpretation"] = (
+                f"{label} could not be computed reliably for this cut — the value is a "
+                "computation artifact of the same conditioned denominator, not a real level.")
+            scrubbed += 1
+    return scrubbed
+
+
+def _norm_measure(s: str) -> str:
+    """Normalise a measure name for matching: lowercase, drop a units suffix like '(%)' and
+    non-alphanumerics. 'Refund Leakage Rate (%)' and 'refund_leakage_rate' → 'refundleakagerate'."""
+    return re.sub(r"[^a-z0-9]", "", re.sub(r"\(.*?\)", "", str(s or "")).lower())
+
+
+def _dedupe_repeated_caveats(phases: list) -> None:
+    """One honest detection was rendering as eight: the same suppression text was stamped on
+    every fanned finding as BOTH its interpretation and its trust_caveat, and the UI draws a box
+    per caveat. Keep the first occurrence of each identical caveat / suppression interpretation
+    across the whole report; blank the exact-duplicate repeats so it reads once. In place."""
+    seen_caveats: set = set()
+    seen_interps: set = set()
+    for ph in phases or []:
+        for f in ph.get("findings") or []:
+            cav = (f.get("trust_caveat") or "").strip()
+            if cav:
+                if cav in seen_caveats:
+                    f["trust_caveat"] = None
+                else:
+                    seen_caveats.add(cav)
+            # Only collapse the SUPPRESSION interpretation (the identical machine-written one);
+            # a real per-finding interpretation is never an exact repeat of another's.
+            interp = (f.get("interpretation") or "").strip()
+            if interp and "could not be computed reliably" in interp:
+                if interp in seen_interps:
+                    f["interpretation"] = "See the note above — the same computation caveat applies."
+                else:
+                    seen_interps.add(interp)
+
+
 # ── Global-ratio plausibility guard (conditioned-denominator / implausible-magnitude) ─────────
 # The catastrophic inv1 failure: a "why is the Fragrance refund RATE so high?" scan generated
 # per-dimension SQL that used the EVENT table (refunds) as the JOIN BASE and INNER-joined the
@@ -1227,13 +1296,17 @@ _GLOBAL_RATIO_INFLATION = 2.5   # every segment ≥ this × the true global ⇒ 
 
 
 def _global_ratio_plausibility_guard(findings: list, conn, metric_sql: str,
-                                     metric_label: str) -> Optional[str]:
+                                     metric_label: str) -> Optional[dict]:
     """Fix 1+2 — detect a conditioned-denominator / broken ratio by magnitude. Compute the metric's
     true global level independently; if EVERY scanned segment is ≥ 2.5× that global (systematic
     inflation the eye reads as 'every segment is an outlier'), the per-segment ratio is a computation
     artifact, not a business signal. Suppress the corrupted numbers and return an honest caveat that
     STATES the true global. Returns None (no-op) when it can't parse the metric, can't compute the
-    global, or the segments are plausibly distributed around it. Deterministic; never raises."""
+    global, or the segments are plausibly distributed around it. Deterministic; never raises.
+
+    Returns a dict ``{caveat, true_global_str, true_global}`` — the structured true level lets
+    synthesis be handed the antidote (2.8%), not just told the segment values are wrong, so it
+    can't headline the artifact for want of a real number to cite instead."""
     sources = _parse_ratio_sources(metric_sql)
     if not sources:
         return None
@@ -1257,16 +1330,17 @@ def _global_ratio_plausibility_guard(findings: list, conn, metric_sql: str,
     if min(seg_vals) < _GLOBAL_RATIO_INFLATION * global_ratio:
         return None
     _fmt = _fmt_pct if sources["scale"] == 100.0 or max(seg_vals) <= 100.0 else (lambda v: f"{v:,.2f}")
+    true_global_str = _fmt(global_ratio)
     caveat = (
         f"metric-computation error: every scanned segment of {metric_label} ({_fmt(min(seg_vals))}–"
         f"{_fmt(max(seg_vals))}) sits far above the metric's TRUE whole-population level of "
-        f"{_fmt(global_ratio)} (numerator over {sources['num_table']} ÷ denominator over "
+        f"{true_global_str} (numerator over {sources['num_table']} ÷ denominator over "
         f"{sources['den_table']}, each on its full population). This is the signature of a conditioned "
         "denominator — the per-segment query joined the denominator through the numerator's event "
         f"table, so it counted only the population that already had the event. The true global "
-        f"{metric_label} is {_fmt(global_ratio)}; the per-segment ranking is not trustworthy until the "
+        f"{metric_label} is {true_global_str}; the per-segment ranking is not trustworthy until the "
         "denominator is computed over the full population per segment.")
-    return caveat
+    return {"caveat": caveat, "true_global_str": true_global_str, "true_global": global_ratio}
 
 
 def _chart_ratio_primary(finding) -> None:
@@ -4706,6 +4780,10 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # is per-SQL, so only the findings whose OWN query over-scanned are flagged — a clean sibling like
     # 'by platform' is no longer tarred by another finding's fan-out. The AST phase caveat is
     # phase-level; apply it broadly only when the numeric backstop found no specific offender.
+    # A ratio suppressed here is corrupt at the METRIC level (the shared metric_sql), so every other
+    # phase that renders it — the temporal tile, a baseline chart — is corrupt too. Record a terminal
+    # signal that synthesis uses to scrub those and to state the true level instead of the artifact.
+    _suppressed_ratio: Optional[dict] = None
     _eff_caveat = _numeric_fanout or _run.fanout_caveat
     if _eff_caveat:
         def _finding_fanned(f):
@@ -4719,6 +4797,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                 # Fix B — a fanned RATIO is corrupted, not merely inflated; suppress its values + ranking
                 # rather than present and let the narrator rationalise an artifact (the ROAS 0.0–0.01 mess).
                 summary = _suppress_fanned_ratio(_fanned, metric_label, _eff_caveat)
+                _suppressed_ratio = {"metric_label": metric_label, "caveat": _eff_caveat,
+                                     "true_global_str": None}
             else:
                 summary = f"⚠ {_eff_caveat} " + (summary or "")
 
@@ -4731,9 +4811,13 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         _plausibility = _global_ratio_plausibility_guard(findings, conn, metric_sql, metric_label)
         if _plausibility:
             for f in findings:
-                f["trust_caveat"] = f.get("trust_caveat") or _plausibility
+                f["trust_caveat"] = f.get("trust_caveat") or _plausibility["caveat"]
                 f["is_significant"] = False
-            summary = _suppress_fanned_ratio(findings, metric_label, _plausibility)
+            summary = _suppress_fanned_ratio(findings, metric_label, _plausibility["caveat"])
+            # The conditioned-denominator guard KNOWS the true level — carry it, so synthesis
+            # cites 2.8%, not the 49–69% artifacts.
+            _suppressed_ratio = {"metric_label": metric_label, "caveat": _plausibility["caveat"],
+                                 "true_global_str": _plausibility["true_global_str"]}
 
     phase = _phase_result(
         _phase_id, _phase_title, _phase_emoji,
@@ -4756,7 +4840,10 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # them here too duplicated the phase in the report (seen live, run b59f9bcd).
     if dims_override is None:
         result_phases = result_phases + _run_loss_lens_phases(state, conn)
-    return {"investigation_phases": result_phases, "_cross_section_summary": summary}
+    out = {"investigation_phases": result_phases, "_cross_section_summary": summary}
+    if _suppressed_ratio:
+        out["_suppressed_ratio"] = _suppressed_ratio
+    return out
 
 
 # ── Parallel multi-lens cross-section (flag: ada.parallel_lenses) ──────────────
@@ -6123,6 +6210,29 @@ def ada_synthesize(state: AgentState) -> dict:
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
     intake_data = state.get("_ada_intake") or {}
 
+    # Terminal suppression (P0): a ratio proven corrupt in the cross-section guard is corrupt
+    # wherever the shared metric is rendered. Scrub it from every OTHER phase (the temporal tile
+    # + line chart the guard never reached), collapse the one caveat that was repeating ~8×, and
+    # hand synthesis the TRUE level so it states 2.8% instead of headlining the 58.8% artifact.
+    _suppressed = state.get("_suppressed_ratio")
+    suppression_section = ""
+    if _suppressed:
+        _scrub_suppressed_metric_everywhere(phases, _suppressed)
+        _true = _suppressed.get("true_global_str")
+        _mlabel = _suppressed.get("metric_label") or "the metric"
+        suppression_section = (
+            f"\n\nSUPPRESSED METRIC — HARD RULE: '{_mlabel}' could not be computed reliably; its "
+            "per-segment and per-period values in the evidence (any large percentage such as 58.8%, "
+            "or a 49–69% range) are COMPUTATION ARTIFACTS of a conditioned denominator / join "
+            "fan-out, NOT real levels. You MUST NOT cite, rank, or headline those values as facts. "
+            + (f"The metric's TRUE whole-population level is {_true} — cite THAT if you state a level, "
+               "and say plainly it needs a grain-correct recompute before segments can be compared. "
+               if _true else
+               "State plainly that the metric needs a grain-correct recompute before it can be "
+               "trusted, and do not invent a level. ")
+            + "Do not let a suppressed number appear anywhere in the headline or executive summary.")
+    _dedupe_repeated_caveats(phases)
+
     # Detect early-stop: if only baseline (and intake) phases exist, the Tier-0
     # gate fired and we should label this as a "no anomaly" report.
     phase_ids = {p["phase_id"] for p in phases}
@@ -6303,7 +6413,7 @@ def ada_synthesize(state: AgentState) -> dict:
         playbook_section=playbook_section,
         org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
-    ) + contradiction_section + early_stop_note + cross_section_note
+    ) + contradiction_section + early_stop_note + cross_section_note + suppression_section
     # Issue-1 fix (frugal) — BOUND the synthesis LLM call. The cloud narrator can stall for many
     # minutes, and a hung synthesis used to leave the user with no report at all even though every
     # phase had finished. Run it under a hard timeout; on timeout we fall through to the SAME

@@ -117,10 +117,11 @@ def test_a1_guard_fires_and_states_true_global_on_inflated_segments(gt_db):
         "columns": ["category", "metric_total"],
         "rows": [["fragrance", 73.2], ["skincare", 68.0], ["makeup", 61.5]],
     }]
-    caveat = I._global_ratio_plausibility_guard(findings, gt_db, _REFUND_METRIC, "refund rate")
-    assert caveat is not None
-    assert "conditioned denominator" in caveat.lower()
-    assert I._fmt_pct(_TRUE_GLOBAL_REFUND_RATE) in caveat        # "10.0%" is stated in the caveat
+    res = I._global_ratio_plausibility_guard(findings, gt_db, _REFUND_METRIC, "refund rate")
+    assert res is not None
+    assert "conditioned denominator" in res["caveat"].lower()
+    assert I._fmt_pct(_TRUE_GLOBAL_REFUND_RATE) in res["caveat"]      # "10.0%" is stated in the caveat
+    assert res["true_global_str"] == I._fmt_pct(_TRUE_GLOBAL_REFUND_RATE)   # and structured
 
 
 def test_a1_guard_silent_on_plausible_spread(gt_db):
