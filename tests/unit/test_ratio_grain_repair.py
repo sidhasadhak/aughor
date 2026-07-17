@@ -139,3 +139,29 @@ def test_orchestration_repairs_the_finding_in_place():
     assert "2.8%" in corrupt["interpretation"]
     assert "fan-out" not in corrupt["trust_caveat"]
     assert "2.8%" in (gstr or "") and abs(g - 2.8) < 0.01
+
+
+def test_suppressed_rows_are_redacted_from_synthesis_evidence():
+    """The synthesis model cited a suppressed single-period '58.04%' straight out of the
+    evidence log even under the hard don't-cite instruction — because the finding's raw
+    rows were dumped verbatim. A suppressed finding's rows are redacted from the evidence;
+    its SQL + caveat stay so synthesis knows what was attempted."""
+    from aughor.agent.investigate import _one_phase_evidence, _is_suppressed_finding
+    phase = {"phase_name": "Temporal", "findings": [
+        {"title": "Single period", "sql": "SELECT ...", "error": None,
+         "columns": ["period", "refund leakage rate (%)", "records"],
+         "rows": [["2024-06", "58.04", "6907"]], "row_count": 1,
+         "chart_type": "none", "key_numbers": [],
+         "interpretation": "refund leakage rate could not be computed reliably; artifact.",
+         "_suppressed": True}]}
+    ev = _one_phase_evidence(phase)
+    assert "58.04" not in ev                    # the artifact value is gone from the evidence
+    assert "SELECT ..." in ev                   # the SQL stays (what was attempted)
+    assert "values suppressed" in ev            # replaced by the honest note
+    # a normal finding is untouched
+    ok = {"phase_name": "X", "findings": [
+        {"title": "t", "sql": "SELECT 1", "error": None, "columns": ["a"],
+         "rows": [["3.4"]], "row_count": 1, "chart_type": "bar_horizontal",
+         "key_numbers": [], "interpretation": "fine"}]}
+    assert "3.4" in _one_phase_evidence(ok)
+    assert not _is_suppressed_finding(ok["findings"][0])

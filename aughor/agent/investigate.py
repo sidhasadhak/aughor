@@ -1759,12 +1759,30 @@ def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
     return "\n".join(lines)
 
 
+def _is_suppressed_finding(f: dict) -> bool:
+    """A finding whose rows are a suppressed computation artifact (fanned/conditioned ratio).
+    The flag is set on new reports; the signature catches the value-carrying shape either way."""
+    if f.get("_suppressed"):
+        return True
+    interp = (f.get("interpretation") or "").lower()
+    return (f.get("chart_type") == "none" and not f.get("key_numbers")
+            and ("could not be computed reliably" in interp
+                 or "computation artifact" in interp or "fan-out artifact" in interp
+                 or "see the note above" in interp))
+
+
 def _one_phase_evidence(p: InvestigationPhaseResult) -> str:
-    """Verbatim evidence block for ONE phase — its findings' SQL + result tables (≤20 rows each)."""
+    """Verbatim evidence block for ONE phase — its findings' SQL + result tables (≤20 rows each).
+    A SUPPRESSED finding's rows are the corrupt artifact, so they are redacted from the evidence:
+    the synthesis model kept citing them (a single-period "58.04%" in the exec summary) even under
+    the hard don't-cite instruction. The SQL + caveat stay so it knows what was attempted."""
     lines = [f"\n=== {p['phase_name']} ==="]
     for f in p["findings"]:
         if f["sql"]:
             lines.append(f"SQL: {f['sql']}")
+        if _is_suppressed_finding(f):
+            lines.append(f"[values suppressed — {(f.get('interpretation') or 'computation artifact').strip()}]")
+            continue
         if f["error"]:
             lines.append(f"ERROR: {f['error']}")
         elif f["columns"] and f["rows"]:
