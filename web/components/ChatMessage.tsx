@@ -869,7 +869,9 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
 }
 
 // ── Inline agent trace — streams during the turn, auto-collapses when done ──────
-function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
+// No box: the trace sits directly on the chat background (Genie-style), so it reads as
+// the agent thinking out loud rather than a boxed status widget.
+function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource?: (data: SourcePanelData) => void }) {
   const running = turn.status === "loading";
   const [open, setOpen] = useState(running);
   const prevRunning = useRef(running);
@@ -882,14 +884,13 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
   const traceState = turnToTraceState(turn, running);
 
   return (
-    <div className="mb-4 rounded-md border border-zinc-800/60" style={{ background: "var(--bg-0)" }}>
+    <div className="mb-4">
       <Button
         variant="ghost"
         onClick={() => setOpen(o => !o)}
-        className="w-full h-auto justify-between px-3 py-2 group/trace font-normal hover:bg-transparent dark:hover:bg-transparent"
+        className="h-auto justify-start gap-2 px-1 py-1 group/trace font-normal hover:bg-transparent dark:hover:bg-transparent"
       >
-        {/* R16 P3 — the Genie-trace shape: a quiet monochrome label ("Thinking…" /
-            "Thinking complete"), no violet chrome, no status dot theater. */}
+        {/* A quiet monochrome label ("Thinking…" / "Thinking complete"), no chrome. */}
         <span className="flex items-center gap-2 aug-fs-xs font-medium text-zinc-400">
           {running ? (
             <span className="relative flex h-2 w-2 items-center justify-center">
@@ -906,8 +907,8 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
         <Chevron open={open} />
       </Button>
       {open && (
-        <div className="border-t border-zinc-800/60">
-          <ThinkingTrace state={traceState} />
+        <div className="pl-1">
+          <ThinkingTrace state={traceState} onShowSource={onShowSource} />
         </div>
       )}
     </div>
@@ -915,33 +916,6 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-
-// ── Assumptions the deep run is making (P4 — de-trapped) ──────────────────────
-// Deep analysis does NOT pause on these — the run proceeds on its own interpretation (see
-// docs/DEEP_ANALYSIS_QUALITY: the graph arms no clarify interrupt). The old "Clarifying questions"
-// label + clickable-looking pill chips read as a stuck human-in-the-loop prompt with no way to
-// answer. Reframed as honest, non-actionable disclosure: what the run is interpreting for you.
-function ClarifyingQuestionsBanner({ questions, contextNote }: { questions: string[]; contextNote: string }) {
-  if (!questions || questions.length === 0) return null;
-  return (
-    <div className="mt-3 mb-3 rounded-[var(--r3)] border border-blue-700/30 p-3" style={{ background: 'color-mix(in srgb, var(--blue3) 6%, transparent)' }}>
-      <div className="flex items-center gap-2 mb-1.5">
-        <span className="aug-fs-xs font-medium uppercase tracking-wide text-blue-400">Interpreting automatically</span>
-      </div>
-      <p className="aug-fs-xs text-blue-300/70 mb-2">
-        {contextNote ? `${contextNote} ` : ""}The analysis is resolving these itself and continuing — no action needed.
-      </p>
-      <ul className="flex flex-col gap-1">
-        {questions.map((q, i) => (
-          <li key={i} className="aug-fs-xs text-blue-300/90 flex gap-1.5">
-            <span className="text-blue-500/60" aria-hidden>·</span>
-            <span>{q}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
 
 // ── Insight answer, rendered as a clean Brief ─────────────────────────────────
 // Headline + interpretation prose + the one framed result (chart / table /
@@ -1351,7 +1325,7 @@ export function ChatMessage({
 
       {/* ── Inline agent trace (agentic modes) — streams live, collapses when done ── */}
       {isInvestigate && (turn.status === "loading" || isDone || turn.status === "error") && (
-        <InlineAgentTrace turn={turn} />
+        <InlineAgentTrace turn={turn} onShowSource={onShowSource} />
       )}
 
       {/* ── Editable plan gate (P3): review the sub-question plan before the fan-out ── */}
@@ -1374,10 +1348,9 @@ export function ChatMessage({
       {/* ── Loading state ── */}
       {turn.status === "loading" && (
         <div>
-          {/* Clarifying questions surface early in deep analysis */}
-          {isInvestigate && turn.clarifyingQuestions.length > 0 && (
-            <ClarifyingQuestionsBanner questions={turn.clarifyingQuestions} contextNote={turn.clarifyingContext} />
-          )}
+          {/* The "Interpreting automatically" banner is removed — users don't value the
+              intake/assumptions disclosure in the trace; it read as a stuck human-in-the-loop
+              prompt. The thinking trace itself carries what the run is doing. */}
           {/* Quick (ask) mode has no multi-step trace — a compact thinking cue
               sits above the shimmer scaffold (rendered below) during the wait */}
           {!isInvestigate && (

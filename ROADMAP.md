@@ -14,6 +14,44 @@
 
 ## 0 · Immediate next action ⏭️
 
+### 🧭 Session handoff — 2026-07-17 (later) · Opportunity wiring → fan-out repair → report relevance (branch `2026-07-17-opportunity-wiring`)
+
+**16 commits; suite 3281; ruff + tsc + eslint clean. The arc from "I'm not happy with the output and the
+decomposition" to a report that answers the question in one clear beat.** Every accuracy fix causally
+validated read-only against the real airline CSVs and on the live path; the flags `intake.loss_signals` /
+`lens.decision_grade` / `report.argument_style` were flipped **on** in the live ledger (they'd been off — the
+user was grading work that never ran).
+- **Decision-grade opportunity, wired end-to-end** — the R15 gap × volume number is now computed on the loss
+  path (was left to the model), with two guards the wiring exposed: **scale** (the lens SQL emits `100·SUM/SUM`,
+  so the rate arrives at 77.7 not 0.777 — normalised before gap×volume) and **direction** (a cost-like rate's
+  laggard is the *highest* segment; the renderers already derived this for the red ramp, the math never
+  consumed it). Materiality re-based on the **addressable** base (empty seats) with the gap's **sampling error**
+  as the floor (a flat 3% silenced the real 1.7pp-over-66k-seats case). A/Bs on the real workspace, only the
+  prompt varying, driven through `run_analysis_phase`: **grouping 0/4→4/4** (claim pinned to a low-cardinality
+  class, named units as evidence), **leakage `n`=COUNT(*)→SUM(gross) 1/4→4/4** (money, not a unitless count).
+- **"Sold" pinned from probed values** — `_probe_lifecycle_values` reads DISTINCT off the status columns and
+  `lifecycle_guard.py` **enforces** `WHERE segment_status='flown'` into the planned SQL (the prose pin was
+  ignored in both plan positions; the real root cause was `_table_columns` blind to the deep path's markdown
+  Data-Catalog schema format). Reading pinned = 74.5%/77.2% = the industry load factor = the Databricks pair.
+- **Fan-out REPAIRED, not just suppressed** (`aughor/sql/ratio_grain.py`) — the conditioned-denominator scan is
+  recomputed at the correct grain and accepted only when its whole-population level matches the true global
+  within 2%; what the checksum rejects is suppressed **terminally** (no tile/chart/table/prose leak; caveat
+  once). Resolves the losing-money **coin-flip**: clean planner SQL *or* fanned→repaired both yield a correct
+  answer. `task_4b6b7d77` **DONE**.
+- **Report relevance + ranking** — drops findings that move no conclusion (suppressed · zero-variance
+  100%-everywhere · self-declared inconclusive), hides emptied phases (flag, not delete), re-ranks so the
+  opportunity phase **leads**. Result: 13 findings → 8, the utilization gap headlines. The user's five noise
+  classes (trust-advisory box, "could not be computed", chart-restating captions, 100%-uniform, no-peer) are
+  all gone.
+- **Thinking-trace rework (web)** — typewriter, no box, clickable query nodes, intake/banner removed, leads
+  with the thought (see FEATURES §9).
+
+**⏭️ NEXT:** flags-on soak in the live app now that the pipeline is clean · headline phrasing is
+LLM-stochastic (always answer-first via the ranking, exact words vary — a P7 lever) · machinery section
+titles · explore-path exhibits + real waterfall · `task_6de6f10b` (starter mode vs plan.program) · P7
+bakeoff. **GOTCHA (recurred all session): uvicorn `--reload` serves stale code on the first run after a
+restart — verify live on a run that isn't #1 post-restart, and check `ps lstart` > file mtime.**
+
 ### 🧭 Session handoff — 2026-07-17 · Chart grammar + report quality + loss-lens methodology (PR #174)
 
 **MERGED to `main` (squash, PR [#174](https://github.com/sidhasadhak/aughor/pull/174); 14 commits, suite 3222, CI green).**

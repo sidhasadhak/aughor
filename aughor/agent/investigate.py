@@ -1108,9 +1108,296 @@ def _suppress_fanned_ratio(findings: list, metric_label: str, eff_caveat: str) -
         f["interpretation"] = honest
         f["chart_type"] = "none"
         f["key_numbers"] = []
+        # A suppressed finding's rows are the corrupt artifact values — the caveat sentence
+        # carries it; a renderer must not print them as a clean table (the export showed a
+        # suppressed 'Route Market' cut as "intercontinental 55.73" beside a "2.8%" headline).
+        f["_suppressed"] = True
     return (f"⚠ {metric_label} could not be computed reliably across the scanned dimensions — a "
             "fan-out across the join corrupts the ratio, so the values are suppressed (a "
             "grain-correct recompute is needed).")
+
+
+_VERDICT_PREFIX_RE = re.compile(r"^\s*VERDICT\s*:\s*", re.I)
+
+
+def _strip_verdict_prefix(text: str) -> str:
+    """'VERDICT: UNIFORM. The leading reason…' → 'Uniform. The leading reason…'.
+
+    Drops the machinery label and sentence-cases the ALL-CAPS token that followed it
+    ('AT the peer range' → 'At the peer range'). Prose without the label is untouched."""
+    if not _VERDICT_PREFIX_RE.match(text or ""):
+        return text
+    rest = _VERDICT_PREFIX_RE.sub("", text)
+    m = re.match(r"([A-Z][A-Z ]+?)(\b)", rest)
+    if m and len(m.group(1)) >= 2:
+        word = m.group(1)
+        rest = word.capitalize() + rest[len(word):]
+    return rest
+
+
+def _repair_conditioned_ratio(findings: list, conn, metric_sql: str, metric_label: str,
+                              known_global: Optional[float] = None,
+                              known_global_str: Optional[str] = None):
+    """The grain-correct recompute the suppression caveat has been promising. For each
+    corrupted per-segment ratio finding, rebuild the scan deterministically (each side
+    aggregated over its OWN table — aughor/sql/ratio_grain.py), execute it read-only,
+    and accept it ONLY when the recompute's own whole-population level matches the
+    independently computed true global within 2% — a wrong join guess re-multiplies a
+    side and fails that checksum, so a bad repair degrades to today's suppression, never
+    to a confident wrong ranking. Mutates repaired findings in place (rows, sql,
+    interpretation, caveat, ``_grain_repaired``); returns (repaired, global_str, global).
+    """
+    try:
+        from aughor.sql.ratio_grain import plan_grain_correct_scan, validate_totals
+        sources = _parse_ratio_sources(metric_sql)
+        if not sources:
+            return [], known_global_str, known_global
+        if not sources["num_table"]:
+            sources["num_table"] = _resolve_table_for_column(conn, sources["num_col"])
+        if not sources["den_table"]:
+            sources["den_table"] = _resolve_table_for_column(conn, sources["den_col"])
+        if not sources["num_table"] or not sources["den_table"] \
+                or sources["num_table"] == sources["den_table"]:
+            return [], known_global_str, known_global
+        g = known_global if known_global else _independent_global_ratio(conn, sources)
+        if g is None or g <= 0:
+            return [], known_global_str, known_global
+        scale = float(sources.get("scale") or 1.0)
+        _fmt = _fmt_pct if (scale == 100.0 or g <= 100.0) else (lambda v: f"{v:,.2f}")
+        gstr = known_global_str or _fmt(g)
+
+        def _probe(sql):
+            try:
+                r = conn.execute("__ratio_grain_probe__", sql)
+                return None if getattr(r, "error", None) else r.rows
+            except Exception:
+                return None
+
+        repaired = []
+        for f in findings:
+            cols = [str(c) for c in (f.get("columns") or [])]
+            if not cols:
+                continue
+            plan = plan_grain_correct_scan(_probe, sources, cols[0])
+            if not plan:
+                continue
+            rows = _probe(plan["sql"])
+            if not rows or not validate_totals(rows, scale, g, plan["case"]):
+                continue
+            seg = plan["segment_col"]
+            f["rows"] = [[r[0], r[1], r[2]] for r in rows[:50]]
+            f["columns"] = [seg, "metric_total", "n"]
+            f["row_count"] = len(rows)
+            f["sql"] = plan["sql"]             # the drill shows the CORRECT query
+            f["key_numbers"] = []
+            f["error"] = None
+            # The chart already shows the per-segment ranking; the interpretation adds only
+            # what the chart can't — the whole-population level the ranking is measured
+            # against — not a restatement of "X highest, Y lowest across N segments".
+            f["interpretation"] = (
+                f"Recomputed at the correct grain against a whole-population {metric_label} "
+                f"of {gstr}.")
+            # Transparency without tripping the prompt's fan-out damper: this data is
+            # now correct and MAY be cited as exact.
+            f["trust_caveat"] = (
+                f"{metric_label} was recomputed with each side aggregated over its own "
+                f"table — the first-pass query conditioned the denominator — and validated "
+                f"against the whole-population level of {gstr}.")
+            f["is_significant"] = False
+            f["_grain_repaired"] = True
+            repaired.append(f)
+        if repaired:
+            from aughor.stats import stats as _s
+            _s.inc("ada.ratio_grain_repaired", len(repaired))
+        return repaired, gstr, g
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "grain-correct ratio repair is best-effort; suppression stands",
+                 counter="ada.ratio_grain_repair_failed")
+        return [], known_global_str, known_global
+
+
+def _repaired_ratio_summary(metric_label: str, gstr: Optional[str],
+                            n_repaired: int = 0, n_left: int = 0) -> str:
+    """The phase summary once the recompute ran. When SOME dimensions couldn't be
+    recomputed (a segment on a third table, outside the v1 repair), lead with the real
+    answer and note the omission — never let a couple of un-repairable cuts headline the
+    whole phase as 'could not be computed' when the repaired cuts ARE the answer."""
+    lvl = f" — overall {gstr}" if gstr else ""
+    base = (f"{metric_label} was recomputed with each side aggregated at its own grain"
+            f"{lvl}; the per-dimension rankings below are validated against that level.")
+    if n_left > 0:
+        base += (f" {n_left} dimension(s) whose segment lives on a further-joined table "
+                 "could not be recomputed and are omitted.")
+    return base
+
+
+def _scrub_suppressed_metric_everywhere(phases: list, suppressed: dict) -> int:
+    """A suppressed ratio is corrupt at the METRIC level, so every phase that renders it is
+    corrupt — but only the cross-section phase ran the guard. Walk every phase and neutralise
+    any finding that displays the same metric (its label appears as a result COLUMN or in a
+    key-number label): drop the chart, clear the metric key numbers, carry the caveat. This is
+    what stopped the temporal 'June 2024 Refund Leakage Rate: 58.8%' tile + line chart shipping
+    beside a report that elsewhere calls the metric an artifact. Deterministic; returns the count
+    scrubbed."""
+    label = (suppressed or {}).get("metric_label") or ""
+    caveat = (suppressed or {}).get("caveat") or ""
+    if not label:
+        return 0
+    norm = _norm_measure(label)
+    scrubbed = 0
+    for ph in phases or []:
+        for f in ph.get("findings") or []:
+            if f.get("_grain_repaired"):
+                continue                                    # repaired + validated — real data
+            if f.get("chart_type") == "none" and not (f.get("key_numbers") or []):
+                continue                                    # already suppressed at source
+            cols = [_norm_measure(c) for c in (f.get("columns") or [])]
+            kn_labels = [_norm_measure(k.get("label", "")) for k in (f.get("key_numbers") or [])]
+            renders_metric = norm in cols or any(norm and norm in kl for kl in kn_labels)
+            if not renders_metric:
+                continue
+            f["chart_type"] = "none"
+            # Drop only the key numbers that quote THIS metric; a co-located record count stays.
+            f["key_numbers"] = [k for k in (f.get("key_numbers") or [])
+                                if norm not in _norm_measure(k.get("label", ""))]
+            f["is_significant"] = False
+            f["trust_caveat"] = f.get("trust_caveat") or caveat
+            f["_suppressed"] = True     # its rows are the artifact — never table them (export)
+            # The interpretation prose quotes the artifact ("...is 58.83%..."); replace it so the
+            # number appears nowhere the reader can mistake for a fact. Dedupe collapses the repeat.
+            f["interpretation"] = (
+                f"{label} could not be computed reliably for this cut — the value is a "
+                "computation artifact of the same conditioned denominator, not a real level.")
+            scrubbed += 1
+    return scrubbed
+
+
+def _norm_measure(s: str) -> str:
+    """Normalise a measure name for matching: lowercase, drop a units suffix like '(%)' and
+    non-alphanumerics. 'Refund Leakage Rate (%)' and 'refund_leakage_rate' → 'refundleakagerate'."""
+    return re.sub(r"[^a-z0-9]", "", re.sub(r"\(.*?\)", "", str(s or "")).lower())
+
+
+def _dedupe_repeated_caveats(phases: list) -> None:
+    """One honest detection was rendering as eight: the same suppression text was stamped on
+    every fanned finding as BOTH its interpretation and its trust_caveat, and the UI draws a box
+    per caveat. Keep the first occurrence of each identical caveat / suppression interpretation
+    across the whole report; blank the exact-duplicate repeats so it reads once. In place."""
+    seen_caveats: set = set()
+    seen_interps: set = set()
+    for ph in phases or []:
+        for f in ph.get("findings") or []:
+            cav = (f.get("trust_caveat") or "").strip()
+            if cav:
+                if cav in seen_caveats:
+                    f["trust_caveat"] = None
+                else:
+                    seen_caveats.add(cav)
+            # Only collapse the SUPPRESSION interpretation (the identical machine-written one);
+            # a real per-finding interpretation is never an exact repeat of another's.
+            interp = (f.get("interpretation") or "").strip()
+            if interp and "could not be computed reliably" in interp:
+                if interp in seen_interps:
+                    f["interpretation"] = "See the note above — the same computation caveat applies."
+                else:
+                    seen_interps.add(interp)
+
+
+# The plotted measure in a ranking finding (the rate/share/metric column, not the count
+# or the segment label). Used to test whether a ranking actually discriminates.
+_MEASURE_COL_RE = re.compile(
+    r"(share|rate|pct|percent|metric_total|metric_value|_of_total|factor|ratio|utili[sz])", re.I)
+
+
+def _measure_col_index(cols: list) -> Optional[int]:
+    for i, c in enumerate(cols):
+        if _MEASURE_COL_RE.search(str(c)):
+            return i
+    return None
+
+
+def _as_float(v) -> Optional[float]:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None                  # assignment-fallback, not a silent pass
+
+
+def _is_zero_variance_ranking(f: dict) -> bool:
+    """A ranking whose measure is IDENTICAL across every segment — the '100% in every
+    booking channel' shape. No spread means nothing to rank and nothing to act on, so the
+    chart and its 'Uniform…' prose add no signal. A single-row finding is a stated fact,
+    not a ranking, and is left alone."""
+    rows = f.get("rows") or []
+    if len(rows) < 2:
+        return False
+    idx = _measure_col_index(f.get("columns") or [])
+    if idx is None:
+        return False
+    vals = [_as_float(r[idx]) for r in rows if idx < len(r)]
+    vals = [v for v in vals if v is not None]
+    return len(vals) >= 2 and (max(vals) - min(vals)) < 1e-9
+
+
+def _has_opportunity_number(f: dict) -> bool:
+    return any((k.get("label", "") or "").startswith("Opportunity")
+               for k in (f.get("key_numbers") or []))
+
+
+def _finding_earns_place(f: dict) -> bool:
+    """A finding earns a place in the report only if it can move the reader toward a
+    conclusion. The classes that cannot, and are dropped:
+      • a suppressed metric — a failed computation teaches the reader nothing;
+      • a zero-variance ranking — identical everywhere ⇒ no discrimination, no action;
+      • a self-declared-inconclusive finding — one that reaches no conclusion by its own
+        admission ("Inconclusive — no peer range…"), unless it still carries a material
+        opportunity number that stands on its own.
+    A recomputed-and-validated finding always earns its place."""
+    if f.get("_grain_repaired"):
+        return True
+    if f.get("_suppressed"):
+        return False
+    interp = (f.get("interpretation") or "").strip().lower()
+    if (interp.startswith("inconclusive") or "no peer range" in interp
+            or "cannot be validated or refuted" in interp) and not _has_opportunity_number(f):
+        return False
+    if _is_zero_variance_ranking(f):
+        return False
+    return True
+
+
+def _phase_materiality(ph: dict) -> int:
+    """A decision-impact score for ordering. The R15 opportunity number (gap × volume) is
+    the only real magnitude of impact, so a phase carrying one leads; significance and
+    key-number density break ties. Deterministic; higher = more material."""
+    score = 0
+    for f in ph.get("findings") or []:
+        if _has_opportunity_number(f):
+            score += 100
+        if f.get("is_significant"):
+            score += 5
+        score += min(len(f.get("key_numbers") or []), 3)
+    return score
+
+
+def _prune_and_rank_phases(phases: list) -> list:
+    """Deliver only what's relevant, most-material first. Drops findings that can't move the
+    reader (see _finding_earns_place), hides a phase left with nothing to say, and re-orders
+    so the phase carrying the decision (the opportunity gap) leads instead of trailing —
+    the Databricks 'what → why → how' shape. Findings are dropped, phases are only HIDDEN
+    (a flag the renderers honour), so the 'phases run' count and plan reconciliation stay
+    intact. Returns the re-ranked list; mutates findings in place."""
+    for ph in phases or []:
+        ph["findings"] = [f for f in (ph.get("findings") or []) if _finding_earns_place(f)]
+        # A phase with no surviving finding has nothing to show — its summary was the noise
+        # ("Uniform…"). Hide it from render; keep the object so the counter doesn't desync.
+        if not ph["findings"]:
+            ph["_hidden"] = True
+    # Stable sort: visible phases first (most-material leading), hidden phases retained at
+    # the end. Only the opportunity-bearing phase jumps forward; ties keep narrative order.
+    return sorted(phases or [],
+                  key=lambda ph: (1 if ph.get("_hidden") else 0, -_phase_materiality(ph)))
 
 
 # ── Global-ratio plausibility guard (conditioned-denominator / implausible-magnitude) ─────────
@@ -1227,13 +1514,17 @@ _GLOBAL_RATIO_INFLATION = 2.5   # every segment ≥ this × the true global ⇒ 
 
 
 def _global_ratio_plausibility_guard(findings: list, conn, metric_sql: str,
-                                     metric_label: str) -> Optional[str]:
+                                     metric_label: str) -> Optional[dict]:
     """Fix 1+2 — detect a conditioned-denominator / broken ratio by magnitude. Compute the metric's
     true global level independently; if EVERY scanned segment is ≥ 2.5× that global (systematic
     inflation the eye reads as 'every segment is an outlier'), the per-segment ratio is a computation
     artifact, not a business signal. Suppress the corrupted numbers and return an honest caveat that
     STATES the true global. Returns None (no-op) when it can't parse the metric, can't compute the
-    global, or the segments are plausibly distributed around it. Deterministic; never raises."""
+    global, or the segments are plausibly distributed around it. Deterministic; never raises.
+
+    Returns a dict ``{caveat, true_global_str, true_global}`` — the structured true level lets
+    synthesis be handed the antidote (2.8%), not just told the segment values are wrong, so it
+    can't headline the artifact for want of a real number to cite instead."""
     sources = _parse_ratio_sources(metric_sql)
     if not sources:
         return None
@@ -1257,16 +1548,17 @@ def _global_ratio_plausibility_guard(findings: list, conn, metric_sql: str,
     if min(seg_vals) < _GLOBAL_RATIO_INFLATION * global_ratio:
         return None
     _fmt = _fmt_pct if sources["scale"] == 100.0 or max(seg_vals) <= 100.0 else (lambda v: f"{v:,.2f}")
+    true_global_str = _fmt(global_ratio)
     caveat = (
         f"metric-computation error: every scanned segment of {metric_label} ({_fmt(min(seg_vals))}–"
         f"{_fmt(max(seg_vals))}) sits far above the metric's TRUE whole-population level of "
-        f"{_fmt(global_ratio)} (numerator over {sources['num_table']} ÷ denominator over "
+        f"{true_global_str} (numerator over {sources['num_table']} ÷ denominator over "
         f"{sources['den_table']}, each on its full population). This is the signature of a conditioned "
         "denominator — the per-segment query joined the denominator through the numerator's event "
         f"table, so it counted only the population that already had the event. The true global "
-        f"{metric_label} is {_fmt(global_ratio)}; the per-segment ranking is not trustworthy until the "
+        f"{metric_label} is {true_global_str}; the per-segment ranking is not trustworthy until the "
         "denominator is computed over the full population per segment.")
-    return caveat
+    return {"caveat": caveat, "true_global_str": true_global_str, "true_global": global_ratio}
 
 
 def _chart_ratio_primary(finding) -> None:
@@ -1317,6 +1609,13 @@ def _chart_type_for_finding(finding: dict, intent: str) -> str:
     has_date = any(_FINDING_DATE_RE.search(c) for c in cols)
     has_change = any(_FINDING_CHANGE_RE.search(c) for c in cols)
     if intent == "composition":
+        # Chart grammar: a composition is a RANKED BAR, never a donut — the reference
+        # reports use three forms (ranked h-bar, labeled scatter, table) and zero pies;
+        # a 60.7/39.3 split reads faster as two sorted bars with data labels than as
+        # arc angles. Flag-off keeps the legacy pie byte-identical.
+        from aughor.kernel.flags import flag_enabled as _fe
+        if _fe("chart.exhibit_grammar"):
+            return "bar_horizontal"
         return "pie" if 2 <= n <= _PIE_MAX_SLICES else "bar_horizontal"
     if intent == "relationship":
         return "scatter"
@@ -1550,6 +1849,8 @@ def _detect_phase_contradictions(phases: list[InvestigationPhaseResult]) -> str:
 def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
     lines = []
     for p in phases:
+        if p.get("_hidden"):
+            continue                 # pruned to nothing — its summary was the noise
         lines.append(f"[{p['phase_name']}] {p['summary']}")
         for f in p["findings"]:
             if not f["error"] and f["interpretation"]:
@@ -1557,12 +1858,32 @@ def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
     return "\n".join(lines)
 
 
+def _is_suppressed_finding(f: dict) -> bool:
+    """A finding whose rows are a suppressed computation artifact (fanned/conditioned ratio).
+    The flag is set on new reports; the signature catches the value-carrying shape either way."""
+    if f.get("_suppressed"):
+        return True
+    interp = (f.get("interpretation") or "").lower()
+    return (f.get("chart_type") == "none" and not f.get("key_numbers")
+            and ("could not be computed reliably" in interp
+                 or "computation artifact" in interp or "fan-out artifact" in interp
+                 or "see the note above" in interp))
+
+
 def _one_phase_evidence(p: InvestigationPhaseResult) -> str:
-    """Verbatim evidence block for ONE phase — its findings' SQL + result tables (≤20 rows each)."""
+    """Verbatim evidence block for ONE phase — its findings' SQL + result tables (≤20 rows each).
+    A SUPPRESSED finding's rows are the corrupt artifact, so they are redacted from the evidence:
+    the synthesis model kept citing them (a single-period "58.04%" in the exec summary) even under
+    the hard don't-cite instruction. The SQL + caveat stay so it knows what was attempted."""
+    if p.get("_hidden"):
+        return ""                    # pruned as irrelevant — nothing for the narrator to cite
     lines = [f"\n=== {p['phase_name']} ==="]
     for f in p["findings"]:
         if f["sql"]:
             lines.append(f"SQL: {f['sql']}")
+        if _is_suppressed_finding(f):
+            lines.append(f"[values suppressed — {(f.get('interpretation') or 'computation artifact').strip()}]")
+            continue
         if f["error"]:
             lines.append(f"ERROR: {f['error']}")
         elif f["columns"] and f["rows"]:
@@ -3441,6 +3762,7 @@ def run_analysis_phase(
     connection_id: str = "",
     interpret_max_rows: int = 12,
     grounding_block: Optional[str] = None,
+    sql_transform=None,
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
@@ -3450,7 +3772,13 @@ def run_analysis_phase(
     ``preplanned`` (a PhasePlan): when a drilled finding hands us its already-grounded,
     grain-correct query, REUSE it verbatim instead of re-deriving — so the phase reproduces the
     finding's numbers rather than risking a fresh fan-out. The LLM re-plan guards (temporal,
-    fan-out) are then skipped, since re-planning would defeat the reuse."""
+    fan-out) are then skipped, since re-planning would defeat the reuse.
+
+    ``sql_transform(sql) -> sql``: a caller-supplied deterministic pass applied to every
+    planned query right before execution — AFTER the re-plan guards, so a corrective re-plan
+    can't shed it. This is how a lens ENFORCES a contract the planner keeps ignoring (the
+    lifecycle filter survived neither plan_user nor plan_system as prose). Fail-open is the
+    transform's own responsibility; a raised exception here is tolerated per query."""
     from aughor.agent.prompts_investigate import PhasePlan, PhaseInterpretation
 
     # Ground the phase planner with the SHARED data-understanding bundle (measure-grain
@@ -3597,6 +3925,18 @@ def run_analysis_phase(
         _fanout_caveat = None
 
     # Step 2 — execute (parallel — each query gets its own reader connection)
+    # Caller's deterministic per-query pass (e.g. the lifecycle guard). Applied to the FINAL
+    # plan — after the temporal/fan-out re-plans — so no corrective re-plan can shed it.
+    if sql_transform is not None:
+        for _pq in plan.queries or []:
+            try:
+                _new = sql_transform(getattr(_pq, "sql", "") or "")
+                if _new:
+                    _pq.sql = _new
+            except Exception as _st_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_st_exc, "caller sql_transform is best-effort; original SQL runs",
+                         counter="ada.sql_transform_failed")
     # Phase-level unit-conversion strip: the intake guard cleans intake.metric_sql, but
     # each phase's coder writes FRESH SQL and can re-invent the '/100 cents' story there
     # (live recurrence: the temporal phase emitted SUM(totalPrice)/100.0 on its own,
@@ -4615,7 +4955,10 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     from aughor.kernel.flags import flag_enabled as _flag_enabled
     _decision_grade = _flag_enabled("lens.decision_grade")
     _exhibit_grammar = _flag_enabled("chart.exhibit_grammar")
-    for f in findings:
+    def _polish_xsec_finding(f):
+        """The per-finding presentation passes, factored so the grain-correct repair can
+        re-run them on a finding whose ROWS it just replaced (chart/keys/exhibit computed
+        off corrupt rows would otherwise survive the repair)."""
         if is_ratio:
             _chart_ratio_primary(f)
         else:
@@ -4635,15 +4978,23 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         # deterministically from this finding's own segment rows (no model, no extra
         # query). Flag-gated; a grid the lens can't read honestly annotates nothing.
         if _decision_grade:
-            from aughor.agent.opportunity import annotate_opportunity
+            from aughor.agent.opportunity import annotate_opportunity, metric_lower_is_better
+            # Orient the benchmark: for a cost-like metric (refund rate, cancellations)
+            # the laggard is the HIGHEST segment, so benchmarking upward would invert the
+            # claim. The renderers already derive this to pick a red ramp; the math is the
+            # consumer the signal never reached.
             annotate_opportunity(f, metric_label=metric_label, is_ratio=is_ratio,
-                                 is_percent=_metric_is_pct)
+                                 is_percent=_metric_is_pct,
+                                 lower_is_better=metric_lower_is_better(metric_label, metric_sql))
         # Chart-grammar exhibit — severity ramp for a rate ranking + deterministic
         # reference lines (segment-weighted average; the R15 best-peer benchmark),
         # computed from this finding's own rows. No model, no extra query; fail-open.
         if _exhibit_grammar:
             from aughor.agent.exhibit import exhibit_for_cross_section
             exhibit_for_cross_section(f, is_ratio=is_ratio, is_percent=_metric_is_pct)
+
+    for f in findings:
+        _polish_xsec_finding(f)
 
     # Numeric fan-out backstop — the AST chasm detectors miss some join shapes and the coder can
     # reinterpret the metric, so verify the NUMBERS on the RAW results (all columns present). Two
@@ -4701,6 +5052,10 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # is per-SQL, so only the findings whose OWN query over-scanned are flagged — a clean sibling like
     # 'by platform' is no longer tarred by another finding's fan-out. The AST phase caveat is
     # phase-level; apply it broadly only when the numeric backstop found no specific offender.
+    # A ratio suppressed here is corrupt at the METRIC level (the shared metric_sql), so every other
+    # phase that renders it — the temporal tile, a baseline chart — is corrupt too. Record a terminal
+    # signal that synthesis uses to scrub those and to state the true level instead of the artifact.
+    _suppressed_ratio: Optional[dict] = None
     _eff_caveat = _numeric_fanout or _run.fanout_caveat
     if _eff_caveat:
         def _finding_fanned(f):
@@ -4711,9 +5066,26 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             f["is_significant"] = False
         if _fanned:
             if is_ratio:
-                # Fix B — a fanned RATIO is corrupted, not merely inflated; suppress its values + ranking
-                # rather than present and let the narrator rationalise an artifact (the ROAS 0.0–0.01 mess).
-                summary = _suppress_fanned_ratio(_fanned, metric_label, _eff_caveat)
+                # Fix B, upgraded: a fanned RATIO is corrupted, not merely inflated. First
+                # attempt the grain-correct recompute the caveat used to merely promise;
+                # only what the repair's checksum rejects gets suppressed.
+                _rep, _gstr, _g = _repair_conditioned_ratio(_fanned, conn, metric_sql, metric_label)
+                for f in _rep:
+                    _polish_xsec_finding(f)
+                _left = [f for f in _fanned if not f.get("_grain_repaired")]
+                if _left:
+                    # Suppress the unrepairable siblings individually…
+                    _suppress_fanned_ratio(_left, metric_label, _eff_caveat)
+                # …but the PHASE summary leads with the repair whenever anything was repaired,
+                # so a couple of third-table cuts can't headline the phase as uncomputable.
+                if _rep:
+                    summary = _repaired_ratio_summary(metric_label, _gstr, len(_rep), len(_left))
+                elif _left:
+                    summary = _suppress_fanned_ratio(_left, metric_label, _eff_caveat)
+                _lens_logger.info("[ada] ratio grain repair (fanout): %d/%d repaired, global=%s",
+                                  len(_rep), len(_fanned), _gstr)
+                _suppressed_ratio = {"metric_label": metric_label, "caveat": _eff_caveat,
+                                     "true_global_str": _gstr, "repaired": bool(_rep)}
             else:
                 summary = f"⚠ {_eff_caveat} " + (summary or "")
 
@@ -4725,10 +5097,31 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     if is_ratio and _metric_is_composite_ratio(metric_sql):
         _plausibility = _global_ratio_plausibility_guard(findings, conn, metric_sql, metric_label)
         if _plausibility:
-            for f in findings:
-                f["trust_caveat"] = f.get("trust_caveat") or _plausibility
+            # Repair before suppressing — the guard already computed the true global, which
+            # doubles as the repair's acceptance checksum.
+            _rep, _gstr, _g = _repair_conditioned_ratio(
+                findings, conn, metric_sql, metric_label,
+                known_global=_plausibility.get("true_global"),
+                known_global_str=_plausibility.get("true_global_str"))
+            for f in _rep:
+                _polish_xsec_finding(f)
+            _left = [f for f in findings if not f.get("_grain_repaired")]
+            for f in _left:
+                f["trust_caveat"] = f.get("trust_caveat") or _plausibility["caveat"]
                 f["is_significant"] = False
-            summary = _suppress_fanned_ratio(findings, metric_label, _plausibility)
+            if _left:
+                _suppress_fanned_ratio(_left, metric_label, _plausibility["caveat"])
+            if _rep:
+                summary = _repaired_ratio_summary(metric_label, _gstr, len(_rep), len(_left))
+            elif _left:
+                summary = _suppress_fanned_ratio(_left, metric_label, _plausibility["caveat"])
+            _lens_logger.info("[ada] ratio grain repair (plausibility): %d/%d repaired, global=%s",
+                              len(_rep), len(findings), _gstr)
+            # The conditioned-denominator guard KNOWS the true level — carry it, so synthesis
+            # cites 2.8%, not the 49–69% artifacts; `repaired` tells it the rankings are real.
+            _suppressed_ratio = {"metric_label": metric_label, "caveat": _plausibility["caveat"],
+                                 "true_global_str": _gstr or _plausibility["true_global_str"],
+                                 "repaired": bool(_rep)}
 
     phase = _phase_result(
         _phase_id, _phase_title, _phase_emoji,
@@ -4751,7 +5144,10 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # them here too duplicated the phase in the report (seen live, run b59f9bcd).
     if dims_override is None:
         result_phases = result_phases + _run_loss_lens_phases(state, conn)
-    return {"investigation_phases": result_phases, "_cross_section_summary": summary}
+    out = {"investigation_phases": result_phases, "_cross_section_summary": summary}
+    if _suppressed_ratio:
+        out["_suppressed_ratio"] = _suppressed_ratio
+    return out
 
 
 # ── Parallel multi-lens cross-section (flag: ada.parallel_lenses) ──────────────
@@ -5707,10 +6103,16 @@ def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_su
 
 def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: str,
                          metric_label: str, empty_summary: str,
-                         peer_median_ref: bool = False) -> Optional[dict]:
+                         peer_median_ref: bool = False,
+                         opportunity: Optional[dict] = None) -> Optional[dict]:
     """Shared tail for the forward-chained WHY lenses (benchmark/drill): assemble findings from a
     completed `run_analysis_phase`, tag percent/share columns, and wrap as a phase. Mirrors the
-    composition lens's tail. Returns the error phase on failure, None only if there's nothing."""
+    composition lens's tail. Returns the error phase on failure, None only if there's nothing.
+
+    `opportunity` (a lens spec's block) opts the phase into the R15 gap × volume key number,
+    computed deterministically from the lens's own rows. Only a lens whose `n` IS its rate's
+    denominator may pass it — see loss_signals.lens_specs. Without it the phase is unchanged,
+    which is why the leakage lens (n = COUNT(*), denominator = gross) stays silent."""
     if not _run.ok:
         return _run.error_phase
     results, interp = _run.results, _run.interpretation
@@ -5730,18 +6132,66 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
     _tag_percent_columns(findings, re.compile(r"share|pct|percent|_of_total", re.I))
     from aughor.kernel.flags import flag_enabled as _fe
     _grammar = _fe("chart.exhibit_grammar")
+    # R15 on the lens path. The utilization lens plans exactly R15's grid (segment,
+    # metric_total, n) and then ASKED THE MODEL to "size the opportunity as gap ×
+    # volume" — the one number the whole lens exists for, left to prose. Compute it.
+    _opp = opportunity if (opportunity and _fe("lens.decision_grade")) else None
     for _f in findings:
         _normalize_pct_key_numbers(_f)
         _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+        if _opp:
+            from aughor.agent.opportunity import annotate_opportunity
+            # The lens's rate is a percent-scaled ratio by SQL construction
+            # (`100.0 * SUM(x) / SUM(y)`), which the scale normalisation expects.
+            annotate_opportunity(_f, metric_label=metric_label, is_ratio=True,
+                                 is_percent=True,
+                                 lower_is_better=bool(_opp.get("lower_is_better")),
+                                 volume_label=_opp.get("volume_label") or "records",
+                                 volume_is_denominator=bool(
+                                     _opp.get("volume_is_denominator")),
+                                 volume_is_money=bool(_opp.get("volume_is_money")))
         # Chart-grammar exhibit: severity ramp on the share ranking; the benchmark
         # lens also draws the peer median its whole point is to compare against.
         if _grammar:
             from aughor.agent.exhibit import exhibit_for_lens
             exhibit_for_lens(_f, peer_median=peer_median_ref)
-    return _phase_result(
+    _ph = _phase_result(
         phase_id, title, emoji,
         "complete" if any(not f["error"] for f in findings) else "partial", summary, findings,
     )
+    # This lens measures its OWN thing, not the run's primary metric. Record the label so
+    # the terminal alias-humanizer can't stamp "refund leakage rate" on a load-factor grid.
+    _ph["metric_label"] = metric_label
+    return _ph
+
+
+def _probe_lifecycle_values(conn, cols: list) -> dict:
+    """Distinct values of each lifecycle/status column — read-only, bounded, fail-open.
+
+    Ground-first, and the reason this exists: the schema block gives the planner
+    `segment_status VARCHAR` and no values, so a prose rule ("exclude cancelled") makes
+    it INVENT the literal it filters on — and a literal that matches nothing silently
+    yields a 0% rate. Probe the column, name the values, remove the guess."""
+    out: dict = {}
+    for qualified in (cols or [])[:4]:
+        table, _, col = qualified.rpartition(".")
+        if not table or not col:
+            continue
+        try:
+            r = conn.execute_bounded(
+                "loss_lifecycle_probe",
+                f'SELECT DISTINCT "{col}" AS v FROM {table} WHERE "{col}" IS NOT NULL LIMIT 25',
+                25)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, f"lifecycle probe '{qualified}' best-effort; skipped",
+                     counter="ada.loss_lifecycle_probe")
+            continue
+        vals = [str(row[0]) for row in (r.rows or []) if row and row[0] is not None]
+        # One value pins nothing; 25 means it isn't a lifecycle column at all.
+        if 1 < len(vals) < 25:
+            out[qualified] = sorted(vals)
+    return out
 
 
 def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list[dict]:
@@ -5759,12 +6209,40 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
         intake_data = state.get("_ada_intake") or {}
         sig = intake_data.get("loss_signals") or {}
         if not sig:
+            _lens_logger.info("[ada] loss-lens gates: intake carried no loss_signals — nothing owed")
             return []
-        from aughor.agent.loss_signals import lens_specs
+        from aughor.agent.loss_signals import lens_specs, lifecycle_directive
         blob = f"{intake_data.get('metric_label', '')} {intake_data.get('metric_sql', '')}"
         specs = lens_specs(sig, blob)
+        # The gates are where this dies silently — a run with no loss phases looks
+        # identical to a run that was never owed one. Say which it was.
+        _lens_logger.info("[ada] loss-lens gates: sig={%s} owed=%s blob=%r",
+                    ", ".join(f"{k}:{len(v)}" for k, v in sig.items()),
+                    [s["kind"] for s in specs] or "nothing", blob[:80])
         if not specs:
             return []
+        # Pin which units count BEFORE planning: without the probed values "paid units"
+        # is the planner's call, and the same claim moved 77.7/79.4 → 78.0/80.8 across
+        # runs depending on whether it silently counted refunded and no-show tickets.
+        _probed = _probe_lifecycle_values(conn, sig.get("lifecycle") or [])
+        _lifecycle = lifecycle_directive(_probed)
+        # The prompt is the belt; the GUARD is the enforcement. The live planner ignored
+        # the directive in BOTH prompt positions while obeying the rule beside it, so the
+        # filter is injected into the planned SQL deterministically (sqlglot, per scope,
+        # skipped when the planner already filtered). Counters make every repair auditable.
+        from aughor.agent.loss_signals import lifecycle_rules
+        from aughor.sql.lifecycle_guard import lifecycle_transform
+        from aughor.stats import stats as _stats
+        _rules = lifecycle_rules(_probed)
+        _lc_transform = lifecycle_transform(
+            _rules, dialect=getattr(conn, "dialect", "duckdb"),
+            on_apply=lambda applied: _stats.inc("ada.lifecycle_guard_applied", len(applied)))
+        # Auditable by design: a guard that fails silently reads as "no losses to pin".
+        # This line is how the live gap was found — every offline repro passed while the
+        # live path produced unpinned SQL, and only the run's own log could arbitrate.
+        _lens_logger.info("[ada] loss-lens lifecycle: cols=%d probed=%d rules=%d guard=%s",
+                    len(sig.get("lifecycle") or []), len(_probed), len(_rules),
+                    bool(_lc_transform))
         question = state["question"]
         schema = _with_ledger(state, intake_data.get("filtered_schema")
                               or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
@@ -5774,8 +6252,19 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                 _run = run_analysis_phase(
                     conn, phase_id=spec["phase_id"], title=spec["title"], emoji=spec["emoji"],
                     cap=2, schema=schema,
-                    plan_system=spec["plan_system"] + _ADA_SQL_GROUNDING,
-                    plan_user=(f"QUESTION: {question}\n\nSCHEMA:\n{schema}\n\n{spec['plan_ask']}"),
+                    # The lifecycle rule rides in plan_SYSTEM, next to the grouping rule.
+                    # Live evidence (inv 0db3a6db): in ONE run the grouping constraint —
+                    # in plan_system — was obeyed ("utilization by haul type"), while this
+                    # rule, then in plan_user, was ignored and the SQL came back with no
+                    # status filter at all. plan_user competes with _ADA_SQL_GROUNDING and
+                    # the grounding block's trusted-query shapes; plan_system does not.
+                    # Only the lens whose metric is DEFINED by consumption gets it — see
+                    # the leakage spec for what handing it to the wrong lens costs.
+                    plan_system=(spec["plan_system"]
+                                 + (f"\n{_lifecycle}" if spec.get("lifecycle_filter") else "")
+                                 + _ADA_SQL_GROUNDING),
+                    plan_user=(f"QUESTION: {question}\n\nSCHEMA:\n{schema}\n\n"
+                               f"{spec['plan_ask']}"),
                     interpret_system=spec["interpret_system"],
                     interpret_user_fn=(lambda results_text, _t=spec["title"]:
                                        f"QUESTION: {question}\n\n{_t.upper()}:\n{results_text}\n\n"
@@ -5785,6 +6274,7 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                     exec_error_msg=f"{spec['kind']} query failed.",
                     question=question, connection_id=state.get("connection_id", ""),
                     grounding_block=intake_data.get("data_understanding_block"),
+                    sql_transform=(_lc_transform if spec.get("lifecycle_filter") else None),
                 )
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
@@ -5793,7 +6283,8 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                 continue
             ph = _lens_phase_from_run(_run, spec["phase_id"], spec["title"], spec["emoji"],
                                       spec["fprefix"], spec["metric_label"],
-                                      f"{spec['title']} computed.")
+                                      f"{spec['title']} computed.",
+                                      opportunity=spec.get("opportunity"))
             if ph:
                 phases.append(ph)
         return phases
@@ -5847,29 +6338,34 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     rate_lenses = [(n, d, m) for (n, d, m, k) in dim_specs if k == "rate"]
 
     def _run_spec(spec):
+        # Returns (name, new_phases, summary, anomalous, suppressed_ratio). The last is the
+        # terminal-suppression signal a rate lens raises when the shared metric is proven
+        # corrupt — it MUST ride back up: without it the multilens merge dropped it and the
+        # temporal 58.8% tile + synthesis citation survived a report that suppressed the
+        # same metric elsewhere (inv 1aa22321).
         name, kind, payload, pmeta = spec
         try:
             reader = conn.make_reader()
             if kind == "when":
                 phase, anomalous = _run_temporal_lens(state, reader, payload, grain=grain)
-                return name, ([phase] if phase else []), None, anomalous
+                return name, ([phase] if phase else []), None, anomalous, None
             if kind == "composition":
                 phase = _run_composition_lens(state, reader, payload)
-                return name, ([phase] if phase else []), None, None
+                return name, ([phase] if phase else []), None, None, None
             # kind == 'rate' — the WHERE scan, augmented with the discovered population attributes.
             out = ada_cross_section(state, reader, dims_override=payload, phase_meta=pmeta,
                                     extra_dims=_aug_dims, extra_schema=_aug_schema,
                                     extra_directive=_aug_dir, grain=grain)
             ph = out.get("investigation_phases", [])
             new = ph[base_n:] if len(ph) > base_n else (ph[-1:] if ph else [])
-            return name, new, out.get("_cross_section_summary"), None
+            return name, new, out.get("_cross_section_summary"), None, out.get("_suppressed_ratio")
         except BudgetExceeded:
             raise
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, f"ada multilens '{name}' best-effort; lens skipped",
                      counter="ada.multilens_lens")
-            return name, [], None, None
+            return name, [], None, None, None
 
     results: list = []
     width = min(len(specs), max(1, _ADA_LENS_WIDTH))
@@ -5891,12 +6387,19 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     merged = list(base_phases)
     primary_summary = None
     anomalous = None
-    for name, new_phases, summ, anom in results:
+    suppressed_ratio = None
+    for name, new_phases, summ, anom, supp in results:
         merged.extend(new_phases)
         if summ and primary_summary is None and name.startswith("xsec:"):
             primary_summary = summ
         if anom:
             anomalous = anom
+        if supp and (suppressed_ratio is None or
+                     (supp.get("repaired") and not suppressed_ratio.get("repaired"))):
+            # The metric is the same across lenses; prefer a signal whose rankings were
+            # REPAIRED (one lens recomputing channel/cabin proves the metric is computable
+            # even if a sibling lens's third-table cut couldn't be).
+            suppressed_ratio = supp
 
     # Forward-chain: the WHEN lens flagged a period → drill the segment/mechanism scan INTO it
     # (sequential — the drill depends on the detection). Honest no-op when the trend was flat.
@@ -5992,6 +6495,8 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     out = {"investigation_phases": merged}
     if primary_summary is not None:
         out["_cross_section_summary"] = primary_summary
+    if suppressed_ratio is not None:
+        out["_suppressed_ratio"] = suppressed_ratio    # terminal suppression reaches synthesis
     return out
 
 
@@ -6048,9 +6553,55 @@ def ada_synthesize(state: AgentState) -> dict:
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
     intake_data = state.get("_ada_intake") or {}
 
+    # Terminal suppression (P0): a ratio proven corrupt in the cross-section guard is corrupt
+    # wherever the shared metric is rendered. Scrub it from every OTHER phase (the temporal tile
+    # + line chart the guard never reached), collapse the one caveat that was repeating ~8×, and
+    # hand synthesis the TRUE level so it states 2.8% instead of headlining the 58.8% artifact.
+    _suppressed = state.get("_suppressed_ratio")
+    suppression_section = ""
+    if _suppressed:
+        _scrub_suppressed_metric_everywhere(phases, _suppressed)
+        _true = _suppressed.get("true_global_str")
+        _mlabel = _suppressed.get("metric_label") or "the metric"
+        if _suppressed.get("repaired"):
+            # The rankings were RECOMPUTED and checksum-validated — the model must cite
+            # them as facts, not hedge them; only OTHER phases' first-pass values (the
+            # single-period 58.8% class) remain artifacts.
+            suppression_section = (
+                f"\n\nMETRIC RECOMPUTED — HARD RULE: the first-pass per-segment SQL for "
+                f"'{_mlabel}' was corrupted (conditioned denominator), and the cross-section "
+                "rankings were RECOMPUTED at the correct grain and validated against the "
+                "metric's independently-computed whole-population level"
+                + (f" ({_true})" if _true else "") + ". Cite those recomputed rankings as "
+                "exact facts and lead with what they show. Any OTHER phase's value for this "
+                "metric (for example a single-period figure far above that level) was a "
+                "computation artifact and has been suppressed — never cite one. Do not "
+                "describe the metric as unmeasurable or 'needing a recompute': it was "
+                "measured; the first pass was corrected.")
+        else:
+            suppression_section = (
+                f"\n\nSUPPRESSED METRIC — HARD RULE: '{_mlabel}' could not be computed reliably; its "
+                "per-segment and per-period values in the evidence (any large percentage such as 58.8%, "
+                "or a 49–69% range) are COMPUTATION ARTIFACTS of a conditioned denominator / join "
+                "fan-out, NOT real levels. You MUST NOT cite, rank, or headline those values as facts. "
+                + (f"The metric's TRUE whole-population level is {_true} — cite THAT if you state a level, "
+                   "and say plainly it needs a grain-correct recompute before segments can be compared. "
+                   if _true else
+                   "State plainly that the metric needs a grain-correct recompute before it can be "
+                   "trusted, and do not invent a level. ")
+                + "Do not let a suppressed number appear anywhere in the headline or executive summary.")
+    _dedupe_repeated_caveats(phases)
+
+    # Relevance + ranking (deliver only what moves the reader, most-material first). Runs
+    # BEFORE the evidence log / narrator prompt below, so the LLM neither writes about the
+    # dropped noise (uniform / inconclusive / suppressed cuts) nor buries the decision — it
+    # sees the opportunity-bearing phase first and leads with it. `phase_ids` (early-stop)
+    # is computed from the full set first, so a hidden phase can't misfire the Tier-0 label.
+    phase_ids = {p["phase_id"] for p in phases}
+    phases = _prune_and_rank_phases(phases)
+
     # Detect early-stop: if only baseline (and intake) phases exist, the Tier-0
     # gate fired and we should label this as a "no anomaly" report.
-    phase_ids = {p["phase_id"] for p in phases}
     early_stop = phase_ids <= {"intake", "baseline"}
     sigma = state.get("_baseline_sigma")
     early_stop_note = ""
@@ -6228,7 +6779,7 @@ def ada_synthesize(state: AgentState) -> dict:
         playbook_section=playbook_section,
         org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
-    ) + contradiction_section + early_stop_note + cross_section_note
+    ) + contradiction_section + early_stop_note + cross_section_note + suppression_section
     # Issue-1 fix (frugal) — BOUND the synthesis LLM call. The cloud narrator can stall for many
     # minutes, and a hung synthesis used to leave the user with no report at all even though every
     # phase had finished. Run it under a hard timeout; on timeout we fall through to the SAME
@@ -6429,6 +6980,19 @@ def ada_synthesize(state: AgentState) -> dict:
         core = re.sub(r"^[+\-]\s*", "", s)
         return ("-" + core) if pct < 0 else core
 
+    # Clean-output: the interpret prompts ask lens narrators to "lead with the verdict",
+    # and the model obliges LITERALLY — "VERDICT: UNIFORM. The leading reason…" is
+    # analysis-machinery speak in the reader's body text (flags-on soak). Strip the label
+    # and un-shout the word it modified; the sentence that follows already carries it.
+    for _p in phases:
+        _ps = _p.get("summary")
+        if _ps:
+            _p["summary"] = _strip_verdict_prefix(_ps)
+        for _f in (_p.get("findings") or []):
+            _fi = _f.get("interpretation")
+            if _fi:
+                _f["interpretation"] = _strip_verdict_prefix(_fi)
+
     # Humanize the scan template's internal SQL aliases at the LAST touch before the
     # report ships — charts/tooltips were labelling series "Metric Total" and "Avg Per
     # Record" (live screenshot). Terminal on purpose: the chart-shaping helpers above
@@ -6442,15 +7006,28 @@ def ada_synthesize(state: AgentState) -> dict:
             "n": "records",
             "pct_of_total": "% of total",
         }
+        # A forward-chained LENS measures something else entirely, so the run's primary
+        # label is a lie on its grid: the soak shipped a load-factor chart whose axis read
+        # "refund leakage rate" (inv 0db3a6db) because this pass stamps the intake's metric
+        # onto every phase. Each lens names its own measure; only phases that actually ran
+        # the primary metric may take the primary label.
+        _lens_labels = {p.get("phase_id"): (p.get("metric_label") or "").strip()
+                        for p in phases if p.get("metric_label")}
         for _p in phases:
+            _own = _lens_labels.get(_p.get("phase_id"))
+            _map = dict(_alias_map)
+            if _own and _own != _mlabel:
+                _map["metric_total"] = _own
+                _map["metric_value"] = _own
+                _map["avg_per_record"] = f"{_own} per record"
             for _f in (_p.get("findings") or []):
                 _cols = _f.get("columns") or []
-                if not any(c in _alias_map for c in _cols):
+                if not any(c in _map for c in _cols):
                     continue
-                _f["columns"] = [_alias_map.get(c, c) for c in _cols]
+                _f["columns"] = [_map.get(c, c) for c in _cols]
                 _units = _f.get("column_units") or {}
                 if _units:
-                    _f["column_units"] = {_alias_map.get(k, k): v for k, v in _units.items()}
+                    _f["column_units"] = {_map.get(k, k): v for k, v in _units.items()}
 
     if synth:
         waterfall = [

@@ -452,7 +452,11 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
         if why:
             return (False, why)
         if is_degenerate_result(rows, finding_text, sql, metric_ranges):
-            return (False, "degenerate result (flat NULL / zero / boundary-pinned rate)")
+            # Reader-grade wording: this string surfaces verbatim as a trust advisory in the
+            # report body — "degenerate result (flat NULL / zero / boundary-pinned rate)" is
+            # a debug label, not a sentence a reader should have to parse.
+            return (False, "every value in this result is identical, empty, or pinned at a "
+                           "boundary — there is no variation to rank or compare")
         pw = _part_exceeds_whole(rows, columns=columns)
         if pw:
             return (False, pw)

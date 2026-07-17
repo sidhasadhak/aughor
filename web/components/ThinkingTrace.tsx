@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import CompassIcon   from "@atlaskit/icon/core/compass";
 import DataFlowIcon  from "@atlaskit/icon/core/data-flow";
@@ -46,6 +47,15 @@ export function turnToTraceState(turn: ChatTurn, running: boolean): Investigatio
 type StepStatus = "pending" | "running" | "done" | "error";
 type Verdict = "confirmed" | "refuted" | "inconclusive" | "untested";
 
+/** A named query the phase ran. Carries its result so the reader can OPEN it —
+ *  the Genie trace lets you click a dataset/code node, not just read its name. */
+interface SubStep {
+  title: string;
+  sql?: string;
+  columns?: string[];
+  rows?: unknown[][];
+}
+
 interface Step {
   id: string;
   label: string;
@@ -54,9 +64,41 @@ interface Step {
   sublabel?: string;
   status: StepStatus;
   verdict?: Verdict;
-  /** Named query steps nested under this beat (Genie-style): the human titles of
-   *  the queries this phase ran — "Bottom 20 franchises by revenue", never SQL. */
-  substeps?: string[];
+  /** Named query steps nested under this beat: what was asked of the data, clickable. */
+  substeps?: SubStep[];
+}
+
+// A char-by-char reveal for a line of trace text — the "it's thinking out loud"
+// feel. Only types while `active` (the live turn's current line); a restored or
+// already-finished line renders whole, so history never re-animates. Retypes when
+// the text itself changes (a phase's running label → its summary).
+function useTypewriter(text: string, active: boolean): string {
+  const [shown, setShown] = useState(text);
+  const raf = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!active) return;                         // inactive: the render path returns `text` directly
+    const start = performance.now();
+    const CPS = 90;                              // chars/sec — brisk, not sluggish
+    const tick = (now: number) => {              // setState only inside the async rAF callback
+      const target = Math.min(text.length, Math.floor(((now - start) / 1000) * CPS));
+      setShown(text.slice(0, target));
+      if (target < text.length) raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+  }, [text, active]);
+  return active ? shown : text;
+}
+
+function TypeLine({ text, active }: { text: string; active: boolean }) {
+  const shown = useTypewriter(text, active);
+  const typing = active && shown.length < text.length;
+  return (
+    <>
+      {shown}
+      {typing && <span className="aug-caret ml-px align-baseline" aria-hidden />}
+    </>
+  );
 }
 
 const VERDICT_COLOR: Record<Verdict, string> = {
@@ -181,6 +223,9 @@ function deriveSteps(state: InvestigationState): Step[] {
   const phases = (adaReport?.phases ?? investigationPhases ?? []);
   if (phases.length > 0) {
     for (const p of phases) {
+      // Intake ("Question intake" / "Understanding the question") is setup, not thinking —
+      // users don't value it in the trace. Drop it entirely.
+      if (p.phase_id === "intake") continue;
       const skipped = p.status === "skipped";
       const errored = p.status === "error";
       const done = p.status === "complete" || p.status === "partial" || skipped;
@@ -188,21 +233,27 @@ function deriveSteps(state: InvestigationState): Step[] {
       // The trace renders plain text (no markdown), so strip **bold** (else "**gift_sets**"
       // leaks literal asterisks) and honour the configured currency.
       const summary = localizeCurrency((p.summary || "").trim()).replace(/\*+/g, "");
-      // Nested named query steps (Genie-style): each finding's human title is one
-      // sub-row under the phase beat — the reader sees WHAT was asked of the data,
-      // never SQL. Errored/blank titles are dropped; capped for readability.
-      const substeps = (p.findings ?? [])
+      // Nested named query steps: each finding is a clickable node — its human title
+      // over its own result (SQL + rows), so the reader can OPEN what was asked of the
+      // data, Genie-style. Errored/blank titles dropped; capped for readability.
+      const substeps: SubStep[] = (p.findings ?? [])
         .filter(f => !f.error && (f.title || "").trim())
-        .map(f => localizeCurrency(f.title).replace(/\*+/g, ""))
-        .slice(0, 8);
+        .slice(0, 8)
+        .map(f => ({
+          title: localizeCurrency(f.title).replace(/\*+/g, ""),
+          sql: f.sql || undefined,
+          columns: f.columns,
+          rows: f.rows,
+        }));
+      // Lead with the model's actual conclusion (the summary) once it exists — that reads
+      // as thinking. While running, the present-tense action is the live "what it's doing".
+      const thought = done && summary
+        ? (summary.length > 200 ? summary.slice(0, 200) + "…" : summary)
+        : (PHASE_ACTION[p.phase_id] ?? p.phase_name);
       steps.push({
         id: `ph-${p.phase_id}`,
-        label: PHASE_ACTION[p.phase_id] ?? p.phase_name,
-        sublabel: skipped
-          ? "skipped — not needed"
-          : done
-            ? (summary ? (summary.length > 64 ? summary.slice(0, 64) + "…" : summary) : undefined)
-            : running ? "working…" : undefined,
+        label: thought,
+        sublabel: skipped ? "skipped — not needed" : running ? "working…" : undefined,
         status: errored ? "error" : done ? "done" : running ? "running" : "pending",
         substeps: substeps.length ? substeps : undefined,
       });
@@ -294,15 +345,27 @@ function StepDot({ status }: { status: StepStatus; verdict?: Verdict }) {
   );
 }
 
-interface Props {
-  state: InvestigationState;
+export interface SourceOpen {
+  columns: string[];
+  rows: unknown[][];
+  sql: string | null;
+  title: string;
 }
 
-export function ThinkingTrace({ state }: Props) {
+interface Props {
+  state: InvestigationState;
+  /** Open a query node's result (SQL + rows) in the source panel — makes the
+   *  dataset/code nodes clickable, as in the Genie trace. */
+  onShowSource?: (data: SourceOpen) => void;
+}
+
+export function ThinkingTrace({ state, onShowSource }: Props) {
   const steps = deriveSteps(state);
+  // Type only while the turn is live; a restored/finished trace renders whole.
+  const live = state.status === "running";
 
   return (
-    <div className="px-4 py-3">
+    <div className="py-1">
       {/* R16 P3 — no dashboard chrome: the tree itself is the progress display.
           (The wrapper's label carries running/complete; a step counter and a
           gradient bar read as status theater, not thinking.) */}
@@ -330,7 +393,9 @@ export function ThinkingTrace({ state }: Props) {
                 }`}>
                   {/* Icon inherits the label's colour so pending/running/done tones carry through. */}
                   {step.icon && <span className="shrink-0 mt-px" aria-hidden>{step.icon}</span>}
-                  <span className="min-w-0">{step.label}</span>
+                  <span className="min-w-0">
+                    <TypeLine text={step.label} active={live && step.status === "running"} />
+                  </span>
                 </p>
                 {step.sublabel && (
                   <p className={`aug-fs-xs mt-0.5 leading-snug aug-anim-fade ${
@@ -346,13 +411,34 @@ export function ThinkingTrace({ state }: Props) {
                 <div className="aug-disclose" data-open={!!step.substeps}>
                   <div>
                     {step.substeps && (
-                      <div className="mt-1.5 ml-0.5 border-l border-zinc-700/60 pl-2.5 space-y-1">
-                        {step.substeps.map((s, j) => (
-                          <p key={j} className="aug-fs-xs leading-snug text-zinc-400 flex items-start gap-1.5 aug-anim-fade">
-                            <span className="text-zinc-500 shrink-0 mt-px" aria-hidden><DatabaseIcon label="" size="small" /></span>
-                            <span className="min-w-0">{s.length > 76 ? s.slice(0, 76) + "…" : s}</span>
-                          </p>
-                        ))}
+                      <div className="mt-1.5 ml-0.5 border-l border-zinc-700/60 pl-2.5 space-y-0.5">
+                        {step.substeps.map((s, j) => {
+                          const clickable = !!onShowSource && (!!s.sql || !!(s.rows && s.rows.length));
+                          const title = s.title.length > 76 ? s.title.slice(0, 76) + "…" : s.title;
+                          const body = (
+                            <>
+                              <span className="text-zinc-500 shrink-0 mt-px" aria-hidden><DatabaseIcon label="" size="small" /></span>
+                              <span className="min-w-0 truncate">{title}</span>
+                            </>
+                          );
+                          return clickable ? (
+                            <button
+                              key={j}
+                              type="button"
+                              onClick={() => onShowSource!({
+                                columns: s.columns ?? [], rows: (s.rows as unknown[][]) ?? [],
+                                sql: s.sql ?? null, title: s.title,
+                              })}
+                              className="group/q w-full text-left aug-fs-xs leading-snug text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 aug-anim-fade rounded-[var(--r1)] -ml-1 px-1 py-0.5 hover:bg-zinc-500/10 transition-colors"
+                            >
+                              {body}
+                            </button>
+                          ) : (
+                            <p key={j} className="aug-fs-xs leading-snug text-zinc-400 flex items-start gap-1.5 aug-anim-fade py-0.5">
+                              {body}
+                            </p>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

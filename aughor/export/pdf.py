@@ -153,9 +153,11 @@ def _flow(block: Block, S) -> list:
         out.append(_keynums(block.keynums, S))
         out.append(Spacer(1, 4))
     elif block.kind == "chart" and block.png:
+        # No caption under a chart: the figure draws its own title (charts.py ax.set_title),
+        # so the PDF was printing every chart's name twice. The Block keeps the caption —
+        # slides use it as the slide heading, where the PNG title isn't a heading.
         out.append(_image(block.png))
-        if block.caption:
-            out.append(Paragraph(_esc(block.caption), S["caption"]))
+        out.append(Spacer(1, 6))
     elif block.kind == "table" and block.columns:
         out.append(_table(block.columns, block.rows, S))
         if block.caption:

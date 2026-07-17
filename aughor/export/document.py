@@ -299,6 +299,22 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
                     KeyNumber(_nm(k.get("label", "")), _nm(k.get("value", "")), _nm(k.get("delta")) or None, _nm(k.get("context")) or None)
                     for k in kns
                 ]))
+            # A suppressed finding's rows ARE the corrupt artifact (a fanned/conditioned
+            # ratio) — its interpretation sentence already says so; rendering the rows as a
+            # clean table prints exactly the numbers we suppressed ("intercontinental 55.73"
+            # beside a "2.8%" headline). The sentence carries it; no chart, no table. The
+            # flag is set on new reports; the signature also catches reports stored before it.
+            _interp_lc = (f.get("interpretation") or "").lower()
+            if f.get("_suppressed") or (
+                (f.get("chart_type") == "none")
+                and not (f.get("key_numbers"))
+                and ("could not be computed reliably" in _interp_lc
+                     or "computation artifact" in _interp_lc
+                     or "fan-out artifact" in _interp_lc
+                     # the dedup collapses a repeated suppression interpretation to this
+                     # back-reference, which loses the signature above — catch it too.
+                     or "see the note above" in _interp_lc)):
+                continue
             # The finding's own display contract travels with it: `column_units` so a rate
             # prints "74.5%" in the PDF exactly as on screen, and the chart-grammar `exhibit`
             # (severity ramp · reference lines · point labels). Both absent → unchanged output.

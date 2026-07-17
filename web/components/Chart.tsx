@@ -212,17 +212,19 @@ export function Chart({
     const _stackUnique = catCol ? new Set(data.map((d) => d[catCol])).size : 0;
     const nCats = catCol ? new Set(data.map((d) => d[catCol])).size : 0;
 
-    // Pareto detection (concentration columns) — same logic as before.
+    // Pareto renders ONLY on an explicit backend hint. The old silent "upgrade" promoted any
+    // plain bar carrying a share-like column into a dual-axis bars+cumulative combo — and its
+    // measure picker EXCLUDED the share column, so a finding titled "share of refunds by
+    // channel" charted raw COUNTS under a share title (the flags-on soak, inv 721d68aa). Both
+    // defects die together: no upgrade, and a share ranking stays a ranked bar of the share.
     const PARETO_SHARE = /(share|cumulative|cum_pct|pct_of_total|of_total|contribution)/i;
     const paretoShareCol = columns.find((c) => PARETO_SHARE.test(c));
     const paretoCat: string | null = catCol ?? columns.find((c) => c !== paretoShareCol && ID_COL.test(c)) ?? null;
     const paretoMeasure: string | null =
       numericCols.find((c) => c !== paretoShareCol && !PARETO_SHARE.test(c) && !SHARE_COL.test(c) && !ID_COL.test(c))
       ?? (hint === "pareto" ? numCol : null);
-    const PARETO_UPGRADE = new Set(["auto", "bar", "bar_horizontal", "bar_vertical", "treemap", "pie"]);
     const wantPareto =
-      (hint === "pareto" || (PARETO_UPGRADE.has(hint) && !!paretoShareCol && rows.length >= 4))
-      && !!paretoCat && !!paretoMeasure && paretoCat !== paretoMeasure;
+      hint === "pareto" && !!paretoCat && !!paretoMeasure && paretoCat !== paretoMeasure;
 
     // Backend-provided chart config (LLM-generated alongside SQL). TRUST IT ONLY WHEN ITS
     // FIELD ROLES ARE COHERENT WITH THE DATA — the LLM sometimes mis-maps the axes (e.g.

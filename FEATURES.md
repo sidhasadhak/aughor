@@ -151,8 +151,33 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   population that already had the event — inflating every segment (a refund rate of ~73% when the truth is
   ~10%) with no row fan-out to trip the other guards. The metric's **true global level is recomputed
   independently** (each aggregate over its own full table), and when every scanned segment sits ≥2.5× above it —
-  the systematic-inflation signature of a conditioned denominator — the corrupted numbers are **suppressed** and
-  the caveat **states the true global**, so a broken ratio can't be headlined as a business finding.
+  the systematic-inflation signature of a conditioned denominator — the guard fires.
+- **Grain-correct ratio repair** (`aughor/sql/ratio_grain.py`) — the guard now **recomputes rather than only
+  suppressing**: a corrupted per-segment ratio is rebuilt deterministically (numerator over its own table,
+  denominator over its own, joined at the segment grain) and **accepted only when the recompute's own
+  whole-population level reproduces the independently-computed true global within 2%** — a wrong join guess
+  re-multiplies a side, fails that checksum, and degrades to suppression, so a bad repair is a wrong checksum,
+  never a confident wrong ranking. What the checksum rejects is suppressed **terminally**: the artifact reaches
+  no reader surface — not a tile, chart, export table, or the synthesis prose (rows are redacted from the
+  narrator's evidence, so it can't cite a value it was told is corrupt), and the one caveat renders once.
+- **Loss-lens decision-grade opportunity** (`aughor/agent/opportunity.py`, flag `lens.decision_grade`) — a
+  "where are we losing money?" (or its optimisation flip side — "where can we improve / what's underutilised")
+  is answered with a **gap × volume opportunity computed deterministically**, not written by the model:
+  the utilization lens's "long-haul flies 74.5% vs short-haul's 77.2% → ~1,812 empty seats" and the leakage
+  lens's "closing the gap ≈ 381K CHF", both benchmarked against the best material peer with the direction
+  (higher-is-worse for a cost-like rate) and scale pinned from the data. The claim is grouped by a
+  **low-cardinality class** (haul, cabin) with named units as evidence, materiality is measured against the
+  *addressable* base (empty seats, not the whole business) with the gap's own sampling error as the floor, and
+  a probed **lifecycle filter** (`aughor/sql/lifecycle_guard.py`) is **enforced into the planned SQL** —
+  values read off the data name which units count as sold (flown, not cancelled/no-show), a contract the
+  planner kept ignoring as prose.
+- **Report relevance & ranking** — a deterministic pass drops findings that can't move the reader toward a
+  conclusion (a suppressed metric, a zero-variance ranking that reads 100% in every segment, a self-declared
+  "inconclusive — no peer range" finding), **hides** a phase left with nothing to say (a flag the renderers
+  honour — never a hard delete, so the phase-count and plan reconciliation stay intact), and **re-orders by
+  decision-impact** so the phase carrying the opportunity gap **leads** instead of trailing. The narrator sees
+  the pruned, ranked set, so it neither writes about the noise nor buries the answer: the losing-money report
+  goes from 13 findings with the decision last to the utilization gap headlining — *what → why → how*.
 - **Sustained level-shift detection** — a "why did X change?" investigation no longer relies on single-point
   anomaly detection alone (which is blind to a gradual multi-period shift where no single point is an outlier —
   a real −6.4% year-over-year decline dismissed as "within normal variance" because the mean gap was divided by
@@ -286,6 +311,11 @@ Builder" from Insights/Deep. Schema-qualified correctness; user-typed SQL is **g
   chart inference, LLM chart-config validation, captions, and the PDF export renderer, so `franchiseID`
   can't be plotted (or captioned) as a quantity on any surface; export grouped bars also drop >25×
   scale-gap series and prefer name columns over ids on the category axis.
+- **Genie-grade thinking trace** — the agent trace reads as thinking out loud, not a status widget: it sits
+  directly on the chat background (no boxed chrome), the live line types character-by-character (gated to the
+  running turn, so restored history renders whole), each step leads with the model's actual conclusion (the
+  phase summary) rather than a canned action, and every nested query node is **clickable** — opening its SQL
+  and result. Setup ceremony is gone (no "Question intake" section, no "interpreting automatically" banner).
 - **Genie-grade report presentation** — a collapsible thinking trace with nested, named query steps;
   clean-output policy (no internal phase headers — method lives in a Details disclosure); per-finding
   numbered **Sources** (claim → numbered query → SQL); criterion-complete extreme-tie enumeration;
