@@ -3540,6 +3540,7 @@ def run_analysis_phase(
     connection_id: str = "",
     interpret_max_rows: int = 12,
     grounding_block: Optional[str] = None,
+    sql_transform=None,
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
@@ -3549,7 +3550,13 @@ def run_analysis_phase(
     ``preplanned`` (a PhasePlan): when a drilled finding hands us its already-grounded,
     grain-correct query, REUSE it verbatim instead of re-deriving — so the phase reproduces the
     finding's numbers rather than risking a fresh fan-out. The LLM re-plan guards (temporal,
-    fan-out) are then skipped, since re-planning would defeat the reuse."""
+    fan-out) are then skipped, since re-planning would defeat the reuse.
+
+    ``sql_transform(sql) -> sql``: a caller-supplied deterministic pass applied to every
+    planned query right before execution — AFTER the re-plan guards, so a corrective re-plan
+    can't shed it. This is how a lens ENFORCES a contract the planner keeps ignoring (the
+    lifecycle filter survived neither plan_user nor plan_system as prose). Fail-open is the
+    transform's own responsibility; a raised exception here is tolerated per query."""
     from aughor.agent.prompts_investigate import PhasePlan, PhaseInterpretation
 
     # Ground the phase planner with the SHARED data-understanding bundle (measure-grain
@@ -3696,6 +3703,18 @@ def run_analysis_phase(
         _fanout_caveat = None
 
     # Step 2 — execute (parallel — each query gets its own reader connection)
+    # Caller's deterministic per-query pass (e.g. the lifecycle guard). Applied to the FINAL
+    # plan — after the temporal/fan-out re-plans — so no corrective re-plan can shed it.
+    if sql_transform is not None:
+        for _pq in plan.queries or []:
+            try:
+                _new = sql_transform(getattr(_pq, "sql", "") or "")
+                if _new:
+                    _pq.sql = _new
+            except Exception as _st_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_st_exc, "caller sql_transform is best-effort; original SQL runs",
+                         counter="ada.sql_transform_failed")
     # Phase-level unit-conversion strip: the intake guard cleans intake.metric_sql, but
     # each phase's coder writes FRESH SQL and can re-invent the '/100 cents' story there
     # (live recurrence: the temporal phase emitted SUM(totalPrice)/100.0 on its own,
@@ -5930,16 +5949,40 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
         intake_data = state.get("_ada_intake") or {}
         sig = intake_data.get("loss_signals") or {}
         if not sig:
+            _lens_logger.info("[ada] loss-lens gates: intake carried no loss_signals — nothing owed")
             return []
         from aughor.agent.loss_signals import lens_specs, lifecycle_directive
         blob = f"{intake_data.get('metric_label', '')} {intake_data.get('metric_sql', '')}"
         specs = lens_specs(sig, blob)
+        # The gates are where this dies silently — a run with no loss phases looks
+        # identical to a run that was never owed one. Say which it was.
+        _lens_logger.info("[ada] loss-lens gates: sig={%s} owed=%s blob=%r",
+                    ", ".join(f"{k}:{len(v)}" for k, v in sig.items()),
+                    [s["kind"] for s in specs] or "nothing", blob[:80])
         if not specs:
             return []
         # Pin which units count BEFORE planning: without the probed values "paid units"
         # is the planner's call, and the same claim moved 77.7/79.4 → 78.0/80.8 across
         # runs depending on whether it silently counted refunded and no-show tickets.
-        _lifecycle = lifecycle_directive(_probe_lifecycle_values(conn, sig.get("lifecycle") or []))
+        _probed = _probe_lifecycle_values(conn, sig.get("lifecycle") or [])
+        _lifecycle = lifecycle_directive(_probed)
+        # The prompt is the belt; the GUARD is the enforcement. The live planner ignored
+        # the directive in BOTH prompt positions while obeying the rule beside it, so the
+        # filter is injected into the planned SQL deterministically (sqlglot, per scope,
+        # skipped when the planner already filtered). Counters make every repair auditable.
+        from aughor.agent.loss_signals import lifecycle_rules
+        from aughor.sql.lifecycle_guard import lifecycle_transform
+        from aughor.stats import stats as _stats
+        _rules = lifecycle_rules(_probed)
+        _lc_transform = lifecycle_transform(
+            _rules, dialect=getattr(conn, "dialect", "duckdb"),
+            on_apply=lambda applied: _stats.inc("ada.lifecycle_guard_applied", len(applied)))
+        # Auditable by design: a guard that fails silently reads as "no losses to pin".
+        # This line is how the live gap was found — every offline repro passed while the
+        # live path produced unpinned SQL, and only the run's own log could arbitrate.
+        _lens_logger.info("[ada] loss-lens lifecycle: cols=%d probed=%d rules=%d guard=%s",
+                    len(sig.get("lifecycle") or []), len(_probed), len(_rules),
+                    bool(_lc_transform))
         question = state["question"]
         schema = _with_ledger(state, intake_data.get("filtered_schema")
                               or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
@@ -5971,6 +6014,7 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                     exec_error_msg=f"{spec['kind']} query failed.",
                     question=question, connection_id=state.get("connection_id", ""),
                     grounding_block=intake_data.get("data_understanding_block"),
+                    sql_transform=(_lc_transform if spec.get("lifecycle_filter") else None),
                 )
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate

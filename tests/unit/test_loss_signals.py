@@ -242,3 +242,36 @@ def test_starter_question_names_the_loss_lenses():
     q = next(s.question for s in STARTERS if s.id == "where_are_we_losing_money")
     for token in ("refunds", "share of gross", "utilization", "profitable"):
         assert token in q, token
+
+
+_CATALOG_BLOCK = """
+## flights
+
+| Column | Type | Nullable |
+|---|---|---|
+| flight_id | VARCHAR | YES |
+| haul | VARCHAR | YES |
+| total_seats | BIGINT | YES |
+| status | VARCHAR | YES |
+
+## tickets
+
+| Column | Type | Nullable |
+|---|---|---|
+| ticket_id | VARCHAR | YES |
+| refund_amount | DOUBLE | YES |
+| segment_status | VARCHAR | YES |
+"""
+
+
+def test_lifecycle_detection_parses_the_data_catalog_format():
+    """The deep path's schema_context is the markdown Data Catalog (## table + | col |
+    rows), not the TABLE: block format — and the parser knowing only the latter made the
+    lifecycle pin silently detect NOTHING on every live deep run (gates log lifecycle:0)
+    while the format-agnostic contra/capacity scans kept firing. Both formats parse now."""
+    sig = detect_loss_signals("Where are we losing money?", _CATALOG_BLOCK)
+    assert sig is not None
+    assert "flights.status" in sig["lifecycle"]
+    assert "tickets.segment_status" in sig["lifecycle"]
+    # The markdown header row is not a column.
+    assert all(not c.endswith(".Column") for c in sig["lifecycle"])

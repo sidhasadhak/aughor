@@ -59,20 +59,54 @@ NOT_CONSUMED_RE = re.compile(
 
 
 def _table_columns(schema_text: str) -> list:
-    """(table, column) pairs off the schema block's `TABLE: name` / indented `col TYPE`
-    shape. Deterministic parse — the lifecycle rule has to name a real table.column."""
+    """(table, column) pairs off the schema text, in EITHER live format.
+
+    Two producers feed the intake: `get_schema()` emits `TABLE: name` with indented
+    `col TYPE` lines, and the deep path's Data Catalog (`build_data_catalog`) emits
+    markdown — `## name` headers over `| col | TYPE | … |` rows. This parser knowing
+    only the first was an invisible failure: the word-token scans (contra/capacity)
+    are format-agnostic and kept firing, so the loss lenses ran while the lifecycle
+    pin silently detected nothing on every live deep run (`lifecycle:0` in the gates
+    log, while every offline repro — which used get_schema() — passed)."""
     out: list = []
     table = None
     for line in (schema_text or "").splitlines():
-        m = re.match(r"\s*TABLE:\s+([A-Za-z0-9_.\"]+)", line)
+        m = re.match(r"\s*TABLE:\s+([A-Za-z0-9_.\"]+)", line) \
+            or re.match(r"\s*##\s+([A-Za-z0-9_.\"]+)\s*$", line)
         if m:
             table = m.group(1).strip('"')
             continue
-        if table and line[:1] in (" ", "\t"):
-            m2 = re.match(r"\s+([A-Za-z0-9_]+)\s+\S", line)
-            if m2:
+        if not table:
+            continue
+        m2 = re.match(r"\s*\|\s*([A-Za-z_][A-Za-z0-9_]*)\s*\|", line)
+        if m2:
+            if m2.group(1).lower() != "column":     # the markdown header row is not a column
                 out.append((table, m2.group(1)))
+            continue
+        if line[:1] in (" ", "\t"):
+            m3 = re.match(r"\s+([A-Za-z0-9_]+)\s+\S", line)
+            if m3:
+                out.append((table, m3.group(1)))
     return out
+
+
+def lifecycle_rules(probed: dict) -> list:
+    """The probed lifecycle values as structured KEEP rules for the SQL guard:
+    ``[{"table", "column", "keep", "exclude"}]``. Same classification as the prose
+    directive (one source of truth for what counts); a column that pins nothing —
+    no cancel-like value, or nothing left to keep — contributes no rule."""
+    rules: list = []
+    for qualified, vals in (probed or {}).items():
+        table, _, col = str(qualified).rpartition(".")
+        if not table or not col:
+            continue
+        drop = [v for v in vals if NOT_CONSUMED_RE.search(str(v))]
+        keep = [v for v in vals if v not in drop]
+        if drop and keep:
+            rules.append({"table": table, "column": col,
+                          "keep": [str(v) for v in keep],
+                          "exclude": [str(v) for v in drop]})
+    return rules
 
 
 def lifecycle_directive(probed: dict) -> str:
@@ -85,18 +119,14 @@ def lifecycle_directive(probed: dict) -> str:
     off the data and naming them removes the choice. The pinned reading (units that
     actually flew, over capacity that actually operated) is the industry load factor and
     reproduces the reference report's 74.5% / 77.2% exactly."""
-    lines = ["LIFECYCLE FILTER (values probed from THIS data — filter on them literally):"]
-    pinned = False
-    for qualified, vals in (probed or {}).items():
-        drop = [v for v in vals if NOT_CONSUMED_RE.search(str(v))]
-        keep = [v for v in vals if v not in drop]
-        if not drop or not keep:
-            continue                    # nothing to exclude, or everything — no rule
-        pinned = True
-        lines.append(f"  {qualified}: KEEP {', '.join(repr(str(v)) for v in keep)}"
-                     f" — EXCLUDE {', '.join(repr(str(v)) for v in drop)}.")
-    if not pinned:
+    rules = lifecycle_rules(probed)
+    if not rules:
         return ""
+    lines = ["LIFECYCLE FILTER (values probed from THIS data — filter on them literally):"]
+    for r in rules:
+        lines.append(f"  {r['table']}.{r['column']}: "
+                     f"KEEP {', '.join(repr(v) for v in r['keep'])}"
+                     f" — EXCLUDE {', '.join(repr(v) for v in r['exclude'])}.")
     lines.append(
         "  Apply each filter on ITS OWN table at its own grain. A unit belongs in the "
         "NUMERATOR only if it actually consumed the capacity — it flew, was occupied, was "
