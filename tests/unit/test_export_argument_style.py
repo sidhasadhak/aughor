@@ -114,3 +114,45 @@ def test_exhibit_table_fallback_is_capped():
     out = _exhibit_argument(["k", "v"], rows, "none", "t")
     assert [b.kind for b in out] == ["table"]
     assert len(out[0].rows) == 8                                             # compact, not the grid
+
+
+def test_suppressed_finding_renders_no_table_of_its_artifact_rows(monkeypatch):
+    """A suppressed ratio finding's rows ARE the corrupt artifact; the caveat sentence
+    carries it. The export must not print them as a clean table — the fan-out repair
+    shipped a suppressed 'Route Market' cut as "intercontinental 55.73" beside a "2.8%"
+    headline (inv 1a4615f7). The interpretation still renders; the rows do not."""
+    inv = {
+        "kind": "investigate",
+        "report": {
+            "_report_type": "investigate",
+            "headline": "refund leakage rate recomputed — overall 2.8%",
+            "executive_summary": "Overall 2.8%; two dimensions omitted.",
+            "confidence": "low",
+            "phases": [{
+                "phase_id": "cross_section", "phase_name": "Where value is weakest",
+                "status": "complete", "summary": "recomputed",
+                "findings": [
+                    {"title": "By channel", "columns": ["channel", "metric_total", "n"],
+                     "rows": [["corporate", 3.41, 5000], ["web", 2.72, 5000]],
+                     "chart_type": "bar_horizontal", "interpretation": "Corporate highest.",
+                     "key_numbers": [], "_grain_repaired": True},
+                    {"title": "By Route Market", "columns": ["market", "metric_total", "n"],
+                     "rows": [["intercontinental", 55.73, 1], ["continental", 61.98, 1]],
+                     "chart_type": "none", "interpretation": "could not be computed reliably.",
+                     "key_numbers": [], "_suppressed": True},
+                ]}],
+            "recommendations": [], "data_gaps": [],
+        },
+    }
+    for flag in ("1", "0"):        # argument style on AND off
+        monkeypatch.setenv("AUGHOR_REPORT_ARGUMENT_STYLE", flag)
+        doc = build_export_doc(inv)
+        prose = " ".join((b.text or "") + " " + " ".join(
+            "".join(str(c) for c in row) for row in (b.rows or [])) for b in doc.blocks)
+        # the artifact rows are gone — not in prose, and not in any table block
+        assert "55.73" not in prose and "61.98" not in prose and "intercontinental" not in prose
+        finding_text = " ".join((b.text or "") for b in doc.blocks if b.kind == "finding")
+        assert "could not be computed reliably" in finding_text   # the suppressed caveat stays
+        assert "Corporate highest." in finding_text               # the REPAIRED finding still renders
+        # the repaired channel finding DID produce an exhibit; the suppressed one did not
+        assert any(b.kind in ("chart", "table") for b in doc.blocks)

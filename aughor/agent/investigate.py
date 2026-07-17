@@ -1108,6 +1108,10 @@ def _suppress_fanned_ratio(findings: list, metric_label: str, eff_caveat: str) -
         f["interpretation"] = honest
         f["chart_type"] = "none"
         f["key_numbers"] = []
+        # A suppressed finding's rows are the corrupt artifact values — the caveat sentence
+        # carries it; a renderer must not print them as a clean table (the export showed a
+        # suppressed 'Route Market' cut as "intercontinental 55.73" beside a "2.8%" headline).
+        f["_suppressed"] = True
     return (f"⚠ {metric_label} could not be computed reliably across the scanned dimensions — a "
             "fan-out across the join corrupts the ratio, so the values are suppressed (a "
             "grain-correct recompute is needed).")
@@ -1258,6 +1262,7 @@ def _scrub_suppressed_metric_everywhere(phases: list, suppressed: dict) -> int:
                                 if norm not in _norm_measure(k.get("label", ""))]
             f["is_significant"] = False
             f["trust_caveat"] = f.get("trust_caveat") or caveat
+            f["_suppressed"] = True     # its rows are the artifact — never table them (export)
             # The interpretation prose quotes the artifact ("...is 58.83%..."); replace it so the
             # number appears nowhere the reader can mistake for a fact. Dedupe collapses the repeat.
             f["interpretation"] = (
