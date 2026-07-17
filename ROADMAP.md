@@ -14,6 +14,40 @@
 
 ## 0 · Immediate next action ⏭️
 
+### 🧭 Session handoff — 2026-07-17 · Chart grammar + report quality + loss-lens methodology (PR #174)
+
+**MERGED to `main` (squash, PR [#174](https://github.com/sidhasadhak/aughor/pull/174); 14 commits, suite 3222, CI green).**
+The full arc from "our charts feel rookie vs the two Databricks reference PDFs" to a causally-validated
+accuracy fix. Three themes, everything flag-gated default-off unless it was a defect:
+- **Chart grammar** (`chart.exhibit_grammar`) — one additive `exhibit` payload carries chart SEMANTICS to
+  BOTH renderers (web ECharts `web/components/charts/exhibit.ts` ↔ export matplotlib `aughor/export/charts.py`
+  — mirrored constants, keep in sync): combo demotion (the renderer's `scoreDualAxis` is the only door to a
+  dual axis; an explicit `bar_horizontal` hint renders one ranked bar), severity ramps for rate rankings
+  (red family for cost-like metrics), deterministic ref lines (weighted avg · R15 benchmark · peer median;
+  range-AND-visibility clipped), `exhibit.order` (the finding's own `ORDER BY … ASC LIMIT` leads with the
+  weakest row), entity scatters (ID labels · category hue · quadrants), ungraphable shapes → tables (stats
+  grids, entity profiles, wide/no-label/degenerate-x grids), export parity (light chart tokens, percent +
+  `currency:XXX` units, router-injected effective currency). The explore report **had no export builder**
+  (evidence silently dropped) → `_build_explore`.
+- **Clean-output policy** — process-speak OUT of the body: significance badges/stat notes/confidence chip
+  live in Details/Trust Receipt; explore planner directives ("→ Q5 should…", the `refinement` field)
+  stripped from reader prose web+export; head dedup; per-measure compact key numbers; source currency on
+  `column_units` so no surface relabels CHF data with the org's €.
+- **Loss-lens methodology** (`intake.loss_signals`) — a live A/B showed "Where are we losing money?"
+  answered "broadly healthy, no losses" over **2.38M CHF refund leakage + a 1.2M CHF utilization gap**
+  (verified read-only against the same CSVs). A revenue ranking can never find losses. Deterministic
+  detector (loss intent × schema loss signals) → intake directive naming the actual columns + honesty
+  clause; **multi-lens playbook** forward-chains a phase per uncovered signal class (leakage ↔ utilization)
+  through the shared phase harness. Validated live ×2 — the playbook run's utilization numbers matched
+  ground truth exactly (77.7% vs 79.4%, 1,136-seat ceiling).
+
+**⏭️ NEXT:** flags-on soak of `chart.exhibit_grammar` + `intake.loss_signals` (+ `lens.decision_grade` /
+`starters.library`, still off in the live ledger) · the two chips: utilization-ratio join fan-out grain
+guard (`task_4b6b7d77` — the one remaining accuracy hole: per-segment ratios across fanning joins) and
+starter `mode` swallowed by the plan.program short-circuit (`task_6de6f10b`) · exhibit grammar for the
+explore path · real waterfall geometry · **P7 frontier-coder decision** (re-confirmed: synthesis fallback
+prose + metric-choice drift are model-side; the bakeoff harness is one command).
+
 ### 🧭 Session handoff — 2026-07-16 · Databricks-HAR program (R1–R15)
 
 **R1–R9 ALL MERGED to `main`** (squash-merged PRs #163–166 → `f42ced4`, then **R9** #167 `0958ce2`, study-#2
@@ -23,7 +57,7 @@ R7 (unique-alias compile), R8 (ontology docs as a Merkle-checksummed build artif
 + `aughor ontology-docs` CLI + flag `ontology.autodoc`), R9 (route wide→explore wave; flag
 `explore.route_wide`). **R4 moot.** Both new flags default-off.
 
-**✅ R11–R15 ALL BUILT (2026-07-16, branch `2026-07-16-r11-column-config`, 6 commits, NOT pushed / no PR yet).**
+**✅ R11–R15 MERGED (PR [#171](https://github.com/sidhasadhak/aughor/pull/171) `53d67b8`), R-program leftovers MERGED (PR [#172](https://github.com/sidhasadhak/aughor/pull/172) `a7acf90`), R16 presentation MERGED (PR [#173](https://github.com/sidhasadhak/aughor/pull/173) `d757400`).**
 Sequence ran R11 → R12 → R14 → R13 → R15; every feature flag-gated default-off / byte-identical when off;
 each committed with its tests green + swallow/private-import ratchets at baseline. New flags:
 `ontology.column_config` · `birth.job` · `obs.popularity` · `starters.library` · `lens.decision_grade`.
@@ -62,11 +96,10 @@ width-routed fast/coder; `aughor ontology-docs --enrich` estimate-then-confirm; 
 of a BOUND value rewritten to the verified value, dry-run-vetted, self-gating on ask.resolve_first —
 true named-param execution deliberately rejected: every adapter for no added safety).
 
-**⏭️ NEXT: user pushes BOTH branches + PRs (wave branch first, then the stacked leftovers — remember the
-stacked-PR rebase gotcha). R6 live eyeball = the ONE open R-item (user-side, ~5 min): with the dev stack
-running and `ada.progress_events` on (default), ask any deep question and watch the report prose stream
-token-by-token into the InvestigationReport card before the final report lands. Then: the live flags-on
-pass for the five wave flags; the task_history-recovery flake chip.**
+**⏭️ Remaining from this program: R6 live eyeball (user-side, ~5 min — ask any deep question and watch
+the report prose stream into the InvestigationReport card); the flags-on pass for the wave flags; the
+task_history-recovery flake chip.** (The push/PR/merge steps completed as #171–#173; the 2026-07-17
+chart-grammar arc above then landed R16's presentation ideas end-to-end.)
 
 **NEW — Wire study #2 (canvas-birth + 2 Deep-Research runs on our airline dataset) →
 [`docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md`](docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md).**
