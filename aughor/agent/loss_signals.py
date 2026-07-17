@@ -48,17 +48,98 @@ def detect_loss_signals(question: str, schema_text: str) -> dict | None:
     return {"contra_revenue": contra[:12], "capacity": capacity[:8]}
 
 
-def loss_signal_directive(question: str, schema_text: str) -> str:
-    """The intake-prompt directive, or '' when it doesn't apply (safe to prepend
-    unconditionally). Kept to facts the detector verified — the block never claims
-    signals that aren't in the schema."""
-    sig = detect_loss_signals(question, schema_text)
+# Which loss CLASS a metric already covers — used to decide which forward-chained
+# lens phases a run still owes after the intake picked its primary metric.
+LEAKAGE_METRIC_RE = re.compile(
+    r"refund|chargeback|discount|rebate|leakage|writeoff|write_off|clawback|penalt", re.I)
+UTILIZATION_METRIC_RE = re.compile(
+    r"load[ _-]?factor|utili[sz]ation|occupancy|capacity|fill[ _-]?rate|seats?\b", re.I)
+
+
+def lens_specs(sig: dict | None, primary_metric_blob: str) -> list[dict]:
+    """The forward-chained LOSS phases this run still owes. One investigation carries
+    ONE primary metric — the live A/B showed the intake (correctly) picking utilization
+    and the leakage story going untold. Every detected signal class the primary metric
+    does NOT cover gets a phase spec: deterministic prompts seeded with the columns the
+    detector actually found. Empty when nothing is owed."""
+    sig = sig or {}
+    blob = primary_metric_blob or ""
+    specs: list[dict] = []
+    if sig.get("contra_revenue") and not LEAKAGE_METRIC_RE.search(blob):
+        cols = ", ".join(sig["contra_revenue"])
+        specs.append({
+            "kind": "leakage",
+            "phase_id": "loss_leakage",
+            "title": "Revenue Leakage — Where Money Walks Back Out",
+            "emoji": "💸",
+            "fprefix": "leakage",
+            "metric_label": "leakage rate",
+            "counter": "ada.loss_leakage_lens",
+            "plan_system": (
+                "You are planning a revenue-LEAKAGE scan: money that walks back out "
+                "(refunds, chargebacks, discounts). Plan AT MOST 2 queries. "
+                "(1) The leakage RATE by the single most decision-relevant segment: for each "
+                "segment value, 100.0 * SUM(<contra amount>) / NULLIF(SUM(<gross amount>), 0) "
+                "AS metric_total, plus COUNT(*) AS n. Aggregate the contra side and the gross "
+                "side EACH AT ITS OWN GRAIN before combining (ratio of sums — never AVG of "
+                "per-row ratios, and never a join that duplicates either side). ORDER BY "
+                "metric_total DESC (the fastest leak first). Return exactly three columns: "
+                "the segment, metric_total, n. "
+                "(2) The overall picture: total contra-revenue and 100.0 * SUM(contra) / "
+                "NULLIF(SUM(gross), 0) AS metric_total, with the contra reason/category as the "
+                "segment when one exists. Do NOT plan a plain revenue ranking."),
+            "plan_ask": (
+                "Where does contra-revenue leak fastest — which segments have the highest "
+                "leakage RATE (contra as a share of gross), and what is the total? "
+                f"CONTRA-REVENUE COLUMNS PRESENT: {cols}."),
+            "interpret_system": (
+                "Interpret a revenue-leakage scan. Lead with the TOTAL leaked and its share of "
+                "gross, then where the leakage RATE concentrates (segments above the overall "
+                "rate) and the dominant reason if present. These are contra-revenue rates, not "
+                "profit — never claim segments are 'profitable' or that there are 'no losses'."),
+        })
+    if sig.get("capacity") and not UTILIZATION_METRIC_RE.search(blob):
+        cols = ", ".join(sig["capacity"])
+        specs.append({
+            "kind": "utilization",
+            "phase_id": "loss_utilization",
+            "title": "Capacity Utilization — Paid vs Available",
+            "emoji": "🪑",
+            "fprefix": "utilization",
+            "metric_label": "utilization",
+            "counter": "ada.loss_utilization_lens",
+            "plan_system": (
+                "You are planning a capacity-UTILIZATION scan: paid units against available "
+                "capacity. Plan AT MOST 2 queries. "
+                "(1) Utilization by the most decision-relevant segment: for each segment value, "
+                "100.0 * SUM(<units sold>) / NULLIF(SUM(<capacity>), 0) AS metric_total, plus "
+                "the capacity as n. COUNT CAPACITY EXACTLY ONCE per carrier unit (per flight / "
+                "slot / store) — joining capacity through a per-sale table multiplies it and "
+                "corrupts the rate; aggregate each side at its own grain, then combine. ORDER "
+                "BY metric_total ASC (the emptiest first). Return exactly three columns: the "
+                "segment, metric_total, n. "
+                "(2) The overall utilization as one row for context."),
+            "plan_ask": (
+                "Which segments run the lowest utilization (paid units vs available capacity), "
+                "and what is the overall level? "
+                f"CAPACITY COLUMNS PRESENT: {cols}."),
+            "interpret_system": (
+                "Interpret a utilization scan. Lead with the weakest segments and the gap to "
+                "the best segment; if volume is present, size the opportunity as gap × volume, "
+                "hedged as a ceiling. Utilization is not profit — never claim 'profitable' or "
+                "'no losses'."),
+        })
+    return specs
+
+
+def directive_from_signals(sig: dict | None) -> str:
+    """The intake-prompt directive for already-detected signals ('' when none)."""
     if not sig:
         return ""
     lines = ["LOSS-SIGNAL DIRECTIVE (deterministic scan of THIS schema — these columns exist):"]
-    if sig["contra_revenue"]:
+    if sig.get("contra_revenue"):
         lines.append(f"  Contra-revenue signals: {', '.join(sig['contra_revenue'])}.")
-    if sig["capacity"]:
+    if sig.get("capacity"):
         lines.append(f"  Capacity/utilization signals: {', '.join(sig['capacity'])}.")
     lines.append(
         "  A 'losing money' question is NOT a revenue ranking — segment revenue is never "
@@ -73,3 +154,9 @@ def loss_signal_directive(question: str, schema_text: str) -> str:
         "'profitable' or that there are 'no losses'; quantify leakage and utilization "
         "opportunity, or state plainly that only revenue was measurable.")
     return "\n".join(lines) + "\n"
+
+def loss_signal_directive(question: str, schema_text: str) -> str:
+    """The intake-prompt directive, or '' when it doesn't apply (safe to prepend
+    unconditionally). Kept to facts the detector verified — the block never claims
+    signals that aren't in the schema."""
+    return directive_from_signals(detect_loss_signals(question, schema_text))

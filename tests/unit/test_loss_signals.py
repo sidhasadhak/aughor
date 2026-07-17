@@ -56,6 +56,36 @@ def test_directive_is_empty_when_inapplicable():
     assert loss_signal_directive("revenue by region", _SCHEMA) == ""
 
 
+def test_lens_specs_cover_what_the_primary_metric_leaves_uncovered():
+    from aughor.agent.loss_signals import lens_specs
+    sig = {"contra_revenue": ["refund_chf", "refunds"], "capacity": ["total_seats"]}
+    # Primary = revenue ranking → BOTH loss lenses are owed.
+    both = lens_specs(sig, "net revenue SUM(bookings.total_fare_chf)")
+    assert [s["kind"] for s in both] == ["leakage", "utilization"]
+    # Primary = load factor → only the leakage story is untold.
+    leak_only = lens_specs(sig, "Load factor (seat utilization rate)")
+    assert [s["kind"] for s in leak_only] == ["leakage"]
+    # Primary = refund rate → only utilization is owed.
+    util_only = lens_specs(sig, "refund rate SUM(refund_chf)/SUM(total_fare_chf)")
+    assert [s["kind"] for s in util_only] == ["utilization"]
+    # No signals → nothing owed.
+    assert lens_specs(None, "anything") == []
+
+
+def test_lens_specs_carry_the_grain_guards_and_honesty():
+    from aughor.agent.loss_signals import lens_specs
+    sig = {"contra_revenue": ["refund_chf"], "capacity": ["total_seats"]}
+    leak, util = lens_specs(sig, "net revenue")
+    # Ratio-of-sums + own-grain aggregation — the fan-out prevention, in the prompt.
+    assert "ratio of sums" in leak["plan_system"]
+    assert "EXACTLY ONCE" in util["plan_system"] or "exactly once" in util["plan_system"].lower()
+    # The detected columns reach the planner.
+    assert "refund_chf" in leak["plan_ask"] and "total_seats" in util["plan_ask"]
+    # Honesty clause on both interpreters.
+    for s in (leak, util):
+        assert "no losses" in s["interpret_system"]
+
+
 def test_flag_defaults_off():
     from aughor.kernel.flags import FLAG_ENV, flag_enabled
     assert "intake.loss_signals" in FLAG_ENV

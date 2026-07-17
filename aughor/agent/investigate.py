@@ -2880,12 +2880,15 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # losses, and the live A/B showed it concluding "no losses" over 2.4M of refund
     # leakage. Prepended so it is the topmost instruction the intake sees. Flag-gated;
     # '' when the question/schema don't apply, so the prompt is byte-identical otherwise.
+    # The detected signals are kept (stored on _ada_intake below) so the cross-section
+    # can forward-chain the loss lenses the primary metric doesn't cover.
+    _loss_sig = None
     from aughor.kernel.flags import flag_enabled as _loss_flag
     if _loss_flag("intake.loss_signals"):
-        from aughor.agent.loss_signals import loss_signal_directive
-        _directive = loss_signal_directive(question, schema)
-        if _directive:
-            prompt = _directive + "\n" + prompt
+        from aughor.agent.loss_signals import detect_loss_signals, directive_from_signals
+        _loss_sig = detect_loss_signals(question, schema)
+        if _loss_sig:
+            prompt = directive_from_signals(_loss_sig) + "\n" + prompt
 
     try:
         intake: IntakeOutput = _provider("coder").complete(
@@ -3244,6 +3247,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
 
     intake_dict = intake.model_dump()
     intake_dict["filtered_schema"] = filtered_schema
+    if _loss_sig:
+        # The loss signals travel with the intake so the cross-section can forward-chain
+        # the lens phases the primary metric leaves uncovered (leakage vs utilization).
+        intake_dict["loss_signals"] = _loss_sig
     if _metric_note:
         intake_dict["metric_safety_note"] = _metric_note
 
@@ -4737,6 +4744,9 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         _why_phase = _run_composition_lens(state, conn, _why_event_dims)
         if _why_phase:
             result_phases = result_phases + [_why_phase]
+    # Loss-playbook lenses (flag intake.loss_signals) — mirror of the multilens path, so
+    # the leakage/utilization stories run whichever cross-section variant is live.
+    result_phases = result_phases + _run_loss_lens_phases(state, conn)
     return {"investigation_phases": result_phases, "_cross_section_summary": summary}
 
 
@@ -5730,6 +5740,65 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
     )
 
 
+def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list[dict]:
+    """Forward-chained LOSS lenses (flag `intake.loss_signals`): one investigation
+    carries ONE primary metric, so a 'losing money' run that (correctly) picked
+    utilization leaves the leakage story untold — and vice versa. Every signal class
+    the intake detected but the primary metric doesn't cover gets its own phase via
+    the shared plan→execute→interpret harness, which buys percent tagging, ranking
+    chart types and the exhibit grammar through `_lens_phase_from_run`. Deterministic
+    gating; fail-open — a lens that can't run contributes nothing."""
+    try:
+        from aughor.kernel.flags import flag_enabled as _fe
+        if not _fe("intake.loss_signals"):
+            return []
+        intake_data = state.get("_ada_intake") or {}
+        sig = intake_data.get("loss_signals") or {}
+        if not sig:
+            return []
+        from aughor.agent.loss_signals import lens_specs
+        blob = f"{intake_data.get('metric_label', '')} {intake_data.get('metric_sql', '')}"
+        specs = lens_specs(sig, blob)
+        if not specs:
+            return []
+        question = state["question"]
+        schema = _with_ledger(state, intake_data.get("filtered_schema")
+                              or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+        phases: list[dict] = []
+        for spec in specs:
+            try:
+                _run = run_analysis_phase(
+                    conn, phase_id=spec["phase_id"], title=spec["title"], emoji=spec["emoji"],
+                    cap=2, schema=schema,
+                    plan_system=spec["plan_system"] + _ADA_SQL_GROUNDING,
+                    plan_user=(f"QUESTION: {question}\n\nSCHEMA:\n{schema}\n\n{spec['plan_ask']}"),
+                    interpret_system=spec["interpret_system"],
+                    interpret_user_fn=(lambda results_text, _t=spec["title"]:
+                                       f"QUESTION: {question}\n\n{_t.upper()}:\n{results_text}\n\n"
+                                       "Lead with the quantified verdict. Never claim profitability "
+                                       "or 'no losses' — cost data is absent."),
+                    plan_error_msg=f"{spec['kind']} planning failed.",
+                    exec_error_msg=f"{spec['kind']} query failed.",
+                    question=question, connection_id=state.get("connection_id", ""),
+                    grounding_block=intake_data.get("data_understanding_block"),
+                )
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, f"loss lens '{spec['kind']}' best-effort; skipped",
+                         counter=spec["counter"])
+                continue
+            ph = _lens_phase_from_run(_run, spec["phase_id"], spec["title"], spec["emoji"],
+                                      spec["fprefix"], spec["metric_label"],
+                                      f"{spec['title']} computed.")
+            if ph:
+                phases.append(ph)
+        return phases
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "loss lens phases best-effort; skipped", counter="ada.loss_lens")
+        return []
+
+
 def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -> dict:
     """Flag-gated parallel multi-lens cross-section. Runs independent lenses CONCURRENTLY — one
     focused segment/mechanism scan per themed dimension group PLUS a temporal WHEN lens when a date
@@ -5903,6 +5972,13 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
             if _ph:
                 merged.append(_ph)
                 _extras.append(label)
+
+    # Loss-playbook lenses (flag intake.loss_signals): the leakage/utilization phases the
+    # primary metric left uncovered — independent of the WHY chain, appended last so the
+    # narrative reads scan → causes → the other loss stories.
+    for _lp in _run_loss_lens_phases(state, conn):
+        merged.append(_lp)
+        _extras.append(_lp.get("phase_id", "loss"))
 
     _lens_logger.info("[ada] multilens ran %d lens(es)%s%s → %d phase(s)",
                       len(specs), (" + period drill" if anomalous else ""),
