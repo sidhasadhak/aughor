@@ -299,3 +299,32 @@ def test_terminal_suppression_on_the_real_broken_report_shape():
     # P1: the caveat renders once, not on all three suppressed findings.
     cav_boxes = [f for ph in phases for f in ph["findings"] if f.get("trust_caveat")]
     assert len(cav_boxes) == 1
+
+
+def test_multilens_propagates_the_suppression_signal_to_synthesis(monkeypatch):
+    """Reachability — the REAL multilens merge, per-lens ada_cross_section stubbed. This is
+    the gap 1aa22321 exposed: the terminal-suppression signal a rate lens raises was captured
+    from the plain return but DROPPED at the multilens merge, so on the real 'losing money'
+    path (always multilens) the temporal 58.8% tile + synthesis citation survived. Assert the
+    signal rides `_suppressed_ratio` all the way out of ada_cross_section_multilens."""
+    import aughor.agent.investigate as inv
+
+    sig = {"metric_label": "refund leakage rate (%)", "caveat": "corrupt", "true_global_str": None}
+
+    def _fake_xsec(state, conn, **kw):
+        # A rate lens that suppressed its metric — exactly what the guard returns.
+        return {"investigation_phases": (state.get("investigation_phases") or []) + [
+            {"phase_id": "cross_section", "findings": []}],
+            "_cross_section_summary": "suppressed", "_suppressed_ratio": sig}
+
+    monkeypatch.setattr(inv, "ada_cross_section", _fake_xsec)
+    # Only one rate dimension → multilens routes straight to the single ada_cross_section
+    # (its own fast path also returns the dict verbatim).
+    state = {
+        "question": "Where are we losing money?", "connection_id": "c",
+        "investigation_phases": [],
+        "_ada_intake": {"dimensions": ["channel"], "metric_label": "refund leakage rate (%)",
+                        "metric_sql": "SUM(a)/SUM(b)", "metric_is_ratio": True},
+    }
+    out = inv.ada_cross_section_multilens(state, object())
+    assert out.get("_suppressed_ratio") == sig

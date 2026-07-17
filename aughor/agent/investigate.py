@@ -6078,29 +6078,34 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     rate_lenses = [(n, d, m) for (n, d, m, k) in dim_specs if k == "rate"]
 
     def _run_spec(spec):
+        # Returns (name, new_phases, summary, anomalous, suppressed_ratio). The last is the
+        # terminal-suppression signal a rate lens raises when the shared metric is proven
+        # corrupt — it MUST ride back up: without it the multilens merge dropped it and the
+        # temporal 58.8% tile + synthesis citation survived a report that suppressed the
+        # same metric elsewhere (inv 1aa22321).
         name, kind, payload, pmeta = spec
         try:
             reader = conn.make_reader()
             if kind == "when":
                 phase, anomalous = _run_temporal_lens(state, reader, payload, grain=grain)
-                return name, ([phase] if phase else []), None, anomalous
+                return name, ([phase] if phase else []), None, anomalous, None
             if kind == "composition":
                 phase = _run_composition_lens(state, reader, payload)
-                return name, ([phase] if phase else []), None, None
+                return name, ([phase] if phase else []), None, None, None
             # kind == 'rate' — the WHERE scan, augmented with the discovered population attributes.
             out = ada_cross_section(state, reader, dims_override=payload, phase_meta=pmeta,
                                     extra_dims=_aug_dims, extra_schema=_aug_schema,
                                     extra_directive=_aug_dir, grain=grain)
             ph = out.get("investigation_phases", [])
             new = ph[base_n:] if len(ph) > base_n else (ph[-1:] if ph else [])
-            return name, new, out.get("_cross_section_summary"), None
+            return name, new, out.get("_cross_section_summary"), None, out.get("_suppressed_ratio")
         except BudgetExceeded:
             raise
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, f"ada multilens '{name}' best-effort; lens skipped",
                      counter="ada.multilens_lens")
-            return name, [], None, None
+            return name, [], None, None, None
 
     results: list = []
     width = min(len(specs), max(1, _ADA_LENS_WIDTH))
@@ -6122,12 +6127,15 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     merged = list(base_phases)
     primary_summary = None
     anomalous = None
-    for name, new_phases, summ, anom in results:
+    suppressed_ratio = None
+    for name, new_phases, summ, anom, supp in results:
         merged.extend(new_phases)
         if summ and primary_summary is None and name.startswith("xsec:"):
             primary_summary = summ
         if anom:
             anomalous = anom
+        if supp and suppressed_ratio is None:
+            suppressed_ratio = supp    # the metric is the same across lenses — one signal suffices
 
     # Forward-chain: the WHEN lens flagged a period → drill the segment/mechanism scan INTO it
     # (sequential — the drill depends on the detection). Honest no-op when the trend was flat.
@@ -6223,6 +6231,8 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     out = {"investigation_phases": merged}
     if primary_summary is not None:
         out["_cross_section_summary"] = primary_summary
+    if suppressed_ratio is not None:
+        out["_suppressed_ratio"] = suppressed_ratio    # terminal suppression reaches synthesis
     return out
 
 
