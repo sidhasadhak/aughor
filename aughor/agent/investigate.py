@@ -1131,6 +1131,102 @@ def _strip_verdict_prefix(text: str) -> str:
     return rest
 
 
+def _repair_conditioned_ratio(findings: list, conn, metric_sql: str, metric_label: str,
+                              known_global: Optional[float] = None,
+                              known_global_str: Optional[str] = None):
+    """The grain-correct recompute the suppression caveat has been promising. For each
+    corrupted per-segment ratio finding, rebuild the scan deterministically (each side
+    aggregated over its OWN table — aughor/sql/ratio_grain.py), execute it read-only,
+    and accept it ONLY when the recompute's own whole-population level matches the
+    independently computed true global within 2% — a wrong join guess re-multiplies a
+    side and fails that checksum, so a bad repair degrades to today's suppression, never
+    to a confident wrong ranking. Mutates repaired findings in place (rows, sql,
+    interpretation, caveat, ``_grain_repaired``); returns (repaired, global_str, global).
+    """
+    try:
+        from aughor.sql.ratio_grain import plan_grain_correct_scan, validate_totals
+        sources = _parse_ratio_sources(metric_sql)
+        if not sources:
+            return [], known_global_str, known_global
+        if not sources["num_table"]:
+            sources["num_table"] = _resolve_table_for_column(conn, sources["num_col"])
+        if not sources["den_table"]:
+            sources["den_table"] = _resolve_table_for_column(conn, sources["den_col"])
+        if not sources["num_table"] or not sources["den_table"] \
+                or sources["num_table"] == sources["den_table"]:
+            return [], known_global_str, known_global
+        g = known_global if known_global else _independent_global_ratio(conn, sources)
+        if g is None or g <= 0:
+            return [], known_global_str, known_global
+        scale = float(sources.get("scale") or 1.0)
+        _fmt = _fmt_pct if (scale == 100.0 or g <= 100.0) else (lambda v: f"{v:,.2f}")
+        gstr = known_global_str or _fmt(g)
+
+        def _probe(sql):
+            try:
+                r = conn.execute("__ratio_grain_probe__", sql)
+                return None if getattr(r, "error", None) else r.rows
+            except Exception:
+                return None
+
+        repaired = []
+        for f in findings:
+            cols = [str(c) for c in (f.get("columns") or [])]
+            if not cols:
+                continue
+            plan = plan_grain_correct_scan(_probe, sources, cols[0])
+            if not plan:
+                continue
+            rows = _probe(plan["sql"])
+            if not rows or not validate_totals(rows, scale, g, plan["case"]):
+                continue
+            seg = plan["segment_col"]
+            f["rows"] = [[r[0], r[1], r[2]] for r in rows[:50]]
+            f["columns"] = [seg, "metric_total", "n"]
+            f["row_count"] = len(rows)
+            f["sql"] = plan["sql"]             # the drill shows the CORRECT query
+            f["key_numbers"] = []
+            f["error"] = None
+            top, bottom = rows[0], rows[-1]
+            f["interpretation"] = (
+                f"Recomputed at the correct grain: overall {metric_label} is {gstr}. "
+                f"{top[0]} ranks highest at {_fmt(float(top[1]))} and {bottom[0]} lowest at "
+                f"{_fmt(float(bottom[1]))} across {len(rows)} segments.")
+            # Transparency without tripping the prompt's fan-out damper: this data is
+            # now correct and MAY be cited as exact.
+            f["trust_caveat"] = (
+                f"{metric_label} was recomputed with each side aggregated over its own "
+                f"table — the first-pass query conditioned the denominator — and validated "
+                f"against the whole-population level of {gstr}.")
+            f["is_significant"] = False
+            f["_grain_repaired"] = True
+            repaired.append(f)
+        if repaired:
+            from aughor.stats import stats as _s
+            _s.inc("ada.ratio_grain_repaired", len(repaired))
+        return repaired, gstr, g
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "grain-correct ratio repair is best-effort; suppression stands",
+                 counter="ada.ratio_grain_repair_failed")
+        return [], known_global_str, known_global
+
+
+def _repaired_ratio_summary(metric_label: str, gstr: Optional[str],
+                            n_repaired: int = 0, n_left: int = 0) -> str:
+    """The phase summary once the recompute ran. When SOME dimensions couldn't be
+    recomputed (a segment on a third table, outside the v1 repair), lead with the real
+    answer and note the omission — never let a couple of un-repairable cuts headline the
+    whole phase as 'could not be computed' when the repaired cuts ARE the answer."""
+    lvl = f" — overall {gstr}" if gstr else ""
+    base = (f"{metric_label} was recomputed with each side aggregated at its own grain"
+            f"{lvl}; the per-dimension rankings below are validated against that level.")
+    if n_left > 0:
+        base += (f" {n_left} dimension(s) whose segment lives on a further-joined table "
+                 "could not be recomputed and are omitted.")
+    return base
+
+
 def _scrub_suppressed_metric_everywhere(phases: list, suppressed: dict) -> int:
     """A suppressed ratio is corrupt at the METRIC level, so every phase that renders it is
     corrupt — but only the cross-section phase ran the guard. Walk every phase and neutralise
@@ -1147,6 +1243,8 @@ def _scrub_suppressed_metric_everywhere(phases: list, suppressed: dict) -> int:
     scrubbed = 0
     for ph in phases or []:
         for f in ph.get("findings") or []:
+            if f.get("_grain_repaired"):
+                continue                                    # repaired + validated — real data
             if f.get("chart_type") == "none" and not (f.get("key_numbers") or []):
                 continue                                    # already suppressed at source
             cols = [_norm_measure(c) for c in (f.get("columns") or [])]
@@ -4733,7 +4831,10 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     from aughor.kernel.flags import flag_enabled as _flag_enabled
     _decision_grade = _flag_enabled("lens.decision_grade")
     _exhibit_grammar = _flag_enabled("chart.exhibit_grammar")
-    for f in findings:
+    def _polish_xsec_finding(f):
+        """The per-finding presentation passes, factored so the grain-correct repair can
+        re-run them on a finding whose ROWS it just replaced (chart/keys/exhibit computed
+        off corrupt rows would otherwise survive the repair)."""
         if is_ratio:
             _chart_ratio_primary(f)
         else:
@@ -4767,6 +4868,9 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         if _exhibit_grammar:
             from aughor.agent.exhibit import exhibit_for_cross_section
             exhibit_for_cross_section(f, is_ratio=is_ratio, is_percent=_metric_is_pct)
+
+    for f in findings:
+        _polish_xsec_finding(f)
 
     # Numeric fan-out backstop — the AST chasm detectors miss some join shapes and the coder can
     # reinterpret the metric, so verify the NUMBERS on the RAW results (all columns present). Two
@@ -4838,11 +4942,26 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             f["is_significant"] = False
         if _fanned:
             if is_ratio:
-                # Fix B — a fanned RATIO is corrupted, not merely inflated; suppress its values + ranking
-                # rather than present and let the narrator rationalise an artifact (the ROAS 0.0–0.01 mess).
-                summary = _suppress_fanned_ratio(_fanned, metric_label, _eff_caveat)
+                # Fix B, upgraded: a fanned RATIO is corrupted, not merely inflated. First
+                # attempt the grain-correct recompute the caveat used to merely promise;
+                # only what the repair's checksum rejects gets suppressed.
+                _rep, _gstr, _g = _repair_conditioned_ratio(_fanned, conn, metric_sql, metric_label)
+                for f in _rep:
+                    _polish_xsec_finding(f)
+                _left = [f for f in _fanned if not f.get("_grain_repaired")]
+                if _left:
+                    # Suppress the unrepairable siblings individually…
+                    _suppress_fanned_ratio(_left, metric_label, _eff_caveat)
+                # …but the PHASE summary leads with the repair whenever anything was repaired,
+                # so a couple of third-table cuts can't headline the phase as uncomputable.
+                if _rep:
+                    summary = _repaired_ratio_summary(metric_label, _gstr, len(_rep), len(_left))
+                elif _left:
+                    summary = _suppress_fanned_ratio(_left, metric_label, _eff_caveat)
+                _lens_logger.info("[ada] ratio grain repair (fanout): %d/%d repaired, global=%s",
+                                  len(_rep), len(_fanned), _gstr)
                 _suppressed_ratio = {"metric_label": metric_label, "caveat": _eff_caveat,
-                                     "true_global_str": None}
+                                     "true_global_str": _gstr, "repaired": bool(_rep)}
             else:
                 summary = f"⚠ {_eff_caveat} " + (summary or "")
 
@@ -4854,14 +4973,31 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     if is_ratio and _metric_is_composite_ratio(metric_sql):
         _plausibility = _global_ratio_plausibility_guard(findings, conn, metric_sql, metric_label)
         if _plausibility:
-            for f in findings:
+            # Repair before suppressing — the guard already computed the true global, which
+            # doubles as the repair's acceptance checksum.
+            _rep, _gstr, _g = _repair_conditioned_ratio(
+                findings, conn, metric_sql, metric_label,
+                known_global=_plausibility.get("true_global"),
+                known_global_str=_plausibility.get("true_global_str"))
+            for f in _rep:
+                _polish_xsec_finding(f)
+            _left = [f for f in findings if not f.get("_grain_repaired")]
+            for f in _left:
                 f["trust_caveat"] = f.get("trust_caveat") or _plausibility["caveat"]
                 f["is_significant"] = False
-            summary = _suppress_fanned_ratio(findings, metric_label, _plausibility["caveat"])
+            if _left:
+                _suppress_fanned_ratio(_left, metric_label, _plausibility["caveat"])
+            if _rep:
+                summary = _repaired_ratio_summary(metric_label, _gstr, len(_rep), len(_left))
+            elif _left:
+                summary = _suppress_fanned_ratio(_left, metric_label, _plausibility["caveat"])
+            _lens_logger.info("[ada] ratio grain repair (plausibility): %d/%d repaired, global=%s",
+                              len(_rep), len(findings), _gstr)
             # The conditioned-denominator guard KNOWS the true level — carry it, so synthesis
-            # cites 2.8%, not the 49–69% artifacts.
+            # cites 2.8%, not the 49–69% artifacts; `repaired` tells it the rankings are real.
             _suppressed_ratio = {"metric_label": metric_label, "caveat": _plausibility["caveat"],
-                                 "true_global_str": _plausibility["true_global_str"]}
+                                 "true_global_str": _gstr or _plausibility["true_global_str"],
+                                 "repaired": bool(_rep)}
 
     phase = _phase_result(
         _phase_id, _phase_title, _phase_emoji,
@@ -6134,8 +6270,12 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
             primary_summary = summ
         if anom:
             anomalous = anom
-        if supp and suppressed_ratio is None:
-            suppressed_ratio = supp    # the metric is the same across lenses — one signal suffices
+        if supp and (suppressed_ratio is None or
+                     (supp.get("repaired") and not suppressed_ratio.get("repaired"))):
+            # The metric is the same across lenses; prefer a signal whose rankings were
+            # REPAIRED (one lens recomputing channel/cabin proves the metric is computable
+            # even if a sibling lens's third-table cut couldn't be).
+            suppressed_ratio = supp
 
     # Forward-chain: the WHEN lens flagged a period → drill the segment/mechanism scan INTO it
     # (sequential — the drill depends on the detection). Honest no-op when the trend was flat.
@@ -6299,17 +6439,33 @@ def ada_synthesize(state: AgentState) -> dict:
         _scrub_suppressed_metric_everywhere(phases, _suppressed)
         _true = _suppressed.get("true_global_str")
         _mlabel = _suppressed.get("metric_label") or "the metric"
-        suppression_section = (
-            f"\n\nSUPPRESSED METRIC — HARD RULE: '{_mlabel}' could not be computed reliably; its "
-            "per-segment and per-period values in the evidence (any large percentage such as 58.8%, "
-            "or a 49–69% range) are COMPUTATION ARTIFACTS of a conditioned denominator / join "
-            "fan-out, NOT real levels. You MUST NOT cite, rank, or headline those values as facts. "
-            + (f"The metric's TRUE whole-population level is {_true} — cite THAT if you state a level, "
-               "and say plainly it needs a grain-correct recompute before segments can be compared. "
-               if _true else
-               "State plainly that the metric needs a grain-correct recompute before it can be "
-               "trusted, and do not invent a level. ")
-            + "Do not let a suppressed number appear anywhere in the headline or executive summary.")
+        if _suppressed.get("repaired"):
+            # The rankings were RECOMPUTED and checksum-validated — the model must cite
+            # them as facts, not hedge them; only OTHER phases' first-pass values (the
+            # single-period 58.8% class) remain artifacts.
+            suppression_section = (
+                f"\n\nMETRIC RECOMPUTED — HARD RULE: the first-pass per-segment SQL for "
+                f"'{_mlabel}' was corrupted (conditioned denominator), and the cross-section "
+                "rankings were RECOMPUTED at the correct grain and validated against the "
+                "metric's independently-computed whole-population level"
+                + (f" ({_true})" if _true else "") + ". Cite those recomputed rankings as "
+                "exact facts and lead with what they show. Any OTHER phase's value for this "
+                "metric (for example a single-period figure far above that level) was a "
+                "computation artifact and has been suppressed — never cite one. Do not "
+                "describe the metric as unmeasurable or 'needing a recompute': it was "
+                "measured; the first pass was corrected.")
+        else:
+            suppression_section = (
+                f"\n\nSUPPRESSED METRIC — HARD RULE: '{_mlabel}' could not be computed reliably; its "
+                "per-segment and per-period values in the evidence (any large percentage such as 58.8%, "
+                "or a 49–69% range) are COMPUTATION ARTIFACTS of a conditioned denominator / join "
+                "fan-out, NOT real levels. You MUST NOT cite, rank, or headline those values as facts. "
+                + (f"The metric's TRUE whole-population level is {_true} — cite THAT if you state a level, "
+                   "and say plainly it needs a grain-correct recompute before segments can be compared. "
+                   if _true else
+                   "State plainly that the metric needs a grain-correct recompute before it can be "
+                   "trusted, and do not invent a level. ")
+                + "Do not let a suppressed number appear anywhere in the headline or executive summary.")
     _dedupe_repeated_caveats(phases)
 
     # Detect early-stop: if only baseline (and intake) phases exist, the Tier-0
