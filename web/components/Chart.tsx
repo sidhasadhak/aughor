@@ -30,9 +30,10 @@ import {
 } from "@/components/charts/echarts/builders";
 import {
   SHARE_COL, CHANGE_METRIC_COL, TIME_LABEL_COL, INSTRUMENTATION_COL, PREFER_COL, classifyColumns,
-  isIdLike,
+  isIdLike, isUngraphableGrid,
 } from "@/components/charts/columnRoles";
 import { scoreDualAxis } from "@/components/charts/chartTypeInference";
+import type { ExhibitSpec } from "@/components/charts/exhibit";
 
 /** User chart styling applied as a generic post-pass over the built ECharts option —
  *  lets the Query Builder Customize tab override colours / number format / legend /
@@ -105,6 +106,7 @@ export function Chart({
   custom = null,
   heightScale = 1,
   columnUnits,
+  exhibit = null,
   onSelect,
 }: {
   columns: string[];
@@ -125,6 +127,9 @@ export function Chart({
   /** Authoritative per-column display unit from the backend finding ({"metric_total":"percent"}),
    *  so a rate renders "41.0%" on the axis + labels instead of the raw "0.4". */
   columnUnits?: Record<string, string> | null;
+  /** Optional backend exhibit spec (semantic color mode, reference lines, point labels,
+   *  quadrant dividers). Absent → rendering is byte-identical to before. */
+  exhibit?: ExhibitSpec | null;
 }) {
   const outerRef = useRef<HTMLDivElement>(null);
   const instRef = useRef<{ getDataURL: (o?: { type?: string; pixelRatio?: number; backgroundColor?: string }) => string } | null>(null);
@@ -170,6 +175,9 @@ export function Chart({
   // data / type / labels / custom / org settings change. userH & heightScale affect height only.
   const built = useMemo<{ option: EChartsOption; defaultH: number } | null>(() => {
     if (!rows.length || !columns.length) return null;
+    // Chart-grammar gate: a stats/entity-profile grid has no honest chart — render
+    // nothing and let the surface's table view carry it (mirrors the export).
+    if (isUngraphableGrid(columns, rows)) return null;
 
     const data: Record<string, unknown>[] = rows.map((r) =>
       Object.fromEntries(columns.map((c, i) => [c, (r as unknown[])[i]])),
@@ -223,6 +231,9 @@ export function Chart({
     // inference below, which is robust. (The config is dropped on history restore, so a
     // validated-or-inferred chart also makes a live answer match what History shows.)
     const cc = chartConfig;
+    // The quick path's exhibit spec rides INSIDE chart_config (no separate event); an explicit
+    // `exhibit` prop (deep report) wins over it.
+    const exhibitEff = exhibit ?? ((cc?.exhibit as ExhibitSpec | undefined) || null);
     const ccType = cc?.type as string | undefined;
     const ccX = cc?.x_field as string | undefined;
     const ccY = cc?.y_field as string | undefined;
@@ -256,8 +267,14 @@ export function Chart({
           : lineOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF], xKind: "time" });
         defaultH = 350;
       }
-      else if (backendHint === "bar" || backendHint === "bar_horizontal") { option = barOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF], labels: lbls }); defaultH = 350; }
-      else if (backendHint === "scatter") { option = scatterOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF] }); defaultH = 350; }
+      else if (backendHint === "bar" || backendHint === "bar_horizontal") { option = barOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF], labels: lbls, exhibit: exhibitEff }); defaultH = 350; }
+      else if (backendHint === "scatter") {
+        option = scatterOption({
+          rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF], exhibit: exhibitEff,
+          color: ccColor, pointLabel: catCols.find((c) => c !== ccColor) ?? catCol,
+        });
+        defaultH = 350;
+      }
       else if (backendHint === "pie") { option = pieOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF] }); defaultH = 350; }
     }
 
@@ -278,10 +295,21 @@ export function Chart({
     if (!option && hint === "auto" && _isChangeMetric && catCol && dateCol) { option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
     // 8. Stacked bar (explicit, or auto date/cat with ≤6 series). A SHARE measure → 100%-stacked
     //    (composition shift over time); an absolute measure stacks by volume.
+    //    A stack needs ≥2 x positions: one stacked column is a single lying bar (the
+    //    "loyalty_members at 100%" exhibit), so a degenerate x falls through to the
+    //    categorical branch below. 100%-stacked additionally demands share-like VALUES —
+    //    the name test alone let `award_miles_fraction` (values to 309) normalise
+    //    incomparable measures into a fake composition.
     if (!option && (hint === "stacked_bar" || (hint === "auto" && catCol && (catCol2 || dateCol) && !_isChangeMetric && _stackUnique <= 6))) {
       const x = dateCol ?? catCol;
       const color = dateCol ? catCol : catCol2;
-      if (x && color) { option = stackedBarOption({ rows: data, units: columnUnits ?? undefined, x, ys: [numCol], color, xKind: dateCol ? "time" : "category" }, SHARE_COL.test(numCol)); defaultH = 280; }
+      const xUnique = x ? new Set(data.map((d) => d[x])).size : 0;
+      if (x && color && xUnique >= 2) {
+        const shareVals = data.map((d) => Number(d[numCol])).filter((v) => !isNaN(v));
+        const asPercent = SHARE_COL.test(numCol) && shareVals.length > 0 && shareVals.every((v) => Math.abs(v) <= 1.0001);
+        option = stackedBarOption({ rows: data, units: columnUnits ?? undefined, x, ys: [numCol], color, xKind: dateCol ? "time" : "category" }, asPercent);
+        defaultH = 280;
+      }
     }
     // 8b. Small multiples — a many-group trend (auto date/cat with >6 series, or explicit): a grid of
     //     mini lines beats a spaghetti multi-line. Explicit hint always; auto only past the stack cap.
@@ -293,13 +321,33 @@ export function Chart({
     // 9. Temporal multi-line (auto, ≤6 series)
     if (!option && hint === "auto" && dateCol && catCol && !_isChangeMetric) { option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
     // 10. Date bar (date + measure, no category)
-    if (!option && dateCol && !catCol && (hint === "bar" || hint === "bar_horizontal")) { option = barOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: true }, { order: "time" }); defaultH = 220; }
+    if (!option && dateCol && !catCol && (hint === "bar" || hint === "bar_horizontal")) { option = barOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: true, exhibit: exhibitEff }, { order: "time" }); defaultH = 220; }
     // 11. Line / area (timeseries)
-    if (!option && dateCol && !catCol && (hint === "line" || hint === "area" || hint === "auto")) { option = lineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: lbls }, hint === "area"); defaultH = 220; }
+    if (!option && dateCol && !catCol && (hint === "line" || hint === "area" || hint === "auto")) { option = lineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: lbls, exhibit: exhibitEff }, hint === "area"); defaultH = 220; }
     // 12. Vertical bar (explicit)
-    if (!option && catCol && hint === "bar_vertical") { option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }, { order: isTimeLabel ? "keep" : "value" }); defaultH = 260; }
-    // 13. Scatter (explicit)
-    if (!option && hint === "scatter" && numericCols.length >= 2) { option = scatterOption({ rows: data, units: columnUnits ?? undefined, x: numericCols[0], ys: [numericCols[1]] }); defaultH = 300; }
+    if (!option && catCol && hint === "bar_vertical") { option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { order: isTimeLabel ? "keep" : "value" }); defaultH = 260; }
+    // 13. Scatter (explicit) — an ENTITY scatter names each point with the id-like column and, when a
+    //     second low-cardinality category exists, colors the points by it (hue = third dimension).
+    if (!option && hint === "scatter" && numericCols.length >= 2) {
+      const scatterLabel = catCols.find((c) => ID_COL.test(c)) ?? catCol;
+      const scatterColor = catCols.find((c) =>
+        c !== scatterLabel && !ID_COL.test(c) && new Set(data.map((d) => d[c])).size <= 12);
+      option = scatterOption({
+        rows: data, units: columnUnits ?? undefined, x: numericCols[0], ys: [numericCols[1]],
+        exhibit: exhibitEff, pointLabel: scatterLabel, color: scatterColor,
+      });
+      defaultH = 300;
+    }
+    // 14a. Explicit RANKING hint (bar / bar_horizontal) on a categorical result — the backend's
+    //      intent-driven chart_type is authoritative: plot the PRIMARY measure as one sorted
+    //      horizontal bar. Without this branch the hint fell through to the data-shape gate
+    //      below, which turned a [dim, metric, n, avg] ranking finding into a dual-axis COMBO
+    //      of metric vs row-count — second-guessing the backend and discarding exhibit.order.
+    if (!option && catCol && (hint === "bar" || hint === "bar_horizontal")) {
+      option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff },
+                         { horizontal: true, diverging: _isChangeMetric });
+      defaultH = Math.max(110, nCats * 46 + 44);
+    }
     // 14. Categorical default → combo / grouped / change-bar / horizontal bar
     if (!option && catCol) {
       if (chartNumericCols.length >= 2 && catCols.length === 1) {
@@ -308,17 +356,17 @@ export function Chart({
         const primary = columns[d.barIdx] ?? chartNumericCols[0];
         if (d.combo && d.lineIdx != null) { option = comboOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [primary, columns[d.lineIdx]] }); defaultH = 350; }
         else if (d.groupIdxs.length >= 2) { option = groupedBarOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: d.groupIdxs.map((i) => columns[i]) }); defaultH = 300; }
-        else { option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [primary], labels: lbls }, { horizontal: true }); defaultH = Math.max(110, nCats * 46 + 44); }
+        else { option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [primary], labels: lbls, exhibit: exhibitEff }, { horizontal: true }); defaultH = Math.max(110, nCats * 46 + 44); }
       } else if (_isChangeMetric) {
-        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }, { horizontal: true, diverging: true });
+        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { horizontal: true, diverging: true });
         defaultH = Math.max(110, nCats * 46 + 44);
       } else {
-        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }, { horizontal: true });
+        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { horizontal: true });
         defaultH = Math.max(110, nCats * 46 + 44);
       }
     }
     // 15. Final fallback — line on date + measure
-    if (!option && dateCol && numCol) { option = lineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: lbls }); defaultH = 350; }
+    if (!option && dateCol && numCol) { option = lineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: lbls, exhibit: exhibitEff }); defaultH = 350; }
 
     if (!option) return null;
     // Org-level chart palette (Settings ▸ Appearance) applies when the chart hasn't set
@@ -329,7 +377,7 @@ export function Chart({
       if (pal && SCHEME_PALETTES[pal]) built.color = SCHEME_PALETTES[pal];
     }
     return { option: built, defaultH };
-  }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits]);
+  }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits, exhibit]);
 
   if (!built) return null;
   const chartH = Math.round((userH ?? built.defaultH) * heightScale);

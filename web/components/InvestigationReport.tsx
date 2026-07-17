@@ -33,7 +33,6 @@ import {
   BriefDetailBlock,
   renderEmphasis,
 } from "@/components/brief/Brief";
-import { SignificanceBadge } from "@/components/brief/StatBadge";
 import { TrendStrip } from "@/components/brief/Sparkline";
 import { useOpenInBuilder } from "@/lib/openInBuilder";
 
@@ -61,6 +60,7 @@ interface InvestigationFinding {
   is_significant: boolean;
   trust_caveat?: string | null;   // advisory from the trust battery — surfaced, never blocking
   column_units?: Record<string, string> | null;  // per-column display unit ({metric_total:"percent"})
+  exhibit?: import("@/components/charts/exhibit").ExhibitSpec | null;  // chart-grammar semantics
 }
 
 interface InvestigationPhase {
@@ -114,12 +114,6 @@ export interface AnswerReport {
   // T4-1 — plain-language receipt of how the metric was computed (formula + interpretation).
   metric_definition?: string | null;
 }
-
-const CONF_TXT: Record<AnswerReport["confidence"], string> = {
-  HIGH:   "text-emerald-400",
-  MEDIUM: "text-amber-400",
-  LOW:    "text-red-400",
-};
 
 // ── Collapsible data table — quiet, only when a finding has no chart ───────────
 
@@ -190,7 +184,7 @@ function EvidenceBlock({ finding, onShowSource, sourceNo }: { finding: Investiga
       {/* Chart — the framed figure */}
       {hasChart && (
         <BriefFigure caption={finding.title}>
-          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} columnUnits={finding.column_units} showLabels />
+          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit} showLabels />
         </BriefFigure>
       )}
 
@@ -216,9 +210,10 @@ function EvidenceBlock({ finding, onShowSource, sourceNo }: { finding: Investiga
       {finding.interpretation && <BriefProse text={finding.interpretation} muted />}
 
       {/* Significance verdict — "Significant" / "Within noise" + raw stat note */}
-      {(finding.stat_note || finding.is_significant) && (
-        <SignificanceBadge significant={finding.is_significant} note={finding.stat_note} />
-      )}
+      {/* Clean-output policy: the significance verdict + stat note are VERIFICATION
+          machinery — they live in the Trust Receipt / Details, never in the body.
+          A reader gets conclusions; "Within noise · Only 2 rows returned" is the
+          machine talking to itself. */}
 
       {/* Trust advisory — the result computed, but the trust battery distrusts it (impossible
           magnitude, fan-out artifact, vacuous CASE…). Surfaced, never suppressed. */}
@@ -246,17 +241,22 @@ function EvidenceBlock({ finding, onShowSource, sourceNo }: { finding: Investiga
 
 // ── Phase — a flat narrative section (no accordion, no chevron, no indent) ─────
 
-function PhaseSection({ phase, onShowSource, sourceNos }: { phase: InvestigationPhase; onShowSource?: ShowSource; sourceNos?: Map<string, number> }) {
+function PhaseSection({ phase, onShowSource, sourceNos, execSummary }: { phase: InvestigationPhase; onShowSource?: ShowSource; sourceNos?: Map<string, number>; execSummary?: string }) {
   if (phase.status === "skipped") return null;
   const findings = phase.findings.filter(f => f.interpretation || f.columns.length > 0 || f.error);
   if (!phase.summary && findings.length === 0) return null;
+  // The deterministic synthesis fallback STITCHES the phase summaries into the executive
+  // summary — re-printing this phase's summary below it reads the same paragraph twice
+  // (three times counting the headline). Skip a summary the head already carries.
+  const _norm = (s: string) => s.replace(/\*+/g, "").replace(/\s+/g, " ").trim();
+  const summaryRedundant = !!phase.summary && !!execSummary && _norm(execSummary).includes(_norm(phase.summary));
 
   return (
     // Clean-output policy (Genie-style): no phase-machinery header ("CROSS-SECTIONAL
     // SCAN", "TEMPORAL TREND — WHEN") — the reader gets a continuous, confident
     // narrative; which internal phase produced a finding is process, not insight.
     <BriefSection>
-      {phase.summary && <BriefProse text={phase.summary} />}
+      {phase.summary && !summaryRedundant && <BriefProse text={phase.summary} />}
       {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} sourceNo={sourceNos?.get(f.finding_id)} />)}
     </BriefSection>
   );
@@ -570,14 +570,11 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
           <div key={f.finding_id} className="space-y-1.5 pl-2">
             {hasChart && (
               <div className="rounded-md border border-zinc-800/60 overflow-hidden p-2" style={{ background: "var(--bg-0)" }}>
-                <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} columnUnits={f.column_units} showLabels />
+                <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} columnUnits={f.column_units} exhibit={f.exhibit} showLabels />
               </div>
             )}
             {f.key_numbers?.length > 0 && <KeyNumbersInline metrics={f.key_numbers} />}
             {f.interpretation && <BriefProse text={f.interpretation} muted />}
-            {(f.stat_note || f.is_significant) && (
-              <SignificanceBadge significant={f.is_significant} note={f.stat_note} />
-            )}
           </div>
         );
       })}
@@ -622,7 +619,10 @@ export function InvestigationReportView({
   return (
     <Brief>
       <BriefHeadline>{report.headline}</BriefHeadline>
-      {report.executive_summary && <BriefProse text={report.executive_summary} />}
+      {/* Skip a summary that only restates the headline (the fallback path can emit both
+          from the same sentence) — one text, rendered once. */}
+      {report.executive_summary && report.executive_summary.trim() !== report.headline?.trim()
+        && <BriefProse text={report.executive_summary} />}
 
       <BriefMeta
         items={[
@@ -630,9 +630,9 @@ export function InvestigationReportView({
             ? <span key="tc" className={`font-mono ${!/\d/.test(report.total_change_label) ? "text-zinc-400" : report.total_change_label.trim().startsWith("-") ? "text-red-400" : "text-emerald-400"}`}>{report.total_change_label}</span>
             : null,
           periodStr || null,
-          report.confidence
-            ? <span key="conf" className={CONF_TXT[report.confidence]}>{report.confidence.charAt(0) + report.confidence.slice(1).toLowerCase()} confidence</span>
-            : null,
+          // Clean-output policy: the confidence verdict + justification live in the
+          // Details disclosure (they already render there) — the body states findings,
+          // not a hedge banner across the top of every answer.
         ]}
       />
 
@@ -648,7 +648,7 @@ export function InvestigationReportView({
             .map((f, i) => [f.finding_id, i + 1] as const),
         );
         return analysisPhases.map(phase => (
-          <PhaseSection key={phase.phase_id} phase={phase} onShowSource={onShowSource} sourceNos={sourceNos} />
+          <PhaseSection key={phase.phase_id} phase={phase} onShowSource={onShowSource} sourceNos={sourceNos} execSummary={report.executive_summary} />
         ));
       })()}
 

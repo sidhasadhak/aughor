@@ -59,12 +59,19 @@ STARTERS: tuple[ResearchStarter, ...] = (
     ResearchStarter(
         id="where_are_we_losing_money",
         title="Where are we losing money?",
-        question=("Where are we losing money? Find the segments, products or routes "
-                  "with negative or below-benchmark contribution and quantify the gap."),
+        # A revenue ranking can never find losses (segment revenue is never negative) —
+        # the question must NAME the loss lenses so the intake can't reduce it to one.
+        question=("Where are we losing money? Quantify money that walks back out — "
+                  "refunds, cancellations, chargebacks, discounts — as a share of gross "
+                  "and find the segments where that leakage rate concentrates; if the "
+                  "data carries capacity (seats, slots, inventory), compute utilization "
+                  "against the best-performing segment and the value of closing the gap. "
+                  "Rank below-benchmark revenue contribution only as context, and do not "
+                  "declare anything profitable if cost data is absent."),
         mode="investigate",
         purpose="profitability",
-        description="A deep investigation into underperforming segments and the "
-                    "size of the opportunity.",
+        description="A deep investigation into leakage, utilization gaps and "
+                    "underperforming segments — and the size of the opportunity.",
     ),
     ResearchStarter(
         id="data_quality_scan",

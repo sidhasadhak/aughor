@@ -25,7 +25,7 @@
 import {
   isIdLike, INSTRUMENTATION_COL as INSTRUMENTATION,
   SHARE_COL, CHANGE_METRIC_COL as CHANGE_METRIC, ADDITIVE_COL,
-  countUnique, classifyColumns,
+  countUnique, classifyColumns, isUngraphableGrid,
 } from "./columnRoles";
 
 // Re-exported so existing importers of these from chartTypeInference keep working while the
@@ -119,6 +119,8 @@ export function inferChartType(
   rows: unknown[][],
 ): InferredChart | null {
   if (!columns.length || rows.length < 2) return null;
+  // Chart-grammar gate: a stats/entity-profile grid is a table, never a chart.
+  if (isUngraphableGrid(columns, rows)) return null;
 
   const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows);
 

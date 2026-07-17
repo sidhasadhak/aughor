@@ -327,6 +327,10 @@ class InvestigationFinding(TypedDict):
     # a value the SAME way — e.g. {"metric_total": "percent"} tells the UI a rate stored as 0.4096 is
     # "41.0%", not "0.4". Absent → the UI falls back to its column-name heuristics. Units: "percent".
     column_units: NotRequired[dict[str, str]]
+    # Chart-grammar exhibit spec (flag `chart.exhibit_grammar`): deterministic chart SEMANTICS —
+    # {"color": {"mode": "severity"|...}, "ref_lines": [{value,label,kind}], "label_points", "quadrant"}.
+    # Built by aughor/agent/exhibit.py from the finding's own rows; absent → legacy rendering.
+    exhibit: NotRequired[dict]
 
 
 class InvestigationPhaseResult(TypedDict):

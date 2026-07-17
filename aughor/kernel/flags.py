@@ -28,6 +28,8 @@ FLAG_ENV = {
     "starters.library": "AUGHOR_STARTERS_LIBRARY",
     "lens.decision_grade": "AUGHOR_LENS_DECISION_GRADE",
     "report.argument_style": "AUGHOR_REPORT_ARGUMENT_STYLE",
+    "chart.exhibit_grammar": "AUGHOR_CHART_EXHIBIT_GRAMMAR",
+    "intake.loss_signals": "AUGHOR_INTAKE_LOSS_SIGNALS",
     "ontology.autodoc": "AUGHOR_ONTOLOGY_AUTODOC",
     "ontology.column_config": "AUGHOR_ONTOLOGY_COLUMN_CONFIG",
     "birth.job": "AUGHOR_BIRTH_JOB",
@@ -199,6 +201,14 @@ FLAG_META = {
     "report.argument_style": {
         "label": "Argument-style report composition",
         "description": "Compose exported deep-analysis reports the way a human analyst argues (the Genie report study): one exhibit per claim (chart OR a small table, never both), no degenerate exhibits (a 1-bar chart or single-point trend becomes a sentence), key numbers bold inline in the prose instead of stat-tile rows, the Question-Intake machinery out of the body (it stays in the Trust Receipt), and the R15 opportunity number promoted to its own Financial impact section. Deterministic re-composition of the SAME report data — no model. Off by default = byte-identical exports — see docs/REPORT_STYLE_STUDY_2026-07-16.md (R16 P1).",
+    },
+    "intake.loss_signals": {
+        "label": "Loss-signal directive at question intake",
+        "description": "When the question carries loss intent ('where are we losing money', leakage, waste) a deterministic scan names the loss signals THIS schema carries — contra-revenue columns (refunds, chargebacks, discounts) and capacity/utilization columns — and directs the intake to frame the metric around them: leakage as a rate of gross per segment, sold-vs-capacity with a benchmark gap, revenue ranking as context only. Also forbids the un-computable verdict: without cost data the report may never conclude 'profitable' or 'no losses'. Found by the 2026-07-16 A/B: a revenue ranking answered 'broadly healthy' over 2.4M CHF of refund leakage and a 1.2M CHF utilization gap. No model in the detector; off by default = byte-identical intake prompt.",
+    },
+    "chart.exhibit_grammar": {
+        "label": "Semantic chart grammar (exhibit spec)",
+        "description": "Charts encode meaning the way the Genie reports do (the 2026-07-16 chart-grammar study): the model is no longer OFFERED the combo chart (one measure per exhibit; the renderer's deterministic dual-axis gate is the only door to one), a rate/percent ranking carries a severity color ramp (value → hue, red family for cost-like metrics), cross-section findings gain deterministic reference lines (segment-weighted average; the R15 best-peer benchmark), the peer-benchmark lens draws its peer median, and an entity scatter labels its points by ID. All computed from rows already fetched — no model, no extra query; carried as an additive `exhibit` payload on findings/answers. Off by default = byte-identical charts and prompts.",
     },
     "lens.decision_grade": {
         "label": "Decision-grade output lenses",

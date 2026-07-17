@@ -3,7 +3,8 @@
 import { useState } from "react";
 import type { ExplorationReport as ExplorationReportType, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
-import { BriefDetails, BriefDetailBlock } from "@/components/brief/Brief";
+import { BriefDetails, BriefDetailBlock, renderEmphasis } from "@/components/brief/Brief";
+import { stripPlannerNotes } from "@/lib/format";
 import { recordVerdict } from "@/lib/api";
 
 interface Props {
@@ -69,9 +70,10 @@ function SubQuestionCard({
             <p className="aug-fs-ui text-zinc-300 leading-snug flex-1 min-w-0">{answer.question}</p>
           </div>
 
-          {/* Answer takeaway */}
-          {answer.answer && (
-            <p className="aug-fs-ui text-zinc-100 leading-relaxed">{answer.answer}</p>
+          {/* Answer takeaway — planner directives ("→ Q5 should…") are the wave's
+              internal to-do list, never reader prose. */}
+          {answer.answer && stripPlannerNotes(answer.answer) && (
+            <p className="aug-fs-ui text-zinc-100 leading-relaxed">{renderEmphasis(stripPlannerNotes(answer.answer))}</p>
           )}
 
           {/* Evidence — chart with grain-aware controls + chart⇄table toggle */}
@@ -86,17 +88,16 @@ function SubQuestionCard({
           )}
 
           {/* Insight */}
-          {answer.insight && answer.insight !== answer.answer && (
+          {answer.insight && answer.insight !== answer.answer && stripPlannerNotes(answer.insight) && (
             <p className="aug-fs-sm text-zinc-400 leading-relaxed border-t border-zinc-800/60 pt-2">
               <span className="text-zinc-500 uppercase tracking-wide aug-fs-xs mr-1.5">Insight</span>
-              {answer.insight}
+              {renderEmphasis(stripPlannerNotes(answer.insight))}
             </p>
           )}
 
-          {/* Refinement (what it led to next) */}
-          {answer.refinement && (
-            <p className="aug-fs-sm text-zinc-500 leading-relaxed">→ {answer.refinement}</p>
-          )}
+          {/* Clean-output policy: the refinement is the planner's note to the NEXT
+              question — process, not analysis. The chain's ordering already shows
+              what each step led to; the machine's to-do list stays out of the body. */}
 
           {/* SQL — the only collapsed detail */}
           {(hasData || answer.error) && answer.sql && (
@@ -234,12 +235,14 @@ export function ExplorationReportView({ report, subqAnswers, queryCount, connect
         <p className="aug-fs-h2 font-medium text-zinc-100 leading-snug">{report.headline}</p>
       </div>
 
-      {/* Summary — conclusion + narrative merged into one block */}
-      {(report.conclusion || showNarrative) && (
+      {/* Summary — the CONCLUSION only (emphasis rendered, never raw asterisks). The
+          narrative — the step-by-step retelling of what the wave did — is process, and
+          the chain below already shows each step with its evidence; it moves into
+          Details ("How the exploration ran") instead of doubling the page. */}
+      {report.conclusion && (
         <div className="border-t border-zinc-800/60 pt-4 space-y-2">
           <SectionLabel>Summary</SectionLabel>
-          {report.conclusion && <p className="leading-relaxed">{report.conclusion}</p>}
-          {showNarrative && <p className="leading-relaxed text-zinc-400">{report.narrative}</p>}
+          <p className="leading-relaxed">{renderEmphasis(report.conclusion)}</p>
         </div>
       )}
 
@@ -258,8 +261,13 @@ export function ExplorationReportView({ report, subqAnswers, queryCount, connect
       {/* Machinery — recommended actions, data quality, and verification fold into one
           quiet Details toggle so the explore answer reads as a conversation, not a report
           (Option A, consistent with the quick + deep answers). */}
-      {(report.recommended_actions.length > 0 || dqNotes.length > 0 || report.verification) && (
+      {(report.recommended_actions.length > 0 || dqNotes.length > 0 || report.verification || showNarrative) && (
         <BriefDetails summary="Details">
+          {showNarrative && (
+            <BriefDetailBlock label="How the exploration ran">
+              <p className="leading-relaxed text-zinc-400">{renderEmphasis(stripPlannerNotes(report.narrative!))}</p>
+            </BriefDetailBlock>
+          )}
           {report.recommended_actions.length > 0 && (
             <BriefDetailBlock label="Recommended actions">
               <ol className="space-y-2">

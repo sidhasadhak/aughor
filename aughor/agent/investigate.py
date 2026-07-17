@@ -1327,6 +1327,32 @@ def _chart_type_for_finding(finding: dict, intent: str) -> str:
     return finding.get("chart_type") or "auto"
 
 
+# The metric SQL names its source column (SUM(tickets.fare_chf)) — the currency code
+# embedded there is the DATA's currency, which no display preference may overwrite.
+_SRC_CURRENCY_RE = re.compile(r"_(chf|usd|eur|gbp|jpy|cny|inr|aud|cad|sgd|brl|zar)\b", re.I)
+_MONEYISH_COL_RE = re.compile(r"(revenue|fare|amount|cost|price|spend|gmv|sales|value|profit|total)", re.I)
+
+
+def _tag_currency_columns(finding: dict, metric_sql: str) -> None:
+    """Carry the metric's SOURCE currency (fare_chf → CHF) on `column_units` as
+    "currency:CHF", so no surface relabels CHF data with the org's display symbol
+    (the live A/B showed a €2.0M axis beside "CHF" prose). Additive — an existing
+    unit (percent) always wins; no currency token in the SQL → no-op."""
+    m = _SRC_CURRENCY_RE.search(metric_sql or "")
+    if not m:
+        return
+    code = m.group(1).upper()
+    units = dict(finding.get("column_units") or {})
+    changed = False
+    for c in finding.get("columns") or []:
+        name = str(c)
+        if name not in units and _MONEYISH_COL_RE.search(name) and not _SHARE_COL_RE.search(name):
+            units[name] = f"currency:{code}"
+            changed = True
+    if changed:
+        finding["column_units"] = units
+
+
 def _tag_percent_columns(findings: list, match) -> None:
     """Mark every finding column whose name matches `match` (a compiled regex) as a percent on the
     finding's `column_units`, so the UI formats it the one consistent way. Additive; idempotent."""
@@ -1390,22 +1416,50 @@ def _normalize_pct_key_numbers(finding: dict) -> None:
         kn["value"] = approx + _fmt_pct(num) + tail
 
 
+def _fallback_headline(summary: str) -> str:
+    """First sentence of a phase summary as a headline, cut at a WORD boundary when
+    over length — the raw [:160] slice used to shear mid-clause ("…while the
+    lowest-ranked individual"), which read as a rendering bug in the report head."""
+    first = re.split(r"(?<=[.!?])\s", summary or "")[0].strip()
+    if len(first) <= 160:
+        return first
+    return first[:160].rsplit(" ", 1)[0].rstrip(" ,;:—-") + "…"
+
+
+def _fmt_compact_num(v: float) -> str:
+    """1951747 → '1.95M' — the compact scale every chart axis already speaks; a key
+    number sitting beside that chart must not read '1951747.00'."""
+    a = abs(v)
+    if a >= 1e9:
+        return f"{v / 1e9:.2f}B"
+    if a >= 1e6:
+        return f"{v / 1e6:.2f}M"
+    if a >= 1e3:
+        return f"{v / 1e3:.1f}K"
+    return f"{v:,.2f}" if a != int(a) else f"{int(v):,}"
+
+
+_AVG_COL_RE = re.compile(r"avg|average|per[\s_/-]|mean", re.I)
+_COUNT_COL_RE = re.compile(r"^(n|count|records|n_records|row_count)$", re.I)
+
+
 def _fix_xsec_extreme_key_numbers(finding: dict, is_pct: bool = False) -> None:
     """F4 — make the 'lowest'/'highest' key numbers agree with the finding's OWN charted rows.
     The interpret LLM occasionally reports an extreme that is not the actual min/max of the result
     set (e.g. 'highest 42.68%' when the top bar in the very same chart is 43.07%). Recompute both
-    extremes deterministically from the rows so a key number can never contradict the chart beside
-    it. Runs AFTER chart trimming, so columns are [dimension, metric]. Also strips the misleading
-    '(top N)' parenthetical — the scan is weakest-first, so these are the LOWEST values, not the top."""
+    extremes deterministically from the rows so a key number can never contradict the chart.
+
+    A cross-section grid carries TWO measures — a total (metric_total) and a per-record average —
+    so a tile is routed to its OWN column by label: an 'avg/per' tile reads the average column, a
+    'total' tile the total column. Getting this wrong is what stamped a total's extreme onto the
+    avg tile ('Poland avg/ticket: 1951747.00 (Egypt)') and left the total unformatted. Magnitudes
+    format compact (1.95M) to match the axis; the '(top N)' parenthetical is stripped (weakest-first
+    ⇒ these are the LOWEST)."""
     cols = finding.get("columns") or []
     rows = finding.get("rows") or []
     kns = finding.get("key_numbers") or []
     if len(cols) < 2 or not rows or not kns:
         return
-    midx = next((i for i, c in enumerate(cols) if _RATIO_METRIC_COL_RE.search(c)), None)
-    if midx is None:
-        midx = len(cols) - 1  # trimmed cross-section findings are [dimension, metric]
-    dim_idx = 1 if midx == 0 else 0
 
     def _num(v):
         try:
@@ -1413,28 +1467,53 @@ def _fix_xsec_extreme_key_numbers(finding: dict, is_pct: bool = False) -> None:
         except Exception:
             return None
 
-    vals = [(_num(r[midx]), r[dim_idx]) for r in rows
-            if midx < len(r) and dim_idx < len(r) and _num(r[midx]) is not None]
-    if not vals:
-        return
-    lo = min(vals, key=lambda x: x[0])
-    hi = max(vals, key=lambda x: x[0])
+    # Identify the dimension (first non-numeric), the PRIMARY total metric, and the AVG column.
+    def _is_numeric_col(i):
+        return any(_num(r[i]) is not None for r in rows[:20] if i < len(r))
+    numeric = [i for i in range(len(cols)) if _is_numeric_col(i)]
+    dim_idx = next((i for i in range(len(cols)) if i not in numeric), 0)
+    measures = [i for i in numeric if not _COUNT_COL_RE.match(str(cols[i]).strip())]
+    avg_idx = next((i for i in measures if _AVG_COL_RE.search(str(cols[i]))), None)
+    total_idx = next((i for i in measures if i != avg_idx), None)
+    # Ratio/percent metric: the total IS the rate; there is no separate avg tile.
+    ratio_idx = next((i for i in measures if _RATIO_METRIC_COL_RE.search(str(cols[i]))), None)
+    if ratio_idx is not None:
+        total_idx, avg_idx = ratio_idx, None
+
+    def _extremes(midx):
+        if midx is None:
+            return None, None
+        vals = [(_num(r[midx]), r[dim_idx]) for r in rows
+                if midx < len(r) and dim_idx < len(r) and _num(r[midx]) is not None]
+        if not vals:
+            return None, None
+        return min(vals, key=lambda x: x[0]), max(vals, key=lambda x: x[0])
+
+    total_lo, total_hi = _extremes(total_idx)
+    avg_lo, avg_hi = _extremes(avg_idx)
 
     def _reformat(template: str, num: float, dim) -> str:
-        """Replace the numeric part of the LLM's value string, preserving its unit (% / €), and
-        keep/refresh a trailing '(dimension)' so value and label stay self-consistent. For a percent
-        metric the number is formatted scale-aware (0.4096 → "41.0%"), so it can't disagree with the
-        chart, whose axis now formats the same column the same way."""
+        """Replace the numeric part of the LLM's value string, preserving its unit (% / €) and a
+        trailing '(dimension)' so value and label stay self-consistent. A percent is scale-aware
+        (0.4096 → '41.0%'); a magnitude is compact (1.95M) — matching the chart's axis, never a
+        raw '1951747.00'."""
         t = template or ""
         if is_pct:
             return f"{_fmt_pct(num)} ({dim})"
         unit = "%" if "%" in t else ""
-        return f"{num:.2f}{unit} ({dim})"
+        return f"{_fmt_compact_num(num)}{unit} ({dim})"
 
     for kn in kns:
         lbl = (kn.get("label") or "")
         low = lbl.lower()
         kn["label"] = re.sub(r"\s*\(top\s*\d+\)", "", lbl).strip()  # weakest-first ⇒ not "top"
+        # Route the tile to its own measure — an avg/per label reads the avg column, else the
+        # total. An avg tile with NO avg column in the grid is left alone: falling back to the
+        # total would stamp the total's extreme onto it — the exact bug this routing exists to fix.
+        is_avg_tile = bool(_AVG_COL_RE.search(low))
+        lo, hi = (avg_lo, avg_hi) if is_avg_tile else (total_lo, total_hi)
+        if lo is None:
+            continue
         if any(w in low for w in ("lowest", "weakest", "min")):
             kn["value"] = _reformat(kn.get("value", ""), lo[0], lo[1])
         elif any(w in low for w in ("highest", "strongest", "max", "best", "top")):
@@ -2796,6 +2875,20 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         events_section=events_section,
         origin_finding_section=origin_finding_section,
     )
+    # Loss-intent questions get a deterministic directive naming the loss signals THIS
+    # schema carries (contra-revenue / capacity columns) — a revenue ranking cannot find
+    # losses, and the live A/B showed it concluding "no losses" over 2.4M of refund
+    # leakage. Prepended so it is the topmost instruction the intake sees. Flag-gated;
+    # '' when the question/schema don't apply, so the prompt is byte-identical otherwise.
+    # The detected signals are kept (stored on _ada_intake below) so the cross-section
+    # can forward-chain the loss lenses the primary metric doesn't cover.
+    _loss_sig = None
+    from aughor.kernel.flags import flag_enabled as _loss_flag
+    if _loss_flag("intake.loss_signals"):
+        from aughor.agent.loss_signals import detect_loss_signals, directive_from_signals
+        _loss_sig = detect_loss_signals(question, schema)
+        if _loss_sig:
+            prompt = directive_from_signals(_loss_sig) + "\n" + prompt
 
     try:
         intake: IntakeOutput = _provider("coder").complete(
@@ -3154,6 +3247,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
 
     intake_dict = intake.model_dump()
     intake_dict["filtered_schema"] = filtered_schema
+    if _loss_sig:
+        # The loss signals travel with the intake so the cross-section can forward-chain
+        # the lens phases the primary metric leaves uncovered (leakage vs utilization).
+        intake_dict["loss_signals"] = _loss_sig
     if _metric_note:
         intake_dict["metric_safety_note"] = _metric_note
 
@@ -4517,6 +4614,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # large numerator/denominator aggregates; for an additive metric, plot the magnitude not its share.
     from aughor.kernel.flags import flag_enabled as _flag_enabled
     _decision_grade = _flag_enabled("lens.decision_grade")
+    _exhibit_grammar = _flag_enabled("chart.exhibit_grammar")
     for f in findings:
         if is_ratio:
             _chart_ratio_primary(f)
@@ -4530,6 +4628,9 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         _fix_xsec_extreme_key_numbers(f, is_pct=_metric_is_pct)
         # Tag % columns + canonicalise every key number's scale/precision (no-op for non-% metrics).
         _apply_percent_formatting(f, _metric_is_pct)
+        # Tag money columns with the metric's SOURCE currency (fare_chf → "currency:CHF") so the
+        # chart axis can't say € over CHF data. Percent units win; token-less SQL is a no-op.
+        _tag_currency_columns(f, metric_sql)
         # R15 — decision-grade opportunity framing: benchmark-gap × volume, computed
         # deterministically from this finding's own segment rows (no model, no extra
         # query). Flag-gated; a grid the lens can't read honestly annotates nothing.
@@ -4537,6 +4638,12 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             from aughor.agent.opportunity import annotate_opportunity
             annotate_opportunity(f, metric_label=metric_label, is_ratio=is_ratio,
                                  is_percent=_metric_is_pct)
+        # Chart-grammar exhibit — severity ramp for a rate ranking + deterministic
+        # reference lines (segment-weighted average; the R15 best-peer benchmark),
+        # computed from this finding's own rows. No model, no extra query; fail-open.
+        if _exhibit_grammar:
+            from aughor.agent.exhibit import exhibit_for_cross_section
+            exhibit_for_cross_section(f, is_ratio=is_ratio, is_percent=_metric_is_pct)
 
     # Numeric fan-out backstop — the AST chasm detectors miss some join shapes and the coder can
     # reinterpret the metric, so verify the NUMBERS on the RAW results (all columns present). Two
@@ -4637,6 +4744,13 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         _why_phase = _run_composition_lens(state, conn, _why_event_dims)
         if _why_phase:
             result_phases = result_phases + [_why_phase]
+    # Loss-playbook lenses (flag intake.loss_signals) — mirror of the multilens path, so
+    # the leakage/utilization stories run whichever cross-section variant is live. Only
+    # on the ROOT invocation: the multilens node calls this function once per partitioned
+    # lens (dims_override set) and appends the loss phases itself at merge time — running
+    # them here too duplicated the phase in the report (seen live, run b59f9bcd).
+    if dims_override is None:
+        result_phases = result_phases + _run_loss_lens_phases(state, conn)
     return {"investigation_phases": result_phases, "_cross_section_summary": summary}
 
 
@@ -5537,7 +5651,8 @@ def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", wh
         tolerate(_exc, "benchmark lens best-effort; skipped", counter="ada.benchmark_lens")
         return None
     return _lens_phase_from_run(_run, "reason_benchmark", "Reason Benchmark — Is the Cause Abnormal?",
-                                "📊", "benchmark", metric_label, "Reason benchmark computed.")
+                                "📊", "benchmark", metric_label, "Reason benchmark computed.",
+                                peer_median_ref=True)
 
 
 def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_summary: str) -> Optional[dict]:
@@ -5591,7 +5706,8 @@ def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_su
 
 
 def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: str,
-                         metric_label: str, empty_summary: str) -> Optional[dict]:
+                         metric_label: str, empty_summary: str,
+                         peer_median_ref: bool = False) -> Optional[dict]:
     """Shared tail for the forward-chained WHY lenses (benchmark/drill): assemble findings from a
     completed `run_analysis_phase`, tag percent/share columns, and wrap as a phase. Mirrors the
     composition lens's tail. Returns the error phase on failure, None only if there's nothing."""
@@ -5612,13 +5728,79 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
         ]
         summary = empty_summary
     _tag_percent_columns(findings, re.compile(r"share|pct|percent|_of_total", re.I))
+    from aughor.kernel.flags import flag_enabled as _fe
+    _grammar = _fe("chart.exhibit_grammar")
     for _f in findings:
         _normalize_pct_key_numbers(_f)
         _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+        # Chart-grammar exhibit: severity ramp on the share ranking; the benchmark
+        # lens also draws the peer median its whole point is to compare against.
+        if _grammar:
+            from aughor.agent.exhibit import exhibit_for_lens
+            exhibit_for_lens(_f, peer_median=peer_median_ref)
     return _phase_result(
         phase_id, title, emoji,
         "complete" if any(not f["error"] for f in findings) else "partial", summary, findings,
     )
+
+
+def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list[dict]:
+    """Forward-chained LOSS lenses (flag `intake.loss_signals`): one investigation
+    carries ONE primary metric, so a 'losing money' run that (correctly) picked
+    utilization leaves the leakage story untold — and vice versa. Every signal class
+    the intake detected but the primary metric doesn't cover gets its own phase via
+    the shared plan→execute→interpret harness, which buys percent tagging, ranking
+    chart types and the exhibit grammar through `_lens_phase_from_run`. Deterministic
+    gating; fail-open — a lens that can't run contributes nothing."""
+    try:
+        from aughor.kernel.flags import flag_enabled as _fe
+        if not _fe("intake.loss_signals"):
+            return []
+        intake_data = state.get("_ada_intake") or {}
+        sig = intake_data.get("loss_signals") or {}
+        if not sig:
+            return []
+        from aughor.agent.loss_signals import lens_specs
+        blob = f"{intake_data.get('metric_label', '')} {intake_data.get('metric_sql', '')}"
+        specs = lens_specs(sig, blob)
+        if not specs:
+            return []
+        question = state["question"]
+        schema = _with_ledger(state, intake_data.get("filtered_schema")
+                              or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+        phases: list[dict] = []
+        for spec in specs:
+            try:
+                _run = run_analysis_phase(
+                    conn, phase_id=spec["phase_id"], title=spec["title"], emoji=spec["emoji"],
+                    cap=2, schema=schema,
+                    plan_system=spec["plan_system"] + _ADA_SQL_GROUNDING,
+                    plan_user=(f"QUESTION: {question}\n\nSCHEMA:\n{schema}\n\n{spec['plan_ask']}"),
+                    interpret_system=spec["interpret_system"],
+                    interpret_user_fn=(lambda results_text, _t=spec["title"]:
+                                       f"QUESTION: {question}\n\n{_t.upper()}:\n{results_text}\n\n"
+                                       "Lead with the quantified verdict. Never claim profitability "
+                                       "or 'no losses' — cost data is absent."),
+                    plan_error_msg=f"{spec['kind']} planning failed.",
+                    exec_error_msg=f"{spec['kind']} query failed.",
+                    question=question, connection_id=state.get("connection_id", ""),
+                    grounding_block=intake_data.get("data_understanding_block"),
+                )
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, f"loss lens '{spec['kind']}' best-effort; skipped",
+                         counter=spec["counter"])
+                continue
+            ph = _lens_phase_from_run(_run, spec["phase_id"], spec["title"], spec["emoji"],
+                                      spec["fprefix"], spec["metric_label"],
+                                      f"{spec['title']} computed.")
+            if ph:
+                phases.append(ph)
+        return phases
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "loss lens phases best-effort; skipped", counter="ada.loss_lens")
+        return []
 
 
 def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -> dict:
@@ -5794,6 +5976,15 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
             if _ph:
                 merged.append(_ph)
                 _extras.append(label)
+
+    # Loss-playbook lenses (flag intake.loss_signals): the leakage/utilization phases the
+    # primary metric left uncovered — independent of the WHY chain, appended last so the
+    # narrative reads scan → causes → the other loss stories.
+    for _lp in _run_loss_lens_phases(state, conn):
+        if any(p.get("phase_id") == _lp.get("phase_id") for p in merged):
+            continue    # defensive: never show the same loss story twice
+        merged.append(_lp)
+        _extras.append(_lp.get("phase_id", "loss"))
 
     _lens_logger.info("[ada] multilens ran %d lens(es)%s%s → %d phase(s)",
                       len(specs), (" + period drill" if anomalous else ""),
@@ -6314,7 +6505,7 @@ def ada_synthesize(state: AgentState) -> dict:
                       if p.get("phase_id") != "intake"
                       and p.get("status") not in ("skipped", "error")
                       and _clean(p.get("summary"))]
-        _headline = re.split(r"(?<=[.!?])\s", _summaries[0])[0][:160] if _summaries \
+        _headline = _fallback_headline(_summaries[0]) if _summaries \
             else "Investigation complete — see the phase findings below."
         _exec = (" ".join(_summaries))[:900] or "See the individual phase findings below for details."
         answer_report = AnswerReport(

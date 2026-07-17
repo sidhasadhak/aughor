@@ -103,6 +103,36 @@ export function isDeadColumn(rows: unknown[][], colIdx: number): boolean {
  *  used by both `inferChartType` (type selection) and `Chart.tsx` (rendering), so the two can't drift.
  *  A date is a date-NAME or a date-VALUE prefix; a numeric is a non-date, non-id numeric value; every
  *  other non-dead column is a category. */
+// ── ungraphable grid shapes (chart-grammar gates; mirror aughor/export/charts.py) ──
+// A summary-statistics PROFILE grid (min/max/mean/std/p1…p99 per column) and an
+// ID-labelled record grid with 3+ heterogeneous measures are TABLES, never charts —
+// stacked/grouped bars over them say nothing (the W5 A/B caught both live).
+const STAT_COL_RE = /^(min|max|mean|avg|std|stddev|median|p\d{1,2})(_val(ue)?)?$/i;
+
+/** True when the grid has no honest chart — the shapes the chart grammar sends to a
+ *  TABLE. Shared by inference (auto path), the renderer, and the answer card (which
+ *  flips its default view to table). Mirrors aughor/export/charts.py; keep in sync.
+ *    · stats profile (≥3 min/max/mean/std/p-cols)
+ *    · wide profile (≥4 measures — a chart can't say four things about one row)
+ *    · entity profile (≥3 measures whose only real label is an ID)
+ *    · no-label grid (≥3 measures and NO distinguishing label column at all)
+ *    · degenerate x (>1 rows but every category column holds ONE value — a chart
+ *      with a single x position is one lying bar, e.g. "loyalty_members at 100%") */
+export function isUngraphableGrid(columns: string[], rows: unknown[][]): boolean {
+  const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows);
+  const statCols = numericIdxs.filter((i) => STAT_COL_RE.test((columns[i] || "").trim()));
+  if (statCols.length >= 3) return true;
+  if (numericIdxs.length >= 4 && dateIdxs.length === 0) return true;
+  if (dateIdxs.length === 0 && catIdxs.length > 0) {
+    // A "real" label column distinguishes rows (a near-constant flag column doesn't).
+    const labelish = catIdxs.filter((i) => new Set(rows.map((r) => String((r as unknown[])[i]))).size > 2);
+    if (numericIdxs.length >= 3 && (labelish.length === 0 || labelish.every((i) => isIdLike(columns[i] || "")))) return true;
+    if (rows.length > 1 && numericIdxs.length > 0
+        && catIdxs.every((i) => new Set(rows.map((r) => String((r as unknown[])[i]))).size <= 1)) return true;
+  }
+  return false;
+}
+
 export function classifyColumns(
   columns: string[],
   rows: unknown[][],

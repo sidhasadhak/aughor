@@ -8,6 +8,7 @@ renderer. The two never touch each other.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -87,11 +88,13 @@ def _round_cell(v):
     return v
 
 
-def _chart_or_table(columns, rows, chart_type, title) -> list[Block]:
+def _chart_or_table(columns, rows, chart_type, title, units=None, exhibit=None,
+                    money_symbol: str = "") -> list[Block]:
     """Render a chart if the data supports it; always include the data table too
     (capped) so the document carries the underlying numbers."""
     out: list[Block] = []
-    png = render_chart(columns or [], rows or [], chart_type or "auto", title)
+    png = render_chart(columns or [], rows or [], chart_type or "auto", title,
+                       units=units, exhibit=exhibit, money_symbol=money_symbol)
     if png:
         out.append(Block("chart", png=png, caption=title))
     if columns and rows:
@@ -100,7 +103,8 @@ def _chart_or_table(columns, rows, chart_type, title) -> list[Block]:
     return out
 
 
-def _exhibit_argument(columns, rows, chart_type, title) -> list[Block]:
+def _exhibit_argument(columns, rows, chart_type, title, units=None, exhibit=None,
+                      money_symbol: str = "") -> list[Block]:
     """R16 P1 — ONE exhibit per claim, and only when it informs.
 
     A degenerate result (fewer than two rows: the 1-bar chart, the single-point
@@ -111,7 +115,8 @@ def _exhibit_argument(columns, rows, chart_type, title) -> list[Block]:
     if not columns or len(rows) < 2:
         return []
     if (chart_type or "auto") != "none":
-        png = render_chart(columns, rows, chart_type or "auto", title)
+        png = render_chart(columns, rows, chart_type or "auto", title, units=units,
+                           exhibit=exhibit, money_symbol=money_symbol)
         if png:
             return [Block("chart", png=png, caption=title)]
     table_rows = [[_round_cell(v) for v in row] for row in rows[:8]]
@@ -152,7 +157,72 @@ def _build_chat(inv: dict) -> ExportDoc:
     return ExportDoc(title=headline, subtitle=inv.get("question") or "", meta=meta, kind="chat", blocks=blocks)
 
 
-def _build_ada(inv: dict) -> ExportDoc:
+def _strip_planner_notes(text: str) -> str:
+    """Strip the explore wave's internal planner directives from reader-facing prose:
+    paragraphs/lines beginning with "→" are forward-chaining notes to the NEXT question
+    ("→ Q5 should investigate…") — process, not analysis. Mirrors web/lib/format.ts."""
+    kept = []
+    for p in re.split(r"\n{2,}", text or ""):
+        if p.strip().startswith("→"):
+            continue        # a directive paragraph goes whole, wrapped lines included
+        lines = [ln for ln in p.split("\n") if not ln.strip().startswith("→")]
+        if "\n".join(lines).strip():
+            kept.append("\n".join(lines))
+    return "\n\n".join(kept).strip()
+
+
+def _build_explore(inv: dict, money_symbol: str = "") -> ExportDoc:
+    """The explore-wave 'landscape' report (R9/R13: narrative → one section per
+    sub-question with its own evidence → conclusion → actions).
+
+    This shape had NO builder — it fell through to `_build_chat`, which reads only
+    inv-level columns/rows (absent on a wave), so the export dropped every chart and
+    shipped a 2-page text note. Found by the W5 chart-grammar A/B: the outlier-entities
+    starter routes here, and its Databricks reference report is exactly this shape."""
+    rep = inv.get("report") or {}
+    headline = rep.get("headline") or inv.get("question") or "Exploration"
+    answers = rep.get("subq_answers") or []
+    meta = [m for m in (
+        inv.get("connection_id") or "",
+        _date(inv.get("completed_at") or inv.get("started_at")),
+        f"{len(answers)} questions explored" if answers else "",
+    ) if m]
+    from aughor.kernel.flags import flag_enabled
+    _argument = flag_enabled("report.argument_style")
+    _exhibits = _exhibit_argument if _argument else _chart_or_table
+    _money_sym = money_symbol
+
+    blocks: list[Block] = []
+    if rep.get("narrative"):
+        blocks.append(_h("What the exploration found"))
+        blocks.append(_p(_strip_planner_notes(rep["narrative"])))
+    for a in answers:
+        if a.get("error"):
+            continue
+        title = (a.get("question") or "").strip() or "Exploration step"
+        blocks.append(_h(title))
+        prose = _strip_planner_notes((a.get("insight") or a.get("answer") or "").strip())
+        if prose:
+            blocks.append(_p(prose))
+        blocks.extend(_exhibits(a.get("columns"), a.get("rows"), a.get("chart_type") or "auto",
+                                title, units=a.get("column_units"), exhibit=a.get("exhibit"),
+                                money_symbol=_money_sym))
+    if rep.get("conclusion"):
+        blocks.append(_h("Conclusion"))
+        blocks.append(_p(rep["conclusion"]))
+    if rep.get("recommended_actions"):
+        blocks.append(_h("Recommended actions"))
+        blocks.append(Block("recs", recs=[{"action": a} for a in rep["recommended_actions"]]))
+    dq = rep.get("data_quality_notes") or []
+    if dq:
+        blocks.append(_h("Data quality notes"))
+        blocks.append(_bul([str(n) if not isinstance(n, dict)
+                            else f"{n.get('table') or ''}: {n.get('issue') or ''}" for n in dq]))
+    return ExportDoc(title=headline, subtitle=inv.get("question") or "", meta=meta,
+                     kind="explore", blocks=blocks)
+
+
+def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
     """The structured 'Deep Analysis' report (ADA: metric → phases → findings →
     attribution → recommendations). Charts live right on each finding."""
     rep = inv.get("report") or {}
@@ -184,6 +254,7 @@ def _build_ada(inv: dict) -> ExportDoc:
     # section. Flag off → the legacy composition, byte-identical.
     from aughor.kernel.flags import flag_enabled
     _argument = flag_enabled("report.argument_style")
+    _money_sym = money_symbol
     _nm = lambda s: (s or "").replace("*", "")  # noqa: E731 — strip model markdown
     opportunities: list[dict] = []
 
@@ -193,7 +264,11 @@ def _build_ada(inv: dict) -> ExportDoc:
         if _argument and (ph.get("phase_id") or "") == "intake":
             continue
         blocks.append(_h(str(ph.get("phase_name") or ph.get("phase_id") or "Phase").strip()))
-        if ph.get("summary"):
+        # The deterministic synthesis fallback STITCHES phase summaries into the executive
+        # summary — re-printing one here reads the same paragraph twice. Skip what the head
+        # already carries (whitespace/emphasis-insensitive containment).
+        _n = lambda s: re.sub(r"\s+", " ", re.sub(r"\*+", "", s or "")).strip()
+        if ph.get("summary") and _n(ph["summary"]) not in _n(rep.get("executive_summary") or ""):
             blocks.append(_p(ph["summary"]))
         for f in ph["findings"]:
             if f.get("error"):
@@ -224,10 +299,18 @@ def _build_ada(inv: dict) -> ExportDoc:
                     KeyNumber(_nm(k.get("label", "")), _nm(k.get("value", "")), _nm(k.get("delta")) or None, _nm(k.get("context")) or None)
                     for k in kns
                 ]))
+            # The finding's own display contract travels with it: `column_units` so a rate
+            # prints "74.5%" in the PDF exactly as on screen, and the chart-grammar `exhibit`
+            # (severity ramp · reference lines · point labels). Both absent → unchanged output.
+            _u, _x = f.get("column_units"), f.get("exhibit")
             if _argument:
-                blocks.extend(_exhibit_argument(f.get("columns"), f.get("rows"), f.get("chart_type"), f.get("title") or ""))
+                blocks.extend(_exhibit_argument(f.get("columns"), f.get("rows"), f.get("chart_type"),
+                                                f.get("title") or "", units=_u, exhibit=_x,
+                                                money_symbol=_money_sym))
             else:
-                blocks.extend(_chart_or_table(f.get("columns"), f.get("rows"), f.get("chart_type"), f.get("title") or ""))
+                blocks.extend(_chart_or_table(f.get("columns"), f.get("rows"), f.get("chart_type"),
+                                              f.get("title") or "", units=_u, exhibit=_x,
+                                              money_symbol=_money_sym))
 
     # R16 P1 — the decision paragraph: gap-to-benchmark × volume, in prose,
     # right where a reader decides (before Recommendations).
@@ -244,10 +327,14 @@ def _build_ada(inv: dict) -> ExportDoc:
     wf = rep.get("attribution_waterfall") or []
     if wf:
         blocks.append(_h("Attribution"))
+        # A waterfall entry's share is SIGNED (what pushed the metric up vs down), and the
+        # web already colours it by sign — the PDF used to flatten every cause to one hue,
+        # so a reader couldn't tell a driver from an offset without reading the bullets.
         png = render_chart(
             ["cause", "share"],
             [[w.get("cause", ""), w.get("pct_of_total", 0)] for w in wf],
             "bar", "Share of total change",
+            units={"share": "percent"}, exhibit={"color": {"mode": "sign"}},
         )
         if png:
             blocks.append(Block("chart", png=png, caption="Share of the total change, by cause"))
@@ -325,7 +412,7 @@ def _build_analysis(inv: dict) -> ExportDoc:
     return ExportDoc(title=headline, subtitle=inv.get("question") or "", meta=meta, kind="investigation", blocks=blocks)
 
 
-def build_export_doc(inv: dict, *, narrate: bool = False) -> ExportDoc:
+def build_export_doc(inv: dict, *, narrate: bool = False, money_symbol: str = "") -> ExportDoc:
     """Dispatch on the report's actual shape → an ExportDoc.
 
     The stored `kind` is a coarse hint; the report dict's own `_report_type` /
@@ -333,13 +420,18 @@ def build_export_doc(inv: dict, *, narrate: bool = False) -> ExportDoc:
     rep = inv.get("report") or {}
     if rep.get("_report_type") == "investigate" or "phases" in rep:
         builder = _build_ada
+    elif rep.get("_report_type") == "explore" or "subq_answers" in rep:
+        builder = _build_explore
     elif "verdict" in rep or "key_findings" in rep:
         builder = _build_analysis
     elif (inv.get("kind") or "chat") == "chat":
         builder = _build_chat
     else:
         builder = _build_chat
-    doc = builder(inv)
+    # `money_symbol` (caller-resolved: the connection's effective currency, matching the
+    # web's fallback) reaches only the builders that render charts — the platform-side
+    # export never resolves it itself (Platform must not import Agent; the caller injects).
+    doc = builder(inv, money_symbol) if builder in (_build_ada, _build_explore) else builder(inv)
     if narrate:
         summary = _llm_executive_summary(inv, doc)
         if summary:
