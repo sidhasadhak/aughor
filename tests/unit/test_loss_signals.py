@@ -70,6 +70,21 @@ def test_ordinary_temporal_questions_are_not_hijacked():
         assert detect_loss_signals(q, _SCHEMA) is None, q
 
 
+def test_utilization_claim_is_pinned_to_a_low_cardinality_grouping():
+    """The A/B's finding, test-locked. "The most decision-relevant segment" let the
+    planner group the claim by route_id (84 routes, 0/4 material); naming the grain
+    explicitly took it to 4/4 at the haul level. The evidence query keeps the named
+    units, so the group carries the claim and the routes illustrate it."""
+    util = [s for s in lens_specs({"capacity": ["total_seats"]}, "net revenue")
+            if s["kind"] == "utilization"][0]
+    ps = util["plan_system"]
+    assert "LOW-CARDINALITY" in ps and "THE CLAIM" in ps
+    assert "NEVER group the claim by a high-cardinality identifier" in ps
+    assert "THE EVIDENCE" in ps and "LIMIT 10" in ps
+    # The grain guard that held across both arms must survive the rewrite.
+    assert "COUNT CAPACITY EXACTLY ONCE" in ps
+
+
 def test_utilization_spec_declares_a_sound_opportunity_and_leakage_does_not():
     """The utilization grid's `n` IS its rate's denominator, so gap x volume is
     unit-correct. The leakage grid's `n` is COUNT(*) while the denominator is gross —

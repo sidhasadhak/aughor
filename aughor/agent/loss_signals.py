@@ -142,17 +142,32 @@ def lens_specs(sig: dict | None, primary_metric_blob: str) -> list[dict]:
             "fprefix": "utilization",
             "metric_label": "utilization",
             "counter": "ada.loss_utilization_lens",
+            # The grouping is the whole ballgame, and "the most decision-relevant segment"
+            # lost it: an A/B on the real airline workspace (n=4/arm) had the planner pick
+            # route_id — 84 routes — every single time, where no one route is material and
+            # the opportunity is 0/4. Naming the claim's grain explicitly flips it to 4/4
+            # at the haul level, which is also how the reference report framed it: the
+            # GROUP carries the claim ("long-haul routes are under-filled") and the named
+            # units are its evidence. Grain discipline held in both arms (no rate >100%).
             "plan_system": (
                 "You are planning a capacity-UTILIZATION scan: paid units against available "
                 "capacity. Plan AT MOST 2 queries. "
-                "(1) Utilization by the most decision-relevant segment: for each segment value, "
-                "100.0 * SUM(<units sold>) / NULLIF(SUM(<capacity>), 0) AS metric_total, plus "
-                "the capacity as n. COUNT CAPACITY EXACTLY ONCE per carrier unit (per flight / "
-                "slot / store) — joining capacity through a per-sale table multiplies it and "
-                "corrupts the rate; aggregate each side at its own grain, then combine. ORDER "
-                "BY metric_total ASC (the emptiest first). Return exactly three columns: the "
-                "segment, metric_total, n. "
-                "(2) The overall utilization as one row for context."),
+                "(1) THE CLAIM — utilization by a LOW-CARDINALITY grouping: a categorical "
+                "column with a HANDFUL of distinct values naming a CLASS of operation (haul, "
+                "cabin, aircraft type, region, service level). NEVER group the claim by a "
+                "high-cardinality identifier (route id, flight number, SKU, customer) — "
+                "benchmarking one identifier against another compares two specks of the "
+                "business, and no single one of hundreds is material enough to act on. For "
+                "each group: 100.0 * SUM(<units sold>) / NULLIF(SUM(<capacity>), 0) AS "
+                "metric_total, plus the capacity as n. COUNT CAPACITY EXACTLY ONCE per "
+                "carrier unit (per flight / slot / store) — joining capacity through a "
+                "per-sale table multiplies it and corrupts the rate; aggregate each side at "
+                "its own grain, then combine. ORDER BY metric_total ASC (the emptiest "
+                "first). Return exactly three columns: the group, metric_total, n. "
+                "(2) THE EVIDENCE — the same rate for the individual named units (routes / "
+                "flights / stores), same three columns, same grain discipline, ORDER BY "
+                "metric_total ASC LIMIT 10, so the weakest group's claim can be illustrated "
+                "by name."),
             "plan_ask": (
                 "Which segments run the lowest utilization (paid units vs available capacity), "
                 "and what is the overall level? "
