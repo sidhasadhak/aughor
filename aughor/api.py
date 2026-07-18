@@ -610,6 +610,7 @@ from aughor.routers import (  # noqa: E402
     packs as packs_router,
     receipt as receipt_router,
     agui,
+    dashboard,
 )
 
 app.include_router(system.router)
@@ -644,3 +645,4 @@ app.include_router(packs_router.router)
 app.include_router(roles_router.router)
 app.include_router(receipt_router.router)
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
+app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)

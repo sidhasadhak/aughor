@@ -60,6 +60,8 @@ for _env, _file in (
     ("AUGHOR_SAMPLES_DB", "samples.duckdb"),
     # R14 — the query-popularity counter store (born hermetic like the R11 tree).
     ("AUGHOR_POPULARITY_DB", "popularity.db"),
+    # Briefing-cockpit — user-authored dashboard cards (born hermetic).
+    ("AUGHOR_DASHBOARD_DB", "dashboard_cards.db"),
 ):
     os.environ.setdefault(_env, os.path.join(_test_stores_dir, _file))
 
