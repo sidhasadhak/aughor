@@ -1,7 +1,7 @@
 # The Self-Explaining Briefing — Argument Graph + Co-authored Cockpit
 
-**Design doc · 2026-07-18 · Status: Slice 0 + Slice 1 BUILT & live-verified on branch
-`2026-07-18-briefing-cockpit` (not pushed); Slices 2–4 pending — see §10.**
+**Design doc · 2026-07-18 · Status: Slices 0 + 1 + 2 BUILT & live-verified on branch
+`2026-07-18-briefing-cockpit` (not pushed); Slices 3–4 pending — see §10.**
 Build is gated slice-by-slice in §10; nothing here ships until a v1 slice is picked.
 
 All file:line references below were verified against the current tree on 2026-07-18. Where a
@@ -322,7 +322,18 @@ Each slice is independently shippable, flag-gated, and verified on a real briefi
   `seriesTrend`/`Sparkline` for time-shaped findings; a bounded cross-cycle value history for
   scalars) + a per-card **Refresh** button. *Verified live:* a "GMV by month" card renders a
   60-month sparkline reading `565,875  −3.9% MoM`.
-- **Slice 2 — Door 2.** Query Builder "Pin to dashboard." *Proves:* the second door on the same Card.
+- **✅ Slice 2 — Door 2. DONE.** Query Builder "Pin to dashboard." New `POST /cards/pin-query`
+  (guard-on-write) + a `pinQueryToDashboard` client + a "Pin" control beside Save in the
+  Query Builder toolbar (name popover; `kind` derived server-side: scalar→kpi, grouped→chart;
+  the chosen render spec is stored opaque). Refactored the guard/preview/clip into three shared
+  helpers (`_guarded_or_refuse` / `_preview` / `_clip_title`) so **both doors run the identical
+  trust gate** — Door 1 stays behavior-identical (its 5 tests still green). *Proves:* the second
+  door on the same Card, and that user-authored SQL gets the same guarantee as a finding.
+  *Verified live (real luxexperience DB + real guard battery):* a scalar pin stored as a `kpi`
+  (35,136 customers), a grouped pin as a `chart` (6 regions), a `SUM(varchar)` **refused 422**
+  (Binder Error) and a `DELETE` **refused 422** (`[BLOCKED]`) with nothing stored — and both
+  clean cards appeared on the exact `scope=connection` list `PinnedCards` reads. The new Pin
+  button renders in the live Query Builder toolbar next to Save.
 - **Slice 3 — argument-graph lens.** Un-orphan the edges + render the map as a React Flow lens
   (linear stays default). *Proves:* the narrative-as-graph, reusing drill wiring.
 - **Slice 4 — Door 3 + connective tissue.** Inline authoring + `relates_to` edges (card↔finding) +

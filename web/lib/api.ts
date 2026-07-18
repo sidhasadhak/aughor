@@ -1426,6 +1426,37 @@ export async function pinInsightToDashboard(
   return res.json();
 }
 
+/** Pin a Query-Builder query as a dashboard card (Door 2). The backend re-runs the
+ *  user-authored SQL through the guard battery and refuses (throws) if it errors or is
+ *  BLOCKED — the same trust gate as Door 1, now on hand-written SQL. `render` is the opaque
+ *  Chart spec the card draws with; `kind` (kpi/chart) is derived server-side from the shape. */
+export async function pinQueryToDashboard(
+  connectionId: string,
+  sql: string,
+  title: string,
+  opts: { scope?: string; scopeRef?: string; schema?: string; render?: Record<string, unknown>; queryRef?: string } = {},
+): Promise<{ card: DashboardCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
+  const res = await fetch(`${BASE}/cards/pin-query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      connection_id: connectionId,
+      sql,
+      title,
+      scope: opts.scope ?? "connection",
+      scope_ref: opts.scopeRef ?? connectionId,
+      schema: opts.schema,
+      render: opts.render ?? {},
+      query_ref: opts.queryRef,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to pin to dashboard"));
+  }
+  return res.json();
+}
+
 export async function listDashboardCards(
   opts: { connectionId?: string; scope?: string; scopeRef?: string } = {},
 ): Promise<DashboardCard[]> {

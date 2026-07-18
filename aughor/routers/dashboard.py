@@ -8,7 +8,7 @@ pin-from-insight / Query-Builder convenience doors that compose this primitive.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -61,6 +61,66 @@ def delete_card_route(card_id: str) -> None:
         raise HTTPException(status_code=404, detail="Card not found")
 
 
+# ── Guard-on-write: the shared trust gate every authoring door runs through ──
+
+def _clip_title(title: str, fallback: str) -> str:
+    """A human card label: the given title (or the fallback when blank), clipped to ~120 chars."""
+    t = (title or "").strip() or fallback
+    return (t[:117].rstrip() + "…") if len(t) > 120 else t
+
+
+def _preview(result) -> dict:
+    """A bounded, stringified snapshot of a guarded result for the pin response."""
+    return {
+        "columns": result.columns or [],
+        "rows": [[str(c) for c in r] for r in (result.rows or [])[:20]],
+        "row_count": result.row_count,
+    }
+
+
+def _scalar(result) -> Optional[float]:
+    """A single numeric cell → the card's tracked value; else None (chart/table card)."""
+    if result.error or result.row_count != 1 or len(result.columns or []) != 1:
+        return None
+    try:
+        return float((result.rows or [[None]])[0][0])
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def _guarded_or_refuse(
+    connection_id: str, sql: str, *, query_id: str, schema: Optional[str] = None
+):
+    """Open the connection, run `sql` through the deterministic guard battery, and either
+    return the clean QueryResult or refuse. A leadership dashboard never stores a card it
+    couldn't run cleanly: a connection that won't open is a 404, and a query that errors or is
+    BLOCKED by a guard is a 422 — nothing is persisted either way. Shared by every authoring
+    door so a Query-Builder pin carries the exact same trust guarantee as a pinned finding.
+    """
+    from aughor.db.connection import open_connection_for, open_connection_for_with_schema
+    from aughor.sql.executor import execute_guarded
+
+    try:
+        db = (
+            open_connection_for_with_schema(connection_id, schema_name=schema)
+            if schema else open_connection_for(connection_id)
+        )
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
+    try:
+        result = execute_guarded(db, sql, query_id=query_id, schema=schema)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+    if result.error:
+        raise HTTPException(
+            status_code=422, detail=f"Query failed the trust guards, not pinned: {result.error}"
+        )
+    return result
+
+
 # ── Door 1: pin a briefing finding as a card ─────────────────────────────────
 
 class PinInsightRequest(BaseModel):
@@ -87,8 +147,6 @@ def pin_insight_route(req: PinInsightRequest) -> dict:
     source finding + its receipt, plus a live preview and any unrepaired guard caveats.
     """
     from aughor.routers.exploration import _domain_insights_for, _store_key
-    from aughor.db.connection import open_connection_for, open_connection_for_with_schema
-    from aughor.sql.executor import execute_guarded
 
     # 1) Resolve the finding (same source as the brief) and require a runnable query.
     by_domain = _domain_insights_for(req.connection_id, req.schema_name)
@@ -102,43 +160,25 @@ def pin_insight_route(req: PinInsightRequest) -> dict:
     if not sql:
         raise HTTPException(status_code=422, detail="This finding has no query to pin (profile-only fact)")
 
-    # 2) Open the (canvas-scoped) connection.
+    # 2) Guard-on-write, on the canvas-scoped schema (refuses 422 if it can't run cleanly).
     use_schema = (
         req.schema_name
         if (req.schema_name and _store_key(req.connection_id, req.schema_name) != req.connection_id)
         else None
     )
-    try:
-        db = (
-            open_connection_for_with_schema(req.connection_id, schema_name=use_schema)
-            if use_schema else open_connection_for(req.connection_id)
-        )
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
+    result = _guarded_or_refuse(
+        req.connection_id, sql, query_id=f"pin:{req.insight_id}", schema=use_schema
+    )
 
-    # 3) Guard-on-write: a leadership dashboard never stores a card it couldn't run cleanly.
-    try:
-        result = execute_guarded(db, sql, query_id=f"pin:{req.insight_id}", schema=use_schema)
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
-    if result.error:
-        raise HTTPException(status_code=422, detail=f"Query failed the trust guards, not pinned: {result.error}")
-
-    # 4) Build + store the card, linked to the source finding (graph edge) + its receipt.
+    # 3) Build + store the card, linked to the source finding (graph edge) + its receipt.
     finding = (insight.get("finding") or "").strip()
-    title = req.title or finding or "Pinned finding"
-    if len(title) > 120:
-        title = title[:117].rstrip() + "…"
     saved = upsert_card(DashboardCard(
         connection_id=req.connection_id,
         scope=req.scope,
         scope_ref=req.scope_ref,
         source="insight",
         kind=req.kind,
-        title=title,
+        title=_clip_title(req.title or finding, "Pinned finding"),
         sql=sql,
         provenance=CardProvenance(
             insight_id=req.insight_id,
@@ -146,28 +186,61 @@ def pin_insight_route(req: PinInsightRequest) -> dict:
         ),
         links=[req.insight_id],
     ))
-    return {
-        "card": saved.model_dump(),
-        "preview": {
-            "columns": result.columns or [],
-            "rows": [[str(c) for c in r] for r in (result.rows or [])[:20]],
-            "row_count": result.row_count,
-        },
-        "caveats": result.caveats or [],
-    }
+    return {"card": saved.model_dump(), "preview": _preview(result), "caveats": result.caveats or []}
+
+
+# ── Door 2: pin a Query-Builder query as a card ──────────────────────────────
+
+class PinQueryRequest(BaseModel):
+    """Pin an ad-hoc Query-Builder query as a card. Unlike Door 1 the SQL is user-authored, so
+    the guard-on-write battery is the whole point: a bad join or mis-grained aggregate is
+    refused (422) before it can ever become a leadership KPI. `render` is the opaque
+    frontend-owned Chart spec; `kind` is derived from the result shape, not trusted from the
+    client."""
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    sql: str
+    title: Optional[str] = None
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+    scope: str = "connection"
+    scope_ref: str = ""                              # defaults to connection_id (the cockpit)
+    render: Dict[str, Any] = Field(default_factory=dict)
+    query_ref: Optional[str] = None                  # optional link to the SavedQuery it came from
+
+
+@router.post("/cards/pin-query", status_code=201)
+def pin_query_route(req: PinQueryRequest) -> dict:
+    """Pin a Query-Builder query as a dashboard card (the "from Query Builder" door).
+
+    Runs the user's SQL through the SAME guard battery as a pinned finding, refusing (422)
+    anything that errors or is BLOCKED — so the second authoring door carries the identical
+    trust guarantee as the first, now on user-authored SQL. `kind` is derived from the result
+    shape (a single numeric cell → kpi, otherwise chart); the render spec is stored opaque for
+    the card to draw and the card lands on the connection's cockpit.
+    """
+    sql = (req.sql or "").strip()
+    if not sql:
+        raise HTTPException(status_code=422, detail="No query to pin")
+
+    result = _guarded_or_refuse(
+        req.connection_id, sql, query_id="pin-query", schema=req.schema_name or None
+    )
+
+    saved = upsert_card(DashboardCard(
+        connection_id=req.connection_id,
+        scope=req.scope,
+        scope_ref=req.scope_ref or req.connection_id,
+        source="query_builder",
+        kind="kpi" if _scalar(result) is not None else "chart",
+        title=_clip_title(req.title or "", "Pinned query"),
+        sql=sql,
+        query_ref=req.query_ref,
+        render=req.render or {},
+    ))
+    return {"card": saved.model_dump(), "preview": _preview(result), "caveats": result.caveats or []}
 
 
 # ── Run / refresh a card's value ─────────────────────────────────────────────
-
-def _scalar(result) -> Optional[float]:
-    """A single numeric cell → the card's tracked value; else None (chart/table card)."""
-    if result.error or result.row_count != 1 or len(result.columns or []) != 1:
-        return None
-    try:
-        return float((result.rows or [[None]])[0][0])
-    except (TypeError, ValueError, IndexError):
-        return None
-
 
 @router.post("/cards/{card_id}/run")
 def run_card_route(card_id: str) -> dict:

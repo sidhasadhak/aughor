@@ -6,6 +6,7 @@ import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
   createCanvas, updateCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
   listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery, runSemanticOp, decompileSql,
+  pinQueryToDashboard,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
   type CatalogEntry, type SavedQuery, type Canvas, type SemanticOpResult, type SemanticOpRequest,
   type DecompiledQuery,
@@ -1117,6 +1118,11 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
   const [showSaveName, setShowSaveName] = useState(false);
   const [saveName,    setSaveName]    = useState("");
   const [savingState, setSavingState] = useState<"idle"|"saving"|"saved">("idle");
+  // Pin to the briefing cockpit (Door 2) — the query is re-guarded on save, so a bad one is refused.
+  const [showPinName, setShowPinName] = useState(false);
+  const [pinName,     setPinName]     = useState("");
+  const [pinState,    setPinState]    = useState<"idle"|"pinning"|"pinned">("idle");
+  const [pinError,    setPinError]    = useState<string|null>(null);
 
   useEffect(() => { getMetrics().then(setMetrics).catch(()=>{}); }, []);
   useEffect(() => {
@@ -1591,6 +1597,32 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
     xTitle: xTitle || undefined,
     yTitle: yTitle || undefined,
   };
+
+  // ── Pin to briefing cockpit (Door 2) ────────────────────────────────────────
+  // Persist the current query + chosen render as a DashboardCard on this connection's
+  // cockpit. The backend re-runs the SQL through the guard battery and refuses a bad one,
+  // so a fabricated or mis-grained KPI can never be pinned.
+  const onPinClick = () => {
+    if (!sql.trim() || !connId) return;
+    setPinError(null);
+    setPinName(chartTitle.trim() || suggestedName());
+    setShowPinName(true);
+  };
+  const doPinQuery = async (name: string) => {
+    if (!connId || !sql.trim() || pinState === "pinning") return;
+    setPinState("pinning"); setPinError(null);
+    try {
+      await pinQueryToDashboard(connId, sql, name.trim() || suggestedName(), {
+        scope: "connection", scopeRef: connId, schema: tableSchemas[primaryTable ?? ""] || undefined,
+        render: { chartType: vizMode, showDataLabels, title: chartTitle || undefined, custom: chartCustom },
+      });
+      setShowPinName(false); setPinState("pinned");
+      setTimeout(() => setPinState("idle"), 1800);
+    } catch (e) {
+      setPinError((e as Error).message || "Failed to pin");
+      setPinState("idle");
+    }
+  };
   // Customize-tab option lists
   const COLOR_SCHEMES = [["", "Default"], ["tableau10", "Tableau 10"], ["category10", "Category 10"], ["set2", "Set 2"], ["dark2", "Dark 2"], ["pastel1", "Pastel"], ["tableau20", "Tableau 20"]];
   const NUMBER_FORMATS = [["", "Auto"], [",.0f", "1,234"], [",.2f", "1,234.56"], ["$,.0f", "$1,234"], ["$,.2f", "$1,234.56"], ["~s", "1.2K (compact)"], [".0%", "12%"], [".1%", "12.3%"]];
@@ -1674,6 +1706,19 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
               {savingState === "saving" ? "Saving…" : savingState === "saved" ? "Saved ✓" : savedId ? "Save" : "Save"}
             </Button>
 
+            {/* Pin to briefing cockpit — Door 2 (guarded on save) */}
+            <Button variant="ghost" size="xs" onClick={onPinClick} disabled={!sql.trim() || pinState === "pinning"}
+              title="Pin this query to the briefing cockpit — re-guarded on save"
+              className={`h-auto font-normal aug-fs-xs rounded-[var(--r3)] px-2.5 py-1 transition disabled:opacity-40 gap-1 ${SVG_SIZE_AUTO} ${
+                pinState === "pinned" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-500/10"
+                  : "border-violet-500/40 bg-violet-500/10 text-violet-300 hover:text-violet-300 hover:bg-violet-500/20 dark:hover:bg-violet-500/20"
+              }`}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                <path d="M12 17v5"/><path d="M9 4.5 8 8H5.5a1.5 1.5 0 0 0-1.06 2.56l4.5 4.5a1.5 1.5 0 0 0 2.12 0l4.5-4.5A1.5 1.5 0 0 0 18.5 8H16l-1-3.5A1.5 1.5 0 0 0 13.56 3.5h-3.12A1.5 1.5 0 0 0 9 4.5Z"/>
+              </svg>
+              {pinState === "pinning" ? "Pinning…" : pinState === "pinned" ? "Pinned ✓" : "Pin"}
+            </Button>
+
             {/* Saved-query list */}
             {showSaved && (
               <>
@@ -1719,6 +1764,28 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     <Button variant="ghost" size="xs" onClick={() => setShowSaveName(false)} className="h-auto font-normal aug-fs-xs text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent px-2 py-1">Cancel</Button>
                     <Button variant="ghost" size="xs" onClick={() => doCreateSaved(saveName)} disabled={!saveName.trim()}
                       className="h-auto aug-fs-xs bg-blue-600 hover:bg-blue-500 dark:hover:bg-blue-500 text-white hover:text-white rounded-md px-3 py-1 font-medium disabled:opacity-40">Save</Button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Name prompt for a cockpit pin */}
+            {showPinName && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowPinName(false)} />
+                <div className="absolute right-0 top-full mt-2 z-50 w-80 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl p-3">
+                  <p className="aug-fs-xs font-semibold text-zinc-300 mb-1">Pin to briefing cockpit</p>
+                  <p className="aug-fs-xs text-zinc-500 mb-2.5 leading-snug">Re-run through the trust guards on save — a query that fails a guard is refused, not pinned.</p>
+                  <input autoFocus value={pinName} onChange={e => setPinName(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") doPinQuery(pinName); if (e.key === "Escape") setShowPinName(false); }}
+                    placeholder="Card title"
+                    className="w-full aug-fs-sm bg-zinc-800 border border-zinc-600 rounded-md px-2.5 py-1.5 text-zinc-200 outline-none focus:border-violet-400" />
+                  {pinError && <p className="aug-fs-xs text-red-400 mt-2 leading-snug">{pinError}</p>}
+                  <div className="flex justify-end gap-2 mt-2.5">
+                    <Button variant="ghost" size="xs" onClick={() => setShowPinName(false)} className="h-auto font-normal aug-fs-xs text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent px-2 py-1">Cancel</Button>
+                    <Button variant="ghost" size="xs" onClick={() => doPinQuery(pinName)} disabled={!pinName.trim() || pinState === "pinning"}
+                      className="h-auto aug-fs-xs bg-violet-600 hover:bg-violet-500 dark:hover:bg-violet-500 text-white hover:text-white rounded-md px-3 py-1 font-medium disabled:opacity-40">
+                      {pinState === "pinning" ? "Pinning…" : "Pin"}</Button>
                   </div>
                 </div>
               </>
