@@ -2768,11 +2768,45 @@ export interface HeldBackSignal {
   reason: string;
 }
 
+/** The briefing's narrative layer made structural (Slice 3 — argument-graph lens). Nodes are the
+ *  verdict + the impact-ranked drivers; edges are the explorer's OWN typed relationships
+ *  (supports from the ranking; chain/tension/confound/concentration/share from composition;
+ *  explains_why from drills). Built deterministically server-side; the frontend only renders it. */
+export type ArgumentEdgeType =
+  | "supports" | "chain" | "tension" | "confound" | "concentration" | "share" | "explains_why";
+
+export interface ArgumentGraphNode {
+  id: string;
+  kind: "verdict" | "finding";
+  title: string;
+  domain: string;
+  angle: string;
+  impact: number;
+  plausibility: "implausible" | "confound" | null;
+  has_sql: boolean;
+  composition_type: string | null;
+  is_driver: boolean;
+  cited: boolean;
+}
+
+export interface ArgumentGraphEdge {
+  source: string;
+  target: string;
+  type: ArgumentEdgeType;
+}
+
+export interface ArgumentGraph {
+  nodes: ArgumentGraphNode[];
+  edges: ArgumentGraphEdge[];
+}
+
 export interface BriefingNarrativeResponse {
   narrative: string;
   headline_theme: string;
   citations: BriefingCitation[];
   held_back?: HeldBackSignal[];
+  /** The argument-graph projection of this brief (verdict + drivers + typed edges). */
+  graph?: ArgumentGraph;
   currency_code?: string;
   generated_at: string | null;
   available: boolean;

@@ -67,6 +67,11 @@ import { PinnedCards } from "@/components/brief/PinnedCards";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
 import { GroundedNumber, withGroundedNumbers } from "@/components/brief/GroundedNumber";
 import { BriefAskBox } from "@/components/brief/BriefAskBox";
+import dynamic from "next/dynamic";
+
+// React Flow measures the DOM — load the argument-graph lens client-only (the repo's pattern for
+// heavy client libs, e.g. ECharts), so it never renders during SSR.
+const ArgumentGraph = dynamic(() => import("@/components/brief/ArgumentGraph"), { ssr: false });
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1719,6 +1724,8 @@ export function BriefingPanel({
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [pinnedRefresh, setPinnedRefresh]   = useState(0);
+  // Argument-graph lens (Slice 3): swap the linear narrative body for the node+edge graph.
+  const [lens, setLens]                     = useState<"linear" | "graph">("linear");
   const [loading, setLoading]               = useState(false);
   const [error, setError]                   = useState<string | null>(null);
   const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
@@ -2024,6 +2031,22 @@ export function BriefingPanel({
         onInvestigate={onInvestigate}
         controls={
           <>
+            {narrative?.graph && narrative.graph.nodes.length > 1 && (
+              <div style={{ display: "inline-flex", borderRadius: "var(--r2)", border: "1px solid var(--b1)", overflow: "hidden" }}>
+                {(["linear", "graph"] as const).map(m => (
+                  <button key={m} onClick={() => setLens(m)}
+                    title={m === "graph" ? "See the verdict, its drivers and their evidence as an argument graph" : "The linear brief"}
+                    style={{
+                      padding: "4px 10px", fontSize: 11, border: "none", cursor: "pointer",
+                      background: lens === m ? "var(--bg-1)" : "transparent",
+                      color: lens === m ? "var(--blue4)" : "var(--t3)",
+                      fontWeight: lens === m ? 600 : 400,
+                    }}>
+                    {m === "linear" ? "Linear" : "Graph"}
+                  </button>
+                ))}
+              </div>
+            )}
             <GenerateBriefButton
               loading={narrativeLoading}
               hasNarrative={hasNarrative}
@@ -2068,6 +2091,15 @@ export function BriefingPanel({
         onOpenInAsk={onInvestigate}
       />
 
+      {lens === "graph" && narrative?.graph ? (
+        /* ── Argument graph ── the verdict, its drivers, and their typed evidence edges,
+           a lens over the same brief (Slice 3). Linear stays the default. */
+        <ArgumentGraph
+          graph={narrative.graph}
+          onOpenFinding={(iid) => onInvestigate("Investigate this finding", iid)}
+        />
+      ) : (
+      <>
       {/* ── Supporting signals ── 3-up confidence-meter cards of the strongest findings. */}
       <SupportingSignals signals={briefing.signals} onInvestigate={onInvestigate} />
 
@@ -2121,6 +2153,8 @@ export function BriefingPanel({
           )}
         </div>
       )}
+      </>
+      )}
 
       {/* ── Your pinned cards ── the standing cockpit layer: user-authored, guard-checked
             KPI cards pinned from findings (briefing-cockpit Slice 0). Renders nothing if none. */}
@@ -2131,6 +2165,7 @@ export function BriefingPanel({
             click a card to expand it into its trend chart (replaces the old chart grid). */}
       <IndustryKpiStrip connectionId={connectionId} schema={schema} />
 
+      {lens === "linear" && (<>
       {/* ── Live dashboard ── finding text cards (#3); metric trends now expand from the KPI strip above */}
       <BriefingDashboard
         findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
@@ -2161,6 +2196,7 @@ export function BriefingPanel({
           </div>
         </div>
       )}
+      </>)}
     </>
   )}
 

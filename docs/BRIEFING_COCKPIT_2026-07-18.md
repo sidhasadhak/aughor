@@ -1,7 +1,7 @@
 # The Self-Explaining Briefing — Argument Graph + Co-authored Cockpit
 
-**Design doc · 2026-07-18 · Status: Slices 0 + 1 + 2 BUILT & live-verified on branch
-`2026-07-18-briefing-cockpit` (not pushed); Slices 3–4 pending — see §10.**
+**Design doc · 2026-07-18 · Status: Slices 0 + 1 + 2 + 3 BUILT & live-verified on branch
+`2026-07-18-briefing-cockpit` (not pushed); Slice 4 pending — see §10.**
 Build is gated slice-by-slice in §10; nothing here ships until a v1 slice is picked.
 
 All file:line references below were verified against the current tree on 2026-07-18. Where a
@@ -334,8 +334,27 @@ Each slice is independently shippable, flag-gated, and verified on a real briefi
   (Binder Error) and a `DELETE` **refused 422** (`[BLOCKED]`) with nothing stored — and both
   clean cards appeared on the exact `scope=connection` list `PinnedCards` reads. The new Pin
   button renders in the live Query Builder toolbar next to Save.
-- **Slice 3 — argument-graph lens.** Un-orphan the edges + render the map as a React Flow lens
-  (linear stays default). *Proves:* the narrative-as-graph, reusing drill wiring.
+- **✅ Slice 3 — argument-graph lens. DONE.** Un-orphan the edges + render the map as a React
+  Flow lens (linear stays default). New deterministic `aughor/knowledge/argument_graph.py`
+  (`build_argument_graph`) projects the SAME impact-ranked drivers the prose uses + the explorer's
+  OWN typed edges (`composition_type`+`parents` → chain/tension/confound/concentration/share;
+  `drill_of` → explains_why; ranking → `supports`; citations → `cited`) into a `{nodes, edges}`
+  graph, verdict at the apex, rooted (composition parents ride up via their synth→verdict path).
+  It rides along in the `/briefing` response (`generate_narrative`). Frontend: `@xyflow/react`
+  (v12, MIT) + `web/components/brief/ArgumentGraph.tsx` (`dynamic(ssr:false)`) — custom
+  verdict/finding nodes reusing the `FindingCard` look, hand-rolled longest-path-to-verdict
+  layered layout, typed-edge colours/labels + legend, progressive disclosure (verdict + top-4
+  drivers → "Show all"), node click "pulls the thread." A "Linear | Graph" toggle in `VerdictHero`
+  controls swaps only the narrative body; `VerdictHero`/`BriefAskBox`/`PinnedCards`/KPI stay in
+  both (two layers on one surface). **Deterministic-first:** every edge comes from real
+  composition/drill structure or the impact ranking, never an LLM drawing arrows.
+  *Proves:* the narrative-as-graph, reusing drill wiring. *Verified live (real luxexperience
+  brief):* the graph renders — verdict apex, 8 drivers with `supports` edges + ◆ cited markers, a
+  Synthesis "CHAIN" node with its two parent findings pulled in and joined by "drives" edges,
+  "Show all (10 findings)" progressive disclosure, React Flow zoom/fit controls, and the Linear
+  toggle round-trips unchanged. Backend: 10 py tests (builder + real-shape + endpoint-wiring).
+  *Densify deferred:* drill parents are only linked when already in-graph; pulling non-driver
+  parents / `relates_to` card↔finding edges is S4.
 - **Slice 4 — Door 3 + connective tissue.** Inline authoring + `relates_to` edges (card↔finding) +
   watch/alert graduation. *Proves:* the full co-authored cockpit.
 
