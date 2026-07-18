@@ -25,11 +25,13 @@ CADENCES = ("brief_cycle", "hourly", "daily", "manual")
 
 
 class CardRefresh(BaseModel):
-    """The card's living state: how often it recomputes, and the last two values (for a delta)."""
+    """The card's living state: how often it recomputes, the last two values (for a delta),
+    and a bounded value history (oldest→newest) that draws the cross-cycle trend sparkline."""
     cadence: str = "brief_cycle"          # brief_cycle | hourly | daily | manual
     last_run: str = ""                    # ISO timestamp of the last recompute
     last_value: Optional[float] = None    # latest scalar (for a KPI/watch delta)
-    prev_value: Optional[float] = None     # the value before that
+    prev_value: Optional[float] = None    # the value before that
+    history: List[float] = Field(default_factory=list)   # distinct scalar values over runs, bounded
 
 
 class CardProvenance(BaseModel):

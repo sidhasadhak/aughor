@@ -39,19 +39,29 @@ def _qr(**kw) -> QueryResult:
     return QueryResult(**base)
 
 
-def test_run_scalar_tracks_value_and_delta(monkeypatch):
+def test_run_scalar_tracks_value_delta_and_history(monkeypatch):
     card = _card()
     _stub(monkeypatch, _qr(rows=[[0.32]], row_count=1))
     r1 = client.post(f"/cards/{card.id}/run")
     assert r1.status_code == 200
     assert r1.json()["refresh"]["last_value"] == 0.32
     assert r1.json()["refresh"]["prev_value"] is None
+    assert r1.json()["refresh"]["history"] == [0.32]        # trend series seeded
 
     _stub(monkeypatch, _qr(rows=[[0.40]], row_count=1))
     r2 = client.post(f"/cards/{card.id}/run")
     assert r2.json()["refresh"]["last_value"] == 0.40
     assert r2.json()["refresh"]["prev_value"] == 0.32       # previous rolled in → delta
+    assert r2.json()["refresh"]["history"] == [0.32, 0.40]  # appended → sparkline
     assert get_card(card.id).refresh.last_value == 0.40      # persisted
+
+
+def test_run_history_dedupes_consecutive_equal_values(monkeypatch):
+    card = _card()
+    _stub(monkeypatch, _qr(rows=[[5.0]], row_count=1))
+    client.post(f"/cards/{card.id}/run")
+    r = client.post(f"/cards/{card.id}/run")                 # same value again
+    assert r.json()["refresh"]["history"] == [5.0]           # not [5.0, 5.0] — meaningful steps only
 
 
 def test_run_multi_row_has_no_scalar(monkeypatch):

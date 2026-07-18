@@ -1365,6 +1365,7 @@ export interface DashboardCardRefresh {
   last_run: string;
   last_value: number | null;
   prev_value: number | null;
+  history: number[];
 }
 
 export interface DashboardCard {
@@ -1390,7 +1391,7 @@ export interface DashboardCard {
 
 export interface CardRunResult {
   columns: string[];
-  rows: string[][];
+  rows: (string | number | null)[][];
   row_count: number;
   caveats: string[];
   error: string | null;

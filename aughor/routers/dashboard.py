@@ -199,14 +199,18 @@ def run_card_route(card_id: str) -> dict:
 
     scalar = _scalar(result)
     if scalar is not None:
+        hist = list(card.refresh.history or [])
+        if not hist or hist[-1] != scalar:      # dedupe consecutive equals → a meaningful step series
+            hist = (hist + [scalar])[-24:]        # bounded to the last 24 observations
         card = upsert_card(card.model_copy(update={"refresh": card.refresh.model_copy(update={
             "prev_value": card.refresh.last_value,
             "last_value": scalar,
             "last_run": now_iso(),
+            "history": hist,
         })}))
     return {
         "columns": result.columns or [],
-        "rows": [[str(c) for c in r] for r in (result.rows or [])[:100]],
+        "rows": (result.rows or [])[:200],       # raw values so the client can detect a time series
         "row_count": result.row_count,
         "caveats": result.caveats or [],
         "error": result.error,
