@@ -11,8 +11,9 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 
-from aughor.dashboard.models import DashboardCard
+from aughor.dashboard.models import CardProvenance, DashboardCard
 from aughor.dashboard.store import delete_card, get_card, list_cards, upsert_card
 
 router = APIRouter(tags=["dashboard"])
@@ -58,3 +59,99 @@ def update_card_route(card_id: str, card: DashboardCard) -> dict:
 def delete_card_route(card_id: str) -> None:
     if not delete_card(card_id):
         raise HTTPException(status_code=404, detail="Card not found")
+
+
+# ── Door 1: pin a briefing finding as a card ─────────────────────────────────
+
+class PinInsightRequest(BaseModel):
+    """Pin the finding `insight_id` (from `connection_id`'s briefing) as a card scoped to
+    `scope`/`scope_ref` (e.g. a canvas cockpit)."""
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    insight_id: str
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+    scope: str = "canvas"
+    scope_ref: str = ""
+    kind: str = "kpi"                 # kpi | chart
+    title: Optional[str] = None       # optional override of the finding text
+
+
+@router.post("/cards/pin-insight", status_code=201)
+def pin_insight_route(req: PinInsightRequest) -> dict:
+    """Pin a briefing finding as a dashboard card (the "from an insight" door).
+
+    Resolves the finding's grounded SQL from the SAME domain insights the brief is built
+    from, RE-RUNS it through the deterministic guard battery (`execute_guarded`) so the
+    pinned number carries the same trust guarantee as an AI answer — a query that errors or
+    is BLOCKED is refused (422), never stored — then persists a card linked back to the
+    source finding + its receipt, plus a live preview and any unrepaired guard caveats.
+    """
+    from aughor.routers.exploration import _domain_insights_for, _store_key
+    from aughor.db.connection import open_connection_for, open_connection_for_with_schema
+    from aughor.sql.executor import execute_guarded
+
+    # 1) Resolve the finding (same source as the brief) and require a runnable query.
+    by_domain = _domain_insights_for(req.connection_id, req.schema_name)
+    insight = next(
+        (i for items in by_domain.values() for i in (items or []) if i.get("id") == req.insight_id),
+        None,
+    )
+    if not insight:
+        raise HTTPException(status_code=404, detail="Insight not found in this connection's briefing")
+    sql = (insight.get("sql") or "").strip()
+    if not sql:
+        raise HTTPException(status_code=422, detail="This finding has no query to pin (profile-only fact)")
+
+    # 2) Open the (canvas-scoped) connection.
+    use_schema = (
+        req.schema_name
+        if (req.schema_name and _store_key(req.connection_id, req.schema_name) != req.connection_id)
+        else None
+    )
+    try:
+        db = (
+            open_connection_for_with_schema(req.connection_id, schema_name=use_schema)
+            if use_schema else open_connection_for(req.connection_id)
+        )
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
+
+    # 3) Guard-on-write: a leadership dashboard never stores a card it couldn't run cleanly.
+    try:
+        result = execute_guarded(db, sql, query_id=f"pin:{req.insight_id}", schema=use_schema)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+    if result.error:
+        raise HTTPException(status_code=422, detail=f"Query failed the trust guards, not pinned: {result.error}")
+
+    # 4) Build + store the card, linked to the source finding (graph edge) + its receipt.
+    finding = (insight.get("finding") or "").strip()
+    title = req.title or finding or "Pinned finding"
+    if len(title) > 120:
+        title = title[:117].rstrip() + "…"
+    saved = upsert_card(DashboardCard(
+        connection_id=req.connection_id,
+        scope=req.scope,
+        scope_ref=req.scope_ref,
+        source="insight",
+        kind=req.kind,
+        title=title,
+        sql=sql,
+        provenance=CardProvenance(
+            insight_id=req.insight_id,
+            receipt_ref=f"insight:{req.connection_id}:{req.insight_id}",
+        ),
+        links=[req.insight_id],
+    ))
+    return {
+        "card": saved.model_dump(),
+        "preview": {
+            "columns": result.columns or [],
+            "rows": [[str(c) for c in r] for r in (result.rows or [])[:20]],
+            "row_count": result.row_count,
+        },
+        "caveats": result.caveats or [],
+    }
