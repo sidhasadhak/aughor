@@ -7,6 +7,7 @@ import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
 import { formatMetricValue, formatVariance } from "@/lib/format";
 import {
   deleteDashboardCard,
+  graduateCard,
   listDashboardCards,
   runDashboardCard,
   type CardRunResult,
@@ -119,6 +120,25 @@ function PinnedCard({ card, run, failed, onRemove, onRefresh, onOpenSource }: {
     [run],
   );
 
+  // Watch → alert (Slice 4): graduate a scalar KPI card to a scheduled threshold Monitor.
+  const t0 = card.thresholds as { warning?: number | null; critical?: number | null; direction?: string } | undefined;
+  const [alerting, setAlerting] = useState(!!(t0 && (t0.warning != null || t0.critical != null)));
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertVal, setAlertVal] = useState("");
+  const [alertDir, setAlertDir] = useState<"below" | "above">((t0?.direction as "below" | "above") || "below");
+  const [alertBusy, setAlertBusy] = useState(false);
+  const canAlert = val != null && !errored;
+  const saveAlert = async () => {
+    const n = Number(alertVal);
+    if (!alertVal || Number.isNaN(n)) return;
+    setAlertBusy(true);
+    try {
+      await graduateCard(card.id, { warning_threshold: n, threshold_direction: alertDir });
+      setAlerting(true); setAlertOpen(false);
+    } catch { /* best-effort; leave the form open on failure */ }
+    finally { setAlertBusy(false); }
+  };
+
   return (
     <div style={{
       background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
@@ -164,11 +184,38 @@ function PinnedCard({ card, run, failed, onRemove, onRefresh, onOpenSource }: {
         </div>
       )}
 
+      {canAlert && alerting && (
+        <div title="This card is now a scheduled monitor" style={{ fontSize: 10, color: "var(--amb4)", display: "flex", alignItems: "center", gap: 4 }}>
+          <span>⏰</span> Alerting when {alertDir} threshold
+        </div>
+      )}
+      {canAlert && !alerting && alertOpen && (
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <select value={alertDir} onChange={e => setAlertDir(e.target.value as "below" | "above")}
+            style={{ fontSize: 10, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t2)", padding: "2px 4px" }}>
+            <option value="below">below</option>
+            <option value="above">above</option>
+          </select>
+          <input type="number" value={alertVal} onChange={e => setAlertVal(e.target.value)} placeholder="threshold"
+            onKeyDown={e => { if (e.key === "Enter") saveAlert(); }}
+            style={{ fontSize: 10, width: 74, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t1)", padding: "2px 4px", outline: "none" }} />
+          <Button variant="ghost" size="xs" onClick={saveAlert} disabled={!alertVal || alertBusy}
+            style={{ fontSize: 10, color: "var(--amb4)", padding: "2px 6px" }}>{alertBusy ? "…" : "Save"}</Button>
+        </div>
+      )}
+
       <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: "auto" }}>
         {onOpenSource && (
           <Button variant="ghost" size="xs" onClick={onOpenSource}
             style={{ fontSize: 11, color: "var(--blue4)", padding: "2px 6px" }}>
             Source
+          </Button>
+        )}
+        {canAlert && !alerting && (
+          <Button variant="ghost" size="xs" onClick={() => setAlertOpen(o => !o)}
+            title="Alert me when this KPI crosses a threshold (schedules a monitor)"
+            style={{ fontSize: 11, color: "var(--amb4)", padding: "2px 6px" }}>
+            {alertOpen ? "Cancel" : "Set alert"}
           </Button>
         )}
         <Button variant="ghost" size="xs" onClick={onRefresh}

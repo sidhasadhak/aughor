@@ -269,6 +269,67 @@ def card_relations_route(req: CardRelationsRequest) -> dict:
     return relate_cards(cards, findings)
 
 
+# ── Graduate a card to a Monitor (watch → alert, Slice 4) ────────────────────
+
+class GraduateCardRequest(BaseModel):
+    """Alert thresholds. `threshold_direction`: fire when the value goes below (default) or above
+    the threshold."""
+    warning_threshold: Optional[float] = None
+    critical_threshold: Optional[float] = None
+    threshold_direction: str = "below"
+
+
+@router.post("/cards/{card_id}/graduate", status_code=201)
+def graduate_card_route(card_id: str, req: GraduateCardRequest) -> dict:
+    """Graduate a KPI/watch card to a scheduled Monitor — the last step of the card lifecycle:
+    run its already-guarded SQL as a recurring threshold check (`reanchor_window` ON so a frozen
+    date window can't go stale), then record the thresholds + monitor id back on the card so the
+    cockpit shows it's now alerting. The card stops being a passive slot and becomes proactive
+    push, reusing the monitor engine rather than forking a second alerting path.
+    """
+    from pydantic import ValidationError
+    from aughor.monitors.models import Monitor
+    from aughor.monitors.store import upsert_monitor
+
+    card = get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if not (card.sql or "").strip():
+        raise HTTPException(status_code=422, detail="This card has no query to monitor")
+    if req.warning_threshold is None and req.critical_threshold is None:
+        raise HTTPException(status_code=422, detail="Set a warning or critical threshold")
+
+    try:
+        monitor = Monitor(
+            conn_id=card.connection_id,
+            name=card.title or "Card alert",
+            custom_sql=card.sql,
+            reanchor_window=True,
+            alert_on="threshold_cross",
+            warning_threshold=req.warning_threshold,
+            critical_threshold=req.critical_threshold,
+            threshold_direction=req.threshold_direction,
+        )
+    except ValidationError as e:
+        detail = "; ".join(f"{er['loc'][-1]}: {er['msg']}" for er in e.errors())
+        raise HTTPException(status_code=422, detail=f"Invalid alert configuration — {detail}")
+
+    saved_monitor = upsert_monitor(monitor)
+    try:
+        from aughor.monitors.scheduler import reload_monitor
+        reload_monitor(saved_monitor)
+    except Exception:
+        pass
+
+    updated = upsert_card(card.model_copy(update={"thresholds": {
+        "warning": req.warning_threshold,
+        "critical": req.critical_threshold,
+        "direction": req.threshold_direction,
+        "monitor_id": saved_monitor.id,
+    }}))
+    return {"monitor": saved_monitor.model_dump(), "card": updated.model_dump()}
+
+
 # ── Run / refresh a card's value ─────────────────────────────────────────────
 
 @router.post("/cards/{card_id}/run")

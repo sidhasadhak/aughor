@@ -1481,6 +1481,24 @@ export async function deleteDashboardCard(cardId: string): Promise<void> {
   await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
 }
 
+/** Graduate a KPI/watch card to a scheduled Monitor (Slice 4 — watch → alert): its guarded SQL
+ *  becomes a recurring threshold check and the thresholds are recorded back on the card. */
+export async function graduateCard(
+  cardId: string,
+  thresholds: { warning_threshold?: number | null; critical_threshold?: number | null; threshold_direction?: string },
+): Promise<{ card: DashboardCard }> {
+  const res = await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}/graduate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(thresholds),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to set alert"));
+  }
+  return res.json();
+}
+
 /** Card↔finding `relates_to` edges for the argument-graph lens (Slice 4): links this
  *  connection's pinned cards to the given graph findings by deterministic SQL-signature overlap.
  *  Live (reflects the current cockpit). Returns card nodes + edges to merge onto the graph. */
