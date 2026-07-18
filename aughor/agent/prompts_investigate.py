@@ -672,10 +672,21 @@ CONFIDENCE ASSESSMENT:
   LOW    = multiple plausible causes; data insufficient to discriminate; high residual
 
 RECOMMENDATIONS:
-  For each CONTROLLABLE root cause, provide a specific, actionable recommendation with:
-  action, expected_impact (quantified if possible), owner (team/function), timeline.
+  For each CONTROLLABLE root cause OR material gap, provide a specific, actionable recommendation
+  with: action, expected_impact (quantified if possible), owner (team/function), timeline.
+  You MUST produce at least one recommendation whenever the findings expose a lever the business
+  can pull — a low-utilization segment, a leakage driver, a concentrated risk. A missing cost
+  column (so profit can't be computed) is NOT a reason to leave recommendations empty: recommend
+  investigating/closing the worst gap or reviewing the leading driver, quantifying the gap where
+  the evidence supports it (never invent a number). Leave empty ONLY when every query failed or
+  the finding is genuinely "nothing actionable here".
   If METRIC TARGETS are provided above, prioritise root causes where the current value
   exceeds the warning or critical threshold — those are the highest-urgency items.
+
+CLOSING SUMMARY (closing_summary):
+  A 1-2 sentence BOTTOM LINE that CLOSES the report — the single most important takeaway and
+  what it implies for the business. It restates the conclusion crisply and is DISTINCT from
+  executive_summary (which OPENS the report); do not copy it verbatim. Plain prose, no preamble.
 
 DATA GAPS:
   List every hypothesis that could NOT be tested due to missing schema (no sessions table,
@@ -801,6 +812,12 @@ class CausalLinkModel(BaseModel):
 class ADASynthesisModel(BaseModel):
     headline: str
     executive_summary: str
+    closing_summary: str = Field(
+        default="",
+        description="A 1-2 sentence BOTTOM LINE that CLOSES the report — the single most "
+        "important takeaway and its implication for the business. Distinct from "
+        "executive_summary (which OPENS the report); do not copy it verbatim. Plain prose.",
+    )
     total_change_label: str
     attribution_waterfall: list[WaterfallEntryModel]
     confidence: Literal["HIGH", "MEDIUM", "LOW"]

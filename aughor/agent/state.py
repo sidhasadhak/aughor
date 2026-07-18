@@ -379,6 +379,9 @@ class AnswerReport(TypedDict):
     # T4-1 — a plain-language receipt of HOW the metric was computed (formula + ratio interpretation
     # + coverage), so a silently-chosen definition is visible and challengeable. "" when none.
     metric_definition: Optional[str]
+    # A short closing "bottom line" rendered at the END of the report, before the recommendations
+    # (the exec summary opens it; this closes it). "" when the synthesis didn't author one.
+    closing_summary: Optional[str]
 
 
 class AgentState(TypedDict):

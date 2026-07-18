@@ -65,6 +65,25 @@ def test_normalize_pct_key_numbers_preserves_percentage_points():
                    "Subject": "41.0%", "Rate": "41.0%"}
 
 
+def test_normalize_pct_key_numbers_leaves_count_with_unit_alone():
+    """A COUNT trailed by a unit word ("0.0 events") is NOT a percentage — the num≤1 heuristic
+    wrongly read the zero-count as a fraction and emitted the glitch "0.0%events" (a percent
+    with no space + a nonsense unit). A count-with-unit now passes through untouched; a real
+    percent that carries a trailing unit keeps its separating space."""
+    f = {"key_numbers": [
+        {"label": "Voluntary cancellation refunds", "value": "6,907 events"},  # >1 count → untouched
+        {"label": "Other refund reasons", "value": "0.0 events"},              # 0 count → NOT "0.0%events"
+        {"label": "Gross margin", "value": "5%margin"},                        # percent+unit → space restored
+        {"label": "Refund leakage rate", "value": "0.028"},                    # bare fraction still converts
+    ]}
+    I._normalize_pct_key_numbers(f)
+    got = {k["label"]: k["value"] for k in f["key_numbers"]}
+    assert got == {"Voluntary cancellation refunds": "6,907 events",
+                   "Other refund reasons": "0.0 events",
+                   "Gross margin": "5.0% margin",
+                   "Refund leakage rate": "2.8%"}
+
+
 def test_fix_xsec_extreme_key_numbers_is_scale_aware_when_pct():
     f = {"columns": ["brand", "metric_total"], "rows": [["a", 0.27], ["b", 0.405]],
          "key_numbers": [{"label": "Highest (top 1)", "value": "40.5%"},
