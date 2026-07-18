@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { type ChartCustom } from "@/components/Chart";
 import { formatMetricValue, formatVariance } from "@/lib/format";
 import {
   deleteDashboardCard,
@@ -120,6 +122,13 @@ function PinnedCard({ card, run, failed, onRemove, onRefresh, onOpenSource }: {
     [run],
   );
 
+  // A multi-column / categorical result (e.g. "Customers by region") is neither a scalar nor a
+  // trend → render it as its own chart/table (ResultChartCard) with the card's stored render spec,
+  // instead of a bare "N rows". Such cards get more room (span two grid columns).
+  const render = (card.render || {}) as { chartType?: string; chartConfig?: Record<string, unknown>; custom?: ChartCustom };
+  const isTabular = !errored && !trend && val == null && !!run && !run.error
+    && (run.columns?.length ?? 0) > 0 && (run.rows?.length ?? 0) > 0;
+
   // Watch → alert (Slice 4): graduate a scalar KPI card to a scheduled threshold Monitor.
   const t0 = card.thresholds as { warning?: number | null; critical?: number | null; direction?: string } | undefined;
   const [alerting, setAlerting] = useState(!!(t0 && (t0.warning != null || t0.critical != null)));
@@ -143,6 +152,7 @@ function PinnedCard({ card, run, failed, onRemove, onRefresh, onOpenSource }: {
     <div style={{
       background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
       padding: "13px 15px", display: "flex", flexDirection: "column" as const, gap: 7, minHeight: 132,
+      gridColumn: isTabular ? "span 2" : undefined,
     }}>
       <div style={{ fontSize: 11.5, color: "var(--t2)", lineHeight: 1.4 }}>{card.title}</div>
 
@@ -174,6 +184,15 @@ function PinnedCard({ card, run, failed, onRemove, onRefresh, onOpenSource }: {
             ? <Sparkline values={hist} width={198} height={30} color="var(--blue4)" />
             : <div style={{ fontSize: 10, color: "var(--t4)" }}>trend builds as it refreshes</div>}
         </>
+      ) : isTabular && run ? (
+        <ResultChartCard
+          columns={run.columns}
+          rows={run.rows as unknown[][]}
+          chartType={render.chartType ?? null}
+          chartConfig={render.chartConfig ?? null}
+          custom={render.custom ?? null}
+          heightScale={0.62}
+        />
       ) : (
         <div style={{ fontSize: 13, color: "var(--t3)" }}>{run ? `${run.row_count} rows` : "…"}</div>
       )}
