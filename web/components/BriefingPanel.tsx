@@ -41,6 +41,7 @@ import {
   createMonitor,
   getActionTriggers,
   sendFindingToTrigger,
+  pinInsightToDashboard,
   type DomainInsights,
   type ExplorationInsight,
   type Pattern,
@@ -62,6 +63,7 @@ import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
 import { BriefingDashboard } from "@/components/brief/BriefingDashboard";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
+import { PinnedCards } from "@/components/brief/PinnedCards";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
 import { GroundedNumber, withGroundedNumbers } from "@/components/brief/GroundedNumber";
 import { BriefAskBox } from "@/components/brief/BriefAskBox";
@@ -760,18 +762,21 @@ function ActionButton({ label, title, status, color, onClick, disabled }: {
   );
 }
 
-export function FindingActions({ insight, domain, connectionId, canvasId, triggers, onEvidence, onTriggersHint, onDismissed }: {
+export function FindingActions({ insight, domain, connectionId, canvasId, schema, triggers, onEvidence, onTriggersHint, onDismissed, onPinned }: {
   insight:       ExplorationInsight;
   domain:        string;
   connectionId:  string;
   canvasId?:     string;
+  schema?:       string;
   triggers:      ActionTrigger[];
   onEvidence:    (insight: ExplorationInsight) => void;
   onTriggersHint: () => void;
   onDismissed?:  (insightId: string) => void;
+  onPinned?:     () => void;
 }) {
   const [monStatus, setMonStatus]   = useState<ActStatus>("idle");
   const [promStatus, setPromStatus] = useState<ActStatus>(insight.promoted_to_org ? "done" : "idle");
+  const [pinStatus, setPinStatus]   = useState<ActStatus>("idle");
   const [shareOpen, setShareOpen]   = useState(false);
   const [shareMsg, setShareMsg]     = useState<string | null>(null);
   const [dismissed, setDismissed]   = useState(false);
@@ -804,6 +809,18 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
       setMonStatus("done");
     } catch { setMonStatus("error"); }
   }, [insight, domain, connectionId]);
+
+  const handlePin = useCallback(async () => {
+    if (!insight.sql) return;
+    setPinStatus("busy");
+    try {
+      await pinInsightToDashboard(connectionId, insight.id, {
+        scope: "connection", scopeRef: connectionId, schema,
+      });
+      setPinStatus("done");
+      onPinned?.();
+    } catch { setPinStatus("error"); }
+  }, [insight.id, insight.sql, connectionId, schema, onPinned]);
 
   const handlePromote = useCallback(async () => {
     setPromStatus("busy");
@@ -849,6 +866,9 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
       <ActionButton label="Monitor"
         title={degenerate ? noData : (insight.sql ? "Create an anomaly monitor from this finding's query" : "No query available to monitor")}
         status={monStatus} color={btnColor} onClick={handleMonitor} disabled={!insight.sql || degenerate} />
+      <ActionButton label="Pin"
+        title={degenerate ? noData : (insight.sql ? "Pin this finding as a guard-checked card on your dashboard" : "No query available to pin")}
+        status={pinStatus} color={btnColor} onClick={handlePin} disabled={!insight.sql || degenerate} />
       <ActionButton label="Promote"
         title={degenerate ? noData : (promStatus === "done" ? "Promoted to org intelligence" : "Promote this finding to org-wide intelligence")}
         status={promStatus} color={btnColor} onClick={handlePromote} disabled={degenerate} />
@@ -1698,6 +1718,7 @@ export function BriefingPanel({
   schemaReady?: boolean;
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
+  const [pinnedRefresh, setPinnedRefresh]   = useState(0);
   const [loading, setLoading]               = useState(false);
   const [error, setError]                   = useState<string | null>(null);
   const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
@@ -2026,9 +2047,10 @@ export function BriefingPanel({
         actions={briefing.headline && (
           <FindingActions
             insight={briefing.headline.insight} domain={briefing.headline.domain}
-            connectionId={connectionId} canvasId={canvasId} triggers={triggers}
+            connectionId={connectionId} canvasId={canvasId} schema={schema} triggers={triggers}
             onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)}
-            onTriggersHint={showTriggersHint} onDismissed={() => load()} />
+            onTriggersHint={showTriggersHint} onDismissed={() => load()}
+            onPinned={() => setPinnedRefresh(n => n + 1)} />
         )}
       />
 
@@ -2100,6 +2122,11 @@ export function BriefingPanel({
         </div>
       )}
 
+      {/* ── Your pinned cards ── the standing cockpit layer: user-authored, guard-checked
+            KPI cards pinned from findings (briefing-cockpit Slice 0). Renders nothing if none. */}
+      <PinnedCards connectionId={connectionId} refreshKey={pinnedRefresh}
+        onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)} />
+
       {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live;
             click a card to expand it into its trend chart (replaces the old chart grid). */}
       <IndustryKpiStrip connectionId={connectionId} schema={schema} />
@@ -2113,9 +2140,9 @@ export function BriefingPanel({
         onInvestigate={onInvestigate}
         renderActions={(insight, domain) => (
           <FindingActions insight={insight} domain={domain}
-            connectionId={connectionId} canvasId={canvasId} triggers={triggers}
+            connectionId={connectionId} canvasId={canvasId} schema={schema} triggers={triggers}
             onEvidence={(ins) => openEvidence(ins, domain)} onTriggersHint={showTriggersHint}
-            onDismissed={() => load()} />
+            onDismissed={() => load()} onPinned={() => setPinnedRefresh(n => n + 1)} />
         )}
       />
 

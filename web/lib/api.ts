@@ -1358,6 +1358,97 @@ export async function promoteConnectionInsight(connectionId: string, insightId: 
   return res.json();
 }
 
+// ── Dashboard cards (briefing cockpit — user-authored KPI/chart/watch cards) ──
+
+export interface DashboardCardRefresh {
+  cadence: string;
+  last_run: string;
+  last_value: number | null;
+  prev_value: number | null;
+}
+
+export interface DashboardCard {
+  id: string;
+  connection_id: string;
+  scope: string;
+  scope_ref: string;
+  source: string;
+  kind: string;
+  title: string;
+  sql: string;
+  query_ref: string | null;
+  render: Record<string, unknown>;
+  refresh: DashboardCardRefresh;
+  thresholds: Record<string, unknown>;
+  provenance: { insight_id: string; origin_finding_id: string; receipt_ref: string };
+  links: string[];
+  body: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardRunResult {
+  columns: string[];
+  rows: string[][];
+  row_count: number;
+  caveats: string[];
+  error: string | null;
+  refresh: DashboardCardRefresh;
+}
+
+/** Pin a briefing finding as a dashboard card (Door 1). The backend re-runs the finding's
+ *  SQL through the guard battery and refuses (throws) if it errors — a bad number is never
+ *  pinned. */
+export async function pinInsightToDashboard(
+  connectionId: string,
+  insightId: string,
+  opts: { scope?: string; scopeRef?: string; schema?: string; kind?: string; title?: string } = {},
+): Promise<{ card: DashboardCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
+  const res = await fetch(`${BASE}/cards/pin-insight`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      connection_id: connectionId,
+      insight_id: insightId,
+      scope: opts.scope ?? "connection",
+      scope_ref: opts.scopeRef ?? connectionId,
+      schema: opts.schema,
+      kind: opts.kind ?? "kpi",
+      title: opts.title,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to pin to dashboard"));
+  }
+  return res.json();
+}
+
+export async function listDashboardCards(
+  opts: { connectionId?: string; scope?: string; scopeRef?: string } = {},
+): Promise<DashboardCard[]> {
+  const q = new URLSearchParams();
+  if (opts.connectionId) q.set("connection_id", opts.connectionId);
+  if (opts.scope) q.set("scope", opts.scope);
+  if (opts.scopeRef) q.set("scope_ref", opts.scopeRef);
+  const res = await fetch(`${BASE}/cards?${q.toString()}`);
+  if (!res.ok) throw new Error("Failed to list dashboard cards");
+  return res.json();
+}
+
+/** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
+ *  last/prev value for a delta. */
+export async function runDashboardCard(cardId: string): Promise<CardRunResult> {
+  const res = await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}/run`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to refresh dashboard card");
+  return res.json();
+}
+
+export async function deleteDashboardCard(cardId: string): Promise<void> {
+  await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
+}
+
 export async function dismissCanvasInsight(canvasId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
   const res = await fetch(
     `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/insights/${encodeURIComponent(insightId)}/dismiss`,
