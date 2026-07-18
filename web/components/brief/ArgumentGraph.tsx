@@ -42,6 +42,7 @@ const EDGE_STYLE: Record<ArgumentEdgeType, { color: string; label: string }> = {
   share:         { color: "var(--grn4)",  label: "shares" },
   explains_why:  { color: "var(--grn4)",  label: "explains" },
   relates_to:    { color: "var(--vio4)",  label: "pinned card" },
+  related:       { color: "var(--t4)",    label: "related" },
 };
 
 // ── Custom nodes ─────────────────────────────────────────────────────────────
@@ -202,7 +203,9 @@ export function ArgumentGraph({ graph, connectionId, schema, onOpenFinding }: {
     const vNodes = allNodes.filter(n => visible.has(n.id));
     const vEdges = allEdges.filter(e => visible.has(e.source) && visible.has(e.target));
 
-    const rows = layoutRows(vNodes, vEdges);
+    // `related` is a lateral sibling link (driver↔driver) — exclude it from the hierarchy so it
+    // can't push a driver into a lower row; every other edge type points evidence→claim.
+    const rows = layoutRows(vNodes, vEdges.filter(e => e.type !== "related"));
     const byRow = new Map<number, ArgumentGraphNode[]>();
     vNodes.forEach(n => { const r = rows.get(n.id) ?? 1; const a = byRow.get(r) ?? []; a.push(n); byRow.set(r, a); });
 
@@ -226,20 +229,23 @@ export function ArgumentGraph({ graph, connectionId, schema, onOpenFinding }: {
     const rfEdges: Edge[] = vEdges.map((e, i) => {
       const st = EDGE_STYLE[e.type] ?? EDGE_STYLE.supports;
       const faint = e.type === "supports";
-      const dashed = e.type === "relates_to";      // human↔machine link reads as a dashed tie
+      const lateral = e.type === "related";         // structural sibling link — quiet, symmetric
+      const dashed = e.type === "relates_to" || lateral;   // human/structural ties read as dashed
       return {
         id: `e${i}`,
         source: e.source,
         target: e.target,
         type: "default",
-        label: st.label || undefined,
+        label: (e.label || st.label) || undefined,   // a `related` edge shows its shared join key
         labelStyle: { fill: st.color, fontSize: 9, fontWeight: 600 },
         labelBgStyle: { fill: "var(--bg-0)" },
         style: {
-          stroke: st.color, strokeWidth: faint ? 1 : 1.5, opacity: faint ? 0.45 : 0.9,
+          stroke: st.color, strokeWidth: (faint || lateral) ? 1 : 1.5,
+          opacity: (faint || lateral) ? 0.4 : 0.9,
           strokeDasharray: dashed ? "5 4" : undefined,
         },
-        markerEnd: { type: MarkerType.ArrowClosed, color: st.color, width: 14, height: 14 },
+        // `related` is symmetric — no arrowhead; everything else points evidence→claim.
+        markerEnd: lateral ? undefined : { type: MarkerType.ArrowClosed, color: st.color, width: 14, height: 14 },
         animated: !faint && !dashed,
       };
     });

@@ -25,6 +25,11 @@ VERDICT_ID = "verdict"
 # The explorer's typed cross-finding relationships (aughor/explorer/synthesis.py OPERATORS).
 COMPOSITION_TYPES = ("share", "tension", "concentration", "confound", "chain")
 
+# Densify (Slice-3 follow-up): cap on `related` sibling edges added among the drivers, so a
+# dense briefing can't turn the graph into a hairball. `related` is structural relatedness
+# (a shared join key), deliberately NOT an LLM-validated composition type.
+MAX_RELATED_EDGES = 8
+
 
 def _index_by_id(domain_data: dict[str, list[dict]]) -> dict[str, dict]:
     """id → insight over EVERY finding (all domains) so a parent/drill id resolves even when
@@ -140,6 +145,39 @@ def build_argument_graph(
         drill_parent = ins.get("drill_of")
         if drill_parent and drill_parent in node_ids:
             _add_edge(iid, drill_parent, "explains_why")
+
+    # 4) Densify — connect the ordinary drivers to each other. The typed composition/drill edges
+    #    above only cover synthesized findings + drills (a sparse subset), so ordinary drivers
+    #    otherwise just fan `supports` into the verdict (a star). Reuse the explorer's OWN
+    #    deterministic pair logic (synthesis.candidate_pairs) over the drivers to emit `related`
+    #    edges wherever two share a join key (table/dimension), labelled with that key. `related`
+    #    is structural relatedness (a shared cut) — NOT one of the LLM-validated composition types
+    #    and rendered lighter — so it reads as context, never an asserted trade-off/cause. Bounded.
+    from aughor.explorer.synthesis import candidate_pairs
+
+    linked = {frozenset((e["source"], e["target"])) for e in edges}
+    # Two findings that both compose into the same synthesis are already connected THROUGH it —
+    # don't add a redundant direct `related` edge between such co-parents.
+    _children: dict[str, list[str]] = {}
+    for e in edges:
+        if e["type"] in COMPOSITION_TYPES:
+            _children.setdefault(e["target"], []).append(e["source"])
+    for _parents in _children.values():
+        for _i in range(len(_parents)):
+            for _j in range(_i + 1, len(_parents)):
+                linked.add(frozenset((_parents[_i], _parents[_j])))
+    dense = 0
+    for c in candidate_pairs(top, max_pairs=2 * MAX_RELATED_EDGES):
+        if dense >= MAX_RELATED_EDGES:
+            break
+        a, b = c.parent_ids
+        pair = frozenset((a, b))
+        if a not in node_ids or b not in node_ids or a == b or pair in linked:
+            continue
+        linked.add(pair)
+        dense += 1
+        key = (c.shared_dimensions or c.shared_tables or [""])[0].split(".")[-1]
+        edges.append({"source": a, "target": b, "type": "related", "label": key})
 
     return {"nodes": nodes, "edges": edges}
 

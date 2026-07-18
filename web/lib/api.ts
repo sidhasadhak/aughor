@@ -2812,7 +2812,8 @@ export interface HeldBackSignal {
  *  explains_why from drills). Built deterministically server-side; the frontend only renders it. */
 export type ArgumentEdgeType =
   | "supports" | "chain" | "tension" | "confound" | "concentration" | "share" | "explains_why"
-  | "relates_to";   // card ↔ finding (Slice 4 — wires the cockpit into the graph)
+  | "relates_to"   // card ↔ finding (Slice 4 — wires the cockpit into the graph)
+  | "related";     // finding ↔ finding, densify: a shared join key (structural, not validated)
 
 export interface ArgumentGraphNode {
   id: string;
@@ -2832,6 +2833,8 @@ export interface ArgumentGraphEdge {
   source: string;
   target: string;
   type: ArgumentEdgeType;
+  /** Optional per-edge label (e.g. the shared join key on a `related` edge). */
+  label?: string;
 }
 
 export interface ArgumentGraph {

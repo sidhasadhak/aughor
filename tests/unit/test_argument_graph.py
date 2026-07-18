@@ -209,3 +209,66 @@ def test_relate_cards_caps_edges_per_card():
 def test_relate_cards_skips_empty_card_sql():
     r = relate_cards([{"id": "note1", "title": "A note", "sql": ""}], _FINDINGS)
     assert r == {"nodes": [], "edges": []}                    # a note (no SQL) has nothing to relate
+
+
+# ── Densify: `related` sibling edges among the drivers (Slice-3 follow-up) ─────
+
+def _related(g):
+    return [(e["source"], e["target"], e.get("label")) for e in g["edges"] if e["type"] == "related"]
+
+
+def test_densify_relates_drivers_sharing_a_join_key():
+    top = [
+        {"id": "rev", "domain": "Sales", "finding": "Revenue by region", "sql": "x", "_impact": 0.9,
+         "signature": {"tables": ["orders"], "dimensions": ["region"], "measures": ["revenue"]}},
+        {"id": "ret", "domain": "Returns", "finding": "Return rate by region", "sql": "x", "_impact": 0.8,
+         "signature": {"tables": ["returns"], "dimensions": ["region"], "measures": ["return_rate"]}},
+    ]
+    g = build_argument_graph(top, "h", {"d": top})
+    rel = _related(g)
+    # Both are drivers sharing the `region` cut with different measures → one `related` edge,
+    # labelled with the shared dimension.
+    assert len(rel) == 1
+    assert {rel[0][0], rel[0][1]} == {"rev", "ret"}
+    assert rel[0][2] == "region"
+
+
+def test_densify_does_not_duplicate_a_composition_edge():
+    # A synth driver already links its two parents via `chain`; densify must not ALSO relate them.
+    data = {"S": [
+        {"id": "syn", "domain": "S", "finding": "combined", "sql": "x", "_impact": 0.9,
+         "composition_type": "chain", "parents": ["p1", "p2"],
+         "signature": {"tables": ["t"], "dimensions": ["seg"], "measures": ["m1"]}},
+    ], "P": [
+        {"id": "p1", "domain": "P", "finding": "p1", "sql": "x", "_impact": 0.85,
+         "signature": {"tables": ["t"], "dimensions": ["seg"], "measures": ["a"]}},
+        {"id": "p2", "domain": "P", "finding": "p2", "sql": "x", "_impact": 0.8,
+         "signature": {"tables": ["t"], "dimensions": ["seg"], "measures": ["b"]}},
+    ]}
+    top = [data["S"][0], data["P"][0], data["P"][1]]
+    g = build_argument_graph(top, "h", data)
+    # p1↔p2 are already joined (p1→syn, p2→syn via chain); no `related` edge between p1 and p2.
+    assert frozenset(("p1", "p2")) not in {frozenset((s, t)) for s, t, _ in _related(g)}
+
+
+def test_densify_no_shared_key_no_related():
+    top = [
+        {"id": "a", "domain": "A", "finding": "a", "sql": "x", "_impact": 0.9,
+         "signature": {"tables": ["ta"], "dimensions": ["da"], "measures": ["ma"]}},
+        {"id": "b", "domain": "B", "finding": "b", "sql": "x", "_impact": 0.8,
+         "signature": {"tables": ["tb"], "dimensions": ["db"], "measures": ["mb"]}},
+    ]
+    g = build_argument_graph(top, "h", {"d": top})
+    assert _related(g) == []                                  # disjoint signatures → no relatedness
+
+
+def test_densify_is_bounded():
+    from aughor.knowledge.argument_graph import MAX_RELATED_EDGES
+    # Many drivers all sharing one dimension but with distinct measures → many eligible pairs.
+    top = [
+        {"id": f"n{i}", "domain": f"D{i}", "finding": f"f{i}", "sql": "x", "_impact": 1.0 - i / 100,
+         "signature": {"tables": ["t"], "dimensions": ["seg"], "measures": [f"m{i}"]}}
+        for i in range(8)
+    ]
+    g = build_argument_graph(top, "h", {"d": top})
+    assert len(_related(g)) <= MAX_RELATED_EDGES              # capped — never a hairball
