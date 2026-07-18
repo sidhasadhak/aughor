@@ -161,7 +161,9 @@ a:hover { color: var(--blue4); }
   border: none;
 }
 .aug-nav-item:hover { background: var(--bg-hover); color: var(--t1); }
-.aug-nav-item.active { background: var(--bg-sel); color: var(--t1); font-weight: 500; }
+/* Active tab reads NEUTRAL, not blue: a quiet grey wash + a muted blue-grey indicator
+   (the saturated --blue3 accent was too loud for the resting nav). */
+.aug-nav-item.active { background: rgba(255, 255, 255, 0.06); color: var(--t1); font-weight: 500; }
 .aug-nav-item.active::before {
   content: '';
   position: absolute;
@@ -170,7 +172,7 @@ a:hover { color: var(--blue4); }
   transform: translateY(-50%);
   width: 2px;
   height: 16px;
-  background: var(--blue3);
+  background: var(--t2);
   border-radius: 0 2px 2px 0;
 }
 .aug-nav-group {
