@@ -24,6 +24,11 @@ const CHEVD_ICON   = "M6 9l6 6 6-6";
 const CANVAS_ICON = "M4 6h16M4 10h16M4 14h8M4 18h5M15 14l2 2 4-4";
 const TRASH_ICON  = "M4 6h16M6 6l1 14h10L18 6M9 6V4h6v2M10 11v6M14 11v6";
 const DB_ICON     = "M12 2C7.58 2 4 3.79 4 6v12c0 2.21 3.58 4 8 4s8-1.79 8-4V6c0-2.21-3.58-4-8-4zm0 2c3.87 0 6 1.5 6 2s-2.13 2-6 2-6-1.5-6-2 2.13-2 6-2zm6 12c0 .5-2.13 2-6 2s-6-1.5-6-2v-2.23C7.61 15.51 9.72 16 12 16s4.39-.49 6-1.23V16zm0-5c0 .5-2.13 2-6 2s-6-1.5-6-2V8.77C7.61 10.51 9.72 11 12 11s4.39-.49 6-1.23V11z";
+const PERSON_ICON = "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z";
+const GRID_ICON   = "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z";
+const LIST_ICON   = "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01";
+const CLOCK_ICON  = "M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm.5-14v5.25l4.5 2.67-.75 1.23L11 14.5V8h1.5z";
+const LAYERS_ICON = "M12 2l9 5-9 5-9-5 9-5zM3 12l9 5 9-5M3 17l9 5 9-5";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -42,10 +47,10 @@ function timeAgo(iso: string): string {
 
 // ── Filter chip ───────────────────────────────────────────────────────────────
 
-function FilterChip({ label, active, onClick }: { label: string; active?: boolean; onClick: () => void }) {
+function FilterChip({ label, icon, active, onClick }: { label: string; icon?: string; active?: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
+      display: "inline-flex", alignItems: "center", gap: 6,
       padding: "5px 13px", borderRadius: 999,
       background: active ? "color-mix(in srgb, var(--blue4) 12%, var(--bg-2))" : "var(--bg-2)",
       border: `1px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
@@ -53,8 +58,96 @@ function FilterChip({ label, active, onClick }: { label: string; active?: boolea
       fontSize: 12, fontWeight: active ? 500 : 400,
       cursor: "pointer", transition: "all .1s", whiteSpace: "nowrap",
     }}>
+      {icon && <Icon d={icon} size={13} color={active ? "var(--blue4)" : "var(--t3)"} />}
       {label}
     </button>
+  );
+}
+
+// ── Canvas card — the rich, Databricks-Genie-style catalog tile (default view) ──
+function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () => void; onDelete?: () => void }) {
+  const { canvas, connection } = row;
+  const n = canvas.scopes[0]?.tables.length ?? 0;
+  const tableLabel = n === 0 ? "All tables" : `${n} table${n !== 1 ? "s" : ""}`;
+  const updated = timeAgo(canvas.updated_at || canvas.created_at);
+  return (
+    <div
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); } }}
+      className="aug-canvas-card"
+      style={{
+        position: "relative", display: "flex", flexDirection: "column", gap: 12,
+        padding: 16, minHeight: 148, textAlign: "left", cursor: "pointer",
+        background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
+        transition: "border-color .12s, background .12s, box-shadow .12s",
+      }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b3)"; e.currentTarget.style.background = "var(--bg-3)"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-2)"; }}
+    >
+      {/* Header — icon + name + type label */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 11 }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: "var(--r2)", flexShrink: 0,
+          background: canvas.is_legacy ? "var(--bg-4)" : "color-mix(in srgb, var(--blue3) 16%, transparent)",
+          border: `1px solid ${canvas.is_legacy ? "var(--b2)" : "color-mix(in srgb, var(--blue3) 32%, transparent)"}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <Icon d={CANVAS_ICON} size={17} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--t1)", lineHeight: 1.35,
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {canvas.name}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 1 }}>
+            {canvas.is_legacy ? "Data Canvas · auto-generated" : "Data Canvas"}
+          </div>
+        </div>
+        {onDelete && !canvas.is_legacy && (
+          <button
+            onClick={e => { e.stopPropagation(); onDelete(); }}
+            title="Delete Data Canvas"
+            className="aug-canvas-card-delete"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t4)",
+              padding: 3, marginTop: -2, marginRight: -2, borderRadius: 4, opacity: 0, transition: "opacity .12s, color .1s" }}
+            onMouseEnter={e => { e.currentTarget.style.color = "var(--red4)"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "var(--t4)"; }}
+          >
+            <Icon d={TRASH_ICON} size={13} />
+          </button>
+        )}
+      </div>
+
+      {/* Description — two lines, quiet */}
+      <div style={{
+        flex: 1, fontSize: 12, color: "var(--t3)", lineHeight: 1.5,
+        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+      }}>
+        {canvas.description || "No description."}
+      </div>
+
+      {/* Footer — signal chips: connection · tables · updated */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+        {connection && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px",
+            borderRadius: 4, background: "var(--bg-3)", border: "1px solid var(--b1)",
+            fontSize: 11, color: "var(--t2)", whiteSpace: "nowrap" }}>
+            <Icon d={DB_ICON} size={10} color="var(--t4)" />{connection.name}
+          </span>
+        )}
+        <span style={{ display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 4,
+          background: n === 0 ? "color-mix(in srgb, var(--grn3) 10%, transparent)" : "var(--bg-3)",
+          border: `1px solid ${n === 0 ? "color-mix(in srgb, var(--grn3) 25%, transparent)" : "var(--b1)"}`,
+          fontSize: 11, color: n === 0 ? "var(--grn4)" : "var(--t3)", whiteSpace: "nowrap" }}>
+          {tableLabel}
+        </span>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap" }}>
+          {updated}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -83,6 +176,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
   const [filter, setFilter]             = useState<"all" | "mine">("all");
   const [sort, setSort]                 = useState<"activity" | "modified" | "name" | "tables">("activity");
   const [sortOpen, setSortOpen]         = useState(false);
+  const [view, setView]                 = useState<"cards" | "list">("cards");
   const [pendingDelete, setPendingDelete] = useState<Canvas | null>(null);
   const [deleting, setDeleting]         = useState(false);
 
@@ -131,15 +225,6 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
       .sort(cmp)
       .map(c => ({ key: c.id, canvas: c, connection: connMap[c.scopes[0]?.connection_id] }));
   }, [canvases, filter, search, sort, connMap]);
-
-  // Up to 5 most-recently-used canvases (those with any investigation/chat).
-  const recent: CanvasRow[] = useMemo(() => {
-    return [...canvases]
-      .filter(c => !!c.last_activity)
-      .sort((a, b) => new Date(b.last_activity!).getTime() - new Date(a.last_activity!).getTime())
-      .slice(0, 5)
-      .map(c => ({ key: c.id, canvas: c, connection: connMap[c.scopes[0]?.connection_id] }));
-  }, [canvases, connMap]);
 
   const SORT_LABELS: Record<typeof sort, string> = {
     activity: "Latest investigation",
@@ -203,7 +288,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
       title: "Connection",
       key: "connection",
       width: 200,
-      render: (_, { canvas, connection }) => {
+      render: (_, { connection }) => {
         if (!connection) return <span style={{ color: "var(--t4)" }}>—</span>;
         const ct = connection.conn_type;
         const label = ct === "duckdb" ? "DuckDB" : ct === "postgres" ? "PG" : ct.toUpperCase().slice(0, 4);
@@ -342,8 +427,8 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
         }}>
           <Icon d={SLIDERS_ICON} size={14} color="var(--t3)" />
         </div>
-        <FilterChip label="All"           active={filter === "all"}  onClick={() => setFilter("all")} />
-        <FilterChip label="Created by me" active={filter === "mine"} onClick={() => setFilter("mine")} />
+        <FilterChip label="All"           icon={LAYERS_ICON} active={filter === "all"}  onClick={() => setFilter("all")} />
+        <FilterChip label="Created by me" icon={PERSON_ICON} active={filter === "mine"} onClick={() => setFilter("mine")} />
       </div>
 
       {/* ── Table ── */}
@@ -354,8 +439,25 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             {loading ? "Loading…" : `All Data Canvases${displayed.length > 0 ? ` (${displayed.length})` : ""}`}
           </span>
 
-          {/* Sort control */}
-          <div style={{ marginLeft: "auto", position: "relative" }}>
+          {/* View toggle + Sort — right cluster */}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            {/* Cards ⇄ List view toggle */}
+            <div style={{ display: "flex", alignItems: "center", gap: 1, padding: 2,
+              background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
+              {([["cards", GRID_ICON, "Card view"], ["list", LIST_ICON, "List view"]] as const).map(([v, ic, tt]) => (
+                <div key={v} role="button" tabIndex={0} title={tt} aria-label={tt} aria-pressed={view === v}
+                  onClick={() => setView(v)}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setView(v); } }}
+                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    width: 27, height: 24, borderRadius: 5, cursor: "pointer",
+                    background: view === v ? "var(--bg-4)" : "transparent",
+                    color: view === v ? "var(--t1)" : "var(--t3)", transition: "all .1s" }}>
+                  <Icon d={ic} size={13} color="currentColor" />
+                </div>
+              ))}
+            </div>
+            {/* Sort control */}
+            <div style={{ position: "relative" }}>
             <button
               onClick={() => setSortOpen(v => !v)}
               onBlur={() => setTimeout(() => setSortOpen(false), 120)}
@@ -402,6 +504,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
                 ))}
               </div>
             )}
+            </div>
           </div>
         </div>
 
@@ -437,6 +540,21 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               </button>
             )}
           </div>
+        ) : view === "cards" ? (
+          /* ── Card grid (default) — rich Databricks-Genie-style tiles ── */
+          <>
+            <style>{`.aug-canvas-card:hover .aug-canvas-card-delete { opacity: 1 !important; }`}</style>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+              {displayed.map(row => (
+                <CanvasCard
+                  key={row.key}
+                  row={row}
+                  onSelect={() => onSelect(row.canvas)}
+                  onDelete={() => setPendingDelete(row.canvas)}
+                />
+              ))}
+            </div>
+          </>
         ) : (
           <>
             <style>{`
@@ -468,47 +586,6 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               })}
             />
           </>
-        )}
-
-        {/* ── Recently used (up to 5, by latest investigation) ── */}
-        {!loading && !search && recent.length > 0 && (
-          <div style={{ marginTop: 28 }}>
-            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t2)", display: "block", marginBottom: 10 }}>
-              Recently used
-            </span>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-              {recent.map(({ canvas, connection }) => (
-                <button
-                  key={canvas.id}
-                  onClick={() => onSelect(canvas)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 10, textAlign: "left",
-                    padding: "11px 13px", borderRadius: "var(--r2)", cursor: "pointer",
-                    background: "var(--bg-2)", border: "1px solid var(--b1)", transition: "all .1s",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--blue4)"; e.currentTarget.style.background = "var(--bg-3)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-2)"; }}
-                >
-                  <div style={{
-                    width: 30, height: 30, borderRadius: 4, flexShrink: 0,
-                    background: "color-mix(in srgb, var(--blue3) 16%, transparent)",
-                    border: "1px solid color-mix(in srgb, var(--blue3) 32%, transparent)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    <Icon d={CANVAS_ICON} size={14} color="var(--blue4)" />
-                  </div>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {canvas.name}
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--t4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {connection?.name ?? "—"} · {timeAgo(canvas.last_activity!)}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
         )}
       </div>
 

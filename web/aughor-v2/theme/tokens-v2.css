@@ -22,25 +22,27 @@
 
 /* ── DARK (default) ──────────────────────────────────────────────────────── */
 :root {
-  /* Backgrounds — MLflow near-black canvas, hairline-lifted layers */
-  --bg-0: #0A0A0E;   /* canvas */
-  --bg-1: #0C0D12;   /* sidebar / topbar — one step off the canvas */
-  --bg-2: #121318;   /* surface: cards, panels, tables */
-  --bg-3: #181A21;   /* surface-2: table headers, insets, inputs, hover fills */
-  --bg-4: #20222B;   /* surface-3: pressed / gauge tracks */
+  /* Backgrounds — Du Bois-lifted soft-dark canvas (blue-tinted), hairline layers.
+     Off pure-black so surfaces read as surfaces and text contrast is gentler. */
+  --bg-0: #10161D;   /* canvas — Du Bois-level soft-dark, cool tint (calm, not a void) */
+  --bg-1: #131A22;   /* sidebar / topbar — one step off the canvas */
+  --bg-2: #19212B;   /* surface: cards, panels, tables */
+  --bg-3: #222C37;   /* surface-2: table headers, insets, inputs, hover fills */
+  --bg-4: #2C3744;   /* surface-3: pressed / gauge tracks */
   --bg-hover: rgba(255, 255, 255, 0.045);
   --bg-sel:   rgba(90, 159, 214, 0.14);   /* blue-tint — selected rows / active nav wash */
 
   /* Borders — hairline structure carries the layout (not shadows) */
-  --b0: #1A1C23;   /* line-faint: internal table-row separators */
-  --b1: #23252E;   /* line: default border / divider */
-  --b2: #2F323C;   /* line-strong: inputs, pills, emphasised borders */
-  --b3: #3A3D48;   /* stronger emphasis / hover borders */
+  --b0: #29323E;   /* line-faint: internal table-row separators */
+  --b1: #333D4A;   /* line: default border / divider */
+  --b2: #414C5B;   /* line-strong: inputs, pills, emphasised borders */
+  --b3: #4E5A6A;   /* stronger emphasis / hover borders */
   --bfocus: #5A9FD6;
 
-  /* Text — ink */
-  --t1: #F2F3F6;
-  --t2: #989BA6;
+  /* Text — ink. Primary is a SOFT off-white (Du Bois), not pure white: gentler
+     contrast on the lifted canvas, easier on the eyes over long sessions. */
+  --t1: #E8ECF0;
+  --t2: #93A1B2;
   --t3: #686B77;
   --t4: #525B69;
 
@@ -81,11 +83,11 @@
   --chart-threshold-warn:   #E0A54D;
   --chart-threshold-crit:   #E07070;
   --chart-threshold-target: #5FBE82;
-  --chart-axis: #23252E;
-  --chart-grid: #1E2129;
+  --chart-axis: #333D4A;
+  --chart-grid: #262F3A;
   --chart-tick: #686B77;
 
-  --code-bg: #0D0E13;
+  --code-bg: #0C1219;   /* recessed code well, one step under the lifted canvas */
 }
 
 /* ── LIGHT ───────────────────────────────────────────────────────────────── */
