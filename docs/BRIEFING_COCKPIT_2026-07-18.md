@@ -353,8 +353,11 @@ Each slice is independently shippable, flag-gated, and verified on a real briefi
   Synthesis "CHAIN" node with its two parent findings pulled in and joined by "drives" edges,
   "Show all (10 findings)" progressive disclosure, React Flow zoom/fit controls, and the Linear
   toggle round-trips unchanged. Backend: 10 py tests (builder + real-shape + endpoint-wiring).
-  *Densify deferred:* drill parents are only linked when already in-graph; pulling non-driver
-  parents / `relates_to` card↔finding edges is S4.
+  *Densify (DONE, follow-up `9986989`):* the ordinary drivers no longer just fan `supports` into
+  the verdict — `related` sibling edges connect drivers that share a join key (deterministic,
+  reusing `synthesis.candidate_pairs`; structural relatedness, NOT an LLM-validated composition
+  type; quiet dashed, layout-excluded, capped). *Still open:* pulling non-driver drill parents;
+  `supports` from citations vs pure top-K.
 - **✅ Slice 4 — Door 3 + connective tissue. DONE** (3 commits). The full co-authored cockpit:
   - **S4a `relates_to` (card↔finding), `eec44b6`.** `argument_graph.relate_cards` links each pinned
     card to the graph finding(s) it shares SQL structure with (deterministic table/measure/dimension
