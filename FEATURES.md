@@ -582,6 +582,13 @@ folded onto — Intelligence, **Operations** (Monitors / Action Hub / Security &
 (Catalog / Query Builder / Semantic Layer) each render as one perspective-switched surface instead of a row
 of separate full-screen tabs (deep-links preserved). A **turn renderer registry** (`TURN_RENDERERS` +
 `registerTurnRenderer`) lets a pack contribute an answer surface without editing the chat god-component.
+A **Genie-parity report presentation + Du Bois design uplift** (2026-07-18, PR [#177](https://github.com/sidhasadhak/aughor/pull/177)):
+the deep-analysis report reads as one clean argument (compact chrome, no methodology disclosure, one-font/one-color
+prose, a "Bottom line" close before the recommendations, per-exhibit **named** source drawers, the agent trace
+inspectable in history); the dark theme is lifted off near-black to a **Du Bois soft-dark** (calmer contrast, surfaces
+read as surfaces); and the list surfaces — **Data Canvas · Investigations · Agents** — lead with rich **card catalogs**
+(icon + title + description/headline + signal chips + hover-lift, a card/list toggle on Data Canvas) with a neutral
+(grey) active-nav. See ROADMAP §0.
 
 ## How it fits together
 
