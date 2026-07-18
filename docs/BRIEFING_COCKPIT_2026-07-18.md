@@ -1,7 +1,7 @@
 # The Self-Explaining Briefing — Argument Graph + Co-authored Cockpit
 
-**Design doc · 2026-07-18 · Status: Slices 0 + 1 + 2 + 3 BUILT & live-verified on branch
-`2026-07-18-briefing-cockpit` (not pushed); Slice 4 pending — see §10.**
+**Design doc · 2026-07-18 · Status: ALL Slices 0–4 BUILT & verified on branch
+`2026-07-18-briefing-cockpit` (not pushed) — the full co-authored cockpit. See §10.**
 Build is gated slice-by-slice in §10; nothing here ships until a v1 slice is picked.
 
 All file:line references below were verified against the current tree on 2026-07-18. Where a
@@ -355,8 +355,26 @@ Each slice is independently shippable, flag-gated, and verified on a real briefi
   toggle round-trips unchanged. Backend: 10 py tests (builder + real-shape + endpoint-wiring).
   *Densify deferred:* drill parents are only linked when already in-graph; pulling non-driver
   parents / `relates_to` card↔finding edges is S4.
-- **Slice 4 — Door 3 + connective tissue.** Inline authoring + `relates_to` edges (card↔finding) +
-  watch/alert graduation. *Proves:* the full co-authored cockpit.
+- **✅ Slice 4 — Door 3 + connective tissue. DONE** (3 commits). The full co-authored cockpit:
+  - **S4a `relates_to` (card↔finding), `eec44b6`.** `argument_graph.relate_cards` links each pinned
+    card to the graph finding(s) it shares SQL structure with (deterministic table/measure/dimension
+    overlap via `signature_fields`); live `POST /cards/relations` (not cached with the brief);
+    ArgumentGraph renders distinct violet dashed "card" nodes + "pinned card" edges. *Verified live:*
+    the expanded graph shows pinned-card nodes tied up to their findings — the standing layer wired
+    into the narrative. (+4 py tests; validated on the real cockpit — 7 cards → 10 relations.)
+  - **S4b watch→monitor graduation, `67821a6`.** `POST /cards/{id}/graduate` builds a threshold
+    Monitor from the card's guarded SQL (`reanchor_window` ON) and records the thresholds back on
+    the card; a compact "Set alert" control on scalar KPI cards → "⏰ Alerting". *Verified live:* a
+    real Monitor was created (custom_sql = the card's SQL) and the card showed alerting. (+4 py tests.)
+  - **S4c Door 3 inline authoring, `63b5948`.** `NewCardComposer` — "＋ New card from a metric":
+    pick a grounded north-star metric → Value/Trend → live preview → pin through the guarded
+    pin-query path. *Verified:* composer renders; metric fetch returns the connection's 8 metrics;
+    the pin path proven on the real path (Item Return Rate → guarded kpi card 0.262). Full
+    in-browser click-through wasn't captured — the shared dev server's Turbopack wedged on a stale
+    mid-edit error — but the code is clean (tsc 0, eslint parses, all gates green).
+  *Proves:* the full co-authored cockpit — three authoring doors onto one Card, both layers wired
+  together in the graph, and the card lifecycle closed (author → ground → refresh → place →
+  graduate → own).
 
 **Build notes (2026-07-18):** (a) tabular findings render "N rows" — a *trend* card needs a
 scalar or a time series; rendering tabular cards as charts/tables (reuse `ResultChartCard`) is a
