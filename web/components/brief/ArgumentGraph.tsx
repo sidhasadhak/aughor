@@ -13,14 +13,18 @@
  * auto-layout. Progressive disclosure starts at the verdict + top drivers so it never opens as a
  * hairball. A node click "pulls the thread" into an inline investigation (reusing the drill wiring).
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ReactFlow, Background, Controls, Handle, Position, MarkerType,
   type Node, type Edge, type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import type { ArgumentGraph as ArgumentGraphData, ArgumentGraphNode, ArgumentEdgeType } from "@/lib/api";
+import {
+  fetchCardRelations,
+  type ArgumentGraph as ArgumentGraphData, type ArgumentGraphNode,
+  type ArgumentGraphEdge, type ArgumentEdgeType,
+} from "@/lib/api";
 
 // How many drivers the collapsed view shows before "Show all" (verdict + top-N by impact).
 const COLLAPSED_DRIVERS = 4;
@@ -37,6 +41,7 @@ const EDGE_STYLE: Record<ArgumentEdgeType, { color: string; label: string }> = {
   concentration: { color: "var(--vio4)",  label: "concentrates" },
   share:         { color: "var(--grn4)",  label: "shares" },
   explains_why:  { color: "var(--grn4)",  label: "explains" },
+  relates_to:    { color: "var(--vio4)",  label: "pinned card" },
 };
 
 // ── Custom nodes ─────────────────────────────────────────────────────────────
@@ -103,7 +108,28 @@ function FindingNode({ data }: NodeProps<Node<FindingNodeData>>) {
   );
 }
 
-const nodeTypes = { verdict: VerdictNode, finding: FindingNode };
+// A user-pinned cockpit card, visually distinct from AI findings (violet, "PINNED" chip) so a
+// human artefact never reads as a machine finding. It relates UP to the finding(s) it explains.
+function CardNode({ data }: NodeProps<Node<{ title: string }>>) {
+  return (
+    <div style={{
+      width: 210, padding: "8px 11px", borderRadius: "var(--r3)",
+      background: "color-mix(in srgb, var(--vio4) 10%, var(--bg-2))",
+      border: "1px dashed color-mix(in srgb, var(--vio4) 45%, var(--b1))",
+    }}>
+      <Handle type="source" position={Position.Top} style={{ opacity: 0 }} />
+      <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--vio4)", marginBottom: 3 }}>
+        ◆ Pinned card
+      </div>
+      <div style={{ fontSize: 10.5, lineHeight: 1.4, color: "var(--t2)",
+        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+        {data.title}
+      </div>
+    </div>
+  );
+}
+
+const nodeTypes = { verdict: VerdictNode, finding: FindingNode, card: CardNode };
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 
@@ -132,30 +158,49 @@ function layoutRows(nodes: ArgumentGraphNode[], edges: { source: string; target:
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function ArgumentGraph({ graph, onOpenFinding }: {
+export function ArgumentGraph({ graph, connectionId, schema, onOpenFinding }: {
   graph: ArgumentGraphData;
+  connectionId: string;
+  schema?: string;
   /** Investigate the finding behind a node (reuses the briefing's pull-the-thread handler). */
   onOpenFinding: (insightId: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
+  // Live card↔finding relations (Slice 4) — fetched, not cached with the brief, so a card pinned
+  // this session wires into the graph immediately. Best-effort: a failure just omits card nodes.
+  const [cardRel, setCardRel] = useState<{ nodes: ArgumentGraphNode[]; edges: ArgumentGraphEdge[] }>({ nodes: [], edges: [] });
+
+  useEffect(() => {
+    const findingIds = graph.nodes.filter(n => n.kind === "finding").map(n => n.id);
+    if (!connectionId || !findingIds.length) { setCardRel({ nodes: [], edges: [] }); return; }
+    let cancelled = false;
+    fetchCardRelations(connectionId, { schema, findingIds })
+      .then(r => { if (!cancelled) setCardRel(r); })
+      .catch(() => { if (!cancelled) setCardRel({ nodes: [], edges: [] }); });
+    return () => { cancelled = true; };
+  }, [connectionId, schema, graph.nodes]);
+
+  // The brief's finding graph + the live card relations, as one node/edge set.
+  const allNodes = useMemo(() => [...graph.nodes, ...cardRel.nodes], [graph.nodes, cardRel.nodes]);
+  const allEdges = useMemo(() => [...graph.edges, ...cardRel.edges], [graph.edges, cardRel.edges]);
 
   const drivers = useMemo(
-    () => graph.nodes.filter(n => n.kind === "finding" && n.is_driver).sort((a, b) => b.impact - a.impact),
-    [graph.nodes],
+    () => allNodes.filter(n => n.kind === "finding" && n.is_driver).sort((a, b) => b.impact - a.impact),
+    [allNodes],
   );
-  const hiddenCount = Math.max(0, graph.nodes.length - 1 - Math.min(drivers.length, COLLAPSED_DRIVERS));
+  const hiddenCount = Math.max(0, allNodes.length - 1 - Math.min(drivers.length, COLLAPSED_DRIVERS));
 
-  const { rfNodes, rfEdges } = useMemo(() => {
-    const verdict = graph.nodes.find(n => n.kind === "verdict");
+  const { rfNodes, rfEdges, usedTypes } = useMemo(() => {
+    const verdict = allNodes.find(n => n.kind === "verdict");
     const visible = new Set<string>();
     if (showAll) {
-      graph.nodes.forEach(n => visible.add(n.id));
+      allNodes.forEach(n => visible.add(n.id));
     } else {
       if (verdict) visible.add(verdict.id);
       drivers.slice(0, COLLAPSED_DRIVERS).forEach(n => visible.add(n.id));
     }
-    const vNodes = graph.nodes.filter(n => visible.has(n.id));
-    const vEdges = graph.edges.filter(e => visible.has(e.source) && visible.has(e.target));
+    const vNodes = allNodes.filter(n => visible.has(n.id));
+    const vEdges = allEdges.filter(e => visible.has(e.source) && visible.has(e.target));
 
     const rows = layoutRows(vNodes, vEdges);
     const byRow = new Map<number, ArgumentGraphNode[]>();
@@ -170,9 +215,9 @@ export function ArgumentGraph({ graph, onOpenFinding }: {
 
     const rfNodes: Node[] = vNodes.map(n => ({
       id: n.id,
-      type: n.kind === "verdict" ? "verdict" : "finding",
+      type: n.kind === "verdict" ? "verdict" : n.kind === "card" ? "card" : "finding",
       position: pos.get(n.id) ?? { x: 0, y: 0 },
-      data: n.kind === "verdict"
+      data: (n.kind === "verdict" || n.kind === "card")
         ? { title: n.title }
         : { ...n, onOpen: n.has_sql ? () => onOpenFinding(n.id) : undefined },
       draggable: true,
@@ -181,6 +226,7 @@ export function ArgumentGraph({ graph, onOpenFinding }: {
     const rfEdges: Edge[] = vEdges.map((e, i) => {
       const st = EDGE_STYLE[e.type] ?? EDGE_STYLE.supports;
       const faint = e.type === "supports";
+      const dashed = e.type === "relates_to";      // human↔machine link reads as a dashed tie
       return {
         id: `e${i}`,
         source: e.source,
@@ -189,14 +235,18 @@ export function ArgumentGraph({ graph, onOpenFinding }: {
         label: st.label || undefined,
         labelStyle: { fill: st.color, fontSize: 9, fontWeight: 600 },
         labelBgStyle: { fill: "var(--bg-0)" },
-        style: { stroke: st.color, strokeWidth: faint ? 1 : 1.5, opacity: faint ? 0.45 : 0.9 },
+        style: {
+          stroke: st.color, strokeWidth: faint ? 1 : 1.5, opacity: faint ? 0.45 : 0.9,
+          strokeDasharray: dashed ? "5 4" : undefined,
+        },
         markerEnd: { type: MarkerType.ArrowClosed, color: st.color, width: 14, height: 14 },
-        animated: !faint,
+        animated: !faint && !dashed,
       };
     });
 
-    return { rfNodes, rfEdges };
-  }, [graph, drivers, showAll, onOpenFinding]);
+    const usedTypes = [...new Set(vEdges.map(e => e.type))].filter(t => t !== "supports");
+    return { rfNodes, rfEdges, usedTypes };
+  }, [allNodes, allEdges, drivers, showAll, onOpenFinding]);
 
   if (!graph.nodes.length) {
     return (
@@ -205,9 +255,6 @@ export function ArgumentGraph({ graph, onOpenFinding }: {
       </div>
     );
   }
-
-  const usedTypes = Array.from(new Set(rfEdges.length ? graph.edges.map(e => e.type) : []))
-    .filter(t => t !== "supports");
 
   return (
     <div style={{ marginBottom: 20 }}>

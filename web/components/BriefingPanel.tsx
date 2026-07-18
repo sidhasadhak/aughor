@@ -2096,6 +2096,8 @@ export function BriefingPanel({
            a lens over the same brief (Slice 3). Linear stays the default. */
         <ArgumentGraph
           graph={narrative.graph}
+          connectionId={connectionId}
+          schema={schema}
           onOpenFinding={(iid) => onInvestigate("Investigate this finding", iid)}
         />
       ) : (

@@ -142,3 +142,60 @@ def build_argument_graph(
             _add_edge(iid, drill_parent, "explains_why")
 
     return {"nodes": nodes, "edges": edges}
+
+
+def relate_cards(
+    cards: list[dict],
+    findings: list[dict],
+    *,
+    max_edges_per_card: int = 2,
+    dialect: str = "duckdb",
+) -> dict:
+    """Deterministic card↔finding `relates_to` edges (Slice 4 connective tissue): link each
+    pinned cockpit card to the argument-graph finding(s) it shares the most structure with, by
+    SQL-signature overlap (shared tables / measures / dimensions). This is what wires the
+    STANDING layer (user cards) into the NARRATIVE layer (findings) — the "every number links to
+    its why" promise made structural. Pure/deterministic (no LLM); overlap comes from real query
+    shape, not a guess.
+
+    `cards` and `findings` are plain dicts (card: id/title/sql; finding: id/sql/signature).
+    Returns ``{"nodes": [card_nodes], "edges": [relates_to]}`` — each card linked to its top
+    ``max_edges_per_card`` findings by overlap score (weights tables/measures over dimensions).
+    """
+    from aughor.explorer.frontier import signature_fields
+
+    # Each finding's (tables, measures, dimensions) — prefer its stored signature, else parse.
+    fsig: dict[str, tuple[set, set, set]] = {}
+    for f in findings:
+        fid = f.get("id")
+        if not fid:
+            continue
+        sig = f.get("signature") if isinstance(f.get("signature"), dict) else None
+        if not sig or not (sig.get("tables") or sig.get("measures")):
+            sig = signature_fields(f.get("sql", "") or "", dialect)
+        fsig[fid] = (set(sig.get("tables") or []), set(sig.get("measures") or []),
+                     set(sig.get("dimensions") or []))
+
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    for card in cards:
+        cid, csql = card.get("id"), (card.get("sql") or "").strip()
+        if not cid or not csql:
+            continue
+        cs = signature_fields(csql, dialect)
+        ct, cm, cd = set(cs.get("tables") or []), set(cs.get("measures") or []), set(cs.get("dimensions") or [])
+        scored = [
+            (2 * len(ct & ft) + 2 * len(cm & fm) + len(cd & fd), fid)
+            for fid, (ft, fm, fd) in fsig.items()
+        ]
+        scored = sorted(((s, fid) for s, fid in scored if s > 0), key=lambda x: (-x[0], x[1]))
+        if not scored:
+            continue
+        nodes.append({
+            "id": cid, "kind": "card", "title": card.get("title") or "Pinned card", "domain": "",
+            "angle": "", "impact": 0.0, "plausibility": None, "has_sql": True,
+            "composition_type": None, "is_driver": False, "cited": False,
+        })
+        for _, fid in scored[:max_edges_per_card]:
+            edges.append({"source": cid, "target": fid, "type": "relates_to"})
+    return {"nodes": nodes, "edges": edges}

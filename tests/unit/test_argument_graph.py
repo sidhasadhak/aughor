@@ -7,7 +7,7 @@ domains, the verdict apex, cited flags, the parent cap, and dedup/self-loop safe
 """
 from __future__ import annotations
 
-from aughor.knowledge.argument_graph import VERDICT_ID, build_argument_graph
+from aughor.knowledge.argument_graph import VERDICT_ID, build_argument_graph, relate_cards
 
 
 def _edges_of(graph, etype):
@@ -169,3 +169,43 @@ def test_generate_narrative_wires_graph_into_response(monkeypatch):
     assert any(n["kind"] == "verdict" and n["title"] == "Returns Pressure The Quarter"
                for n in g["nodes"])
     assert any(e["type"] == "supports" for e in g["edges"])          # drivers → verdict
+
+
+# ── relate_cards (card ↔ finding connective tissue, Slice 4) ──────────────────
+
+_FINDINGS = [
+    {"id": "f_orders", "sql": "SELECT region, SUM(gmv) AS gmv FROM orders GROUP BY region",
+     "signature": {"tables": ["orders"], "measures": ["gmv"], "dimensions": ["region"]}},
+    {"id": "f_cust", "sql": "SELECT COUNT(*) AS n FROM customers",
+     "signature": {"tables": ["customers"], "measures": ["n"], "dimensions": []}},
+]
+
+
+def test_relate_cards_links_by_signature_overlap():
+    cards = [{"id": "card1", "title": "GMV total", "sql": "SELECT SUM(gmv) AS gmv FROM orders"}]
+    r = relate_cards(cards, _FINDINGS)
+    # The card shares table `orders` + measure `gmv` with f_orders (not f_cust).
+    assert any(n["id"] == "card1" and n["kind"] == "card" for n in r["nodes"])
+    assert r["edges"] == [{"source": "card1", "target": "f_orders", "type": "relates_to"}]
+
+
+def test_relate_cards_no_overlap_no_edge():
+    cards = [{"id": "card2", "title": "Consent", "sql": "SELECT COUNT(*) FROM consent"}]
+    r = relate_cards(cards, _FINDINGS)
+    assert r == {"nodes": [], "edges": []}                    # no shared table/measure → nothing
+
+
+def test_relate_cards_caps_edges_per_card():
+    findings = [
+        {"id": f"f{i}", "sql": f"SELECT SUM(gmv) FROM orders WHERE d={i}",
+         "signature": {"tables": ["orders"], "measures": ["gmv"], "dimensions": []}}
+        for i in range(5)
+    ]
+    cards = [{"id": "c", "title": "GMV", "sql": "SELECT SUM(gmv) FROM orders"}]
+    r = relate_cards(cards, findings, max_edges_per_card=2)
+    assert len([e for e in r["edges"] if e["source"] == "c"]) == 2   # capped
+
+
+def test_relate_cards_skips_empty_card_sql():
+    r = relate_cards([{"id": "note1", "title": "A note", "sql": ""}], _FINDINGS)
+    assert r == {"nodes": [], "edges": []}                    # a note (no SQL) has nothing to relate

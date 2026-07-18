@@ -1481,6 +1481,26 @@ export async function deleteDashboardCard(cardId: string): Promise<void> {
   await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
 }
 
+/** Card↔finding `relates_to` edges for the argument-graph lens (Slice 4): links this
+ *  connection's pinned cards to the given graph findings by deterministic SQL-signature overlap.
+ *  Live (reflects the current cockpit). Returns card nodes + edges to merge onto the graph. */
+export async function fetchCardRelations(
+  connectionId: string,
+  opts: { schema?: string; findingIds: string[] },
+): Promise<{ nodes: ArgumentGraphNode[]; edges: ArgumentGraphEdge[] }> {
+  const res = await fetch(`${BASE}/cards/relations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      connection_id: connectionId,
+      schema: opts.schema,
+      finding_ids: opts.findingIds,
+    }),
+  });
+  if (!res.ok) return { nodes: [], edges: [] };   // best-effort: relations never block the graph
+  return res.json();
+}
+
 export async function dismissCanvasInsight(canvasId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
   const res = await fetch(
     `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/insights/${encodeURIComponent(insightId)}/dismiss`,
@@ -2773,11 +2793,12 @@ export interface HeldBackSignal {
  *  (supports from the ranking; chain/tension/confound/concentration/share from composition;
  *  explains_why from drills). Built deterministically server-side; the frontend only renders it. */
 export type ArgumentEdgeType =
-  | "supports" | "chain" | "tension" | "confound" | "concentration" | "share" | "explains_why";
+  | "supports" | "chain" | "tension" | "confound" | "concentration" | "share" | "explains_why"
+  | "relates_to";   // card ↔ finding (Slice 4 — wires the cockpit into the graph)
 
 export interface ArgumentGraphNode {
   id: string;
-  kind: "verdict" | "finding";
+  kind: "verdict" | "finding" | "card";
   title: string;
   domain: string;
   angle: string;
