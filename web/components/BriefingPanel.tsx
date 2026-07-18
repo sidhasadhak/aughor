@@ -67,6 +67,8 @@ import { PinnedCards } from "@/components/brief/PinnedCards";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
 import { GroundedNumber, withGroundedNumbers } from "@/components/brief/GroundedNumber";
 import { BriefAskBox } from "@/components/brief/BriefAskBox";
+import { NewCardComposer } from "@/components/brief/NewCardComposer";
+import { Button } from "@/components/ui/button";
 import dynamic from "next/dynamic";
 
 // React Flow measures the DOM — load the argument-graph lens client-only (the repo's pattern for
@@ -2034,16 +2036,16 @@ export function BriefingPanel({
             {narrative?.graph && narrative.graph.nodes.length > 1 && (
               <div style={{ display: "inline-flex", borderRadius: "var(--r2)", border: "1px solid var(--b1)", overflow: "hidden" }}>
                 {(["linear", "graph"] as const).map(m => (
-                  <button key={m} onClick={() => setLens(m)}
+                  <Button key={m} variant="ghost" size="xs" onClick={() => setLens(m)}
                     title={m === "graph" ? "See the verdict, its drivers and their evidence as an argument graph" : "The linear brief"}
                     style={{
-                      padding: "4px 10px", fontSize: 11, border: "none", cursor: "pointer",
+                      padding: "4px 10px", fontSize: 11, height: "auto", borderRadius: 0, cursor: "pointer",
                       background: lens === m ? "var(--bg-1)" : "transparent",
                       color: lens === m ? "var(--blue4)" : "var(--t3)",
                       fontWeight: lens === m ? 600 : 400,
                     }}>
                     {m === "linear" ? "Linear" : "Graph"}
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
@@ -2159,7 +2161,10 @@ export function BriefingPanel({
       )}
 
       {/* ── Your pinned cards ── the standing cockpit layer: user-authored, guard-checked
-            KPI cards pinned from findings (briefing-cockpit Slice 0). Renders nothing if none. */}
+            KPI cards. Door 3 (inline authoring from a metric) sits above the pinned grid so
+            the first card can be composed even when the cockpit is empty. */}
+      <NewCardComposer connectionId={connectionId} schema={schema}
+        onCreated={() => setPinnedRefresh(n => n + 1)} />
       <PinnedCards connectionId={connectionId} refreshKey={pinnedRefresh}
         onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)} />
 
