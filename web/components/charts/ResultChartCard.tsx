@@ -1,29 +1,30 @@
 "use client";
 
 /**
- * ResultChartCard — the answer-result chart surface for Insight (chat) and Deep
- * Analysis (report) modes. Wraps the canonical <Chart> (ECharts) engine with an
- * inline, re-pivot-in-place control strip + a chart⇄table toggle, in the spirit
- * of a ThoughtSpot-style answer card — but GRAIN-AWARE:
+ * ResultChartCard — the answer-result chart surface for Insight (chat), Deep Analysis
+ * (report), and the briefing cockpit. Wraps the canonical <Chart> (ECharts) engine and
+ * renders CLEAN: no controls sit on the chart. A single hover pencil ("Edit
+ * visualization") opens the Databricks-style right-docked side panel (VizEditorPanel),
+ * where every control lives, grouped into layered sections — Visualization, X axis,
+ * Y axis, Transform, Labels. Edits apply live to the chart behind the drawer.
  *
- *   • Display  — swap chart type (line/bar/pie/…), driven by availableChartTypes.
- *   • Metric   — which numeric measure to plot (shown only when ≥2 exist).
- *   • Dimension— which category/date column for the x-axis (shown only when ≥2).
- *   • Aggregation — SUM/AVG/COUNT/MIN/MAX, shown ONLY when the chosen dimension
- *                   has repeated values (i.e. re-aggregation is actually meaningful);
- *                   defaults to AVG for rate/share metrics so we never offer the
- *                   nonsensical SUM-of-an-average that naive tools expose.
- *   • ⊞ table  — one-click toggle to the raw result table.
- *   • ⊞ pivot  — cross-tab (rows × columns → aggregated values) via PivotTable,
- *                fed the FULL result (not the projected [dim, metric]); its own
- *                Rows/Columns/Values/Agg pickers own the re-shape there.
+ * The controls themselves are unchanged and GRAIN-AWARE:
+ *   • Display  — chart type (line/bar/pie/…), from availableChartTypes; + chart⇄table⇄pivot.
+ *   • Metric   — which numeric measure to plot.
+ *   • Dimension— which category/date column for the x-axis.
+ *   • Aggregation — SUM/AVG/COUNT/MIN/MAX, offered ONLY when the dimension repeats;
+ *                   defaults to AVG for rate/share metrics (never SUM-of-an-average).
+ *   • Transform— period-over-period / share / rolling / cumulative (appends a column).
+ *   • Table / Pivot — the raw result, or a cross-tab.
  *
- * Untouched defaults reproduce today's chart exactly (original rows → <Chart>'s
- * own inference), so this is additive — no regression for existing results.
+ * Untouched defaults reproduce today's chart exactly (original rows → <Chart>'s own
+ * inference), so this is additive — no regression for existing results.
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { BarChart3, Table2, Grid3x3 } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Pencil } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Chart, type ChartCustom } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
@@ -32,6 +33,8 @@ import { isUngraphableGrid } from "@/components/charts/columnRoles";
 import type { ExhibitSpec } from "@/components/charts/exhibit";
 import { cleanLabel } from "@/lib/format";
 import { applyPostproc, type PostprocOp } from "@/lib/api";
+import { VizEditorPanel, type VizEditorModel } from "@/components/charts/VizEditorPanel";
+import { useVizEditorOpen, openVizEditor, closeVizEditor } from "@/components/charts/vizEditorStore";
 
 const TRANSFORM_OPTS: { v: PostprocOp | "none"; t: string }[] = [
   { v: "none", t: "None" },
@@ -112,23 +115,30 @@ interface Props {
   chartType?: string | null;
   chartConfig?: Record<string, unknown> | null;
   custom?: ChartCustom | null;
+  /** Backend exhibit spec (semantic colour / ref-lines) — takes precedence over the
+   *  one riding inside chartConfig; lets the deep-report path pass it explicitly. */
+  exhibit?: ExhibitSpec | null;
+  /** Authoritative per-column display unit from the backend finding (e.g. percent). */
+  columnUnits?: Record<string, string> | null;
+  /** Initial data-label visibility (the deep report ships labels on). */
+  defaultShowLabels?: boolean;
   heightScale?: number;
   onSelect?: (datum: Record<string, unknown>) => void;
 }
 
-const SELECT_CLS =
-  "aug-fs-xs rounded border bg-transparent px-1.5 py-0.5 outline-none cursor-pointer";
-const selectStyle = { borderColor: "var(--chart-grid)", color: "var(--t2)" } as const;
-
-export function ResultChartCard({ columns, rows, title, chartType, chartConfig, custom, heightScale, onSelect }: Props) {
+export function ResultChartCard({
+  columns, rows, title, chartType, chartConfig, custom, exhibit: exhibitProp,
+  columnUnits, defaultShowLabels, heightScale, onSelect,
+}: Props) {
   const { numericIdxs, catIdxs, dateIdxs } = useMemo(() => classifyColumns(columns, rows), [columns, rows]);
   const chartTypes = useMemo(() => availableChartTypes(columns, rows), [columns, rows]);
   // The exhibit spec (semantic colour / reference lines) rides inside chart_config on the quick
   // path, but it is NOT field-role config: it must survive the user choosing a chart type, which
   // nulls chartConfig below. Lift it out so a Display switch can't silently drop the grammar.
+  // An explicit `exhibit` prop (deep report) wins over the one embedded in chartConfig.
   const exhibit = useMemo(
-    () => (chartConfig?.exhibit as ExhibitSpec | undefined) ?? null,
-    [chartConfig],
+    () => exhibitProp ?? (chartConfig?.exhibit as ExhibitSpec | undefined) ?? null,
+    [exhibitProp, chartConfig],
   );
 
   const metricCols = useMemo(() => numericIdxs.map((i) => columns[i]), [numericIdxs, columns]);
@@ -145,6 +155,7 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
   const [metricSel, setMetricSel] = useState<string | null>(null);
   const [dimSel, setDimSel] = useState<string | null>(null);
   const [aggSel, setAggSel] = useState<Agg | null>(null);
+  const [showLabels, setShowLabels] = useState<boolean>(defaultShowLabels ?? false);
 
   // Default metric MUST match what <Chart> resolves when untouched, or the strip
   // label contradicts the plot. <Chart> prefers a rate/share column as its primary
@@ -211,84 +222,70 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
   // user picks a chart type, applies a transform, or reshapes the data (metric/dim/agg) —
   // otherwise those controls silently do nothing on any answer that shipped a config.
   const userChoseChart = touched || typeSel !== "auto" || transformOp !== "none";
-  const Dropdown = (label: string, value: string, opts: { v: string; t: string }[], on: (v: string) => void) => (
-    <label className="flex items-center gap-1" style={{ color: "var(--t3)" }}>
-      <span className="aug-fs-xs uppercase tracking-wide">{label}</span>
-      <select className={SELECT_CLS} style={selectStyle} value={value} onChange={(e) => on(e.target.value)}>
-        {opts.map((o) => <option key={o.v} value={o.v}>{o.t}</option>)}
-      </select>
-    </label>
-  );
+
+  // Live ECharts instance (for the panel's Download PNG on a chromeless chart).
+  const instRef = useRef<{ getDataURL: (o?: { type?: string; pixelRatio?: number; backgroundColor?: string }) => string } | null>(null);
+  const handleDownload = () => {
+    const inst = instRef.current;
+    if (!inst) return;
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg-2").trim() || "#161A20";
+    const url = inst.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: bg });
+    const fname = (title || "chart").replace(/[^a-z0-9]+/gi, "_").toLowerCase() + ".png";
+    const a = Object.assign(document.createElement("a"), { href: url, download: fname });
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+
+  // Single-instance viz editor (one drawer open app-wide).
+  const cardId = useId();
+  const editorOpen = useVizEditorOpen(cardId);
+
+  // The control model handed to the side panel. The panel is stateless; this is the
+  // single place the AUTO sentinel ↔ null mapping lives.
+  const model: VizEditorModel = {
+    title,
+    view, setView,
+    chartAvailable: chartTypes.length > 0,
+    canPivot,
+    chartTypeValue: typeSel,
+    chartTypeOptions: chartTypes.length ? [{ v: "auto", t: "Auto" }, ...chartTypes.map((t) => ({ v: t, t: TYPE_LABEL[t] }))] : [],
+    setChartType: (v) => setTypeSel(v as ChartType | "auto"),
+    dimValue: dimSel ?? (dimCols.length >= 2 ? AUTO_OPT : (dimCols[0] ?? "")),
+    dimOptions: dimCols.length
+      ? [...(dimCols.length >= 2 ? [{ v: AUTO_OPT, t: "Auto" }] : []), ...dimCols.map((c) => ({ v: c, t: cleanLabel(c) }))]
+      : [],
+    setDim: (v) => setDimSel(v === AUTO_OPT ? null : v),
+    metricValue: metricSel ?? (metricCols.length >= 2 ? AUTO_OPT : (metricCols[0] ?? "")),
+    metricOptions: metricCols.length
+      ? [...(metricCols.length >= 2 ? [{ v: AUTO_OPT, t: "Auto" }] : []), ...metricCols.map((c) => ({ v: c, t: cleanLabel(c) }))]
+      : [],
+    setMetric: (v) => setMetricSel(v === AUTO_OPT ? null : v),
+    aggValue: dimHasDups ? (aggSel ?? AUTO_OPT) : null,
+    aggOptions: [{ v: AUTO_OPT, t: "Auto" }, ...(["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() }))],
+    setAgg: (v) => setAggSel(v === AUTO_OPT ? null : (v as Agg)),
+    rateSummed,
+    transformValue: transformOp,
+    transformOptions: metricCols.length >= 1 ? TRANSFORM_OPTS : [],
+    setTransform: (v) => setTransformOp(v as PostprocOp | "none"),
+    transformErr: tErr || undefined,
+    showLabels, setShowLabels,
+    onDownload: view === "chart" ? handleDownload : null,
+  };
 
   return (
-    <div className="flex flex-col gap-1.5">
-      {/* Control strip */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* The grain-aware strip drives chart/table; pivot owns its own field pickers. */}
-          {view !== "pivot" && (
-            <>
-              {metricCols.length >= 2 &&
-                Dropdown("Metric", metricSel ?? AUTO_OPT,
-                  [{ v: AUTO_OPT, t: "Auto" }, ...metricCols.map((c) => ({ v: c, t: cleanLabel(c) }))],
-                  (v) => setMetricSel(v === AUTO_OPT ? null : v))}
-              {dimCols.length >= 2 &&
-                Dropdown("Dimension", dimSel ?? AUTO_OPT,
-                  [{ v: AUTO_OPT, t: "Auto" }, ...dimCols.map((c) => ({ v: c, t: cleanLabel(c) }))],
-                  (v) => setDimSel(v === AUTO_OPT ? null : v))}
-              {dimHasDups &&
-                Dropdown("Aggregation", aggSel ?? AUTO_OPT,
-                  [{ v: AUTO_OPT, t: "Auto" }, ...(["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() }))],
-                  (v) => setAggSel(v === AUTO_OPT ? null : (v as Agg)))}
-              {rateSummed && (
-                <span className="aug-fs-xs" style={{ color: "var(--amb4)" }} title="Summing a rate/ratio is usually not meaningful — AVG is the grain-correct aggregate.">
-                  ⚠ summing a rate
-                </span>
-              )}
-              {metricCols.length >= 1 &&
-                Dropdown("Transform", transformOp, TRANSFORM_OPTS, (v) => setTransformOp(v as PostprocOp | "none"))}
-              {tErr && <span className="aug-fs-xs" style={{ color: "var(--amb4)" }} title={tErr}>⚠ transform n/a</span>}
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {view === "chart" && chartTypes.length > 0 &&
-            Dropdown("Display", typeSel,
-              [{ v: "auto", t: "Auto" }, ...chartTypes.map((t) => ({ v: t, t: TYPE_LABEL[t] }))],
-              (v) => setTypeSel(v as ChartType | "auto"))}
-          {/* chart ⇄ table toggle */}
-          <div className="flex items-center gap-0.5 rounded border p-0.5" style={{ borderColor: "var(--chart-grid)" }}>
-            <button
-              onClick={() => setView("chart")}
-              title="Chart"
-              disabled={!chartTypes.length}
-              className="w-6 h-6 flex items-center justify-center rounded transition-colors disabled:opacity-30"
-              style={view === "chart" ? { background: "var(--bg-sel)", color: "var(--accent)" } : { color: "var(--t3)" }}
-            >
-              <BarChart3 size={14} />
-            </button>
-            <button
-              onClick={() => setView("table")}
-              title="Table"
-              className="w-6 h-6 flex items-center justify-center rounded transition-colors"
-              style={view === "table" ? { background: "var(--bg-sel)", color: "var(--accent)" } : { color: "var(--t3)" }}
-            >
-              <Table2 size={14} />
-            </button>
-            <button
-              onClick={() => setView("pivot")}
-              title="Pivot (cross-tab)"
-              disabled={!canPivot}
-              className="w-6 h-6 flex items-center justify-center rounded transition-colors disabled:opacity-30"
-              style={view === "pivot" ? { background: "var(--bg-sel)", color: "var(--accent)" } : { color: "var(--t3)" }}
-            >
-              <Grid3x3 size={14} />
-            </button>
-          </div>
-        </div>
-      </div>
+    <div className="group/viz relative">
+      {/* Edit visualization — the single hover affordance; every control lives in the panel. */}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={() => openVizEditor(cardId)}
+        title="Edit visualization"
+        className="absolute -top-1 right-0 z-10 opacity-0 group-hover/viz:opacity-100 transition-opacity"
+        style={editorOpen ? { color: "var(--accent)", opacity: 1 } : { color: "var(--t3)" }}
+      >
+        <Pencil size={13} />
+      </Button>
 
-      {/* Body */}
+      {/* Body — clean chart / table / pivot */}
       {view === "pivot" ? (
         <PivotTable columns={columns} rows={rows} />
       ) : view === "table" ? (
@@ -300,13 +297,19 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
           chartType={hint}
           chartConfig={userChoseChart ? null : chartConfig}
           exhibit={exhibit}
+          columnUnits={columnUnits}
           custom={custom}
           title={title}
           chrome={false}
+          showLabels={showLabels}
           heightScale={heightScale}
           onSelect={onSelect}
+          onInstanceReady={(inst) => { instRef.current = inst; }}
         />
       )}
+
+      {editorOpen && typeof document !== "undefined" &&
+        createPortal(<VizEditorPanel model={model} onClose={() => closeVizEditor(cardId)} />, document.body)}
     </div>
   );
 }

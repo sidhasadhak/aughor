@@ -108,6 +108,7 @@ export function Chart({
   columnUnits,
   exhibit = null,
   onSelect,
+  onInstanceReady,
 }: {
   columns: string[];
   rows: unknown[][];
@@ -118,6 +119,9 @@ export function Chart({
   heightScale?: number;
   /** Click a mark to drill in — receives the datum behind the clicked bar/point. */
   onSelect?: (datum: Record<string, unknown>) => void;
+  /** Hand the live ECharts instance up to a chromeless caller (e.g. so a side-panel
+   *  "Download PNG" can export a chart rendered with chrome={false}). */
+  onInstanceReady?: (inst: { getDataURL: (o?: { type?: string; pixelRatio?: number; backgroundColor?: string }) => string }) => void;
   /** Render the hover toolbar (labels + download) and drag-to-resize handle. */
   chrome?: boolean;
   /** Externally control data-label visibility (chromeless mode). */
@@ -416,7 +420,7 @@ export function Chart({
         const _maxW = _catN > 0 && _catN <= 6 ? Math.max(340, _catN * 130 + 150) : undefined;
         return (
       <div ref={outerRef} style={{ maxHeight: 350, overflowY: "auto", overflowX: "hidden", width: "100%", maxWidth: _maxW }}>
-        <EChart option={built.option} height={chartH} onSelect={onSelect} onReady={(inst) => { instRef.current = inst; }} />
+        <EChart option={built.option} height={chartH} onSelect={onSelect} onReady={(inst) => { instRef.current = inst; onInstanceReady?.(inst); }} />
       </div>
         );
       })()}
