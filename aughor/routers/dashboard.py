@@ -155,3 +155,60 @@ def pin_insight_route(req: PinInsightRequest) -> dict:
         },
         "caveats": result.caveats or [],
     }
+
+
+# ── Run / refresh a card's value ─────────────────────────────────────────────
+
+def _scalar(result) -> Optional[float]:
+    """A single numeric cell → the card's tracked value; else None (chart/table card)."""
+    if result.error or result.row_count != 1 or len(result.columns or []) != 1:
+        return None
+    try:
+        return float((result.rows or [[None]])[0][0])
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+@router.post("/cards/{card_id}/run")
+def run_card_route(card_id: str) -> dict:
+    """Recompute a card's value NOW: re-run its SQL through the guard battery and return the
+    current result. A single numeric cell is recorded as the card's latest value (rolling the
+    previous one into prev_value) so a KPI can show a delta. Guard-on-read keeps a card honest
+    even if the underlying data drifted after it was pinned."""
+    from aughor.db.connection import open_connection_for
+    from aughor.sql.executor import execute_guarded
+    from aughor.util.time import now_iso
+
+    card = get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if not (card.sql or "").strip():
+        return {"columns": [], "rows": [], "row_count": 0, "caveats": [], "error": None,
+                "refresh": card.refresh.model_dump()}
+    try:
+        db = open_connection_for(card.connection_id)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
+    try:
+        result = execute_guarded(db, card.sql, query_id=f"card:{card_id}", schema=None)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+    scalar = _scalar(result)
+    if scalar is not None:
+        card = upsert_card(card.model_copy(update={"refresh": card.refresh.model_copy(update={
+            "prev_value": card.refresh.last_value,
+            "last_value": scalar,
+            "last_run": now_iso(),
+        })}))
+    return {
+        "columns": result.columns or [],
+        "rows": [[str(c) for c in r] for r in (result.rows or [])[:100]],
+        "row_count": result.row_count,
+        "caveats": result.caveats or [],
+        "error": result.error,
+        "refresh": card.refresh.model_dump(),
+    }

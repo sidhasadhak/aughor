@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 # ── Enumerated string domains (kept as plain strings for storage simplicity) ──
-SCOPES = ("canvas", "workspace", "user")
+SCOPES = ("canvas", "workspace", "user", "connection")
 SOURCES = ("insight", "query_builder", "authored", "watch")
 KINDS = ("note", "kpi", "chart", "watch")
 CADENCES = ("brief_cycle", "hourly", "daily", "manual")
