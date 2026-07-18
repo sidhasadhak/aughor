@@ -957,39 +957,61 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
             <p style={{ fontSize: 12, color: "var(--t3)" }}>No activity yet — start by asking a question.</p>
           </div>
         ) : (
-          <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
-            <table className="aug-dt">
-              <thead>
-                <tr>
-                  <th>Question / Analysis</th>
-                  <th>Type</th>
-                  <th>Date</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map(a => (
-                  <tr key={a.id} onClick={() => onOpenInvestigation(a.id, a.kind === "chat" ? "chat" : "investigation", a.connection_id, a.canvas_id)} style={{ cursor: "pointer" }}>
-                    <td style={{ maxWidth: 420 }}>
-                      <div style={{ fontSize: 12, color: "var(--t1)", fontFamily: "var(--font-ui)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{plainSubtitle(a.question)}</div>
-                      {a.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{plainSubtitle(a.headline)}</div>}
-                    </td>
-                    <td>
-                      <span className={`aug-tag ${a.kind === "chat" ? "aug-tag-blue" : "aug-tag-violet"}`}>
-                        {a.kind === "chat" ? "Chat" : "Agentic"}
-                      </span>
-                    </td>
-                    <td style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(a.started_at)}</td>
-                    <td>
-                      {a.status === "complete" && <span className="aug-tag aug-tag-green">Completed</span>}
-                      {a.status === "timed_out" && <span className="aug-tag aug-tag-amber">Timed out</span>}
-                      {a.status === "running"   && <span className="aug-tag aug-tag-blue">Running</span>}
-                      {a.status === "failed"    && <span className="aug-tag aug-tag-red">Failed</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          /* Card grid — each run reads as a tile: question + the answer headline + status */
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
+            {shown.map(a => {
+              const isChat = a.kind === "chat";
+              const st: [string, string] | null =
+                a.status === "complete"  ? ["aug-tag-green", "Completed"] :
+                a.status === "timed_out" ? ["aug-tag-amber", "Timed out"] :
+                a.status === "running"   ? ["aug-tag-blue",  "Running"]   :
+                a.status === "failed"    ? ["aug-tag-red",   "Failed"]    : null;
+              const open = () => onOpenInvestigation(a.id, isChat ? "chat" : "investigation", a.connection_id, a.canvas_id);
+              return (
+                <div key={a.id} role="button" tabIndex={0} onClick={open}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
+                  style={{
+                    display: "flex", flexDirection: "column", gap: 10, padding: 16, minHeight: 128, cursor: "pointer",
+                    background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
+                    transition: "border-color .12s, background .12s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b3)"; e.currentTarget.style.background = "var(--bg-3)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-2)"; }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 11 }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: "var(--r2)", flexShrink: 0,
+                      background: isChat ? "color-mix(in srgb, var(--blue3) 15%, transparent)" : "color-mix(in srgb, var(--vio3) 18%, transparent)",
+                      border: `1px solid ${isChat ? "color-mix(in srgb, var(--blue3) 30%, transparent)" : "color-mix(in srgb, var(--vio3) 32%, transparent)"}`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <NavIcon name={isChat ? "chat" : "spark"} size={15} color={isChat ? "var(--blue4)" : "var(--vio4)"} />
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{
+                        fontSize: 13, fontWeight: 600, color: "var(--t1)", lineHeight: 1.35,
+                        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+                      }}>
+                        {plainSubtitle(a.question)}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
+                        {isChat ? "Chat" : "Agentic"}{a.connection_id ? ` · ${a.connection_id}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{
+                    flex: 1, fontSize: 12, color: "var(--t3)", lineHeight: 1.5,
+                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+                  }}>
+                    {a.headline ? plainSubtitle(a.headline) : "—"}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {st && <span className={`aug-tag ${st[0]}`}>{st[1]}</span>}
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)" }}>{timeAgo(a.started_at)}</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1058,6 +1080,7 @@ function AgentsPanel({ workspaceId, workspaceName }: { workspaceId?: string; wor
         a run that exceeds its token or time budget is cancelled, because every run is metered.
         {workspaceName && " Unset values inherit the Org default."}
       </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(400px, 1fr))", gap: 12 }}>
       {agents.map(a => {
         const isBackground = a.lane === "background";
         const enabled = a.governance.enabled;
@@ -1065,8 +1088,11 @@ function AgentsPanel({ workspaceId, workspaceName }: { workspaceId?: string; wor
           <div key={a.id} style={{
             background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
             padding: "14px 16px", opacity: a.reserved ? 0.6 : 1,
-            display: "flex", flexDirection: "column", gap: 8,
-          }}>
+            display: "flex", flexDirection: "column", gap: 8, transition: "border-color .12s",
+          }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b3)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; }}
+          >
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ width: 30, height: 30, borderRadius: 8, background: "var(--bg-3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <NavIcon name={AGENT_ICON[a.id] || "spark"} size={15} color="var(--t2)" />
@@ -1115,6 +1141,7 @@ function AgentsPanel({ workspaceId, workspaceName }: { workspaceId?: string; wor
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
