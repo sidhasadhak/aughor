@@ -55,6 +55,20 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   AUD: "A$", CAD: "C$", SGD: "S$", CHF: "CHF ", BRL: "R$", ZAR: "R",
 };
 
+/** Decimals a SHARE column needs so two DISTINCT values never collapse to the same label —
+ *  fixes "return 2.8% / one_way 2.8%" printed beside visibly different-length bars (the real
+ *  values were 2.76 vs 2.80). Default 1 decimal; bump to 2 only when 1 would merge distinct
+ *  values (capped at 2 — closer than that and the bars are indistinguishable anyway). */
+function sharePrecision(rows: Row[], f: string, isFraction: boolean): 1 | 2 {
+  const scale = isFraction ? 100 : 1;
+  const vals = [...new Set(
+    rows.map((r) => num(r[f])).filter((v) => !isNaN(v)).map((v) => v * scale),
+  )];
+  if (vals.length < 2) return 1;
+  const at1 = new Set(vals.map((v) => v.toFixed(1)));
+  return at1.size < vals.length ? 2 : 1;
+}
+
 export function valueFormatter(rows: Row[], f: string, units?: Record<string, string>): (v: unknown) => string {
   const share = isShareField(rows, f, units);
   // The backend's SOURCE-currency unit ("currency:CHF", read from the metric SQL) is
@@ -70,10 +84,11 @@ export function valueFormatter(rows: Row[], f: string, units?: Record<string, st
   // percent-scaled axis (ticks ≤1 individually read as fractions and get ×100 — the
   // flags-on soak, every narrow-range chart). Mirrors export charts.py `_fmt_for`.
   const shareIsFraction = share && maxAbs(rows, f) <= 1.0001;
+  const prec = share ? sharePrecision(rows, f, shareIsFraction) : 1;
   return (v) => {
     const n = num(v);
     if (v == null || isNaN(n)) return "—";
-    if (share) return shareIsFraction ? pct(n, 1) : `${n.toFixed(1)}%`;
+    if (share) return shareIsFraction ? pct(n, prec) : `${n.toFixed(prec)}%`;
     return sym + compactNumber(n);
   };
 }

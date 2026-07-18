@@ -1191,12 +1191,12 @@ def _repair_conditioned_ratio(findings: list, conn, metric_sql: str, metric_labe
             f["sql"] = plan["sql"]             # the drill shows the CORRECT query
             f["key_numbers"] = []
             f["error"] = None
-            # The chart already shows the per-segment ranking; the interpretation adds only
-            # what the chart can't — the whole-population level the ranking is measured
-            # against — not a restatement of "X highest, Y lowest across N segments".
-            f["interpretation"] = (
-                f"Recomputed at the correct grain against a whole-population {metric_label} "
-                f"of {gstr}.")
+            # Clean-output policy: the corrected chart + ranking ARE the finding. The
+            # interpretation must NOT narrate the repair ("recomputed at the correct grain
+            # against a whole-population level of …") — that's how-it-was-computed process-
+            # speak the reader never asked for. The whole-population level still rides
+            # `trust_caveat` below for the Trust Receipt / Evidence tab.
+            f["interpretation"] = ""
             # Transparency without tripping the prompt's fan-out damper: this data is
             # now correct and MAY be cited as exact.
             f["trust_caveat"] = (
@@ -1219,17 +1219,13 @@ def _repair_conditioned_ratio(findings: list, conn, metric_sql: str, metric_labe
 
 def _repaired_ratio_summary(metric_label: str, gstr: Optional[str],
                             n_repaired: int = 0, n_left: int = 0) -> str:
-    """The phase summary once the recompute ran. When SOME dimensions couldn't be
-    recomputed (a segment on a third table, outside the v1 repair), lead with the real
-    answer and note the omission — never let a couple of un-repairable cuts headline the
-    whole phase as 'could not be computed' when the repaired cuts ARE the answer."""
-    lvl = f" — overall {gstr}" if gstr else ""
-    base = (f"{metric_label} was recomputed with each side aggregated at its own grain"
-            f"{lvl}; the per-dimension rankings below are validated against that level.")
-    if n_left > 0:
-        base += (f" {n_left} dimension(s) whose segment lives on a further-joined table "
-                 "could not be recomputed and are omitted.")
-    return base
+    """The phase summary once the recompute ran. Clean-output policy: a repaired phase
+    carries NO process narration. The corrected exhibits below ARE the finding, and
+    narrating "recomputed with each side aggregated at its own grain … N dimension(s)
+    omitted" is exactly the how-it-was-computed noise a reader didn't ask for. The
+    whole-population level + repair provenance ride `trust_caveat` / the Trust Receipt.
+    Returns "" so the phase renders its (now-correct) exhibits without a machinery blurb."""
+    return ""
 
 
 def _scrub_suppressed_metric_everywhere(phases: list, suppressed: dict) -> int:
@@ -1710,8 +1706,17 @@ def _normalize_pct_key_numbers(finding: dict) -> None:
             continue  # a bare count / average, not a percentage
         approx = "~" if m.group(1) else ""
         tail = val[m.end():]
+        # A value trailed by a unit WORD is a COUNT/measure with a unit ("0.0 events",
+        # "6,907 events", "5% margin"), not a bare percentage. Without an explicit "%" the
+        # num≤1 heuristic wrongly read a 0/1 count as a fraction and emitted the glitch
+        # "0.0%events" — skip those. (A parenthetical "(Germany)" isn't a unit → still converts.)
+        tail_is_word = bool(re.match(r"[A-Za-z]", tail))
+        if tail_is_word and not had_pct:
+            continue
         if _PCT_KN_REDUNDANT_TAIL_RE.match(tail):
             tail = ""   # drop the duplicate "(32.8%)" the LLM appended
+        elif tail_is_word:
+            tail = " " + tail   # restore the separator the number-match consumed ("5% margin")
         kn["value"] = approx + _fmt_pct(num) + tail
 
 
@@ -7056,6 +7061,7 @@ def ada_synthesize(state: AgentState) -> dict:
         answer_report = AnswerReport(
             headline=synth.headline,
             executive_summary=synth.executive_summary,
+            closing_summary=(getattr(synth, "closing_summary", "") or "").strip(),
             metric=intake_data.get("metric_label", ""),
             observation_period=(intake_data.get("data_coverage_label", "") if _xsec else intake_data.get("observation_label", "")),
             metric_definition=_metric_definition_receipt(intake_data),
@@ -7088,6 +7094,7 @@ def ada_synthesize(state: AgentState) -> dict:
         answer_report = AnswerReport(
             headline=_headline,
             executive_summary=_exec,
+            closing_summary="",   # deterministic fallback report carries no separate bottom line
             metric=intake_data.get("metric_label", ""),
             observation_period=(intake_data.get("data_coverage_label", "") if _xsec else intake_data.get("observation_label", "")),
             metric_definition=_metric_definition_receipt(intake_data),

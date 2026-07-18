@@ -21,6 +21,7 @@ const PATHS: Record<string, string> = {
   close:    "M18 6L6 18M6 6l12 12",
   check:    "M20 6L9 17l-5-5",
   table:    "M3 3h18v4H3zM3 11h18M3 19h18M8 7v12M16 7v12",
+  plus:     "M12 5v14M5 12h14",
 };
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -656,7 +657,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           }}>
             <Icon name="canvas" size={11} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
           </div>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{canvas.name}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap" }}>{canvas.name}</span>
         </div>
 
         {/* Table count badge */}
@@ -689,18 +690,29 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           </span>
         )}
 
-        {/* Spacer */}
+        {/* Spacer — pushes the tabs + actions into ONE right-stacked cluster. */}
         <div style={{ flex: 1 }} />
 
-        {/* New chat button */}
+        {/* View tabs — Chat / History / Artifacts, stacked to the RIGHT beside the canvas
+            actions (was centered). The standalone "New" button is gone: it navigated to Chat
+            exactly like the Chat tab, so the two read as duplicates. Starting a FRESH
+            conversation now lives as the compact "+" beside them — a distinct create action,
+            not a second "go to chat". */}
+        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <TabPill icon="chat"   label="Chat"      active={wsTab === "chat"}      onClick={() => { setWsTab("chat"); setOpenInvId(null); }} />
+          <TabPill icon="clock"  label="History"   active={wsTab === "history"}   onClick={() => { setWsTab("history"); setOpenInvId(null); }} />
+          <TabPill icon="table"  label="Artifacts" active={wsTab === "artifacts"} onClick={() => setWsTab("artifacts")} />
+        </div>
+
+        {/* New conversation — compact "+" (dedup of the old wordy "New" button that read the
+            same as the Chat tab). Same action: reset the chat surface to a fresh session. */}
         <button
           onClick={() => { setWsTab("chat"); setChatKey(k => k + 1); setOpenInvId(null); setRestoreSessionId(null); setChatInitialQuestion(undefined); setChatInitialMode(undefined); }}
           className="aug-btn aug-btn-ghost aug-btn-sm"
           title="New conversation"
-          style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, padding: 0 }}
         >
-          <Icon name="chat" size={11} color="currentColor" />
-          New
+          <Icon name="plus" size={15} color="currentColor" />
         </button>
 
         {/* Configure */}
@@ -740,16 +752,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
         )}
       </div>
 
-      {/* ── Tab nav ── */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 2,
-        padding: "6px 12px", borderBottom: "1px solid var(--b1)", flexShrink: 0,
-        background: "var(--bg-1)",
-      }}>
-        <TabPill icon="chat"    label="Chat"          active={wsTab === "chat"}    onClick={() => { setWsTab("chat"); setOpenInvId(null); }} />
-        <TabPill icon="clock"   label="History"       active={wsTab === "history"} onClick={() => { setWsTab("history"); setOpenInvId(null); }} />
-        <TabPill icon="table"  label="Artifacts"     active={wsTab === "artifacts"} onClick={() => setWsTab("artifacts")} />
-      </div>
+      {/* Tab nav folded into the header above (was a second full-width bar here). */}
 
       {/* ── Content ── */}
       {/*
@@ -783,38 +786,22 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
         }}>
           {openInvId
             ? (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  padding: "0 16px", height: 40, flexShrink: 0,
-                  borderBottom: "1px solid var(--b1)",
-                }}>
-                  <button
-                    onClick={() => setOpenInvId(null)}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: 5,
-                      background: "none", border: "none", cursor: "pointer",
-                      color: "var(--t3)", fontSize: 11, padding: "4px 0",
-                    }}
-                  >
-                    <Icon name="back" size={12} /> Back
-                  </button>
-                </div>
-                {/* Flex column (not a bare overflow block) so HistoryDetailPanel's
-                    flex:1 + position:absolute report area gets a resolved height.
-                    Without this the report collapses to 0px and looks "blank". */}
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
-                  <HistoryDetailPanel
-                    invId={openInvId}
-                    onContinue={() => {
-                      setOpenInvId(null);
-                      setChatInitialQuestion(undefined);
-                      setChatInitialMode(undefined);
-                      setWsTab("chat");
-                      setChatKey(k => k + 1);
-                    }}
-                  />
-                </div>
+              // The "← Back" bar is gone — Back folds into HistoryDetailPanel's Report/Evidence
+              // tab bar (onBack), so viewing a run is 2 chrome rows, not 4. Flex column (not a
+              // bare overflow block) so HistoryDetailPanel's flex:1 + position:absolute report
+              // area gets a resolved height (without it the report collapses to 0px = "blank").
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+                <HistoryDetailPanel
+                  invId={openInvId}
+                  onBack={() => setOpenInvId(null)}
+                  onContinue={() => {
+                    setOpenInvId(null);
+                    setChatInitialQuestion(undefined);
+                    setChatInitialMode(undefined);
+                    setWsTab("chat");
+                    setChatKey(k => k + 1);
+                  }}
+                />
               </div>
             )
             : (

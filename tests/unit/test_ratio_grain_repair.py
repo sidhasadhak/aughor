@@ -136,7 +136,11 @@ def test_orchestration_repairs_the_finding_in_place():
     by_seg = {r[0]: float(r[1]) for r in corrupt["rows"]}
     assert abs(by_seg["corporate"] - 4.48) < 0.01 and abs(by_seg["web"] - 1.12) < 0.01
     assert "WITH den AS" in corrupt["sql"]
-    assert "2.8%" in corrupt["interpretation"]
+    # Clean-output policy (2026-07-18): a repaired finding carries NO reader-facing process-
+    # speak — the corrected chart IS the finding. The whole-population level the ranking is
+    # validated against rides the trust_caveat (receipt-only), not the interpretation prose.
+    assert corrupt["interpretation"] == ""
+    assert "2.8%" in corrupt["trust_caveat"]
     assert "fan-out" not in corrupt["trust_caveat"]
     assert "2.8%" in (gstr or "") and abs(g - 2.8) < 0.01
 

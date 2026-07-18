@@ -191,38 +191,67 @@ export function AgentsAdminPanel() {
               {" "}<code>agents.user_defined</code> flag in Settings → System.
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            /* Persona card grid — icon + name + status, the instructions as the description,
+               binding meta, and the manage actions along the footer. */
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
               {agents.map(a => (
-                <div key={a.id}
-                     style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
-                              borderRadius: "var(--r2)", border: "1px solid var(--b1)",
-                              background: "var(--bg-1)" }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{a.name}</span>
-                      <StatusChip hue={a.enabled ? "positive" : "muted"}>
-                        {a.enabled ? "enabled" : "disabled"}
-                      </StatusChip>
-                      {a.last_eval && a.last_eval.total > 0 && (
-                        <StatusChip hue={a.last_eval.passed === a.last_eval.total ? "positive" : "caution"}>
-                          {a.last_eval.passed}/{a.last_eval.total} passing
-                        </StatusChip>
-                      )}
+                <div key={a.id} style={{
+                  display: "flex", flexDirection: "column", gap: 10, padding: 16, minHeight: 156,
+                  background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
+                  transition: "border-color .12s",
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b3)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 11 }}>
+                    <div style={{
+                      width: 34, height: 34, borderRadius: "var(--r2)", flexShrink: 0,
+                      background: "color-mix(in srgb, var(--vio3) 16%, transparent)",
+                      border: "1px solid color-mix(in srgb, var(--vio3) 32%, transparent)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="var(--vio4)"
+                           strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
+                      </svg>
                     </div>
-                    <div style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 3,
-                                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {connName(a.connection_id)}
-                      {a.schema_scope ? ` · ${a.schema_scope}` : ""}
-                      {" · "}{a.doc_ids.length} document{a.doc_ids.length === 1 ? "" : "s"}
-                      {a.pack_ids.length > 0 ? ` · ${a.pack_ids.length} pack${a.pack_ids.length === 1 ? "" : "s"}` : ""}
-                      {a.instructions ? ` · ${a.instructions}` : ""}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--t1)",
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {a.name}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                        <StatusChip hue={a.enabled ? "positive" : "muted"}>
+                          {a.enabled ? "enabled" : "disabled"}
+                        </StatusChip>
+                        {a.last_eval && a.last_eval.total > 0 && (
+                          <StatusChip hue={a.last_eval.passed === a.last_eval.total ? "positive" : "caution"}>
+                            {a.last_eval.passed}/{a.last_eval.total} passing
+                          </StatusChip>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <Button variant="ghost" size="xs" onClick={() => toggle(a)}>
-                    {a.enabled ? "Disable" : "Enable"}
-                  </Button>
-                  <Button variant="outline" size="xs" onClick={() => openEdit(a)}>Edit</Button>
-                  <Button variant="destructive" size="xs" onClick={() => remove(a)}>Delete</Button>
+                  <div style={{
+                    flex: 1, fontSize: 12, color: "var(--t3)", lineHeight: 1.5,
+                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+                  }}>
+                    {a.instructions || "No standing instructions."}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--t4)", overflow: "hidden",
+                                textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {connName(a.connection_id)}
+                    {a.schema_scope ? ` · ${a.schema_scope}` : ""}
+                    {" · "}{a.doc_ids.length} document{a.doc_ids.length === 1 ? "" : "s"}
+                    {a.pack_ids.length > 0 ? ` · ${a.pack_ids.length} pack${a.pack_ids.length === 1 ? "" : "s"}` : ""}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, borderTop: "1px solid var(--b1)", paddingTop: 10 }}>
+                    <Button variant="ghost" size="xs" onClick={() => toggle(a)}>
+                      {a.enabled ? "Disable" : "Enable"}
+                    </Button>
+                    <Button variant="outline" size="xs" onClick={() => openEdit(a)}>Edit</Button>
+                    <Button variant="destructive" size="xs" onClick={() => remove(a)}>Delete</Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -324,7 +353,7 @@ export function AgentsAdminPanel() {
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span className="aug-label">Golden questions</span>
                   <span style={{ fontSize: 11, color: "var(--t3)" }}>
-                    the agent's own regression suite — re-run after editing instructions or documents
+                    the agent&rsquo;s own regression suite — re-run after editing instructions or documents
                   </span>
                   <span style={{ marginLeft: "auto" }}>
                     <Button size="xs" variant="outline" onClick={runEvaluation}

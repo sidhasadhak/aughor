@@ -8,8 +8,10 @@ import { Separator } from "@/components/ui/separator";
 import { ReportView } from "@/components/ReportView";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
+import { ThinkingTrace } from "@/components/ThinkingTrace";
+import { SourcePanel, type SourcePanelData } from "@/components/ChatMessage";
 import { formatTimestamp } from "@/lib/format";
-import type { Hypothesis, QueryCitation, Report, AnswerReport, ExplorationReport, SubQuestion, SubQuestionAnswer } from "@/lib/types";
+import type { Hypothesis, QueryCitation, Report, AnswerReport, ExplorationReport, SubQuestion, SubQuestionAnswer, InvestigationState } from "@/lib/types";
 import { API_BASE } from "@/lib/config";
 import { localizeCurrency } from "@/lib/orgSettings";
 import { getEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/lib/api";
@@ -26,12 +28,54 @@ interface FullInvestigation {
   query_history: QueryCitation[] | null;
 }
 
+// Rebuild the trace state from a PERSISTED investigation so the agent trace renders
+// when a run is viewed later — parity with the live inline trace in ChatMessage
+// (`turnToTraceState`). Every field is sourced from the stored record instead of a
+// live ChatTurn; the run is finished, so status is always "done" (nothing re-animates).
+function investigationToTraceState(
+  inv: FullInvestigation,
+  reportType: "investigate" | "explore" | "direct" | "legacy",
+  reportRaw: (Record<string, unknown> & { _report_type?: string }) | null,
+): InvestigationState {
+  const queryHistory = inv.query_history ?? [];
+  const queryMode: InvestigationState["queryMode"] =
+    reportType === "explore" ? "explore" : reportType === "direct" ? "direct" : "investigate";
+  const ada = reportType === "investigate" ? (reportRaw as unknown as AnswerReport) : null;
+  return {
+    status: "done",
+    question: inv.question,
+    investigationId: inv.id,
+    hypotheses: inv.hypotheses ?? [],
+    queriesExecuted: queryHistory.length,
+    currentIteration: 0,
+    log: [],
+    report: null,
+    queryHistory,
+    error: null,
+    statsPerHypothesis: {},
+    fromCache: false,
+    cachedQuestion: null,
+    humanFeedback: null,
+    queryMode,
+    routeReasoning: null,
+    routeConfidence: null,
+    subQuestions: (reportRaw?.sub_questions ?? []) as SubQuestion[],
+    subqAnswers: (reportRaw?.subq_answers ?? []) as SubQuestionAnswer[],
+    exploreReport: reportType === "explore" ? (reportRaw as unknown as ExplorationReport) : null,
+    investigationPhases: ada?.phases ?? [],
+    adaReport: ada,
+  };
+}
+
 interface Props {
   invId: string | null;
+  /** Back to the investigations list — rendered as "← Back" in the tab bar (the dedicated
+   *  Back bar above was removed so viewing a run is 2 chrome rows, not 4). */
+  onBack?: () => void;
   onContinue?: (question: string, mode: "ask" | "investigate") => void;
 }
 
-export function HistoryDetailPanel({ invId, onContinue }: Props) {
+export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
   const [inv, setInv] = useState<FullInvestigation | null>(null);
   const [loading, setLoading] = useState(false);
   const [followUp, setFollowUp] = useState("");
@@ -40,9 +84,13 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
   const [evidence, setEvidence] = useState<EvidenceClaim[]>([]);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [feedbackPending, setFeedbackPending] = useState<string | null>(null);
+  // Source-data drawer (data + SQL + Query Builder), opened from the per-exhibit icon
+  // or a trace query node — the same panel the live chat uses (item 6, restored to history).
+  const [sourcePanel, setSourcePanel] = useState<SourcePanelData | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    setSourcePanel(null);  // a stale drawer must not survive switching investigations
     if (!invId) { setInv(null); setEvidence([]); setActiveTab("report"); return; }
     setLoading(true);
     fetch(`${API_BASE}/investigations/${invId}`)
@@ -135,8 +183,22 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
 
-      {/* ── Tab bar: Report / Evidence ── */}
-      <div style={{ display: "flex", borderBottom: "1px solid var(--b1)", flexShrink: 0 }}>
+      {/* ── Tab bar: ← Back · Report / Evidence (Back folded in — was its own bar above) ── */}
+      <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--b1)", flexShrink: 0 }}>
+        {onBack && (
+          <button
+            onClick={onBack}
+            title="Back to investigations"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "8px 14px", background: "none", border: "none",
+              cursor: "pointer", color: "var(--t3)", fontSize: 12, fontWeight: 500,
+            }}
+          >
+            <span style={{ fontSize: 15, lineHeight: 1 }}>←</span> Back
+          </button>
+        )}
+        {onBack && <span style={{ width: 1, height: 16, background: "var(--b1)", alignSelf: "center" }} />}
         {(["report", "evidence"] as const).map(t => (
           <button
             key={t}
@@ -189,6 +251,7 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
 
       {/* ── Report panel ── */}
       {activeTab === "report" && (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
     <div style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}>
       {/* Scrollable report */}
       <div style={{ position: "absolute", inset: 0, overflowY: "auto" }}>
@@ -224,13 +287,35 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
             <p style={{ marginTop: 4, fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)", textAlign: "right" }}>{inv.connection_id}</p>
           </div>
 
+          {/* Agent trace — the run's thinking, reconstructed from the stored phases so it is
+              inspectable when the investigation is viewed later (item 5). Collapsed by default
+              ("Thinking complete", Genie-style); its query nodes open the Source-data drawer. */}
+          {reportRaw && (reportType === "investigate" || reportType === "explore") && (
+            <details className="group">
+              <summary className="cursor-pointer list-none flex items-center gap-2 aug-fs-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors">
+                <span className="inline-flex h-1.5 w-1.5 rounded-[var(--r-pill)] bg-zinc-500" />
+                Thinking complete
+                <span className="ml-0.5 text-zinc-500 select-none">
+                  <span className="inline group-open:hidden">▶</span>
+                  <span className="hidden group-open:inline">▼</span>
+                </span>
+              </summary>
+              <div className="pl-1 mt-1">
+                <ThinkingTrace
+                  state={investigationToTraceState(inv, reportType, reportRaw)}
+                  onShowSource={setSourcePanel}
+                />
+              </div>
+            </details>
+          )}
+
           {/* Report */}
           {reportRaw && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <Separator className="bg-zinc-800" />
 
               {reportType === "investigate" && (
-                <InvestigationReportView report={reportRaw as unknown as AnswerReport} />
+                <InvestigationReportView report={reportRaw as unknown as AnswerReport} onShowSource={setSourcePanel} />
               )}
 
               {reportType === "explore" && (
@@ -353,6 +438,22 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
             </div>
             <p className="aug-fs-sm text-center" style={{ color: "var(--t4)" }}>Always review the accuracy of responses.</p>
           </div>
+        </div>
+      )}
+    </div>
+
+      {/* ── Source-data drawer (right side, pushes the report left) — opened by the
+          per-exhibit icon and the trace's query nodes; the same panel the live chat
+          uses, restored to the history view (item 6). ── */}
+      {sourcePanel && (
+        <div style={{ flexShrink: 0, width: 380, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--b1)", background: "var(--blue1)" }}>
+          <SourcePanel
+            columns={sourcePanel.columns}
+            rows={sourcePanel.rows}
+            sql={sourcePanel.sql}
+            title={sourcePanel.title}
+            onClose={() => setSourcePanel(null)}
+          />
         </div>
       )}
     </div>
