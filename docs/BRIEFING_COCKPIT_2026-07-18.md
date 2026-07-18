@@ -1,6 +1,7 @@
 # The Self-Explaining Briefing — Argument Graph + Co-authored Cockpit
 
-**Design doc · 2026-07-18 · Status: DESIGN ONLY (not started).**
+**Design doc · 2026-07-18 · Status: Slice 0 + Slice 1 BUILT & live-verified on branch
+`2026-07-18-briefing-cockpit` (not pushed); Slices 2–4 pending — see §10.**
 Build is gated slice-by-slice in §10; nothing here ships until a v1 slice is picked.
 
 All file:line references below were verified against the current tree on 2026-07-18. Where a
@@ -312,17 +313,28 @@ time it is built the primitive, persistence, refresh, and guarding already exist
 
 Each slice is independently shippable, flag-gated, and verified on a real briefing before the next.
 
-- **Slice 0 — the spine.** New `dashboard_cards` store + **Door 1** (pin an insight → Card) +
-  render in the existing dashboard region + **guarded** (route SQL through `execute_guarded`) +
-  receipt. *Proves:* the Card primitive, persistence, guarding, and render. *Verify:* pin a real
-  finding, confirm the card shows the same guarded number + receipt.
-- **Slice 1 — grip over time.** Add the `refresh` field + trend (sparkline via
-  `IndustryKpiStrip`/`Sparkline` pattern). *Proves:* the "living/trend" property.
+- **✅ Slice 0 — the spine. DONE** (`975e50f` · `0b91d60` · `f627344` · `b4db3a1`). New
+  `dashboard_cards` store + CRUD `/cards` + **Door 1** (`POST /cards/pin-insight`) + `/run`
+  (guard-on-read) + the "Pin" action in `FindingActions` + the `PinnedCards` region.
+  *Verified live:* pinned real findings on the luxexperience briefing; a finding whose SQL errored
+  (`SUM` over a VARCHAR) was **refused with a 422** — the guard guarantee, on write.
+- **✅ Slice 1 — grip over time. DONE** (`743e63e`). Trend sparklines (intra-metric via
+  `seriesTrend`/`Sparkline` for time-shaped findings; a bounded cross-cycle value history for
+  scalars) + a per-card **Refresh** button. *Verified live:* a "GMV by month" card renders a
+  60-month sparkline reading `565,875  −3.9% MoM`.
 - **Slice 2 — Door 2.** Query Builder "Pin to dashboard." *Proves:* the second door on the same Card.
 - **Slice 3 — argument-graph lens.** Un-orphan the edges + render the map as a React Flow lens
   (linear stays default). *Proves:* the narrative-as-graph, reusing drill wiring.
 - **Slice 4 — Door 3 + connective tissue.** Inline authoring + `relates_to` edges (card↔finding) +
   watch/alert graduation. *Proves:* the full co-authored cockpit.
+
+**Build notes (2026-07-18):** (a) tabular findings render "N rows" — a *trend* card needs a
+scalar or a time series; rendering tabular cards as charts/tables (reuse `ResultChartCard`) is a
+follow-up. (b) A **pre-existing** dev-only React warning ("useEffect changed size") fires from an
+*unchanged* briefing child component (not introduced by the cockpit work — `git diff main` on
+BriefingPanel added only `handlePin`'s dep array; bounded StrictMode-amplified load burst, not an
+infinite loop) — worth a separate fix. (c) Demo cards live on the luxexperience briefing in
+`data/dashboard_cards.db` (gitignored runtime); removable via each card's Remove.
 
 ---
 
