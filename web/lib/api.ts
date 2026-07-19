@@ -1481,6 +1481,25 @@ export async function deleteDashboardCard(cardId: string): Promise<void> {
   await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
 }
 
+/** The cockpit layout (position + size per card) the reader arranged — saved SERVER-SIDE and
+ *  account-keyed, so any device/login shows the same arrangement. */
+export type CockpitLayout = Record<string, { x: number; y: number; w: number; h: number }>;
+
+export async function getCockpitLayout(connectionId: string): Promise<CockpitLayout> {
+  try {
+    const res = await fetch(`${BASE}/cards/layout?connection_id=${encodeURIComponent(connectionId)}`);
+    return res.ok ? await res.json() : {};
+  } catch { return {}; }
+}
+
+export async function saveCockpitLayout(connectionId: string, layout: CockpitLayout): Promise<void> {
+  await fetch(`${BASE}/cards/layout`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, layout }),
+  }).catch(() => {});
+}
+
 /** Graduate a KPI/watch card to a scheduled Monitor (Slice 4 — watch → alert): its guarded SQL
  *  becomes a recurring threshold check and the thresholds are recorded back on the card. */
 export async function graduateCard(

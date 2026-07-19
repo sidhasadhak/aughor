@@ -70,3 +70,25 @@ def test_missing_card_is_404():
     assert client.get("/cards/nope").status_code == 404
     assert client.put("/cards/nope", json=_payload()).status_code == 404
     assert client.delete("/cards/nope").status_code == 404
+
+
+def test_cockpit_layout_roundtrips_server_side():
+    # No arrangement saved yet → empty (a fresh cockpit packs by default).
+    assert client.get("/cards/layout", params={"connection_id": "cx_layout"}).json() == {}
+
+    # Save the arrangement, then read it back — server-side + account-keyed, so any device sees it.
+    layout = {"card1": {"x": 10, "y": 20, "w": 320, "h": 200}, "card2": {"x": 350, "y": 20, "w": 244, "h": 150}}
+    p = client.put("/cards/layout", json={"connection_id": "cx_layout", "layout": layout})
+    assert p.status_code == 200 and p.json() == {"ok": True}
+    assert client.get("/cards/layout", params={"connection_id": "cx_layout"}).json() == layout
+
+    # Overwrite replaces (not merges); a different connection is independent.
+    client.put("/cards/layout", json={"connection_id": "cx_layout", "layout": {"card1": {"x": 0, "y": 0, "w": 200, "h": 120}}})
+    assert set(client.get("/cards/layout", params={"connection_id": "cx_layout"}).json()) == {"card1"}
+    assert client.get("/cards/layout", params={"connection_id": "cx_other"}).json() == {}
+
+
+def test_layout_route_not_shadowed_by_card_id():
+    # The static /cards/layout must win over GET /cards/{card_id} (card_id="layout").
+    r = client.get("/cards/layout", params={"connection_id": "cx_shadow"})
+    assert r.status_code == 200 and isinstance(r.json(), dict)

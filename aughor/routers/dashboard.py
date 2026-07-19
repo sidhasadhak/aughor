@@ -10,13 +10,27 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.dashboard.models import CardProvenance, DashboardCard
-from aughor.dashboard.store import delete_card, get_card, list_cards, upsert_card
+from aughor.dashboard.store import (
+    delete_card, get_card, get_layout, list_cards, set_layout, upsert_card,
+)
 
 router = APIRouter(tags=["dashboard"])
+
+
+def _layout_user_id(request: Request) -> str:
+    """The account key for cockpit layout — the identified user, or a shared 'default' on
+    localhost / identity-off so a single operator still gets the same cockpit on any device.
+    Upgrades to true per-user the moment RBAC identity is bound, with no migration."""
+    try:
+        from aughor.security.authz import get_principal
+        p = get_principal(request)
+        return p.user_id if p and p.user_id else "default"
+    except Exception:
+        return "default"
 
 
 @router.get("/cards")
@@ -31,6 +45,27 @@ def list_cards_route(
         c.model_dump()
         for c in list_cards(connection_id=connection_id, scope=scope, scope_ref=scope_ref)
     ]
+
+
+class LayoutRequest(BaseModel):
+    connection_id: str
+    layout: Dict[str, Any] = Field(default_factory=dict)   # {card_id: {x, y, w, h}}
+
+
+# NOTE: the static /cards/layout routes MUST precede /cards/{card_id} below, or the dynamic
+# path would swallow "layout" as a card_id.
+@router.get("/cards/layout")
+def get_layout_route(request: Request, connection_id: str) -> Dict[str, Any]:
+    """The caller's saved cockpit layout for a connection ({card_id: {x, y, w, h}}); {} if none.
+    Server-side + account-keyed, so any device/login sees the same arrangement."""
+    return get_layout(connection_id, _layout_user_id(request))
+
+
+@router.put("/cards/layout")
+def put_layout_route(request: Request, req: LayoutRequest) -> dict:
+    """Persist the caller's cockpit layout (position + size per card) for a connection."""
+    set_layout(req.connection_id, _layout_user_id(request), req.layout or {})
+    return {"ok": True}
 
 
 @router.get("/cards/{card_id}")

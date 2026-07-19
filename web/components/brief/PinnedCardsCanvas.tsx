@@ -22,7 +22,7 @@ import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { type ChartCustom } from "@/components/Chart";
 import { formatMetricValue, formatVariance } from "@/lib/format";
-import { graduateCard, type CardRunResult, type DashboardCard } from "@/lib/api";
+import { graduateCard, getCockpitLayout, saveCockpitLayout, type CardRunResult, type DashboardCard } from "@/lib/api";
 
 export type CardState = { card: DashboardCard; run?: CardRunResult; failed?: boolean };
 
@@ -53,18 +53,10 @@ function cardKind(cs: CardState): Kind {
   return "note";
 }
 
-// ── Layout persistence (per-connection, browser-local) ─────────────────────────
+// ── Layout persistence — server-side, account-keyed (per connection + user) ─────
 
 type Box = { x: number; y: number; w: number; h: number };
 type Layout = Record<string, Box>;
-
-function loadLayout(key: string): Layout {
-  if (typeof window === "undefined") return {};
-  try { return JSON.parse(window.localStorage.getItem(key) || "{}") as Layout; } catch { return {}; }
-}
-function saveLayout(key: string, layout: Layout) {
-  try { window.localStorage.setItem(key, JSON.stringify(layout)); } catch { /* quota / private mode */ }
-}
 
 type Handlers = { onRemove: (id: string) => void; onRefresh: (id: string) => void; onOpenSource?: (iid: string) => void };
 
@@ -286,21 +278,35 @@ function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSour
   onRefresh: (id: string) => void;
   onOpenSource?: (iid: string) => void;
 }) {
-  const key = `aughor.cockpit.${connectionId}`;
-  const layoutRef = useRef<Layout>(loadLayout(key));
   const handlers = useMemo(() => ({ onRemove, onRefresh, onOpenSource }), [onRemove, onRefresh, onOpenSource]);
+
+  // Cockpit layout — loaded from the SERVER (account-keyed, so any device sees the same arrangement),
+  // applied once ready. `savedRef` mirrors the latest saved layout so new cards pack relative to it.
+  const savedRef = useRef<Layout>({});
+  const [loaded, setLoaded] = useState<Layout | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setLoaded(null);
+    getCockpitLayout(connectionId).then(l => {
+      if (cancelled) return;
+      savedRef.current = (l as Layout) || {};
+      setLoaded(savedRef.current);
+    });
+    return () => { cancelled = true; };
+  }, [connectionId]);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
 
-  // Reconcile card data changes (refresh / add / remove) into RF state, positioning from the saved
-  // layout (read here, in an effect — not during render). Surviving nodes keep their geometry.
+  // Reconcile card data changes into RF state ONCE the layout has loaded — positioning new cards
+  // from the saved layout (read in an effect, not during render). Surviving nodes keep their geometry.
   useEffect(() => {
-    setRfNodes(prev => reconcileNodes(prev, cards, handlers, layoutRef.current));
-  }, [cards, handlers, setRfNodes]);
+    if (loaded == null) return;
+    setRfNodes(prev => reconcileNodes(prev, cards, handlers, savedRef.current));
+  }, [cards, handlers, loaded, setRfNodes]);
 
-  // Persist the layout (position + size per card) shortly after any drag / resize.
+  // Persist the layout (position + size per card) to the server shortly after any drag / resize.
   useEffect(() => {
-    if (!rfNodes.length) return;
+    if (loaded == null || !rfNodes.length) return;
     const t = setTimeout(() => {
       const l: Layout = {};
       rfNodes.forEach(n => {
@@ -308,20 +314,21 @@ function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSour
         const h = (n.height ?? n.measured?.height) as number | undefined;
         if (w && h) l[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y), w: Math.round(w), h: Math.round(h) };
       });
-      layoutRef.current = l;
-      saveLayout(key, l);
-    }, 450);
+      savedRef.current = l;
+      saveCockpitLayout(connectionId, l);
+    }, 500);
     return () => clearTimeout(t);
-  }, [rfNodes, key]);
+  }, [rfNodes, connectionId, loaded]);
 
   // Frame on load; re-fit after nodes settle (measure timing in some browsers).
   const { fitView } = useReactFlow();
   const didMount = useRef(false);
   useEffect(() => {
-    const t = setTimeout(() => fitView({ padding: 0.14, duration: didMount.current ? 240 : 0 }), 90);
+    if (loaded == null) return;
+    const t = setTimeout(() => fitView({ padding: 0.14, duration: didMount.current ? 240 : 0 }), 120);
     didMount.current = true;
     return () => clearTimeout(t);
-  }, [cards.length, fitView]);
+  }, [loaded, cards.length, fitView]);
 
   return (
     <div style={{ height: 560, borderRadius: "var(--r3)", border: "1px solid var(--b1)", background: "var(--bg-1)", overflow: "hidden" }}>

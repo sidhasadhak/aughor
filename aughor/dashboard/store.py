@@ -54,6 +54,18 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_dashboard_cards_scope ON dashboard_cards(scope, scope_ref)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_dashboard_cards_conn ON dashboard_cards(connection_id)")
+    # Cockpit layout — the user's arrangement (position + size per card) on a connection, saved at
+    # the ACCOUNT level so any login/device sees the same cockpit. Keyed by (connection, user); the
+    # user is 'default' until identity/RBAC is on, so it upgrades to true per-user with no migration.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS card_layouts (
+            connection_id TEXT NOT NULL DEFAULT '',
+            user_id       TEXT NOT NULL DEFAULT 'default',
+            layout_json   TEXT NOT NULL DEFAULT '{}',
+            updated_at    TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (connection_id, user_id)
+        )
+    """)
     c.commit()
 
 
@@ -136,6 +148,31 @@ def get_card(card_id: str) -> Optional[DashboardCard]:
     _ensure_schema(c)
     row = c.execute("SELECT * FROM dashboard_cards WHERE id = ?", (card_id,)).fetchone()
     return _row_to_card(row) if row else None
+
+
+def get_layout(connection_id: str, user_id: str) -> dict:
+    """The saved cockpit layout ({card_id: {x, y, w, h}}) for a user on a connection ({} if none)."""
+    c = _conn()
+    _ensure_schema(c)
+    row = c.execute(
+        "SELECT layout_json FROM card_layouts WHERE connection_id = ? AND user_id = ?",
+        (connection_id, user_id),
+    ).fetchone()
+    return _loads(row["layout_json"] or "{}", {}) if row else {}
+
+
+def set_layout(connection_id: str, user_id: str, layout: dict) -> None:
+    """Persist a user's cockpit layout (position + size per card) for a connection."""
+    c = _conn()
+    _ensure_schema(c)
+    c.execute(
+        """INSERT INTO card_layouts (connection_id, user_id, layout_json, updated_at)
+           VALUES (?,?,?,?)
+           ON CONFLICT(connection_id, user_id) DO UPDATE SET
+             layout_json = excluded.layout_json, updated_at = excluded.updated_at""",
+        (connection_id, user_id, json.dumps(layout or {}), _now()),
+    )
+    c.commit()
 
 
 def list_cards(
