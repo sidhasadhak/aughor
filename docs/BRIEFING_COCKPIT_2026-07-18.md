@@ -421,3 +421,43 @@ Frontend: `Chart.tsx:98` · `charts/echarts/` (`EChart.tsx`, `builders.ts`, `ind
 
 Stack: React 19.2.4 · Next 16.2.6 · ECharts ^6.1.0 · **no** react-flow/xyflow/tldraw (graph lens
 greenfield).
+
+---
+
+## 13. Post-initiative follow-ons (2026-07-19)
+
+Slices 0–4 shipped; a run of UX polish followed, all on `2026-07-18-briefing-cockpit` / PR #178.
+
+- **Cockpit layout** (`956b58b` · `f963708` · `07127bb`, `gridLayout.ts`). Pinned cards + findings
+  became a React-Flow canvas: drag by the title bar, resize (per-type min sizes), **snap-to-grid**,
+  **top-left / horizontal bin-pack** with no overlaps or gaps, layout persisted **server-side**
+  (account-keyed `card_layouts`, `GET/PUT /cards/layout`). Charts fill their card (`Chart.tsx`
+  `fitHeight`). Viewport pinned (controlled `viewport` + `autoPanOnNodeDrag={false}`) so it never drifts.
+- **Design unification** (`aef8c15` · `e762b78` · `036a06b`). The whole Briefing reskinned onto the
+  shared Deep-Analysis/Insight system — the `Brief*` primitives + `.aug-*` classes + the
+  `styles/type.css` scale + two fonts; 0 sub-11px sizes, flat cards, both Linear + Graph lenses.
+  Content-shaped **skeleton loaders** (`858db21`) replaced the two spinners.
+- **Toasts** (`d59f7bf`, `components/ui/toast.tsx`). Reusable notifications — module store +
+  `useSyncExternalStore` + a `<body>`-portalled `<Toaster/>` in the root layout;
+  `toast.success/error/info/warning`. Wired into every previously-silent cockpit side-effect (pin
+  ×3 doors, remove, refresh, watch→monitor graduation): success confirms, failures surface the
+  trust-guard refusal. Hydration-safe (`getServerSnapshot=false`, not `useState`+`useEffect`).
+- **Tidy-up** (`83203db`). A "▦ Tidy up" header button re-packs every card into a clean gap-free
+  grid (`packTopLeft`) and persists it. Live-verified via `PUT /cards/layout`.
+- **Button unification** (`7a7903d` + `82a7c84`). **ROOT CAUSE:** an *unlayered*
+  `button { background:none; border:none; color:inherit }` reset in `app/globals.css` was silently
+  stripping every base-ui `<Button variant>` (unlayered CSS beats Tailwind's *layered* utilities) —
+  which is **why two button systems ever existed** (`.aug-btn` classes won on specificity; `<Button>`
+  lost). Fix: exempt `button:not([data-slot="button"])`. Aligned `<Button>` variants to the `.aug-*`
+  look (fixed the primary no-hover bug via `--blue-solid-hover`; added a `minimal` variant), then
+  migrated all ~56 remaining `.aug-btn` buttons across 16 files to `<Button>` (MonitorsPanel's fused
+  `<Button className="aug-btn">` de-fused; a file-upload `<label>` left alone). Raw-button ratchet 92 → 73.
+- **⌘K command palette** (`b7cbe4d`). The palette already fuzzy-searched nav/investigations/tables;
+  added the *command* half — `lib/commandRegistry.ts` (module store) + a Commands section + **global**
+  action verbs and **per-view contextual** verbs (views register via `useRegisterCommands(scope, cmds)`
+  on mount): Briefing → Regenerate brief / Start exploration; cockpit → Tidy cockpit; Query Builder →
+  Run query / Pin to cockpit.
+
+**Ops note.** `.claude/launch.json` `aughor-api` had `--reload` **removed** — rapid multi-file edits
+thrash uvicorn's reloader and wedge its event loop (symptom: data views render empty while the web
+:3000 stays 200). Backend `.py` changes now need a manual `preview_stop`+`preview_start aughor-api`.
