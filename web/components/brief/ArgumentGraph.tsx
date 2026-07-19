@@ -270,6 +270,13 @@ function ArgumentGraphInner({ graph, connectionId, schema, onOpenFinding }: {
     });
   }, []);
 
+  // `onOpenFinding` arrives as a fresh inline arrow from the panel on every parent render. Route
+  // node clicks through a ref so the desired-node memo does NOT churn on the parent's identity —
+  // that churn was rebuilding every node (dropping RF's measured/resizing state) and killing an
+  // in-progress NodeResizer drag. The ref always calls the latest handler at click time.
+  const onOpenRef = useRef(onOpenFinding);
+  onOpenRef.current = onOpenFinding;
+
   // Live card↔finding relations (Slice 4) — fetched, not cached with the brief, so a card pinned
   // this session wires into the graph immediately. Best-effort: a failure just omits card nodes.
   const [cardRel, setCardRel] = useState<{ nodes: ArgumentGraphNode[]; edges: ArgumentGraphEdge[] }>({ nodes: [], edges: [] });
@@ -329,7 +336,7 @@ function ArgumentGraphInner({ graph, connectionId, schema, onOpenFinding }: {
       width: n.kind === "verdict" ? W_VERDICT : n.kind === "card" ? W_CARD : W_FINDING,
       data: (n.kind === "verdict" || n.kind === "card")
         ? { title: n.title }
-        : { ...n, expanded: expanded.has(n.id), onToggle: () => toggleExpand(n.id), onOpen: n.has_sql ? () => onOpenFinding(n.id) : undefined },
+        : { ...n, expanded: expanded.has(n.id), onToggle: () => toggleExpand(n.id), onOpen: n.has_sql ? () => onOpenRef.current(n.id) : undefined },
       draggable: true,
     }));
 
@@ -359,7 +366,7 @@ function ArgumentGraphInner({ graph, connectionId, schema, onOpenFinding }: {
 
     const usedTypes = [...new Set(vEdges.map(e => e.type))].filter(t => t !== "supports");
     return { desiredNodes, desiredEdges, usedTypes };
-  }, [allNodes, allEdges, drivers, showAll, expanded, toggleExpand, onOpenFinding]);
+  }, [allNodes, allEdges, drivers, showAll, expanded, toggleExpand]);
 
   // RF-owned state so drags + NodeResizer changes persist. SEEDED with the initial layout so
   // React Flow's built-in `fitView` frames real (measured) nodes on init — not an empty graph.
@@ -373,9 +380,10 @@ function ArgumentGraphInner({ graph, connectionId, schema, onOpenFinding }: {
       const byId = new Map(prev.map(n => [n.id, n]));
       return desiredNodes.map(d => {
         const p = byId.get(d.id);
-        return p
-          ? { ...d, position: p.position, width: p.width, height: p.height, selected: p.selected }
-          : d;
+        // Surviving node → KEEP everything React Flow owns (position, width/height + measured from a
+        // resize, selection, dragging/resizing) and refresh ONLY what the graph data drives. Spread
+        // p LAST-but-patch so an in-flight NodeResizer drag is never clobbered by a data re-render.
+        return p ? { ...p, type: d.type, data: d.data, draggable: d.draggable } : d;
       });
     });
   }, [desiredNodes, setRfNodes]);
