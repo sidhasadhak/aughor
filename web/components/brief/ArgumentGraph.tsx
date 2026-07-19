@@ -102,7 +102,7 @@ function VerdictNode({ data, selected }: NodeProps<Node<{ title: string }>>) {
       overflow: "hidden",
     }}>
       <NodeResizer isVisible={selected} minWidth={190} minHeight={54} {...RESIZER} />
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--blue4)", marginBottom: 3 }}>
+      <div className="aug-label" style={{ color: "var(--blue4)", marginBottom: 3 }}>
         Verdict
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.35, color: "var(--t1)" }}>{data.title}</div>
@@ -128,7 +128,6 @@ function FindingNode({ id, data, selected }: NodeProps<Node<FindingNodeData>>) {
         padding: "8px 11px", borderRadius: "var(--r3)",
         background: "var(--bg-2)",
         border: `1px solid ${data.cited ? "var(--blue4)" : "var(--b1)"}`,
-        borderLeft: tone ? `3px solid ${tone}` : undefined,
         cursor: "pointer", opacity: data.plausibility ? 0.72 : 1,
         display: "flex", flexDirection: "column", gap: 4, overflow: "hidden",
       }}
@@ -137,15 +136,15 @@ function FindingNode({ id, data, selected }: NodeProps<Node<FindingNodeData>>) {
       <Handle type="target" position={Position.Bottom} style={{ opacity: 0 }} />
 
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--t4)" }}>
+        <span className="aug-label" style={{ color: "var(--t4)" }}>
           {data.domain || "—"}
         </span>
         {data.composition_type && (
-          <span style={{ fontSize: 8.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: tone ?? "var(--t3)" }}>
+          <span className="aug-label" style={{ color: tone ?? "var(--t3)" }}>
             {data.composition_type}
           </span>
         )}
-        {data.cited && <span title="Cited by the verdict" style={{ fontSize: 9, color: "var(--blue4)" }}>◆</span>}
+        {data.cited && <span title="Cited by the verdict" className="aug-fs-xs" style={{ color: "var(--blue4)" }}>◆</span>}
         {/* Expand affordance — always visible so the card reads as expandable at a glance. */}
         <span style={{ marginLeft: "auto", color: "var(--t4)", display: "inline-flex" }}>
           {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -164,28 +163,29 @@ function FindingNode({ id, data, selected }: NodeProps<Node<FindingNodeData>>) {
       {expanded && (
         <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 2, paddingTop: 6, borderTop: "1px solid var(--b1)" }}>
           {data.angle && (
-            <div style={{ fontSize: 10, color: "var(--t3)" }}>
+            <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
               <span style={{ color: "var(--t4)" }}>Angle · </span>{data.angle}
             </div>
           )}
           {/* Impact strength bar (impact is a 0–1 ranking score). */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".04em" }}>Impact</span>
+            <span className="aug-label" style={{ color: "var(--t4)" }}>Impact</span>
             <span style={{ flex: 1, height: 4, borderRadius: "var(--r-pill)", background: "var(--bg-4)", overflow: "hidden" }}>
               <span style={{ display: "block", height: "100%", width: `${Math.min(100, Math.max(6, data.impact * 100))}%`, background: tone ?? "var(--blue4)" }} />
             </span>
           </div>
           {data.composition_type && COMPOSITION_PHRASE[data.composition_type] && (
-            <div style={{ fontSize: 10, color: tone ?? "var(--t3)" }}>{COMPOSITION_PHRASE[data.composition_type]}</div>
+            <div className="aug-fs-xs" style={{ color: tone ?? "var(--t3)" }}>{COMPOSITION_PHRASE[data.composition_type]}</div>
           )}
           {data.plausibility && (
-            <div style={{ fontSize: 10, color: "var(--amb4)" }}>⚠ Trust gate: {data.plausibility}</div>
+            <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>⚠ Trust gate: {data.plausibility}</div>
           )}
           {data.has_sql && data.onOpen && (
             <button
               onClick={(e) => { e.stopPropagation(); data.onOpen!(); }}
+              className="aug-fs-xs"
               style={{
-                alignSelf: "flex-start", marginTop: 1, fontSize: 10.5, fontWeight: 600,
+                alignSelf: "flex-start", marginTop: 1, fontWeight: 600,
                 color: "var(--blue4)", background: "transparent", border: "none", padding: 0, cursor: "pointer",
               }}
             >
@@ -213,10 +213,10 @@ function CardNode({ data, selected }: NodeProps<Node<{ title: string }>>) {
     }}>
       <NodeResizer isVisible={selected} minWidth={150} minHeight={48} {...RESIZER} />
       <Handle type="source" position={Position.Top} style={{ opacity: 0 }} />
-      <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--vio4)", marginBottom: 3 }}>
+      <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 3 }}>
         ◆ Pinned card
       </div>
-      <div style={{ fontSize: 10.5, lineHeight: 1.4, color: "var(--t2)",
+      <div className="aug-fs-xs" style={{ lineHeight: 1.4, color: "var(--t2)",
         display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
         {data.title}
       </div>
@@ -414,10 +414,10 @@ function ArgumentGraphInner({ graph, connectionId, schema, onOpenFinding }: {
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div className="aug-label">Argument graph</div>
-        <span style={{ fontSize: 9.5, color: "var(--t4)" }}>click a card to expand · drag to arrange · select to resize</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>click a card to expand · drag to arrange · select to resize</span>
         {/* Edge legend — only the typed (non-supports) relationships actually present. */}
         {usedTypes.map(t => (
-          <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 9.5, color: "var(--t3)" }}>
+          <span key={t} className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--t3)" }}>
             <span style={{ width: 12, height: 0, borderTop: `2px solid ${EDGE_STYLE[t].color}` }} />
             {EDGE_STYLE[t].label || t}
           </span>
@@ -425,10 +425,8 @@ function ArgumentGraphInner({ graph, connectionId, schema, onOpenFinding }: {
         {hiddenCount > 0 && (
           <button
             onClick={() => setShowAll(v => !v)}
-            style={{
-              marginLeft: "auto", fontSize: 10.5, padding: "3px 9px", borderRadius: "var(--r2)",
-              background: "var(--bg-2)", border: "1px solid var(--b1)", color: "var(--t3)", cursor: "pointer",
-            }}
+            className="aug-btn aug-btn-minimal aug-btn-sm"
+            style={{ marginLeft: "auto" }}
           >
             {showAll ? "Show key drivers" : `Show all (${graph.nodes.length - 1} findings)`}
           </button>

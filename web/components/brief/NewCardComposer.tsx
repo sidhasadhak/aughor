@@ -194,9 +194,9 @@ export function NewCardComposer({ connectionId, schema, onCreated }: {
         {/* Door picker: curated metric vs free-form build. */}
         <div style={{ display: "inline-flex", borderRadius: "var(--r2)", border: "1px solid var(--b1)", overflow: "hidden" }}>
           {([["metric", "From metric"], ["build", "Build"]] as const).map(([m, label]) => (
-            <Button key={m} variant="ghost" size="xs" onClick={() => setMode(m)}
+            <Button key={m} variant="ghost" size="xs" onClick={() => setMode(m)} className="aug-fs-xs"
               style={{
-                fontSize: 10.5, padding: "4px 10px", height: "auto", borderRadius: 0,
+                padding: "4px 10px", height: "auto", borderRadius: 0,
                 background: mode === m ? "var(--bg-1)" : "transparent",
                 color: mode === m ? "var(--vio4)" : "var(--t3)",
               }}>{label}</Button>
@@ -214,9 +214,9 @@ export function NewCardComposer({ connectionId, schema, onCreated }: {
           {metric && (
             <div style={{ display: "inline-flex", borderRadius: "var(--r2)", border: "1px solid var(--b1)", overflow: "hidden" }}>
               {([["value", "Value", !!metric.value_sql], ["trend", "Trend", !!metric.chart_sql]] as const).map(([s, label, avail]) => (
-                <Button key={s} variant="ghost" size="xs" disabled={!avail} onClick={() => setShape(s)}
+                <Button key={s} variant="ghost" size="xs" disabled={!avail} onClick={() => setShape(s)} className="aug-fs-xs"
                   style={{
-                    fontSize: 10.5, padding: "4px 9px", height: "auto", borderRadius: 0, cursor: avail ? "pointer" : "not-allowed",
+                    padding: "4px 9px", height: "auto", borderRadius: 0, cursor: avail ? "pointer" : "not-allowed",
                     background: shape === s ? "var(--bg-1)" : "transparent",
                     color: !avail ? "var(--t4)" : shape === s ? "var(--vio4)" : "var(--t3)",
                   }}>{label}</Button>
@@ -271,13 +271,13 @@ export function NewCardComposer({ connectionId, schema, onCreated }: {
           ) : preview?.error ? (
             <span style={{ fontSize: 11, color: "var(--amb4)" }}>Query failed: {preview.error.slice(0, 90)}</span>
           ) : isScalar && vals.length ? (
-            <span style={{ fontSize: 21, fontWeight: 600, color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
+            <span className="aug-fs-display" style={{ fontWeight: 600, color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
               {formatMetricValue(vals[vals.length - 1])}
             </span>
           ) : vals.length ? (
             <>
               <Sparkline values={vals} width={200} height={30} color="var(--vio4)" />
-              <span style={{ fontSize: 10, color: "var(--t4)" }}>{vals.length} {bDim && mode === "build" ? "groups" : "points"}</span>
+              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{vals.length} {bDim && mode === "build" ? "groups" : "points"}</span>
             </>
           ) : (
             <span style={{ fontSize: 11, color: "var(--t4)" }}>No preview</span>
@@ -285,7 +285,7 @@ export function NewCardComposer({ connectionId, schema, onCreated }: {
         </div>
       )}
 
-      {error && <div style={{ fontSize: 10.5, color: "var(--red4)" }}>{error}</div>}
+      {error && <div className="aug-fs-xs" style={{ color: "var(--red4)" }}>{error}</div>}
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Button variant="ghost" size="xs" onClick={reset}
