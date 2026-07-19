@@ -296,29 +296,20 @@ function NarrativeCard({
   const [thread, setThread] = useState<{ question: string; seedSql: string | null; seedContext: string; key: string } | null>(null);
 
   return (
-    <div style={{
-      background: "linear-gradient(135deg, color-mix(in srgb, var(--blue4) 8%, var(--bg-2)), var(--bg-2))",
-      border: "1px solid color-mix(in srgb, var(--blue4) 22%, var(--b1))",
-      borderRadius: "var(--r3)", padding: "18px 22px",
-    }}>
+    // Flat panel in the shared card language (was a blue-gradient card). The section's .aug-label
+    // header outside already frames it; the prose carries the analysis.
+    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 22px" }}>
       {/* Header */}
       {!hideHeadline && (
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span style={{
-          fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: "var(--r1)",
-          background: "color-mix(in srgb, var(--blue4) 16%, transparent)",
-          border: "1px solid color-mix(in srgb, var(--blue4) 30%, transparent)",
-          color: "var(--blue4)", textTransform: "uppercase" as const, letterSpacing: ".09em",
-        }}>
-          AI Synthesis
-        </span>
+        <span className="aug-label">AI Synthesis</span>
         {narrative.headline_theme && (
-          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
+          <span className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t1)" }}>
             {narrative.headline_theme}
           </span>
         )}
         {narrative.generated_at && (
-          <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: "auto" }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t4)", marginLeft: "auto" }}>
             {timeAgo(narrative.generated_at)}
           </span>
         )}
@@ -326,10 +317,7 @@ function NarrativeCard({
       )}
 
       {/* Narrative prose with inline citations */}
-      <div style={{
-        fontSize: 13, color: "var(--t1)", lineHeight: 1.75, fontWeight: 400,
-        letterSpacing: ".01em",
-      }}>
+      <div className="aug-fs-ui" style={{ color: "var(--t1)", lineHeight: 1.7, fontWeight: 400 }}>
         <NarrativeText
           text={narrative.narrative}
           citations={narrative.citations}
@@ -1200,34 +1188,22 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
   actions?:      ReactNode;
 }) {
   const { insight, domain } = signal;
-  const nColor = noveltyColor(insight.novelty);
 
   return (
-    <div style={{
-      background:  "var(--bg-2)",
-      border:      `1px solid color-mix(in srgb, ${nColor} 28%, var(--b1))`,
-      borderLeft:  `3px solid ${nColor}`,
-      borderRadius: "var(--r3)", padding: "20px 24px",
-    }}>
+    // Flat card — the novelty is carried by the label + meter, not a colour-coded border.
+    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "20px 24px" }}>
       {/* Badge row */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" as const }}>
-        <span style={{
-          padding: "3px 8px", borderRadius: "var(--r2)", fontSize: 10, fontWeight: 600,
-          background: `color-mix(in srgb, ${nColor} 14%, transparent)`,
-          border:     `1px solid color-mix(in srgb, ${nColor} 28%, transparent)`,
-          color: nColor, textTransform: "uppercase" as const, letterSpacing: ".07em",
-        }}>
-          {noveltyLabel(insight.novelty)}
-        </span>
+        <span className="aug-label">{noveltyLabel(insight.novelty)}</span>
         <DomainTag domain={domain} />
         {insight.angle && (
-          <span style={{ fontSize: 10, color: "var(--t4)" }}>{insight.angle}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>
         )}
         <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={64} /></span>
       </div>
 
       {/* Finding */}
-      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t1)", lineHeight: 1.65, marginBottom: 16 }}>
+      <div className="aug-fs-ui" style={{ fontWeight: 500, color: "var(--t1)", lineHeight: 1.65, marginBottom: 16 }}>
         {insight.finding}
       </div>
 
@@ -1236,8 +1212,8 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
         {insight.entities_involved.length > 0 && (
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
             {insight.entities_involved.slice(0, 4).map(e => (
-              <span key={e} style={{
-                padding: "1px 6px", borderRadius: "var(--r1)", fontSize: 10,
+              <span key={e} className="aug-fs-xs" style={{
+                padding: "1px 6px", borderRadius: "var(--r1)",
                 background: "var(--bg-3)", border: "1px solid var(--b1)",
                 color: "var(--t3)", fontFamily: "var(--font-mono)",
               }}>{e.replace(/_/g, " ")}</span>
@@ -1246,14 +1222,8 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
         )}
         <button
           onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-          style={{
-            marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
-            padding: "6px 14px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
-            background: "var(--bg-sel)", border: "1px solid var(--blue2)",
-            color: "var(--blue4)", cursor: "pointer", transition: "all .12s",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 16%, transparent)"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "var(--bg-sel)"; }}
+          className="aug-btn aug-btn-minimal"
+          style={{ marginLeft: "auto" }}
         >
           Investigate →
         </button>
@@ -1275,8 +1245,8 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
 // re-created on every VerdictHero render).
 function HeroStatPill({ value, label }: { value: number; label: string }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 5, fontSize: 11 }}>
-      <span style={{ fontWeight: 650, color: "var(--t2)", fontVariantNumeric: "tabular-nums" as const }}>{value}</span>
+    <span className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "baseline", gap: 5 }}>
+      <span style={{ fontWeight: 600, color: "var(--t2)", fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" as const }}>{value}</span>
       <span style={{ color: "var(--t4)" }}>{label}</span>
     </span>
   );
@@ -1309,49 +1279,35 @@ function VerdictHero({
   const isVerdict = !!narrative;
 
   return (
-    <div style={{
-      position: "relative", overflow: "hidden",
-      background: "linear-gradient(135deg, color-mix(in srgb, var(--blue4) 10%, var(--bg-2)) 0%, var(--bg-2) 58%)",
-      border: "1px solid color-mix(in srgb, var(--blue4) 24%, var(--b1))",
-      borderRadius: "var(--r3)", boxShadow: "var(--shadow-md)",
-    }}>
-      {/* left accent + a soft top-right glow for depth */}
-      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: "linear-gradient(var(--blue4), color-mix(in srgb, var(--blue4) 25%, transparent))" }} />
-      <div style={{ position: "absolute", right: 0, top: 0, width: 380, height: 210, background: "radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--blue4) 13%, transparent), transparent 62%)", pointerEvents: "none" }} />
-
-      <div style={{ position: "relative", padding: "18px 26px 17px 30px" }}>
+    // Flat panel in the shared card language (was a gradient + glow + shadow hero). Prominence now
+    // comes from position, the display-size verdict, and the primary action — not chrome.
+    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
+      <div style={{ padding: "18px 26px 17px" }}>
         {/* eyebrow (context) + controls */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13, flexWrap: "wrap" as const }}>
-          <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".13em", textTransform: "uppercase" as const, color: "var(--t4)" }}>
-            Intelligence briefing{scope ? <span style={{ color: "var(--t3)" }}>{"  ·  "}{scope}</span> : null}
+          <span className="aug-label">
+            Intelligence briefing{scope ? <span style={{ color: "var(--t4)" }}>{"  ·  "}{scope}</span> : null}
           </span>
           {controls && <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{controls}</span>}
         </div>
 
-        {/* verdict badge — a live pulse dot reads as a fresh, standing conclusion */}
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 11,
-          padding: "3px 10px 3px 8px", borderRadius: "var(--r-pill)",
-          background: "color-mix(in srgb, var(--blue4) 14%, transparent)",
-          border: "1px solid color-mix(in srgb, var(--blue4) 32%, transparent)",
-        }}>
-          <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: "var(--blue4)", boxShadow: "0 0 6px color-mix(in srgb, var(--blue4) 70%, transparent)" }} />
-          <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "var(--blue4)" }}>
-            {isVerdict ? "Verdict" : "Top finding"}
-          </span>
+        {/* verdict badge — dot + label (dots, not boxes, like the report surfaces) */}
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: "var(--blue4)" }} />
+          <span className="aug-label" style={{ color: "var(--blue4)" }}>{isVerdict ? "Verdict" : "Top finding"}</span>
         </div>
 
-        {/* the ONE bold verdict — larger, tighter, premium */}
-        <div style={{
-          fontSize: 24, fontWeight: 680, lineHeight: 1.28, color: "var(--t1)",
-          letterSpacing: "-.015em", maxWidth: 780, textWrap: "balance" as const,
+        {/* the ONE verdict — on-scale display size (was 24px/680) */}
+        <div className="aug-fs-display" style={{
+          fontWeight: 600, lineHeight: 1.3, color: "var(--t1)",
+          letterSpacing: "-.01em", maxWidth: 780, textWrap: "balance" as const,
           marginBottom: lead ? 10 : 0,
         }}>{title}</div>
 
         {/* one-line proof */}
         {lead && (
-          <p style={{
-            fontSize: 13.5, color: "var(--t2)", lineHeight: 1.6, maxWidth: 740, margin: 0,
+          <p className="aug-fs-ui" style={{
+            color: "var(--t2)", lineHeight: 1.6, maxWidth: 740, margin: 0,
             display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
           }}>{lead}</p>
         )}
@@ -1364,7 +1320,7 @@ function VerdictHero({
                 <button
                   onClick={() => onInvestigate(`Investigate: ${headline.insight.finding}`, headline.insight.id)}
                   className="aug-btn aug-btn-primary"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", fontSize: 12.5, fontWeight: 600, borderRadius: "var(--r2)", cursor: "pointer" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
                 >Investigate →</button>
               )}
               {actions}
@@ -1374,15 +1330,15 @@ function VerdictHero({
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const }}>
             {/* Aughor's differentiator, made explicit: every number is evidence-backed. */}
             <span title="Every number is grounded in the data and cleared the trust guards"
-              style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: "var(--r-pill)", color: "var(--grn4)", background: "var(--grn1)", border: "1px solid var(--grn2)" }}>
-              <span style={{ fontSize: 9 }}>✓</span> Grounded &amp; guarded
+              className="aug-tag aug-tag-green">
+              ✓ Grounded &amp; guarded
             </span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
               <HeroStatPill value={domainCount} label={domainCount === 1 ? "domain" : "domains"} />
               <HeroDivider />
               <HeroStatPill value={totalInsights} label={totalInsights === 1 ? "finding" : "findings"} />
               <HeroDivider />
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>{timeAgo(synthesizedAt)}</span>
+              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{timeAgo(synthesizedAt)}</span>
             </span>
           </div>
         </div>
@@ -1407,28 +1363,28 @@ function SupportingSignals({ signals, onInvestigate }: {
       <div className="aug-label" style={{ marginBottom: 10 }}>Supporting signals</div>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${top.length}, 1fr)`, gap: 14 }}>
         {top.map(({ insight, domain }) => {
-          const nColor    = noveltyColor(insight.novelty);
           return (
             <div key={insightKey(insight)} style={{
               background: "var(--bg-2)", border: "1px solid var(--b1)",
-              borderLeft: `3px solid ${nColor}`, borderRadius: "var(--r3)",
+              borderRadius: "var(--r3)",
               padding: "16px 18px", display: "flex", flexDirection: "column" as const, gap: 10,
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <DomainTag domain={domain} />
-                {insight.angle && <span style={{ fontSize: 10, color: "var(--t4)" }}>{insight.angle}</span>}
-                <span style={{ marginLeft: "auto", fontSize: 9.5, fontWeight: 700, color: nColor, textTransform: "uppercase" as const, letterSpacing: ".06em" }}>
+                {insight.angle && <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>}
+                <span className="aug-label" style={{ marginLeft: "auto" }}>
                   {noveltyLabel(insight.novelty)}
                 </span>
               </div>
-              <div style={{
-                fontSize: 13, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
+              <div className="aug-fs-ui" style={{
+                fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
                 textWrap: "pretty" as const, display: "-webkit-box",
                 WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
               }}>{insight.finding}</div>
               <button
                 onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-                style={{ alignSelf: "flex-start", marginTop: "auto", fontSize: 11, color: "var(--blue4)", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                className="aug-btn aug-btn-ghost aug-btn-sm"
+                style={{ alignSelf: "flex-start", marginTop: "auto", padding: 0 }}
               >Investigate →</button>
             </div>
           );
@@ -1446,35 +1402,27 @@ function SignalCard({ signal, onInvestigate, actions }: {
   actions?:      ReactNode;
 }) {
   const { insight, domain } = signal;
-  const nColor = noveltyColor(insight.novelty);
 
   return (
     <div style={{
       background: "var(--bg-2)", border: "1px solid var(--b1)",
-      borderTop:  `2px solid ${nColor}`,
       borderRadius: "var(--r3)", padding: "14px 16px",
       display: "flex", flexDirection: "column" as const, gap: 10,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
         <DomainTag domain={domain} />
         {insight.angle && (
-          <span style={{ fontSize: 10, color: "var(--t4)" }}>{insight.angle}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>
         )}
         <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={40} /></span>
       </div>
-      <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.55, flex: 1 }}>
+      <div className="aug-fs-sm" style={{ color: "var(--t2)", lineHeight: 1.55, flex: 1 }}>
         {insight.finding.length > 160 ? insight.finding.slice(0, 160) + "…" : insight.finding}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
         <button
           onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-          style={{
-            padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
-            background: "transparent", border: "1px solid var(--b2)",
-            color: "var(--t3)", cursor: "pointer", transition: "all .12s",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--blue3)"; e.currentTarget.style.color = "var(--blue4)"; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t3)"; }}
+          className="aug-btn aug-btn-minimal aug-btn-sm"
         >
           Investigate →
         </button>
@@ -1505,26 +1453,19 @@ function PatternRow({ pattern, onInvestigate }: {
       onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)"; }}
       onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-2)"; }}
     >
-      <span style={{ fontSize: 13, color, flexShrink: 0, lineHeight: 1.4 }}>{icon}</span>
+      <span className="aug-fs-ui" style={{ color, flexShrink: 0, lineHeight: 1.4 }}>{icon}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 11, fontWeight: 500, color: "var(--t1)",
+        <div className="aug-fs-xs" style={{
+          fontWeight: 500, color: "var(--t1)",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
         }}>
           {pattern.title}
         </div>
-        <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }}>
           {pattern.domains.length} domain{pattern.domains.length !== 1 ? "s" : ""} · {pattern.evidence_count} findings
         </div>
       </div>
-      <span style={{
-        fontSize: 9, padding: "2px 6px", borderRadius: "var(--r1)", flexShrink: 0,
-        background: `color-mix(in srgb, ${color} 12%, transparent)`,
-        border:     `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
-        color, textTransform: "uppercase" as const, letterSpacing: ".06em", fontWeight: 600,
-      }}>
-        {pattern.type}
-      </span>
+      <span className="aug-label" style={{ flexShrink: 0 }}>{pattern.type}</span>
     </div>
   );
 }
@@ -1532,20 +1473,18 @@ function PatternRow({ pattern, onInvestigate }: {
 // ── Org signal row (sidebar) ───────────────────────────────────────────────────
 
 function OrgSignalRow({ insight }: { insight: OrgInsight }) {
-  const nColor = noveltyColor(insight.novelty);
   return (
     <div style={{
       padding: "10px 12px", borderRadius: "var(--r2)",
       background: "var(--bg-2)", border: "1px solid var(--b1)",
-      borderLeft: `2px solid ${nColor}`,
     }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" as const }}>
         <DomainTag domain={insight.domain} />
         {insight.angle && (
-          <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: "auto" }}>{insight.angle}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t4)", marginLeft: "auto" }}>{insight.angle}</span>
         )}
       </div>
-      <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
+      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
         {insight.text.length > 120 ? insight.text.slice(0, 120) + "…" : insight.text}
       </div>
     </div>
