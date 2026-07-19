@@ -111,6 +111,7 @@ export function Chart({
   showLabels: showLabelsProp,
   custom = null,
   heightScale = 1,
+  fitHeight = null,
   columnUnits,
   exhibit = null,
   onSelect,
@@ -123,6 +124,10 @@ export function Chart({
   title?: string;
   /** Scale the computed chart height (e.g. 0.75 for a compact briefing card). */
   heightScale?: number;
+  /** Fill an exact pixel height instead of the data-derived default — for a resizeable
+   *  card/canvas node where the chart should grow to fill the box (drops the 350px + few-cat
+   *  width caps). */
+  fitHeight?: number | null;
   /** Click a mark to drill in — receives the datum behind the clicked bar/point. */
   onSelect?: (datum: Record<string, unknown>) => void;
   /** Hand the live ECharts instance up to a chromeless caller (e.g. so a side-panel
@@ -392,7 +397,8 @@ export function Chart({
   }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits, exhibit]);
 
   if (!built) return null;
-  const chartH = Math.round((userH ?? built.defaultH) * heightScale);
+  const fill = !!(fitHeight && fitHeight > 0);
+  const chartH = fill ? Math.round(fitHeight!) : Math.round((userH ?? built.defaultH) * heightScale);
 
   return (
     <div className="mt-2 w-full group/chart">
@@ -423,9 +429,10 @@ export function Chart({
       {(() => {
         const _xd = (built.option as { xAxis?: { data?: unknown[] } })?.xAxis?.data;
         const _catN = Array.isArray(_xd) ? _xd.length : 0;
-        const _maxW = _catN > 0 && _catN <= 6 ? Math.max(340, _catN * 130 + 150) : undefined;
+        // In fill mode the chart takes the whole box (no 350px cap, no few-category width cap).
+        const _maxW = fill ? undefined : (_catN > 0 && _catN <= 6 ? Math.max(340, _catN * 130 + 150) : undefined);
         return (
-      <div ref={outerRef} style={{ maxHeight: 350, overflowY: "auto", overflowX: "hidden", width: "100%", maxWidth: _maxW }}>
+      <div ref={outerRef} style={{ maxHeight: fill ? undefined : 350, height: fill ? chartH : undefined, overflowY: "auto", overflowX: "hidden", width: "100%", maxWidth: _maxW }}>
         <EChart option={built.option} height={chartH} onSelect={onSelect} onReady={(inst) => { instRef.current = inst; onInstanceReady?.(inst); }} />
       </div>
         );

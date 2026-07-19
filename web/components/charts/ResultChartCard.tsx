@@ -137,12 +137,14 @@ interface Props {
   /** Initial data-label visibility (the deep report ships labels on). */
   defaultShowLabels?: boolean;
   heightScale?: number;
+  /** Fill an exact pixel height — for a resizeable card/canvas node (chart + table grow to fill). */
+  fillHeight?: number | null;
   onSelect?: (datum: Record<string, unknown>) => void;
 }
 
 export function ResultChartCard({
   columns, rows, title, chartType, chartConfig, custom, exhibit: exhibitProp,
-  columnUnits, defaultShowLabels, heightScale, onSelect,
+  columnUnits, defaultShowLabels, heightScale, fillHeight, onSelect,
 }: Props) {
   const { numericIdxs, catIdxs, dateIdxs } = useMemo(() => classifyColumns(columns, rows), [columns, rows]);
   const chartTypes = useMemo(() => availableChartTypes(columns, rows), [columns, rows]);
@@ -355,7 +357,7 @@ export function ResultChartCard({
       {view === "pivot" ? (
         <PivotTable columns={columns} rows={rows} />
       ) : view === "table" ? (
-        <SqlResultTable columns={effData.columns} rows={effData.rows} maxHeight={340} />
+        <SqlResultTable columns={effData.columns} rows={effData.rows} maxHeight={fillHeight && fillHeight > 0 ? fillHeight : 340} />
       ) : (
         <Chart
           columns={effData.columns}
@@ -369,6 +371,7 @@ export function ResultChartCard({
           chrome={false}
           showLabels={showLabels}
           heightScale={heightScale}
+          fitHeight={fillHeight}
           onSelect={onSelect}
           onInstanceReady={(inst) => { instRef.current = inst; }}
         />
