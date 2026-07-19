@@ -12,8 +12,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ReactFlow, ReactFlowProvider, Background, Controls, NodeResizer,
-  useNodesState, useReactFlow, type Node, type NodeProps,
+  ReactFlow, ReactFlowProvider, Background, NodeResizer,
+  useNodesState, type Node, type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -58,14 +58,14 @@ function cardKind(cs: CardState): Kind {
 type Box = { x: number; y: number; w: number; h: number };
 type Layout = Record<string, Box>;
 
-type Handlers = { onRemove: (id: string) => void; onRefresh: (id: string) => void; onOpenSource?: (iid: string) => void };
+type Handlers = { onRemove: (id: string) => void; onRefresh: (id: string) => void; onOpenSource?: (iid: string) => void; onEvidence?: (iid: string) => void };
 
 /** Reconcile the card list into RF nodes: KEEP each surviving node's geometry + selection (only its
  *  data refreshes); a card lacking a live node takes its SAVED box, or is shelf-packed BELOW whatever
  *  is already placed (so an added card never lands on top of an existing one). */
-function reconcileNodes(prev: Node[], cards: CardState[], handlers: Handlers, saved: Layout): Node[] {
+function reconcileNodes(prev: Node[], cards: CardState[], handlers: Handlers, saved: Layout, maxWidth = 1180): Node[] {
   const byId = new Map(prev.map(n => [n.id, n]));
-  const MAXW = 1180, GAP = 14;
+  const MAXW = Math.max(360, maxWidth), GAP = 14;
   let baseY = 0;
   for (const cs of cards) {
     const p = byId.get(cs.card.id);
@@ -100,6 +100,7 @@ type PinnedNodeData = {
   onRemove: (id: string) => void;
   onRefresh: (id: string) => void;
   onOpenSource?: (iid: string) => void;
+  onEvidence?: (iid: string) => void;
 } & Record<string, unknown>;
 
 function BigValue({ v }: { v: number | null | undefined }) {
@@ -165,11 +166,11 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
     }}>
       <NodeResizer isVisible={selected} minWidth={MIN_SIZE[kind].w} minHeight={MIN_SIZE[kind].h} {...RESIZER} />
 
-      {/* Title bar — the drag handle. */}
+      {/* Title bar — the drag handle. The title wraps FULLY (no ellipsis) so it's always readable. */}
       <div className="pinned-drag" title={card.title}
         style={{
-          fontSize: 11.5, color: "var(--t2)", lineHeight: 1.35, padding: "9px 12px 6px", cursor: "grab",
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 0 auto",
+          fontSize: 11.5, fontWeight: 500, color: "var(--t1)", lineHeight: 1.35, padding: "9px 12px 7px", cursor: "grab",
+          flex: "0 0 auto", overflowWrap: "anywhere",
           borderBottom: "1px solid color-mix(in srgb, var(--b1) 60%, transparent)",
         }}>
         {card.title}
@@ -245,10 +246,16 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
               style={{ fontSize: 10, color: "var(--amb4)", padding: "2px 6px" }}>{alertBusy ? "…" : "Save"}</Button>
           </div>
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
           {data.onOpenSource && card.provenance.insight_id && (
             <Button variant="ghost" size="xs" onClick={() => data.onOpenSource!(card.provenance.insight_id)}
               style={{ fontSize: 11, color: "var(--blue4)", padding: "2px 6px" }}>Source</Button>
+          )}
+          {/* Evidence capsule — the receipt/derivation behind a finding-derived card. */}
+          {data.onEvidence && card.provenance.insight_id && (
+            <Button variant="ghost" size="xs" onClick={() => data.onEvidence!(card.provenance.insight_id)}
+              title="See the evidence behind this finding"
+              style={{ fontSize: 10.5, color: "var(--vio4)", padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--vio4) 35%, var(--b1))", borderRadius: "var(--r-pill)" }}>Evidence</Button>
           )}
           {canAlert && !alerting && (
             <Button variant="ghost" size="xs" onClick={() => setAlertOpen(o => !o)}
@@ -271,14 +278,28 @@ const nodeTypes = { pinned: PinnedCardNode };
 
 // ── Canvas ───────────────────────────────────────────────────────────────────
 
-function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSource }: {
+function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSource, onEvidence }: {
   connectionId: string;
   cards: CardState[];
   onRemove: (id: string) => void;
   onRefresh: (id: string) => void;
   onOpenSource?: (iid: string) => void;
+  onEvidence?: (iid: string) => void;
 }) {
-  const handlers = useMemo(() => ({ onRemove, onRefresh, onOpenSource }), [onRemove, onRefresh, onOpenSource]);
+  const handlers = useMemo(() => ({ onRemove, onRefresh, onOpenSource, onEvidence }), [onRemove, onRefresh, onOpenSource, onEvidence]);
+
+  // The board is BOUNDED (not an infinite canvas): its width tracks the container, and it grows only
+  // VERTICALLY as cards are added — measure the width so packing wraps at the real edge.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [wrapW, setWrapW] = useState(1180);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setWrapW(el.clientWidth));
+    ro.observe(el);
+    setWrapW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
 
   // Cockpit layout — loaded from the SERVER (account-keyed, so any device sees the same arrangement),
   // applied once ready. `savedRef` mirrors the latest saved layout so new cards pack relative to it.
@@ -301,8 +322,8 @@ function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSour
   // from the saved layout (read in an effect, not during render). Surviving nodes keep their geometry.
   useEffect(() => {
     if (loaded == null) return;
-    setRfNodes(prev => reconcileNodes(prev, cards, handlers, savedRef.current));
-  }, [cards, handlers, loaded, setRfNodes]);
+    setRfNodes(prev => reconcileNodes(prev, cards, handlers, savedRef.current, wrapW));
+  }, [cards, handlers, loaded, wrapW, setRfNodes]);
 
   // Persist the layout (position + size per card) to the server shortly after any drag / resize.
   useEffect(() => {
@@ -320,32 +341,36 @@ function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSour
     return () => clearTimeout(t);
   }, [rfNodes, connectionId, loaded]);
 
-  // Frame on load; re-fit after nodes settle (measure timing in some browsers).
-  const { fitView } = useReactFlow();
-  const didMount = useRef(false);
-  useEffect(() => {
-    if (loaded == null) return;
-    const t = setTimeout(() => fitView({ padding: 0.14, duration: didMount.current ? 240 : 0 }), 120);
-    didMount.current = true;
-    return () => clearTimeout(t);
-  }, [loaded, cards.length, fitView]);
+  // Height = the content bounds, so the board is fully visible and grows DOWN as cards are added
+  // (no pan needed). Clamp so an empty/one-card board still reads as a panel.
+  const contentH = useMemo(() => {
+    let maxB = 0;
+    rfNodes.forEach(n => { maxB = Math.max(maxB, n.position.y + ((n.height ?? n.measured?.height ?? 200) as number)); });
+    return Math.max(220, Math.round(maxB) + 22);
+  }, [rfNodes]);
 
   return (
-    <div style={{ height: 560, borderRadius: "var(--r3)", border: "1px solid var(--b1)", background: "var(--bg-1)", overflow: "hidden" }}>
+    <div ref={wrapRef} style={{ height: contentH, borderRadius: "var(--r3)", border: "1px solid var(--b1)", background: "var(--bg-1)", overflow: "hidden", transition: "height var(--dur-fast, .15s)" }}>
       <ReactFlow
         nodes={rfNodes}
         edges={[]}
         onNodesChange={onNodesChange}
         nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.14 }}
-        minZoom={0.3}
-        maxZoom={1.6}
+        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+        minZoom={1}
+        maxZoom={1}
+        panOnDrag={false}
+        panOnScroll={false}
+        zoomOnScroll={false}
+        zoomOnPinch={false}
+        zoomOnDoubleClick={false}
+        preventScrolling={false}
+        nodeExtent={[[0, 0], [wrapW, Infinity]]}
+        translateExtent={[[0, 0], [wrapW, Infinity]]}
         proOptions={{ hideAttribution: true }}
         nodesConnectable={false}
       >
         <Background color="var(--b1)" gap={22} />
-        <Controls showInteractive={false} />
       </ReactFlow>
     </div>
   );
@@ -357,6 +382,7 @@ export function PinnedCardsCanvas(props: {
   onRemove: (id: string) => void;
   onRefresh: (id: string) => void;
   onOpenSource?: (iid: string) => void;
+  onEvidence?: (iid: string) => void;
 }) {
   return (
     <ReactFlowProvider>

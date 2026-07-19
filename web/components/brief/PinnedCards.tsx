@@ -13,10 +13,11 @@ import { PinnedCardsCanvas, type CardState } from "@/components/brief/PinnedCard
  *  Each is re-run through the guard battery so its number stays honest, then laid out on a CANVAS
  *  (PinnedCardsCanvas) the reader arranges by priority and resizes at will — the layout persists
  *  per connection, the same scope every briefing element uses. Renders nothing until a card exists. */
-export function PinnedCards({ connectionId, refreshKey, onOpenSource }: {
+export function PinnedCards({ connectionId, refreshKey, onOpenSource, onEvidence }: {
   connectionId: string;
   refreshKey?: number;
   onOpenSource?: (insightId: string) => void;
+  onEvidence?: (insightId: string) => void;
 }) {
   const [cards, setCards] = useState<CardState[]>([]);
   const [ready, setReady] = useState(false);
@@ -76,6 +77,7 @@ export function PinnedCards({ connectionId, refreshKey, onOpenSource }: {
         onRemove={remove}
         onRefresh={refreshOne}
         onOpenSource={onOpenSource}
+        onEvidence={onEvidence}
       />
     </div>
   );

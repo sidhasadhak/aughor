@@ -1272,6 +1272,20 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
  *  is demoted to a quiet footer so the lede isn't cluttered with background process.
  *  Falls back to the deterministic top finding when no AI narrative exists.
  *  Confidence % is deliberately NOT shown — it carried no call to action. */
+// Small provenance chips for the verdict hero's meta strip (module-level so they aren't
+// re-created on every VerdictHero render).
+function HeroStatPill({ value, label }: { value: number; label: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 5, fontSize: 11 }}>
+      <span style={{ fontWeight: 650, color: "var(--t2)", fontVariantNumeric: "tabular-nums" as const }}>{value}</span>
+      <span style={{ color: "var(--t4)" }}>{label}</span>
+    </span>
+  );
+}
+function HeroDivider() {
+  return <span style={{ width: 1, height: 11, background: "var(--b2)" }} />;
+}
+
 function VerdictHero({
   narrative, headline, domainCount, totalInsights, synthesizedAt,
   onInvestigate, controls, actions, scope,
@@ -1293,66 +1307,85 @@ function VerdictHero({
   const title   = theme || finding || "Intelligence briefing";
   // When the AI theme is the headline, the top finding becomes the supporting lead.
   const lead    = theme ? finding : undefined;
+  const isVerdict = !!narrative;
 
   return (
     <div style={{
       position: "relative", overflow: "hidden",
-      background: "linear-gradient(135deg, color-mix(in srgb, var(--blue4) 9%, var(--bg-2)), var(--bg-2))",
-      border: "1px solid color-mix(in srgb, var(--blue4) 22%, var(--b1))",
+      background: "linear-gradient(135deg, color-mix(in srgb, var(--blue4) 10%, var(--bg-2)) 0%, var(--bg-2) 58%)",
+      border: "1px solid color-mix(in srgb, var(--blue4) 24%, var(--b1))",
       borderRadius: "var(--r3)", boxShadow: "var(--shadow-md)",
     }}>
-      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: "var(--blue4)" }} />
-      <div style={{ padding: "22px 26px 22px 28px" }}>
-        {/* top row: tag + controls (scope/provenance demoted to the footer below) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" as const }}>
-          <span style={{
-            fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: "var(--r1)",
-            background: "color-mix(in srgb, var(--blue4) 16%, transparent)",
-            border: "1px solid color-mix(in srgb, var(--blue4) 30%, transparent)",
-            color: "var(--blue4)", textTransform: "uppercase" as const, letterSpacing: ".09em",
-          }}>{narrative ? "Verdict" : "Top finding"}</span>
-          {controls && (
-            <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{controls}</span>
+      {/* left accent + a soft top-right glow for depth */}
+      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: "linear-gradient(var(--blue4), color-mix(in srgb, var(--blue4) 25%, transparent))" }} />
+      <div style={{ position: "absolute", right: 0, top: 0, width: 380, height: 210, background: "radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--blue4) 13%, transparent), transparent 62%)", pointerEvents: "none" }} />
+
+      <div style={{ position: "relative", padding: "18px 26px 17px 30px" }}>
+        {/* eyebrow (context) + controls */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13, flexWrap: "wrap" as const }}>
+          <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".13em", textTransform: "uppercase" as const, color: "var(--t4)" }}>
+            Intelligence briefing{scope ? <span style={{ color: "var(--t3)" }}>{"  ·  "}{scope}</span> : null}
+          </span>
+          {controls && <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{controls}</span>}
+        </div>
+
+        {/* verdict badge — a live pulse dot reads as a fresh, standing conclusion */}
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 11,
+          padding: "3px 10px 3px 8px", borderRadius: "var(--r-pill)",
+          background: "color-mix(in srgb, var(--blue4) 14%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--blue4) 32%, transparent)",
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: "var(--blue4)", boxShadow: "0 0 6px color-mix(in srgb, var(--blue4) 70%, transparent)" }} />
+          <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "var(--blue4)" }}>
+            {isVerdict ? "Verdict" : "Top finding"}
+          </span>
+        </div>
+
+        {/* the ONE bold verdict — larger, tighter, premium */}
+        <div style={{
+          fontSize: 24, fontWeight: 680, lineHeight: 1.28, color: "var(--t1)",
+          letterSpacing: "-.015em", maxWidth: 780, textWrap: "balance" as const,
+          marginBottom: lead ? 10 : 0,
+        }}>{title}</div>
+
+        {/* one-line proof */}
+        {lead && (
+          <p style={{
+            fontSize: 13.5, color: "var(--t2)", lineHeight: 1.6, maxWidth: 740, margin: 0,
+            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
+          }}>{lead}</p>
+        )}
+
+        {/* actions (left) + trust & provenance (right) on one confident strip */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 18, flexWrap: "wrap" as const }}>
+          {(headline || actions) && (
+            <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" as const }}>
+              {headline && (
+                <button
+                  onClick={() => onInvestigate(`Investigate: ${headline.insight.finding}`, headline.insight.id)}
+                  className="aug-btn aug-btn-primary"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", fontSize: 12.5, fontWeight: 600, borderRadius: "var(--r2)", cursor: "pointer" }}
+                >Investigate →</button>
+              )}
+              {actions}
+            </div>
           )}
-        </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 28, alignItems: "center" }}>
-          <div>
-            {/* the ONE bold verdict */}
-            <div style={{
-              fontSize: 21, fontWeight: 650, lineHeight: 1.35, color: "var(--t1)",
-              letterSpacing: "-.01em", maxWidth: 660, textWrap: "pretty" as const,
-              marginBottom: lead ? 8 : 0,
-            }}>{title}</div>
-            {/* one-line proof */}
-            {lead && (
-              <p style={{
-                fontSize: 13, color: "var(--t2)", lineHeight: 1.55, maxWidth: 640, margin: 0,
-                display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
-              }}>{lead}</p>
-            )}
-            {/* primary action up front */}
-            {(headline || actions) && (
-              <div style={{ display: "flex", gap: 9, marginTop: 18, flexWrap: "wrap" as const, alignItems: "center" }}>
-                {headline && (
-                  <button
-                    onClick={() => onInvestigate(`Investigate: ${headline.insight.finding}`, headline.insight.id)}
-                    className="aug-btn aug-btn-primary"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", fontSize: 12.5, fontWeight: 600, borderRadius: "var(--r2)", cursor: "pointer" }}
-                  >Investigate →</button>
-                )}
-                {actions}
-              </div>
-            )}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const }}>
+            {/* Aughor's differentiator, made explicit: every number is evidence-backed. */}
+            <span title="Every number is grounded in the data and cleared the trust guards"
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: "var(--r-pill)", color: "var(--grn4)", background: "var(--grn1)", border: "1px solid var(--grn2)" }}>
+              <span style={{ fontSize: 9 }}>✓</span> Grounded &amp; guarded
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
+              <HeroStatPill value={domainCount} label={domainCount === 1 ? "domain" : "domains"} />
+              <HeroDivider />
+              <HeroStatPill value={totalInsights} label={totalInsights === 1 ? "finding" : "findings"} />
+              <HeroDivider />
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>{timeAgo(synthesizedAt)}</span>
+            </span>
           </div>
-        </div>
-
-        {/* quiet provenance — present for trust, but not the headline (click Investigate for the rest) */}
-        <div style={{ marginTop: 16, fontSize: 10.5, color: "var(--t4)" }}>
-          {scope && <><span style={{ color: "var(--t3)", fontWeight: 500 }}>{scope}</span>{" · "}</>}
-          {narrative ? "Synthesized" : "Ranked"} from {domainCount} {domainCount === 1 ? "domain" : "domains"}
-          {" · "}{totalInsights} {totalInsights === 1 ? "finding" : "findings"}
-          {" · "}{timeAgo(synthesizedAt)}
         </div>
       </div>
     </div>
@@ -2166,7 +2199,8 @@ export function BriefingPanel({
       <NewCardComposer connectionId={connectionId} schema={schema}
         onCreated={() => setPinnedRefresh(n => n + 1)} />
       <PinnedCards connectionId={connectionId} refreshKey={pinnedRefresh}
-        onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)} />
+        onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}
+        onEvidence={(iid) => { const sig = briefing.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); }} />
 
       {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live;
             click a card to expand it into its trend chart (replaces the old chart grid). */}
