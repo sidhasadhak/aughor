@@ -316,6 +316,11 @@ a:hover { color: var(--blue4); }
 /* ── Panel ───────────────────────────────────────────────────────────────── */
 .aug-panel { background: var(--bg-2); border: 1px solid var(--b1); border-radius: var(--r3); box-shadow: var(--shadow-sm); }
 
+/* ── Briefing "on this brief" TOC rail ───────────────────────────────────────
+   The sticky section-nav aside is a two-column luxury — collapse it (giving the
+   brief its full width back) once the pane is too narrow to spare the ~186px. */
+@media (max-width: 1180px) { .brief-toc { display: none !important; } }
+
 /* ── Callout ─────────────────────────────────────────────────────────────── */
 .aug-callout {
   border-radius: 0 var(--r3) var(--r3) 0;
