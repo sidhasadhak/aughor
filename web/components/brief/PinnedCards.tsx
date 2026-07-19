@@ -113,7 +113,7 @@ export function PinnedCards({ connectionId, refreshKey, findings, onOpenSource, 
           padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--grn4)",
           background: "var(--grn1)", border: "1px solid var(--grn2)",
         }}>Guarded</span>
-        <span style={{ fontSize: 9.5, fontWeight: 400, color: "var(--t4)" }}>findings + your pinned cards · drag the title to arrange · select to resize</span>
+        <span style={{ fontSize: 9.5, fontWeight: 400, color: "var(--t4)" }}>findings + your pinned cards · drag the title to arrange · select to resize · snaps to grid, never overlaps</span>
       </div>
       <PinnedCardsCanvas
         connectionId={connectionId}
