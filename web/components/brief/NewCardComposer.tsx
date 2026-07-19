@@ -23,6 +23,7 @@ import {
   getBusinessProfile, getSchemaRich, runDirectQuery, pinQueryToDashboard,
   type NorthStarMetric, type DirectQueryResult, type SchemaTable,
 } from "@/lib/api";
+import { toast } from "@/components/ui/toast";
 
 const inputStyle = {
   fontSize: 11, background: "var(--bg-1)", border: "1px solid var(--b1)",
@@ -161,9 +162,12 @@ export function NewCardComposer({ connectionId, schema, onCreated }: {
         scope: "connection", scopeRef: connectionId, schema,
         render: { chartType },
       });
+      toast.success("Pinned to your cockpit");
       onCreated(); reset();
     } catch (e) {
-      setError((e as Error).message || "Could not pin — the query failed the trust guards");
+      const msg = (e as Error).message || "Could not pin — the query failed the trust guards";
+      setError(msg);
+      toast.error("Card refused by the trust guards", { description: msg.slice(0, 140) });
     } finally { setBusy(false); }
   };
 

@@ -20,6 +20,7 @@ import { PivotTable } from "@/components/PivotTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
 import { inferChartType, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -1618,9 +1619,12 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
       });
       setShowPinName(false); setPinState("pinned");
       setTimeout(() => setPinState("idle"), 1800);
+      toast.success("Pinned to your cockpit");
     } catch (e) {
-      setPinError((e as Error).message || "Failed to pin");
+      const msg = (e as Error).message || "Failed to pin";
+      setPinError(msg);
       setPinState("idle");
+      toast.error("Card refused by the trust guards", { description: msg.slice(0, 140) });
     }
   };
   // Customize-tab option lists

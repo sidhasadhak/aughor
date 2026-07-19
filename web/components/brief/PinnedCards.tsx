@@ -7,6 +7,7 @@ import {
   type DashboardCard, type DashboardCardRefresh, type ExplorationInsight,
 } from "@/lib/api";
 import { PinnedCardsCanvas, type CardState } from "@/components/brief/PinnedCardsCanvas";
+import { toast } from "@/components/ui/toast";
 
 /** A brief finding, rendered as a (virtual) chart/table card beside the user's pins. */
 export interface DashboardFinding { insight: ExplorationInsight; domain: string; }
@@ -84,16 +85,23 @@ export function PinnedCards({ connectionId, refreshKey, findings, onOpenSource, 
   }, [findings, connectionId, refreshKey]);
 
   const remove = useCallback(async (id: string) => {
-    await deleteDashboardCard(id).catch(() => {});
-    setCards(cs => cs.filter(c => c.card.id !== id));
+    try {
+      await deleteDashboardCard(id);
+      setCards(cs => cs.filter(c => c.card.id !== id));
+      toast.success("Card removed from your cockpit");
+    } catch {
+      toast.error("Couldn't remove card", { description: "The card store didn't accept the delete — try again." });
+    }
   }, []);
 
   const refreshOne = useCallback(async (id: string) => {
     try {
       const run = await runDashboardCard(id);
       setCards(cs => cs.map(c => (c.card.id === id ? { ...c, run, failed: false } : c)));
+      toast.success("Card refreshed");
     } catch {
       setCards(cs => cs.map(c => (c.card.id === id ? { ...c, failed: true } : c)));
+      toast.error("Couldn't refresh card", { description: "The query failed the trust guards or the source is unavailable." });
     }
   }, []);
 

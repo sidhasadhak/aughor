@@ -63,6 +63,7 @@ import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { PinnedCards } from "@/components/brief/PinnedCards";
+import { toast } from "@/components/ui/toast";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
 import { GroundedNumber, withGroundedNumbers } from "@/components/brief/GroundedNumber";
 import { BriefAskBox } from "@/components/brief/BriefAskBox";
@@ -811,7 +812,11 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
       });
       setPinStatus("done");
       onPinned?.();
-    } catch { setPinStatus("error"); }
+      toast.success("Pinned to your cockpit");
+    } catch {
+      setPinStatus("error");
+      toast.error("Couldn't pin finding", { description: "The finding's query didn't pass the trust guards." });
+    }
   }, [insight.id, insight.sql, connectionId, schema, onPinned]);
 
   const handlePromote = useCallback(async () => {
@@ -1756,7 +1761,6 @@ export function BriefingPanel({
   const [triggers, setTriggers]               = useState<ActionTrigger[]>([]);
   const [evidenceInsight, setEvidenceInsight] = useState<ExplorationInsight | null>(null);
   const [evidenceDomain, setEvidenceDomain]   = useState<string>("");
-  const [hint, setHint]                       = useState<string | null>(null);
 
   // Available delivery channels for the Share action (Action Hub triggers).
   useEffect(() => {
@@ -1771,8 +1775,7 @@ export function BriefingPanel({
   }, []);
 
   const showTriggersHint = useCallback(() => {
-    setHint("No delivery channel yet — add a Slack/webhook trigger in Action Hub to share findings.");
-    setTimeout(() => setHint(null), 5000);
+    toast.info("No delivery channel yet", { description: "Add a Slack/webhook trigger in Action Hub to share findings." });
   }, []);
 
   const load = useCallback(async () => {
@@ -1936,16 +1939,9 @@ export function BriefingPanel({
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
 
-      {/* Evidence drill-through drawer + transient hint toast (finding actions, #4) */}
+      {/* Evidence drill-through drawer (finding actions, #4). Transient hints/side-effect
+          feedback now go through the shared <Toaster/> (toast.*), mounted in the root layout. */}
       <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} connectionId={connectionId} onClose={() => setEvidenceInsight(null)} />
-      {hint && (
-        <div style={{
-          position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 70,
-          padding: "10px 16px", borderRadius: "var(--r2)", fontSize: 12,
-          background: "var(--bg-1)", border: "1px solid var(--b2)", color: "var(--t2)",
-          boxShadow: "0 6px 20px rgba(0,0,0,.18)", maxWidth: 420,
-        }}>{hint}</div>
-      )}
 
       {/* ── Explorer control bar ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "8px 12px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>

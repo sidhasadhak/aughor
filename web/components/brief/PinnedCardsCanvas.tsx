@@ -29,6 +29,7 @@ import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { type ChartCustom } from "@/components/Chart";
 import { formatMetricValue, formatVariance } from "@/lib/format";
 import { graduateCard, getCockpitLayout, saveCockpitLayout, type CardRunResult, type DashboardCard } from "@/lib/api";
+import { toast } from "@/components/ui/toast";
 import {
   GRID, boxToCell, cellPos, cellSize, packTopLeft, bottomRow,
   type Box, type Cell, type Cells,
@@ -218,7 +219,10 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
     try {
       await graduateCard(card.id, { warning_threshold: n, threshold_direction: alertDir });
       setAlerting(true); setAlertOpen(false);
-    } catch { /* best-effort */ }
+      toast.success("Alert set", { description: `You'll be notified when this metric goes ${alertDir} ${n}.` });
+    } catch {
+      toast.error("Couldn't set alert", { description: "The card's query didn't pass the trust guards, so no monitor was scheduled." });
+    }
     finally { setAlertBusy(false); }
   };
 
