@@ -20,11 +20,12 @@
  * expand appear only when chart_sql yields a real series; otherwise the card degrades to
  * label + value.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import NumberFlow, { type Format } from "@number-flow/react";
 import { getBusinessProfile, runDirectQuery, currencySymbol } from "@/lib/api";
 import { GroundedNumber } from "@/components/brief/GroundedNumber";
-import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
+import { seriesTrend } from "@/components/brief/Sparkline";
+import { StatTile } from "@/components/brief/StatTile";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { effectiveCurrencySymbol } from "@/lib/orgSettings";
 import { useOrgSettings } from "@/lib/useOrgSettings";
@@ -210,57 +211,24 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
         {kpis.map(k => {
-          const fav = k.trend?.favorable;
-          const deltaColor = fav == null ? "var(--t3)" : fav ? "var(--grn4)" : "var(--red4)";
-          const deltaBg = fav == null ? "var(--bg-3)" : fav ? "var(--grn1)" : "var(--red1)";
           const canExpand = !!(k.chart && k.chart.rows.length >= 2);
           const isOpen = expanded?.name === k.name;
+          // Every KPI tile renders through the one canonical StatTile spec; the tuned odometer
+          // (KpiValue) rides in as the value slot so this refactor keeps it byte-for-byte.
           return (
-            <div
+            <StatTile
               key={k.name}
+              label={k.name}
+              accent={k.color}
+              value={<KpiValue kpi={k} />}
+              delta={k.trend ? { text: k.trend.deltaText, sign: k.trend.sign, favorable: k.trend.favorable } : null}
+              sparkline={k.trend?.values ?? null}
+              caption={k.trend?.caption}
+              expandable={canExpand}
+              open={isOpen}
               onClick={canExpand ? () => setExpandedId(isOpen ? null : k.name) : undefined}
               title={canExpand ? (isOpen ? "Collapse" : "Click to expand the trend") : undefined}
-              style={{
-                position: "relative", flex: "1 1 160px", minWidth: 150, padding: "11px 13px",
-                borderRadius: "var(--r2)", background: isOpen ? "var(--bg-3)" : "var(--bg-2)",
-                // Explicit per-side borders (not the `border` shorthand) so they don't conflict
-                // with borderLeft on rerender — React warns about mixing shorthand + longhand.
-                borderTop: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
-                borderRight: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
-                borderBottom: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
-                borderLeft: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
-                display: "flex", flexDirection: "column", gap: 7,
-                cursor: canExpand ? "pointer" : "default",
-                transition: "background var(--dur-fast), border-color var(--dur-fast)",
-              }}
-            >
-              <div
-                className="aug-label"
-                style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 14 }}
-                title={k.name}
-              >
-                {k.name}
-              </div>
-              {canExpand && (
-                <span aria-hidden style={{ position: "absolute", top: 9, right: 10, fontSize: 11, lineHeight: 1, color: isOpen ? k.color : "var(--t4)" }}>
-                  {isOpen ? "×" : "⤢"}
-                </span>
-              )}
-              <div className="aug-fs-display" style={{ color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1 }}>
-                <KpiValue kpi={k} />
-              </div>
-              {k.trend && k.trend.sign !== 0 && (
-                <span style={{
-                  alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 3,
-                  fontSize: 11, fontWeight: 600, fontFamily: "var(--font-mono)",
-                  color: deltaColor, background: deltaBg, padding: "1px 6px", borderRadius: "var(--r1)",
-                }}>
-                  {k.trend.sign > 0 ? "↑" : "↓"} {k.trend.deltaText}
-                </span>
-              )}
-              {k.trend && <Sparkline values={k.trend.values} color={k.color} width={130} height={26} showDot={false} />}
-              {k.trend && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{k.trend.caption}</div>}
-            </div>
+            />
           );
         })}
       </div>
@@ -293,13 +261,24 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
 }
 
 // ── Live container ──────────────────────────────────────────────────────────────
-export function IndustryKpiStrip({ connectionId, schema }: { connectionId: string; schema?: string }) {
+export function IndustryKpiStrip({ connectionId, schema, onHasContent }: {
+  connectionId: string;
+  schema?: string;
+  /** Reports whether any KPI actually rendered — the strip fail-safes to nothing when the
+   *  profile has no north-star metrics (or they all error), so a caller (e.g. the briefing
+   *  TOC) can omit a "Key metrics" entry that would jump to an empty section. */
+  onHasContent?: (has: boolean) => void;
+}) {
   const [industry, setIndustry] = useState("");
   const [period, setPeriod] = useState("");
   const [kpis, setKpis] = useState<Kpi[]>([]);
   // The currency symbol is baked into each KPI inside the effect below, so re-run the
   // effect when org settings change (else the strip keeps the old currency until reload).
   const orgV = useOrgSettings();
+  // Held in a ref so an unstable callback prop never re-triggers the KPI fetch (updated in an
+  // effect, not during render, matching the repo's latest-callback idiom).
+  const onHasContentRef = useRef(onHasContent);
+  useEffect(() => { onHasContentRef.current = onHasContent; });
 
   useEffect(() => {
     if (!connectionId) return;
@@ -308,7 +287,7 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
     (async () => {
       const p = await getBusinessProfile(connectionId, schema);
       if (!alive) return;
-      if (!p.available || !p.profile) { setIndustry(""); setKpis([]); return; }
+      if (!p.available || !p.profile) { setIndustry(""); setKpis([]); onHasContentRef.current?.(false); return; }
       setIndustry(p.profile.industry || "");
       // Override-wins: a set org/workspace currency beats the inferred profile currency,
       // and matches what the expanded charts render from the same orgSettings cache.
@@ -339,8 +318,10 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
       }));
 
       if (!alive) return;
-      setKpis(results.filter((k): k is Kpi => k !== null));
+      const live = results.filter((k): k is Kpi => k !== null);
+      setKpis(live);
       setPeriod(seenPeriod);
+      onHasContentRef.current?.(live.length > 0);
     })();
     return () => { alive = false; };
   }, [connectionId, schema, orgV]);
