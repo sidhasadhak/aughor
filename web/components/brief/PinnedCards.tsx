@@ -9,6 +9,7 @@ import {
 import { PinnedCardsCanvas, type CardState } from "@/components/brief/PinnedCardsCanvas";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
+import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 
 /** A brief finding, rendered as a (virtual) chart/table card beside the user's pins. */
 export interface DashboardFinding { insight: ExplorationInsight; domain: string; }
@@ -113,6 +114,14 @@ export function PinnedCards({ connectionId, refreshKey, findings, onOpenSource, 
 
   // The brief's findings first (the fresh signals), then the user's standing pins.
   const all = useMemo(() => [...findingCards, ...cards], [findingCards, cards]);
+
+  // ── ⌘K "Tidy cockpit" command — offered only while the cockpit has cards ──
+  const tidyCommands = useMemo<Command[]>(() =>
+    all.length > 0
+      ? [{ id: "cockpit-tidy", label: "Tidy cockpit", sublabel: "Re-pack the cockpit into a clean, gap-free grid", icon: "canvas", accent: "var(--grn3)", keywords: "tidy cockpit arrange pack grid layout reset", run: () => tidyRef.current?.() }]
+      : [],
+  [all.length]);
+  useRegisterCommands("cockpit", tidyCommands);
 
   // Wait for BOTH pins and findings before first paint, so findings pack at the top (not below the
   // pins that happened to load first).

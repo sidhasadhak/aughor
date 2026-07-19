@@ -15,7 +15,7 @@
  *   • generateBriefingNarrative() — LLM prose with citation links (M24b)
  */
 
-import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { formatTimestamp } from "@/lib/format";
 import {
   getDomainInsights,
@@ -64,6 +64,7 @@ import { Spinner } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { PinnedCards } from "@/components/brief/PinnedCards";
 import { toast } from "@/components/ui/toast";
+import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
 import { GroundedNumber, withGroundedNumbers } from "@/components/brief/GroundedNumber";
 import { BriefAskBox } from "@/components/brief/BriefAskBox";
@@ -1920,6 +1921,16 @@ export function BriefingPanel({
     }
     prevPhaseRef.current = phase;
   }, [explorerStatus?.phase, load]);
+
+  // ── ⌘K contextual commands (present only while the Briefing is mounted) ──
+  const regenRefCmd = useRef(generateNarrative);
+  const startRefCmd = useRef(runExplorer);
+  useEffect(() => { regenRefCmd.current = generateNarrative; startRefCmd.current = runExplorer; });
+  const briefCommands = useMemo<Command[]>(() => [
+    { id: "brief-regen",   label: "Regenerate brief",  sublabel: "Re-synthesize the intelligence briefing",          icon: "spark",   accent: "var(--blue3)", keywords: "regenerate refresh brief narrative synthesis",  run: () => regenRefCmd.current(true) },
+    { id: "brief-explore", label: "Start exploration", sublabel: "Run the autonomous explorer on this connection",   icon: "process", accent: "var(--cyn3)",  keywords: "explore exploration run analyze discover signals", run: () => startRefCmd.current() },
+  ], []);
+  useRegisterCommands("briefing", briefCommands);
 
   if (loading)  return <BriefingLoading />;
 

@@ -21,6 +21,7 @@ import { ChartWrapper }       from "@/components/charts/ChartWrapper";
 import { inferChartType, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
+import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -1627,6 +1628,16 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
       toast.error("Card refused by the trust guards", { description: msg.slice(0, 140) });
     }
   };
+
+  // ── ⌘K contextual commands (present only while the Query Builder is mounted) ──
+  const runRefCmd = useRef(triggerRun);
+  const pinRefCmd = useRef(onPinClick);
+  useEffect(() => { runRefCmd.current = triggerRun; pinRefCmd.current = onPinClick; });
+  const qbCommands = useMemo<Command[]>(() => [
+    { id: "qb-run", label: "Run query", sublabel: "Execute the current Query Builder query", icon: "builder", accent: "var(--blue3)", keywords: "execute run sql query", run: () => runRefCmd.current() },
+    { id: "qb-pin", label: "Pin query to cockpit", sublabel: "Guard-check and pin this query as a briefing card", icon: "spark", accent: "var(--vio3)", keywords: "pin dashboard cockpit save card", run: () => pinRefCmd.current() },
+  ], []);
+  useRegisterCommands("query-builder", qbCommands);
   // Customize-tab option lists
   const COLOR_SCHEMES = [["", "Default"], ["tableau10", "Tableau 10"], ["category10", "Category 10"], ["set2", "Set 2"], ["dark2", "Dark 2"], ["pastel1", "Pastel"], ["tableau20", "Tableau 20"]];
   const NUMBER_FORMATS = [["", "Auto"], [",.0f", "1,234"], [",.2f", "1,234.56"], ["$,.0f", "$1,234"], ["$,.2f", "$1,234.56"], ["~s", "1.2K (compact)"], [".0%", "12%"], [".1%", "12.3%"]];

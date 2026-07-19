@@ -16,15 +16,17 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { formatCount } from "@/lib/format";
 import Fuse, { type FuseResult, type FuseResultMatch } from "fuse.js";
 import { API_BASE } from "@/lib/config";
+import { useCommands, useRegisterCommands, type Command } from "@/lib/commandRegistry";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type ItemType = "action" | "investigation" | "table" | "canvas";
+type ItemType = "command" | "action" | "investigation" | "table" | "canvas";
 
 interface PaletteItem {
   id: string;
   label: string;
   sublabel?: string;
+  keywords?: string;    // extra fuzzy-match terms (commands), not displayed
   type: ItemType;
   icon: string;         // from ICONS map below
   accent?: string;      // CSS color for the icon dot
@@ -33,8 +35,9 @@ interface PaletteItem {
 }
 
 // Section header order and display names
-const SECTION_ORDER: ItemType[] = ["action", "investigation", "table", "canvas"];
+const SECTION_ORDER: ItemType[] = ["command", "action", "investigation", "table", "canvas"];
 const SECTION_LABELS: Record<ItemType, string> = {
+  command:       "Commands",
   action:        "Navigation",
   investigation: "Recent investigations",
   table:         "Tables",
@@ -118,6 +121,28 @@ interface CommandPaletteProps {
   onGoToChat: (q?: string) => void;
 }
 
+/**
+ * GlobalCommands — registers the always-available action verbs for the ⌘K palette.
+ * Renders nothing; mount it once (next to <CommandPalette/>). Handlers are held in
+ * refs so the command closures stay stable yet always call the latest callback.
+ */
+export function GlobalCommands({ onNavigate, onGoToChat }: { onNavigate: (t: string) => void; onGoToChat: (q?: string) => void }) {
+  const navRef = useRef(onNavigate);
+  const chatRef = useRef(onGoToChat);
+  useEffect(() => { navRef.current = onNavigate; chatRef.current = onGoToChat; });
+
+  const commands = useMemo<Command[]>(() => [
+    { id: "cmd-ask",         label: "Ask a question",     sublabel: "Start a new investigation",       icon: "spark",    accent: "var(--blue3)", keywords: "new chat investigate ask question analyze", run: () => chatRef.current() },
+    { id: "cmd-new-canvas",  label: "New Data Canvas",    sublabel: "Create or browse Data Canvases",  icon: "canvas",   accent: "var(--blue3)", keywords: "create canvas new workspace",             run: () => navRef.current("canvases") },
+    { id: "cmd-new-monitor", label: "New monitor",        sublabel: "Watch a metric for threshold, drift or staleness", icon: "activity", accent: "var(--grn3)", keywords: "create alert watch threshold notify", run: () => navRef.current("monitors") },
+    { id: "cmd-new-query",   label: "Build a query",      sublabel: "Open the visual Query Builder",   icon: "builder",  accent: "var(--t2)",    keywords: "sql query builder new compose",           run: () => navRef.current("builder") },
+    { id: "cmd-add-source",  label: "Add a data source",  sublabel: "Connect or upload data",          icon: "plug",     accent: "var(--grn3)", keywords: "connect connection upload csv source database", run: () => navRef.current("connections") },
+  ], []);
+
+  useRegisterCommands("global", commands);
+  return null;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoToChat }: CommandPaletteProps) {
@@ -127,6 +152,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
   const [tables, setTables] = useState<Array<{ name: string; row_count: string }>>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef  = useRef<HTMLDivElement>(null);
+  const commands = useCommands();   // contextual + global action verbs (registry)
 
   // Reset + fetch on open
   useEffect(() => {
@@ -197,6 +223,17 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
   // ── Build full item list ──────────────────────────────────────────────────
 
   const allItems = useMemo<PaletteItem[]>(() => {
+    const cmdItems: PaletteItem[] = commands.map(c => ({
+      id: c.id,
+      label: c.label,
+      sublabel: c.sublabel,
+      keywords: c.keywords,
+      type: "command" as ItemType,
+      icon: c.icon ?? "spark",
+      accent: c.accent ?? "var(--vio3)",
+      onSelect: c.run,
+    }));
+
     const navItems: PaletteItem[] = NAV_ACTIONS.map(a => ({ ...a, onSelect: NAV_DISPATCH[a.id] ?? (() => {}) }));
 
     const invItems: PaletteItem[] = investigations.map(inv => ({
@@ -219,9 +256,9 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       onSelect: () => onGoToChat(`Tell me about the ${t.name} table`),
     }));
 
-    return [...navItems, ...invItems, ...tableItems];
+    return [...cmdItems, ...navItems, ...invItems, ...tableItems];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [investigations, tables]);
+  }, [commands, investigations, tables]);
 
   // ── Fuse fuzzy search ─────────────────────────────────────────────────────
 
@@ -229,6 +266,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     keys: [
       { name: "label",    weight: 2 },
       { name: "sublabel", weight: 1 },
+      { name: "keywords", weight: 1 },
     ],
     threshold: 0.35,
     includeMatches: true,
@@ -237,11 +275,12 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
 
   const results: FuseResult<PaletteItem>[] = useMemo(() => {
     if (!query.trim()) {
-      // No query — show defaults: top actions + 5 recent investigations + 5 tables
+      // No query — show defaults: all commands, top nav, then a few recents + tables.
       const defaults = [
+        ...allItems.filter(i => i.type === "command"),
         ...allItems.filter(i => ["nav-canvases","nav-recents","nav-catalog","nav-builder"].includes(i.id)),
-        ...allItems.filter(i => i.type === "investigation").slice(0, 5),
-        ...allItems.filter(i => i.type === "table").slice(0, 5),
+        ...allItems.filter(i => i.type === "investigation").slice(0, 4),
+        ...allItems.filter(i => i.type === "table").slice(0, 4),
       ];
       return defaults.map(item => ({ item, refIndex: 0, matches: [] }));
     }

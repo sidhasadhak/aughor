@@ -12,7 +12,7 @@ import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInBuilderProvider } from "@/lib/openInBuilder";
 import { getCanvases } from "@/lib/api";
-import { CommandPalette } from "@/components/CommandPalette";
+import { CommandPalette, GlobalCommands } from "@/components/CommandPalette";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -2347,6 +2347,7 @@ export default function Home() {
       )}
 
       {/* ── Command palette (⌘K) ── */}
+      <GlobalCommands onNavigate={t => handleNavigate(t as NavTab)} onGoToChat={q => goToChat(q)} />
       <CommandPalette
         open={showSearch}
         onClose={() => setShowSearch(false)}
