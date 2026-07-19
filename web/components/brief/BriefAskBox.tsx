@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
+import { Button } from "@/components/ui/button";
 
 interface Card { id: string; question: string; }
 
@@ -49,14 +50,14 @@ export function BriefAskBox({
             className="aug-input"
             style={{ flex: 1, padding: "9px 12px" }}
           />
-          <button
+          <Button
+            variant="default"
             onClick={ask}
             disabled={!draft.trim()}
-            className="aug-btn aug-btn-primary"
-            style={{ padding: "9px 16px" }}
+            style={{ padding: "9px 16px", height: "auto" }}
           >
             Ask →
-          </button>
+          </Button>
         </div>
       </div>
 

@@ -421,14 +421,14 @@ function CitationActionsPopover({
           onDismissed={() => { ctx.onDismissed(); onClose(); }}
         />
         <div style={{ display: "flex", gap: 8 }}>
-          <button
+          <Button
+            variant="ghost"
             onClick={() => onPull({
               question: `Why is this happening? ${citation.finding}`,
               seedSql: insight.sql || null,
               seedContext: `SEED FINDING (the briefing claim being investigated): ${citation.finding}`,
               key: citation.insight_id,
             })}
-            className="aug-btn"
             style={{
               alignSelf: "flex-start", fontSize: 11, color: "var(--bg-0)",
               background: "var(--blue5)", border: "1px solid var(--blue5)",
@@ -437,10 +437,10 @@ function CitationActionsPopover({
             title="Investigate this citation in place"
           >
             Pull the thread →
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => { ctx.onInvestigate(`Investigate: ${citation.finding}`, citation.insight_id); onClose(); }}
-            className="aug-btn"
             style={{
               alignSelf: "flex-start", fontSize: 11, color: "var(--blue5)",
               background: "var(--bg-sel)", border: "1px solid var(--b1)",
@@ -449,7 +449,7 @@ function CitationActionsPopover({
             title="Open in the Ask workspace"
           >
             Open in Ask ↗
-          </button>
+          </Button>
         </div>
       </div>
     </>
@@ -1222,13 +1222,13 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
             ))}
           </div>
         )}
-        <button
+        <Button
+          variant="minimal" size="sm"
           onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-          className="aug-btn aug-btn-minimal"
           style={{ marginLeft: "auto" }}
         >
           Investigate →
-        </button>
+        </Button>
       </div>
       {actions && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--b1)" }}>{actions}</div>
@@ -1319,11 +1319,10 @@ function VerdictHero({
           {(headline || actions) && (
             <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" as const }}>
               {headline && (
-                <button
+                <Button
+                  variant="default" size="sm"
                   onClick={() => onInvestigate(`Investigate: ${headline.insight.finding}`, headline.insight.id)}
-                  className="aug-btn aug-btn-primary"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                >Investigate →</button>
+                >Investigate →</Button>
               )}
               {actions}
             </div>
@@ -1383,11 +1382,11 @@ function SupportingSignals({ signals, onInvestigate }: {
                 textWrap: "pretty" as const, display: "-webkit-box",
                 WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
               }}>{insight.finding}</div>
-              <button
+              <Button
+                variant="ghost" size="xs"
                 onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-                className="aug-btn aug-btn-ghost aug-btn-sm"
                 style={{ alignSelf: "flex-start", marginTop: "auto", padding: 0 }}
-              >Investigate →</button>
+              >Investigate →</Button>
             </div>
           );
         })}
@@ -1422,12 +1421,12 @@ function SignalCard({ signal, onInvestigate, actions }: {
         {insight.finding.length > 160 ? insight.finding.slice(0, 160) + "…" : insight.finding}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
-        <button
+        <Button
+          variant="minimal" size="xs"
           onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-          className="aug-btn aug-btn-minimal aug-btn-sm"
         >
           Investigate →
-        </button>
+        </Button>
         {actions}
       </div>
     </div>
@@ -1977,34 +1976,34 @@ export function BriefingPanel({
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           {(!explorerStatus || explorerStatus.phase === "complete" || explorerStatus.phase === "pending" || explorerStatus.phase === "failed") ? (
             <>
-              <button
+              <Button
+                variant="secondary" size="xs"
                 disabled={explorerBusy} onClick={runExplorer}
-                className="aug-btn aug-btn-secondary aug-btn-sm"
-              >Start</button>
+              >Start</Button>
               {explorerStatus?.phase === "complete" && (
-                <button
+                <Button
+                  variant="secondary" size="xs"
                   disabled={explorerBusy} onClick={runTriggerIntel}
-                  className="aug-btn aug-btn-secondary aug-btn-sm"
-                >Trigger Intel</button>
+                >Trigger Intel</Button>
               )}
               {explorerStatus?.phase === "complete" && (
-                <button
+                <Button
+                  variant="secondary" size="xs"
                   disabled={explorerBusy} onClick={runRefresh}
                   title="Clear stale findings and re-run intelligence from scratch (drops 'no data' findings, re-anchors the window)"
-                  className="aug-btn aug-btn-secondary aug-btn-sm"
-                >↻ Refresh</button>
+                >↻ Refresh</Button>
               )}
             </>
           ) : (
             <>
-              <button
+              <Button
+                variant="secondary" size="xs"
                 disabled={explorerBusy} onClick={runStop}
-                className="aug-btn aug-btn-secondary aug-btn-sm"
-              >Stop</button>
-              <button
+              >Stop</Button>
+              <Button
+                variant="secondary" size="xs"
                 disabled={explorerBusy} onClick={runRefresh}
-                className="aug-btn aug-btn-secondary aug-btn-sm"
-              >Restart</button>
+              >Restart</Button>
             </>
           )}
         </div>

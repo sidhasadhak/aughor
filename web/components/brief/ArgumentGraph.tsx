@@ -24,6 +24,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 import {
   fetchCardRelations,
@@ -423,13 +424,13 @@ function ArgumentGraphInner({ graph, connectionId, schema, onOpenFinding }: {
           </span>
         ))}
         {hiddenCount > 0 && (
-          <button
+          <Button
+            variant="minimal" size="xs"
             onClick={() => setShowAll(v => !v)}
-            className="aug-btn aug-btn-minimal aug-btn-sm"
             style={{ marginLeft: "auto" }}
           >
             {showAll ? "Show key drivers" : `Show all (${graph.nodes.length - 1} findings)`}
-          </button>
+          </Button>
         )}
       </div>
       <div style={{ height: 540, borderRadius: "var(--r3)", border: "1px solid var(--b1)", background: "var(--bg-1)", overflow: "hidden" }}>
