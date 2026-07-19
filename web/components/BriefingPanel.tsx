@@ -61,7 +61,6 @@ import {
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
-import { BriefingDashboard } from "@/components/brief/BriefingDashboard";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { PinnedCards } from "@/components/brief/PinnedCards";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
@@ -2199,6 +2198,7 @@ export function BriefingPanel({
       <NewCardComposer connectionId={connectionId} schema={schema}
         onCreated={() => setPinnedRefresh(n => n + 1)} />
       <PinnedCards connectionId={connectionId} refreshKey={pinnedRefresh}
+        findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
         onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}
         onEvidence={(iid) => { const sig = briefing.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); }} />
 
@@ -2207,24 +2207,10 @@ export function BriefingPanel({
       <IndustryKpiStrip connectionId={connectionId} schema={schema} />
 
       {lens === "linear" && (<>
-      {/* ── Live dashboard ── finding text cards (#3); metric trends now expand from the KPI strip above */}
-      <BriefingDashboard
-        findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
-        connectionId={connectionId}
-        schema={schema}
-        canvasId={canvasId}
-        onInvestigate={onInvestigate}
-        renderActions={(insight, domain) => (
-          <FindingActions insight={insight} domain={domain}
-            connectionId={connectionId} canvasId={canvasId} schema={schema} triggers={triggers}
-            onEvidence={(ins) => openEvidence(ins, domain)} onTriggersHint={showTriggersHint}
-            onDismissed={() => load()} onPinned={() => setPinnedRefresh(n => n + 1)} />
-        )}
-      />
+      {/* ── The findings now render as chart/table cards in the cockpit above (PinnedCards),
+          replacing the old text "Dashboard" section — one unified, arrangeable card surface. ── */}
 
-      {/* ── Top patterns ── a full-width row below the dashboard. (Domain Coverage and
-          Org Intelligence were removed by request — the dashboard's metric charts +
-          finding cards carry the briefing.) */}
+      {/* ── Top patterns ── a full-width row below the cockpit. */}
       {hasPatterns && (
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 280px", minWidth: 240 }}>

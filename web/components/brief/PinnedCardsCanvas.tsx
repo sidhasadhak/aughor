@@ -24,7 +24,10 @@ import { type ChartCustom } from "@/components/Chart";
 import { formatMetricValue, formatVariance } from "@/lib/format";
 import { graduateCard, getCockpitLayout, saveCockpitLayout, type CardRunResult, type DashboardCard } from "@/lib/api";
 
-export type CardState = { card: DashboardCard; run?: CardRunResult; failed?: boolean };
+/** `isFinding` cards are the brief's OWN findings, rendered as virtual chart/table cards (not
+ *  persisted) beside the user's pinned cards — AI-derived, so they get Investigate + Evidence
+ *  instead of Refresh/Remove/alert. */
+export type CardState = { card: DashboardCard; run?: CardRunResult; failed?: boolean; isFinding?: boolean };
 
 type Kind = "kpi" | "chart" | "table" | "note";
 
@@ -114,6 +117,7 @@ function BigValue({ v }: { v: number | null | undefined }) {
 function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
   const { cs, kind } = data;
   const { card, run, failed } = cs;
+  const isFinding = !!cs.isFinding;
   const errored = failed || !!run?.error;
   const val = run?.refresh?.last_value ?? null;
   const prev = run?.refresh?.prev_value ?? null;
@@ -146,7 +150,7 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
   const [alertVal, setAlertVal] = useState("");
   const [alertDir, setAlertDir] = useState<"below" | "above">((t0?.direction as "below" | "above") || "below");
   const [alertBusy, setAlertBusy] = useState(false);
-  const canAlert = val != null && !errored;
+  const canAlert = val != null && !errored && !isFinding;
   const saveAlert = async () => {
     const n = Number(alertVal);
     if (!alertVal || Number.isNaN(n)) return;
@@ -161,7 +165,9 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
   return (
     <div style={{
       width: "100%", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column",
-      background: "var(--bg-2)", border: `1px solid ${selected ? "var(--vio4)" : "var(--b1)"}`,
+      background: "var(--bg-2)",
+      // Finding-cards (the brief's own signals) read distinctly from the user's persistent pins.
+      border: `1px solid ${selected ? "var(--vio4)" : isFinding ? "color-mix(in srgb, var(--blue4) 34%, var(--b1))" : "var(--b1)"}`,
       borderRadius: "var(--r3)", overflow: "hidden",
     }}>
       <NodeResizer isVisible={selected} minWidth={MIN_SIZE[kind].w} minHeight={MIN_SIZE[kind].h} {...RESIZER} />
@@ -173,6 +179,11 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
           flex: "0 0 auto", overflowWrap: "anywhere",
           borderBottom: "1px solid color-mix(in srgb, var(--b1) 60%, transparent)",
         }}>
+        {isFinding && (
+          <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--blue4)", marginRight: 6, verticalAlign: "middle" }}>
+            ◆ Finding
+          </span>
+        )}
         {card.title}
       </div>
 
@@ -247,27 +258,37 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
           </div>
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-          {data.onOpenSource && card.provenance.insight_id && (
-            <Button variant="ghost" size="xs" onClick={() => data.onOpenSource!(card.provenance.insight_id)}
-              style={{ fontSize: 11, color: "var(--blue4)", padding: "2px 6px" }}>Source</Button>
-          )}
           {/* Evidence capsule — the receipt/derivation behind a finding-derived card. */}
           {data.onEvidence && card.provenance.insight_id && (
             <Button variant="ghost" size="xs" onClick={() => data.onEvidence!(card.provenance.insight_id)}
               title="See the evidence behind this finding"
               style={{ fontSize: 10.5, color: "var(--vio4)", padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--vio4) 35%, var(--b1))", borderRadius: "var(--r-pill)" }}>Evidence</Button>
           )}
-          {canAlert && !alerting && (
-            <Button variant="ghost" size="xs" onClick={() => setAlertOpen(o => !o)}
-              title="Alert me when this KPI crosses a threshold (schedules a monitor)"
-              style={{ fontSize: 11, color: "var(--amb4)", padding: "2px 6px" }}>
-              {alertOpen ? "Cancel" : "Set alert"}
-            </Button>
+          {isFinding ? (
+            /* A brief finding: investigate it or read its evidence — it isn't a persisted card. */
+            data.onOpenSource && card.provenance.insight_id && (
+              <Button variant="ghost" size="xs" onClick={() => data.onOpenSource!(card.provenance.insight_id)}
+                style={{ fontSize: 11, fontWeight: 600, color: "var(--blue4)", padding: "2px 6px", marginLeft: "auto" }}>Investigate →</Button>
+            )
+          ) : (
+            <>
+              {data.onOpenSource && card.provenance.insight_id && (
+                <Button variant="ghost" size="xs" onClick={() => data.onOpenSource!(card.provenance.insight_id)}
+                  style={{ fontSize: 11, color: "var(--blue4)", padding: "2px 6px" }}>Source</Button>
+              )}
+              {canAlert && !alerting && (
+                <Button variant="ghost" size="xs" onClick={() => setAlertOpen(o => !o)}
+                  title="Alert me when this KPI crosses a threshold (schedules a monitor)"
+                  style={{ fontSize: 11, color: "var(--amb4)", padding: "2px 6px" }}>
+                  {alertOpen ? "Cancel" : "Set alert"}
+                </Button>
+              )}
+              <Button variant="ghost" size="xs" onClick={() => data.onRefresh(card.id)}
+                style={{ fontSize: 11, color: "var(--t3)", padding: "2px 6px", marginLeft: "auto" }}>Refresh</Button>
+              <Button variant="ghost" size="xs" onClick={() => data.onRemove(card.id)}
+                style={{ fontSize: 11, color: "var(--t4)", padding: "2px 6px" }}>Remove</Button>
+            </>
           )}
-          <Button variant="ghost" size="xs" onClick={() => data.onRefresh(card.id)}
-            style={{ fontSize: 11, color: "var(--t3)", padding: "2px 6px", marginLeft: "auto" }}>Refresh</Button>
-          <Button variant="ghost" size="xs" onClick={() => data.onRemove(card.id)}
-            style={{ fontSize: 11, color: "var(--t4)", padding: "2px 6px" }}>Remove</Button>
         </div>
       </div>
     </div>
