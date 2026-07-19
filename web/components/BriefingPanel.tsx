@@ -122,10 +122,11 @@ function CitationChip({
         onMouseEnter={() => setTooltip(true)}
         onMouseLeave={() => setTooltip(false)}
         onClick={e => { if (citation) { setTooltip(false); onCitationClick(citation, e); } }}
+        className="aug-fs-xs"
         style={{
           display: "inline-flex", alignItems: "center", justifyContent: "center",
           width: 18, height: 18, borderRadius: "50%",
-          fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)",
+          fontWeight: 700, fontFamily: "var(--font-mono)",
           background: "var(--blue3)", color: "var(--bg-0)",
           cursor: citation ? "pointer" : "default",
           verticalAlign: "middle", marginLeft: 2, flexShrink: 0,
@@ -146,10 +147,10 @@ function CitationChip({
           borderRadius: "var(--r2)", boxShadow: "0 4px 16px rgba(0,0,0,.4)",
           zIndex: 50, pointerEvents: "none" as const,
         }}>
-          <div style={{ fontSize: 9, fontWeight: 600, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".07em", marginBottom: 4 }}>
+          <div className="aug-label" style={{ marginBottom: 4 }}>
             {citation.domain}{citation.angle ? ` · ${citation.angle}` : ""}
           </div>
-          <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
             {citation.finding.length > 120 ? citation.finding.slice(0, 120) + "…" : citation.finding}
           </div>
         </span>
@@ -256,10 +257,7 @@ function HeldBackStrip({ items }: { items: HeldBackSignal[] }) {
   if (!items?.length) return null;
   return (
     <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--b1)" }}>
-      <div style={{
-        fontSize: 9, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".08em",
-        color: "var(--t4)", marginBottom: 6,
-      }}>
+      <div className="aug-label" style={{ marginBottom: 6 }}>
         {items.length} signal{items.length > 1 ? "s" : ""} held back by the trust gate
       </div>
       {items.map((h, i) => {
@@ -405,7 +403,7 @@ function CitationActionsPopover({
           display: "flex", flexDirection: "column", gap: 10,
         }}
       >
-        <div style={{ fontSize: 9, fontWeight: 600, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".07em" }}>
+        <div className="aug-label">
           {domain}{citation.angle ? ` · ${citation.angle}` : ""}
         </div>
         <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
@@ -644,7 +642,7 @@ function NoveltyMeter({ novelty, width = 56, showValue = true }: { novelty: numb
       <span style={{ width, height: 5, borderRadius: 3, background: "var(--bg-3)", display: "inline-block", overflow: "hidden", flexShrink: 0 }}>
         <span style={{ display: "block", height: "100%", width: `${pct}%`, background: color, borderRadius: 3, transition: "width .5s ease" }} />
       </span>
-      {showValue && <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color, fontWeight: 600 }}>{novelty.toFixed(1)}</span>}
+      {showValue && <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color, fontWeight: 600 }}>{novelty.toFixed(1)}</span>}
     </span>
   );
 }
@@ -662,7 +660,7 @@ function DomainCoverageChart({ domains }: { domains: DomainStat[] }) {
           <div key={d.name} style={{ display: "flex", flexDirection: "column" as const, gap: 3 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
               <span style={{ fontSize: 11, color: "var(--t2)", textTransform: "capitalize" as const, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</span>
-              <span style={{ fontSize: 10, color: "var(--t4)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{d.count}</span>
+              <span className="aug-fs-xs" style={{ color: "var(--t4)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{d.count}</span>
             </div>
             <div style={{ height: 6, borderRadius: 3, background: "var(--bg-3)", overflow: "hidden" }}>
               <div style={{
@@ -693,9 +691,9 @@ function domainColor(domain: string): string {
 function DomainTag({ domain }: { domain: string }) {
   const color = domainColor(domain);
   return (
-    <span style={{
+    <span className="aug-fs-xs" style={{
       display: "inline-flex", alignItems: "center",
-      padding: "2px 8px", borderRadius: "var(--r2)", fontSize: 10,
+      padding: "2px 8px", borderRadius: "var(--r2)",
       background:  `color-mix(in srgb, ${color} 12%, transparent)`,
       border:      `1px solid color-mix(in srgb, ${color} 28%, transparent)`,
       color, fontWeight: 500, textTransform: "capitalize" as const,
@@ -876,7 +874,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
             background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)",
             boxShadow: "0 6px 20px rgba(0,0,0,.18)", minWidth: 160, overflow: "hidden",
           }}>
-            <div style={{ padding: "6px 10px", fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", borderBottom: "1px solid var(--b1)" }}>
+            <div className="aug-label" style={{ padding: "6px 10px", borderBottom: "1px solid var(--b1)" }}>
               Send to channel
             </div>
             {triggers.map(t => (
@@ -888,7 +886,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-3)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--t4)", marginRight: 6 }}>{t.type}</span>
+                <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t4)", marginRight: 6 }}>{t.type}</span>
                 {t.name}{!t.enabled && " (disabled)"}
               </button>
             ))}
@@ -901,14 +899,13 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
         title="Hide this finding if it's wrong or stale — captures a reason for the guard backlog; reversible"
         status="idle" color={btnColor} onClick={handleDismiss} />
       {degenerate && (
-        <span title={noData} style={{
-          fontSize: 9, fontWeight: 600, letterSpacing: ".05em", textTransform: "uppercase" as const,
+        <span title={noData} className="aug-label" style={{
           padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t4)",
           background: "var(--bg-3)", border: "1px solid var(--b1)",
         }}>no data</span>
       )}
       {shareMsg && (
-        <span style={{ fontSize: 10, color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t4)" }}>{shareMsg}</span>
+        <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t4)" }}>{shareMsg}</span>
       )}
     </div>
   );
@@ -929,7 +926,7 @@ export function DossierTrace({ dossier }: { dossier: FindingDossier }) {
   const g = dossier.grounding;
 
   const Label = ({ children }: { children: React.ReactNode }) => (
-    <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>{children}</div>
+    <div className="aug-label" style={{ marginBottom: 6 }}>{children}</div>
   );
 
   return (
@@ -1044,7 +1041,7 @@ function RevalidateRow({ dossier, connectionId, insightId }: {
           }}
           style={{ padding: "5px 11px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 11.5, fontWeight: 500, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}
         >{busy ? "Re-validating…" : "Re-validate"}</button>
-        <span style={{ fontSize: 10.5, color: "var(--t4)" }}>as of {asOfText}</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>as of {asOfText}</span>
       </div>
       {badge && (
         <div style={{ fontSize: 11, color: badge.c, lineHeight: 1.5 }}>
@@ -1076,7 +1073,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
   const dossier = receipt?.artifact?.payload?.dossier;
   const Stat = ({ label, value }: { label: string; value: string }) => (
     <div style={{ display: "flex", flexDirection: "column" as const, gap: 2 }}>
-      <span style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em" }}>{label}</span>
+      <span className="aug-label">{label}</span>
       <span style={{ fontSize: 13, color: "var(--t1)", fontWeight: 500 }}>{value}</span>
     </div>
   );
@@ -1110,20 +1107,20 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
             <div style={{ display: "flex", flexDirection: "column" as const, gap: 10 }}>
               {insight.entities_involved?.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 5 }}>Entities</div>
+                  <div className="aug-label" style={{ marginBottom: 5 }}>Entities</div>
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
                     {insight.entities_involved.map(e => (
-                      <span key={e} style={{ padding: "2px 7px", borderRadius: "var(--r1)", fontSize: 10, background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{e.replace(/_/g, " ")}</span>
+                      <span key={e} className="aug-fs-xs" style={{ padding: "2px 7px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{e.replace(/_/g, " ")}</span>
                     ))}
                   </div>
                 </div>
               )}
               {insight.measures?.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 5 }}>Measures</div>
+                  <div className="aug-label" style={{ marginBottom: 5 }}>Measures</div>
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
                     {insight.measures.map(m => (
-                      <span key={m} style={{ padding: "2px 7px", borderRadius: "var(--r1)", fontSize: 10, background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{m}</span>
+                      <span key={m} className="aug-fs-xs" style={{ padding: "2px 7px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{m}</span>
                     ))}
                   </div>
                 </div>
@@ -1135,7 +1132,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
           {dossier && <RevalidateRow dossier={dossier} connectionId={connectionId} insightId={insight.id} />}
 
           <div>
-            <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query — the data behind this claim</div>
+            <div className="aug-label" style={{ marginBottom: 6 }}>Source query — the data behind this claim</div>
             <pre style={{
               margin: 0, padding: "12px 14px", borderRadius: "var(--r2)",
               background: "var(--bg-2)", border: "1px solid var(--b1)",
@@ -1146,7 +1143,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
 
           {receipt && (
             <div>
-              <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>
+              <div className="aug-label" style={{ marginBottom: 6 }}>
                 Trust receipt — how this finding was produced
               </div>
               <div style={{ display: "flex", flexDirection: "column" as const, gap: 6, padding: "10px 12px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
@@ -1162,9 +1159,9 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
                 </div>
                 {receipt.lineage.filter(l => l.relation === "input").length > 0 && (
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const, alignItems: "center" }}>
-                    <span style={{ fontSize: 10, color: "var(--t3)" }}>Inputs:</span>
+                    <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Inputs:</span>
                     {receipt.lineage.filter(l => l.relation === "input").map(l => (
-                      <span key={l.ref} style={{ padding: "1px 6px", borderRadius: "var(--r1)", fontSize: 10, background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)" }}>{l.ref.replace("table:", "")}</span>
+                      <span key={l.ref} className="aug-fs-xs" style={{ padding: "1px 6px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)" }}>{l.ref.replace("table:", "")}</span>
                     ))}
                   </div>
                 )}
@@ -1944,37 +1941,32 @@ export function BriefingPanel({
           {(!explorerStatus || explorerStatus.phase === "complete" || explorerStatus.phase === "pending" || explorerStatus.phase === "failed") ? (
             <>
               <button
-                disabled={explorerBusy}
-                onClick={runExplorer}
-                style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--grn2)", color: "var(--grn5)", border: "1px solid var(--grn3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
+                disabled={explorerBusy} onClick={runExplorer}
+                className="aug-btn aug-btn-secondary aug-btn-sm"
               >Start</button>
               {explorerStatus?.phase === "complete" && (
                 <button
-                  disabled={explorerBusy}
-                  onClick={runTriggerIntel}
-                  style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--blue2)", color: "var(--blue5)", border: "1px solid var(--blue3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
+                  disabled={explorerBusy} onClick={runTriggerIntel}
+                  className="aug-btn aug-btn-secondary aug-btn-sm"
                 >Trigger Intel</button>
               )}
               {explorerStatus?.phase === "complete" && (
                 <button
-                  disabled={explorerBusy}
-                  onClick={runRefresh}
+                  disabled={explorerBusy} onClick={runRefresh}
                   title="Clear stale findings and re-run intelligence from scratch (drops 'no data' findings, re-anchors the window)"
-                  style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bg-3)", color: "var(--t2)", border: "1px solid var(--b2)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
+                  className="aug-btn aug-btn-secondary aug-btn-sm"
                 >↻ Refresh</button>
               )}
             </>
           ) : (
             <>
               <button
-                disabled={explorerBusy}
-                onClick={runStop}
-                style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--red2)", color: "var(--red5)", border: "1px solid var(--red3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
+                disabled={explorerBusy} onClick={runStop}
+                className="aug-btn aug-btn-secondary aug-btn-sm"
               >Stop</button>
               <button
-                disabled={explorerBusy}
-                onClick={runRefresh}
-                style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bg-3)", color: "var(--t3)", border: "1px solid var(--b2)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
+                disabled={explorerBusy} onClick={runRefresh}
+                className="aug-btn aug-btn-secondary aug-btn-sm"
               >Restart</button>
             </>
           )}

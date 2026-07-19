@@ -228,14 +228,15 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
                 borderTop: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
                 borderRight: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
                 borderBottom: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
-                borderLeft: `3px solid ${k.color}`,
+                borderLeft: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
                 display: "flex", flexDirection: "column", gap: 7,
                 cursor: canExpand ? "pointer" : "default",
                 transition: "background var(--dur-fast), border-color var(--dur-fast)",
               }}
             >
               <div
-                style={{ fontSize: 9.5, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 14 }}
+                className="aug-label"
+                style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 14 }}
                 title={k.name}
               >
                 {k.name}
@@ -245,7 +246,7 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
                   {isOpen ? "×" : "⤢"}
                 </span>
               )}
-              <div style={{ fontSize: 25, color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1 }}>
+              <div className="aug-fs-display" style={{ color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1 }}>
                 <KpiValue kpi={k} />
               </div>
               {k.trend && k.trend.sign !== 0 && (
@@ -258,7 +259,7 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
                 </span>
               )}
               {k.trend && <Sparkline values={k.trend.values} color={k.color} width={130} height={26} showDot={false} />}
-              {k.trend && <div style={{ fontSize: 10.5, color: "var(--t3)" }}>{k.trend.caption}</div>}
+              {k.trend && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{k.trend.caption}</div>}
             </div>
           );
         })}

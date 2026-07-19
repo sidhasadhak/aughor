@@ -168,7 +168,7 @@ type PinnedNodeData = {
 
 function BigValue({ v }: { v: number | null | undefined }) {
   return (
-    <span style={{ fontSize: 23, fontWeight: 600, color: "var(--t1)", fontVariantNumeric: "tabular-nums" as const }}>
+    <span className="aug-fs-display" style={{ fontWeight: 600, color: "var(--t1)", fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" as const }}>
       {formatMetricValue(v)}
     </span>
   );
@@ -233,14 +233,14 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
       <NodeResizer isVisible={selected} minWidth={MIN_CELLS[kind].w * GRID} minHeight={MIN_CELLS[kind].h * GRID} {...RESIZER} />
 
       {/* Title bar — the drag handle. The title wraps FULLY (no ellipsis) so it's always readable. */}
-      <div className="pinned-drag" title={card.title}
+      <div className="pinned-drag aug-fs-sm" title={card.title}
         style={{
-          fontSize: 11.5, fontWeight: 500, color: "var(--t1)", lineHeight: 1.35, padding: "9px 12px 7px", cursor: "grab",
+          fontWeight: 500, color: "var(--t1)", lineHeight: 1.35, padding: "9px 12px 7px", cursor: "grab",
           flex: "0 0 auto", overflowWrap: "anywhere",
           borderBottom: "1px solid color-mix(in srgb, var(--b1) 60%, transparent)",
         }}>
         {isFinding && (
-          <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--blue4)", marginRight: 6, verticalAlign: "middle" }}>
+          <span className="aug-fs-xs" style={{ fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--blue4)", marginRight: 6, verticalAlign: "middle" }}>
             ◆ Finding
           </span>
         )}
@@ -275,7 +275,7 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
             </div>
             {hist.length >= 2
               ? <Sparkline values={hist} width={sparkW} height={sparkH} color="var(--blue4)" />
-              : <div style={{ fontSize: 10, color: "var(--t4)" }}>trend builds as it refreshes</div>}
+              : <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>trend builds as it refreshes</div>}
           </>
         ) : isTabular && run ? (
           <ResultChartCard
@@ -294,27 +294,27 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
       {/* Footer — actions (never a drag target). */}
       <div className="nodrag" style={{ flex: "0 0 auto", padding: "5px 10px 7px", display: "flex", flexDirection: "column", gap: 4, borderTop: "1px solid color-mix(in srgb, var(--b1) 60%, transparent)" }}>
         {caveats.length > 0 && (
-          <div title={caveats.join("; ")} style={{ fontSize: 10, color: "var(--amb4)" }}>
+          <div title={caveats.join("; ")} className="aug-fs-xs" style={{ color: "var(--amb4)" }}>
             {caveats.length} guard caveat{caveats.length > 1 ? "s" : ""}
           </div>
         )}
         {canAlert && alerting && (
-          <div title="This card is now a scheduled monitor" style={{ fontSize: 10, color: "var(--amb4)", display: "flex", alignItems: "center", gap: 4 }}>
+          <div title="This card is now a scheduled monitor" className="aug-fs-xs" style={{ color: "var(--amb4)", display: "flex", alignItems: "center", gap: 4 }}>
             <span>⏰</span> Alerting when {alertDir} threshold
           </div>
         )}
         {canAlert && !alerting && alertOpen && (
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <select value={alertDir} onChange={e => setAlertDir(e.target.value as "below" | "above")}
-              style={{ fontSize: 10, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t2)", padding: "2px 4px" }}>
+              style={{ fontSize: 11, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t2)", padding: "2px 4px" }}>
               <option value="below">below</option>
               <option value="above">above</option>
             </select>
             <input type="number" value={alertVal} onChange={e => setAlertVal(e.target.value)} placeholder="threshold"
               onKeyDown={e => { if (e.key === "Enter") saveAlert(); }}
-              style={{ fontSize: 10, width: 74, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t1)", padding: "2px 4px", outline: "none" }} />
+              style={{ fontSize: 11, width: 74, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t1)", padding: "2px 4px", outline: "none" }} />
             <Button variant="ghost" size="xs" onClick={saveAlert} disabled={!alertVal || alertBusy}
-              style={{ fontSize: 10, color: "var(--amb4)", padding: "2px 6px" }}>{alertBusy ? "…" : "Save"}</Button>
+              style={{ fontSize: 11, color: "var(--amb4)", padding: "2px 6px" }}>{alertBusy ? "…" : "Save"}</Button>
           </div>
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
@@ -322,7 +322,7 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
           {data.onEvidence && card.provenance.insight_id && (
             <Button variant="ghost" size="xs" onClick={() => data.onEvidence!(card.provenance.insight_id)}
               title="See the evidence behind this finding"
-              style={{ fontSize: 10.5, color: "var(--vio4)", padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--vio4) 35%, var(--b1))", borderRadius: "var(--r-pill)" }}>Evidence</Button>
+              style={{ fontSize: 11, color: "var(--vio4)", padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--vio4) 35%, var(--b1))", borderRadius: "var(--r-pill)" }}>Evidence</Button>
           )}
           {isFinding ? (
             /* A brief finding: investigate it or read its evidence — it isn't a persisted card. */
