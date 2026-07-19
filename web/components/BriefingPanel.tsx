@@ -16,8 +16,9 @@
  */
 
 import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
-import { formatTimestamp } from "@/lib/format";
+import { formatTimestamp, formatMetricValue } from "@/lib/format";
 import {
+  runDirectQuery,
   getDomainInsights,
   getCanvasDomainInsights,
   getPatterns,
@@ -63,6 +64,7 @@ import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { PinnedCards } from "@/components/brief/PinnedCards";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { toast } from "@/components/ui/toast";
 import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
@@ -552,6 +554,24 @@ const PATTERN_TYPE_ICONS: Record<string, string> = {
 
 // ── Synthesis engine ───────────────────────────────────────────────────────────
 
+/** Stable identity for a finding, robust to the meta-domains ("Key Questions",
+ *  "Synthesis") that repeat the same finding and reuse non-unique ids: `insightKey`
+ *  alone collides there (bare `pinned__N` / `synth__…` ids, no source_schema), so we
+ *  fold the finding TEXT in. Used to dedup a scoped slice, count distinct per domain,
+ *  and key the cards. */
+const signalIdentity = (ins: ExplorationInsight): string => `${insightKey(ins)}|${ins.finding}`;
+
+/** Drop repeated findings from a list (first occurrence wins), by `signalIdentity`. */
+function dedupeSignals(list: SynthesisSignal[]): SynthesisSignal[] {
+  const seen = new Set<string>();
+  return list.filter(s => {
+    const k = signalIdentity(s.insight);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 function synthesize(
   domainData:  Record<string, DomainInsights>,
   patterns:    Pattern[],
@@ -611,9 +631,13 @@ function synthesize(
   }
 
   // Per-domain stats for the coverage chart (where the intelligence concentrates).
+  // Count DISTINCT findings (by signalIdentity) so a meta-domain that repeats the same
+  // finding many times isn't inflated — and its chip count matches the deduped scoped view.
   const domains: DomainStat[] = Object.entries(domainData)
     .map(([name, data]) => {
-      const ns = data.insights.filter(i => !isDegenerateFinding(i) && i.plausibility !== "implausible").map(i => i.novelty);
+      const valid = data.insights.filter(i => !isDegenerateFinding(i) && i.plausibility !== "implausible");
+      const seen = new Set<string>();
+      const ns = valid.filter(i => { const k = signalIdentity(i); if (seen.has(k)) return false; seen.add(k); return true; }).map(i => i.novelty);
       return {
         name,
         count: ns.length,
@@ -762,71 +786,6 @@ function ScopeChips({ domains, total, active, onChange }: {
         />
       ))}
     </div>
-  );
-}
-
-// ── Sticky TOC (scroll-spy) ─────────────────────────────────────────────────────
-/** An "on this brief" rail beside the content: sticky, highlights the section nearest
- *  the top of the scroll pane, and jumps on click. It's a lens-aware aside — graph mode
- *  collapses the signals/synthesis entries into a single "Argument graph" — and hides
- *  itself on a pane too narrow for two columns (the .brief-toc media rule). */
-interface TocSection { id: string; label: string; }
-
-/** Watch the given section ids within `rootRef`'s scroll pane; return the topmost one
- *  currently in the upper band of the viewport. Holds the last active section while
- *  scrolling through a gap (never flickers to null mid-scroll). */
-function useScrollSpy(ids: string[], rootRef: React.RefObject<HTMLElement | null>): string | null {
-  const key = ids.join("|");
-  const [active, setActive] = useState<string | null>(null);
-  useEffect(() => {
-    const root = rootRef.current;
-    const els = ids.map(id => document.getElementById(id)).filter((e): e is HTMLElement => !!e);
-    if (!root || els.length === 0) { setActive(ids[0] ?? null); return; }
-    const seen = new Set<string>();
-    const obs = new IntersectionObserver(entries => {
-      for (const e of entries) {
-        if (e.isIntersecting) seen.add(e.target.id); else seen.delete(e.target.id);
-      }
-      const top = ids.find(id => seen.has(id));   // ids are in document order → topmost wins
-      if (top) setActive(top);
-    }, { root, rootMargin: "0px 0px -68% 0px", threshold: 0 });
-    els.forEach(el => obs.observe(el));
-    return () => obs.disconnect();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, rootRef]);
-  return active;
-}
-
-function BriefingTOC({ sections, activeId, onJump }: {
-  sections: TocSection[];
-  activeId: string | null;
-  onJump:   (id: string) => void;
-}) {
-  if (sections.length < 3) return null;   // a rail earns its keep only past a couple of sections
-  return (
-    <nav className="brief-toc" aria-label="Briefing sections" style={{
-      position: "sticky", top: 22, alignSelf: "flex-start", flexShrink: 0,
-      width: 158, display: "flex", flexDirection: "column", gap: 1,
-    }}>
-      <div className="aug-label" style={{ marginBottom: 8, paddingLeft: 11 }}>On this brief</div>
-      {sections.map(s => {
-        const active = s.id === activeId;
-        return (
-          <Button
-            key={s.id} variant="ghost" size="xs" onClick={() => onJump(s.id)} className="justify-start"
-            style={{
-              height: "auto", width: "100%", justifyContent: "flex-start", textAlign: "left" as const,
-              padding: "5px 11px", borderRadius: "var(--r1)", fontSize: 12,
-              borderLeft: `2px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
-              color: active ? "var(--t1)" : "var(--t3)", fontWeight: active ? 600 : 400,
-              background: active ? "var(--bg-2)" : "transparent",
-            }}
-          >
-            {s.label}
-          </Button>
-        );
-      })}
-    </nav>
   );
 }
 
@@ -1473,65 +1432,118 @@ function VerdictHero({
   );
 }
 
-// ── Supporting signals ──────────────────────────────────────────────────────────
-/** A 3-up row of the strongest supporting findings under the verdict (v2 mockup's
- *  hypothesis-card row). Driven by real briefing signals — every card is a live
- *  finding tagged by novelty. Confidence % is intentionally omitted (no call to
- *  action); novelty + the Investigate affordance carry the card. */
-function SupportingSignals({ signals, onInvestigate, max = 3 }: {
-  signals:       SynthesisSignal[];
+// ── Findings exhibit strip ──────────────────────────────────────────────────────
+/** The narrative layer's reading surface: each finding is a UNIFORM exhibit card —
+ *  domain eyebrow · the finding statement · its own grounded chart — in impact order.
+ *  Replaces both the old 3-up text cards and the findings-in-cockpit experiment (a
+ *  bin-packed canvas has no reading order; a document flow does). A finding whose SQL
+ *  errors degrades to text-only — never a broken chart. Actions reveal on hover. */
+const EXHIBIT_DEFAULT = 6;    // first paint: two rows of three
+const EXHIBIT_STEP    = 12;   // each "Show more" click; bounds the burst of chart fetches
+const EXHIBIT_CHART_H = 190;  // fixed chart height = uniform rows
+
+function ExhibitCard({ insight, domain, connectionId, onInvestigate, onEvidence }: {
+  insight:       ExplorationInsight;
+  domain:        string;
+  connectionId:  string;
   onInvestigate: (q: string, insightId?: string) => void;
-  /** How many signal cards to show — 3 in the default breadth view, more when the
-   *  reader has scoped to one domain (the whole point of scoping is to see its depth). */
-  max?:          number;
+  onEvidence:    (ins: ExplorationInsight, domain: string) => void;
 }) {
-  const top = signals.slice(0, max);
-  if (top.length === 0) return null;
-  // ≤3 → an even N-up row; more (a scoped domain) → a wrapping grid so it never squeezes.
-  const cols = top.length <= 3 ? `repeat(${top.length}, 1fr)` : "repeat(auto-fill, minmax(240px, 1fr))";
+  // The finding's own grounded result — fetched once per card (server-cached, same query the
+  // explorer ran), so "Show more" only pays for the newly revealed cards. Errors/empty → the
+  // card stays text-only; no error state is ever rendered.
+  const [run, setRun]     = useState<{ columns: string[]; rows: unknown[][] } | null>(null);
+  const [phase, setPhase] = useState<"loading" | "chart" | "text">(() => ((insight.sql || "").trim() ? "loading" : "text"));
+  useEffect(() => {
+    const sql = (insight.sql || "").trim();
+    if (!sql || !connectionId) return;   // initial phase already "text"
+    let alive = true;
+    runDirectQuery(connectionId, sql, 200, { useCache: true })
+      .then(r => {
+        if (!alive) return;
+        if (r.error || !r.columns?.length || !r.rows?.length) { setPhase("text"); return; }
+        setRun({ columns: r.columns, rows: r.rows as unknown[][] });
+        setPhase("chart");
+      })
+      .catch(() => { if (alive) setPhase("text"); });
+    return () => { alive = false; };
+  }, [connectionId, insight.sql]);
+
+  // A single scalar renders as the big figure; anything richer goes through the chart card.
+  const scalar = run && run.rows.length === 1 && run.columns.length === 1 && !isNaN(Number(run.rows[0][0]))
+    ? Number(run.rows[0][0]) : null;
+
+  return (
+    <div className="group" style={{
+      background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
+      padding: "14px 16px", display: "flex", flexDirection: "column" as const, gap: 10, minWidth: 0,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <DomainTag domain={domain} />
+        {insight.angle && <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>}
+        <span className="aug-label" style={{ marginLeft: "auto", flexShrink: 0 }}>{noveltyLabel(insight.novelty)}</span>
+      </div>
+      <div className="aug-fs-ui" title={insight.finding} style={{
+        fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
+        textWrap: "pretty" as const, display: "-webkit-box",
+        WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
+      }}>{insight.finding}</div>
+
+      {phase === "loading" && <Shimmer h={EXHIBIT_CHART_H} r="var(--r2)" />}
+      {phase === "chart" && run && (scalar != null ? (
+        <div className="aug-fs-display" style={{ color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1, padding: "20px 0" }}>
+          {formatMetricValue(scalar)}
+        </div>
+      ) : (
+        <div style={{ minHeight: EXHIBIT_CHART_H }}>
+          <ResultChartCard columns={run.columns} rows={run.rows} fillHeight={EXHIBIT_CHART_H} />
+        </div>
+      ))}
+
+      {/* Hover-row actions — quiet at rest, revealed on hover/focus. */}
+      <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+        style={{ marginTop: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+        <Button variant="ghost" size="xs" onClick={() => onEvidence(insight, domain)}
+          title="See the query + provenance behind this finding"
+          style={{ fontSize: 11, color: "var(--vio4)", padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--vio4) 35%, var(--b1))", borderRadius: "var(--r-pill)" }}>
+          Evidence
+        </Button>
+        <Button variant="ghost" size="xs"
+          onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
+          style={{ fontSize: 11, fontWeight: 600, color: "var(--blue4)", padding: "2px 6px", marginLeft: "auto" }}>
+          Investigate →
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SupportingSignals({ signals, connectionId, onInvestigate, onEvidence }: {
+  signals:       SynthesisSignal[];
+  connectionId:  string;
+  onInvestigate: (q: string, insightId?: string) => void;
+  onEvidence:    (ins: ExplorationInsight, domain: string) => void;
+}) {
+  const [shown, setShown] = useState(EXHIBIT_DEFAULT);
+  if (signals.length === 0) return null;
+  const top = signals.slice(0, shown);
+  const remaining = signals.length - top.length;
   return (
     <div>
-      <div className="aug-label" style={{ marginBottom: 10 }}>Supporting signals</div>
-      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 14 }}>
-        {top.map(({ insight, domain }) => {
-          // Hover-row: the whole card is the (single, keyboard-accessible) click target — the
-          // "Investigate →" affordance stays quiet at rest and reveals on hover/focus.
-          const go = () => onInvestigate(`Investigate: ${insight.finding}`, insight.id);
-          return (
-            <div
-              key={insightKey(insight)}
-              role="button" tabIndex={0} onClick={go}
-              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } }}
-              className="group"
-              style={{
-                background: "var(--bg-2)", border: "1px solid var(--b1)",
-                borderRadius: "var(--r3)", cursor: "pointer",
-                padding: "16px 18px", display: "flex", flexDirection: "column" as const, gap: 10,
-                transition: "background var(--dur-fast), border-color var(--dur-fast)",
-              }}
-              onMouseEnter={e => { const t = e.currentTarget; t.style.background = "var(--bg-3)"; t.style.borderColor = "var(--b2)"; }}
-              onMouseLeave={e => { const t = e.currentTarget; t.style.background = "var(--bg-2)"; t.style.borderColor = "var(--b1)"; }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <DomainTag domain={domain} />
-                {insight.angle && <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>}
-                <span className="aug-label" style={{ marginLeft: "auto" }}>
-                  {noveltyLabel(insight.novelty)}
-                </span>
-              </div>
-              <div className="aug-fs-ui" style={{
-                fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
-                textWrap: "pretty" as const, display: "-webkit-box",
-                WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
-              }}>{insight.finding}</div>
-              <span
-                className="aug-fs-sm opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-                style={{ marginTop: "auto", alignSelf: "flex-start", color: "var(--blue4)", fontWeight: 500 }}
-              >Investigate →</span>
-            </div>
-          );
-        })}
+      <div className="aug-label" style={{ marginBottom: 10 }}>Findings</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+        {top.map(({ insight, domain }) => (
+          <ExhibitCard key={signalIdentity(insight)} insight={insight} domain={domain}
+            connectionId={connectionId} onInvestigate={onInvestigate} onEvidence={onEvidence} />
+        ))}
       </div>
+      {remaining > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <Button variant="minimal" size="sm" onClick={() => setShown(s => s + EXHIBIT_STEP)}>
+            Show more ({remaining} more)
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1891,9 +1903,6 @@ export function BriefingPanel({
   // domain; null = all. The standing cockpit layer is intentionally left unscoped — it's
   // the user's arranged surface, not a per-cycle finding view.
   const [scope, setScope]                   = useState<string | null>(null);
-  // Whether the Key-metrics strip actually rendered KPIs — drives whether the TOC lists it
-  // (the strip fail-safes to nothing when the profile has no north-star metrics).
-  const [hasKpis, setHasKpis]               = useState(false);
   const [loading, setLoading]               = useState(false);
   const [error, setError]                   = useState<string | null>(null);
   const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
@@ -2086,14 +2095,18 @@ export function BriefingPanel({
 
   // Scope-chip derivations — filter the narrative-layer findings + patterns to the active
   // domain. Guard the scope against a stale value (a reload can drop the domain), and drop
-  // the headline from the scoped signals (it already leads the verdict hero, as unscoped).
+  // the headline (it already leads the verdict hero) by IDENTITY — not id, which collides
+  // across the meta-domains. Unscoped, the strip starts breadth-first (the deduped one-per-
+  // domain signals) and extends into the full impact-ranked list behind "Show more".
   const scopeDomain    = scope && briefing?.domains.some(d => d.name === scope) ? scope : null;
-  const headlineKey    = briefing?.headline ? insightKey(briefing.headline.insight) : null;
+  const headlineIdent  = briefing?.headline ? signalIdentity(briefing.headline.insight) : null;
   const scopedSignals  = !briefing
     ? []
-    : scopeDomain
-      ? briefing.allSignals.filter(s => s.domain === scopeDomain && insightKey(s.insight) !== headlineKey)
-      : briefing.signals;
+    : dedupeSignals(
+        scopeDomain
+          ? briefing.allSignals.filter(s => s.domain === scopeDomain)
+          : [...briefing.signals, ...briefing.allSignals],
+      ).filter(s => signalIdentity(s.insight) !== headlineIdent);
   const scopedPatterns = !briefing
     ? []
     : scopeDomain
@@ -2103,28 +2116,6 @@ export function BriefingPanel({
   const hasPatterns    = scopedPatterns.length > 0;
   const hasNarrative   = !!narrative?.narrative;
   const isEmpty        = !briefing || briefing.totalInsights === 0;
-
-  // ── Sticky TOC (scroll-spy) ── the rail's sections adapt to the active lens. These hooks
-  // run before the early returns (Rules of Hooks) so they can read the derivations above.
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const tocSections = useMemo<TocSection[]>(() => {
-    if (isEmpty) return [];
-    const s: TocSection[] = [{ id: "brief-verdict", label: "Verdict" }];
-    if (lens === "graph" && narrative?.graph) {
-      s.push({ id: "brief-graph", label: "Argument graph" });
-    } else {
-      if (scopedSignals.length) s.push({ id: "brief-signals", label: "Signals" });
-      if (hasNarrative || narrativeLoading) s.push({ id: "brief-synthesis", label: "Synthesis" });
-    }
-    s.push({ id: "brief-cockpit", label: "Cockpit" });
-    if (hasKpis) s.push({ id: "brief-metrics", label: "Key metrics" });
-    if (lens === "linear" && hasPatterns) s.push({ id: "brief-patterns", label: "Patterns" });
-    return s;
-  }, [isEmpty, lens, narrative?.graph, scopedSignals.length, hasNarrative, narrativeLoading, hasKpis, hasPatterns]);
-  const activeSection = useScrollSpy(tocSections.map(s => s.id), scrollRef);
-  const jumpToSection = useCallback((id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
 
   if (loading)  return <BriefingLoading />;
 
@@ -2137,7 +2128,7 @@ export function BriefingPanel({
   }
 
   return (
-    <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
 
       {/* Evidence drill-through drawer (finding actions, #4). Transient hints/side-effect
           feedback now go through the shared <Toaster/> (toast.*), mounted in the root layout. */}
@@ -2219,13 +2210,10 @@ export function BriefingPanel({
           canvasId={canvasId}
         />
       ) : (
-        <div style={{ display: "flex", gap: 28, alignItems: "flex-start" }}>
-        {/* Content column — the brief itself; the TOC rail is its sticky right-hand aside. */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <>
 
       {/* ── Verdict hero ── conclusion-first lede: the synthesized verdict + the top
           finding + proof stats + the primary action, ahead of the full prose. */}
-      <section id="brief-verdict" style={{ scrollMarginTop: 16 }}>
       <VerdictHero
         narrative={hasNarrative ? narrative : null}
         headline={briefing.headline}
@@ -2281,7 +2269,6 @@ export function BriefingPanel({
             onPinned={() => setPinnedRefresh(n => n + 1)} />
         )}
       />
-      </section>
 
       {/* ── Living brief ── ask anything anchored to this briefing's context; answers
           stream inline as a stack of investigations (capability E). */}
@@ -2300,29 +2287,26 @@ export function BriefingPanel({
       {lens === "graph" && narrative?.graph ? (
         /* ── Argument graph ── the verdict, its drivers, and their typed evidence edges,
            a lens over the same brief (Slice 3). Linear stays the default. */
-        <section id="brief-graph" style={{ scrollMarginTop: 16 }}>
         <ArgumentGraph
           graph={narrative.graph}
           connectionId={connectionId}
           schema={schema}
           onOpenFinding={(iid) => onInvestigate("Investigate this finding", iid)}
         />
-        </section>
       ) : (
       <>
-      {/* ── Scope chips + supporting signals ── focus the narrative layer on one domain. */}
-      <section id="brief-signals" style={{ scrollMarginTop: 16 }}>
+      {/* ── Scope chips ── focus the narrative layer (signals + patterns) on one domain. */}
       <ScopeChips domains={briefing.domains} total={briefing.totalInsights} active={scopeDomain} onChange={setScope} />
 
-      {/* ── Supporting signals ── confidence-meter cards of the strongest findings; scoped
-          to the active domain (and widened past the 3-up breadth row) when a chip is on. */}
-      <SupportingSignals signals={scopedSignals} onInvestigate={onInvestigate} max={scopeDomain ? 6 : 3} />
-      </section>
+      {/* ── Findings ── uniform exhibit cards (statement + its grounded chart), impact-ordered
+          and scoped by the chips; keyed by scope so "Show more" resets on a scope change. */}
+      <SupportingSignals key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId}
+        onInvestigate={onInvestigate} onEvidence={openEvidence} />
 
       {/* ── Full synthesis ── the multi-paragraph narrative + interactive citations.
           The hero above already carries the conclusion, so this card hides its header. */}
       {(hasNarrative || narrativeLoading || narrativeError) && (
-        <section id="brief-synthesis" style={{ scrollMarginTop: 16 }}>
+        <div>
           <div className="aug-label" style={{ marginBottom: 10 }}>Full synthesis</div>
           {narrativeLoading && <SynthesisSkeleton />}
           {!narrativeLoading && narrativeError && (
@@ -2351,28 +2335,24 @@ export function BriefingPanel({
               }}
             />
           )}
-        </section>
+        </div>
       )}
       </>
       )}
 
-      {/* ── Your cockpit ── the standing layer: user-authored, guard-checked KPI cards +
-            the cycle's findings as arrangeable cards. Door 3 (inline authoring from a metric)
-            sits above the grid so the first card can be composed even when it's empty. */}
-      <section id="brief-cockpit" style={{ scrollMarginTop: 16 }}>
+      {/* ── Your cockpit ── the standing layer: the user's OWN guard-checked pinned cards.
+            The cycle's findings read above in the exhibit strip — the cockpit is curated, not
+            a dump of the brief. Door 3 (inline authoring) sits above so the first card can be
+            composed even when it's empty. */}
       <NewCardComposer connectionId={connectionId} schema={schema}
         onCreated={() => setPinnedRefresh(n => n + 1)} />
       <PinnedCards connectionId={connectionId} refreshKey={pinnedRefresh}
-        findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
         onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}
         onEvidence={(iid) => { const sig = briefing.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); }} />
-      </section>
 
       {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live;
             click a card to expand it into its trend chart (replaces the old chart grid). */}
-      <section id="brief-metrics" style={{ scrollMarginTop: 16 }}>
-      <IndustryKpiStrip connectionId={connectionId} schema={schema} onHasContent={setHasKpis} />
-      </section>
+      <IndustryKpiStrip connectionId={connectionId} schema={schema} />
 
       {lens === "linear" && (<>
       {/* ── The findings now render as chart/table cards in the cockpit above (PinnedCards),
@@ -2380,7 +2360,7 @@ export function BriefingPanel({
 
       {/* ── Top patterns ── a full-width row below the cockpit. */}
       {hasPatterns && (
-        <section id="brief-patterns" style={{ scrollMarginTop: 16, display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 280px", minWidth: 240 }}>
             <div className="aug-label" style={{ marginBottom: 10 }}>Top Patterns</div>
             <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
@@ -2389,13 +2369,10 @@ export function BriefingPanel({
               ))}
             </div>
           </div>
-        </section>
+        </div>
       )}
       </>)}
-        </div>
-        {/* Sticky section-nav aside beside the content column. */}
-        <BriefingTOC sections={tocSections} activeId={activeSection} onJump={jumpToSection} />
-        </div>
+    </>
   )}
 
       {/* Spinner keyframe */}

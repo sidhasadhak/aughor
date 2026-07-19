@@ -35,10 +35,7 @@ import {
   type Box, type Cell, type Cells,
 } from "@/components/brief/gridLayout";
 
-/** `isFinding` cards are the brief's OWN findings, rendered as virtual chart/table cards (not
- *  persisted) beside the user's pinned cards — AI-derived, so they get Investigate + Evidence
- *  instead of Refresh/Remove/alert. */
-export type CardState = { card: DashboardCard; run?: CardRunResult; failed?: boolean; isFinding?: boolean };
+export type CardState = { card: DashboardCard; run?: CardRunResult; failed?: boolean };
 
 type Kind = "kpi" | "chart" | "table" | "note";
 
@@ -178,7 +175,6 @@ function BigValue({ v }: { v: number | null | undefined }) {
 function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
   const { cs, kind } = data;
   const { card, run, failed } = cs;
-  const isFinding = !!cs.isFinding;
   const errored = failed || !!run?.error;
   const val = run?.refresh?.last_value ?? null;
   const prev = run?.refresh?.prev_value ?? null;
@@ -211,7 +207,7 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
   const [alertVal, setAlertVal] = useState("");
   const [alertDir, setAlertDir] = useState<"below" | "above">((t0?.direction as "below" | "above") || "below");
   const [alertBusy, setAlertBusy] = useState(false);
-  const canAlert = val != null && !errored && !isFinding;
+  const canAlert = val != null && !errored;
   const saveAlert = async () => {
     const n = Number(alertVal);
     if (!alertVal || Number.isNaN(n)) return;
@@ -230,8 +226,7 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
     <div style={{
       width: "100%", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column",
       background: "var(--bg-2)",
-      // Finding-cards (the brief's own signals) read distinctly from the user's persistent pins.
-      border: `1px solid ${selected ? "var(--vio4)" : isFinding ? "color-mix(in srgb, var(--blue4) 34%, var(--b1))" : "var(--b1)"}`,
+      border: `1px solid ${selected ? "var(--vio4)" : "var(--b1)"}`,
       borderRadius: "var(--r3)", overflow: "hidden",
     }}>
       <NodeResizer isVisible={selected} minWidth={MIN_CELLS[kind].w * GRID} minHeight={MIN_CELLS[kind].h * GRID} {...RESIZER} />
@@ -243,11 +238,6 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
           flex: "0 0 auto", overflowWrap: "anywhere",
           borderBottom: "1px solid color-mix(in srgb, var(--b1) 60%, transparent)",
         }}>
-        {isFinding && (
-          <span className="aug-fs-xs" style={{ fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--blue4)", marginRight: 6, verticalAlign: "middle" }}>
-            ◆ Finding
-          </span>
-        )}
         {card.title}
       </div>
 
@@ -328,31 +318,21 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
               title="See the evidence behind this finding"
               style={{ fontSize: 11, color: "var(--vio4)", padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--vio4) 35%, var(--b1))", borderRadius: "var(--r-pill)" }}>Evidence</Button>
           )}
-          {isFinding ? (
-            /* A brief finding: investigate it or read its evidence — it isn't a persisted card. */
-            data.onOpenSource && card.provenance.insight_id && (
-              <Button variant="ghost" size="xs" onClick={() => data.onOpenSource!(card.provenance.insight_id)}
-                style={{ fontSize: 11, fontWeight: 600, color: "var(--blue4)", padding: "2px 6px", marginLeft: "auto" }}>Investigate →</Button>
-            )
-          ) : (
-            <>
-              {data.onOpenSource && card.provenance.insight_id && (
-                <Button variant="ghost" size="xs" onClick={() => data.onOpenSource!(card.provenance.insight_id)}
-                  style={{ fontSize: 11, color: "var(--blue4)", padding: "2px 6px" }}>Source</Button>
-              )}
-              {canAlert && !alerting && (
-                <Button variant="ghost" size="xs" onClick={() => setAlertOpen(o => !o)}
-                  title="Alert me when this KPI crosses a threshold (schedules a monitor)"
-                  style={{ fontSize: 11, color: "var(--amb4)", padding: "2px 6px" }}>
-                  {alertOpen ? "Cancel" : "Set alert"}
-                </Button>
-              )}
-              <Button variant="ghost" size="xs" onClick={() => data.onRefresh(card.id)}
-                style={{ fontSize: 11, color: "var(--t3)", padding: "2px 6px", marginLeft: "auto" }}>Refresh</Button>
-              <Button variant="ghost" size="xs" onClick={() => data.onRemove(card.id)}
-                style={{ fontSize: 11, color: "var(--t4)", padding: "2px 6px" }}>Remove</Button>
-            </>
+          {data.onOpenSource && card.provenance.insight_id && (
+            <Button variant="ghost" size="xs" onClick={() => data.onOpenSource!(card.provenance.insight_id)}
+              style={{ fontSize: 11, color: "var(--blue4)", padding: "2px 6px" }}>Source</Button>
           )}
+          {canAlert && !alerting && (
+            <Button variant="ghost" size="xs" onClick={() => setAlertOpen(o => !o)}
+              title="Alert me when this KPI crosses a threshold (schedules a monitor)"
+              style={{ fontSize: 11, color: "var(--amb4)", padding: "2px 6px" }}>
+              {alertOpen ? "Cancel" : "Set alert"}
+            </Button>
+          )}
+          <Button variant="ghost" size="xs" onClick={() => data.onRefresh(card.id)}
+            style={{ fontSize: 11, color: "var(--t3)", padding: "2px 6px", marginLeft: "auto" }}>Refresh</Button>
+          <Button variant="ghost" size="xs" onClick={() => data.onRemove(card.id)}
+            style={{ fontSize: 11, color: "var(--t4)", padding: "2px 6px" }}>Remove</Button>
         </div>
       </div>
     </div>
@@ -459,8 +439,8 @@ function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSour
     const ending = changes.some(ch =>
       ((ch.type === "position" && ch.dragging === false) || (ch.type === "dimensions" && ch.resizing === false))
       && opRef.current?.id === ch.id);
-    // Any deliberate drag/resize marks the layout dirty so it persists — of a pinned card OR a finding
-    // card (the reader arranged it; honour that on reload).
+    // Any deliberate drag/resize marks the layout dirty so it persists (the reader arranged it;
+    // honour that on reload).
     if (changes.some(ch => (ch.type === "position" && "dragging" in ch) || (ch.type === "dimensions" && "resizing" in ch))) {
       dirtyRef.current = true;
     }
@@ -492,7 +472,7 @@ function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSour
 
   // Persist the whole layout (position + size per card) to the server shortly after a USER drag /
   // resize — gated on `dirtyRef` so automatic (re)placement never persists. Every save REPLACES the
-  // stored layout with the current board, so finding ids that churn on a regenerate can't pile up.
+  // stored layout with the current board, so stale card ids can't pile up.
   useEffect(() => {
     if (loaded == null || !rfNodes.length || !dirtyRef.current) return;
     const t = setTimeout(() => {

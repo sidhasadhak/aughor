@@ -20,7 +20,7 @@
  * expand appear only when chart_sql yields a real series; otherwise the card degrades to
  * label + value.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import NumberFlow, { type Format } from "@number-flow/react";
 import { getBusinessProfile, runDirectQuery, currencySymbol } from "@/lib/api";
 import { GroundedNumber } from "@/components/brief/GroundedNumber";
@@ -261,24 +261,13 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
 }
 
 // ── Live container ──────────────────────────────────────────────────────────────
-export function IndustryKpiStrip({ connectionId, schema, onHasContent }: {
-  connectionId: string;
-  schema?: string;
-  /** Reports whether any KPI actually rendered — the strip fail-safes to nothing when the
-   *  profile has no north-star metrics (or they all error), so a caller (e.g. the briefing
-   *  TOC) can omit a "Key metrics" entry that would jump to an empty section. */
-  onHasContent?: (has: boolean) => void;
-}) {
+export function IndustryKpiStrip({ connectionId, schema }: { connectionId: string; schema?: string }) {
   const [industry, setIndustry] = useState("");
   const [period, setPeriod] = useState("");
   const [kpis, setKpis] = useState<Kpi[]>([]);
   // The currency symbol is baked into each KPI inside the effect below, so re-run the
   // effect when org settings change (else the strip keeps the old currency until reload).
   const orgV = useOrgSettings();
-  // Held in a ref so an unstable callback prop never re-triggers the KPI fetch (updated in an
-  // effect, not during render, matching the repo's latest-callback idiom).
-  const onHasContentRef = useRef(onHasContent);
-  useEffect(() => { onHasContentRef.current = onHasContent; });
 
   useEffect(() => {
     if (!connectionId) return;
@@ -287,7 +276,7 @@ export function IndustryKpiStrip({ connectionId, schema, onHasContent }: {
     (async () => {
       const p = await getBusinessProfile(connectionId, schema);
       if (!alive) return;
-      if (!p.available || !p.profile) { setIndustry(""); setKpis([]); onHasContentRef.current?.(false); return; }
+      if (!p.available || !p.profile) { setIndustry(""); setKpis([]); return; }
       setIndustry(p.profile.industry || "");
       // Override-wins: a set org/workspace currency beats the inferred profile currency,
       // and matches what the expanded charts render from the same orgSettings cache.
@@ -318,10 +307,8 @@ export function IndustryKpiStrip({ connectionId, schema, onHasContent }: {
       }));
 
       if (!alive) return;
-      const live = results.filter((k): k is Kpi => k !== null);
-      setKpis(live);
+      setKpis(results.filter((k): k is Kpi => k !== null));
       setPeriod(seenPeriod);
-      onHasContentRef.current?.(live.length > 0);
     })();
     return () => { alive = false; };
   }, [connectionId, schema, orgV]);
