@@ -138,13 +138,21 @@ def build_argument_graph(
                     _add_finding(parent, is_driver=False)
                 _add_edge(pid, iid, ctype)
 
-        # Drill: this driver was a deeper look INTO another finding → it explains it. Only
-        # connect a parent that is ALREADY in the graph, so no drill parent floats unrooted
-        # (a composition parent is instead rooted via its synthesis→verdict path above).
-        # Pulling drill parents in as new nodes is deferred densify work.
+        # Drill: this driver was a deeper look INTO another finding → it explains it. Pull the
+        # drilled-into finding in (if not already present) as a non-driver node, bounded like the
+        # composition parents, and ROOT it with a `supports` edge to the verdict — so the why-chain
+        # (drill → the finding it explains → verdict) is connected instead of the drill floating
+        # alone. A parent already in the graph (a driver, or a synthesis parent) just gets the edge.
         drill_parent = ins.get("drill_of")
-        if drill_parent and drill_parent in node_ids:
-            _add_edge(iid, drill_parent, "explains_why")
+        if drill_parent:
+            if drill_parent not in node_ids:
+                parent = by_id.get(drill_parent)
+                if parent and added_parents < max_parents:
+                    added_parents += 1
+                    _add_finding(parent, is_driver=False)
+                    _add_edge(drill_parent, VERDICT_ID, "supports")
+            if drill_parent in node_ids:
+                _add_edge(iid, drill_parent, "explains_why")
 
     # 4) Densify — connect the ordinary drivers to each other. The typed composition/drill edges
     #    above only cover synthesized findings + drills (a sparse subset), so ordinary drivers

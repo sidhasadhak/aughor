@@ -89,15 +89,30 @@ def test_drill_of_explains_why_between_drivers():
     assert ("ops__drill", "ops__parent") in _edges_of(g, "explains_why")
 
 
-def test_drill_parent_not_in_graph_is_skipped():
-    # Only the drill is a driver; its parent is not — no floating unrooted node/edge is added.
+def test_non_driver_drill_parent_pulled_and_rooted():
+    # Only the drill is a driver; its parent is NOT. The parent is pulled in from domain_data as a
+    # non-driver node and rooted with a supports→verdict edge, so the why-chain connects (instead of
+    # the drill floating): drill → parent (explains_why), parent → verdict (supports).
     data = {"Ops": [
         {"id": "ops__parent", "domain": "Ops", "finding": "Warehouse overbuy", "sql": "s", "_impact": 0.7},
         {"id": "ops__drill", "domain": "Ops", "finding": "Bologna markdown 33%", "sql": "s",
          "_impact": 0.85, "drill_of": "ops__parent"},
     ]}
     g = build_argument_graph([data["Ops"][1]], "h", data)
-    assert _node(g, "ops__parent") is None
+    parent = _node(g, "ops__parent")
+    assert parent is not None and parent["is_driver"] is False
+    assert ("ops__drill", "ops__parent") in _edges_of(g, "explains_why")
+    assert ("ops__parent", VERDICT_ID) in _edges_of(g, "supports")
+
+
+def test_drill_parent_absent_from_domain_data_is_noop():
+    # drill_of points at an id that isn't in domain_data at all → nothing to pull; no crash, no edge.
+    data = {"Ops": [
+        {"id": "ops__drill", "domain": "Ops", "finding": "Bologna markdown 33%", "sql": "s",
+         "_impact": 0.85, "drill_of": "ghost__id"},
+    ]}
+    g = build_argument_graph([data["Ops"][0]], "h", data)
+    assert _node(g, "ghost__id") is None
     assert _edges_of(g, "explains_why") == []
 
 
