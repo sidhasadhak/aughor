@@ -24,7 +24,8 @@ import { useEffect, useState } from "react";
 import NumberFlow, { type Format } from "@number-flow/react";
 import { getBusinessProfile, runDirectQuery, currencySymbol } from "@/lib/api";
 import { GroundedNumber } from "@/components/brief/GroundedNumber";
-import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
+import { seriesTrend } from "@/components/brief/Sparkline";
+import { StatTile } from "@/components/brief/StatTile";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { effectiveCurrencySymbol } from "@/lib/orgSettings";
 import { useOrgSettings } from "@/lib/useOrgSettings";
@@ -210,56 +211,24 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
         {kpis.map(k => {
-          const fav = k.trend?.favorable;
-          const deltaColor = fav == null ? "var(--t3)" : fav ? "var(--grn4)" : "var(--red4)";
-          const deltaBg = fav == null ? "var(--bg-3)" : fav ? "var(--grn1)" : "var(--red1)";
           const canExpand = !!(k.chart && k.chart.rows.length >= 2);
           const isOpen = expanded?.name === k.name;
+          // Every KPI tile renders through the one canonical StatTile spec; the tuned odometer
+          // (KpiValue) rides in as the value slot so this refactor keeps it byte-for-byte.
           return (
-            <div
+            <StatTile
               key={k.name}
+              label={k.name}
+              accent={k.color}
+              value={<KpiValue kpi={k} />}
+              delta={k.trend ? { text: k.trend.deltaText, sign: k.trend.sign, favorable: k.trend.favorable } : null}
+              sparkline={k.trend?.values ?? null}
+              caption={k.trend?.caption}
+              expandable={canExpand}
+              open={isOpen}
               onClick={canExpand ? () => setExpandedId(isOpen ? null : k.name) : undefined}
               title={canExpand ? (isOpen ? "Collapse" : "Click to expand the trend") : undefined}
-              style={{
-                position: "relative", flex: "1 1 160px", minWidth: 150, padding: "11px 13px",
-                borderRadius: "var(--r2)", background: isOpen ? "var(--bg-3)" : "var(--bg-2)",
-                // Explicit per-side borders (not the `border` shorthand) so they don't conflict
-                // with borderLeft on rerender — React warns about mixing shorthand + longhand.
-                borderTop: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
-                borderRight: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
-                borderBottom: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
-                borderLeft: `3px solid ${k.color}`,
-                display: "flex", flexDirection: "column", gap: 7,
-                cursor: canExpand ? "pointer" : "default",
-                transition: "background var(--dur-fast), border-color var(--dur-fast)",
-              }}
-            >
-              <div
-                style={{ fontSize: 9.5, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 14 }}
-                title={k.name}
-              >
-                {k.name}
-              </div>
-              {canExpand && (
-                <span aria-hidden style={{ position: "absolute", top: 9, right: 10, fontSize: 11, lineHeight: 1, color: isOpen ? k.color : "var(--t4)" }}>
-                  {isOpen ? "×" : "⤢"}
-                </span>
-              )}
-              <div style={{ fontSize: 25, color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1 }}>
-                <KpiValue kpi={k} />
-              </div>
-              {k.trend && k.trend.sign !== 0 && (
-                <span style={{
-                  alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 3,
-                  fontSize: 11, fontWeight: 600, fontFamily: "var(--font-mono)",
-                  color: deltaColor, background: deltaBg, padding: "1px 6px", borderRadius: "var(--r1)",
-                }}>
-                  {k.trend.sign > 0 ? "↑" : "↓"} {k.trend.deltaText}
-                </span>
-              )}
-              {k.trend && <Sparkline values={k.trend.values} color={k.color} width={130} height={26} showDot={false} />}
-              {k.trend && <div style={{ fontSize: 10.5, color: "var(--t3)" }}>{k.trend.caption}</div>}
-            </div>
+            />
           );
         })}
       </div>

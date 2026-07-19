@@ -15,9 +15,10 @@
  *   • generateBriefingNarrative() — LLM prose with citation links (M24b)
  */
 
-import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
-import { formatTimestamp } from "@/lib/format";
+import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
+import { formatTimestamp, formatMetricValue } from "@/lib/format";
 import {
+  runDirectQuery,
   getDomainInsights,
   getCanvasDomainInsights,
   getPatterns,
@@ -41,6 +42,7 @@ import {
   createMonitor,
   getActionTriggers,
   sendFindingToTrigger,
+  pinInsightToDashboard,
   type DomainInsights,
   type ExplorationInsight,
   type Pattern,
@@ -60,11 +62,21 @@ import {
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
-import { BriefingDashboard } from "@/components/brief/BriefingDashboard";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
+import { PinnedCards } from "@/components/brief/PinnedCards";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { toast } from "@/components/ui/toast";
+import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
 import { GroundedNumber, withGroundedNumbers } from "@/components/brief/GroundedNumber";
 import { BriefAskBox } from "@/components/brief/BriefAskBox";
+import { NewCardComposer } from "@/components/brief/NewCardComposer";
+import { Button } from "@/components/ui/button";
+import dynamic from "next/dynamic";
+
+// React Flow measures the DOM — load the argument-graph lens client-only (the repo's pattern for
+// heavy client libs, e.g. ECharts), so it never renders during SSR.
+const ArgumentGraph = dynamic(() => import("@/components/brief/ArgumentGraph"), { ssr: false });
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -83,6 +95,10 @@ interface DomainStat {
 interface BriefingData {
   headline:      SynthesisSignal | null;
   signals:       SynthesisSignal[];
+  /** The full ranked, non-degenerate finding list (before the breadth-first dedup that
+   *  caps `signals` at one-per-domain) — the scope chips filter by domain and so need the
+   *  complete set, not the deduped six. */
+  allSignals:    SynthesisSignal[];
   patterns:      Pattern[];
   orgInsights:   OrgInsight[];
   domains:       DomainStat[];
@@ -114,10 +130,11 @@ function CitationChip({
         onMouseEnter={() => setTooltip(true)}
         onMouseLeave={() => setTooltip(false)}
         onClick={e => { if (citation) { setTooltip(false); onCitationClick(citation, e); } }}
+        className="aug-fs-xs"
         style={{
           display: "inline-flex", alignItems: "center", justifyContent: "center",
           width: 18, height: 18, borderRadius: "50%",
-          fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)",
+          fontWeight: 700, fontFamily: "var(--font-mono)",
           background: "var(--blue3)", color: "var(--bg-0)",
           cursor: citation ? "pointer" : "default",
           verticalAlign: "middle", marginLeft: 2, flexShrink: 0,
@@ -138,10 +155,10 @@ function CitationChip({
           borderRadius: "var(--r2)", boxShadow: "0 4px 16px rgba(0,0,0,.4)",
           zIndex: 50, pointerEvents: "none" as const,
         }}>
-          <div style={{ fontSize: 9, fontWeight: 600, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".07em", marginBottom: 4 }}>
+          <div className="aug-label" style={{ marginBottom: 4 }}>
             {citation.domain}{citation.angle ? ` · ${citation.angle}` : ""}
           </div>
-          <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
             {citation.finding.length > 120 ? citation.finding.slice(0, 120) + "…" : citation.finding}
           </div>
         </span>
@@ -248,10 +265,7 @@ function HeldBackStrip({ items }: { items: HeldBackSignal[] }) {
   if (!items?.length) return null;
   return (
     <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--b1)" }}>
-      <div style={{
-        fontSize: 9, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".08em",
-        color: "var(--t4)", marginBottom: 6,
-      }}>
+      <div className="aug-label" style={{ marginBottom: 6 }}>
         {items.length} signal{items.length > 1 ? "s" : ""} held back by the trust gate
       </div>
       {items.map((h, i) => {
@@ -288,29 +302,20 @@ function NarrativeCard({
   const [thread, setThread] = useState<{ question: string; seedSql: string | null; seedContext: string; key: string } | null>(null);
 
   return (
-    <div style={{
-      background: "linear-gradient(135deg, color-mix(in srgb, var(--blue4) 8%, var(--bg-2)), var(--bg-2))",
-      border: "1px solid color-mix(in srgb, var(--blue4) 22%, var(--b1))",
-      borderRadius: "var(--r3)", padding: "18px 22px",
-    }}>
+    // Flat panel in the shared card language (was a blue-gradient card). The section's .aug-label
+    // header outside already frames it; the prose carries the analysis.
+    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 22px" }}>
       {/* Header */}
       {!hideHeadline && (
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span style={{
-          fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: "var(--r1)",
-          background: "color-mix(in srgb, var(--blue4) 16%, transparent)",
-          border: "1px solid color-mix(in srgb, var(--blue4) 30%, transparent)",
-          color: "var(--blue4)", textTransform: "uppercase" as const, letterSpacing: ".09em",
-        }}>
-          AI Synthesis
-        </span>
+        <span className="aug-label">AI Synthesis</span>
         {narrative.headline_theme && (
-          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
+          <span className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t1)" }}>
             {narrative.headline_theme}
           </span>
         )}
         {narrative.generated_at && (
-          <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: "auto" }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t4)", marginLeft: "auto" }}>
             {timeAgo(narrative.generated_at)}
           </span>
         )}
@@ -318,10 +323,7 @@ function NarrativeCard({
       )}
 
       {/* Narrative prose with inline citations */}
-      <div style={{
-        fontSize: 13, color: "var(--t1)", lineHeight: 1.75, fontWeight: 400,
-        letterSpacing: ".01em",
-      }}>
+      <div className="aug-fs-ui" style={{ color: "var(--t1)", lineHeight: 1.7, fontWeight: 400 }}>
         <NarrativeText
           text={narrative.narrative}
           citations={narrative.citations}
@@ -409,7 +411,7 @@ function CitationActionsPopover({
           display: "flex", flexDirection: "column", gap: 10,
         }}
       >
-        <div style={{ fontSize: 9, fontWeight: 600, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".07em" }}>
+        <div className="aug-label">
           {domain}{citation.angle ? ` · ${citation.angle}` : ""}
         </div>
         <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
@@ -426,14 +428,14 @@ function CitationActionsPopover({
           onDismissed={() => { ctx.onDismissed(); onClose(); }}
         />
         <div style={{ display: "flex", gap: 8 }}>
-          <button
+          <Button
+            variant="ghost"
             onClick={() => onPull({
               question: `Why is this happening? ${citation.finding}`,
               seedSql: insight.sql || null,
               seedContext: `SEED FINDING (the briefing claim being investigated): ${citation.finding}`,
               key: citation.insight_id,
             })}
-            className="aug-btn"
             style={{
               alignSelf: "flex-start", fontSize: 11, color: "var(--bg-0)",
               background: "var(--blue5)", border: "1px solid var(--blue5)",
@@ -442,10 +444,10 @@ function CitationActionsPopover({
             title="Investigate this citation in place"
           >
             Pull the thread →
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => { ctx.onInvestigate(`Investigate: ${citation.finding}`, citation.insight_id); onClose(); }}
-            className="aug-btn"
             style={{
               alignSelf: "flex-start", fontSize: 11, color: "var(--blue5)",
               background: "var(--bg-sel)", border: "1px solid var(--b1)",
@@ -454,7 +456,7 @@ function CitationActionsPopover({
             title="Open in the Ask workspace"
           >
             Open in Ask ↗
-          </button>
+          </Button>
         </div>
       </div>
     </>
@@ -552,6 +554,24 @@ const PATTERN_TYPE_ICONS: Record<string, string> = {
 
 // ── Synthesis engine ───────────────────────────────────────────────────────────
 
+/** Stable identity for a finding, robust to the meta-domains ("Key Questions",
+ *  "Synthesis") that repeat the same finding and reuse non-unique ids: `insightKey`
+ *  alone collides there (bare `pinned__N` / `synth__…` ids, no source_schema), so we
+ *  fold the finding TEXT in. Used to dedup a scoped slice, count distinct per domain,
+ *  and key the cards. */
+const signalIdentity = (ins: ExplorationInsight): string => `${insightKey(ins)}|${ins.finding}`;
+
+/** Drop repeated findings from a list (first occurrence wins), by `signalIdentity`. */
+function dedupeSignals(list: SynthesisSignal[]): SynthesisSignal[] {
+  const seen = new Set<string>();
+  return list.filter(s => {
+    const k = signalIdentity(s.insight);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 function synthesize(
   domainData:  Record<string, DomainInsights>,
   patterns:    Pattern[],
@@ -611,9 +631,13 @@ function synthesize(
   }
 
   // Per-domain stats for the coverage chart (where the intelligence concentrates).
+  // Count DISTINCT findings (by signalIdentity) so a meta-domain that repeats the same
+  // finding many times isn't inflated — and its chip count matches the deduped scoped view.
   const domains: DomainStat[] = Object.entries(domainData)
     .map(([name, data]) => {
-      const ns = data.insights.filter(i => !isDegenerateFinding(i) && i.plausibility !== "implausible").map(i => i.novelty);
+      const valid = data.insights.filter(i => !isDegenerateFinding(i) && i.plausibility !== "implausible");
+      const seen = new Set<string>();
+      const ns = valid.filter(i => { const k = signalIdentity(i); if (seen.has(k)) return false; seen.add(k); return true; }).map(i => i.novelty);
       return {
         name,
         count: ns.length,
@@ -627,6 +651,7 @@ function synthesize(
   return {
     headline,
     signals,
+    allSignals,
     patterns:      patterns.slice(0, 5),
     orgInsights:   orgInsights.slice(0, 3),
     domains,
@@ -648,7 +673,7 @@ function NoveltyMeter({ novelty, width = 56, showValue = true }: { novelty: numb
       <span style={{ width, height: 5, borderRadius: 3, background: "var(--bg-3)", display: "inline-block", overflow: "hidden", flexShrink: 0 }}>
         <span style={{ display: "block", height: "100%", width: `${pct}%`, background: color, borderRadius: 3, transition: "width .5s ease" }} />
       </span>
-      {showValue && <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color, fontWeight: 600 }}>{novelty.toFixed(1)}</span>}
+      {showValue && <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color, fontWeight: 600 }}>{novelty.toFixed(1)}</span>}
     </span>
   );
 }
@@ -666,7 +691,7 @@ function DomainCoverageChart({ domains }: { domains: DomainStat[] }) {
           <div key={d.name} style={{ display: "flex", flexDirection: "column" as const, gap: 3 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
               <span style={{ fontSize: 11, color: "var(--t2)", textTransform: "capitalize" as const, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</span>
-              <span style={{ fontSize: 10, color: "var(--t4)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{d.count}</span>
+              <span className="aug-fs-xs" style={{ color: "var(--t4)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{d.count}</span>
             </div>
             <div style={{ height: 6, borderRadius: 3, background: "var(--bg-3)", overflow: "hidden" }}>
               <div style={{
@@ -697,9 +722,9 @@ function domainColor(domain: string): string {
 function DomainTag({ domain }: { domain: string }) {
   const color = domainColor(domain);
   return (
-    <span style={{
+    <span className="aug-fs-xs" style={{
       display: "inline-flex", alignItems: "center",
-      padding: "2px 8px", borderRadius: "var(--r2)", fontSize: 10,
+      padding: "2px 8px", borderRadius: "var(--r2)",
       background:  `color-mix(in srgb, ${color} 12%, transparent)`,
       border:      `1px solid color-mix(in srgb, ${color} 28%, transparent)`,
       color, fontWeight: 500, textTransform: "capitalize" as const,
@@ -707,6 +732,60 @@ function DomainTag({ domain }: { domain: string }) {
     }}>
       {domain}
     </span>
+  );
+}
+
+// ── Scope chips ─────────────────────────────────────────────────────────────────
+/** A filter row that scopes the brief's narrative layer to one domain. "All" clears the
+ *  scope; each domain chip carries its finding count + colour dot. The schema/connection
+ *  scope is handled upstream by the workspace header — these chips scope *within* the
+ *  brief, by domain, so the reader can focus the supporting signals + patterns on one area.
+ *  Built on <Button> (the canonical system) styled as the app's FilterChip pill. */
+function ScopeChip({ label, dot, count, active, onClick }: {
+  label: string; dot?: string; count: number; active: boolean; onClick: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost" size="xs" onClick={onClick} className="px-3"
+      aria-pressed={active}
+      style={{
+        borderRadius: "var(--r-pill)", gap: 6, height: 26,
+        background: active ? "color-mix(in srgb, var(--blue4) 12%, var(--bg-2))" : "var(--bg-2)",
+        border: `1px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
+        color: active ? "var(--blue4)" : "var(--t2)",
+        fontWeight: active ? 500 : 400,
+      }}
+    >
+      {dot && <span style={{ width: 7, height: 7, borderRadius: "var(--r-pill)", background: dot, flexShrink: 0 }} />}
+      {label}
+      <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: active ? "var(--blue4)" : "var(--t4)", opacity: 0.85 }}>{count}</span>
+    </Button>
+  );
+}
+
+function ScopeChips({ domains, total, active, onChange }: {
+  domains:  DomainStat[];
+  total:    number;
+  active:   string | null;
+  onChange: (domain: string | null) => void;
+}) {
+  // Nothing to scope when the brief spans a single domain.
+  if (domains.length < 2) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, alignItems: "center", marginTop: 6, marginBottom: 14 }}>
+      <span className="aug-label" style={{ marginRight: 2 }}>Scope</span>
+      <ScopeChip label="All" count={total} active={active == null} onClick={() => onChange(null)} />
+      {domains.map(d => (
+        <ScopeChip
+          key={d.name}
+          label={d.name.replace(/_/g, " ")}
+          dot={domainColor(d.name)}
+          count={d.count}
+          active={active === d.name}
+          onClick={() => onChange(active === d.name ? null : d.name)}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -760,18 +839,21 @@ function ActionButton({ label, title, status, color, onClick, disabled }: {
   );
 }
 
-export function FindingActions({ insight, domain, connectionId, canvasId, triggers, onEvidence, onTriggersHint, onDismissed }: {
+export function FindingActions({ insight, domain, connectionId, canvasId, schema, triggers, onEvidence, onTriggersHint, onDismissed, onPinned }: {
   insight:       ExplorationInsight;
   domain:        string;
   connectionId:  string;
   canvasId?:     string;
+  schema?:       string;
   triggers:      ActionTrigger[];
   onEvidence:    (insight: ExplorationInsight) => void;
   onTriggersHint: () => void;
   onDismissed?:  (insightId: string) => void;
+  onPinned?:     () => void;
 }) {
   const [monStatus, setMonStatus]   = useState<ActStatus>("idle");
   const [promStatus, setPromStatus] = useState<ActStatus>(insight.promoted_to_org ? "done" : "idle");
+  const [pinStatus, setPinStatus]   = useState<ActStatus>("idle");
   const [shareOpen, setShareOpen]   = useState(false);
   const [shareMsg, setShareMsg]     = useState<string | null>(null);
   const [dismissed, setDismissed]   = useState(false);
@@ -804,6 +886,22 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
       setMonStatus("done");
     } catch { setMonStatus("error"); }
   }, [insight, domain, connectionId]);
+
+  const handlePin = useCallback(async () => {
+    if (!insight.sql) return;
+    setPinStatus("busy");
+    try {
+      await pinInsightToDashboard(connectionId, insight.id, {
+        scope: "connection", scopeRef: connectionId, schema,
+      });
+      setPinStatus("done");
+      onPinned?.();
+      toast.success("Pinned to your cockpit");
+    } catch {
+      setPinStatus("error");
+      toast.error("Couldn't pin finding", { description: "The finding's query didn't pass the trust guards." });
+    }
+  }, [insight.id, insight.sql, connectionId, schema, onPinned]);
 
   const handlePromote = useCallback(async () => {
     setPromStatus("busy");
@@ -849,6 +947,9 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
       <ActionButton label="Monitor"
         title={degenerate ? noData : (insight.sql ? "Create an anomaly monitor from this finding's query" : "No query available to monitor")}
         status={monStatus} color={btnColor} onClick={handleMonitor} disabled={!insight.sql || degenerate} />
+      <ActionButton label="Pin"
+        title={degenerate ? noData : (insight.sql ? "Pin this finding as a guard-checked card on your dashboard" : "No query available to pin")}
+        status={pinStatus} color={btnColor} onClick={handlePin} disabled={!insight.sql || degenerate} />
       <ActionButton label="Promote"
         title={degenerate ? noData : (promStatus === "done" ? "Promoted to org intelligence" : "Promote this finding to org-wide intelligence")}
         status={promStatus} color={btnColor} onClick={handlePromote} disabled={degenerate} />
@@ -862,7 +963,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
             background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)",
             boxShadow: "0 6px 20px rgba(0,0,0,.18)", minWidth: 160, overflow: "hidden",
           }}>
-            <div style={{ padding: "6px 10px", fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", borderBottom: "1px solid var(--b1)" }}>
+            <div className="aug-label" style={{ padding: "6px 10px", borderBottom: "1px solid var(--b1)" }}>
               Send to channel
             </div>
             {triggers.map(t => (
@@ -874,7 +975,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-3)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--t4)", marginRight: 6 }}>{t.type}</span>
+                <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t4)", marginRight: 6 }}>{t.type}</span>
                 {t.name}{!t.enabled && " (disabled)"}
               </button>
             ))}
@@ -887,14 +988,13 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
         title="Hide this finding if it's wrong or stale — captures a reason for the guard backlog; reversible"
         status="idle" color={btnColor} onClick={handleDismiss} />
       {degenerate && (
-        <span title={noData} style={{
-          fontSize: 9, fontWeight: 600, letterSpacing: ".05em", textTransform: "uppercase" as const,
+        <span title={noData} className="aug-label" style={{
           padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t4)",
           background: "var(--bg-3)", border: "1px solid var(--b1)",
         }}>no data</span>
       )}
       {shareMsg && (
-        <span style={{ fontSize: 10, color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t4)" }}>{shareMsg}</span>
+        <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t4)" }}>{shareMsg}</span>
       )}
     </div>
   );
@@ -915,7 +1015,7 @@ export function DossierTrace({ dossier }: { dossier: FindingDossier }) {
   const g = dossier.grounding;
 
   const Label = ({ children }: { children: React.ReactNode }) => (
-    <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>{children}</div>
+    <div className="aug-label" style={{ marginBottom: 6 }}>{children}</div>
   );
 
   return (
@@ -1030,7 +1130,7 @@ function RevalidateRow({ dossier, connectionId, insightId }: {
           }}
           style={{ padding: "5px 11px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 11.5, fontWeight: 500, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}
         >{busy ? "Re-validating…" : "Re-validate"}</button>
-        <span style={{ fontSize: 10.5, color: "var(--t4)" }}>as of {asOfText}</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>as of {asOfText}</span>
       </div>
       {badge && (
         <div style={{ fontSize: 11, color: badge.c, lineHeight: 1.5 }}>
@@ -1062,7 +1162,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
   const dossier = receipt?.artifact?.payload?.dossier;
   const Stat = ({ label, value }: { label: string; value: string }) => (
     <div style={{ display: "flex", flexDirection: "column" as const, gap: 2 }}>
-      <span style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em" }}>{label}</span>
+      <span className="aug-label">{label}</span>
       <span style={{ fontSize: 13, color: "var(--t1)", fontWeight: 500 }}>{value}</span>
     </div>
   );
@@ -1096,20 +1196,20 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
             <div style={{ display: "flex", flexDirection: "column" as const, gap: 10 }}>
               {insight.entities_involved?.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 5 }}>Entities</div>
+                  <div className="aug-label" style={{ marginBottom: 5 }}>Entities</div>
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
                     {insight.entities_involved.map(e => (
-                      <span key={e} style={{ padding: "2px 7px", borderRadius: "var(--r1)", fontSize: 10, background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{e.replace(/_/g, " ")}</span>
+                      <span key={e} className="aug-fs-xs" style={{ padding: "2px 7px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{e.replace(/_/g, " ")}</span>
                     ))}
                   </div>
                 </div>
               )}
               {insight.measures?.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 5 }}>Measures</div>
+                  <div className="aug-label" style={{ marginBottom: 5 }}>Measures</div>
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
                     {insight.measures.map(m => (
-                      <span key={m} style={{ padding: "2px 7px", borderRadius: "var(--r1)", fontSize: 10, background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{m}</span>
+                      <span key={m} className="aug-fs-xs" style={{ padding: "2px 7px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{m}</span>
                     ))}
                   </div>
                 </div>
@@ -1121,7 +1221,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
           {dossier && <RevalidateRow dossier={dossier} connectionId={connectionId} insightId={insight.id} />}
 
           <div>
-            <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query — the data behind this claim</div>
+            <div className="aug-label" style={{ marginBottom: 6 }}>Source query — the data behind this claim</div>
             <pre style={{
               margin: 0, padding: "12px 14px", borderRadius: "var(--r2)",
               background: "var(--bg-2)", border: "1px solid var(--b1)",
@@ -1132,7 +1232,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
 
           {receipt && (
             <div>
-              <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>
+              <div className="aug-label" style={{ marginBottom: 6 }}>
                 Trust receipt — how this finding was produced
               </div>
               <div style={{ display: "flex", flexDirection: "column" as const, gap: 6, padding: "10px 12px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
@@ -1148,9 +1248,9 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
                 </div>
                 {receipt.lineage.filter(l => l.relation === "input").length > 0 && (
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const, alignItems: "center" }}>
-                    <span style={{ fontSize: 10, color: "var(--t3)" }}>Inputs:</span>
+                    <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Inputs:</span>
                     {receipt.lineage.filter(l => l.relation === "input").map(l => (
-                      <span key={l.ref} style={{ padding: "1px 6px", borderRadius: "var(--r1)", fontSize: 10, background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)" }}>{l.ref.replace("table:", "")}</span>
+                      <span key={l.ref} className="aug-fs-xs" style={{ padding: "1px 6px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)" }}>{l.ref.replace("table:", "")}</span>
                     ))}
                   </div>
                 )}
@@ -1174,34 +1274,22 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
   actions?:      ReactNode;
 }) {
   const { insight, domain } = signal;
-  const nColor = noveltyColor(insight.novelty);
 
   return (
-    <div style={{
-      background:  "var(--bg-2)",
-      border:      `1px solid color-mix(in srgb, ${nColor} 28%, var(--b1))`,
-      borderLeft:  `3px solid ${nColor}`,
-      borderRadius: "var(--r3)", padding: "20px 24px",
-    }}>
+    // Flat card — the novelty is carried by the label + meter, not a colour-coded border.
+    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "20px 24px" }}>
       {/* Badge row */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" as const }}>
-        <span style={{
-          padding: "3px 8px", borderRadius: "var(--r2)", fontSize: 10, fontWeight: 600,
-          background: `color-mix(in srgb, ${nColor} 14%, transparent)`,
-          border:     `1px solid color-mix(in srgb, ${nColor} 28%, transparent)`,
-          color: nColor, textTransform: "uppercase" as const, letterSpacing: ".07em",
-        }}>
-          {noveltyLabel(insight.novelty)}
-        </span>
+        <span className="aug-label">{noveltyLabel(insight.novelty)}</span>
         <DomainTag domain={domain} />
         {insight.angle && (
-          <span style={{ fontSize: 10, color: "var(--t4)" }}>{insight.angle}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>
         )}
         <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={64} /></span>
       </div>
 
       {/* Finding */}
-      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t1)", lineHeight: 1.65, marginBottom: 16 }}>
+      <div className="aug-fs-ui" style={{ fontWeight: 500, color: "var(--t1)", lineHeight: 1.65, marginBottom: 16 }}>
         {insight.finding}
       </div>
 
@@ -1210,27 +1298,21 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
         {insight.entities_involved.length > 0 && (
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
             {insight.entities_involved.slice(0, 4).map(e => (
-              <span key={e} style={{
-                padding: "1px 6px", borderRadius: "var(--r1)", fontSize: 10,
+              <span key={e} className="aug-fs-xs" style={{
+                padding: "1px 6px", borderRadius: "var(--r1)",
                 background: "var(--bg-3)", border: "1px solid var(--b1)",
                 color: "var(--t3)", fontFamily: "var(--font-mono)",
               }}>{e.replace(/_/g, " ")}</span>
             ))}
           </div>
         )}
-        <button
+        <Button
+          variant="minimal" size="sm"
           onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-          style={{
-            marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
-            padding: "6px 14px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
-            background: "var(--bg-sel)", border: "1px solid var(--blue2)",
-            color: "var(--blue4)", cursor: "pointer", transition: "all .12s",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 16%, transparent)"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "var(--bg-sel)"; }}
+          style={{ marginLeft: "auto" }}
         >
           Investigate →
-        </button>
+        </Button>
       </div>
       {actions && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--b1)" }}>{actions}</div>
@@ -1245,6 +1327,20 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
  *  is demoted to a quiet footer so the lede isn't cluttered with background process.
  *  Falls back to the deterministic top finding when no AI narrative exists.
  *  Confidence % is deliberately NOT shown — it carried no call to action. */
+// Small provenance chips for the verdict hero's meta strip (module-level so they aren't
+// re-created on every VerdictHero render).
+function HeroStatPill({ value, label }: { value: number; label: string }) {
+  return (
+    <span className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "baseline", gap: 5 }}>
+      <span style={{ fontWeight: 600, color: "var(--t2)", fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" as const }}>{value}</span>
+      <span style={{ color: "var(--t4)" }}>{label}</span>
+    </span>
+  );
+}
+function HeroDivider() {
+  return <span style={{ width: 1, height: 11, background: "var(--b2)" }} />;
+}
+
 function VerdictHero({
   narrative, headline, domainCount, totalInsights, synthesizedAt,
   onInvestigate, controls, actions, scope,
@@ -1266,115 +1362,188 @@ function VerdictHero({
   const title   = theme || finding || "Intelligence briefing";
   // When the AI theme is the headline, the top finding becomes the supporting lead.
   const lead    = theme ? finding : undefined;
+  const isVerdict = !!narrative;
 
   return (
-    <div style={{
-      position: "relative", overflow: "hidden",
-      background: "linear-gradient(135deg, color-mix(in srgb, var(--blue4) 9%, var(--bg-2)), var(--bg-2))",
-      border: "1px solid color-mix(in srgb, var(--blue4) 22%, var(--b1))",
-      borderRadius: "var(--r3)", boxShadow: "var(--shadow-md)",
-    }}>
-      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: "var(--blue4)" }} />
-      <div style={{ padding: "22px 26px 22px 28px" }}>
-        {/* top row: tag + controls (scope/provenance demoted to the footer below) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" as const }}>
-          <span style={{
-            fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: "var(--r1)",
-            background: "color-mix(in srgb, var(--blue4) 16%, transparent)",
-            border: "1px solid color-mix(in srgb, var(--blue4) 30%, transparent)",
-            color: "var(--blue4)", textTransform: "uppercase" as const, letterSpacing: ".09em",
-          }}>{narrative ? "Verdict" : "Top finding"}</span>
-          {controls && (
-            <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{controls}</span>
+    // Flat panel in the shared card language (was a gradient + glow + shadow hero). Prominence now
+    // comes from position, the display-size verdict, and the primary action — not chrome.
+    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
+      <div style={{ padding: "18px 26px 17px" }}>
+        {/* eyebrow (context) + controls */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13, flexWrap: "wrap" as const }}>
+          <span className="aug-label">
+            Intelligence briefing{scope ? <span style={{ color: "var(--t4)" }}>{"  ·  "}{scope}</span> : null}
+          </span>
+          {controls && <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{controls}</span>}
+        </div>
+
+        {/* verdict badge — dot + label (dots, not boxes, like the report surfaces) */}
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: "var(--blue4)" }} />
+          <span className="aug-label" style={{ color: "var(--blue4)" }}>{isVerdict ? "Verdict" : "Top finding"}</span>
+        </div>
+
+        {/* the ONE verdict — on-scale display size (was 24px/680) */}
+        <div className="aug-fs-display" style={{
+          fontWeight: 600, lineHeight: 1.3, color: "var(--t1)",
+          letterSpacing: "-.01em", maxWidth: 780, textWrap: "balance" as const,
+          marginBottom: lead ? 10 : 0,
+        }}>{title}</div>
+
+        {/* one-line proof */}
+        {lead && (
+          <p className="aug-fs-ui" style={{
+            color: "var(--t2)", lineHeight: 1.6, maxWidth: 740, margin: 0,
+            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
+          }}>{lead}</p>
+        )}
+
+        {/* actions (left) + trust & provenance (right) on one confident strip */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 18, flexWrap: "wrap" as const }}>
+          {(headline || actions) && (
+            <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" as const }}>
+              {headline && (
+                <Button
+                  variant="default" size="sm"
+                  onClick={() => onInvestigate(`Investigate: ${headline.insight.finding}`, headline.insight.id)}
+                >Investigate →</Button>
+              )}
+              {actions}
+            </div>
           )}
-        </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 28, alignItems: "center" }}>
-          <div>
-            {/* the ONE bold verdict */}
-            <div style={{
-              fontSize: 21, fontWeight: 650, lineHeight: 1.35, color: "var(--t1)",
-              letterSpacing: "-.01em", maxWidth: 660, textWrap: "pretty" as const,
-              marginBottom: lead ? 8 : 0,
-            }}>{title}</div>
-            {/* one-line proof */}
-            {lead && (
-              <p style={{
-                fontSize: 13, color: "var(--t2)", lineHeight: 1.55, maxWidth: 640, margin: 0,
-                display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
-              }}>{lead}</p>
-            )}
-            {/* primary action up front */}
-            {(headline || actions) && (
-              <div style={{ display: "flex", gap: 9, marginTop: 18, flexWrap: "wrap" as const, alignItems: "center" }}>
-                {headline && (
-                  <button
-                    onClick={() => onInvestigate(`Investigate: ${headline.insight.finding}`, headline.insight.id)}
-                    className="aug-btn aug-btn-primary"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", fontSize: 12.5, fontWeight: 600, borderRadius: "var(--r2)", cursor: "pointer" }}
-                  >Investigate →</button>
-                )}
-                {actions}
-              </div>
-            )}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const }}>
+            {/* Aughor's differentiator, made explicit: every number is evidence-backed. */}
+            <span title="Every number is grounded in the data and cleared the trust guards"
+              className="aug-tag aug-tag-green">
+              ✓ Grounded &amp; guarded
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
+              <HeroStatPill value={domainCount} label={domainCount === 1 ? "domain" : "domains"} />
+              <HeroDivider />
+              <HeroStatPill value={totalInsights} label={totalInsights === 1 ? "finding" : "findings"} />
+              <HeroDivider />
+              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{timeAgo(synthesizedAt)}</span>
+            </span>
           </div>
-        </div>
-
-        {/* quiet provenance — present for trust, but not the headline (click Investigate for the rest) */}
-        <div style={{ marginTop: 16, fontSize: 10.5, color: "var(--t4)" }}>
-          {scope && <><span style={{ color: "var(--t3)", fontWeight: 500 }}>{scope}</span>{" · "}</>}
-          {narrative ? "Synthesized" : "Ranked"} from {domainCount} {domainCount === 1 ? "domain" : "domains"}
-          {" · "}{totalInsights} {totalInsights === 1 ? "finding" : "findings"}
-          {" · "}{timeAgo(synthesizedAt)}
         </div>
       </div>
     </div>
   );
 }
 
-// ── Supporting signals ──────────────────────────────────────────────────────────
-/** A 3-up row of the strongest supporting findings under the verdict (v2 mockup's
- *  hypothesis-card row). Driven by real briefing signals — every card is a live
- *  finding tagged by novelty. Confidence % is intentionally omitted (no call to
- *  action); novelty + the Investigate affordance carry the card. */
-function SupportingSignals({ signals, onInvestigate }: {
-  signals:       SynthesisSignal[];
+// ── Findings exhibit strip ──────────────────────────────────────────────────────
+/** The narrative layer's reading surface: each finding is a UNIFORM exhibit card —
+ *  domain eyebrow · the finding statement · its own grounded chart — in impact order.
+ *  Replaces both the old 3-up text cards and the findings-in-cockpit experiment (a
+ *  bin-packed canvas has no reading order; a document flow does). A finding whose SQL
+ *  errors degrades to text-only — never a broken chart. Actions reveal on hover. */
+const EXHIBIT_DEFAULT = 6;    // first paint: two rows of three
+const EXHIBIT_STEP    = 12;   // each "Show more" click; bounds the burst of chart fetches
+const EXHIBIT_CHART_H = 190;  // fixed chart height = uniform rows
+
+function ExhibitCard({ insight, domain, connectionId, onInvestigate, onEvidence }: {
+  insight:       ExplorationInsight;
+  domain:        string;
+  connectionId:  string;
   onInvestigate: (q: string, insightId?: string) => void;
+  onEvidence:    (ins: ExplorationInsight, domain: string) => void;
 }) {
-  const top = signals.slice(0, 3);
-  if (top.length === 0) return null;
+  // The finding's own grounded result — fetched once per card (server-cached, same query the
+  // explorer ran), so "Show more" only pays for the newly revealed cards. Errors/empty → the
+  // card stays text-only; no error state is ever rendered.
+  const [run, setRun]     = useState<{ columns: string[]; rows: unknown[][] } | null>(null);
+  const [phase, setPhase] = useState<"loading" | "chart" | "text">(() => ((insight.sql || "").trim() ? "loading" : "text"));
+  useEffect(() => {
+    const sql = (insight.sql || "").trim();
+    if (!sql || !connectionId) return;   // initial phase already "text"
+    let alive = true;
+    runDirectQuery(connectionId, sql, 200, { useCache: true })
+      .then(r => {
+        if (!alive) return;
+        if (r.error || !r.columns?.length || !r.rows?.length) { setPhase("text"); return; }
+        setRun({ columns: r.columns, rows: r.rows as unknown[][] });
+        setPhase("chart");
+      })
+      .catch(() => { if (alive) setPhase("text"); });
+    return () => { alive = false; };
+  }, [connectionId, insight.sql]);
+
+  // A single scalar renders as the big figure; anything richer goes through the chart card.
+  const scalar = run && run.rows.length === 1 && run.columns.length === 1 && !isNaN(Number(run.rows[0][0]))
+    ? Number(run.rows[0][0]) : null;
+
+  return (
+    <div className="group" style={{
+      background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
+      padding: "14px 16px", display: "flex", flexDirection: "column" as const, gap: 10, minWidth: 0,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <DomainTag domain={domain} />
+        {insight.angle && <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>}
+        <span className="aug-label" style={{ marginLeft: "auto", flexShrink: 0 }}>{noveltyLabel(insight.novelty)}</span>
+      </div>
+      <div className="aug-fs-ui" title={insight.finding} style={{
+        fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
+        textWrap: "pretty" as const, display: "-webkit-box",
+        WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
+      }}>{insight.finding}</div>
+
+      {phase === "loading" && <Shimmer h={EXHIBIT_CHART_H} r="var(--r2)" />}
+      {phase === "chart" && run && (scalar != null ? (
+        <div className="aug-fs-display" style={{ color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1, padding: "20px 0" }}>
+          {formatMetricValue(scalar)}
+        </div>
+      ) : (
+        <div style={{ minHeight: EXHIBIT_CHART_H }}>
+          <ResultChartCard columns={run.columns} rows={run.rows} fillHeight={EXHIBIT_CHART_H} />
+        </div>
+      ))}
+
+      {/* Hover-row actions — quiet at rest, revealed on hover/focus. */}
+      <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+        style={{ marginTop: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+        <Button variant="ghost" size="xs" onClick={() => onEvidence(insight, domain)}
+          title="See the query + provenance behind this finding"
+          style={{ fontSize: 11, color: "var(--vio4)", padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--vio4) 35%, var(--b1))", borderRadius: "var(--r-pill)" }}>
+          Evidence
+        </Button>
+        <Button variant="ghost" size="xs"
+          onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
+          style={{ fontSize: 11, fontWeight: 600, color: "var(--blue4)", padding: "2px 6px", marginLeft: "auto" }}>
+          Investigate →
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SupportingSignals({ signals, connectionId, onInvestigate, onEvidence }: {
+  signals:       SynthesisSignal[];
+  connectionId:  string;
+  onInvestigate: (q: string, insightId?: string) => void;
+  onEvidence:    (ins: ExplorationInsight, domain: string) => void;
+}) {
+  const [shown, setShown] = useState(EXHIBIT_DEFAULT);
+  if (signals.length === 0) return null;
+  const top = signals.slice(0, shown);
+  const remaining = signals.length - top.length;
   return (
     <div>
-      <div className="aug-label" style={{ marginBottom: 10 }}>Supporting signals</div>
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${top.length}, 1fr)`, gap: 14 }}>
-        {top.map(({ insight, domain }) => {
-          const nColor    = noveltyColor(insight.novelty);
-          return (
-            <div key={insightKey(insight)} style={{
-              background: "var(--bg-2)", border: "1px solid var(--b1)",
-              borderLeft: `3px solid ${nColor}`, borderRadius: "var(--r3)",
-              padding: "16px 18px", display: "flex", flexDirection: "column" as const, gap: 10,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <DomainTag domain={domain} />
-                {insight.angle && <span style={{ fontSize: 10, color: "var(--t4)" }}>{insight.angle}</span>}
-                <span style={{ marginLeft: "auto", fontSize: 9.5, fontWeight: 700, color: nColor, textTransform: "uppercase" as const, letterSpacing: ".06em" }}>
-                  {noveltyLabel(insight.novelty)}
-                </span>
-              </div>
-              <div style={{
-                fontSize: 13, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
-                textWrap: "pretty" as const, display: "-webkit-box",
-                WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
-              }}>{insight.finding}</div>
-              <button
-                onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-                style={{ alignSelf: "flex-start", marginTop: "auto", fontSize: 11, color: "var(--blue4)", background: "none", border: "none", padding: 0, cursor: "pointer" }}
-              >Investigate →</button>
-            </div>
-          );
-        })}
+      <div className="aug-label" style={{ marginBottom: 10 }}>Findings</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+        {top.map(({ insight, domain }) => (
+          <ExhibitCard key={signalIdentity(insight)} insight={insight} domain={domain}
+            connectionId={connectionId} onInvestigate={onInvestigate} onEvidence={onEvidence} />
+        ))}
       </div>
+      {remaining > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <Button variant="minimal" size="sm" onClick={() => setShown(s => s + EXHIBIT_STEP)}>
+            Show more ({remaining} more)
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1387,38 +1556,30 @@ function SignalCard({ signal, onInvestigate, actions }: {
   actions?:      ReactNode;
 }) {
   const { insight, domain } = signal;
-  const nColor = noveltyColor(insight.novelty);
 
   return (
     <div style={{
       background: "var(--bg-2)", border: "1px solid var(--b1)",
-      borderTop:  `2px solid ${nColor}`,
       borderRadius: "var(--r3)", padding: "14px 16px",
       display: "flex", flexDirection: "column" as const, gap: 10,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
         <DomainTag domain={domain} />
         {insight.angle && (
-          <span style={{ fontSize: 10, color: "var(--t4)" }}>{insight.angle}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>
         )}
         <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={40} /></span>
       </div>
-      <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.55, flex: 1 }}>
+      <div className="aug-fs-sm" style={{ color: "var(--t2)", lineHeight: 1.55, flex: 1 }}>
         {insight.finding.length > 160 ? insight.finding.slice(0, 160) + "…" : insight.finding}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
-        <button
+        <Button
+          variant="minimal" size="xs"
           onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-          style={{
-            padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
-            background: "transparent", border: "1px solid var(--b2)",
-            color: "var(--t3)", cursor: "pointer", transition: "all .12s",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--blue3)"; e.currentTarget.style.color = "var(--blue4)"; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t3)"; }}
         >
           Investigate →
-        </button>
+        </Button>
         {actions}
       </div>
     </div>
@@ -1437,6 +1598,7 @@ function PatternRow({ pattern, onInvestigate }: {
   return (
     <div
       onClick={() => onInvestigate(`Investigate the pattern: ${pattern.title}`)}
+      className="group"
       style={{
         display: "flex", alignItems: "flex-start", gap: 10,
         padding: "10px 12px", borderRadius: "var(--r2)",
@@ -1446,26 +1608,23 @@ function PatternRow({ pattern, onInvestigate }: {
       onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)"; }}
       onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-2)"; }}
     >
-      <span style={{ fontSize: 13, color, flexShrink: 0, lineHeight: 1.4 }}>{icon}</span>
+      <span className="aug-fs-ui" style={{ color, flexShrink: 0, lineHeight: 1.4 }}>{icon}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 11, fontWeight: 500, color: "var(--t1)",
+        <div className="aug-fs-xs" style={{
+          fontWeight: 500, color: "var(--t1)",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
         }}>
           {pattern.title}
         </div>
-        <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }}>
           {pattern.domains.length} domain{pattern.domains.length !== 1 ? "s" : ""} · {pattern.evidence_count} findings
         </div>
       </div>
-      <span style={{
-        fontSize: 9, padding: "2px 6px", borderRadius: "var(--r1)", flexShrink: 0,
-        background: `color-mix(in srgb, ${color} 12%, transparent)`,
-        border:     `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
-        color, textTransform: "uppercase" as const, letterSpacing: ".06em", fontWeight: 600,
-      }}>
-        {pattern.type}
-      </span>
+      <span className="aug-label" style={{ flexShrink: 0 }}>{pattern.type}</span>
+      {/* Hover-row affordance: a quiet chevron that confirms the row navigates, revealed on
+          hover in a fixed 12px slot so it never nudges the layout. */}
+      <span aria-hidden className="opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ flexShrink: 0, width: 12, textAlign: "right" as const, color: "var(--blue4)", fontWeight: 700, lineHeight: 1.4 }}>→</span>
     </div>
   );
 }
@@ -1473,20 +1632,18 @@ function PatternRow({ pattern, onInvestigate }: {
 // ── Org signal row (sidebar) ───────────────────────────────────────────────────
 
 function OrgSignalRow({ insight }: { insight: OrgInsight }) {
-  const nColor = noveltyColor(insight.novelty);
   return (
     <div style={{
       padding: "10px 12px", borderRadius: "var(--r2)",
       background: "var(--bg-2)", border: "1px solid var(--b1)",
-      borderLeft: `2px solid ${nColor}`,
     }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" as const }}>
         <DomainTag domain={insight.domain} />
         {insight.angle && (
-          <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: "auto" }}>{insight.angle}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t4)", marginLeft: "auto" }}>{insight.angle}</span>
         )}
       </div>
-      <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
+      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
         {insight.text.length > 120 ? insight.text.slice(0, 120) + "…" : insight.text}
       </div>
     </div>
@@ -1650,22 +1807,63 @@ function BriefingEmpty({
   );
 }
 
-// ── Loading state ──────────────────────────────────────────────────────────────
+// ── Loading state — content-shaped skeletons ────────────────────────────────────
+// Not a bare spinner: the briefing's OWN shape shimmers in place, so the layout doesn't
+// jump when the real content lands (the old spinner grew the section and shoved
+// everything below it down). Uses the app's standard skeleton idiom (animate-pulse on a
+// muted fill) and the same flat card language as the reskinned briefing.
 
+/** One shimmer bar. */
+function Shimmer({ w = "100%", h = 12, r = "var(--r1)", mt = 0 }: { w?: number | string; h?: number; r?: string; mt?: number }) {
+  return <div className="animate-pulse" style={{ width: w, height: h, marginTop: mt, borderRadius: r, background: "var(--bg-3)" }} />;
+}
+
+const skelCard: React.CSSProperties = { background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" };
+
+/** The full-synthesis prose block while the narrative streams — mirrors NarrativeCard's shape. */
+function SynthesisSkeleton() {
+  return (
+    <div style={{ ...skelCard, padding: "18px 22px", display: "flex", flexDirection: "column", gap: 9 }}
+      aria-busy="true" aria-label="Writing intelligence brief">
+      {["100%", "97%", "99%", "94%", "98%", "62%"].map((w, i) => <Shimmer key={i} w={w} h={12} />)}
+    </div>
+  );
+}
+
+/** Whole-briefing first load — verdict hero + 3 supporting signals + synthesis, in shape. */
 function BriefingLoading() {
   return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{
-        display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 12,
-      }}>
-        <div style={{
-          width: 32, height: 32,
-          border: "2px solid var(--b1)",
-          borderTop: "2px solid var(--blue4)",
-          borderRadius: "50%",
-          animation: "aug-spin var(--dur-breath) linear infinite",
-        }} />
-        <div style={{ fontSize: 12, color: "var(--t3)" }}>Synthesizing intelligence…</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }} aria-busy="true" aria-label="Synthesizing intelligence">
+      {/* Verdict hero */}
+      <div style={{ ...skelCard, padding: "18px 26px 20px" }}>
+        <Shimmer w={130} h={10} />
+        <Shimmer w={70} h={10} mt={16} />
+        <Shimmer w="68%" h={22} mt={14} />
+        <Shimmer w="46%" h={22} mt={8} />
+        <Shimmer w="88%" h={13} mt={16} />
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <Shimmer w={120} h={30} />
+          <Shimmer w={180} h={30} />
+        </div>
+      </div>
+      {/* Supporting signals — 3-up */}
+      <div>
+        <Shimmer w={120} h={11} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 10 }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{ ...skelCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <Shimmer w={80} h={20} r="var(--r-pill)" />
+              <Shimmer w="100%" h={12} mt={4} />
+              <Shimmer w="92%" h={12} />
+              <Shimmer w="70%" h={12} />
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Full synthesis */}
+      <div>
+        <Shimmer w={110} h={11} />
+        <div style={{ marginTop: 10 }}><SynthesisSkeleton /></div>
       </div>
     </div>
   );
@@ -1698,6 +1896,13 @@ export function BriefingPanel({
   schemaReady?: boolean;
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
+  const [pinnedRefresh, setPinnedRefresh]   = useState(0);
+  // Argument-graph lens (Slice 3): swap the linear narrative body for the node+edge graph.
+  const [lens, setLens]                     = useState<"linear" | "graph">("linear");
+  // Scope chips: narrow the narrative layer (supporting signals + top patterns) to one
+  // domain; null = all. The standing cockpit layer is intentionally left unscoped — it's
+  // the user's arranged surface, not a per-cycle finding view.
+  const [scope, setScope]                   = useState<string | null>(null);
   const [loading, setLoading]               = useState(false);
   const [error, setError]                   = useState<string | null>(null);
   const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
@@ -1717,7 +1922,6 @@ export function BriefingPanel({
   const [triggers, setTriggers]               = useState<ActionTrigger[]>([]);
   const [evidenceInsight, setEvidenceInsight] = useState<ExplorationInsight | null>(null);
   const [evidenceDomain, setEvidenceDomain]   = useState<string>("");
-  const [hint, setHint]                       = useState<string | null>(null);
 
   // Available delivery channels for the Share action (Action Hub triggers).
   useEffect(() => {
@@ -1732,8 +1936,7 @@ export function BriefingPanel({
   }, []);
 
   const showTriggersHint = useCallback(() => {
-    setHint("No delivery channel yet — add a Slack/webhook trigger in Action Hub to share findings.");
-    setTimeout(() => setHint(null), 5000);
+    toast.info("No delivery channel yet", { description: "Add a Slack/webhook trigger in Action Hub to share findings." });
   }, []);
 
   const load = useCallback(async () => {
@@ -1880,6 +2083,40 @@ export function BriefingPanel({
     prevPhaseRef.current = phase;
   }, [explorerStatus?.phase, load]);
 
+  // ── ⌘K contextual commands (present only while the Briefing is mounted) ──
+  const regenRefCmd = useRef(generateNarrative);
+  const startRefCmd = useRef(runExplorer);
+  useEffect(() => { regenRefCmd.current = generateNarrative; startRefCmd.current = runExplorer; });
+  const briefCommands = useMemo<Command[]>(() => [
+    { id: "brief-regen",   label: "Regenerate brief",  sublabel: "Re-synthesize the intelligence briefing",          icon: "spark",   accent: "var(--blue3)", keywords: "regenerate refresh brief narrative synthesis",  run: () => regenRefCmd.current(true) },
+    { id: "brief-explore", label: "Start exploration", sublabel: "Run the autonomous explorer on this connection",   icon: "process", accent: "var(--cyn3)",  keywords: "explore exploration run analyze discover signals", run: () => startRefCmd.current() },
+  ], []);
+  useRegisterCommands("briefing", briefCommands);
+
+  // Scope-chip derivations — filter the narrative-layer findings + patterns to the active
+  // domain. Guard the scope against a stale value (a reload can drop the domain), and drop
+  // the headline (it already leads the verdict hero) by IDENTITY — not id, which collides
+  // across the meta-domains. Unscoped, the strip starts breadth-first (the deduped one-per-
+  // domain signals) and extends into the full impact-ranked list behind "Show more".
+  const scopeDomain    = scope && briefing?.domains.some(d => d.name === scope) ? scope : null;
+  const headlineIdent  = briefing?.headline ? signalIdentity(briefing.headline.insight) : null;
+  const scopedSignals  = !briefing
+    ? []
+    : dedupeSignals(
+        scopeDomain
+          ? briefing.allSignals.filter(s => s.domain === scopeDomain)
+          : [...briefing.signals, ...briefing.allSignals],
+      ).filter(s => signalIdentity(s.insight) !== headlineIdent);
+  const scopedPatterns = !briefing
+    ? []
+    : scopeDomain
+      ? briefing.patterns.filter(p => p.domains?.includes(scopeDomain))
+      : briefing.patterns;
+
+  const hasPatterns    = scopedPatterns.length > 0;
+  const hasNarrative   = !!narrative?.narrative;
+  const isEmpty        = !briefing || briefing.totalInsights === 0;
+
   if (loading)  return <BriefingLoading />;
 
   if (error) {
@@ -1890,23 +2127,12 @@ export function BriefingPanel({
     );
   }
 
-  const hasPatterns    = (briefing?.patterns?.length ?? 0) > 0;
-  const hasNarrative   = !!narrative?.narrative;
-  const isEmpty        = !briefing || briefing.totalInsights === 0;
-
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
 
-      {/* Evidence drill-through drawer + transient hint toast (finding actions, #4) */}
+      {/* Evidence drill-through drawer (finding actions, #4). Transient hints/side-effect
+          feedback now go through the shared <Toaster/> (toast.*), mounted in the root layout. */}
       <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} connectionId={connectionId} onClose={() => setEvidenceInsight(null)} />
-      {hint && (
-        <div style={{
-          position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 70,
-          padding: "10px 16px", borderRadius: "var(--r2)", fontSize: 12,
-          background: "var(--bg-1)", border: "1px solid var(--b2)", color: "var(--t2)",
-          boxShadow: "0 6px 20px rgba(0,0,0,.18)", maxWidth: 420,
-        }}>{hint}</div>
-      )}
 
       {/* ── Explorer control bar ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "8px 12px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
@@ -1942,39 +2168,34 @@ export function BriefingPanel({
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           {(!explorerStatus || explorerStatus.phase === "complete" || explorerStatus.phase === "pending" || explorerStatus.phase === "failed") ? (
             <>
-              <button
-                disabled={explorerBusy}
-                onClick={runExplorer}
-                style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--grn2)", color: "var(--grn5)", border: "1px solid var(--grn3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
-              >Start</button>
+              <Button
+                variant="secondary" size="xs"
+                disabled={explorerBusy} onClick={runExplorer}
+              >Start</Button>
               {explorerStatus?.phase === "complete" && (
-                <button
-                  disabled={explorerBusy}
-                  onClick={runTriggerIntel}
-                  style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--blue2)", color: "var(--blue5)", border: "1px solid var(--blue3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
-                >Trigger Intel</button>
+                <Button
+                  variant="secondary" size="xs"
+                  disabled={explorerBusy} onClick={runTriggerIntel}
+                >Trigger Intel</Button>
               )}
               {explorerStatus?.phase === "complete" && (
-                <button
-                  disabled={explorerBusy}
-                  onClick={runRefresh}
+                <Button
+                  variant="secondary" size="xs"
+                  disabled={explorerBusy} onClick={runRefresh}
                   title="Clear stale findings and re-run intelligence from scratch (drops 'no data' findings, re-anchors the window)"
-                  style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bg-3)", color: "var(--t2)", border: "1px solid var(--b2)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
-                >↻ Refresh</button>
+                >↻ Refresh</Button>
               )}
             </>
           ) : (
             <>
-              <button
-                disabled={explorerBusy}
-                onClick={runStop}
-                style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--red2)", color: "var(--red5)", border: "1px solid var(--red3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
-              >Stop</button>
-              <button
-                disabled={explorerBusy}
-                onClick={runRefresh}
-                style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bg-3)", color: "var(--t3)", border: "1px solid var(--b2)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
-              >Restart</button>
+              <Button
+                variant="secondary" size="xs"
+                disabled={explorerBusy} onClick={runStop}
+              >Stop</Button>
+              <Button
+                variant="secondary" size="xs"
+                disabled={explorerBusy} onClick={runRefresh}
+              >Restart</Button>
             </>
           )}
         </div>
@@ -2003,6 +2224,22 @@ export function BriefingPanel({
         onInvestigate={onInvestigate}
         controls={
           <>
+            {narrative?.graph && narrative.graph.nodes.length > 1 && (
+              <div style={{ display: "inline-flex", borderRadius: "var(--r2)", border: "1px solid var(--b1)", overflow: "hidden" }}>
+                {(["linear", "graph"] as const).map(m => (
+                  <Button key={m} variant="ghost" size="xs" onClick={() => setLens(m)}
+                    title={m === "graph" ? "See the verdict, its drivers and their evidence as an argument graph" : "The linear brief"}
+                    style={{
+                      padding: "4px 10px", fontSize: 11, height: "auto", borderRadius: 0, cursor: "pointer",
+                      background: lens === m ? "var(--bg-1)" : "transparent",
+                      color: lens === m ? "var(--blue4)" : "var(--t3)",
+                      fontWeight: lens === m ? 600 : 400,
+                    }}>
+                    {m === "linear" ? "Linear" : "Graph"}
+                  </Button>
+                ))}
+              </div>
+            )}
             <GenerateBriefButton
               loading={narrativeLoading}
               hasNarrative={hasNarrative}
@@ -2026,9 +2263,10 @@ export function BriefingPanel({
         actions={briefing.headline && (
           <FindingActions
             insight={briefing.headline.insight} domain={briefing.headline.domain}
-            connectionId={connectionId} canvasId={canvasId} triggers={triggers}
+            connectionId={connectionId} canvasId={canvasId} schema={schema} triggers={triggers}
             onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)}
-            onTriggersHint={showTriggersHint} onDismissed={() => load()} />
+            onTriggersHint={showTriggersHint} onDismissed={() => load()}
+            onPinned={() => setPinnedRefresh(n => n + 1)} />
         )}
       />
 
@@ -2046,31 +2284,31 @@ export function BriefingPanel({
         onOpenInAsk={onInvestigate}
       />
 
-      {/* ── Supporting signals ── 3-up confidence-meter cards of the strongest findings. */}
-      <SupportingSignals signals={briefing.signals} onInvestigate={onInvestigate} />
+      {lens === "graph" && narrative?.graph ? (
+        /* ── Argument graph ── the verdict, its drivers, and their typed evidence edges,
+           a lens over the same brief (Slice 3). Linear stays the default. */
+        <ArgumentGraph
+          graph={narrative.graph}
+          connectionId={connectionId}
+          schema={schema}
+          onOpenFinding={(iid) => onInvestigate("Investigate this finding", iid)}
+        />
+      ) : (
+      <>
+      {/* ── Scope chips ── focus the narrative layer (signals + patterns) on one domain. */}
+      <ScopeChips domains={briefing.domains} total={briefing.totalInsights} active={scopeDomain} onChange={setScope} />
+
+      {/* ── Findings ── uniform exhibit cards (statement + its grounded chart), impact-ordered
+          and scoped by the chips; keyed by scope so "Show more" resets on a scope change. */}
+      <SupportingSignals key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId}
+        onInvestigate={onInvestigate} onEvidence={openEvidence} />
 
       {/* ── Full synthesis ── the multi-paragraph narrative + interactive citations.
           The hero above already carries the conclusion, so this card hides its header. */}
       {(hasNarrative || narrativeLoading || narrativeError) && (
         <div>
           <div className="aug-label" style={{ marginBottom: 10 }}>Full synthesis</div>
-          {narrativeLoading && (
-            <div style={{
-              background: "color-mix(in srgb, var(--blue4) 6%, var(--bg-2))",
-              border: "1px solid color-mix(in srgb, var(--blue4) 18%, var(--b1))",
-              borderRadius: "var(--r3)", padding: "18px 22px",
-              display: "flex", alignItems: "center", gap: 10,
-            }}>
-              <span style={{
-                width: 14, height: 14, border: "2px solid var(--b2)",
-                borderTop: "2px solid var(--blue4)", borderRadius: "50%",
-                animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0,
-              }} />
-              <span style={{ fontSize: 12, color: "var(--t3)" }}>
-                Writing intelligence brief…
-              </span>
-            </div>
-          )}
+          {narrativeLoading && <SynthesisSkeleton />}
           {!narrativeLoading && narrativeError && (
             <div style={{
               padding: "10px 14px", borderRadius: "var(--r2)",
@@ -2099,41 +2337,41 @@ export function BriefingPanel({
           )}
         </div>
       )}
+      </>
+      )}
+
+      {/* ── Your cockpit ── the standing layer: the user's OWN guard-checked pinned cards.
+            The cycle's findings read above in the exhibit strip — the cockpit is curated, not
+            a dump of the brief. Door 3 (inline authoring) sits above so the first card can be
+            composed even when it's empty. */}
+      <NewCardComposer connectionId={connectionId} schema={schema}
+        onCreated={() => setPinnedRefresh(n => n + 1)} />
+      <PinnedCards connectionId={connectionId} refreshKey={pinnedRefresh}
+        onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}
+        onEvidence={(iid) => { const sig = briefing.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); }} />
 
       {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live;
             click a card to expand it into its trend chart (replaces the old chart grid). */}
       <IndustryKpiStrip connectionId={connectionId} schema={schema} />
 
-      {/* ── Live dashboard ── finding text cards (#3); metric trends now expand from the KPI strip above */}
-      <BriefingDashboard
-        findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
-        connectionId={connectionId}
-        schema={schema}
-        canvasId={canvasId}
-        onInvestigate={onInvestigate}
-        renderActions={(insight, domain) => (
-          <FindingActions insight={insight} domain={domain}
-            connectionId={connectionId} canvasId={canvasId} triggers={triggers}
-            onEvidence={(ins) => openEvidence(ins, domain)} onTriggersHint={showTriggersHint}
-            onDismissed={() => load()} />
-        )}
-      />
+      {lens === "linear" && (<>
+      {/* ── The findings now render as chart/table cards in the cockpit above (PinnedCards),
+          replacing the old text "Dashboard" section — one unified, arrangeable card surface. ── */}
 
-      {/* ── Top patterns ── a full-width row below the dashboard. (Domain Coverage and
-          Org Intelligence were removed by request — the dashboard's metric charts +
-          finding cards carry the briefing.) */}
+      {/* ── Top patterns ── a full-width row below the cockpit. */}
       {hasPatterns && (
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 280px", minWidth: 240 }}>
             <div className="aug-label" style={{ marginBottom: 10 }}>Top Patterns</div>
             <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
-              {briefing.patterns.map(p => (
+              {scopedPatterns.map(p => (
                 <PatternRow key={p.id} pattern={p} onInvestigate={onInvestigate} />
               ))}
             </div>
           </div>
         </div>
       )}
+      </>)}
     </>
   )}
 

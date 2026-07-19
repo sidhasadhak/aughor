@@ -913,6 +913,194 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Cards Route
+         * @description Cards matching the filters (any left unset is ignored), newest-updated first.
+         *     Fetch a canvas cockpit with `?scope=canvas&scope_ref=<canvas_id>`.
+         */
+        get: operations["list_cards_route_cards_get"];
+        put?: never;
+        /** Create Card Route */
+        post: operations["create_card_route_cards_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Layout Route
+         * @description The caller's saved cockpit layout for a connection ({card_id: {x, y, w, h}}); {} if none.
+         *     Server-side + account-keyed, so any device/login sees the same arrangement.
+         */
+        get: operations["get_layout_route_cards_layout_get"];
+        /**
+         * Put Layout Route
+         * @description Persist the caller's cockpit layout (position + size per card) for a connection.
+         */
+        put: operations["put_layout_route_cards_layout_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/pin-insight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pin Insight Route
+         * @description Pin a briefing finding as a dashboard card (the "from an insight" door).
+         *
+         *     Resolves the finding's grounded SQL from the SAME domain insights the brief is built
+         *     from, RE-RUNS it through the deterministic guard battery (`execute_guarded`) so the
+         *     pinned number carries the same trust guarantee as an AI answer — a query that errors or
+         *     is BLOCKED is refused (422), never stored — then persists a card linked back to the
+         *     source finding + its receipt, plus a live preview and any unrepaired guard caveats.
+         */
+        post: operations["pin_insight_route_cards_pin_insight_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/pin-query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pin Query Route
+         * @description Pin a Query-Builder query as a dashboard card (the "from Query Builder" door).
+         *
+         *     Runs the user's SQL through the SAME guard battery as a pinned finding, refusing (422)
+         *     anything that errors or is BLOCKED — so the second authoring door carries the identical
+         *     trust guarantee as the first, now on user-authored SQL. `kind` is derived from the result
+         *     shape (a single numeric cell → kpi, otherwise chart); the render spec is stored opaque for
+         *     the card to draw and the card lands on the connection's cockpit.
+         */
+        post: operations["pin_query_route_cards_pin_query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/relations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Card Relations Route
+         * @description Wire the standing cockpit into the narrative argument graph: for each pinned card on this
+         *     connection, emit a `relates_to` edge to the graph finding(s) it shares the most SQL structure
+         *     with (deterministic table/measure/dimension overlap). Returns `{nodes, edges}` the frontend
+         *     merges onto the graph. Empty when there are no cards or no findings to relate to.
+         */
+        post: operations["card_relations_route_cards_relations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/{card_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Card Route */
+        get: operations["get_card_route_cards__card_id__get"];
+        /** Update Card Route */
+        put: operations["update_card_route_cards__card_id__put"];
+        post?: never;
+        /** Delete Card Route */
+        delete: operations["delete_card_route_cards__card_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/{card_id}/graduate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Graduate Card Route
+         * @description Graduate a KPI/watch card to a scheduled Monitor — the last step of the card lifecycle:
+         *     run its already-guarded SQL as a recurring threshold check (`reanchor_window` ON so a frozen
+         *     date window can't go stale), then record the thresholds + monitor id back on the card so the
+         *     cockpit shows it's now alerting. The card stops being a passive slot and becomes proactive
+         *     push, reusing the monitor engine rather than forking a second alerting path.
+         */
+        post: operations["graduate_card_route_cards__card_id__graduate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/{card_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Card Route
+         * @description Recompute a card's value NOW: re-run its SQL through the guard battery and return the
+         *     current result. A single numeric cell is recorded as the card's latest value (rolling the
+         *     previous one into prev_value) so a KPI can show a delta. Guard-on-read keeps a card honest
+         *     even if the underlying data drifted after it was pinned.
+         */
+        post: operations["run_card_route_cards__card_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/catalog/tree": {
         parameters: {
             query?: never;
@@ -5792,6 +5980,63 @@ export interface components {
              */
             text: string;
         };
+        /**
+         * CardProvenance
+         * @description Where the card came from — so every measured card links back to its evidence.
+         */
+        CardProvenance: {
+            /**
+             * Insight Id
+             * @default
+             */
+            insight_id: string;
+            /**
+             * Origin Finding Id
+             * @default
+             */
+            origin_finding_id: string;
+            /**
+             * Receipt Ref
+             * @default
+             */
+            receipt_ref: string;
+        };
+        /**
+         * CardRefresh
+         * @description The card's living state: how often it recomputes, the last two values (for a delta),
+         *     and a bounded value history (oldest→newest) that draws the cross-cycle trend sparkline.
+         */
+        CardRefresh: {
+            /**
+             * Cadence
+             * @default brief_cycle
+             */
+            cadence: string;
+            /** History */
+            history?: number[];
+            /**
+             * Last Run
+             * @default
+             */
+            last_run: string;
+            /** Last Value */
+            last_value?: number | null;
+            /** Prev Value */
+            prev_value?: number | null;
+        };
+        /**
+         * CardRelationsRequest
+         * @description Compute `relates_to` edges between this connection's pinned cards and the given argument-
+         *     graph findings (by id). Live — reflects the current cockpit, not a cached brief.
+         */
+        CardRelationsRequest: {
+            /** Connection Id */
+            connection_id: string;
+            /** Finding Ids */
+            finding_ids?: string[];
+            /** Schema */
+            schema?: string | null;
+        };
         /** ChatHistoryTurn */
         ChatHistoryTurn: {
             /**
@@ -5995,6 +6240,83 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** DashboardCard */
+        DashboardCard: {
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /**
+             * Body
+             * @default
+             */
+            body: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /**
+             * Kind
+             * @default kpi
+             */
+            kind: string;
+            /** Links */
+            links?: string[];
+            provenance?: components["schemas"]["CardProvenance"];
+            /** Query Ref */
+            query_ref?: string | null;
+            refresh?: components["schemas"]["CardRefresh"];
+            /** Render */
+            render?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Scope
+             * @default canvas
+             */
+            scope: string;
+            /**
+             * Scope Ref
+             * @default
+             */
+            scope_ref: string;
+            /**
+             * Source
+             * @default authored
+             */
+            source: string;
+            /**
+             * Sql
+             * @default
+             */
+            sql: string;
+            /** Thresholds */
+            thresholds?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+        };
         /** DeltaStatusIn */
         DeltaStatusIn: {
             /** Status */
@@ -6137,6 +6459,22 @@ export interface components {
             question: string;
             /** Reference Sql */
             reference_sql: string;
+        };
+        /**
+         * GraduateCardRequest
+         * @description Alert thresholds. `threshold_direction`: fire when the value goes below (default) or above
+         *     the threshold.
+         */
+        GraduateCardRequest: {
+            /** Critical Threshold */
+            critical_threshold?: number | null;
+            /**
+             * Threshold Direction
+             * @default below
+             */
+            threshold_direction: string;
+            /** Warning Threshold */
+            warning_threshold?: number | null;
         };
         /** GrantRequest */
         GrantRequest: {
@@ -6293,6 +6631,15 @@ export interface components {
             tags: string[];
             /** Title */
             title: string;
+        };
+        /** LayoutRequest */
+        LayoutRequest: {
+            /** Connection Id */
+            connection_id: string;
+            /** Layout */
+            layout?: {
+                [key: string]: unknown;
+            };
         };
         /** MetricRequest */
         MetricRequest: {
@@ -6492,6 +6839,70 @@ export interface components {
              * @default
              */
             table: string;
+        };
+        /**
+         * PinInsightRequest
+         * @description Pin the finding `insight_id` (from `connection_id`'s briefing) as a card scoped to
+         *     `scope`/`scope_ref` (e.g. a canvas cockpit).
+         */
+        PinInsightRequest: {
+            /** Connection Id */
+            connection_id: string;
+            /** Insight Id */
+            insight_id: string;
+            /**
+             * Kind
+             * @default kpi
+             */
+            kind: string;
+            /** Schema */
+            schema?: string | null;
+            /**
+             * Scope
+             * @default canvas
+             */
+            scope: string;
+            /**
+             * Scope Ref
+             * @default
+             */
+            scope_ref: string;
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * PinQueryRequest
+         * @description Pin an ad-hoc Query-Builder query as a card. Unlike Door 1 the SQL is user-authored, so
+         *     the guard-on-write battery is the whole point: a bad join or mis-grained aggregate is
+         *     refused (422) before it can ever become a leadership KPI. `render` is the opaque
+         *     frontend-owned Chart spec; `kind` is derived from the result shape, not trusted from the
+         *     client.
+         */
+        PinQueryRequest: {
+            /** Connection Id */
+            connection_id: string;
+            /** Query Ref */
+            query_ref?: string | null;
+            /** Render */
+            render?: {
+                [key: string]: unknown;
+            };
+            /** Schema */
+            schema?: string | null;
+            /**
+             * Scope
+             * @default connection
+             */
+            scope: string;
+            /**
+             * Scope Ref
+             * @default
+             */
+            scope_ref: string;
+            /** Sql */
+            sql: string;
+            /** Title */
+            title?: string | null;
         };
         /** PlaybookEntryRequest */
         PlaybookEntryRequest: {
@@ -9386,6 +9797,418 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_cards_route_cards_get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                scope?: string | null;
+                scope_ref?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_card_route_cards_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DashboardCard"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_layout_route_cards_layout_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_layout_route_cards_layout_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LayoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_insight_route_cards_pin_insight_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PinInsightRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_query_route_cards_pin_query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PinQueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    card_relations_route_cards_relations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CardRelationsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_card_route_cards__card_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_card_route_cards__card_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DashboardCard"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_card_route_cards__card_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    graduate_card_route_cards__card_id__graduate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GraduateCardRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_card_route_cards__card_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

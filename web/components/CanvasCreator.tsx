@@ -9,6 +9,7 @@ import {
   type Connection,
   type Canvas,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
@@ -339,15 +340,15 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
 
           {error && <span style={{ fontSize: 11, color: "var(--red4)" }}>{error}</span>}
 
-          <button onClick={onCancel} className="aug-btn aug-btn-ghost">Cancel</button>
-          <button
+          <Button onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
+          <Button
             onClick={handleCreate}
             disabled={!canCreate}
-            className="aug-btn aug-btn-primary"
+            variant="default" size="sm"
             style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
           >
             {saving ? "Creating…" : "Create"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

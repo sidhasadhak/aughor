@@ -6,6 +6,7 @@ import { getCanvasHistory, updateCanvas, deleteInvestigation, getCanvasArtifacts
 import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
+import { Button } from "@/components/ui/button";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
@@ -306,14 +307,14 @@ function SettingsPopover({
           />
         </label>
         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 4 }}>
-          <button onClick={onClose} className="aug-btn aug-btn-ghost aug-btn-sm">Cancel</button>
-          <button
+          <Button onClick={onClose} variant="ghost" size="xs">Cancel</Button>
+          <Button
             onClick={save}
             disabled={saving || !name.trim()}
-            className="aug-btn aug-btn-primary aug-btn-sm"
+            variant="default" size="xs"
           >
             {saving ? "Saving…" : "Save"}
-          </button>
+          </Button>
         </div>
       </div>
     </>
@@ -706,25 +707,25 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
 
         {/* New conversation — compact "+" (dedup of the old wordy "New" button that read the
             same as the Chat tab). Same action: reset the chat surface to a fresh session. */}
-        <button
+        <Button
           onClick={() => { setWsTab("chat"); setChatKey(k => k + 1); setOpenInvId(null); setRestoreSessionId(null); setChatInitialQuestion(undefined); setChatInitialMode(undefined); }}
-          className="aug-btn aug-btn-ghost aug-btn-sm"
+          variant="ghost" size="xs"
           title="New conversation"
           style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, padding: 0 }}
         >
           <Icon name="plus" size={15} color="currentColor" />
-        </button>
+        </Button>
 
         {/* Configure */}
-        <button
+        <Button
           onClick={() => { setShowConfigure(v => !v); setShowSettings(false); }}
-          className={`aug-btn aug-btn-sm ${showConfigure ? "aug-btn-primary" : "aug-btn-ghost"}`}
+          variant={showConfigure ? "default" : "ghost"} size="xs"
           title="Configure canvas"
           style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
         >
           <Icon name="settings" size={11} color="currentColor" />
           Configure
-        </button>
+        </Button>
 
         {/* Settings */}
         <button

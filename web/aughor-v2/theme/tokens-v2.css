@@ -51,6 +51,7 @@
      primary-button fill (white text); --primary is repointed to it here. */
   --blue1: #10233B; --blue2: #1A4E82; --blue3: #5A9FD6; --blue4: #7DB6E8; --blue5: #BFDBFF;
   --blue-solid: #2272B4;          /* primary-button fill; hover #2A82CC */
+  --blue-solid-hover: #2A82CC;    /* primary-button hover fill (was a literal in .aug-btn-primary:hover) */
   --vio-solid:  #633D96;          /* deep-analysis solid fill (user bubble, white text) */
   --primary:    var(--blue-solid);
   --grn1:  #14251C; --grn2:  #1E4230; --grn3:  #4FA96D; --grn4:  #5FBE82; --grn5:  #8FD9A8;
@@ -113,6 +114,7 @@
 
   --blue1: #EAF3FA; --blue2: #C3DDF0; --blue3: #1F77B4; --blue4: #175A88; --blue5: #103E5E;
   --blue-solid: #1F77B4;   /* primary-button fill in light mode */
+  --blue-solid-hover: #2A82CC; /* primary-button hover fill (light) */
   --vio-solid:  #7C5CE0;   /* deep-analysis solid fill (white text) in light mode */
   --grn1:  #E7F6EE; --grn2:  #BEE6CF; --grn3:  #1FA968; --grn4:  #168A52; --grn5:  #0E5C36;
   --amb1:  #FCF1DA; --amb2:  #F2D89B; --amb3:  #B97D08; --amb4:  #9A6505; --amb5:  #6E4703;

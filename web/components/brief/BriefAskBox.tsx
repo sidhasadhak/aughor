@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
+import { Button } from "@/components/ui/button";
 
 interface Card { id: string; question: string; }
 
@@ -46,25 +47,17 @@ export function BriefAskBox({
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") ask(); }}
             placeholder="Ask a follow-up — e.g. “Which region drove the revenue dip?”"
-            style={{
-              flex: 1, fontSize: 12, padding: "9px 12px", borderRadius: "var(--r2)",
-              background: "var(--bg-2)", border: "1px solid var(--b1)", color: "var(--t1)",
-              outline: "none",
-            }}
+            className="aug-input"
+            style={{ flex: 1, padding: "9px 12px" }}
           />
-          <button
+          <Button
+            variant="default"
             onClick={ask}
             disabled={!draft.trim()}
-            style={{
-              fontSize: 12, fontWeight: 600, padding: "9px 16px", borderRadius: "var(--r2)",
-              color: draft.trim() ? "var(--bg-0)" : "var(--t4)",
-              background: draft.trim() ? "var(--blue5)" : "var(--bg-2)",
-              border: `1px solid ${draft.trim() ? "var(--blue5)" : "var(--b1)"}`,
-              cursor: draft.trim() ? "pointer" : "default",
-            }}
+            style={{ padding: "9px 16px", height: "auto" }}
           >
             Ask →
-          </button>
+          </Button>
         </div>
       </div>
 

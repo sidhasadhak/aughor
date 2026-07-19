@@ -14,6 +14,15 @@
 
 ## 0 · Immediate next action ⏭️
 
+### 🧭 Session handoff — 2026-07-18→19 · Briefing cockpit — the self-explaining briefing + UX polish — PR [#178](https://github.com/sidhasadhak/aughor/pull/178) OPEN (35 commits)
+
+**All pushed to `2026-07-18-briefing-cockpit` / PR [#178](https://github.com/sidhasadhak/aughor/pull/178); tsc 0 · web gates green (raw-button ratchet 92→73) · live-verified on the real app.** Turned the Briefing into "the dashboard that explains itself": a STANDING layer (co-authored KPI/chart/note cards + explorer findings on a drag/resize/snap-to-grid React-Flow cockpit, layout persisted server-side) + a NARRATIVE layer (findings + a React-Flow argument-graph lens), wired together. Full design + build + follow-on detail: [`docs/BRIEFING_COCKPIT_2026-07-18.md`](docs/BRIEFING_COCKPIT_2026-07-18.md).
+- **Initiative (Slices 0–4):** the `dashboard_cards` SQLite store + 3 authoring **doors** (pin-insight / Query-Builder / inline composer — all routed through `execute_guarded`) + refresh/sparkline grip-over-time + the **argument-graph lens** (`@xyflow/react`, built server-side deterministically) + `relates_to` card↔finding edges + watch→monitor graduation.
+- **Follow-on UX (2026-07-19):** bounded snap-to-grid **bin-pack cockpit** with server-side account-keyed layout (`gridLayout.ts`, `GET/PUT /cards/layout`); full **design unification** onto the shared `.aug-*`/type-scale system + skeleton loaders; a reusable **toast** system wired into the cockpit's silent side-effects; a one-click **Tidy up**; **button-system unification** (root-cause below) + full `.aug-btn`→`<Button>` migration; a **⌘K command palette** (global + per-view contextual action verbs via a `commandRegistry` module-store).
+- **🔑 Durable finding:** the two button systems existed because an **unlayered** `button{}` reset in `app/globals.css` silently stripped every base-ui `<Button variant>` (unlayered CSS beats Tailwind's *layered* utilities); `.aug-btn` classes won on specificity, `<Button>` lost. Fix = exempt `[data-slot="button"]` from the reset — a global correction across all 27 `<Button>` files.
+
+**⏭️ NEXT:** merge PR #178 · remaining Mobbin polish (scope chips · hover-row actions · sticky TOC · one stat-tile spec). **GOTCHA:** `aughor-api` now runs WITHOUT `--reload` (rapid multi-file edits wedged its event loop → data views render empty while :3000 stays 200) — restart it manually to apply backend `.py` changes.
+
 ### 🧭 Session handoff — 2026-07-18 · Report presentation (Genie parity) + design uplift (Du Bois tokens · card catalogs · neutral nav) — PR [#177](https://github.com/sidhasadhak/aughor/pull/177)
 
 **5 commits on `2026-07-18-report-presentation-polish` (PR [#177](https://github.com/sidhasadhak/aughor/pull/177)); tsc 0 · ruff clean · web gates green (raw-button 92) · unit suite green.** Two arcs from the user grading a live "Where are we losing money?" deep report vs Databricks Genie, then the app chrome vs the **Du Bois** design language. Every item live-verified in the browser + on fresh `/investigate` runs (`skip_cache`).

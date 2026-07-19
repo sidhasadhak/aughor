@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
+import { Button } from "@/components/ui/button";
 import { compactNumber, formatCount } from "@/lib/format";
 import CloseIcon         from "@atlaskit/icon/core/close";
 import ChevronRightIcon  from "@atlaskit/icon/core/chevron-right";
@@ -132,13 +133,15 @@ function AboutTab({
       </div>
 
       <div className="flex justify-end">
-        <button
+        <Button
           onClick={handleSave}
           disabled={!dirty || !name.trim() || saving}
-          className="aug-btn aug-btn-primary aug-btn-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          variant="default"
+          size="xs"
+          className="disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
-        </button>
+        </Button>
       </div>
 
       <div>
@@ -476,13 +479,15 @@ function InstructionsTab({ canvasId }: { canvasId: string }) {
             style={{ background: "var(--bg-0)" }}
           />
           <div className="flex justify-end shrink-0">
-            <button
+            <Button
               onClick={handleSave}
               disabled={saving || !loaded}
-              className="aug-btn aug-btn-primary aug-btn-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              variant="default"
+              size="xs"
+              className="disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
-            </button>
+            </Button>
           </div>
         </div>
       )}

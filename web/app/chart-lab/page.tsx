@@ -279,10 +279,11 @@ export default function ChartLab() {
       </div>
 
       <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
-        &lt;ResultChartCard&gt; — inline controls + chart⇄table toggle
+        &lt;ResultChartCard&gt; — clean chart, edit in the side panel (hover the pencil)
       </h2>
       <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
-        Re-pivot in place: pick Metric / Dimension / Aggregation (grain-aware — try SUM on the rate) and flip to the table.
+        The chart renders clean; hover and click the pencil to open the Databricks-style viz editor —
+        Metric / Dimension / Aggregation (grain-aware — try SUM on the rate), chart type, transform, and table/pivot.
       </p>
       <div style={{ background: "var(--bg-1)", border: "1px solid var(--chart-axis)", borderRadius: 10, padding: 14, maxWidth: 720 }}>
         <ResultChartCard

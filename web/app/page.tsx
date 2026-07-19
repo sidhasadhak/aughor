@@ -12,7 +12,7 @@ import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInBuilderProvider } from "@/lib/openInBuilder";
 import { getCanvases } from "@/lib/api";
-import { CommandPalette } from "@/components/CommandPalette";
+import { CommandPalette, GlobalCommands } from "@/components/CommandPalette";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -261,10 +261,11 @@ function WorkspaceSwitcher({
 
   return (
     <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
-      <button
+      <Button
         onClick={() => setOpen(v => !v)}
         title="Switch workspace"
-        className="aug-btn"
+        variant="ghost"
+        size="sm"
         style={{
           display: "flex", alignItems: "center", gap: 8,
           padding: "5px 10px", borderRadius: "var(--r2)",
@@ -281,7 +282,7 @@ function WorkspaceSwitcher({
           </span>
         </span>
         <NavIcon name="chevd" size={13} color="var(--t3)" />
-      </button>
+      </Button>
 
       {open && (
         <div style={{
@@ -296,10 +297,11 @@ function WorkspaceSwitcher({
           {workspaces.map(w => {
             const on = w.id === selectedWorkspace;
             return (
-              <button
+              <Button
                 key={w.id}
                 onClick={() => { onWorkspaceChange(w.id); setOpen(false); }}
-                className="aug-btn"
+                variant="ghost"
+                size="sm"
                 style={{
                   display: "flex", alignItems: "center", gap: 9, width: "100%",
                   padding: "7px 8px", borderRadius: "var(--r2)",
@@ -319,7 +321,7 @@ function WorkspaceSwitcher({
                   </span>
                 </span>
                 {on && <NavIcon name="check" size={13} color="var(--blue4)" />}
-              </button>
+              </Button>
             );
           })}
 
@@ -339,14 +341,15 @@ function WorkspaceSwitcher({
                   borderRadius: "var(--r2)", color: "var(--t1)", outline: "none",
                 }}
               />
-              <button onClick={submitNew} className="aug-btn aug-btn-secondary" style={{ padding: "6px 12px", fontSize: 12 }}>
+              <Button onClick={submitNew} variant="secondary" size="sm" style={{ padding: "6px 12px", fontSize: 12 }}>
                 Create
-              </button>
+              </Button>
             </div>
           ) : (
-            <button
+            <Button
               onClick={() => setCreating(true)}
-              className="aug-btn"
+              variant="ghost"
+              size="sm"
               style={{
                 display: "flex", alignItems: "center", gap: 9, width: "100%",
                 padding: "7px 8px", borderRadius: "var(--r2)",
@@ -358,7 +361,7 @@ function WorkspaceSwitcher({
             >
               <NavIcon name="plus" size={14} color="var(--t3)" />
               <span style={{ fontSize: 12 }}>New workspace</span>
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -1580,10 +1583,10 @@ function AddConnectionForm({
 
           {error && <div style={{ fontSize: 11, color: "var(--red4)", padding: "6px 10px", background: "var(--red1)", border: "1px solid var(--red2)", borderRadius: "var(--r2)" }}>{error}</div>}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
-            <button type="button" onClick={onCancel} className="aug-btn aug-btn-ghost">Cancel</button>
-            <button type="submit" disabled={loading || !name.trim()} className="aug-btn aug-btn-primary">
+            <Button type="button" onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
+            <Button type="submit" disabled={loading || !name.trim()} variant="default" size="sm">
               {loading ? "Connecting…" : "Save Connection"}
-            </button>
+            </Button>
           </div>
         </form>
       </div>
@@ -1639,7 +1642,7 @@ function DeleteConnModal({
           style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
         />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button onClick={onCancel} className="aug-btn aug-btn-ghost">Cancel</button>
+          <Button onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
           <button
             onClick={handleConfirm}
             disabled={text !== conn.name || loading}
@@ -2113,20 +2116,21 @@ export default function Home() {
                   ) : null}
                   <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                     {!activeCanvas && (
-                      <button
+                      <Button
                         onClick={() => setTab("canvases")}
-                        className="aug-btn aug-btn-ghost aug-btn-sm"
+                        variant="ghost"
+                        size="xs"
                         title="Pick a Data Canvas"
                       >
                         <NavIcon name="canvas" size={11} /> Canvas
-                      </button>
+                      </Button>
                     )}
-                    <button onClick={() => { setSelectedChatSessionId(null); setSelectedHistoryInvId(null); setChatInitialQuestion(undefined); setChatInitialInsightId(undefined); setChatInitialMode("investigate"); setChatKey(k => k + 1); }} className="aug-btn aug-btn-ghost aug-btn-sm">
+                    <Button onClick={() => { setSelectedChatSessionId(null); setSelectedHistoryInvId(null); setChatInitialQuestion(undefined); setChatInitialInsightId(undefined); setChatInitialMode("investigate"); setChatKey(k => k + 1); }} variant="ghost" size="xs">
                       <NavIcon name="plus" size={11} /> New
-                    </button>
-                    <button onClick={() => setShowHistory(v => !v)} className={`aug-btn aug-btn-sm ${showHistory ? "aug-btn-primary" : "aug-btn-ghost"}`}>
+                    </Button>
+                    <Button onClick={() => setShowHistory(v => !v)} variant={showHistory ? "default" : "ghost"} size="xs">
                       <NavIcon name="clock" size={11} /> History
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
@@ -2343,6 +2347,7 @@ export default function Home() {
       )}
 
       {/* ── Command palette (⌘K) ── */}
+      <GlobalCommands onNavigate={t => handleNavigate(t as NavTab)} onGoToChat={q => goToChat(q)} />
       <CommandPalette
         open={showSearch}
         onClose={() => setShowSearch(false)}

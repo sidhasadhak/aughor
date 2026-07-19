@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { API_BASE as BASE } from "@/lib/config";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -126,10 +127,10 @@ function TriggerForm({
       )}
       {error && <div style={{ fontSize: 11, color: "var(--red4)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button type="button" onClick={onCancel} className="aug-btn aug-btn-ghost aug-btn-sm">Cancel</button>
-        <button type="submit" disabled={saving} className="aug-btn aug-btn-primary aug-btn-sm">
+        <Button type="button" onClick={onCancel} variant="ghost" size="xs">Cancel</Button>
+        <Button type="submit" disabled={saving} variant="default" size="xs">
           {saving ? "Saving…" : initial ? "Update" : "Create"}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -243,13 +244,14 @@ export function ActionHubPanel() {
           ))}
         </div>
         {view === "triggers" && !showForm && (
-          <button
+          <Button
             onClick={() => { setEditing(undefined); setShowForm(true); }}
-            className="aug-btn aug-btn-primary aug-btn-sm"
+            variant="default"
+            size="xs"
             style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5 }}
           >
             + New trigger
-          </button>
+          </Button>
         )}
       </div>
 
@@ -311,34 +313,38 @@ export function ActionHubPanel() {
                   )}
                   {/* Actions */}
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                    <button
+                    <Button
                       onClick={() => handleTest(t.id)}
                       disabled={testing === t.id}
-                      className="aug-btn aug-btn-ghost aug-btn-sm"
+                      variant="ghost"
+                      size="xs"
                       title="Test fire"
                     >
                       {testing === t.id ? "…" : "Test"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() => handleToggle(t)}
-                      className="aug-btn aug-btn-ghost aug-btn-sm"
+                      variant="ghost"
+                      size="xs"
                       title={t.enabled ? "Disable" : "Enable"}
                     >
                       {t.enabled ? "Disable" : "Enable"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() => { setEditing(t); setShowForm(true); }}
-                      className="aug-btn aug-btn-ghost aug-btn-sm"
+                      variant="ghost"
+                      size="xs"
                     >
                       Edit
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() => handleDelete(t.id)}
-                      className="aug-btn aug-btn-ghost aug-btn-sm"
+                      variant="ghost"
+                      size="xs"
                       style={{ color: "var(--red4)" }}
                     >
                       ✕
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}

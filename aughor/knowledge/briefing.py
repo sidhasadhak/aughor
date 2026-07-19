@@ -359,6 +359,7 @@ def generate_narrative(
             "headline_theme": "",
             "citations":      [],
             "held_back":      held_back,
+            "graph":          {"nodes": [], "edges": []},
             "currency_code":  currency_code,
             "generated_at":   _now_iso(),
         }
@@ -451,11 +452,18 @@ def generate_narrative(
         import logging
         logging.getLogger(__name__).debug("per-finding narrative attribution failed", exc_info=True)
 
+    # Argument-graph lens (Slice 3): the SAME impact-ranked drivers + the explorer's own typed
+    # composition/drill edges, projected into a {nodes, edges} graph the frontend renders as an
+    # alternative to the linear brief. Deterministic — rides along with the narrative + citations.
+    from aughor.knowledge.argument_graph import build_argument_graph
+    graph = build_argument_graph(top, result.headline_theme, domain_data, citations_out)
+
     return {
         "narrative":      narrative_text,
         "headline_theme": result.headline_theme,
         "citations":      citations_out,
         "held_back":      held_back,
+        "graph":          graph,
         "currency_code":  currency_code,
         "generated_at":   _now_iso(),
     }

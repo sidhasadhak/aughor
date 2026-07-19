@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { IBM_Plex_Mono } from "next/font/google";
+import { Toaster } from "@/components/ui/toast";
 import "./globals.css";
 // v2 Tier 2: .aug-* component overrides — loaded after globals.css so it wins the
 // cascade over the inline base rules (CSS @import can't sit below them). Revert: delete this line.
@@ -51,7 +52,10 @@ export default function RootLayout({
       lang="en"
       className={`${dmSans.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <Toaster />
+      </body>
     </html>
   );
 }

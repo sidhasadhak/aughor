@@ -19,6 +19,7 @@ import {
   getGlossary, updateTableGlossary, updateColumnGlossary,
   type GlossaryTable,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 const LABEL: React.CSSProperties = {
   fontSize: 11, color: "var(--t4)", textTransform: "uppercase",
@@ -65,8 +66,8 @@ function EditableField({ value, placeholder, multiline = true, onSave }: {
         }}
         style={{ fontSize: 12, lineHeight: 1.5, minHeight: multiline ? 54 : 32, resize: "vertical", width: "100%" }} />
       <div style={{ display: "flex", gap: 8 }}>
-        <button className="aug-btn aug-btn-sm aug-btn-primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</button>
-        <button className="aug-btn aug-btn-sm" disabled={busy} onClick={() => { setDraft(value); setEditing(false); }}>Cancel</button>
+        <Button variant="default" size="xs" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
+        <Button variant="ghost" size="xs" disabled={busy} onClick={() => { setDraft(value); setEditing(false); }}>Cancel</Button>
         <span style={{ fontSize: 10, color: "var(--t4)", alignSelf: "center" }}>⌘↵ to save · Esc to cancel</span>
       </div>
     </div>

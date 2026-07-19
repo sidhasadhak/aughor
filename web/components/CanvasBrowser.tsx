@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getCanvases, deleteCanvas, type Canvas, type Connection } from "@/lib/api";
 import { AugTable } from "@/components/AugTable";
+import { Button } from "@/components/ui/button";
 import type { TableColumnsType } from "antd";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
@@ -373,14 +374,14 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             Curated table sets you can run scoped intelligence and investigations on.
           </p>
         </div>
-        <button
+        <Button
           onClick={onNew}
-          className="aug-btn aug-btn-primary"
+          variant="default" size="sm"
           style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, marginTop: 4 }}
         >
           <Icon d={PLUS_ICON} size={12} color="currentColor" />
           New
-        </button>
+        </Button>
       </div>
 
       {/* ── Search ── */}
@@ -533,11 +534,11 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               </div>
             </div>
             {!search && (
-              <button onClick={onNew} className="aug-btn aug-btn-primary"
+              <Button onClick={onNew} variant="default" size="sm"
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 4 }}>
                 <Icon d={PLUS_ICON} size={12} color="currentColor" />
                 Create your first Data Canvas
-              </button>
+              </Button>
             )}
           </div>
         ) : view === "cards" ? (
@@ -610,7 +611,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               This cannot be undone.
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setPendingDelete(null)} className="aug-btn aug-btn-ghost">Cancel</button>
+              <Button onClick={() => setPendingDelete(null)} variant="ghost" size="sm">Cancel</Button>
               <button onClick={handleDelete} disabled={deleting} style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "5px 12px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,

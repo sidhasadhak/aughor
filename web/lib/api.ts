@@ -1358,6 +1358,186 @@ export async function promoteConnectionInsight(connectionId: string, insightId: 
   return res.json();
 }
 
+// ── Dashboard cards (briefing cockpit — user-authored KPI/chart/watch cards) ──
+
+export interface DashboardCardRefresh {
+  cadence: string;
+  last_run: string;
+  last_value: number | null;
+  prev_value: number | null;
+  history: number[];
+}
+
+export interface DashboardCard {
+  id: string;
+  connection_id: string;
+  scope: string;
+  scope_ref: string;
+  source: string;
+  kind: string;
+  title: string;
+  sql: string;
+  query_ref: string | null;
+  render: Record<string, unknown>;
+  refresh: DashboardCardRefresh;
+  thresholds: Record<string, unknown>;
+  provenance: { insight_id: string; origin_finding_id: string; receipt_ref: string };
+  links: string[];
+  body: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardRunResult {
+  columns: string[];
+  rows: (string | number | null)[][];
+  row_count: number;
+  caveats: string[];
+  error: string | null;
+  refresh: DashboardCardRefresh;
+}
+
+/** Pin a briefing finding as a dashboard card (Door 1). The backend re-runs the finding's
+ *  SQL through the guard battery and refuses (throws) if it errors — a bad number is never
+ *  pinned. */
+export async function pinInsightToDashboard(
+  connectionId: string,
+  insightId: string,
+  opts: { scope?: string; scopeRef?: string; schema?: string; kind?: string; title?: string } = {},
+): Promise<{ card: DashboardCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
+  const res = await fetch(`${BASE}/cards/pin-insight`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      connection_id: connectionId,
+      insight_id: insightId,
+      scope: opts.scope ?? "connection",
+      scope_ref: opts.scopeRef ?? connectionId,
+      schema: opts.schema,
+      kind: opts.kind ?? "kpi",
+      title: opts.title,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to pin to dashboard"));
+  }
+  return res.json();
+}
+
+/** Pin a Query-Builder query as a dashboard card (Door 2). The backend re-runs the
+ *  user-authored SQL through the guard battery and refuses (throws) if it errors or is
+ *  BLOCKED — the same trust gate as Door 1, now on hand-written SQL. `render` is the opaque
+ *  Chart spec the card draws with; `kind` (kpi/chart) is derived server-side from the shape. */
+export async function pinQueryToDashboard(
+  connectionId: string,
+  sql: string,
+  title: string,
+  opts: { scope?: string; scopeRef?: string; schema?: string; render?: Record<string, unknown>; queryRef?: string } = {},
+): Promise<{ card: DashboardCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
+  const res = await fetch(`${BASE}/cards/pin-query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      connection_id: connectionId,
+      sql,
+      title,
+      scope: opts.scope ?? "connection",
+      scope_ref: opts.scopeRef ?? connectionId,
+      schema: opts.schema,
+      render: opts.render ?? {},
+      query_ref: opts.queryRef,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to pin to dashboard"));
+  }
+  return res.json();
+}
+
+export async function listDashboardCards(
+  opts: { connectionId?: string; scope?: string; scopeRef?: string } = {},
+): Promise<DashboardCard[]> {
+  const q = new URLSearchParams();
+  if (opts.connectionId) q.set("connection_id", opts.connectionId);
+  if (opts.scope) q.set("scope", opts.scope);
+  if (opts.scopeRef) q.set("scope_ref", opts.scopeRef);
+  const res = await fetch(`${BASE}/cards?${q.toString()}`);
+  if (!res.ok) throw new Error("Failed to list dashboard cards");
+  return res.json();
+}
+
+/** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
+ *  last/prev value for a delta. */
+export async function runDashboardCard(cardId: string): Promise<CardRunResult> {
+  const res = await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}/run`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to refresh dashboard card");
+  return res.json();
+}
+
+export async function deleteDashboardCard(cardId: string): Promise<void> {
+  await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
+}
+
+/** The cockpit layout (position + size per card) the reader arranged — saved SERVER-SIDE and
+ *  account-keyed, so any device/login shows the same arrangement. */
+export type CockpitLayout = Record<string, { x: number; y: number; w: number; h: number }>;
+
+export async function getCockpitLayout(connectionId: string): Promise<CockpitLayout> {
+  try {
+    const res = await fetch(`${BASE}/cards/layout?connection_id=${encodeURIComponent(connectionId)}`);
+    return res.ok ? await res.json() : {};
+  } catch { return {}; }
+}
+
+export async function saveCockpitLayout(connectionId: string, layout: CockpitLayout): Promise<void> {
+  await fetch(`${BASE}/cards/layout`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, layout }),
+  }).catch(() => {});
+}
+
+/** Graduate a KPI/watch card to a scheduled Monitor (Slice 4 — watch → alert): its guarded SQL
+ *  becomes a recurring threshold check and the thresholds are recorded back on the card. */
+export async function graduateCard(
+  cardId: string,
+  thresholds: { warning_threshold?: number | null; critical_threshold?: number | null; threshold_direction?: string },
+): Promise<{ card: DashboardCard }> {
+  const res = await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}/graduate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(thresholds),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to set alert"));
+  }
+  return res.json();
+}
+
+/** Card↔finding `relates_to` edges for the argument-graph lens (Slice 4): links this
+ *  connection's pinned cards to the given graph findings by deterministic SQL-signature overlap.
+ *  Live (reflects the current cockpit). Returns card nodes + edges to merge onto the graph. */
+export async function fetchCardRelations(
+  connectionId: string,
+  opts: { schema?: string; findingIds: string[] },
+): Promise<{ nodes: ArgumentGraphNode[]; edges: ArgumentGraphEdge[] }> {
+  const res = await fetch(`${BASE}/cards/relations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      connection_id: connectionId,
+      schema: opts.schema,
+      finding_ids: opts.findingIds,
+    }),
+  });
+  if (!res.ok) return { nodes: [], edges: [] };   // best-effort: relations never block the graph
+  return res.json();
+}
+
 export async function dismissCanvasInsight(canvasId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
   const res = await fetch(
     `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/insights/${encodeURIComponent(insightId)}/dismiss`,
@@ -2645,11 +2825,49 @@ export interface HeldBackSignal {
   reason: string;
 }
 
+/** The briefing's narrative layer made structural (Slice 3 — argument-graph lens). Nodes are the
+ *  verdict + the impact-ranked drivers; edges are the explorer's OWN typed relationships
+ *  (supports from the ranking; chain/tension/confound/concentration/share from composition;
+ *  explains_why from drills). Built deterministically server-side; the frontend only renders it. */
+export type ArgumentEdgeType =
+  | "supports" | "chain" | "tension" | "confound" | "concentration" | "share" | "explains_why"
+  | "relates_to"   // card ↔ finding (Slice 4 — wires the cockpit into the graph)
+  | "related";     // finding ↔ finding, densify: a shared join key (structural, not validated)
+
+export interface ArgumentGraphNode {
+  id: string;
+  kind: "verdict" | "finding" | "card";
+  title: string;
+  domain: string;
+  angle: string;
+  impact: number;
+  plausibility: "implausible" | "confound" | null;
+  has_sql: boolean;
+  composition_type: string | null;
+  is_driver: boolean;
+  cited: boolean;
+}
+
+export interface ArgumentGraphEdge {
+  source: string;
+  target: string;
+  type: ArgumentEdgeType;
+  /** Optional per-edge label (e.g. the shared join key on a `related` edge). */
+  label?: string;
+}
+
+export interface ArgumentGraph {
+  nodes: ArgumentGraphNode[];
+  edges: ArgumentGraphEdge[];
+}
+
 export interface BriefingNarrativeResponse {
   narrative: string;
   headline_theme: string;
   citations: BriefingCitation[];
   held_back?: HeldBackSignal[];
+  /** The argument-graph projection of this brief (verdict + drivers + typed edges). */
+  graph?: ArgumentGraph;
   currency_code?: string;
   generated_at: string | null;
   available: boolean;

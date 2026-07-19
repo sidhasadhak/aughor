@@ -15,6 +15,7 @@
 
 import React, { useState } from "react";
 import { Chart } from "@/components/Chart";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { SqlResultTable } from "@/components/AugTable";
 import ChevronDownIcon  from "@atlaskit/icon/core/chevron-down";
 import ChevronRightIcon from "@atlaskit/icon/core/chevron-right";
@@ -196,7 +197,9 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
       {/* Chart — the framed figure */}
       {hasChart && (
         <BriefFigure caption={finding.title}>
-          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit} showLabels />
+          {/* Deep Analysis chart — renders clean; the hover pencil opens the side-panel
+              viz editor (chart type / fields / transform / labels), Databricks-style. */}
+          <ResultChartCard columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit} defaultShowLabels />
         </BriefFigure>
       )}
 
