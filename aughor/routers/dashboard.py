@@ -17,6 +17,7 @@ from aughor.dashboard.models import CardProvenance, DashboardCard
 from aughor.dashboard.store import (
     delete_card, get_card, get_layout, list_cards, set_layout, upsert_card,
 )
+from aughor.kernel.errors import tolerate
 
 router = APIRouter(tags=["dashboard"])
 
@@ -147,8 +148,8 @@ def _guarded_or_refuse(
     finally:
         try:
             db.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            tolerate(exc, "dashboard: connection close failed after guarded query", counter="dashboard.db_close")
     if result.error:
         raise HTTPException(
             status_code=422, detail=f"Query failed the trust guards, not pinned: {result.error}"
@@ -181,10 +182,10 @@ def pin_insight_route(req: PinInsightRequest) -> dict:
     is BLOCKED is refused (422), never stored — then persists a card linked back to the
     source finding + its receipt, plus a live preview and any unrepaired guard caveats.
     """
-    from aughor.routers.exploration import _domain_insights_for, _store_key
+    from aughor.routers import exploration
 
     # 1) Resolve the finding (same source as the brief) and require a runnable query.
-    by_domain = _domain_insights_for(req.connection_id, req.schema_name)
+    by_domain = exploration._domain_insights_for(req.connection_id, req.schema_name)
     insight = next(
         (i for items in by_domain.values() for i in (items or []) if i.get("id") == req.insight_id),
         None,
@@ -198,7 +199,7 @@ def pin_insight_route(req: PinInsightRequest) -> dict:
     # 2) Guard-on-write, on the canvas-scoped schema (refuses 422 if it can't run cleanly).
     use_schema = (
         req.schema_name
-        if (req.schema_name and _store_key(req.connection_id, req.schema_name) != req.connection_id)
+        if (req.schema_name and exploration._store_key(req.connection_id, req.schema_name) != req.connection_id)
         else None
     )
     result = _guarded_or_refuse(
@@ -292,13 +293,13 @@ def card_relations_route(req: CardRelationsRequest) -> dict:
     connection, emit a `relates_to` edge to the graph finding(s) it shares the most SQL structure
     with (deterministic table/measure/dimension overlap). Returns `{nodes, edges}` the frontend
     merges onto the graph. Empty when there are no cards or no findings to relate to."""
-    from aughor.routers.exploration import _domain_insights_for
+    from aughor.routers import exploration
     from aughor.knowledge.argument_graph import relate_cards
 
     cards = [c.model_dump() for c in list_cards(scope="connection", scope_ref=req.connection_id)]
     if not cards or not req.finding_ids:
         return {"nodes": [], "edges": []}
-    by_domain = _domain_insights_for(req.connection_id, req.schema_name)
+    by_domain = exploration._domain_insights_for(req.connection_id, req.schema_name)
     want = set(req.finding_ids)
     findings = [i for items in by_domain.values() for i in (items or []) if i.get("id") in want]
     return relate_cards(cards, findings)
@@ -353,8 +354,8 @@ def graduate_card_route(card_id: str, req: GraduateCardRequest) -> dict:
     try:
         from aughor.monitors.scheduler import reload_monitor
         reload_monitor(saved_monitor)
-    except Exception:
-        pass
+    except Exception as exc:
+        tolerate(exc, "dashboard: monitor scheduler reload failed after card graduate", counter="dashboard.monitor_reload")
 
     updated = upsert_card(card.model_copy(update={"thresholds": {
         "warning": req.warning_threshold,
@@ -392,8 +393,8 @@ def run_card_route(card_id: str) -> dict:
     finally:
         try:
             db.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            tolerate(exc, "dashboard: connection close failed after card run", counter="dashboard.db_close")
 
     scalar = _scalar(result)
     if scalar is not None:
