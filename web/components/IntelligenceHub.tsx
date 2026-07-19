@@ -15,6 +15,7 @@ import {
   type Pattern,
   type ActionTrigger,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { FindingActions, EvidenceDrawer } from "./BriefingPanel";
 import { ExplorationPanel } from "./ExplorationPanel";
 
@@ -409,13 +410,14 @@ function DomainProfile({
         display: "flex", flexDirection: "column", gap: 12, flexShrink: 0,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button
+          <Button
             onClick={onBack}
-            className="aug-btn"
+            variant="ghost"
+            size="sm"
             style={{ background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: 6, cursor: "pointer", color: "var(--t2)", fontSize: 11, padding: "3px 9px", display: "flex", alignItems: "center", gap: 5 }}
           >
             ← Hub
-          </button>
+          </Button>
           <span style={{ fontSize: 15, fontWeight: 700, color: "var(--t1)", textTransform: "capitalize" }}>{domain}</span>
           <span style={{
             fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",

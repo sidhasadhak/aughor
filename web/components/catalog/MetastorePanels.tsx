@@ -18,6 +18,7 @@ import {
   getWorkspaces, listWorkspaceGrants, grantWorkspaceCatalog, revokeWorkspaceCatalog,
   type MetastoreVolume, type MetastoreVolumeObject, type Workspace,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -74,7 +75,7 @@ export function VolumesPanel({ catalogId }: { catalogId: string }) {
             <input className="aug-input" value={newName} onChange={e => setNewName(e.target.value)}
               onKeyDown={e => e.key === "Enter" && create()} placeholder="New volume…"
               style={{ flex: 1, fontSize: 12 }} />
-            <button className="aug-btn aug-btn-sm aug-btn-primary" disabled={busy || !newName.trim()} onClick={create}>Add</button>
+            <Button variant="default" size="xs" disabled={busy || !newName.trim()} onClick={create}>Add</Button>
           </div>
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
@@ -176,9 +177,9 @@ export function PermissionsPanel({ catalogId }: { catalogId: string }) {
           </span>
           <span style={{ justifySelf: "end" }}>
             {granted ? (
-              <button className="aug-btn aug-btn-sm" disabled={busy === ws.id} onClick={() => toggle(ws.id, true)}>Revoke</button>
+              <Button variant="ghost" size="xs" disabled={busy === ws.id} onClick={() => toggle(ws.id, true)}>Revoke</Button>
             ) : (
-              <button className="aug-btn aug-btn-sm aug-btn-primary" disabled={busy === ws.id} onClick={() => toggle(ws.id, false)}>Grant</button>
+              <Button variant="default" size="xs" disabled={busy === ws.id} onClick={() => toggle(ws.id, false)}>Grant</Button>
             )}
           </span>
         </div>

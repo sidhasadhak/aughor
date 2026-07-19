@@ -5,6 +5,7 @@ import {
   getMyAccess, getRoleCatalogue, getRoleAssignments, assignRole, revokeRole,
   type MyAccess, type RoleInfo, type RoleAssignment,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 const ROLE_TINT: Record<string, string> = {
   owner: "var(--blue4)",
@@ -136,9 +137,9 @@ export function RolesPanel() {
               <select className="aug-input" value={newRole} onChange={e => setNewRole(e.target.value)} style={{ cursor: "pointer", width: 120 }}>
                 {roles.map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
               </select>
-              <button className="aug-btn aug-btn-primary" onClick={onAssign} disabled={busy || !newUser.trim()}>
+              <Button variant="default" size="sm" onClick={onAssign} disabled={busy || !newUser.trim()}>
                 Assign
-              </button>
+              </Button>
             </div>
             {err && <div style={{ fontSize: 11, color: "var(--red3, #e5484d)" }}>{err}</div>}
 
@@ -153,12 +154,13 @@ export function RolesPanel() {
                   }}>
                     <span style={{ flex: 1, fontSize: 12, color: "var(--t1)" }}>{a.user_id}</span>
                     <Chip label={a.role} tint={ROLE_TINT[a.role]} />
-                    <button
-                      className="aug-btn aug-btn-sm aug-btn-ghost"
+                    <Button
+                      variant="ghost"
+                      size="xs"
                       onClick={() => onRevoke(a.user_id, a.role)}
                       disabled={busy}
                       title="Revoke this role"
-                    >Revoke</button>
+                    >Revoke</Button>
                   </div>
                 ))}
               </div>

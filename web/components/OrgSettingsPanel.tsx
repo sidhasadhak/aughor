@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { setOrgSettingsCache } from "@/lib/orgSettings";
 import { CHART_PALETTE_NAMES, chartPaletteLabel } from "@/lib/chartPalettes";
+import { Button } from "@/components/ui/button";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
@@ -139,13 +140,14 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <span style={{ fontSize: 11, color: "var(--t3)", marginRight: 2 }}>Scope</span>
           {(["app", "workspace"] as const).map((sc) => (
-            <button
+            <Button
               key={sc}
-              className={`aug-btn aug-btn-sm ${scope === sc ? "aug-btn-secondary" : "aug-btn-ghost"}`}
+              variant={scope === sc ? "secondary" : "ghost"}
+              size="xs"
               onClick={() => { setSaved(false); setScope(sc); }}
             >
               {sc === "app" ? "App default" : (workspaceName || "This workspace")}
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -196,9 +198,9 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
 
       {error && <div style={{ fontSize: 11, color: "var(--red4)" }}>{error}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button className="aug-btn aug-btn-primary" onClick={save} disabled={saving}>
+        <Button variant="default" size="sm" onClick={save} disabled={saving}>
           {saving ? "Saving…" : "Save"}
-        </button>
+        </Button>
         {saved && !saving && <span style={{ fontSize: 11, color: "var(--grn4)" }}>Saved ✓</span>}
       </div>
     </div>

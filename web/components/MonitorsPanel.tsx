@@ -250,7 +250,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
         </div>
         <div style={{ flex: 1 }} />
         {view === "list" && (
-          <Button variant="ghost" className="aug-btn h-auto hover:text-current hover:bg-transparent dark:hover:bg-transparent" onClick={openCreate} style={{ fontSize: 12, padding: "5px 12px" }}>
+          <Button variant="ghost" className="h-auto" onClick={openCreate} style={{ fontSize: 12, padding: "5px 12px" }}>
             + New monitor
           </Button>
         )}
@@ -396,7 +396,7 @@ function MonitorCard({
 
         {/* Actions */}
         <div style={{ display: "flex", gap: 6 }}>
-          <Button variant="ghost" onClick={onRun} className="aug-btn h-auto hover:text-current hover:bg-transparent dark:hover:bg-transparent" style={{ fontSize: 11, padding: "3px 9px", opacity: 0.85 }}>
+          <Button variant="ghost" onClick={onRun} className="h-auto" style={{ fontSize: 11, padding: "3px 9px", opacity: 0.85 }}>
             Run now
           </Button>
           <Button variant="ghost" onClick={onEdit} className="h-auto p-0 font-normal" style={ghostBtn}>Edit</Button>
@@ -694,7 +694,7 @@ function MonitorForm({
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-        <Button variant="ghost" className="aug-btn h-auto hover:text-current hover:bg-transparent dark:hover:bg-transparent" onClick={onSave} disabled={saving} style={{ minWidth: 100 }}>
+        <Button variant="ghost" className="h-auto" onClick={onSave} disabled={saving} style={{ minWidth: 100 }}>
           {saving ? "Saving…" : isEdit ? "Update" : "Create monitor"}
         </Button>
         <Button variant="ghost" onClick={onCancel} className="h-auto p-0 font-normal" style={{ ...ghostBtn, padding: "6px 14px" }}>Cancel</Button>
@@ -744,7 +744,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       <div style={{ fontSize: 32, marginBottom: 12 }}>📡</div>
       <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No monitors yet</div>
       <div style={{ fontSize: 12, marginBottom: 20 }}>Set up a monitor to get alerted when metrics cross thresholds, drift, or go stale.</div>
-      <Button variant="ghost" className="aug-btn h-auto hover:text-current hover:bg-transparent dark:hover:bg-transparent" onClick={onAdd}>Create first monitor</Button>
+      <Button variant="ghost" className="h-auto" onClick={onAdd}>Create first monitor</Button>
     </div>
   );
 }

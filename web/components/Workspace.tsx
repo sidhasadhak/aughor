@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 
 /**
  * One perspective layer of a `<Workspace>` — an id, a switcher icon, a label,
@@ -76,13 +77,14 @@ export function Workspace<L extends string>({
           {layers.map(l => {
             const on = l.id === layer;
             return (
-              <button
+              <Button
                 key={l.id}
                 role="tab"
                 aria-selected={on}
                 onClick={() => onLayerChange(l.id)}
                 title={l.blurb}
-                className="aug-btn"
+                variant="ghost"
+                size="sm"
                 style={{
                   padding: "4px 11px",
                   borderRadius: "var(--r2)",
@@ -94,7 +96,7 @@ export function Workspace<L extends string>({
               >
                 {renderIcon(l.icon, 13, on ? "var(--blue4)" : "currentColor")}
                 {l.label}
-              </button>
+              </Button>
             );
           })}
         </div>
