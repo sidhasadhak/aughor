@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   deleteDashboardCard, listDashboardCards, runDashboardCard, runDirectQuery,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/api";
 import { PinnedCardsCanvas, type CardState } from "@/components/brief/PinnedCardsCanvas";
 import { toast } from "@/components/ui/toast";
+import { Button } from "@/components/ui/button";
 
 /** A brief finding, rendered as a (virtual) chart/table card beside the user's pins. */
 export interface DashboardFinding { insight: ExplorationInsight; domain: string; }
@@ -94,6 +95,11 @@ export function PinnedCards({ connectionId, refreshKey, findings, onOpenSource, 
     }
   }, []);
 
+  // The canvas owns the RF node state, so it hands its "re-pack everything" action up here via a
+  // stable registrar; the header button below invokes it.
+  const tidyRef = useRef<(() => void) | null>(null);
+  const registerTidy = useCallback((fn: (() => void) | null) => { tidyRef.current = fn; }, []);
+
   const refreshOne = useCallback(async (id: string) => {
     try {
       const run = await runDashboardCard(id);
@@ -118,6 +124,12 @@ export function PinnedCards({ connectionId, refreshKey, findings, onOpenSource, 
         Your cockpit
         <span className="aug-tag aug-tag-green">Guarded</span>
         <span className="aug-fs-xs" style={{ fontWeight: 400, color: "var(--t4)", textTransform: "none" as const, letterSpacing: 0 }}>findings + your pinned cards · drag the title to arrange · select to resize · snaps to grid, never overlaps</span>
+        <Button
+          variant="ghost" size="xs"
+          onClick={() => tidyRef.current?.()}
+          title="Re-arrange every card into a clean, gap-free grid"
+          style={{ marginLeft: "auto", fontSize: 11, color: "var(--t3)", padding: "2px 8px", textTransform: "none" as const, letterSpacing: 0 }}
+        >▦ Tidy up</Button>
       </div>
       <PinnedCardsCanvas
         connectionId={connectionId}
@@ -126,6 +138,7 @@ export function PinnedCards({ connectionId, refreshKey, findings, onOpenSource, 
         onRefresh={refreshOne}
         onOpenSource={onOpenSource}
         onEvidence={onEvidence}
+        registerTidy={registerTidy}
       />
     </div>
   );

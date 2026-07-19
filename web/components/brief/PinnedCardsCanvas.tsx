@@ -369,13 +369,14 @@ const keepViewport = () => {};
 
 // ── Canvas ───────────────────────────────────────────────────────────────────
 
-function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSource, onEvidence }: {
+function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSource, onEvidence, registerTidy }: {
   connectionId: string;
   cards: CardState[];
   onRemove: (id: string) => void;
   onRefresh: (id: string) => void;
   onOpenSource?: (iid: string) => void;
   onEvidence?: (iid: string) => void;
+  registerTidy?: (fn: (() => void) | null) => void;
 }) {
   const handlers = useMemo(() => ({ onRemove, onRefresh, onOpenSource, onEvidence }), [onRemove, onRefresh, onOpenSource, onEvidence]);
 
@@ -439,6 +440,18 @@ function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSour
     opRef.current = null;
     setRfNodes(cur => applyCells(cur, packTopLeft(cellsFromNodes(cur, colsRef.current), [], colsRef.current), null));
   }, [setRfNodes]);
+
+  // Tidy up: re-pack EVERY card top-left into a dense, gap-free grid (in current reading order) and
+  // persist — a one-click reset of the arrangement. Same as an op's final settle, but reader-invoked
+  // (from the header button, wired up via registerTidy) and it marks the layout dirty so it saves.
+  const tidyUp = useCallback(() => {
+    dirtyRef.current = true;
+    setRfNodes(cur => applyCells(cur, packTopLeft(cellsFromNodes(cur, colsRef.current), [], colsRef.current), null));
+  }, [setRfNodes]);
+  useEffect(() => {
+    registerTidy?.(tidyUp);
+    return () => registerTidy?.(null);
+  }, [registerTidy, tidyUp]);
 
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
     // A drag ends with a `position` change (dragging:false); a resize with a `dimensions` change
@@ -542,6 +555,7 @@ export function PinnedCardsCanvas(props: {
   onRefresh: (id: string) => void;
   onOpenSource?: (iid: string) => void;
   onEvidence?: (iid: string) => void;
+  registerTidy?: (fn: (() => void) | null) => void;
 }) {
   return (
     <ReactFlowProvider>
