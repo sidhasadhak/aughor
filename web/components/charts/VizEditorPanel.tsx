@@ -14,7 +14,7 @@
  * caller via vizEditorStore + a body portal.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BarChart3, Table2, Grid3x3, X, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -52,6 +52,30 @@ export interface VizEditorModel {
   // Labels
   showLabels: boolean;
   setShowLabels: (b: boolean) => void;
+  // Color
+  colorSchemeValue: string;
+  colorSchemeOptions: VizSelectOption[];
+  setColorScheme: (v: string) => void;
+  legendValue: string;
+  legendOptions: VizSelectOption[];
+  setLegend: (v: string) => void;
+  // Format & axis titles
+  numberFormatValue: string;
+  numberFormatOptions: VizSelectOption[];
+  setNumberFormat: (v: string) => void;
+  xTitleValue: string;
+  setXTitle: (v: string) => void;
+  yTitleValue: string;
+  setYTitle: (v: string) => void;
+  // Tooltip
+  tooltipOn: boolean;
+  setTooltipOn: (b: boolean) => void;
+  // Annotation (reference lines)
+  refLines: { label: string; value: number }[];
+  addRefLine: (value: number, label: string) => void;
+  addAverageLine: () => void;
+  removeRefLine: (idx: number) => void;
+  measureLabel: string;
   // Export
   onDownload?: (() => void) | null;
 }
@@ -89,6 +113,55 @@ function Select({ value, options, onChange }: { value: string; options: VizSelec
     <select value={value} onChange={(e) => onChange(e.target.value)} style={SELECT_STYLE}>
       {options.map((o) => <option key={o.v} value={o.v}>{o.t}</option>)}
     </select>
+  );
+}
+
+const INPUT_STYLE: React.CSSProperties = {
+  fontSize: 11.5, color: "var(--t1)", background: "var(--bg-1)",
+  border: "1px solid var(--b2)", borderRadius: "var(--r2)", padding: "4px 6px", outline: "none",
+};
+
+function TextInput({ value, placeholder, onChange, width }: { value: string; placeholder?: string; onChange: (v: string) => void; width?: number }) {
+  return (
+    <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
+      style={{ ...INPUT_STYLE, width: width ?? 148, maxWidth: 168 }} />
+  );
+}
+
+// Annotation section owns the "add a line" input state (the panel is otherwise stateless).
+function AnnotationSection({ model }: { model: VizEditorModel }) {
+  const [val, setVal] = useState("");
+  const [label, setLabel] = useState("");
+  const add = () => {
+    const n = Number(val);
+    if (val && !Number.isNaN(n)) { model.addRefLine(n, label); setVal(""); setLabel(""); }
+  };
+  return (
+    <Section title="Annotation">
+      {model.refLines.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {model.refLines.map((l, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--t2)" }}>
+              <span style={{ width: 12, borderTop: "1.5px dashed var(--t3)" }} />
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.label} · {l.value}</span>
+              <Button variant="ghost" size="icon-sm" onClick={() => model.removeRefLine(i)} title="Remove" style={{ color: "var(--t4)" }}>
+                <X size={13} />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <input type="number" value={val} placeholder="value" onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") add(); }} style={{ ...INPUT_STYLE, width: 72 }} />
+        <input value={label} placeholder="label" onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") add(); }} style={{ ...INPUT_STYLE, flex: 1, minWidth: 0 }} />
+        <Button variant="ghost" size="xs" onClick={add} disabled={!val} style={{ color: "var(--accent)" }}>Add</Button>
+      </div>
+      <Button variant="ghost" size="xs" onClick={model.addAverageLine} style={{ alignSelf: "flex-start", color: "var(--t3)" }}>
+        + Average of {model.measureLabel}
+      </Button>
+    </Section>
   );
 }
 
@@ -150,6 +223,7 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
 
   const showChartType = model.view === "chart" && model.chartTypeOptions.length > 0;
   const showFields = model.view !== "pivot";
+  const chartMode = model.view === "chart" && model.chartAvailable;
 
   return (
     <div
@@ -212,6 +286,7 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
         {showFields && model.dimOptions.length > 0 && (
           <Section title="X axis">
             <Row label="Field"><Select value={model.dimValue} options={model.dimOptions} onChange={model.setDim} /></Row>
+            {chartMode && <Row label="Axis title"><TextInput value={model.xTitleValue} placeholder="auto" onChange={model.setXTitle} /></Row>}
           </Section>
         )}
 
@@ -222,6 +297,8 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
               <Row label="Aggregation"><Select value={model.aggValue} options={model.aggOptions} onChange={model.setAgg} /></Row>
             )}
             {model.rateSummed && <Warn text="summing a rate — AVG is the grain-correct aggregate" />}
+            {chartMode && <Row label="Number format"><Select value={model.numberFormatValue} options={model.numberFormatOptions} onChange={model.setNumberFormat} /></Row>}
+            {chartMode && <Row label="Axis title"><TextInput value={model.yTitleValue} placeholder="auto" onChange={model.setYTitle} /></Row>}
           </Section>
         )}
 
@@ -232,11 +309,26 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
           </Section>
         )}
 
-        {model.view === "chart" && model.chartAvailable && (
+        {chartMode && (
+          <Section title="Color">
+            <Row label="Scheme"><Select value={model.colorSchemeValue} options={model.colorSchemeOptions} onChange={model.setColorScheme} /></Row>
+            <Row label="Legend"><Select value={model.legendValue} options={model.legendOptions} onChange={model.setLegend} /></Row>
+          </Section>
+        )}
+
+        {chartMode && (
           <Section title="Labels">
             <Row label="Show data labels"><Toggle on={model.showLabels} onChange={model.setShowLabels} /></Row>
           </Section>
         )}
+
+        {chartMode && (
+          <Section title="Tooltip">
+            <Row label="Show on hover"><Toggle on={model.tooltipOn} onChange={model.setTooltipOn} /></Row>
+          </Section>
+        )}
+
+        {chartMode && <AnnotationSection model={model} />}
       </div>
     </div>
   );

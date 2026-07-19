@@ -45,6 +45,7 @@ export interface ChartCustom {
   xTitle?: string;
   yTitle?: string;
   legend?: "right" | "bottom" | "top" | "left" | "none";
+  tooltip?: "on" | "off"; // hover tooltip visibility (default on); "off" for a clean tile
 }
 
 // ── Customize post-pass (ECharts) ────────────────────────────────────────────
@@ -59,8 +60,13 @@ function mapAxes(ax: unknown, fn: (a: AxisLike) => AxisLike): unknown {
 }
 
 function applyCustom(option: EChartsOption, custom?: ChartCustom | null): EChartsOption {
-  if (!custom || !(custom.format || custom.colorScheme || custom.xTitle || custom.yTitle || custom.legend)) return option;
+  if (!custom || !(custom.format || custom.colorScheme || custom.xTitle || custom.yTitle || custom.legend || custom.tooltip)) return option;
   const o: EChartsOption = { ...option };
+
+  // Hover tooltip visibility — "off" makes a clean, static tile (Databricks "Tooltip" section).
+  if (custom.tooltip === "off") {
+    o.tooltip = { ...(o.tooltip as object || {}), show: false } as EChartsOption["tooltip"];
+  }
 
   if (custom.format) {
     let f: ((n: number) => string) | null = null;

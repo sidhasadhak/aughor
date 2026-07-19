@@ -30,7 +30,7 @@ import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
 import { classifyColumns, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
 import { isUngraphableGrid } from "@/components/charts/columnRoles";
-import type { ExhibitSpec } from "@/components/charts/exhibit";
+import type { ExhibitSpec, ExhibitRefLine } from "@/components/charts/exhibit";
 import { cleanLabel } from "@/lib/format";
 import { applyPostproc, type PostprocOp } from "@/lib/api";
 import { VizEditorPanel, type VizEditorModel } from "@/components/charts/VizEditorPanel";
@@ -64,6 +64,20 @@ const TYPE_LABEL: Record<ChartType, string> = {
   "scatter": "Scatter", "heatmap": "Heatmap", "matrix": "Matrix",
   "pie": "Pie", "treemap": "Treemap", "table": "Table",
 };
+
+// Databricks-style Customize vocabularies — kept in sync with the Query Builder Customize tab so a
+// card and a query offer the same knobs. Chart.applyCustom honors each (unknown schemes no-op).
+const COLOR_SCHEMES: { v: string; t: string }[] = [
+  { v: "", t: "Default" }, { v: "tableau10", t: "Tableau 10" }, { v: "category10", t: "Category 10" },
+  { v: "set2", t: "Set 2" }, { v: "dark2", t: "Dark 2" }, { v: "pastel1", t: "Pastel" }, { v: "tableau20", t: "Tableau 20" },
+];
+const NUMBER_FORMATS: { v: string; t: string }[] = [
+  { v: "", t: "Auto" }, { v: ",.0f", t: "1,234" }, { v: ",.2f", t: "1,234.56" }, { v: "$,.0f", t: "$1,234" },
+  { v: "$,.2f", t: "$1,234.56" }, { v: "~s", t: "1.2K (compact)" }, { v: ".0%", t: "12%" }, { v: ".1%", t: "12.3%" },
+];
+const LEGEND_POS: { v: string; t: string }[] = [
+  { v: "", t: "Default" }, { v: "right", t: "Right" }, { v: "bottom", t: "Bottom" }, { v: "top", t: "Top" }, { v: "none", t: "Hidden" },
+];
 
 const RATE_RE = /avg|average|mean|rate|ratio|share|pct|percent|proportion|margin|per_/i;
 /** Grain-aware default aggregation: rate/share metrics average, additive metrics sum. */
@@ -156,6 +170,15 @@ export function ResultChartCard({
   const [dimSel, setDimSel] = useState<string | null>(null);
   const [aggSel, setAggSel] = useState<Agg | null>(null);
   const [showLabels, setShowLabels] = useState<boolean>(defaultShowLabels ?? false);
+  // Customize overrides (Color / Format / Legend / Tooltip / Annotation) layered OVER the passed
+  // `custom`/`exhibit`, so an untouched card renders byte-identically to before.
+  const [colorScheme, setColorScheme] = useState("");
+  const [numberFormat, setNumberFormat] = useState("");
+  const [legendPos, setLegendPos] = useState("");
+  const [xTitle, setXTitle] = useState("");
+  const [yTitle, setYTitle] = useState("");
+  const [tooltipOff, setTooltipOff] = useState(false);
+  const [userRefLines, setUserRefLines] = useState<ExhibitRefLine[]>([]);
 
   // Default metric MUST match what <Chart> resolves when untouched, or the strip
   // label contradicts the plot. <Chart> prefers a rate/share column as its primary
@@ -235,6 +258,37 @@ export function ResultChartCard({
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
+  // Customize overrides merged over the passed props (empty string = "unset" → keep the prop).
+  const effCustom: ChartCustom = useMemo(() => ({
+    ...(custom || {}),
+    ...(colorScheme ? { colorScheme } : {}),
+    ...(numberFormat ? { format: numberFormat } : {}),
+    ...(legendPos ? { legend: legendPos as ChartCustom["legend"] } : {}),
+    ...(xTitle ? { xTitle } : {}),
+    ...(yTitle ? { yTitle } : {}),
+    ...(tooltipOff ? { tooltip: "off" as const } : {}),
+  }), [custom, colorScheme, numberFormat, legendPos, xTitle, yTitle, tooltipOff]);
+
+  // User annotation lines ride on top of any backend exhibit ref-lines.
+  const effExhibit: ExhibitSpec | null = useMemo(() => {
+    if (!userRefLines.length) return exhibit;
+    return { ...(exhibit || {}), ref_lines: [...(exhibit?.ref_lines || []), ...userRefLines] };
+  }, [exhibit, userRefLines]);
+
+  const addRefLine = (value: number, label: string) => {
+    if (!isFinite(value)) return;
+    setUserRefLines(ls => [...ls, { value, label: label || `y = ${value}`, kind: "target" }]);
+  };
+  const removeRefLine = (idx: number) => setUserRefLines(ls => ls.filter((_, i) => i !== idx));
+  const addAverageLine = () => {
+    const mi = effData.columns.indexOf(metric);
+    const col = mi >= 0 ? mi : effData.columns.length - 1;
+    const nums = effData.rows.map(r => Number((r as unknown[])[col])).filter(v => !isNaN(v));
+    if (!nums.length) return;
+    const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+    setUserRefLines(ls => [...ls, { value: Number(mean.toFixed(4)), label: "Average", kind: "global_avg" }]);
+  };
+
   // Single-instance viz editor (one drawer open app-wide).
   const cardId = useId();
   const editorOpen = useVizEditorOpen(cardId);
@@ -268,6 +322,18 @@ export function ResultChartCard({
     setTransform: (v) => setTransformOp(v as PostprocOp | "none"),
     transformErr: tErr || undefined,
     showLabels, setShowLabels,
+    // Color
+    colorSchemeValue: colorScheme, colorSchemeOptions: COLOR_SCHEMES, setColorScheme,
+    legendValue: legendPos, legendOptions: LEGEND_POS, setLegend: setLegendPos,
+    // Format & axis titles
+    numberFormatValue: numberFormat, numberFormatOptions: NUMBER_FORMATS, setNumberFormat,
+    xTitleValue: xTitle, setXTitle,
+    yTitleValue: yTitle, setYTitle,
+    // Tooltip
+    tooltipOn: !tooltipOff, setTooltipOn: (b: boolean) => setTooltipOff(!b),
+    // Annotation (reference lines)
+    refLines: userRefLines.map(l => ({ label: l.label, value: l.value })),
+    addRefLine, addAverageLine, removeRefLine, measureLabel: cleanLabel(metric),
     onDownload: view === "chart" ? handleDownload : null,
   };
 
@@ -296,9 +362,9 @@ export function ResultChartCard({
           rows={effData.rows}
           chartType={hint}
           chartConfig={userChoseChart ? null : chartConfig}
-          exhibit={exhibit}
+          exhibit={effExhibit}
           columnUnits={columnUnits}
-          custom={custom}
+          custom={effCustom}
           title={title}
           chrome={false}
           showLabels={showLabels}
