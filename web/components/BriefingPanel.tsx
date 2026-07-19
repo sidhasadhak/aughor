@@ -1645,22 +1645,63 @@ function BriefingEmpty({
   );
 }
 
-// ── Loading state ──────────────────────────────────────────────────────────────
+// ── Loading state — content-shaped skeletons ────────────────────────────────────
+// Not a bare spinner: the briefing's OWN shape shimmers in place, so the layout doesn't
+// jump when the real content lands (the old spinner grew the section and shoved
+// everything below it down). Uses the app's standard skeleton idiom (animate-pulse on a
+// muted fill) and the same flat card language as the reskinned briefing.
 
+/** One shimmer bar. */
+function Shimmer({ w = "100%", h = 12, r = "var(--r1)", mt = 0 }: { w?: number | string; h?: number; r?: string; mt?: number }) {
+  return <div className="animate-pulse" style={{ width: w, height: h, marginTop: mt, borderRadius: r, background: "var(--bg-3)" }} />;
+}
+
+const skelCard: React.CSSProperties = { background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" };
+
+/** The full-synthesis prose block while the narrative streams — mirrors NarrativeCard's shape. */
+function SynthesisSkeleton() {
+  return (
+    <div style={{ ...skelCard, padding: "18px 22px", display: "flex", flexDirection: "column", gap: 9 }}
+      aria-busy="true" aria-label="Writing intelligence brief">
+      {["100%", "97%", "99%", "94%", "98%", "62%"].map((w, i) => <Shimmer key={i} w={w} h={12} />)}
+    </div>
+  );
+}
+
+/** Whole-briefing first load — verdict hero + 3 supporting signals + synthesis, in shape. */
 function BriefingLoading() {
   return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{
-        display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 12,
-      }}>
-        <div style={{
-          width: 32, height: 32,
-          border: "2px solid var(--b1)",
-          borderTop: "2px solid var(--blue4)",
-          borderRadius: "50%",
-          animation: "aug-spin var(--dur-breath) linear infinite",
-        }} />
-        <div style={{ fontSize: 12, color: "var(--t3)" }}>Synthesizing intelligence…</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }} aria-busy="true" aria-label="Synthesizing intelligence">
+      {/* Verdict hero */}
+      <div style={{ ...skelCard, padding: "18px 26px 20px" }}>
+        <Shimmer w={130} h={10} />
+        <Shimmer w={70} h={10} mt={16} />
+        <Shimmer w="68%" h={22} mt={14} />
+        <Shimmer w="46%" h={22} mt={8} />
+        <Shimmer w="88%" h={13} mt={16} />
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <Shimmer w={120} h={30} />
+          <Shimmer w={180} h={30} />
+        </div>
+      </div>
+      {/* Supporting signals — 3-up */}
+      <div>
+        <Shimmer w={120} h={11} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 10 }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{ ...skelCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <Shimmer w={80} h={20} r="var(--r-pill)" />
+              <Shimmer w="100%" h={12} mt={4} />
+              <Shimmer w="92%" h={12} />
+              <Shimmer w="70%" h={12} />
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Full synthesis */}
+      <div>
+        <Shimmer w={110} h={11} />
+        <div style={{ marginTop: 10 }}><SynthesisSkeleton /></div>
       </div>
     </div>
   );
@@ -2075,23 +2116,7 @@ export function BriefingPanel({
       {(hasNarrative || narrativeLoading || narrativeError) && (
         <div>
           <div className="aug-label" style={{ marginBottom: 10 }}>Full synthesis</div>
-          {narrativeLoading && (
-            <div style={{
-              background: "color-mix(in srgb, var(--blue4) 6%, var(--bg-2))",
-              border: "1px solid color-mix(in srgb, var(--blue4) 18%, var(--b1))",
-              borderRadius: "var(--r3)", padding: "18px 22px",
-              display: "flex", alignItems: "center", gap: 10,
-            }}>
-              <span style={{
-                width: 14, height: 14, border: "2px solid var(--b2)",
-                borderTop: "2px solid var(--blue4)", borderRadius: "50%",
-                animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0,
-              }} />
-              <span style={{ fontSize: 12, color: "var(--t3)" }}>
-                Writing intelligence brief…
-              </span>
-            </div>
-          )}
+          {narrativeLoading && <SynthesisSkeleton />}
           {!narrativeLoading && narrativeError && (
             <div style={{
               padding: "10px 14px", borderRadius: "var(--r2)",
