@@ -28,10 +28,11 @@ import {
   lineOption, multiLineOption, smallMultiplesOption, barOption, groupedBarOption, stackedBarOption,
   pieOption, scatterOption, comboOption, heatmapOption, treemapOption, paretoOption,
   counterOption, funnelOption, histogramOption, boxplotOption, sankeyOption, waterfallOption,
+  lineForecastOption, ganttOption, choroplethOption, pointMapOption,
 } from "@/components/charts/echarts/builders";
 import {
   SHARE_COL, CHANGE_METRIC_COL, TIME_LABEL_COL, INSTRUMENTATION_COL, PREFER_COL, classifyColumns,
-  isIdLike, isUngraphableGrid,
+  isIdLike, isUngraphableGrid, GEO_NAME_COL, LAT_COL, LON_COL,
 } from "@/components/charts/columnRoles";
 import { scoreDualAxis } from "@/components/charts/chartTypeInference";
 import type { ExhibitSpec } from "@/components/charts/exhibit";
@@ -222,6 +223,29 @@ export function Chart({
     const changeNumCol = chartNumericCols.find((c) => CHANGE_PREFER_COL.test(c)) ?? chartNumericCols.find((c) => PREFER_COL.test(c)) ?? chartNumericCols[0];
     const numCol = (_isChangeMetric && catCol) ? changeNumCol : baseNumCol;
     const hint = (chartType ?? "auto").toLowerCase();
+
+    // Measure-less Tier-2 types render BEFORE the numeric-measure guard below, since they key
+    // off dates (gantt) / coordinates (point map), not a measure.
+    if (hint === "gantt" && dateIdxs.length >= 2) {
+      const dcols = dateIdxs.map((k) => columns[k]);
+      const START = /(start|begin|from|open)/i, END = /(end|finish|due|close|^to$|_to$)/i;
+      const startF = dcols.find((c) => START.test(c)) ?? dcols[0];
+      const endF = dcols.find((c) => END.test(c) && c !== startF) ?? dcols.find((c) => c !== startF) ?? dcols[1];
+      const labelCol = catCol ?? columns.find((c) => c !== startF && c !== endF) ?? columns[0];
+      const gopt = ganttOption({ rows: data, units: columnUnits ?? undefined, x: labelCol, ys: [], gantt: { start: startF, end: endF }, color: catCol2 });
+      return { option: applyCustom(gopt, custom), defaultH: Math.max(200, new Set(data.map((d) => d[labelCol])).size * 32 + 60) };
+    }
+    if (hint === "point_map") {
+      const latF = columns.find((c) => LAT_COL.test(c));
+      const lonF = columns.find((c) => LON_COL.test(c));
+      if (latF && lonF) {
+        const sizeMeasure = numericCols.find((c) => !LAT_COL.test(c) && !LON_COL.test(c) && !isIdLike(c));
+        const label = catCol ?? columns.find((c) => c !== latF && c !== lonF && !numericCols.includes(c));
+        const popt = pointMapOption({ rows: data, units: columnUnits ?? undefined, x: latF, ys: sizeMeasure ? [sizeMeasure] : [], pointLabel: label }, latF, lonF);
+        return { option: applyCustom(popt, custom), defaultH: 380 };
+      }
+    }
+
     if (!numCol) return null;
 
     const isTimeLabel = catCol ? TIME_LABEL_COL.test(catCol) : false;
@@ -305,6 +329,11 @@ export function Chart({
     if (!option && hint === "boxplot" && numCol) { option = boxplotOption({ rows: data, units: columnUnits ?? undefined, x: catCol ?? numCol, ys: [numCol] }); defaultH = 320; }
     if (!option && hint === "sankey" && catCol && catCol2 && numCol) { option = sankeyOption({ rows: data, units: columnUnits ?? undefined, x: catCol, color: catCol2, ys: [numCol] }); defaultH = 360; }
     if (!option && hint === "waterfall" && (catCol || dateCol) && numCol) { option = waterfallOption({ rows: data, units: columnUnits ?? undefined, x: (catCol ?? dateCol)!, ys: [numCol], xKind: dateCol && !catCol ? "time" : "category" }); defaultH = 320; }
+    if (!option && hint === "line_forecast" && dateCol && numCol) { option = lineForecastOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time" }); defaultH = 320; }
+    if (!option && hint === "choropleth" && numCol) {
+      const geoCol = catCols.find((c) => GEO_NAME_COL.test(c)) ?? catCol;
+      if (geoCol) { option = choroplethOption({ rows: data, units: columnUnits ?? undefined, x: geoCol, ys: [numCol] }); defaultH = 380; }
+    }
 
     // 1c. Colour binding on a LINE → one line per value of the chosen DIMENSION (multi-line).
     //     A continuous colour on a trend line isn't a standard encoding, so only the categorical

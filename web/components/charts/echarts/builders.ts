@@ -31,6 +31,8 @@ export interface BuildInput {
   /** Field naming each scatter point (the entity id/name column) — enables
    *  exhibit.label_points and the identity line in the tooltip. */
   pointLabel?: string;
+  /** Gantt: the start + end date field names (each row is one task span). */
+  gantt?: { start: string; end: string } | null;
 }
 
 // ── formatting helpers ───────────────────────────────────────────────────────
@@ -956,5 +958,169 @@ export function waterfallOption(i: BuildInput): EChartsOption {
       { name: "Increase", type: "bar", stack: "wf", barMaxWidth: 40, itemStyle: { color: "#2EC87B" }, data: ups, label: dlabel ? { ...dlabel, position: "top" } : undefined },
       { name: "Decrease", type: "bar", stack: "wf", barMaxWidth: 40, itemStyle: { color: "#E64848" }, data: downs, label: dlabel ? { ...dlabel, position: "bottom" } : undefined },
     ],
+  };
+}
+
+// ── Tier-2 additions (heavier infra / narrower fit) ───────────────────────────
+
+/** Line (forecast) — a single timeseries plus a DETERMINISTIC linear projection and a 95%
+ *  confidence band. Least-squares fit on the historical points (no model, no query), extended
+ *  `periods` steps at the data's own cadence. Falls back to a plain line when it can't fit. */
+export function lineForecastOption(i: BuildInput, periods = 6): EChartsOption {
+  const y = i.ys[0];
+  const hist = categories(i.rows, i.x, "time");
+  const byX = new Map(i.rows.map((r) => [String(r[i.x]), r]));
+  const ys = hist.map((c) => { const r = byX.get(c); return r == null ? NaN : num(r[y]); });
+  const fmt = valueFormatter(i.rows, y, i.units);
+  const n = ys.length;
+  const idx = ys.map((_, k) => k).filter((k) => isFinite(ys[k]));
+  const N = idx.length;
+  if (N < 2) return lineOption(i);
+  // Least-squares fit on (k, value).
+  const sx = idx.reduce((a, b) => a + b, 0);
+  const sy = idx.reduce((a, k) => a + ys[k], 0);
+  const sxx = idx.reduce((a, k) => a + k * k, 0);
+  const sxy = idx.reduce((a, k) => a + k * ys[k], 0);
+  const slope = (N * sxy - sx * sy) / (N * sxx - sx * sx || 1);
+  const intercept = (sy - slope * sx) / N;
+  const fit = (k: number) => intercept + slope * k;
+  const resid = idx.map((k) => ys[k] - fit(k));
+  const rstd = Math.sqrt(resid.reduce((a, r) => a + r * r, 0) / Math.max(1, N - 2));
+  const band = 1.96 * rstd;
+  // Future labels at the data's own average cadence.
+  const ts = hist.map((c) => new Date(normDateStr(c)).getTime());
+  const deltas = ts.slice(1).map((t, k) => t - ts[k]).filter((d) => isFinite(d) && d > 0);
+  const step = deltas.length ? deltas.reduce((a, b) => a + b, 0) / deltas.length : 0;
+  const gran: Gran = detectGranularity(i.x, i.rows.map((r) => r[i.x]));
+  const histLabels = hist.map((c) => fmtDate(c, gran));
+  const futureLabels: string[] = [];
+  for (let k = 1; k <= periods; k++) futureLabels.push(fmtDate(new Date(ts[ts.length - 1] + step * k).toISOString().slice(0, 10), gran));
+  const allLabels = [...histLabels, ...futureLabels];
+  const histData: (number | null)[] = [...ys.map((v) => (isFinite(v) ? v : null)), ...new Array(periods).fill(null)];
+  const fcData: (number | null)[] = new Array(allLabels.length).fill(null);
+  const lower: (number | null)[] = new Array(allLabels.length).fill(null);
+  const bandThick: (number | null)[] = new Array(allLabels.length).fill(null);
+  fcData[n - 1] = ys[n - 1];   // anchor the forecast to the last actual
+  for (let k = 1; k <= periods; k++) {
+    const v = fit(n - 1 + k);
+    fcData[n - 1 + k] = v; lower[n - 1 + k] = v - band; bandThick[n - 1 + k] = 2 * band;
+  }
+  return {
+    ...withTitle(i.title),
+    tooltip: { trigger: "axis", valueFormatter: (v) => fmt(v) },
+    legend: { data: [fieldLabel(y), "Forecast"], top: 0 },
+    grid: { top: 28, left: 8, right: 14, bottom: 8, containLabel: true },
+    xAxis: { type: "category", data: allLabels, boundaryGap: false, axisLabel: { hideOverlap: true } },
+    yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
+    series: [
+      { name: "band-lo", type: "line", stack: "band", data: lower, lineStyle: { opacity: 0 }, symbol: "none", silent: true },
+      { name: "Forecast band", type: "line", stack: "band", data: bandThick, lineStyle: { opacity: 0 }, areaStyle: { color: "#4C8EEE", opacity: 0.14 }, symbol: "none", silent: true },
+      { name: fieldLabel(y), type: "line", data: histData, showSymbol: n <= 40, symbolSize: 5, emphasis: { focus: "series" } },
+      { name: "Forecast", type: "line", data: fcData, lineStyle: { type: "dashed" }, symbol: "none", emphasis: { focus: "series" } },
+    ],
+  };
+}
+
+/** Gantt — task spans on a time axis. Each row draws a bar from its start→end date at the
+ *  task's row (custom series); an optional `color` field tints bars by category. */
+export function ganttOption(i: BuildInput): EChartsOption {
+  const g = i.gantt;
+  if (!g) return { ...withTitle(i.title), series: [] };
+  const tasks: string[] = [];
+  for (const r of i.rows) { const t = String(r[i.x]); if (!tasks.includes(t)) tasks.push(t); }
+  const catField = i.color && i.color !== i.x ? i.color : null;
+  const groups: string[] = [];
+  if (catField) for (const r of i.rows) { const c = String(r[catField]); if (!groups.includes(c)) groups.push(c); }
+  const PALETTE = ["#4C8EEE", "#2EC87B", "#E6A23C", "#B37FEB", "#E64848", "#36CFC9", "#F2789F", "#9DA1A8"];
+  const parse = (v: unknown) => new Date(normDateStr(String(v))).getTime();
+  const fmtDay = (t: number) => fmtDate(new Date(t).toISOString().slice(0, 10), "day");
+  const data = i.rows.map((r) => {
+    const cat = catField ? String(r[catField]) : "";
+    return {
+      value: [tasks.indexOf(String(r[i.x])), parse(r[g.start]), parse(r[g.end]), cat],
+      itemStyle: { color: catField ? PALETTE[Math.max(0, groups.indexOf(cat)) % PALETTE.length] : "#4C8EEE" },
+    };
+  });
+  const ganttSeries = {
+    type: "custom",
+    renderItem: (_params: unknown, api: { value: (d: number) => number; coord: (p: number[]) => number[]; size: (p: number[]) => number[]; style: () => Record<string, unknown> }) => {
+      const taskIndex = api.value(0);
+      const start = api.coord([api.value(1), taskIndex]);
+      const end = api.coord([api.value(2), taskIndex]);
+      const h = api.size([0, 1])[1] * 0.58;
+      return { type: "rect", shape: { x: start[0], y: start[1] - h / 2, width: Math.max(2, end[0] - start[0]), height: h, r: 3 }, style: api.style() };
+    },
+    encode: { x: [1, 2], y: 0 },
+    data,
+  };
+  return {
+    ...withTitle(i.title),
+    tooltip: { formatter: (p: unknown) => {
+      const o = p as { value: [number, number, number, string] };
+      return `${tasks[o.value[0]]}${o.value[3] ? " · " + o.value[3] : ""}<br/>${fmtDay(o.value[1])} → ${fmtDay(o.value[2])}`;
+    } },
+    grid: { top: 12, left: 8, right: 14, bottom: 8, containLabel: true },
+    xAxis: { type: "time", axisLabel: { hideOverlap: true } },
+    yAxis: { type: "category", data: tasks, inverse: true },
+    series: [ganttSeries] as EChartsOption["series"],
+  };
+}
+
+// Base-map area/border colours read on both themes (the map geojson carries no colour).
+const MAP_AREA = "#20242b";
+const MAP_BORDER = "#3a4048";
+
+/** Choropleth — a region column (its values must match the world map's country names)
+ *  shaded by the measure via a continuous visualMap. Unmatched names simply stay neutral. */
+export function choroplethOption(i: BuildInput): EChartsOption {
+  const y = i.ys[0];
+  const agg = new Map<string, number>();
+  for (const r of i.rows) { const k = String(r[i.x]); agg.set(k, (agg.get(k) ?? 0) + num(r[y])); }
+  const data = [...agg.entries()].map(([name, value]) => ({ name, value }));
+  const vals = data.map((d) => d.value).filter((v) => isFinite(v));
+  const fmt = valueFormatter(i.rows, y, i.units);
+  const min = vals.length ? Math.min(...vals) : 0, max = vals.length ? Math.max(...vals) : 1;
+  return {
+    ...withTitle(i.title),
+    tooltip: { trigger: "item", formatter: (p: unknown) => { const o = p as { name: string; value: number }; return `${o.name}: ${isFinite(o.value) ? fmt(o.value) : "—"}`; } },
+    visualMap: {
+      type: "continuous", min, max: max > min ? max : min + 1, calculable: true, left: 8, bottom: 8,
+      inRange: { color: rampStops(y).map((s) => s.color) },
+      textStyle: { fontSize: 10 }, formatter: (v: number) => fmt(v),
+    } as unknown as EChartsOption["visualMap"],
+    series: [{
+      type: "map", map: "world", roam: true, nameProperty: "name", data,
+      itemStyle: { areaColor: MAP_AREA, borderColor: MAP_BORDER, borderWidth: 0.4 },
+      emphasis: { label: { show: false }, itemStyle: { areaColor: "#2a2f37" } },
+      select: { disabled: true },
+    }],
+  };
+}
+
+/** Point map — lat/lon points on the world base layer, sized by the measure when present.
+ *  `pointLabel` (from BuildInput) names each point in the tooltip. */
+export function pointMapOption(i: BuildInput, latField: string, lonField: string): EChartsOption {
+  const y = i.ys[0];
+  const fmt = y ? valueFormatter(i.rows, y, i.units) : null;
+  const data = i.rows
+    .map((r) => ({ name: i.pointLabel ? String(r[i.pointLabel]) : "", value: [num(r[lonField]), num(r[latField]), y ? num(r[y]) : 1] as number[] }))
+    .filter((d) => isFinite(d.value[0]) && isFinite(d.value[1]));
+  const sizes = data.map((d) => d.value[2]).filter((v) => isFinite(v));
+  const smin = sizes.length ? Math.min(...sizes) : 0, smax = sizes.length ? Math.max(...sizes) : 1;
+  const sizeOf = (v: number) => (smax > smin ? 6 + 18 * (v - smin) / (smax - smin) : 9);
+  return {
+    ...withTitle(i.title),
+    tooltip: { trigger: "item", formatter: (p: unknown) => {
+      const o = p as { name: string; value: number[] };
+      const head = o.name ? `<b>${o.name}</b><br/>` : "";
+      const metric = y && fmt ? `<br/>${fieldLabel(y)}: ${fmt(o.value[2])}` : "";
+      return `${head}${o.value[1].toFixed(2)}, ${o.value[0].toFixed(2)}${metric}`;
+    } },
+    geo: { map: "world", roam: true, itemStyle: { areaColor: MAP_AREA, borderColor: MAP_BORDER, borderWidth: 0.4 }, emphasis: { itemStyle: { areaColor: "#2a2f37" }, label: { show: false } } },
+    series: [{
+      type: "scatter", coordinateSystem: "geo", data,
+      symbolSize: (val: number[]) => sizeOf(val[2]),
+      itemStyle: { color: "#4C8EEE", opacity: 0.82, borderColor: "#0e2440", borderWidth: 0.5 },
+    }],
   };
 }

@@ -68,6 +68,12 @@ export const TIME_LABEL_COL = /(month|quarter|week|half|period)/i;
 /** ISO date VALUE prefix ("2024-01" / "2024-01-01…"). */
 export const DATE_VALUE_RE = /^\d{4}-\d{2}(-\d{2})?/;
 
+/** Geographic column-name hints. A region/area NAME drives a choropleth (its values must
+ *  match the map geojson's feature names); a lat + lon pair drives a point map. */
+export const GEO_NAME_COL = /(country|nation|^state$|_state$|province|region|county|^city$|_city$|^iso|geo)/i;
+export const LAT_COL = /(^|_)(lat|latitude)$/i;
+export const LON_COL = /(^|_)(lon|lng|long|longitude)$/i;
+
 export function isNumeric(v: unknown): boolean {
   return v !== null && v !== "" && !isNaN(Number(v));
 }

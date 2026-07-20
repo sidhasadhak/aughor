@@ -121,6 +121,27 @@ const arrBridge: Row[] = ([
   ["Starting ARR", 1200000], ["New", 340000], ["Expansion", 180000], ["Contraction", -90000], ["Churn", -160000],
 ] as [string, number][]).map(([stage, arr_delta]) => ({ stage, arr_delta }));
 
+// ── Tier-2 (forecast · gantt · geo) + scatter/line colour binding ──
+const projectPlan: Row[] = ([
+  ["Discovery", "Research", "2024-01-05", "2024-02-10"], ["Design", "Research", "2024-02-01", "2024-03-15"],
+  ["Backend build", "Build", "2024-03-01", "2024-05-20"], ["Frontend build", "Build", "2024-03-20", "2024-06-10"],
+  ["Beta", "Launch", "2024-06-05", "2024-07-05"], ["GA launch", "Launch", "2024-07-01", "2024-08-01"],
+] as [string, string, string, string][]).map(([task, phase, start_date, end_date]) => ({ task, phase, start_date, end_date }));
+const revByCountry: Row[] = ([
+  ["United States", 4200000], ["China", 3100000], ["India", 1400000], ["Germany", 1800000],
+  ["Japan", 1500000], ["United Kingdom", 1200000], ["Brazil", 760000], ["Australia", 520000],
+] as [string, number][]).map(([country, revenue]) => ({ country, revenue }));
+const salesByCity: Row[] = ([
+  ["New York", 40.71, -74.01, 9200], ["London", 51.51, -0.13, 7400], ["Tokyo", 35.68, 139.69, 8100],
+  ["Singapore", 1.35, 103.82, 4300], ["Sao Paulo", -23.55, -46.63, 5200], ["Mumbai", 19.08, 72.88, 6100],
+] as [string, number, number, number][]).map(([city, lat, lon, sales]) => ({ city, lat, lon, sales }));
+// Stores: 3 measures + region → scatter coloured by region (cat) or volume (continuous).
+const storeScatter: Row[] = ([
+  ["Aloha", "West", 42, 4.6, 9200], ["Cedar", "East", 33, 4.8, 15300], ["Echo", "North", 25, 4.9, 21000],
+  ["Fern", "North", 64, 4.0, 3300], ["Haze", "South", 39, 4.7, 11800], ["Jade", "East", 29, 4.85, 18400],
+  ["Kite", "North", 61, 3.95, 3900], ["Lark", "South", 44, 4.5, 8600], ["Bay", "West", 58, 4.2, 4100],
+] as [string, string, number, number, number][]).map(([store, region, price, rating, volume]) => ({ store, region, price, rating, volume }));
+
 function Card({ title, height = 300, children }: { title: string; height?: number; children: React.ReactNode }) {
   return (
     <div style={{ background: "var(--bg-1)", border: "1px solid var(--chart-axis)", borderRadius: 10, padding: 14 }}>
@@ -284,6 +305,40 @@ export default function ChartLab() {
             chartType="bar_horizontal" chrome={false} showLabels columnUnits={{ load_factor_pct: "percent" }}
             exhibit={{ color: { mode: "continuous", field: "revenue_per_flight", name: "Revenue / flight" } }}
           />
+        </Card>
+        <Card title="Scatter — colour by region (dimension → legend)" height={300}>
+          <Chart {...toTable(storeScatter, ["store", "region", "price", "rating", "volume"])}
+            chartType="scatter" chrome={false} exhibit={{ color: { mode: "categorical", field: "region", name: "Region" } }} />
+        </Card>
+        <Card title="Scatter — colour by volume (measure → gradient)" height={300}>
+          <Chart {...toTable(storeScatter, ["store", "region", "price", "rating", "volume"])}
+            chartType="scatter" chrome={false} exhibit={{ color: { mode: "continuous", field: "volume", name: "Volume" } }} />
+        </Card>
+        <Card title="Line — colour by region → multi-line" height={300}>
+          <Chart {...toTable(revByRegionMonth, ["month", "region", "revenue"])}
+            chartType="line" chrome={false} exhibit={{ color: { mode: "categorical", field: "region", name: "Region" } }} />
+        </Card>
+      </div>
+
+      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+        Tier-2 viz types — Line (forecast) · Gantt · Choropleth · Point map
+      </h2>
+      <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
+        The heavier-infra set. Forecast is a deterministic least-squares projection; the maps lazy-load a
+        world geojson from <code>/geo/world.json</code> only when first rendered (zero main-bundle cost).
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 16 }}>
+        <Card title="Line (forecast) — revenue projected + 95% band" height={300}>
+          <Chart {...toTable(revByMonth, ["month", "revenue"])} chartType="line_forecast" chrome={false} />
+        </Card>
+        <Card title="Gantt — project plan (tasks coloured by phase)" height={300}>
+          <Chart {...toTable(projectPlan, ["task", "phase", "start_date", "end_date"])} chartType="gantt" chrome={false} />
+        </Card>
+        <Card title="Choropleth — revenue by country" height={320}>
+          <Chart {...toTable(revByCountry, ["country", "revenue"])} chartType="choropleth" chrome={false} />
+        </Card>
+        <Card title="Point map — sales by city (bubble size)" height={320}>
+          <Chart {...toTable(salesByCity, ["city", "lat", "lon", "sales"])} chartType="point_map" chrome={false} />
         </Card>
       </div>
 

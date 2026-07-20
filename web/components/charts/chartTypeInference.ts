@@ -26,6 +26,7 @@ import {
   isIdLike, INSTRUMENTATION_COL as INSTRUMENTATION,
   SHARE_COL, CHANGE_METRIC_COL as CHANGE_METRIC, ADDITIVE_COL,
   countUnique, classifyColumns, isUngraphableGrid,
+  GEO_NAME_COL, LAT_COL, LON_COL,
 } from "./columnRoles";
 
 // Re-exported so existing importers of these from chartTypeInference keep working while the
@@ -53,6 +54,11 @@ export type ChartType =
   | "boxplot"    // five-number distribution, per category
   | "sankey"     // flow between two dimensions (source → target)
   | "waterfall"  // running total of signed contributions
+  // ── Tier-2 additions (heavier infra / narrower fit) ──
+  | "line-forecast" // timeseries + a deterministic projection + confidence band
+  | "gantt"      // task spans on a time axis (label + start + end)
+  | "choropleth" // region → measure shaded on a map (needs geojson)
+  | "point-map"  // lat/lon points on a base map
   | "table";
 
 // ── Central type vocab (single source of truth) ─────────────────────────────
@@ -67,7 +73,9 @@ export const TYPE_TO_HINT: Record<ChartType, string> = {
   "bar": "bar", "grouped-bar": "combo", "combo": "combo", "stacked-bar": "stacked_bar",
   "scatter": "scatter", "heatmap": "heatmap", "matrix": "heatmap", "pie": "pie", "treemap": "treemap",
   "counter": "counter", "funnel": "funnel", "histogram": "histogram", "boxplot": "boxplot",
-  "sankey": "sankey", "waterfall": "waterfall", "table": "auto",
+  "sankey": "sankey", "waterfall": "waterfall",
+  "line-forecast": "line_forecast", "gantt": "gantt", "choropleth": "choropleth", "point-map": "point_map",
+  "table": "auto",
 };
 
 /** Human label for each type — the dropdown/gallery text. */
@@ -77,6 +85,7 @@ export const CHART_TYPE_LABEL: Record<ChartType | "auto", string> = {
   "stacked-bar": "Stacked", "scatter": "Scatter", "heatmap": "Heatmap", "matrix": "Matrix",
   "pie": "Pie", "treemap": "Treemap", "counter": "Counter", "funnel": "Funnel",
   "histogram": "Histogram", "boxplot": "Box plot", "sankey": "Sankey", "waterfall": "Waterfall",
+  "line-forecast": "Line (forecast)", "gantt": "Gantt", "choropleth": "Choropleth map", "point-map": "Point map",
   "table": "Table",
 };
 
@@ -259,11 +268,20 @@ export function availableChartTypes(columns: string[], rows: unknown[][]): Chart
   if (!columns.length || rows.length < 2) return [];
   const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows);
   const nNum = numericIdxs.length;
-  if (!nNum) return [];
   const hasDate = dateIdxs.length > 0;
   const hasCat  = catIdxs.length > 0;
   const out: ChartType[] = [];
   const add = (t: ChartType) => { if (!out.includes(t)) out.push(t); };
+
+  // ── Tier-2 geo / gantt — may apply to shapes WITHOUT a standard numeric measure, so
+  //    they're evaluated before the numeric gate below. ──
+  const hasLat = columns.some((c) => LAT_COL.test(c));
+  const hasLon = columns.some((c) => LON_COL.test(c));
+  if (hasLat && hasLon) add("point-map");
+  if (catIdxs.some((i) => GEO_NAME_COL.test(columns[i])) && nNum >= 1) add("choropleth");
+  if (dateIdxs.length >= 2) add("gantt");   // a label + start + end span
+
+  if (!nNum) return out;   // the standard charts below all need a measure
 
   if (hasDate && hasCat) {
     // time × category — one series per category value
@@ -271,6 +289,7 @@ export function availableChartTypes(columns: string[], rows: unknown[][]): Chart
   } else if (hasDate) {
     // pure time series
     add("line"); add("area"); add("bar");
+    if (nNum === 1) add("line-forecast");   // project a single trend forward
   }
 
   if (hasCat && !hasDate) {
@@ -302,7 +321,7 @@ export function availableChartTypes(columns: string[], rows: unknown[][]): Chart
  *  the gallery shared by InvestigationChart and the Query Builder Explore rail. */
 export function availableTypesFor(inferred: ChartType): ChartType[] {
   switch (inferred) {
-    case "line":        return ["line", "bar", "counter"];
+    case "line":        return ["line", "bar", "counter", "line-forecast"];
     case "multi-line":  return ["multi-line", "small-multiples", "heatmap", "stacked-bar"];
     case "small-multiples": return ["small-multiples", "multi-line", "heatmap", "stacked-bar"];
     case "heatmap":     return ["heatmap", "multi-line", "small-multiples", "stacked-bar"];

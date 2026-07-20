@@ -29,6 +29,10 @@ const ICONS: Record<ChartType | "auto", string> = {
   boxplot:        "⧗",
   sankey:         "⋈",
   waterfall:      "▨",
+  "line-forecast": "⤳",
+  gantt:          "▤",
+  choropleth:     "◍",
+  "point-map":    "◉",
   table:          "≡",
 };
 

@@ -41,6 +41,9 @@ async function loadECharts(): Promise<typeof import("echarts/core")> {
       // Native-fit additions (2026-07 viz-type wave). Counter renders via TitleComponent,
       // Histogram + Waterfall reuse BarChart, so only these three need registering.
       charts.FunnelChart, charts.SankeyChart, charts.BoxplotChart,
+      // Tier-2: CustomChart (gantt spans) + MapChart (choropleth / point map). Line
+      // (forecast) reuses LineChart.
+      charts.CustomChart, charts.MapChart,
       components.GridComponent,
       components.TooltipComponent,
       components.LegendComponent,
@@ -50,11 +53,32 @@ async function loadECharts(): Promise<typeof import("echarts/core")> {
       components.VisualMapComponent,
       components.AxisPointerComponent,
       components.GraphicComponent,   // continuous color-binding gradient legend
+      components.GeoComponent,       // point-map base layer (coordinateSystem: "geo")
       renderers.CanvasRenderer,
     ]);
     return echarts;
   })();
   return echartsModP;
+}
+
+// The base-map geojson (~1MB) is a STATIC asset, fetched + registered ONCE and only when a
+// map/geo option is actually rendered — so choropleth/point-map cost nothing until used.
+let worldMapP: Promise<void> | null = null;
+async function ensureWorldMap(echarts: Awaited<ReturnType<typeof loadECharts>>): Promise<void> {
+  if (!worldMapP) {
+    worldMapP = fetch("/geo/world.json")
+      .then((r) => r.json())
+      .then((geo) => { echarts.registerMap("world", geo); });
+  }
+  return worldMapP;
+}
+
+/** Does this option render a map (a `map`-type series or a `geo` base layer)? */
+function optionUsesMap(option: EChartsOption): boolean {
+  if ((option as { geo?: unknown }).geo) return true;
+  const s = option.series;
+  const arr = Array.isArray(s) ? s : s ? [s] : [];
+  return arr.some((x) => (x as { type?: string })?.type === "map");
 }
 
 type EChartsInstance = {
@@ -99,7 +123,10 @@ export function EChart({ option, height = 320, className, onSelect, onReady }: P
     let cancelled = false;
     let ro: ResizeObserver | undefined;
 
-    loadECharts().then((echarts) => {
+    loadECharts().then(async (echarts) => {
+      if (cancelled || !containerRef.current) return;
+      // A choropleth / point map needs the base-map geojson registered BEFORE setOption.
+      if (optionUsesMap(option)) { try { await ensureWorldMap(echarts); } catch { /* map stays unshaded */ } }
       if (cancelled || !containerRef.current) return;
       const themeName = registerAughorTheme(echarts);
       chartRef.current?.dispose();
