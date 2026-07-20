@@ -53,6 +53,7 @@ FLAG_ENV = {
     "ada.clarify_gate": "AUGHOR_CLARIFY_GATE",
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
     "ask.resolve_first": "AUGHOR_ASK_RESOLVE_FIRST",
+    "ask.conversation_context": "AUGHOR_ASK_CONVERSATION_CONTEXT",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
     "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
     "join.key_reconciliation": "AUGHOR_JOIN_KEY_RECONCILIATION",
@@ -309,6 +310,10 @@ FLAG_META = {
     "ask.resolve_first": {
         "label": "Ground-first answer resolution",
         "description": "Before the model writes SQL, decide ONCE and deterministically whether the question is answerable as asked: resolve the named entity against the data (bind the real value, or — if a bounded existence probe confirms it is absent — abstain honestly with what IS present, instead of running an empty filter and narrating around the emptiness), and reconcile the requested time grain against the finest grain the measure's table supports. The single verdict is handed to the generator as hard constraints (so it can't silently downgrade grain or guess a value) and drives one coherent caveat, replacing several post-hoc guards that each re-decide the same thing. Off by default = byte-identical (no resolution runs). The ground-first direction from the 2026-07-13 design discussion.",
+    },
+    "ask.conversation_context": {
+        "label": "Conversation-aware resolution (follow-ups inherit context)",
+        "description": "Make the ground-first resolver (ask.resolve_first) conversation-aware so a follow-up doesn't lose the prior turn's grounding — including across a mode switch. When THIS turn is a follow-up (is_followup) it inherits the previous turn's entity/filter (so 'break that down by platform' keeps the earlier 'womenswear' filter), and the resolver never DEAD-ENDS a follow-up with a terminal 'not present in this data' — an entity implicit from the conversation is left to the already history-aware generator instead of a hard abstention. Only affects follow-ups; a fresh question resolves exactly as before. Requires ask.resolve_first. Off by default = byte-identical.",
     },
     "closed_loop": {
         "label": "Closed-loop corrections",

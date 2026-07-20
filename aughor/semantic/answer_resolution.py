@@ -113,6 +113,12 @@ _STOP = {
     "is", "are", "all", "top", "list", "count", "value", "gmv", "orders", "order",
 }
 
+# A deictic reference back to the PRIOR result — the signal that a follow-up continues the
+# previous turn ("break THAT down", "filter THOSE", "the SAME for Q3") rather than starting a
+# new filter. Gates conversation carry-forward in resolve() so "what about menswear?" (a new
+# noun, no deictic) never inherits the old entity.
+_DEICTIC = re.compile(r"\b(that|those|these|this|it|them|they|the same|same|again|previous|above|prior)\b", re.I)
+
 
 @dataclass
 class EntityBinding:
@@ -525,13 +531,18 @@ def _finer_grain_fallback(tables: dict, requested: str, measures: list[str],
 
 
 def resolve(question: str, *, schema: str = "", db=None, connection_id: str = "",
-            eff_schema: Optional[str] = None) -> Resolution:
+            eff_schema: Optional[str] = None, prior_context: str = "") -> Resolution:
     """The single ground-first verdict. Never raises; degrades to ``answerable``.
 
     Measure-first: resolve WHAT the question is about (the measure), then bind the
     entity and read the grain from the table(s) that actually carry that measure —
     so an unrelated table sharing the entity value (or a stray date column) can't
-    hijack the answer."""
+    hijack the answer.
+
+    ``prior_context`` (the previous turn's question) makes a FOLLOW-UP conversation-aware:
+    when the current question names no entity of its own, it inherits the prior turn's
+    entities — so "break that down by platform" keeps the earlier filter instead of
+    resolving against nothing. Empty (the default) → single-turn behaviour, unchanged."""
     r = Resolution(question=question)
     try:
         tables, domains = _parse_schema(schema)
@@ -540,6 +551,16 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
 
         # ── entity resolution — bind to a MEASURE-bearing table when possible ──
         candidates = _entity_candidates(question)
+        # Conversation carry-forward: a follow-up that REFERS BACK to the prior result ("break
+        # THAT down by platform", "filter THOSE to Q3") and names no entity of its own inherits
+        # the prior turn's entities (from `prior_context`) — keeping the earlier 'womenswear'
+        # filter. Gated on an explicit DEICTIC reference, never on a bare empty extraction: a
+        # follow-up that introduces a new noun ("what about menswear?") must NOT inherit the old
+        # entity even though the extractor misses the lowercase noun. An inherited entity absent
+        # in this scope is not a dead-end (the prior turn grounded it) so it never abstains.
+        inherited = bool(prior_context) and not candidates and bool(_DEICTIC.search(question))
+        if inherited:
+            candidates = _entity_candidates(prior_context)
         # Warmed high-card value samples (R5) — loaded once, read-only. Lets an
         # entity that exists in the data bind offline instead of live-probing the
         # warehouse per token; empty when nothing is cached → live probe as before.
@@ -578,7 +599,7 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
                                    value_samples=value_samples, question=question)
             if isinstance(probe, tuple):
                 r.entity_bindings.append(EntityBinding(token, probe[0], probe[1], probe[2], 0.95))
-            elif probe == "absent":
+            elif probe == "absent" and not inherited:
                 r.not_found.append(token)
         if r.not_found:
             # name a couple of real values from the probed dimension so the answer

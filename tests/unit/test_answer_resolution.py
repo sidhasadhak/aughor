@@ -272,3 +272,52 @@ def test_question_named_column_is_probed_first():
     out = R._db_find_value(db, _CONTRA, "womenswear", question="losses by category")
     assert out == ("lux.order_items", "category", "womenswear")
     assert "category" in db.seen[0]             # the named column went first
+
+
+# ── conversation carry-forward: a follow-up inherits the prior turn's entity ────
+# The cross-mode context work (flag ask.conversation_context): resolve() gains prior_context
+# (the previous turn's question). A deictic follow-up that names no entity of its own inherits
+# the earlier entity; one that introduces a new entity never does.
+
+def test_followup_inherits_prior_entity_on_deictic():
+    # "break THAT down by platform" refers back — it keeps the prior 'womenswear' filter.
+    db = _FakeDB(hits={"'womenswear'": [["womenswear"]]})
+    r = R.resolve("break that down by platform", schema=_CONTRA, db=db,
+                  prior_context="contra-revenue losses in womenswear")
+    assert any(b.value == "womenswear" for b in r.entity_bindings)
+    assert r.not_found == []
+
+
+def test_followup_naming_a_new_entity_is_not_overridden():
+    # "the same for menswear" names menswear (the extractor catches 'for X') — bind MENSWEAR,
+    # never inherit the prior womenswear.
+    db = _FakeDB(hits={"'menswear'": [["menswear"]], "'womenswear'": [["womenswear"]]})
+    r = R.resolve("the same for menswear", schema=_CONTRA, db=db,
+                  prior_context="contra-revenue losses in womenswear")
+    vals = [b.value for b in r.entity_bindings]
+    assert "menswear" in vals and "womenswear" not in vals
+
+
+def test_followup_without_a_deictic_does_not_inherit():
+    # "what about menswear?" has no deictic reference → it must NOT inherit the old entity
+    # (a wrong filter is worse than none; the history-aware generator handles the reference).
+    db = _FakeDB(hits={"'womenswear'": [["womenswear"]]})
+    r = R.resolve("what about menswear?", schema=_CONTRA, db=db,
+                  prior_context="contra-revenue losses in womenswear")
+    assert all(b.value != "womenswear" for b in r.entity_bindings)
+
+
+def test_no_prior_context_is_single_turn_unchanged():
+    # Omitting prior_context → byte-identical single-turn behaviour (no inheritance).
+    db = _FakeDB(hits={"'womenswear'": [["womenswear"]]})
+    r = R.resolve("break that down by platform", schema=_CONTRA, db=db)
+    assert r.entity_bindings == [] and r.not_found == []
+
+
+def test_inherited_entity_absent_in_scope_never_dead_ends():
+    # An inherited entity that's absent in the current scope is NOT a dead-end — the prior turn
+    # already grounded it, so it never abstains (never adds to not_found).
+    db = _FakeDB(hits={})               # every probe misses → womenswear "absent" here
+    r = R.resolve("break that down by platform", schema=_CONTRA, db=db,
+                  prior_context="losses in womenswear")
+    assert r.not_found == []
