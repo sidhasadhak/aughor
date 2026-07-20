@@ -16,6 +16,11 @@ import { type ExhibitSpec, severityRamp, rampStops, refMarkLine } from "@/compon
 
 export type Row = Record<string, unknown>;
 
+/** ECharts 6 deprecated `grid.containLabel` in favour of the outerBounds API; this is its exact
+ *  equivalent — fit the axis labels inside the layout rect. Spread into every grid so no chart
+ *  emits the deprecation while label containment stays identical. */
+export const GRID_CONTAIN = { outerBoundsMode: "same", outerBoundsContain: "axisLabel" } as const;
+
 export interface BuildInput {
   rows: Row[];
   x: string;             // x-axis field (date or category)
@@ -312,7 +317,7 @@ export function smallMultiplesOption(i: BuildInput): EChartsOption {
     const rr = Math.floor(k / cols), cc = k % cols;
     const left = gapX + cc * (cellW + gapX);
     const top = gapY + rr * (cellH + gapY + titleH);
-    grids.push({ left: `${left}%`, top: `${top + titleH}%`, width: `${cellW}%`, height: `${cellH}%`, containLabel: true });
+    grids.push({ left: `${left}%`, top: `${top + titleH}%`, width: `${cellW}%`, height: `${cellH}%`, ...GRID_CONTAIN });
     xAxes.push({ gridIndex: k, type: "category", data: cats, boundaryGap: false,
       axisLabel: { show: rr === rows - 1, formatter: xLabel, hideOverlap: true, fontSize: 10 }, axisTick: { show: false } });
     yAxes.push({ gridIndex: k, type: "value", max: ymax || undefined, splitLine: { show: false },
@@ -405,7 +410,7 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
       legend: colorLegendBlock(groups, lp) as EChartsOption["legend"],
       grid: {
         top: lp === "top" || !lp ? 30 : 10, bottom: lp === "bottom" ? 30 : 8,
-        left: lp === "left" ? 92 : 8, right: lp === "right" ? 92 : 12, containLabel: true,
+        left: lp === "left" ? 92 : 8, right: lp === "right" ? 92 : 12, ...GRID_CONTAIN,
       },
       xAxis: style.horizontal ? valAxis : pivotCat,
       yAxis: style.horizontal ? pivotCat : valAxis,
@@ -436,7 +441,7 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
       legend: { show: false },
       grid: {
         top: lp === "top" ? 30 : 10, bottom: lp === "bottom" ? 34 : 8,
-        left: 8, right: lp === "right" ? 76 : 14, containLabel: true,
+        left: 8, right: lp === "right" ? 76 : 14, ...GRID_CONTAIN,
       },
       graphic: continuousLegend(lo, hi, binding.field, binding.name, cfmt, lp) as EChartsOption["graphic"],
       xAxis: style.horizontal ? valAxis : catAxis,
@@ -683,9 +688,9 @@ export function scatterOption(i: BuildInput): EChartsOption {
     // A legend row on top, or a gradient legend on the right, each reserves its own margin
     // so the axis names don't collide with it.
     ...(groups.length > 1
-      ? { grid: { left: 8, right: 12, top: 44, bottom: 8, containLabel: true } }
+      ? { grid: { left: 8, right: 12, top: 44, bottom: 8, ...GRID_CONTAIN } }
       : continuous
-        ? { grid: { left: 8, right: 76, top: 12, bottom: 8, containLabel: true } }
+        ? { grid: { left: 8, right: 76, top: 12, bottom: 8, ...GRID_CONTAIN } }
         : {}),
     ...(graphic ? { graphic: graphic as EChartsOption["graphic"] } : {}),
     // `scale: true`: a scatter's story lives in the data's own range — anchoring at 0
@@ -751,7 +756,7 @@ export function heatmapOption(i: BuildInput): EChartsOption {
       const o = p as { value: [number, number, number] };
       return `${groups[o.value[0]]} · ${stacks[o.value[1]]}: ${fmt(o.value[2])}`;
     } },
-    grid: { left: 8, right: 12, top: 28, bottom: 28, containLabel: true },
+    grid: { left: 8, right: 12, top: 28, bottom: 28, ...GRID_CONTAIN },
     xAxis: { type: "category", data: groups, splitArea: { show: true }, axisLabel: { hideOverlap: true } },
     yAxis: { type: "category", data: stacks, splitArea: { show: true } },
     visualMap: {
@@ -885,7 +890,7 @@ export function histogramOption(i: BuildInput): EChartsOption {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" },
       formatter: (p: unknown) => { const a = (p as { dataIndex: number; value: number }[])[0]; const b = a.dataIndex;
         return `${fmt(lo + b * width)} – ${fmt(lo + (b + 1) * width)}<br/>count: ${a.value}`; } },
-    grid: { top: 16, left: 8, right: 14, bottom: 8, containLabel: true },
+    grid: { top: 16, left: 8, right: 14, bottom: 8, ...GRID_CONTAIN },
     xAxis: { type: "category", data: labels, axisLabel: { hideOverlap: true }, name: fieldLabel(f), nameLocation: "middle", nameGap: 32 },
     yAxis: { type: "value", name: "count" },
     series: [{ type: "bar", data: counts, barCategoryGap: "0%", barGap: "0%",
@@ -935,7 +940,7 @@ export function boxplotOption(i: BuildInput): EChartsOption {
       const [mn, q1, md, q3, mx] = v;
       return `${o.name}<br/>max ${fmt(mx)}<br/>Q3 ${fmt(q3)}<br/>median ${fmt(md)}<br/>Q1 ${fmt(q1)}<br/>min ${fmt(mn)}`;
     } },
-    grid: { top: 16, left: 8, right: 14, bottom: 8, containLabel: true },
+    grid: { top: 16, left: 8, right: 14, bottom: 8, ...GRID_CONTAIN },
     xAxis: { type: "category", data: cats, axisLabel: { hideOverlap: true, interval: 0 } },
     yAxis: { type: "value", scale: true, axisLabel: { formatter: (v: number) => fmt(v) } },
     series: [{ type: "boxplot", data: boxes }],
@@ -1008,7 +1013,7 @@ export function waterfallOption(i: BuildInput): EChartsOption {
       const raw = idx >= 0 && idx < vals.length ? vals[idx] : sum;
       return `${name}: ${fmt(raw)}`;
     } },
-    grid: { top: 16, left: 8, right: 14, bottom: 8, containLabel: true },
+    grid: { top: 16, left: 8, right: 14, bottom: 8, ...GRID_CONTAIN },
     xAxis: { type: "category", data: cats, axisLabel: { hideOverlap: true, interval: 0 } },
     yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
     series: [
@@ -1067,7 +1072,7 @@ export function lineForecastOption(i: BuildInput, periods = 6): EChartsOption {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", valueFormatter: (v) => fmt(v) },
     legend: { data: [fieldLabel(y), "Forecast"], top: 0 },
-    grid: { top: 28, left: 8, right: 14, bottom: 8, containLabel: true },
+    grid: { top: 28, left: 8, right: 14, bottom: 8, ...GRID_CONTAIN },
     xAxis: { type: "category", data: allLabels, boundaryGap: false, axisLabel: { hideOverlap: true } },
     yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
     series: [
@@ -1117,7 +1122,7 @@ export function ganttOption(i: BuildInput): EChartsOption {
       const o = p as { value: [number, number, number, string] };
       return `${tasks[o.value[0]]}${o.value[3] ? " · " + o.value[3] : ""}<br/>${fmtDay(o.value[1])} → ${fmtDay(o.value[2])}`;
     } },
-    grid: { top: 12, left: 8, right: 14, bottom: 8, containLabel: true },
+    grid: { top: 12, left: 8, right: 14, bottom: 8, ...GRID_CONTAIN },
     xAxis: { type: "time", axisLabel: { hideOverlap: true } },
     yAxis: { type: "category", data: tasks, inverse: true },
     series: [ganttSeries] as EChartsOption["series"],
