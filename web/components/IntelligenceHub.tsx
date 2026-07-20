@@ -9,6 +9,8 @@ import {
   getCanvasPatterns,
   getActionTriggers,
   insightKey,
+  insightUid,
+  dedupeDomainInsights,
   type DomainInsights,
   type ExplorationInsight,
   type OrgInsight,
@@ -379,6 +381,8 @@ function DomainProfile({
   const domainOrg = orgInsights.filter(o => o.domain?.toLowerCase() === domain.toLowerCase());
   // One list, ranked "top findings first" — novelty, then confidence as a tiebreak
   // (the same ranking the Hub home uses for its headline findings).
+  // data.insights is already deduped at the Hub's data boundary (see load()); insightUid keys
+  // below still guard the distinct-findings-sharing-an-id case the dedup intentionally keeps.
   const sorted = useMemo(() =>
     [...data.insights].sort((a, b) => (b.novelty - a.novelty) || ((b.confidence ?? 0) - (a.confidence ?? 0))),
     [data.insights]
@@ -485,7 +489,7 @@ function DomainProfile({
               <div style={{ padding: "40px", textAlign: "center", color: "var(--t3)", fontSize: 12 }}>
                 {search ? "No findings match your search." : "No findings yet for this domain."}
               </div>
-            ) : filtered.map(ins => <InsightRow key={insightKey(ins)} insight={ins} ctx={actionsCtx} />)}
+            ) : filtered.map(ins => <InsightRow key={insightUid(ins)} insight={ins} ctx={actionsCtx} />)}
           </div>
         )}
 
@@ -872,7 +876,12 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
         (canvasId ? getCanvasPatterns(canvasId) : getPatterns(connectionId, false, schema))
           .then(r => r.patterns ?? []).catch(() => [] as Pattern[]),
       ]);
-      setDomainData(domains);
+      // Dedup each domain's findings at the boundary. The meta-domains ("Key Questions" /
+      // "Synthesis") arrive with the same finding repeated (aggregated across schemas) — that
+      // both inflated the counts and collided React keys downstream (`pinned__4` twice). One
+      // dedup here keeps every surface — sidebar count, profile count, the list — consistent
+      // and collision-free; `insightUid` keys still guard the distinct-findings-sharing-an-id case.
+      setDomainData(dedupeDomainInsights(domains));
       setOrgInsights(org);
       setHubPatterns(pat);
     } catch {

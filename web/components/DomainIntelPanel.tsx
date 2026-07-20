@@ -9,7 +9,8 @@ import {
   extendCanvasDomainBudget,
   getCanvasExplorationEpisodes,
   promoteCanvasInsight,
-  insightKey,
+  insightUid,
+  dedupeDomainInsights,
   type DomainInsights,
   type ExplorationInsight,
   type ExplorationEpisode,
@@ -557,7 +558,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
           ? <p style={{ fontSize: 11, color: "var(--t4)", fontStyle: "italic" }}>
               {hasFilters ? "No findings match these filters." : "No findings yet — exploration is running or budget not started."}
             </p>
-          : filtered.map(ins => <FindingCard key={insightKey(ins)} insight={ins} canvasId={canvasId} connectionId={connectionId} />)
+          : filtered.map(ins => <FindingCard key={insightUid(ins)} insight={ins} canvasId={canvasId} connectionId={connectionId} />)
       )}
     </div>
   );
@@ -586,7 +587,8 @@ export function DomainIntelPanel({ connectionId, isActive, canvasId }: Props) {
         const [d, eps] = canvasId
           ? await Promise.all([getCanvasDomainInsights(canvasId), getCanvasExplorationEpisodes(canvasId)])
           : await Promise.all([getDomainInsights(connectionId), getExplorationEpisodes(connectionId)]);
-        if (!cancelled) { setData(d); setEpisodes(eps); }
+        // Dedup at the boundary so counts + list + keys stay consistent (see lib/api).
+        if (!cancelled) { setData(dedupeDomainInsights(d)); setEpisodes(eps); }
       } catch { /* silently ignore — stale data stays, next poll retries */ }
     };
 
