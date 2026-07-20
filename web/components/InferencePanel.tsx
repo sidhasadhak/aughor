@@ -15,6 +15,7 @@ const BACKEND_LABEL: Record<string, string> = {
   groq: "Groq",
   together: "Together AI",
   anthropic: "Anthropic",
+  gemini: "Google Gemini",
 };
 const ROLE_LABEL: Record<string, string> = {
   coder: "Coder — SQL & reasoning",

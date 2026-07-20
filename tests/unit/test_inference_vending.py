@@ -66,6 +66,16 @@ class TestProfile:
         assert cap.structured_output == "instructor_emulated"   # plain JSON mode
         assert cap.token_accounting == "exact"
 
+    def test_gemini_is_public_paid_native_million_context(self):
+        cap = capability_for("gemini", "gemini-flash-latest", "coder",
+                             "https://generativelanguage.googleapis.com/v1beta/openai/")
+        assert cap.privacy_class == "public_api"          # Google's hosted API — governance routes it as such
+        assert cap.cost == "per_token"
+        assert cap.tooling == "native_tools"
+        assert cap.structured_output == "native"          # TOOLS / json_schema mode enforces the schema
+        assert cap.token_accounting == "exact"
+        assert cap.max_context == 1_048_576               # 1M-token window (vs the 32k default)
+
     def test_unknown_model_falls_back_to_conservative_context(self):
         assert capability_for("ollama", "some-tiny-model", "fast", "http://localhost:11434/v1").max_context == 32_768
 
@@ -122,3 +132,29 @@ def test_capability_provider_round_trips_to_the_bound_model():
     p = cap.provider()
     assert p._model == "round-trip-model:tag"
     assert p is provider.get_provider("coder", model="round-trip-model:tag")  # cached
+
+
+# ── gemini backend construction (hermetic — no network at build time) ──────────
+
+class TestGeminiProvider:
+    URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+    def test_builder_requires_a_key(self):
+        import pytest
+        with pytest.raises(RuntimeError, match="Gemini API key"):
+            provider._build_gemini_client(self.URL, "")
+
+    def test_provider_constructs_gemini_openai_compat_binding(self):
+        p = provider.LLMProvider("gemini", "coder", model="gemini-flash-latest",
+                                 api_key="test-key", base_url=self.URL)
+        assert p.backend == "gemini"
+        assert p._base_url == self.URL
+        assert p._client is not None
+        # instructor wraps an OpenAI client pointed at the Gemini OpenAI-compat endpoint
+        assert "generativelanguage.googleapis.com" in str(p._client.client.base_url)
+
+    def test_instructor_mode_is_env_overridable(self, monkeypatch):
+        import instructor
+        monkeypatch.setenv("AUGHOR_GEMINI_INSTRUCTOR_MODE", "JSON")
+        client = provider._build_gemini_client(self.URL, "test-key")
+        assert getattr(client, "mode", None) == instructor.Mode.JSON
