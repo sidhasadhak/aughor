@@ -141,11 +141,96 @@ class Verdict:
 _OK = Verdict(ok=True, severity="ok", reason="")
 
 
-def plausibility(finding: str, sql: str = "") -> Verdict:
+# ── aggregate ↔ column-type compatibility ────────────────────────────────────────
+# The SQL engine silently COERCES a wrong-typed aggregate into a real-looking, meaningless
+# number: SUM(signup_fy) over a VARCHAR fiscal-year sums the year integers, STDDEV over text
+# casts and computes garbage. Grounding can't catch this — the query "succeeds" — so we refuse
+# the finding by the column's DECLARED type. Only a BARE column is checked (an expression's or a
+# CAST's type is unknown); an unmapped column is skipped, so it never misfires on an unknown
+# schema. DELIBERATELY NOT type-checked, because they are valid idioms whose flagging would
+# break real analytics:
+#   • SUM/AVG(boolean)            — count / proportion of TRUE rows.
+#   • COUNT / COUNT(DISTINCT) any — COUNT(DISTINCT customer_id) is the backbone of analytics;
+#                                   "distinct of a measure" is a grain concern, not a type error.
+#   • MIN / MAX any ordered type  — numbers, dates and text all order.
+
+def _type_category(dtype: str) -> str:
+    """Coarse category of a declared column type, for aggregate compatibility."""
+    d = dtype.lower()
+    if "interval" in d:                                             # additive (SUM/AVG ok)
+        return "interval"
+    if "bool" in d:
+        return "boolean"
+    if "[]" in d or re.search(r"json|blob|struct|\bmap\b|\blist\b|array|binary|bytea|geometry|union", d):
+        return "complex"
+    if re.search(r"int|dec|num|double|float|real|serial|money", d):
+        return "numeric"
+    if re.search(r"date|timestamp|time", d):
+        return "temporal"
+    if re.search(r"char|text|string|uuid|enum", d):
+        return "text"
+    return "unknown"
+
+
+# Aggregate → the type categories it is meaningful on. A function ABSENT here is not
+# type-checked (COUNT, MIN, MAX, STRING_AGG, MODE, ANY_VALUE, FIRST/LAST, …).
+_AGG_OK: dict[str, frozenset] = {
+    "sum": frozenset({"numeric", "interval", "boolean"}),
+    "avg": frozenset({"numeric", "interval", "boolean"}),
+    "stddev": frozenset({"numeric"}), "stddev_pop": frozenset({"numeric"}), "stddev_samp": frozenset({"numeric"}),
+    "variance": frozenset({"numeric"}), "var_pop": frozenset({"numeric"}), "var_samp": frozenset({"numeric"}),
+    "median": frozenset({"numeric"}), "quantile_cont": frozenset({"numeric"}), "percentile_cont": frozenset({"numeric"}),
+    "corr": frozenset({"numeric"}), "covar_pop": frozenset({"numeric"}), "covar_samp": frozenset({"numeric"}),
+    "kurtosis": frozenset({"numeric"}), "skewness": frozenset({"numeric"}), "geomean": frozenset({"numeric"}),
+}
+
+_CATEGORY_LABEL = {"text": "text", "temporal": "date/time", "complex": "structured",
+                   "boolean": "boolean", "interval": "interval"}
+
+# A single aggregate call over a BARE column (or table.col); DISTINCT / ALL allowed. An
+# expression (SUM(price*qty)) or a CAST won't match the tight ")" and is left alone.
+_AGG_CALL = re.compile(r"\b([a-z_]+)\s*\(\s*(?:all\s+|distinct\s+)?([a-z_]\w*(?:\.[a-z_]\w*)?)\s*\)", re.I)
+
+
+def _aggregate_type_mismatch(sql: str, col_types: dict[str, str]) -> Optional[str]:
+    """Why a finding is untrustworthy: its SQL applies a numeric aggregate (SUM/AVG/STDDEV/
+    MEDIAN/…) to a column whose DECLARED type can't support it (text, date/time, a structured
+    type — or interval/boolean for a stats aggregate). The result is a type-coercion artifact,
+    not a measure. Fires only on a bare, TYPE-KNOWN column."""
+    if not sql or not col_types:
+        return None
+    for m in _AGG_CALL.finditer(sql):
+        fn, ref = m.group(1).lower(), m.group(2).lower()
+        ok = _AGG_OK.get(fn)
+        if ok is None:
+            continue
+        dtype = col_types.get(ref) or col_types.get(ref.split(".")[-1])
+        if not dtype:
+            continue
+        cat = _type_category(dtype)
+        if cat != "unknown" and cat not in ok:
+            bare = ref.split(".")[-1]
+            return (f"{fn.upper()}() over the {_CATEGORY_LABEL.get(cat, cat)} column '{bare}' ({dtype}) — "
+                    f"a {fn.upper()} of a non-numeric column is a type-coercion artifact, not a real measure")
+    return None
+
+
+def plausibility(finding: str, sql: str = "", col_types: Optional[dict[str, str]] = None) -> Verdict:
     """Deterministic trust verdict. Implausible magnitude beats confound beats ok —
-    an impossible number is never worth surfacing even if it also reads causal."""
+    an impossible number is never worth surfacing even if it also reads causal.
+
+    `col_types` (bare + qualified column name → declared dtype) enables the non-additive
+    aggregate check; omit it and that check simply no-ops."""
     if not finding:
         return _OK
+
+    # (0) Aggregate–type mismatch — a numeric aggregate (SUM/AVG/STDDEV/…) over a column
+    # whose type can't support it. Highest priority: the number is meaningless regardless of
+    # what the prose claims about it.
+    reason = _aggregate_type_mismatch(sql, col_types or {})
+    if reason:
+        return Verdict(False, "implausible", reason)
+
     hay = f"{finding}\n{sql}"
 
     # (1) Impossible magnitude — an open-ended metric grossly outside its operating band.

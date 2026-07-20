@@ -67,6 +67,118 @@ def test_turnover_percentage_not_tripped():
     assert v.ok
 
 
+# ── plausibility: non-additive aggregate — SUM/AVG over a non-numeric column ──────
+
+# The real bug: SUM(signup_fy) where signup_fy is a VARCHAR fiscal-year label — DuckDB
+# coerces "2020"+"2021"+… and returns a big, real-looking, meaningless total that then
+# headlines the brief.
+_SIGNUP_SQL = ("SELECT is_top_customer, SUM(signup_fy) AS m_signupfy FROM luxexperience.customers "
+               "GROUP BY is_top_customer ORDER BY m_signupfy DESC LIMIT 20")
+_SIGNUP_FINDING = ("Top-customer signups total 2,493,788 versus 68,569,371 for non-top customers, "
+                   "meaning top customers represent only about 3.5% of all signups")
+
+
+def test_sum_over_varchar_is_implausible():
+    v = plausibility(_SIGNUP_FINDING, _SIGNUP_SQL, {"signup_fy": "VARCHAR"})
+    assert not v.ok and v.severity == "implausible"
+    assert "signup_fy" in v.reason and "VARCHAR" in v.reason
+
+
+def test_avg_over_text_is_implausible():
+    v = plausibility("Average fiscal year is ~2020", "SELECT AVG(signup_fy) FROM customers", {"signup_fy": "TEXT"})
+    assert v.severity == "implausible"
+
+
+def test_sum_over_qualified_varchar():
+    v = plausibility(_SIGNUP_FINDING, "SELECT SUM(customers.signup_fy) FROM customers",
+                     {"customers.signup_fy": "VARCHAR"})
+    assert v.severity == "implausible"
+
+
+def test_sum_over_numeric_is_ok():
+    assert plausibility("Revenue totals 2.4M", "SELECT SUM(amount) FROM orders", {"amount": "DECIMAL(18,2)"}).ok
+    for t in ("INTEGER", "BIGINT", "HUGEINT", "DOUBLE", "NUMERIC", "FLOAT", "REAL"):
+        assert plausibility("total", "SELECT SUM(x) FROM t", {"x": t}).ok, t
+
+
+def test_sum_over_boolean_is_ok():
+    # SUM(bool) legitimately counts the true rows — not flagged.
+    assert plausibility("120 flagged", "SELECT SUM(is_top_customer) FROM customers",
+                        {"is_top_customer": "BOOLEAN"}).ok
+
+
+def test_count_over_varchar_is_ok():
+    # COUNT of anything is fine — only SUM/AVG imply additivity.
+    assert plausibility("2493788 signups", "SELECT COUNT(signup_fy) FROM customers", {"signup_fy": "VARCHAR"}).ok
+
+
+def test_sum_over_expression_left_alone():
+    # An expression (not a bare column) is never flagged — the guard can't know its type.
+    assert plausibility("gmv 2.4M", "SELECT SUM(price * qty) FROM t", {"price": "VARCHAR"}).ok
+
+
+def test_no_coltypes_no_misfire():
+    # Without column types the guard no-ops (can't know the schema) — never a false positive.
+    assert plausibility(_SIGNUP_FINDING, _SIGNUP_SQL).ok
+    assert plausibility(_SIGNUP_FINDING, _SIGNUP_SQL, {}).ok
+
+
+def test_unknown_column_type_no_misfire():
+    # Column not in the type map → skip (an unmapped schema must not trip the guard).
+    assert plausibility(_SIGNUP_FINDING, _SIGNUP_SQL, {"other_col": "VARCHAR"}).ok
+
+
+def test_nonadditive_beats_confound():
+    # A SUM-over-text finding that ALSO reads anti-causal is still 'implausible' (check 0 first).
+    v = plausibility("stockouts fall as SUM rises", "SELECT SUM(signup_fy) FROM t", {"signup_fy": "VARCHAR"})
+    assert v.severity == "implausible"
+
+
+# ── plausibility: the broader aggregate ↔ type matrix ─────────────────────────
+
+def test_stddev_over_text_is_implausible():
+    assert plausibility("std", "SELECT STDDEV(signup_fy) FROM customers", {"signup_fy": "VARCHAR"}).severity == "implausible"
+
+
+def test_median_over_text_is_implausible():
+    assert plausibility("mid", "SELECT MEDIAN(name) FROM customers", {"name": "TEXT"}).severity == "implausible"
+
+
+def test_sum_over_date_is_implausible():
+    v = plausibility("total dates", "SELECT SUM(order_date) FROM orders", {"order_date": "DATE"})
+    assert v.severity == "implausible" and "date/time" in v.reason
+
+
+def test_avg_over_timestamp_is_implausible():
+    assert plausibility("avg ts", "SELECT AVG(created_at) FROM orders", {"created_at": "TIMESTAMP"}).severity == "implausible"
+
+
+def test_sum_over_struct_is_implausible():
+    assert plausibility("x", "SELECT SUM(meta) FROM t", {"meta": "STRUCT(a INTEGER)"}).severity == "implausible"
+
+
+def test_sum_over_interval_is_ok():
+    # Intervals are additive — SUM/AVG of a duration is legitimate.
+    assert plausibility("total wait", "SELECT SUM(wait) FROM t", {"wait": "INTERVAL"}).ok
+
+
+def test_stats_over_numeric_ok():
+    for fn in ("STDDEV", "VARIANCE", "MEDIAN", "STDDEV_SAMP"):
+        assert plausibility("s", f"SELECT {fn}(x) FROM t", {"x": "DECIMAL(10,2)"}).ok, fn
+
+
+def test_min_max_over_text_is_ok():
+    # MIN/MAX order any type — not a numeric aggregate, never flagged.
+    assert plausibility("earliest", "SELECT MIN(name), MAX(name) FROM customers", {"name": "VARCHAR"}).ok
+
+
+def test_count_distinct_int_id_is_ok():
+    # The backbone case: counting distinct ids (int) must NEVER be flagged (it's a grain
+    # question, not a type error). Guarding it would break real analytics.
+    assert plausibility("1200 customers", "SELECT COUNT(DISTINCT customer_id) FROM orders",
+                        {"customer_id": "BIGINT"}).ok
+
+
 # ── plausibility: anti-causal correlation (demote) ────────────────────────────
 
 def test_stockout_lead_time_is_confound():
