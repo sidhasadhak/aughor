@@ -345,22 +345,39 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
   const markLine = refMarkLine(i.exhibit?.ref_lines ?? [], style.horizontal ? "x" : "y", fmt);
   const binding = colorBinding(i);
 
-  // 1. Categorical color-by-field (the Databricks "haul → long/short" case): one stacked,
-  //    single-valued series per distinct value, so ECharts renders a real legend and each
-  //    bar stays centred in its band, coloured by its group.
+  // 1. Categorical color-by-field (the Databricks "haul → long/short" case): PIVOT to
+  //    distinct x categories × color groups (summing), one stacked series per group. One row
+  //    per x → a single-segment bar coloured by its group; N rows sharing an x → N stacked
+  //    segments (the real "split by colour"). Legend carries the groups.
   if (binding && binding.scale === "categorical") {
     const groups: string[] = [];
-    for (const r of rows) { const g = String(r[binding.field]); if (!groups.includes(g)) groups.push(g); }
+    const xcats: string[] = [];
+    const cell = new Map<string, number>();
+    const xtotal = new Map<string, number>();
+    for (const r of rows) {
+      const xv = gran ? fmtDate(String(r[i.x]), gran) : String(r[i.x]);
+      const gv = String(r[binding.field]);
+      const nv = isFinite(num(r[y])) ? num(r[y]) : 0;
+      if (!xcats.includes(xv)) xcats.push(xv);
+      if (!groups.includes(gv)) groups.push(gv);
+      cell.set(`${xv}\u0000${gv}`, (cell.get(`${xv}\u0000${gv}`) ?? 0) + nv);
+      xtotal.set(xv, (xtotal.get(xv) ?? 0) + nv);
+    }
+    if (order === "value") {
+      const asc = i.exhibit?.order === "asc" && !style.diverging;
+      xcats.sort((a, b) => (asc ? (xtotal.get(a)! - xtotal.get(b)!) : (xtotal.get(b)! - xtotal.get(a)!)));
+    }
+    const pivotCat = { ...catAxis, data: xcats };
     return {
       ...withTitle(i.title),
       tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
       legend: { data: groups, top: 0, type: "scroll" },
       grid: { top: 30, left: 8, right: 12, bottom: 8, containLabel: true },
-      xAxis: style.horizontal ? valAxis : catAxis,
-      yAxis: style.horizontal ? catAxis : valAxis,
+      xAxis: style.horizontal ? valAxis : pivotCat,
+      yAxis: style.horizontal ? pivotCat : valAxis,
       series: groups.map((g, gi) => ({
         name: g, type: "bar", stack: "cbind", barMaxWidth: 34,
-        data: rows.map((r) => (String(r[binding.field]) === g ? num(r[y]) : null)),
+        data: xcats.map((x) => { const v = cell.get(`${x}\u0000${g}`); return v == null ? null : v; }),
         label, labelLayout: i.labels ? { hideOverlap: true } : undefined,
         emphasis: { focus: "series" },
         markLine: gi === 0 ? markLine : undefined,
@@ -897,11 +914,11 @@ export function sankeyOption(i: BuildInput): EChartsOption {
     const s = "s:" + String(r[i.x]);
     const t = "t:" + String(r[i.color!]);
     nodeSet.add(s); nodeSet.add(t);
-    const k = s + " " + t;
+    const k = s + "\u0000" + t;
     linkMap.set(k, (linkMap.get(k) ?? 0) + v);
   }
   const nodes = [...nodeSet].map((name) => ({ name }));
-  const links = [...linkMap.entries()].map(([k, value]) => { const [source, target] = k.split(" "); return { source, target, value }; });
+  const links = [...linkMap.entries()].map(([k, value]) => { const [source, target] = k.split("\u0000"); return { source, target, value }; });
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "item", formatter: (p: unknown) => {

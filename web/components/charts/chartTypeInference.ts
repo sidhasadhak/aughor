@@ -78,6 +78,16 @@ export const TYPE_TO_HINT: Record<ChartType, string> = {
   "table": "auto",
 };
 
+/** Every user-selectable chart type, in a stable display order. The viz editor offers ALL
+ *  of these (compatible ones lead — see availableChartTypes) so a user can pick any type,
+ *  Databricks-style; an incompatible pick degrades rather than being hidden. Excludes the
+ *  internal-only `matrix` (folds into heatmap) and `table` (a separate view toggle). */
+export const ALL_CHART_TYPES: ChartType[] = [
+  "bar", "line", "area", "combo", "grouped-bar", "stacked-bar", "multi-line", "small-multiples",
+  "scatter", "pie", "treemap", "heatmap", "histogram", "boxplot", "funnel", "waterfall",
+  "sankey", "counter", "line-forecast", "gantt", "choropleth", "point-map",
+];
+
 /** Human label for each type — the dropdown/gallery text. */
 export const CHART_TYPE_LABEL: Record<ChartType | "auto", string> = {
   "auto": "Auto", "line": "Line", "area": "Area", "multi-line": "Multi-line",

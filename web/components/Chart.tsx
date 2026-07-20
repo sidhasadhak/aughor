@@ -347,6 +347,16 @@ export function Chart({
       option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: _cbField!, xKind: "time" });
       defaultH = 320;
     }
+    // 1d. Colour binding on a CATEGORICAL result → a single-measure BAR carrying the binding
+    //     (dimension → stacked split; measure → per-bar gradient), overriding the default bar
+    //     variant (combo / grouped / auto). This makes "Color by" always visibly split or shade
+    //     the bars — the fix for a colour picked on a multi-measure card (else combo ignored it).
+    if (!option && _cbField && catCol && !dateCol
+        && (hint === "bar" || hint === "bar_horizontal" || hint === "bar_vertical" || hint === "combo" || hint === "grouped_bar" || hint === "auto")) {
+      option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff },
+                         { horizontal: hint !== "bar_vertical" });
+      defaultH = Math.max(180, new Set(data.map((d) => d[catCol])).size * 42 + 60);
+    }
 
     // 2. Pie (explicit)
     if (!option && hint === "pie" && catCol) { option = pieOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }); defaultH = 240; }

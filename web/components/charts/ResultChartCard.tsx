@@ -28,7 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Chart, type ChartCustom } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
-import { classifyColumns, availableChartTypes, CHART_TYPE_LABEL, TYPE_TO_HINT, type ChartType } from "@/components/charts/chartTypeInference";
+import { classifyColumns, availableChartTypes, ALL_CHART_TYPES, CHART_TYPE_LABEL, TYPE_TO_HINT, type ChartType } from "@/components/charts/chartTypeInference";
 import { isUngraphableGrid } from "@/components/charts/columnRoles";
 import type { ExhibitSpec, ExhibitRefLine, ExhibitColor } from "@/components/charts/exhibit";
 import { cleanLabel } from "@/lib/format";
@@ -138,6 +138,13 @@ export function ResultChartCard({
 }: Props) {
   const { numericIdxs, catIdxs, dateIdxs } = useMemo(() => classifyColumns(columns, rows), [columns, rows]);
   const chartTypes = useMemo(() => availableChartTypes(columns, rows), [columns, rows]);
+  // The editor offers EVERY chart type (Databricks-style), with the shape-compatible ones
+  // leading; an incompatible pick degrades. Only when the result is chartable at all
+  // (compatible set non-empty) — a stats/profile grid stays table-only.
+  const offeredTypes = useMemo(
+    () => (chartTypes.length ? [...chartTypes, ...ALL_CHART_TYPES.filter((t) => !chartTypes.includes(t))] : []),
+    [chartTypes],
+  );
   // The exhibit spec (semantic colour / reference lines) rides inside chart_config on the quick
   // path, but it is NOT field-role config: it must survive the user choosing a chart type, which
   // nulls chartConfig below. Lift it out so a Display switch can't silently drop the grammar.
@@ -316,7 +323,7 @@ export function ResultChartCard({
     chartAvailable: chartTypes.length > 0,
     canPivot,
     chartTypeValue: typeSel,
-    chartTypeOptions: chartTypes.length ? [{ v: "auto", t: "Auto" }, ...chartTypes.map((t) => ({ v: t, t: CHART_TYPE_LABEL[t] }))] : [],
+    chartTypeOptions: offeredTypes.length ? [{ v: "auto", t: "Auto" }, ...offeredTypes.map((t) => ({ v: t, t: CHART_TYPE_LABEL[t] }))] : [],
     setChartType: (v) => setTypeSel(v as ChartType | "auto"),
     dimValue: dimSel ?? (dimCols.length >= 2 ? AUTO_OPT : (dimCols[0] ?? "")),
     dimOptions: dimCols.length
