@@ -1019,6 +1019,19 @@ def _narrator_sample(columns, rows, n: int = 20):
     return rows[:n], False
 
 
+def _prior_turn_context(history) -> str:
+    """The previous turn's question — the ground-first resolver mines it for entities a
+    follow-up inherits (so "break that down by platform" keeps the earlier filter). Handles
+    both the pydantic ChatHistoryTurn and a plain dict; empty when there is no prior turn."""
+    for turn in reversed(history or []):
+        q = getattr(turn, "question", None)
+        if q is None and isinstance(turn, dict):
+            q = turn.get("question")
+        if isinstance(q, str) and q.strip():
+            return q.strip()
+    return ""
+
+
 def build_history_section(history, *, followup: bool = False) -> str:
     """Render the conversation context injected into the chat SQL prompt.
 
@@ -1422,9 +1435,16 @@ async def _stream_chat(
             from aughor.kernel.flags import flag_enabled as _rf_flag
             if _rf_flag("ask.resolve_first"):
                 from aughor.semantic.answer_resolution import resolve as _resolve_answer
+                # Conversation-aware (flag ask.conversation_context): a follow-up inherits the
+                # prior turn's entity/filter so a mode switch or a "break that down" doesn't lose
+                # the earlier grounding. Empty for a fresh question → single-turn behaviour.
+                _prior_ctx = (_prior_turn_context(history)
+                              if _rf_flag("ask.conversation_context") and is_followup(question)
+                              else "")
                 _resolution = _resolve_answer(question, schema=_full_schema, db=db,
                                               connection_id=connection_id,
-                                              eff_schema=canvas_scope_eff_schema)
+                                              eff_schema=canvas_scope_eff_schema,
+                                              prior_context=_prior_ctx)
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "ground-first resolution is best-effort; answering without it",
@@ -1432,8 +1452,12 @@ async def _stream_chat(
 
         # Honest abstention: a clear filter entity isn't in the data → say so with
         # what IS present, instead of running an empty filter and narrating around
-        # the emptiness (the "Mytheresa isn't a franchise here" case).
-        if _resolution is not None and _resolution.feasibility == "not_answerable":
+        # the emptiness (the "Mytheresa isn't a franchise here" case). But NEVER dead-end a
+        # FOLLOW-UP when conversation-context is on — the entity/reference may be implicit from
+        # the conversation, so let the history-aware generator answer instead of a terminal stop.
+        from aughor.kernel.flags import flag_enabled as _cc_flag
+        _abstain_ok = not (_cc_flag("ask.conversation_context") and is_followup(question))
+        if _resolution is not None and _resolution.feasibility == "not_answerable" and _abstain_ok:
             _abstain = _resolution.caveat
             yield _sse("mode", {"query_mode": "final_text"})
             yield _sse("headline", {"headline": _abstain})
