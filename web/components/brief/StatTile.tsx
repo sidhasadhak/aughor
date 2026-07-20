@@ -43,11 +43,21 @@ export interface StatTileProps {
   /** Flex basis / floor so a KPI is never forced as wide as a chart card. */
   flexBasis?: number;
   minWidth?:  number;
+  /** A 2px left accent bar in `accent` (the Briefing digest / suggested-pin variant). The
+   *  KPI strip leaves this off and keeps its borderless look. */
+  accentBar?: boolean;
+  /** Render the label as a wrapped, sentence-case descriptor (N lines) instead of the
+   *  uppercase caption — for digest tiles whose label is a phrase, not a metric name. */
+  labelLines?: number;
+  /** A footer slot rendered in place of the delta/sparkline/caption (e.g. a context figure
+   *  + a "finding →" deep-link). When set, delta/sparkline/caption are ignored. */
+  footer?:    ReactNode;
 }
 
 export function StatTile({
   label, value, accent = "var(--b1)", delta, sparkline, caption,
   expandable = false, open = false, onClick, title, flexBasis = 160, minWidth = 150,
+  accentBar = false, labelLines, footer,
 }: StatTileProps) {
   const fav = delta?.favorable;
   const deltaColor = fav == null ? "var(--t3)" : fav ? "var(--grn4)" : "var(--red4)";
@@ -58,7 +68,8 @@ export function StatTile({
       onClick={onClick}
       title={title}
       style={{
-        position: "relative", flex: `1 1 ${flexBasis}px`, minWidth, padding: "11px 13px",
+        position: "relative", flex: `1 1 ${flexBasis}px`, minWidth,
+        padding: "11px 13px", paddingLeft: accentBar ? 15 : 13,
         borderRadius: "var(--r2)", background: open ? "var(--bg-3)" : "var(--bg-2)",
         // Explicit per-side borders (not the `border` shorthand) so React never warns about
         // mixing shorthand + longhand across rerenders.
@@ -68,9 +79,21 @@ export function StatTile({
         transition: "background var(--dur-fast), border-color var(--dur-fast)",
       }}
     >
-      <div className="aug-label" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 14 }} title={label}>
-        {label}
-      </div>
+      {accentBar && (
+        <span aria-hidden style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 2, borderRadius: 1, background: accent }} />
+      )}
+      {labelLines && labelLines > 1 ? (
+        <div style={{
+          fontSize: 11.5, lineHeight: 1.35, color: "var(--t2)", minHeight: "2.7em", paddingRight: 14,
+          display: "-webkit-box", WebkitLineClamp: labelLines, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
+        }} title={label}>
+          {label}
+        </div>
+      ) : (
+        <div className="aug-label" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 14 }} title={label}>
+          {label}
+        </div>
+      )}
       {expandable && (
         <span aria-hidden style={{ position: "absolute", top: 9, right: 10, fontSize: 11, lineHeight: 1, color: open ? accent : "var(--t4)" }}>
           {open ? "×" : "⤢"}
@@ -79,7 +102,7 @@ export function StatTile({
       <div className="aug-fs-display" style={{ color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1 }}>
         {value}
       </div>
-      {delta && delta.sign !== 0 && (
+      {!footer && delta && delta.sign !== 0 && (
         <span style={{
           alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 3,
           fontSize: 11, fontWeight: 600, fontFamily: "var(--font-mono)",
@@ -88,10 +111,11 @@ export function StatTile({
           {delta.sign > 0 ? "↑" : "↓"} {delta.text}
         </span>
       )}
-      {sparkline && sparkline.length >= 2 && (
+      {!footer && sparkline && sparkline.length >= 2 && (
         <Sparkline values={sparkline} color={accent} width={130} height={26} showDot={false} />
       )}
-      {caption && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{caption}</div>}
+      {!footer && caption && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{caption}</div>}
+      {footer}
     </div>
   );
 }

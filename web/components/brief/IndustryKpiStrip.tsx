@@ -23,6 +23,8 @@
 import { useEffect, useState } from "react";
 import NumberFlow, { type Format } from "@number-flow/react";
 import { getBusinessProfile, runDirectQuery, currencySymbol } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { GroundedNumber } from "@/components/brief/GroundedNumber";
 import { seriesTrend } from "@/components/brief/Sparkline";
 import { StatTile } from "@/components/brief/StatTile";
@@ -260,11 +262,30 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
   );
 }
 
+/** Direction B (§6.6): when a connection has no north-star metrics, the Key-Metrics slot
+ *  holds a quiet dashed CTA instead of vanishing — the standing scorecard row never silently
+ *  disappears. Quiet by design so it doesn't compete with real content. */
+function DefineKpiCta() {
+  return (
+    <div>
+      <div className="aug-label" style={{ marginBottom: 8 }}>Key Metrics</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, border: "1px dashed var(--b2)", borderRadius: "var(--r2)", padding: "12px 16px", fontSize: 12.5, color: "var(--t3)" }}>
+        <span aria-hidden style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: "var(--b3)", flex: "none" }} />
+        <span><b style={{ color: "var(--t2)", fontWeight: 500 }}>No north-star metrics defined</b> — define KPIs to add a standing scorecard row.</span>
+        <Button variant="ghost" size="xs"
+          onClick={() => toast.info("Define north-star metrics", { description: "Set north-star KPIs in the connection's business profile to populate this scorecard row." })}
+          style={{ marginLeft: "auto", fontSize: 11 }}>Define KPIs</Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Live container ──────────────────────────────────────────────────────────────
 export function IndustryKpiStrip({ connectionId, schema }: { connectionId: string; schema?: string }) {
   const [industry, setIndustry] = useState("");
   const [period, setPeriod] = useState("");
   const [kpis, setKpis] = useState<Kpi[]>([]);
+  const [noMetrics, setNoMetrics] = useState(false);   // profile settled, zero metrics defined
   // The currency symbol is baked into each KPI inside the effect below, so re-run the
   // effect when org settings change (else the strip keeps the old currency until reload).
   const orgV = useOrgSettings();
@@ -276,12 +297,13 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
     (async () => {
       const p = await getBusinessProfile(connectionId, schema);
       if (!alive) return;
-      if (!p.available || !p.profile) { setIndustry(""); setKpis([]); return; }
+      if (!p.available || !p.profile) { setIndustry(""); setKpis([]); setNoMetrics(true); return; }
       setIndustry(p.profile.industry || "");
       // Override-wins: a set org/workspace currency beats the inferred profile currency,
       // and matches what the expanded charts render from the same orgSettings cache.
       const sym = effectiveCurrencySymbol() || currencySymbol(p.profile.currency_code);
       const metrics = (p.profile.north_star_metrics || []).filter(m => m.value_sql?.trim());
+      setNoMetrics(metrics.length === 0);
 
       const results = await Promise.all(metrics.map(async (m, i): Promise<Kpi | null> => {
         try {
@@ -313,5 +335,6 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
     return () => { alive = false; };
   }, [connectionId, schema, orgV]);
 
-  return <KpiStripView industry={industry} period={period} kpis={kpis} />;
+  if (kpis.length > 0) return <KpiStripView industry={industry} period={period} kpis={kpis} />;
+  return noMetrics ? <DefineKpiCta /> : null;
 }
