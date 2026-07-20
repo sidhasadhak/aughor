@@ -1302,6 +1302,35 @@ export function insightKey(ins: { id: string; source_schema?: string }): string 
   return ins.source_schema ? `${ins.source_schema}::${ins.id}` : ins.id;
 }
 
+/** Collision-proof identity for a finding — use this (NOT `insightKey` or a bare `.id`) as the
+ *  React key and the client-side dedup identity for any list of ExplorationInsights.
+ *
+ *  `insightKey` (source_schema::id) is NOT unique for the meta-domains ("Key Questions" /
+ *  "Synthesis"): their findings reuse bare ids like `pinned__4` / `synth__chain__1` — some as
+ *  TRUE duplicates (same id AND text, e.g. a pinned question aggregated across schemas), some as
+ *  DISTINCT findings that merely share an id. Folding the finding text in disambiguates the
+ *  id-collisions; running the list through `dedupeInsights` first drops the true duplicates. Doing
+ *  both is what stops React's "two children with the same key" warning at the finding lists. */
+export function insightUid(ins: { id: string; source_schema?: string; finding: string }): string {
+  return `${insightKey(ins)}|${ins.finding}`;
+}
+
+/** Drop repeated findings (first occurrence wins), keyed by `insightUid`. */
+export function dedupeInsights<T extends { id: string; source_schema?: string; finding: string }>(list: T[]): T[] {
+  const seen = new Set<string>();
+  return list.filter(i => { const k = insightUid(i); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+/** Dedup every domain's findings in a domain→insights map. Apply this once at the fetch
+ *  boundary so every downstream surface (counts, lists, keys) sees the same de-duplicated
+ *  findings — the meta-domains ("Key Questions" / "Synthesis") arrive with the same finding
+ *  repeated (aggregated across schemas). */
+export function dedupeDomainInsights<D extends { insights: { id: string; source_schema?: string; finding: string }[] }>(
+  map: Record<string, D>,
+): Record<string, D> {
+  return Object.fromEntries(Object.entries(map).map(([k, d]) => [k, { ...d, insights: dedupeInsights(d.insights) }]));
+}
+
 export interface DomainInsights {
   insights: ExplorationInsight[];
   queries_used: number;
