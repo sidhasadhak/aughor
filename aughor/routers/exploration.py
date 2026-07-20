@@ -327,11 +327,43 @@ def get_exploration_findings(conn_id: str, schema: str | None = None):
     return result
 
 
-def _annotate_insights_triage(by_domain: dict, profile) -> None:
+def _connection_col_types(conn_id: str) -> dict[str, str]:
+    """Bare + qualified column name → declared dtype for the connection, from the CACHED
+    schema (one connection open, then the shared schema cache). Lets triage catch a SUM/AVG
+    over a non-numeric column. Fail-open ({}) — a schema hiccup must never blank the cards."""
+    try:
+        from aughor.db.connection import open_connection_for
+        from aughor.routers._shared import get_schema_cached as _schema_cached
+        from aughor.tools.schema import build_rich_schema
+        db = open_connection_for(conn_id)
+        try:
+            schema_str = _schema_cached(conn_id, db)
+        finally:
+            db.close()   # any close error propagates to the outer fail-open tolerate()
+        out: dict[str, str] = {}
+        for t in build_rich_schema(schema_str).get("tables", []):
+            tname = (t.get("name") or "").split(".")[-1].lower()   # bare table
+            for c in t.get("columns", []):
+                cname = (c.get("name") or "").lower()
+                ctype = (c.get("type") or "").strip()
+                if not cname or not ctype:
+                    continue
+                out.setdefault(cname, ctype)          # bare col (first real type wins)
+                if tname:
+                    out[f"{tname}.{cname}"] = ctype    # qualified — cross-table disambiguation
+        return out
+    except Exception as _e:
+        from aughor.kernel.errors import tolerate
+        tolerate(_e, "domains: build col-types for triage", counter="domains.coltypes_failed")
+        return {}
+
+
+def _annotate_insights_triage(by_domain: dict, profile, col_types: dict[str, str] | None = None) -> None:
     """Stamp each insight with `impact` (the briefing's ranking score) and `plausibility`
     (None | 'implausible' | 'confound'), reusing knowledge.triage so the insight CARDS rank
     and filter by the SAME authority as the brief — instead of re-implementing it in the
-    frontend. Mutates in place; fail-open (a triage bug must not blank the cards)."""
+    frontend. `col_types` enables the non-additive-aggregate guard (SUM/AVG over a VARCHAR).
+    Mutates in place; fail-open (a triage bug must not blank the cards)."""
     try:
         from aughor.knowledge.triage import impact_score, plausibility, north_star_tokens
         names = [getattr(m, "name", "") for m in (getattr(profile, "north_star_metrics", None) or [])]
@@ -341,7 +373,7 @@ def _annotate_insights_triage(by_domain: dict, profile) -> None:
                 finding = ins.get("finding", "")
                 ins["impact"] = round(
                     impact_score(finding, ins.get("novelty", 0), ins.get("confidence", 0), ns), 4)
-                v = plausibility(finding, ins.get("sql", ""))
+                v = plausibility(finding, ins.get("sql", ""), col_types)
                 ins["plausibility"] = None if v.ok else v.severity
     except Exception as _e:
         from aughor.kernel.errors import tolerate
@@ -364,8 +396,9 @@ def get_domain_insights(conn_id: str, schema: str | None = None):
             "budget_cap": budgets.get(f"{domain}__cap", 15),
             "angles_covered": coverage.get(domain, []),
         }
-    # Impact-rank + plausibility for the cards (same authority as the brief).
-    _annotate_insights_triage(result, _load_business_profile(conn_id, schema))
+    # Impact-rank + plausibility for the cards (same authority as the brief). Pass the
+    # connection's column types so the triage can catch SUM/AVG over a non-numeric column.
+    _annotate_insights_triage(result, _load_business_profile(conn_id, schema), _connection_col_types(conn_id))
     return result
 
 
