@@ -7,6 +7,7 @@ import {
   type DashboardCard,
 } from "@/lib/api";
 import { PinnedCardsCanvas, type CardState } from "@/components/brief/PinnedCardsCanvas";
+import { PinnedCardsGrid } from "@/components/brief/PinnedCardsGrid";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
@@ -27,6 +28,18 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
 }) {
   const [cards, setCards] = useState<CardState[]>([]);   // the user's persistent pins
   const [ready, setReady] = useState(false);
+
+  // Arrange mode — the reorder grid ("tidy") is the default; the freeform React-Flow canvas is
+  // kept behind an "Arrange freely" toggle. Persisted per-connection so the reader's choice sticks.
+  const [arrangeMode, setArrangeMode] = useState<"tidy" | "free">("tidy");
+  useEffect(() => {
+    try { const m = localStorage.getItem(`aughor:cockpit-mode:${connectionId}`); setArrangeMode(m === "free" ? "free" : "tidy"); }
+    catch { setArrangeMode("tidy"); }
+  }, [connectionId]);
+  const setMode = useCallback((m: "tidy" | "free") => {
+    setArrangeMode(m);
+    try { localStorage.setItem(`aughor:cockpit-mode:${connectionId}`, m); } catch { /* private mode — mode just won't persist */ }
+  }, [connectionId]);
 
   // User pins — fetched from the store, each re-run through the guard battery.
   useEffect(() => {
@@ -134,23 +147,45 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <span className="aug-tag aug-tag-green">Guarded</span>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>your pinned cards · drag the title to arrange · select to resize · snaps to grid, never overlaps</span>
-        <Button
-          variant="ghost" size="xs"
-          onClick={() => tidyRef.current?.()}
-          title="Re-arrange every card into a clean, gap-free grid"
-          style={{ marginLeft: "auto", fontSize: 11, color: "var(--t3)", padding: "2px 8px", textTransform: "none" as const, letterSpacing: 0 }}
-        >▦ Tidy up</Button>
+        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+          {arrangeMode === "tidy"
+            ? "your pinned cards · drag to reorder by priority"
+            : "your pinned cards · drag the title to arrange · select to resize · snaps to grid, never overlaps"}
+        </span>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          {arrangeMode === "free" && (
+            <Button variant="ghost" size="xs" onClick={() => tidyRef.current?.()}
+              title="Re-pack every card into a clean, gap-free grid"
+              style={{ fontSize: 11, color: "var(--t3)", padding: "2px 8px", textTransform: "none" as const, letterSpacing: 0 }}>▦ Tidy up</Button>
+          )}
+          <Button variant="ghost" size="xs"
+            onClick={() => setMode(arrangeMode === "tidy" ? "free" : "tidy")}
+            title={arrangeMode === "tidy" ? "Place cards freely on a canvas (drag + resize)" : "Back to the tidy reorder grid"}
+            style={{ fontSize: 11, color: "var(--t3)", padding: "2px 8px", textTransform: "none" as const, letterSpacing: 0 }}>
+            {arrangeMode === "tidy" ? "⤢ Arrange freely" : "⊞ Grid"}
+          </Button>
+        </span>
       </div>
-      <PinnedCardsCanvas
-        connectionId={connectionId}
-        cards={cards}
-        onRemove={remove}
-        onRefresh={refreshOne}
-        onOpenSource={onOpenSource}
-        onEvidence={onEvidence}
-        registerTidy={registerTidy}
-      />
+      {arrangeMode === "tidy" ? (
+        <PinnedCardsGrid
+          connectionId={connectionId}
+          cards={cards}
+          onRemove={remove}
+          onRefresh={refreshOne}
+          onOpenSource={onOpenSource}
+          onEvidence={onEvidence}
+        />
+      ) : (
+        <PinnedCardsCanvas
+          connectionId={connectionId}
+          cards={cards}
+          onRemove={remove}
+          onRefresh={refreshOne}
+          onOpenSource={onOpenSource}
+          onEvidence={onEvidence}
+          registerTidy={registerTidy}
+        />
+      )}
     </div>
   );
 }
