@@ -320,7 +320,8 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
           )}
           {data.onOpenSource && card.provenance.insight_id && (
             <Button variant="ghost" size="xs" onClick={() => data.onOpenSource!(card.provenance.insight_id)}
-              style={{ fontSize: 11, color: "var(--blue4)", padding: "2px 6px" }}>Source</Button>
+              title="Open the finding that explains this metric's move"
+              style={{ fontSize: 11, color: "var(--blue4)", padding: "2px 6px" }}>Why →</Button>
           )}
           {canAlert && !alerting && (
             <Button variant="ghost" size="xs" onClick={() => setAlertOpen(o => !o)}
