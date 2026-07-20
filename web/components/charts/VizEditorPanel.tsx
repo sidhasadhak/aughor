@@ -4,19 +4,21 @@
  * VizEditorPanel — the Databricks-style right-docked "Edit visualization" drawer.
  *
  * Structured as ENCODING CHANNELS (Visualization · X axis · Y axis · Color) plus a few
- * mark/reference sections (Labels · Tooltip · Transform · Annotation). Each field channel
- * shows only a compact FIELD CHIP by default; its secondary controls (Field select, scale
- * type, display name, aggregation, number format, axis title) stay COLLAPSED behind the chip
- * and reveal on click — so the default view is a short, scannable list, not a wall of rows.
- * Table + Pivot fold into the single Visualization dropdown. Edits apply live; no Apply button.
+ * mark/reference sections (Labels · Tooltip · Transform · Annotation). Each channel shows its
+ * FIELD as one clean dropdown; rarely-touched formatting (axis title, number format, the
+ * reference-line editor) hides behind a per-section options toggle, so the default view is a
+ * short, scannable list. Table + Pivot fold into the single Visualization dropdown. Every
+ * control is the app's design-system Select/Input (Base UI), not a native element.
  *
  * It is a pure presentational component: it renders whatever the caller passes in the
  * VizEditorModel. Single-instance drawering is handled by the caller (vizEditorStore + portal).
  */
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Minus, X, Download } from "lucide-react";
+import { Minus, X, Download, BarChart3, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export interface VizSelectOption { v: string; t: string }
 
@@ -87,86 +89,77 @@ export interface VizEditorModel {
 
 // ── primitives ────────────────────────────────────────────────────────────────
 
-const SECTION_LABEL: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, letterSpacing: ".04em", color: "var(--t2)",
-};
+const SECTION_LABEL: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, color: "var(--t2)" };
 
-const labelFor = (opts: VizSelectOption[], v: string) => opts.find((o) => o.v === v)?.t ?? v;
+/** The app's design-system dropdown (Base UI), wrapped to the panel's {value, options, onChange}
+ *  API. Portals its menu to <body> — the drawer's outside-click handler guards for that. */
+function Select({ value, options, onChange, leading }: {
+  value: string; options: VizSelectOption[]; onChange: (v: string) => void; leading?: React.ReactNode;
+}) {
+  const items = Object.fromEntries(options.map((o) => [o.v, o.t]));
+  return (
+    <UiSelect value={value} onValueChange={(v) => onChange((v ?? "") as string)} items={items}>
+      <SelectTrigger className="w-full">
+        {leading}
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => <SelectItem key={o.v} value={o.v}>{o.t}</SelectItem>)}
+      </SelectContent>
+    </UiSelect>
+  );
+}
 
-/** A plain titled section (used for the Visualization dropdown). */
+function TextInput({ value, placeholder, onChange }: { value: string; placeholder?: string; onChange: (v: string) => void }) {
+  return <Input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />;
+}
+
+/** A label above its control (the stacked layout the sections use). */
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <span style={{ fontSize: 11, fontWeight: 500, color: "var(--t3)" }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+/** A plain titled section (the Visualization dropdown). */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ padding: "12px 15px", borderBottom: "1px solid var(--b1)", display: "flex", flexDirection: "column", gap: 8 }}>
+    <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--b1)", display: "flex", flexDirection: "column", gap: 9 }}>
       <div style={SECTION_LABEL}>{title}</div>
       {children}
     </div>
   );
 }
 
-/** A label above its control (the stacked layout the expand panels use). */
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".02em", color: "var(--t3)" }}>{label}</span>
-      {children}
-    </label>
-  );
-}
-
-const CONTROL_STYLE: React.CSSProperties = {
-  fontSize: 11.5, color: "var(--t1)", background: "var(--bg-1)",
-  border: "1px solid var(--b2)", borderRadius: "var(--r2)", padding: "5px 7px", outline: "none",
-};
-
-function Select({ value, options, onChange }: { value: string; options: VizSelectOption[]; onChange: (v: string) => void }) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...CONTROL_STYLE, width: "100%", cursor: "pointer" }}>
-      {options.map((o) => <option key={o.v} value={o.v}>{o.t}</option>)}
-    </select>
-  );
-}
-
-function TextInput({ value, placeholder, onChange }: { value: string; placeholder?: string; onChange: (v: string) => void }) {
-  return (
-    <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={{ ...CONTROL_STYLE, width: "100%" }} />
-  );
-}
-
-/** The collapsed chip that names a channel's bound field; click to reveal its controls. */
-function FieldChip({ label, empty, open, onClick }: { label: string; empty?: boolean; open: boolean; onClick: () => void }) {
-  return (
-    <Button
-      variant="ghost" onClick={onClick}
-      className="!w-full !h-auto !justify-between !px-2.5 !py-2 !font-medium"
-      style={{
-        background: "var(--bg-1)", border: `1px solid ${open ? "var(--accent)" : "var(--b2)"}`,
-        borderRadius: "var(--r2)", color: empty ? "var(--t4)" : "var(--t1)", fontSize: 12,
-      }}
-    >
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, textAlign: "left" }}>{label}</span>
-      <ChevronDown size={14} style={{ color: "var(--t4)", flexShrink: 0, transition: "transform var(--dur-fast,.12s)", transform: open ? "rotate(180deg)" : "none" }} />
-    </Button>
-  );
-}
-
-/** An encoding channel: a header, a field chip, and a collapsible detail panel. */
-function Channel({ title, chip, empty, defaultOpen, onRemove, children }: {
-  title: string; chip: string; empty?: boolean; defaultOpen?: boolean;
-  onRemove?: (() => void) | null; children: React.ReactNode;
+/** An encoding channel: a header (with optional options-toggle + remove), a primary control,
+ *  and a collapsible `more` block for rarely-touched formatting. */
+function Channel({ title, onRemove, more, children }: {
+  title: string; onRemove?: (() => void) | null; more?: React.ReactNode; children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(!!defaultOpen);
+  const [open, setOpen] = useState(false);
   return (
-    <div style={{ padding: "12px 15px", borderBottom: "1px solid var(--b1)", display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 20 }}>
+    <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--b1)", display: "flex", flexDirection: "column", gap: 9 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, minHeight: 20 }}>
         <span style={SECTION_LABEL}>{title}</span>
-        {onRemove && (
-          <Button variant="ghost" size="icon-sm" onClick={onRemove} title="Remove" style={{ color: "var(--t4)" }}>
-            <Minus size={13} />
-          </Button>
-        )}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 1 }}>
+          {more && (
+            <Button variant="ghost" size="icon-sm" onClick={() => setOpen((o) => !o)} title="More options"
+              style={{ color: open ? "var(--accent)" : "var(--t4)" }}>
+              <SlidersHorizontal size={13} />
+            </Button>
+          )}
+          {onRemove && (
+            <Button variant="ghost" size="icon-sm" onClick={onRemove} title="Remove" style={{ color: "var(--t4)" }}>
+              <Minus size={14} />
+            </Button>
+          )}
+        </div>
       </div>
-      <FieldChip label={chip} empty={empty} open={open} onClick={() => setOpen((o) => !o)} />
-      {open && <div style={{ display: "flex", flexDirection: "column", gap: 9, paddingTop: 2 }}>{children}</div>}
+      {children}
+      {more && open && <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>{more}</div>}
     </div>
   );
 }
@@ -174,7 +167,7 @@ function Channel({ title, chip, empty, defaultOpen, onRemove, children }: {
 /** A single-toggle row that reads as a section header (Labels / Tooltip). */
 function ToggleRow({ title, on, onChange }: { title: string; on: boolean; onChange: (b: boolean) => void }) {
   return (
-    <div style={{ padding: "11px 15px", borderBottom: "1px solid var(--b1)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--b1)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       <span style={SECTION_LABEL}>{title}</span>
       <Toggle on={on} onChange={onChange} />
     </div>
@@ -199,18 +192,20 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (b: boolean) => void 
   );
 }
 
-/** A segmented control (Continuous | Categorical). */
+/** A segmented control (Categorical | Continuous). */
 function SegToggle<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: [T, string][] }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 2, border: "1px solid var(--b2)", borderRadius: "var(--r2)", padding: 2, alignSelf: "flex-start" }}>
-      {options.map(([v, label]) => (
-        <Button
-          key={v} variant="ghost" size="xs" onClick={() => onChange(v)} aria-pressed={value === v}
-          style={value === v ? { background: "var(--bg-sel)", color: "var(--accent)" } : { color: "var(--t3)" }}
-        >
-          {label}
-        </Button>
-      ))}
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 3, border: "1px solid var(--b2)", borderRadius: "var(--r2)", padding: 3, alignSelf: "flex-start", background: "var(--bg-1)" }}>
+      {options.map(([v, label]) => {
+        const on = value === v;
+        return (
+          <Button key={v} variant="ghost" size="xs" onClick={() => onChange(v)} aria-pressed={on}
+            className="!h-6 !px-2.5 !rounded-[var(--r2)] !font-medium"
+            style={on ? { background: "var(--bg-sel)", color: "var(--accent)" } : { color: "var(--t3)" }}>
+            {label}
+          </Button>
+        );
+      })}
     </div>
   );
 }
@@ -220,20 +215,33 @@ function Warn({ text }: { text: string }) {
 }
 
 // Annotation channel owns the "add a line" input state (the panel is otherwise stateless).
-function AnnotationChannel({ model }: { model: VizEditorModel }) {
+function AnnotationSection({ model }: { model: VizEditorModel }) {
   const [val, setVal] = useState("");
   const [label, setLabel] = useState("");
   const add = () => {
     const n = Number(val);
     if (val && !Number.isNaN(n)) { model.addRefLine(n, label); setVal(""); setLabel(""); }
   };
-  const n = model.refLines.length;
+  const more = (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <Input type="number" value={val} placeholder="value" className="w-[76px]"
+          onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <Input value={label} placeholder="label" className="flex-1 min-w-0"
+          onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <Button variant="ghost" size="xs" onClick={add} disabled={!val} style={{ color: "var(--accent)" }}>Add</Button>
+      </div>
+      <Button variant="ghost" size="xs" onClick={model.addAverageLine} style={{ alignSelf: "flex-start", color: "var(--t3)" }}>
+        + Average of {model.measureLabel}
+      </Button>
+    </>
+  );
   return (
-    <Channel title="Annotation" chip={n ? `${n} reference line${n > 1 ? "s" : ""}` : "Add a reference line"} empty={n === 0}>
-      {n > 0 && (
+    <Channel title="Annotation" more={more}>
+      {model.refLines.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {model.refLines.map((l, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--t2)" }}>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--t2)" }}>
               <span style={{ width: 12, borderTop: "1.5px dashed var(--t3)" }} />
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.label} · {l.value}</span>
               <Button variant="ghost" size="icon-sm" onClick={() => model.removeRefLine(i)} title="Remove" style={{ color: "var(--t4)" }}>
@@ -242,17 +250,9 @@ function AnnotationChannel({ model }: { model: VizEditorModel }) {
             </div>
           ))}
         </div>
+      ) : (
+        <div style={{ fontSize: 11.5, color: "var(--t4)" }}>No reference lines yet — open options to add one.</div>
       )}
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <input type="number" value={val} placeholder="value" onChange={(e) => setVal(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") add(); }} style={{ ...CONTROL_STYLE, width: 72 }} />
-        <input value={label} placeholder="label" onChange={(e) => setLabel(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") add(); }} style={{ ...CONTROL_STYLE, flex: 1, minWidth: 0 }} />
-        <Button variant="ghost" size="xs" onClick={add} disabled={!val} style={{ color: "var(--accent)" }}>Add</Button>
-      </div>
-      <Button variant="ghost" size="xs" onClick={model.addAverageLine} style={{ alignSelf: "flex-start", color: "var(--t3)" }}>
-        + Average of {model.measureLabel}
-      </Button>
     </Channel>
   );
 }
@@ -262,12 +262,16 @@ function AnnotationChannel({ model }: { model: VizEditorModel }) {
 export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
 
-  // Escape closes; a click outside the drawer closes. The listener is attached on mount,
-  // AFTER the pencil click that opened it, so that opening click never self-closes it.
+  // Escape closes; a click outside the drawer closes — EXCEPT clicks in a design-system Select
+  // menu, which portals to <body> (a click there, or a dismiss while one is open, is the select's
+  // to handle, not the drawer's). The listener is attached on mount, AFTER the opening pencil click.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as globalThis.Node)) onClose();
+      const t = e.target as Element | null;
+      if (t?.closest?.('[data-slot="select-content"]')) return;                 // inside an open menu
+      if (document.querySelector('[data-slot="select-content"][data-open]')) return;  // a menu is open → dismiss it
+      if (ref.current && !ref.current.contains(t as globalThis.Node)) onClose();
     };
     window.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
@@ -291,8 +295,6 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
     else { model.setView("chart"); model.setChartType(v); }
   };
 
-  const colorLabeled = model.colorFieldValue ? labelFor(model.colorFieldOptions, model.colorFieldValue) : "";
-
   return (
     <div
       ref={ref}
@@ -300,18 +302,18 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
       aria-label="Edit visualization"
       className="animate-in slide-in-from-right-8 fade-in-0 duration-150"
       style={{
-        position: "fixed", top: 0, right: 0, bottom: 0, width: "min(330px, 92vw)", zIndex: 300,
+        position: "fixed", top: 0, right: 0, bottom: 0, width: "min(340px, 92vw)", zIndex: 300,
         background: "var(--bg-2)", borderLeft: "1px solid var(--b2)",
         boxShadow: "-8px 0 28px -12px rgba(0,0,0,.55)",
         display: "flex", flexDirection: "column", overflow: "hidden",
       }}
     >
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 15px", borderBottom: "1px solid var(--b1)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", borderBottom: "1px solid var(--b1)" }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--t1)" }}>Edit visualization</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>Edit visualization</div>
           {model.title && (
-            <div style={{ fontSize: 10.5, color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }} title={model.title}>
+            <div style={{ fontSize: 11, color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }} title={model.title}>
               {model.title}
             </div>
           )}
@@ -331,37 +333,37 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
       {/* Sections */}
       <div style={{ overflowY: "auto", flex: 1 }}>
         <Section title="Visualization">
-          <Select value={vizValue} options={vizOptions} onChange={setViz} />
+          <Select value={vizValue} options={vizOptions} onChange={setViz}
+            leading={<BarChart3 size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />} />
         </Section>
 
         {chartMode && model.dimOptions.length > 0 && (
-          <Channel title="X axis" chip={labelFor(model.dimOptions, model.dimValue)}>
-            <Field label="Field"><Select value={model.dimValue} options={model.dimOptions} onChange={model.setDim} /></Field>
-            <Field label="Axis title"><TextInput value={model.xTitleValue} placeholder="auto" onChange={model.setXTitle} /></Field>
+          <Channel title="X axis" more={<Field label="Axis title"><TextInput value={model.xTitleValue} placeholder="auto" onChange={model.setXTitle} /></Field>}>
+            <Select value={model.dimValue} options={model.dimOptions} onChange={model.setDim} />
           </Channel>
         )}
 
         {chartMode && model.metricOptions.length > 0 && (
-          <Channel title="Y axis" chip={labelFor(model.metricOptions, model.metricValue)}>
-            <Field label="Field"><Select value={model.metricValue} options={model.metricOptions} onChange={model.setMetric} /></Field>
+          <Channel
+            title="Y axis"
+            more={
+              <>
+                <Field label="Number format"><Select value={model.numberFormatValue} options={model.numberFormatOptions} onChange={model.setNumberFormat} /></Field>
+                <Field label="Axis title"><TextInput value={model.yTitleValue} placeholder="auto" onChange={model.setYTitle} /></Field>
+              </>
+            }
+          >
+            <Select value={model.metricValue} options={model.metricOptions} onChange={model.setMetric} />
             {model.aggValue != null && (
               <Field label="Aggregation"><Select value={model.aggValue} options={model.aggOptions} onChange={model.setAgg} /></Field>
             )}
             {model.rateSummed && <Warn text="summing a rate — AVG is the grain-correct aggregate" />}
-            <Field label="Number format"><Select value={model.numberFormatValue} options={model.numberFormatOptions} onChange={model.setNumberFormat} /></Field>
-            <Field label="Axis title"><TextInput value={model.yTitleValue} placeholder="auto" onChange={model.setYTitle} /></Field>
           </Channel>
         )}
 
         {chartMode && model.colorFieldOptions.length > 1 && (
-          <Channel
-            title="Color"
-            chip={colorLabeled || "Add a field"}
-            empty={!model.colorFieldValue}
-            defaultOpen={!!model.colorFieldValue}
-            onRemove={model.colorFieldValue ? () => model.setColorField("") : null}
-          >
-            <Field label="Color by"><Select value={model.colorFieldValue} options={model.colorFieldOptions} onChange={model.setColorField} /></Field>
+          <Channel title="Color" onRemove={model.colorFieldValue ? () => model.setColorField("") : null}>
+            <Select value={model.colorFieldValue} options={model.colorFieldOptions} onChange={model.setColorField} />
             {model.colorFieldValue && (
               <>
                 <Field label="Scale type">
@@ -372,9 +374,9 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
                   />
                 </Field>
                 <Field label="Display name"><TextInput value={model.colorNameValue} placeholder="auto" onChange={model.setColorName} /></Field>
+                <Field label="Legend"><Select value={model.legendValue} options={model.legendOptions} onChange={model.setLegend} /></Field>
               </>
             )}
-            <Field label="Legend"><Select value={model.legendValue} options={model.legendOptions} onChange={model.setLegend} /></Field>
           </Channel>
         )}
 
@@ -382,13 +384,13 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
         {chartMode && <ToggleRow title="Tooltip" on={model.tooltipOn} onChange={model.setTooltipOn} />}
 
         {model.view !== "pivot" && model.transformOptions.length > 0 && (
-          <Channel title="Transform" chip={labelFor(model.transformOptions, model.transformValue)} empty={model.transformValue === "none"}>
-            <Field label="Compute"><Select value={model.transformValue} options={model.transformOptions} onChange={model.setTransform} /></Field>
+          <Channel title="Transform">
+            <Select value={model.transformValue} options={model.transformOptions} onChange={model.setTransform} />
             {model.transformErr && <Warn text="transform not available for this shape" />}
           </Channel>
         )}
 
-        {chartMode && <AnnotationChannel model={model} />}
+        {chartMode && <AnnotationSection model={model} />}
       </div>
     </div>
   );
