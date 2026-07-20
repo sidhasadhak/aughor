@@ -12,7 +12,7 @@ import type { EChartsOption } from "echarts";
 import { compactNumber, pct, cleanLabel, detectGranularity, fmtDate, normDateStr, type Gran } from "@/lib/format";
 import { SHARE_COL } from "@/components/charts/columnRoles";
 import { effectiveCurrencySymbol, isMoneyColumn } from "@/lib/orgSettings";
-import { type ExhibitSpec, severityRamp, refMarkLine } from "@/components/charts/exhibit";
+import { type ExhibitSpec, severityRamp, rampStops, refMarkLine } from "@/components/charts/exhibit";
 
 export type Row = Record<string, unknown>;
 
@@ -128,6 +128,52 @@ function dateAxisLabel(rows: Row[], x: string) {
 /** Shared base: title + grid handled by theme; this adds the title text only. */
 function withTitle(title: string | undefined): Pick<EChartsOption, "title"> {
   return title ? { title: { text: title } } : {};
+}
+
+// ── color binding (the Databricks "Color" field) ─────────────────────────────
+// A chart can colour its marks by a CHOSEN column instead of the plotted measure:
+//   • a dimension  → one discrete hue per value + a legend  ("categorical")
+//   • a measure    → a gradient keyed to that value + a gradient legend ("continuous")
+// The scale is resolved from exhibit.color.mode when set, else inferred from whether the
+// field's values are numeric. Absent a field → callers keep their prior rendering.
+
+const REF_NEUTRAL = "#9DA1A8";
+
+/** Is the color field numeric across the rows (→ default to a continuous gradient)? */
+function colorIsNumeric(rows: Row[], field: string): boolean {
+  const vals = rows.map((r) => r[field]).filter((v) => v != null && v !== "");
+  if (!vals.length) return false;
+  return vals.every((v) => isFinite(Number(v)));
+}
+
+/** The effective color binding for a builder: null when there's no usable field. */
+function colorBinding(i: BuildInput): { field: string; scale: "categorical" | "continuous"; name: string } | null {
+  const c = i.exhibit?.color;
+  const field = c?.field;
+  if (!field || !i.rows.length || !(field in i.rows[0])) return null;
+  // Explicit mode wins; else infer from the data (numeric → gradient, else discrete).
+  const scale: "categorical" | "continuous" =
+    c?.mode === "continuous" ? "continuous"
+    : c?.mode === "categorical" ? "categorical"
+    : colorIsNumeric(i.rows, field) ? "continuous" : "categorical";
+  return { field, scale, name: c?.name || fieldLabel(field) };
+}
+
+/** A small vertical gradient legend (ECharts `graphic`) for a continuous color binding —
+ *  the "Haul Type 300k…100k" ramp in the Databricks screenshot. Drawn top-right; callers
+ *  reserve grid space so it never overlaps the marks. */
+function continuousLegend(min: number, max: number, field: string, name: string, fmt: (v: unknown) => string): Record<string, unknown>[] {
+  const stops = rampStops(field);
+  return [{
+    type: "group", right: 8, top: 6, z: 10,
+    children: [
+      { type: "text", left: 0, top: 0, style: { text: name, fontSize: 10, fontWeight: 600, fill: REF_NEUTRAL } },
+      { type: "rect", left: 0, top: 16, shape: { width: 11, height: 92 },
+        style: { fill: { type: "linear", x: 0, y: 1, x2: 0, y2: 0, colorStops: stops } } },
+      { type: "text", left: 17, top: 13, style: { text: fmt(max), fontSize: 9, fill: REF_NEUTRAL } },
+      { type: "text", left: 17, top: 99, style: { text: fmt(min), fontSize: 9, fill: REF_NEUTRAL } },
+    ],
+  }];
 }
 
 // ── builders ─────────────────────────────────────────────────────────────────
@@ -293,9 +339,60 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
   const label = i.labels
     ? { show: true, fontSize: 11, distance: 5, position: (style.horizontal ? "right" : "top") as "right" | "top", formatter: (p: { value: unknown }) => fmt(p.value) }
     : undefined;
-  // Semantic color: sign-diverging keeps precedence (a change metric's sign IS its meaning);
-  // otherwise a "severity" exhibit ramps the bars by their own value — the redundant
-  // encoding that makes a worst-N ranking read at a glance.
+  // Reference lines: on a horizontal bar the VALUE axis is x, so the line is vertical.
+  const markLine = refMarkLine(i.exhibit?.ref_lines ?? [], style.horizontal ? "x" : "y", fmt);
+  const binding = colorBinding(i);
+
+  // 1. Categorical color-by-field (the Databricks "haul → long/short" case): one stacked,
+  //    single-valued series per distinct value, so ECharts renders a real legend and each
+  //    bar stays centred in its band, coloured by its group.
+  if (binding && binding.scale === "categorical") {
+    const groups: string[] = [];
+    for (const r of rows) { const g = String(r[binding.field]); if (!groups.includes(g)) groups.push(g); }
+    return {
+      ...withTitle(i.title),
+      tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
+      legend: { data: groups, top: 0, type: "scroll" },
+      grid: { top: 30, left: 8, right: 12, bottom: 8, containLabel: true },
+      xAxis: style.horizontal ? valAxis : catAxis,
+      yAxis: style.horizontal ? catAxis : valAxis,
+      series: groups.map((g, gi) => ({
+        name: g, type: "bar", stack: "cbind", barMaxWidth: 34,
+        data: rows.map((r) => (String(r[binding.field]) === g ? num(r[y]) : null)),
+        label, labelLayout: i.labels ? { hideOverlap: true } : undefined,
+        emphasis: { focus: "series" },
+        markLine: gi === 0 ? markLine : undefined,
+      })),
+    };
+  }
+
+  // 2. Continuous color-by-field (the "revenue_per_flight → gradient" case): one series,
+  //    each bar coloured by that field's value via a ramp, plus a gradient legend (graphic)
+  //    with grid space reserved on the right so it never overlaps the bars.
+  if (binding && binding.scale === "continuous") {
+    const cvals = rows.map((r) => Number(r[binding.field])).filter((v) => isFinite(v));
+    const lo = cvals.length ? Math.min(...cvals) : 0, hi = cvals.length ? Math.max(...cvals) : 1;
+    const ramp = severityRamp(lo, hi, binding.field);
+    const cfmt = valueFormatter(i.rows, binding.field, i.units);
+    return {
+      ...withTitle(i.title),
+      tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
+      grid: { top: 10, left: 8, right: 76, bottom: 8, containLabel: true },
+      graphic: continuousLegend(lo, hi, binding.field, binding.name, cfmt) as EChartsOption["graphic"],
+      xAxis: style.horizontal ? valAxis : catAxis,
+      yAxis: style.horizontal ? catAxis : valAxis,
+      series: [{
+        name: fieldLabel(y), type: "bar", barMaxWidth: 34, label,
+        labelLayout: i.labels ? { hideOverlap: true } : undefined, markLine,
+        data: values.map((v, idx) => ({ value: v, itemStyle: { color: ramp(Number(rows[idx][binding.field])) } })),
+      }],
+    };
+  }
+
+  // 3. No color binding → the legacy single series (byte-identical to before). Semantic color:
+  //    sign-diverging keeps precedence (a change metric's sign IS its meaning); otherwise a
+  //    "severity" exhibit ramps the bars by their own value — the redundant encoding that makes
+  //    a worst-N ranking read at a glance.
   let itemStyle: { color: (p: { value: number }) => string } | undefined;
   if (style.diverging) {
     itemStyle = { color: (p: { value: number }) => (p.value >= 0 ? "#2EC87B" : "#E64848") };
@@ -318,8 +415,7 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
       // Drop any data label that would collide instead of overprinting a neighbour.
       labelLayout: i.labels ? { hideOverlap: true } : undefined,
       itemStyle: itemStyle as unknown as undefined,
-      // Reference lines: on a horizontal bar the VALUE axis is x, so the line is vertical.
-      markLine: refMarkLine(i.exhibit?.ref_lines ?? [], style.horizontal ? "x" : "y", fmt),
+      markLine,
     }],
   };
 }
@@ -633,6 +729,207 @@ export function paretoOption(i: BuildInput): EChartsOption {
         tooltip: { valueFormatter: (v) => `${Math.round(Number(v) * 100)}%` },
         markLine: { silent: true, symbol: "none", data: [{ yAxis: 0.8 }], lineStyle: { type: "dashed" }, label: { formatter: "80%" } },
       },
+    ],
+  };
+}
+
+// ── native-fit additions (2026-07 viz-type wave) ──────────────────────────────
+
+/** Counter — a single big-number KPI of the primary measure. A rate/share AVERAGES
+ *  (summing rates is meaningless); a magnitude SUMS. Rendered as a centred title so it
+ *  stays in the one <Chart>/<EChart> pipeline (PNG export + theming come for free). */
+export function counterOption(i: BuildInput): EChartsOption {
+  const y = i.ys[0];
+  const fmt = valueFormatter(i.rows, y, i.units);
+  const vals = i.rows.map((r) => num(r[y])).filter((v) => isFinite(v));
+  const agg = !vals.length ? NaN
+    : isShareField(i.rows, y, i.units) ? vals.reduce((a, b) => a + b, 0) / vals.length
+    : vals.reduce((a, b) => a + b, 0);
+  return {
+    title: {
+      text: isFinite(agg) ? fmt(agg) : "—",
+      subtext: fieldLabel(y),
+      left: "center", top: "center", itemGap: 10,
+      textStyle: { fontSize: 46, fontWeight: 700 },
+      subtextStyle: { fontSize: 13, fontWeight: 500 },
+    },
+    series: [],
+  };
+}
+
+/** Funnel — an ordered drop-off across a handful of stages (aggregated by category,
+ *  widest first). Parts of a process, not parts of a whole (that's a pie). */
+export function funnelOption(i: BuildInput): EChartsOption {
+  const y = i.ys[0];
+  const agg = new Map<string, number>();
+  for (const r of i.rows) { const k = String(r[i.x]); agg.set(k, (agg.get(k) ?? 0) + num(r[y])); }
+  const data = [...agg.entries()].map(([name, value]) => ({ name, value }));
+  const fmt = valueFormatter(i.rows, y, i.units);
+  const maxV = Math.max(1, ...data.map((d) => d.value));
+  return {
+    ...withTitle(i.title),
+    tooltip: { trigger: "item", formatter: (p: unknown) => { const o = p as { name: string; value: number }; return `${o.name}: ${fmt(o.value)}`; } },
+    legend: { type: "scroll", top: 0 },
+    series: [{
+      type: "funnel", left: "8%", right: "8%", top: 26, bottom: 8,
+      minSize: "16%", maxSize: "100%", sort: "descending", gap: 2, min: 0, max: maxV,
+      label: { show: true, position: "inside", formatter: (p: unknown) => { const o = p as { name: string; value: number }; return i.labels ? `${o.name}  ${fmt(o.value)}` : o.name; } },
+      labelLine: { show: false },
+      emphasis: { label: { fontWeight: 700 } },
+      data,
+    }],
+  };
+}
+
+/** Histogram — the distribution of ONE numeric column, binned. Uses the measure (ys[0])
+ *  when present, else the x column. Bin count ≈ √n, capped [6, 20]; bars sit flush. */
+export function histogramOption(i: BuildInput): EChartsOption {
+  const f = i.ys[0] ?? i.x;
+  const vals = i.rows.map((r) => num(r[f])).filter((v) => isFinite(v)).sort((a, b) => a - b);
+  const fmt = valueFormatter(i.rows, f, i.units);
+  const n = vals.length;
+  if (!n) return { ...withTitle(i.title) };
+  const lo = vals[0], hi = vals[n - 1];
+  const bins = Math.min(20, Math.max(6, Math.ceil(Math.sqrt(n))));
+  const width = (hi - lo) / bins || 1;
+  const counts = new Array(bins).fill(0) as number[];
+  for (const v of vals) { let b = Math.floor((v - lo) / width); if (b >= bins) b = bins - 1; if (b < 0) b = 0; counts[b] += 1; }
+  const labels = counts.map((_, b) => fmt(lo + b * width));
+  return {
+    ...withTitle(i.title),
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" },
+      formatter: (p: unknown) => { const a = (p as { dataIndex: number; value: number }[])[0]; const b = a.dataIndex;
+        return `${fmt(lo + b * width)} – ${fmt(lo + (b + 1) * width)}<br/>count: ${a.value}`; } },
+    grid: { top: 16, left: 8, right: 14, bottom: 8, containLabel: true },
+    xAxis: { type: "category", data: labels, axisLabel: { hideOverlap: true }, name: fieldLabel(f), nameLocation: "middle", nameGap: 32 },
+    yAxis: { type: "value", name: "count" },
+    series: [{ type: "bar", data: counts, barCategoryGap: "0%", barGap: "0%",
+      label: i.labels ? { show: true, position: "top", fontSize: 10 } : undefined }],
+  };
+}
+
+/** Linear-interpolated quantile of a pre-sorted array. */
+function quantileSorted(sorted: number[], q: number): number {
+  if (!sorted.length) return NaN;
+  const pos = (sorted.length - 1) * q;
+  const base = Math.floor(pos), rest = pos - base;
+  return sorted[base + 1] !== undefined ? sorted[base] + rest * (sorted[base + 1] - sorted[base]) : sorted[base];
+}
+function fiveNumber(vals: number[]): [number, number, number, number, number] {
+  const s = vals.slice().sort((a, b) => a - b);
+  return [s[0], quantileSorted(s, 0.25), quantileSorted(s, 0.5), quantileSorted(s, 0.75), s[s.length - 1]];
+}
+
+/** Box plot — the five-number distribution (min/Q1/median/Q3/max) of the measure, one box
+ *  per category when the category repeats; else a single box over all values. */
+export function boxplotOption(i: BuildInput): EChartsOption {
+  const y = i.ys[0];
+  const fmt = valueFormatter(i.rows, y, i.units);
+  const groups = new Map<string, number[]>();
+  for (const r of i.rows) {
+    const k = String(r[i.x]); const v = num(r[y]);
+    if (!isFinite(v)) continue;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(v);
+  }
+  const repeats = [...groups.values()].some((a) => a.length > 1);
+  let cats: string[]; let boxes: { value: number[]; name: string }[];
+  if (repeats && groups.size <= 40) {
+    cats = [...groups.keys()];
+    boxes = cats.map((c) => ({ value: fiveNumber(groups.get(c)!), name: c }));
+  } else {
+    const all = i.rows.map((r) => num(r[y])).filter((v) => isFinite(v));
+    cats = [fieldLabel(y)];
+    boxes = [{ value: fiveNumber(all), name: fieldLabel(y) }];
+  }
+  return {
+    ...withTitle(i.title),
+    tooltip: { trigger: "item", formatter: (p: unknown) => {
+      const o = p as { name: string; value: number[] };
+      const v = o.value.length >= 6 ? o.value.slice(1) : o.value;  // ECharts prepends the category index
+      const [mn, q1, md, q3, mx] = v;
+      return `${o.name}<br/>max ${fmt(mx)}<br/>Q3 ${fmt(q3)}<br/>median ${fmt(md)}<br/>Q1 ${fmt(q1)}<br/>min ${fmt(mn)}`;
+    } },
+    grid: { top: 16, left: 8, right: 14, bottom: 8, containLabel: true },
+    xAxis: { type: "category", data: cats, axisLabel: { hideOverlap: true, interval: 0 } },
+    yAxis: { type: "value", scale: true, axisLabel: { formatter: (v: number) => fmt(v) } },
+    series: [{ type: "boxplot", data: boxes }],
+  };
+}
+
+/** Sankey — flow between TWO dimensions (x = source, color = target), weighted by the
+ *  measure. Source/target names are namespaced ("s:"/"t:") so a value appearing on both
+ *  sides can't fuse into one node (which would draw a cycle); labels strip the prefix. */
+export function sankeyOption(i: BuildInput): EChartsOption {
+  const y = i.ys[0];
+  const fmt = valueFormatter(i.rows, y, i.units);
+  const linkMap = new Map<string, number>();
+  const nodeSet = new Set<string>();
+  for (const r of i.rows) {
+    const v = num(r[y]); if (!isFinite(v) || v <= 0) continue;
+    const s = "s:" + String(r[i.x]);
+    const t = "t:" + String(r[i.color!]);
+    nodeSet.add(s); nodeSet.add(t);
+    const k = s + " " + t;
+    linkMap.set(k, (linkMap.get(k) ?? 0) + v);
+  }
+  const nodes = [...nodeSet].map((name) => ({ name }));
+  const links = [...linkMap.entries()].map(([k, value]) => { const [source, target] = k.split(" "); return { source, target, value }; });
+  return {
+    ...withTitle(i.title),
+    tooltip: { trigger: "item", formatter: (p: unknown) => {
+      const o = p as { dataType?: string; name: string; value: number; data?: { source?: string; target?: string } };
+      if (o.dataType === "edge" && o.data) return `${(o.data.source ?? "").slice(2)} → ${(o.data.target ?? "").slice(2)}: ${fmt(o.value)}`;
+      return `${o.name.slice(2)}: ${fmt(o.value)}`;
+    } },
+    series: [{
+      type: "sankey", left: 8, right: 12, top: 20, bottom: 8,
+      emphasis: { focus: "adjacency" }, nodeAlign: "justify", nodeGap: 10,
+      label: { formatter: (p: unknown) => (p as { name: string }).name.slice(2), fontSize: 11 },
+      lineStyle: { color: "gradient", opacity: 0.42 },
+      data: nodes, links,
+    }],
+  };
+}
+
+/** Waterfall — running total of signed contributions building to a Total. A transparent
+ *  "base" stack floats each delta to its running position; up moves render green, down red. */
+export function waterfallOption(i: BuildInput): EChartsOption {
+  const y = i.ys[0];
+  const rows = i.rows.slice();
+  if (i.xKind === "time") rows.sort((a, b) => new Date(normDateStr(String(a[i.x]))).getTime() - new Date(normDateStr(String(b[i.x]))).getTime());
+  const gran: Gran | null = i.xKind === "time" ? detectGranularity(i.x, i.rows.map((r) => r[i.x])) : null;
+  const cats = rows.map((r) => (gran ? fmtDate(String(r[i.x]), gran) : String(r[i.x])));
+  const vals = rows.map((r) => num(r[y]));
+  const fmt = valueFormatter(i.rows, y, i.units);
+  const base: number[] = [];
+  const ups: (number | "-")[] = [];
+  const downs: (number | "-")[] = [];
+  let sum = 0;
+  for (const v of vals) {
+    if (!isFinite(v)) { base.push(0); ups.push("-"); downs.push("-"); continue; }
+    if (v >= 0) { base.push(sum); ups.push(v); downs.push("-"); }
+    else { base.push(sum + v); ups.push("-"); downs.push(-v); }
+    sum += v;
+  }
+  cats.push("Total"); base.push(0); ups.push(sum >= 0 ? sum : "-"); downs.push(sum < 0 ? -sum : "-");
+  const dlabel = i.labels ? { show: true, fontSize: 10, formatter: (p: { value: unknown }) => (p.value === "-" ? "" : fmt(p.value)) } : undefined;
+  return {
+    ...withTitle(i.title),
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, formatter: (p: unknown) => {
+      const arr = p as { name: string; axisValue?: string }[];
+      const name = arr[0]?.axisValue ?? arr[0]?.name ?? "";
+      const idx = cats.indexOf(name);
+      const raw = idx >= 0 && idx < vals.length ? vals[idx] : sum;
+      return `${name}: ${fmt(raw)}`;
+    } },
+    grid: { top: 16, left: 8, right: 14, bottom: 8, containLabel: true },
+    xAxis: { type: "category", data: cats, axisLabel: { hideOverlap: true, interval: 0 } },
+    yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
+    series: [
+      { name: "base", type: "bar", stack: "wf", silent: true, itemStyle: { color: "transparent" }, emphasis: { itemStyle: { color: "transparent" } }, data: base },
+      { name: "Increase", type: "bar", stack: "wf", barMaxWidth: 40, itemStyle: { color: "#2EC87B" }, data: ups, label: dlabel ? { ...dlabel, position: "top" } : undefined },
+      { name: "Decrease", type: "bar", stack: "wf", barMaxWidth: 40, itemStyle: { color: "#E64848" }, data: downs, label: dlabel ? { ...dlabel, position: "bottom" } : undefined },
     ],
   };
 }

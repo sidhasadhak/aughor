@@ -38,6 +38,9 @@ async function loadECharts(): Promise<typeof import("echarts/core")> {
     echarts.use([
       charts.LineChart, charts.BarChart, charts.PieChart,
       charts.ScatterChart, charts.HeatmapChart, charts.TreemapChart,
+      // Native-fit additions (2026-07 viz-type wave). Counter renders via TitleComponent,
+      // Histogram + Waterfall reuse BarChart, so only these three need registering.
+      charts.FunnelChart, charts.SankeyChart, charts.BoxplotChart,
       components.GridComponent,
       components.TooltipComponent,
       components.LegendComponent,
@@ -46,6 +49,7 @@ async function loadECharts(): Promise<typeof import("echarts/core")> {
       components.MarkLineComponent,
       components.VisualMapComponent,
       components.AxisPointerComponent,
+      components.GraphicComponent,   // continuous color-binding gradient legend
       renderers.CanvasRenderer,
     ]);
     return echarts;

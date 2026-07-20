@@ -46,7 +46,39 @@ export type ChartType =
   | "matrix"
   | "pie"
   | "treemap"
+  // ── native-fit additions (2026-07 viz-type wave) ──
+  | "counter"    // single big-number KPI of the primary measure
+  | "funnel"     // stage → value drop-off (few categories)
+  | "histogram"  // distribution of ONE numeric column, binned
+  | "boxplot"    // five-number distribution, per category
+  | "sankey"     // flow between two dimensions (source → target)
+  | "waterfall"  // running total of signed contributions
   | "table";
+
+// ── Central type vocab (single source of truth) ─────────────────────────────
+// Both TYPE_TO_HINT (ChartType → the underscore "hint" the <Chart> engine speaks)
+// and CHART_TYPE_LABEL used to be duplicated across ResultChartCard, InvestigationChart
+// and QueryBuilder — the exact drift this module exists to prevent. They live here now;
+// every surface imports these so a new type is wired in ONE place.
+
+/** ChartType (hyphenated) → the underscore hint `<Chart>` dispatches on. */
+export const TYPE_TO_HINT: Record<ChartType, string> = {
+  "line": "line", "area": "area", "multi-line": "multi_line", "small-multiples": "small_multiples",
+  "bar": "bar", "grouped-bar": "combo", "combo": "combo", "stacked-bar": "stacked_bar",
+  "scatter": "scatter", "heatmap": "heatmap", "matrix": "heatmap", "pie": "pie", "treemap": "treemap",
+  "counter": "counter", "funnel": "funnel", "histogram": "histogram", "boxplot": "boxplot",
+  "sankey": "sankey", "waterfall": "waterfall", "table": "auto",
+};
+
+/** Human label for each type — the dropdown/gallery text. */
+export const CHART_TYPE_LABEL: Record<ChartType | "auto", string> = {
+  "auto": "Auto", "line": "Line", "area": "Area", "multi-line": "Multi-line",
+  "small-multiples": "Small multiples", "bar": "Bar", "grouped-bar": "Grouped", "combo": "Combo",
+  "stacked-bar": "Stacked", "scatter": "Scatter", "heatmap": "Heatmap", "matrix": "Matrix",
+  "pie": "Pie", "treemap": "Treemap", "counter": "Counter", "funnel": "Funnel",
+  "histogram": "Histogram", "boxplot": "Box plot", "sankey": "Sankey", "waterfall": "Waterfall",
+  "table": "Table",
+};
 
 export interface InferredChart {
   type: ChartType;
@@ -250,6 +282,19 @@ export function availableChartTypes(columns: string[], rows: unknown[][]): Chart
 
   if (!hasDate && !hasCat && nNum >= 2) add("scatter");
 
+  // ── native-fit specialized types — offered only where the shape renders something honest ──
+  const nRows = rows.length;
+  // Funnel — an ordered drop-off across a handful of categories (parts of a process).
+  if (hasCat && !hasDate && nNum >= 1 && countUnique(rows, catIdxs[0]) <= 12) add("funnel");
+  // Waterfall — signed contributions building to a total (category, or a short time sequence).
+  if ((hasCat || hasDate) && nNum >= 1 && countUnique(rows, hasCat ? catIdxs[0] : dateIdxs[0]) <= 24) add("waterfall");
+  // Sankey — flow between TWO dimensions (source → target), weighted by a measure.
+  if (catIdxs.length >= 2 && nNum >= 1) add("sankey");
+  // Histogram + Box plot — the distribution of a numeric column (needs enough values to bin/summarise).
+  if (nNum >= 1 && nRows >= 8) { add("histogram"); add("boxplot"); }
+  // Counter — a single big-number KPI of the primary measure (a valid view of any measured result).
+  if (nNum >= 1) add("counter");
+
   return out;
 }
 
@@ -257,15 +302,15 @@ export function availableChartTypes(columns: string[], rows: unknown[][]): Chart
  *  the gallery shared by InvestigationChart and the Query Builder Explore rail. */
 export function availableTypesFor(inferred: ChartType): ChartType[] {
   switch (inferred) {
-    case "line":        return ["line", "bar"];
+    case "line":        return ["line", "bar", "counter"];
     case "multi-line":  return ["multi-line", "small-multiples", "heatmap", "stacked-bar"];
     case "small-multiples": return ["small-multiples", "multi-line", "heatmap", "stacked-bar"];
     case "heatmap":     return ["heatmap", "multi-line", "small-multiples", "stacked-bar"];
-    case "scatter":     return ["scatter", "bar"];
-    case "pie":         return ["pie", "bar", "treemap"];
+    case "scatter":     return ["scatter", "bar", "histogram"];
+    case "pie":         return ["pie", "bar", "treemap", "funnel"];
     case "treemap":     return ["treemap", "bar", "pie"];
     case "combo":       return ["combo", "bar"];
-    default:            return ["bar", "line"];
+    default:            return ["bar", "line", "counter"];
   }
 }
 

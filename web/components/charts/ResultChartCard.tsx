@@ -28,9 +28,9 @@ import { Button } from "@/components/ui/button";
 import { Chart, type ChartCustom } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
-import { classifyColumns, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
+import { classifyColumns, availableChartTypes, CHART_TYPE_LABEL, TYPE_TO_HINT, type ChartType } from "@/components/charts/chartTypeInference";
 import { isUngraphableGrid } from "@/components/charts/columnRoles";
-import type { ExhibitSpec, ExhibitRefLine } from "@/components/charts/exhibit";
+import type { ExhibitSpec, ExhibitRefLine, ExhibitColor } from "@/components/charts/exhibit";
 import { cleanLabel } from "@/lib/format";
 import { applyPostproc, type PostprocOp } from "@/lib/api";
 import { VizEditorPanel, type VizEditorModel } from "@/components/charts/VizEditorPanel";
@@ -51,19 +51,9 @@ type Agg = "sum" | "avg" | "count" | "min" | "max";
 // without it there's no way back to a multi-series default once a control is touched.
 const AUTO_OPT = "__auto__";
 
-// ChartType (hyphenated) → the underscore "hint" the <Chart> engine speaks.
-const TYPE_TO_HINT: Record<ChartType, string> = {
-  "line": "line", "area": "area", "multi-line": "multi_line", "small-multiples": "small_multiples", "bar": "bar",
-  "grouped-bar": "combo", "combo": "combo", "stacked-bar": "stacked_bar",
-  "scatter": "scatter", "heatmap": "heatmap", "matrix": "heatmap",
-  "pie": "pie", "treemap": "treemap", "table": "auto",
-};
-const TYPE_LABEL: Record<ChartType, string> = {
-  "line": "Line", "area": "Area", "multi-line": "Multi-line", "small-multiples": "Small multiples", "bar": "Bar",
-  "grouped-bar": "Grouped", "combo": "Combo", "stacked-bar": "Stacked",
-  "scatter": "Scatter", "heatmap": "Heatmap", "matrix": "Matrix",
-  "pie": "Pie", "treemap": "Treemap", "table": "Table",
-};
+// TYPE_TO_HINT (ChartType → engine hint) and CHART_TYPE_LABEL (display text) are the
+// SINGLE-source maps in chartTypeInference — imported, not re-declared here (the old local
+// copies were the exact drift that module exists to prevent).
 
 // Databricks-style Customize vocabularies — kept in sync with the Query Builder Customize tab so a
 // card and a query offer the same knobs. Chart.applyCustom honors each (unknown schemes no-op).
@@ -162,6 +152,11 @@ export function ResultChartCard({
     () => [...dateIdxs, ...catIdxs].map((i) => columns[i]),
     [dateIdxs, catIdxs, columns],
   );
+  // Any column can drive the Color binding (a dimension → discrete legend, a measure → gradient).
+  const colorFieldOptions = useMemo(
+    () => [{ v: "", t: "None" }, ...columns.map((c) => ({ v: c, t: cleanLabel(c) }))],
+    [columns],
+  );
 
   // Chart-grammar gate: a stats/entity-profile grid opens on the TABLE (its honest
   // form — the chart toggle stays available); everything else opens on the chart.
@@ -175,6 +170,12 @@ export function ResultChartCard({
   // Customize overrides (Color / Format / Legend / Tooltip / Annotation) layered OVER the passed
   // `custom`/`exhibit`, so an untouched card renders byte-identically to before.
   const [colorScheme, setColorScheme] = useState("");
+  // Color binding (the Databricks "Color" field): colour marks by a CHOSEN column instead
+  // of the plotted measure. "" field = off (default coloring). Scale "" = auto by role
+  // (a measure → continuous gradient; a dimension → categorical legend); name = legend title.
+  const [colorField, setColorField] = useState("");
+  const [colorScaleSel, setColorScaleSel] = useState<"" | "continuous" | "categorical">("");
+  const [colorName, setColorName] = useState("");
   const [numberFormat, setNumberFormat] = useState("");
   const [legendPos, setLegendPos] = useState("");
   const [xTitle, setXTitle] = useState("");
@@ -271,11 +272,23 @@ export function ResultChartCard({
     ...(tooltipOff ? { tooltip: "off" as const } : {}),
   }), [custom, colorScheme, numberFormat, legendPos, xTitle, yTitle, tooltipOff]);
 
-  // User annotation lines ride on top of any backend exhibit ref-lines.
+  // The color binding the user built (or null): a chosen field, its scale (explicit, else
+  // auto by role — a measure ramps continuous, a dimension is categorical), and legend title.
+  const colorBinding: ExhibitColor | null = useMemo(() => {
+    if (!colorField) return null;
+    const scale = colorScaleSel || (metricCols.includes(colorField) ? "continuous" : "categorical");
+    return { mode: scale, field: colorField, name: colorName || null };
+  }, [colorField, colorScaleSel, colorName, metricCols]);
+
+  // User annotation lines ride on top of any backend exhibit ref-lines; a color binding, when
+  // set, overrides the backend's own color mode (the user asked to colour by that column).
   const effExhibit: ExhibitSpec | null = useMemo(() => {
-    if (!userRefLines.length) return exhibit;
-    return { ...(exhibit || {}), ref_lines: [...(exhibit?.ref_lines || []), ...userRefLines] };
-  }, [exhibit, userRefLines]);
+    if (!userRefLines.length && !colorBinding) return exhibit;
+    const spec: ExhibitSpec = { ...(exhibit || {}) };
+    if (userRefLines.length) spec.ref_lines = [...(exhibit?.ref_lines || []), ...userRefLines];
+    if (colorBinding) spec.color = colorBinding;
+    return spec;
+  }, [exhibit, userRefLines, colorBinding]);
 
   const addRefLine = (value: number, label: string) => {
     if (!isFinite(value)) return;
@@ -303,7 +316,7 @@ export function ResultChartCard({
     chartAvailable: chartTypes.length > 0,
     canPivot,
     chartTypeValue: typeSel,
-    chartTypeOptions: chartTypes.length ? [{ v: "auto", t: "Auto" }, ...chartTypes.map((t) => ({ v: t, t: TYPE_LABEL[t] }))] : [],
+    chartTypeOptions: chartTypes.length ? [{ v: "auto", t: "Auto" }, ...chartTypes.map((t) => ({ v: t, t: CHART_TYPE_LABEL[t] }))] : [],
     setChartType: (v) => setTypeSel(v as ChartType | "auto"),
     dimValue: dimSel ?? (dimCols.length >= 2 ? AUTO_OPT : (dimCols[0] ?? "")),
     dimOptions: dimCols.length
@@ -327,6 +340,13 @@ export function ResultChartCard({
     // Color
     colorSchemeValue: colorScheme, colorSchemeOptions: COLOR_SCHEMES, setColorScheme,
     legendValue: legendPos, legendOptions: LEGEND_POS, setLegend: setLegendPos,
+    // Color binding (the Databricks "Color" field) — colour by a chosen column.
+    colorFieldValue: colorField,
+    colorFieldOptions,
+    setColorField: (v: string) => { setColorField(v); if (!v) { setColorScaleSel(""); setColorName(""); } },
+    colorScaleValue: colorBinding ? (colorBinding.mode as "continuous" | "categorical") : "",
+    setColorScale: (v: "continuous" | "categorical") => setColorScaleSel(v),
+    colorNameValue: colorName, setColorName,
     // Format & axis titles
     numberFormatValue: numberFormat, numberFormatOptions: NUMBER_FORMATS, setNumberFormat,
     xTitleValue: xTitle, setXTitle,

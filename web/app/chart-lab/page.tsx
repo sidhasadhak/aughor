@@ -15,6 +15,7 @@ import {
   lineOption, multiLineOption, barOption, groupedBarOption,
   stackedBarOption, pieOption, scatterOption, buildAutoOption,
   comboOption, heatmapOption, treemapOption, paretoOption,
+  counterOption, funnelOption, histogramOption, boxplotOption, sankeyOption, waterfallOption,
   type Row,
 } from "@/components/charts/echarts";
 import { Chart } from "@/components/Chart";
@@ -83,6 +84,42 @@ const delayScatter: Row[] = ([
 ] as [string, string, number, number][]).map(
   ([aircraft_id, aircraft_type, flight_count, avg_delay_min]) =>
     ({ aircraft_id, aircraft_type, flight_count, avg_delay_min }));
+
+// ── native-fit viz types (2026-07 wave) + the Databricks color-binding examples ──
+// Aircraft example mirrors the two Databricks screenshots: the SAME load-factor ranking,
+// coloured categorically by haul (long/short → legend) or continuously by revenue (gradient).
+const aircraftPerf: Row[] = ([
+  ["A350-900", 71.2, 302000, "long"], ["B777-300ER", 74.6, 268000, "long"],
+  ["A340-300", 76.1, 254000, "long"], ["A320", 78.4, 96000, "short"],
+  ["A330-300", 77.9, 231000, "long"], ["A321", 78.8, 88000, "short"],
+  ["A220-300", 79.1, 72000, "short"], ["A220-100", 78.7, 64000, "short"],
+] as [string, number, number, string][]).map(
+  ([aircraft_type, load_factor_pct, revenue_per_flight, haul]) => ({ aircraft_type, load_factor_pct, revenue_per_flight, haul }));
+
+// Funnel — an onboarding drop-off.
+const funnelStages: Row[] = ([
+  ["Visited", 48000], ["Signed up", 21500], ["Activated", 12800], ["Subscribed", 5400], ["Renewed", 3100],
+] as [string, number][]).map(([stage, users]) => ({ stage, users }));
+
+// Histogram — order-value distribution (raw values, one row each; deterministic spread).
+const orderValues: Row[] = Array.from({ length: 240 }, (_, i) =>
+  ({ order_value: Math.round(Math.abs(40 + 55 * Math.sin(i * 0.7) + (i % 11) * 6 + (i % 3) * 14) + 8) }));
+
+// Box plot — delivery time distribution per region (repeated values per group).
+const deliveryTimes: Row[] = REGIONS.flatMap((region, ri) =>
+  Array.from({ length: 14 }, (_, k) => ({ region, delivery_hrs: 24 + ri * 8 + (k % 5) * 6 + (k % 2) * 4 - (k % 3) * 3 })));
+
+// Sankey — flow from acquisition channel → device (two dimensions + a measure).
+const channelDevice: Row[] = ([
+  ["Paid search", "Mobile", 3200], ["Paid search", "Desktop", 1800], ["Organic", "Mobile", 2600],
+  ["Organic", "Desktop", 2100], ["Social", "Mobile", 2900], ["Social", "Desktop", 700],
+  ["Email", "Desktop", 1400], ["Email", "Mobile", 900],
+] as [string, string, number][]).map(([channel, device, sessions]) => ({ channel, device, sessions }));
+
+// Waterfall — an ARR bridge (signed contributions building to the total).
+const arrBridge: Row[] = ([
+  ["Starting ARR", 1200000], ["New", 340000], ["Expansion", 180000], ["Contraction", -90000], ["Churn", -160000],
+] as [string, number][]).map(([stage, arr_delta]) => ({ stage, arr_delta }));
 
 function Card({ title, height = 300, children }: { title: string; height?: number; children: React.ReactNode }) {
   return (
@@ -194,6 +231,58 @@ export default function ChartLab() {
             {...toTable(delayScatter, ["aircraft_id", "aircraft_type", "flight_count", "avg_delay_min"])}
             chartType="scatter" chrome={false}
             exhibit={{ label_points: true, quadrant: { x: 20, y: 14.5 } }}
+          />
+        </Card>
+      </div>
+
+      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+        Native-fit viz types (2026-07 wave) — Counter · Funnel · Histogram · Box · Sankey · Waterfall
+      </h2>
+      <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
+        New pure builders, zero new dependencies (ECharts modules registered in EChart.tsx). Each is offered
+        in the viz editor only when the data shape supports it.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 16 }}>
+        <Card title="Counter — total revenue (KPI)">
+          <EChart option={counterOption({ rows: revByMonth, x: "month", ys: ["revenue"] })} height={200} />
+        </Card>
+        <Card title="Funnel — onboarding drop-off">
+          <EChart option={funnelOption({ rows: funnelStages, x: "stage", ys: ["users"], labels: true })} height={270} />
+        </Card>
+        <Card title="Histogram — order-value distribution (240 orders)">
+          <EChart option={histogramOption({ rows: orderValues, x: "order_value", ys: ["order_value"] })} height={270} />
+        </Card>
+        <Card title="Box plot — delivery hours by region">
+          <EChart option={boxplotOption({ rows: deliveryTimes, x: "region", ys: ["delivery_hrs"] })} height={270} />
+        </Card>
+        <Card title="Sankey — acquisition channel → device">
+          <EChart option={sankeyOption({ rows: channelDevice, x: "channel", color: "device", ys: ["sessions"] })} height={270} />
+        </Card>
+        <Card title="Waterfall — ARR bridge (signed contributions)">
+          <EChart option={waterfallOption({ rows: arrBridge, x: "stage", ys: ["arr_delta"], labels: true })} height={270} />
+        </Card>
+      </div>
+
+      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+        Color binding — colour marks by a chosen field (the Databricks &quot;Color&quot;)
+      </h2>
+      <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
+        The two screenshots: the SAME load-factor ranking, coloured categorically by <code>haul</code>
+        (dimension → discrete legend) or continuously by <code>revenue_per_flight</code> (measure → gradient legend).
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 16 }}>
+        <Card title="Categorical — colour by haul (dimension → legend)" height={370}>
+          <Chart
+            {...toTable(aircraftPerf, ["aircraft_type", "load_factor_pct", "revenue_per_flight", "haul"])}
+            chartType="bar_horizontal" chrome={false} showLabels columnUnits={{ load_factor_pct: "percent" }}
+            exhibit={{ color: { mode: "categorical", field: "haul", name: "Haul type" } }}
+          />
+        </Card>
+        <Card title="Continuous — colour by revenue/flight (measure → gradient)" height={370}>
+          <Chart
+            {...toTable(aircraftPerf, ["aircraft_type", "load_factor_pct", "revenue_per_flight", "haul"])}
+            chartType="bar_horizontal" chrome={false} showLabels columnUnits={{ load_factor_pct: "percent" }}
+            exhibit={{ color: { mode: "continuous", field: "revenue_per_flight", name: "Revenue / flight" } }}
           />
         </Card>
       </div>

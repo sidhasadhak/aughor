@@ -27,6 +27,7 @@ import { EChart } from "@/components/charts/echarts/EChart";
 import {
   lineOption, multiLineOption, smallMultiplesOption, barOption, groupedBarOption, stackedBarOption,
   pieOption, scatterOption, comboOption, heatmapOption, treemapOption, paretoOption,
+  counterOption, funnelOption, histogramOption, boxplotOption, sankeyOption, waterfallOption,
 } from "@/components/charts/echarts/builders";
 import {
   SHARE_COL, CHANGE_METRIC_COL, TIME_LABEL_COL, INSTRUMENTATION_COL, PREFER_COL, classifyColumns,
@@ -294,6 +295,16 @@ export function Chart({
       }
       else if (backendHint === "pie") { option = pieOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF] }); defaultH = 350; }
     }
+
+    // 1b. Native-fit explicit types (2026-07 viz wave) — user-selected from the viz editor.
+    //     Each renders only when the shape provides the fields it needs; otherwise it falls
+    //     through to the inference cascade below, so a bad pick degrades, never blanks.
+    if (!option && hint === "counter" && numCol) { option = counterOption({ rows: data, units: columnUnits ?? undefined, x: catCol ?? dateCol ?? numCol, ys: [numCol] }); defaultH = 200; }
+    if (!option && hint === "funnel" && catCol && numCol) { option = funnelOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }); defaultH = 320; }
+    if (!option && hint === "histogram" && numCol) { option = histogramOption({ rows: data, units: columnUnits ?? undefined, x: catCol ?? numCol, ys: [numCol], labels: lbls }); defaultH = 300; }
+    if (!option && hint === "boxplot" && numCol) { option = boxplotOption({ rows: data, units: columnUnits ?? undefined, x: catCol ?? numCol, ys: [numCol] }); defaultH = 320; }
+    if (!option && hint === "sankey" && catCol && catCol2 && numCol) { option = sankeyOption({ rows: data, units: columnUnits ?? undefined, x: catCol, color: catCol2, ys: [numCol] }); defaultH = 360; }
+    if (!option && hint === "waterfall" && (catCol || dateCol) && numCol) { option = waterfallOption({ rows: data, units: columnUnits ?? undefined, x: (catCol ?? dateCol)!, ys: [numCol], xKind: dateCol && !catCol ? "time" : "category" }); defaultH = 320; }
 
     // 2. Pie (explicit)
     if (!option && hint === "pie" && catCol) { option = pieOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }); defaultH = 240; }

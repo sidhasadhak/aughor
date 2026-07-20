@@ -59,6 +59,15 @@ export interface VizEditorModel {
   legendValue: string;
   legendOptions: VizSelectOption[];
   setLegend: (v: string) => void;
+  // Color binding — colour marks by a CHOSEN field: a dimension → discrete legend, a
+  // measure → gradient legend. Scale type auto-defaults by the field's role, overridable.
+  colorFieldValue: string;
+  colorFieldOptions: VizSelectOption[];
+  setColorField: (v: string) => void;
+  colorScaleValue: "" | "continuous" | "categorical";
+  setColorScale: (v: "continuous" | "categorical") => void;
+  colorNameValue: string;
+  setColorName: (v: string) => void;
   // Format & axis titles
   numberFormatValue: string;
   numberFormatOptions: VizSelectOption[];
@@ -183,6 +192,22 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (b: boolean) => void 
     >
       <span style={{ width: 13, height: 13, borderRadius: "var(--r-pill)", background: on ? "var(--bg-0)" : "var(--t3)", margin: "0 2px", display: "block" }} />
     </Button>
+  );
+}
+
+/** A small segmented control (Continuous | Categorical) matching the Display view toggle. */
+function SegToggle<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: [T, string][] }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 2, border: "1px solid var(--b2)", borderRadius: "var(--r2)", padding: 2 }}>
+      {options.map(([v, label]) => (
+        <Button
+          key={v} variant="ghost" size="xs" onClick={() => onChange(v)} aria-pressed={value === v}
+          style={value === v ? { background: "var(--bg-sel)", color: "var(--accent)" } : { color: "var(--t3)" }}
+        >
+          {label}
+        </Button>
+      ))}
+    </div>
   );
 }
 
@@ -311,6 +336,21 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
 
         {chartMode && (
           <Section title="Color">
+            {model.colorFieldOptions.length > 1 && (
+              <Row label="Color by"><Select value={model.colorFieldValue} options={model.colorFieldOptions} onChange={model.setColorField} /></Row>
+            )}
+            {model.colorFieldValue && (
+              <>
+                <Row label="Scale type">
+                  <SegToggle
+                    value={model.colorScaleValue || "categorical"}
+                    onChange={model.setColorScale}
+                    options={[["continuous", "Continuous"], ["categorical", "Categorical"]]}
+                  />
+                </Row>
+                <Row label="Display name"><TextInput value={model.colorNameValue} placeholder="auto" onChange={model.setColorName} /></Row>
+              </>
+            )}
             <Row label="Scheme"><Select value={model.colorSchemeValue} options={model.colorSchemeOptions} onChange={model.setColorScheme} /></Row>
             <Row label="Legend"><Select value={model.legendValue} options={model.legendOptions} onChange={model.setLegend} /></Row>
           </Section>

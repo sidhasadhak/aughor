@@ -18,7 +18,7 @@ import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
-import { inferChartType, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
+import { inferChartType, availableChartTypes, CHART_TYPE_LABEL, type ChartType } from "@/components/charts/chartTypeInference";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
@@ -1587,11 +1587,6 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
   // to "auto" so the chart never renders blank; "table"/"auto" always pass through.
   const vizMode: VizMode = (vizType === "table" || vizType === "pivot" || vizType === "auto" || availTypes.includes(vizType as ChartType))
     ? vizType : "auto";
-  const CHART_TYPE_LABEL: Record<string, string> = {
-    auto: "Auto", bar: "Bar", line: "Line", "multi-line": "Multi-line", area: "Area",
-    "stacked-bar": "Stacked bar", "grouped-bar": "Grouped bar", combo: "Combo (bar + line)", scatter: "Scatter",
-    heatmap: "Heatmap", pie: "Pie", treemap: "Treemap", table: "Table",
-  };
   const chartCustom: ChartCustom = {
     format: numberFormat || undefined,
     colorScheme: colorScheme || undefined,
@@ -2106,7 +2101,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                     {availTypes.length > 0 && (
                       <optgroup label="Chart">
                         {(["auto", ...availTypes] as VizMode[]).map(t => (
-                          <option key={t} value={t}>{CHART_TYPE_LABEL[t] ?? t}</option>
+                          <option key={t} value={t}>{CHART_TYPE_LABEL[t as ChartType] ?? t}</option>
                         ))}
                       </optgroup>
                     )}
