@@ -88,6 +88,17 @@ export const ALL_CHART_TYPES: ChartType[] = [
   "sankey", "counter", "line-forecast", "gantt", "choropleth", "point-map",
 ];
 
+/** The underscore engine hint → the ChartType it renders as. Reverse of TYPE_TO_HINT plus
+ *  the engine-only variants (bar_horizontal/bar_vertical → bar, pareto → bar). Lets a surface
+ *  DISPLAY the resolved type ("Bar") for an auto/backend-hinted chart instead of "Auto". */
+export const HINT_TO_TYPE: Record<string, ChartType> = {
+  line: "line", area: "area", multi_line: "multi-line", small_multiples: "small-multiples",
+  bar: "bar", bar_horizontal: "bar", bar_vertical: "bar", combo: "combo", stacked_bar: "stacked-bar",
+  scatter: "scatter", heatmap: "heatmap", matrix: "heatmap", pie: "pie", treemap: "treemap", pareto: "bar",
+  counter: "counter", funnel: "funnel", histogram: "histogram", boxplot: "boxplot", sankey: "sankey",
+  waterfall: "waterfall", line_forecast: "line-forecast", gantt: "gantt", choropleth: "choropleth", point_map: "point-map",
+};
+
 /** Human label for each type — the dropdown/gallery text. */
 export const CHART_TYPE_LABEL: Record<ChartType | "auto", string> = {
   "auto": "Auto", "line": "Line", "area": "Area", "multi-line": "Multi-line",

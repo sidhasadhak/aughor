@@ -28,7 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Chart, type ChartCustom } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
 import { PivotTable } from "@/components/PivotTable";
-import { classifyColumns, availableChartTypes, ALL_CHART_TYPES, CHART_TYPE_LABEL, TYPE_TO_HINT, type ChartType } from "@/components/charts/chartTypeInference";
+import { classifyColumns, availableChartTypes, inferChartType, ALL_CHART_TYPES, CHART_TYPE_LABEL, TYPE_TO_HINT, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
 import { isUngraphableGrid } from "@/components/charts/columnRoles";
 import type { ExhibitSpec, ExhibitRefLine, ExhibitColor } from "@/components/charts/exhibit";
 import { cleanLabel } from "@/lib/format";
@@ -45,11 +45,6 @@ const TRANSFORM_OPTS: { v: PostprocOp | "none"; t: string }[] = [
 ];
 
 type Agg = "sum" | "avg" | "count" | "min" | "max";
-
-// "Auto" (untouched) option for the Metric/Dimension/Aggregation pickers. Selecting
-// it clears that override so the card returns to the original auto-derived chart —
-// without it there's no way back to a multi-series default once a control is touched.
-const AUTO_OPT = "__auto__";
 
 // TYPE_TO_HINT (ChartType → engine hint) and CHART_TYPE_LABEL (display text) are the
 // SINGLE-source maps in chartTypeInference — imported, not re-declared here (the old local
@@ -83,13 +78,33 @@ function aggregate(xs: number[], agg: Agg): number | null {
   }
 }
 
-/** Project (and optionally re-aggregate) to a [dimension, metric] table. */
+/** Project (and optionally re-aggregate) to a [dimension, metric] table. When a `colorField`
+ *  is bound (and distinct from dim/metric), it is CARRIED THROUGH — the table becomes
+ *  [dim, colorField, metric] aggregated by (dim, colorField), so a colour binding still has
+ *  its column to split/shade by after the projection. */
 function derive(
-  columns: string[], rows: unknown[][], dim: string, metric: string, agg: Agg,
+  columns: string[], rows: unknown[][], dim: string, metric: string, agg: Agg, colorField?: string,
 ): { columns: string[]; rows: unknown[][] } {
   const di = columns.indexOf(dim);
   const mi = columns.indexOf(metric);
   if (di < 0 || mi < 0) return { columns, rows };
+  const ci = colorField && colorField !== dim && colorField !== metric ? columns.indexOf(colorField) : -1;
+  const outCol = agg === "count" ? "count" : metric;
+
+  // With a colour binding: group by (dim, colorField) so the breakdown survives.
+  if (ci >= 0) {
+    const groups = new Map<string, { d: unknown; c: unknown; vals: number[] }>();
+    const order: string[] = [];
+    for (const r of rows) {
+      const dv = (r as unknown[])[di], cv = (r as unknown[])[ci];
+      const k = `${String(dv)}\u0000${String(cv)}`;
+      if (!groups.has(k)) { groups.set(k, { d: dv, c: cv, vals: [] }); order.push(k); }
+      const v = Number((r as unknown[])[mi]);
+      if (!isNaN(v)) groups.get(k)!.vals.push(v);
+    }
+    return { columns: [dim, colorField!, outCol], rows: order.map((k) => { const g = groups.get(k)!; return [g.d, g.c, aggregate(g.vals, agg)]; }) };
+  }
+
   const distinct = new Set(rows.map((r) => String((r as unknown[])[di])));
   const hasDups = distinct.size < rows.length;
   if (!hasDups && agg !== "count") {
@@ -104,7 +119,6 @@ function derive(
     const v = Number((r as unknown[])[mi]);
     if (!isNaN(v)) groups.get(k)!.push(v);
   }
-  const outCol = agg === "count" ? "count" : metric;
   return { columns: [dim, outCol], rows: order.map((k) => [k, aggregate(groups.get(k)!, agg)]) };
 }
 
@@ -212,10 +226,12 @@ export function ResultChartCard({
   const canPivot = metricCols.length >= 1 && dimCols.length >= 1;
 
   // Derived data: untouched → original (today's behaviour); a control change → re-pivot.
+  // A bound colour field is carried through the projection so the breakdown survives it
+  // (else "Color by <dim>" would have nothing to split after an aggregate-by-dim).
   const data = useMemo(() => {
     if (!touched || !metric || !dim) return { columns, rows };
-    return derive(columns, rows, dim, metric, agg);
-  }, [touched, columns, rows, dim, metric, agg]);
+    return derive(columns, rows, dim, metric, agg, colorField || undefined);
+  }, [touched, columns, rows, dim, metric, agg, colorField]);
 
   // On-demand post-processing transform (PoP / share / rolling / cumulative) — appends a
   // derived column on the chosen measure via /query/postproc. Off by default (today's view).
@@ -310,29 +326,33 @@ export function ResultChartCard({
   const cardId = useId();
   const editorOpen = useVizEditorOpen(cardId);
 
-  // The control model handed to the side panel. The panel is stateless; this is the
-  // single place the AUTO sentinel ↔ null mapping lives.
+  // The type the chart ACTUALLY renders, so the Visualization dropdown shows "Bar"/"Scatter"
+  // (never "Auto"): the user's explicit pick, else the backend hint, else data-shape inference.
+  const resolvedType = typeSel !== "auto"
+    ? typeSel
+    : (HINT_TO_TYPE[(chartType ?? "").toLowerCase()] ?? inferChartType(columns, rows)?.type ?? "");
+  const shownType = resolvedType && offeredTypes.includes(resolvedType as ChartType) ? (resolvedType as ChartType) : (offeredTypes[0] ?? "");
+
+  // The control model handed to the side panel. Dropdowns show the RESOLVED field/type/agg the
+  // chart uses (not the "Auto" sentinel); the *Sel state stays null until the user actually picks,
+  // so an untouched chart keeps the engine's own inference.
   const model: VizEditorModel = {
     title,
     view, setView,
     chartAvailable: chartTypes.length > 0,
     canPivot,
-    chartTypeValue: typeSel,
-    chartTypeOptions: offeredTypes.length ? [{ v: "auto", t: "Auto" }, ...offeredTypes.map((t) => ({ v: t, t: CHART_TYPE_LABEL[t] }))] : [],
+    chartTypeValue: shownType,
+    chartTypeOptions: offeredTypes.map((t) => ({ v: t, t: CHART_TYPE_LABEL[t] })),
     setChartType: (v) => setTypeSel(v as ChartType | "auto"),
-    dimValue: dimSel ?? (dimCols.length >= 2 ? AUTO_OPT : (dimCols[0] ?? "")),
-    dimOptions: dimCols.length
-      ? [...(dimCols.length >= 2 ? [{ v: AUTO_OPT, t: "Auto" }] : []), ...dimCols.map((c) => ({ v: c, t: cleanLabel(c) }))]
-      : [],
-    setDim: (v) => setDimSel(v === AUTO_OPT ? null : v),
-    metricValue: metricSel ?? (metricCols.length >= 2 ? AUTO_OPT : (metricCols[0] ?? "")),
-    metricOptions: metricCols.length
-      ? [...(metricCols.length >= 2 ? [{ v: AUTO_OPT, t: "Auto" }] : []), ...metricCols.map((c) => ({ v: c, t: cleanLabel(c) }))]
-      : [],
-    setMetric: (v) => setMetricSel(v === AUTO_OPT ? null : v),
-    aggValue: dimHasDups ? (aggSel ?? AUTO_OPT) : null,
-    aggOptions: [{ v: AUTO_OPT, t: "Auto" }, ...(["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() }))],
-    setAgg: (v) => setAggSel(v === AUTO_OPT ? null : (v as Agg)),
+    dimValue: dimSel ?? (dimCols[0] ?? ""),
+    dimOptions: dimCols.map((c) => ({ v: c, t: cleanLabel(c) })),
+    setDim: (v) => setDimSel(v),
+    metricValue: metricSel ?? defaultMetric,
+    metricOptions: metricCols.map((c) => ({ v: c, t: cleanLabel(c) })),
+    setMetric: (v) => setMetricSel(v),
+    aggValue: dimHasDups ? agg : null,
+    aggOptions: (["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() })),
+    setAgg: (v) => setAggSel(v as Agg),
     rateSummed,
     transformValue: transformOp,
     transformOptions: metricCols.length >= 1 ? TRANSFORM_OPTS : [],
