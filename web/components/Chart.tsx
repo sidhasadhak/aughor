@@ -306,6 +306,19 @@ export function Chart({
     if (!option && hint === "sankey" && catCol && catCol2 && numCol) { option = sankeyOption({ rows: data, units: columnUnits ?? undefined, x: catCol, color: catCol2, ys: [numCol] }); defaultH = 360; }
     if (!option && hint === "waterfall" && (catCol || dateCol) && numCol) { option = waterfallOption({ rows: data, units: columnUnits ?? undefined, x: (catCol ?? dateCol)!, ys: [numCol], xKind: dateCol && !catCol ? "time" : "category" }); defaultH = 320; }
 
+    // 1c. Colour binding on a LINE → one line per value of the chosen DIMENSION (multi-line).
+    //     A continuous colour on a trend line isn't a standard encoding, so only the categorical
+    //     case routes here (the picked dimension overrides the auto series column); otherwise the
+    //     line renders plain. Bar/scatter honour the binding inside their own builders.
+    const _cb = exhibitEff?.color;
+    const _cbField = _cb?.field && _colSet.has(_cb.field) ? _cb.field : null;
+    const _cbCategorical = !!_cbField && (_cb?.mode === "categorical" || !numericCols.includes(_cbField));
+    if (!option && _cbCategorical && dateCol && _cbField !== dateCol
+        && (hint === "line" || hint === "area" || hint === "multi_line" || hint === "auto")) {
+      option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: _cbField!, xKind: "time" });
+      defaultH = 320;
+    }
+
     // 2. Pie (explicit)
     if (!option && hint === "pie" && catCol) { option = pieOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }); defaultH = 240; }
     // 3. Pareto (explicit or concentration-upgrade)

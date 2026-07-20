@@ -537,14 +537,33 @@ export function scatterOption(i: BuildInput): EChartsOption {
     ? { show: true, position: "top" as const, fontSize: 10, formatter: (p: { name?: string }) => p.name ?? "" }
     : undefined;
 
-  // Group into one series per category value (hue + legend); overflow → "Other" so a
-  // long-tail dimension can't explode the legend.
+  // Colour binding: a CHOSEN field drives the hue — a measure → per-point gradient +
+  // gradient legend; a dimension → one series per value + legend (overflow → "Other" so a
+  // long-tail dimension can't explode the legend). Absent a binding, fall back to i.color
+  // (the legacy per-category grouping, e.g. an entity scatter's type hue).
+  const binding = colorBinding(i);
+  const continuous = binding?.scale === "continuous" ? binding : null;
+  const catColorField = binding?.scale === "categorical" ? binding.field : (binding ? null : i.color);
   let series: Record<string, unknown>[];
   let groups: string[] = [];
-  if (i.color) {
+  let graphic: Record<string, unknown>[] | undefined;
+
+  if (continuous) {
+    const cvals = i.rows.map((r) => Number(r[continuous.field])).filter((v) => isFinite(v));
+    const lo = cvals.length ? Math.min(...cvals) : 0, hi = cvals.length ? Math.max(...cvals) : 1;
+    const ramp = severityRamp(lo, hi, continuous.field);
+    const cfmt = valueFormatter(i.rows, continuous.field, i.units);
+    graphic = continuousLegend(lo, hi, continuous.field, continuous.name, cfmt);
+    series = [{
+      type: "scatter", symbolSize: 9,
+      data: i.rows.map((r) => ({ ...pointOf(r), itemStyle: { color: ramp(Number(r[continuous.field])) } })),
+      label, labelLayout: showPointLabels ? { hideOverlap: true } : undefined,
+      emphasis: { focus: "series" },
+    }];
+  } else if (catColorField) {
     const byGroup = new Map<string, Row[]>();
     for (const r of i.rows) {
-      const g = String(r[i.color]);
+      const g = String(r[catColorField]);
       if (!byGroup.has(g)) byGroup.set(g, []);
       byGroup.get(g)!.push(r);
     }
@@ -595,14 +614,20 @@ export function scatterOption(i: BuildInput): EChartsOption {
       trigger: "item",
       formatter: (p: unknown) => {
         const o = p as { value: [number, number]; name?: string; seriesName?: string };
-        const who = o.name || (i.color ? o.seriesName : "");
+        const who = o.name || (catColorField ? o.seriesName : "");
         const head = who ? `<b>${who}</b><br/>` : "";
         return `${head}${fieldLabel(xf)}: ${fx(o.value[0])}<br/>${fieldLabel(yf)}: ${fy(o.value[1])}`;
       },
     },
     legend: groups.length > 1 ? { data: groups } : undefined,
-    // With a legend row on top, drop the grid so the y-axis name doesn't collide with it.
-    ...(groups.length > 1 ? { grid: { left: 8, right: 12, top: 44, bottom: 8, containLabel: true } } : {}),
+    // A legend row on top, or a gradient legend on the right, each reserves its own margin
+    // so the axis names don't collide with it.
+    ...(groups.length > 1
+      ? { grid: { left: 8, right: 12, top: 44, bottom: 8, containLabel: true } }
+      : continuous
+        ? { grid: { left: 8, right: 76, top: 12, bottom: 8, containLabel: true } }
+        : {}),
+    ...(graphic ? { graphic: graphic as EChartsOption["graphic"] } : {}),
     // `scale: true`: a scatter's story lives in the data's own range — anchoring at 0
     // squashes a 13–17min delay cloud into the top tenth of an empty plot.
     xAxis: { type: "value", scale: true, name: fieldLabel(xf), nameLocation: "middle", nameGap: 28, axisLabel: { formatter: (v: number) => fx(v) } },
