@@ -214,3 +214,61 @@ def test_non_revenue_measure_has_no_transactional_substitute():
     # silently answered from a gmv fact (that would be a wrong-measure answer).
     r = R.resolve("monthly customers for mytheresa", schema=_LUX_TXN)
     assert r.grain_feasible_via is None  # no customers measure at a finer grain here
+
+
+# ── no false abstain: probe every candidate column, ranked by the question ────────
+# The reported regression: "contra-revenue categories … in womenswear" abstained
+# ("womenswear is not present in this data") even though womenswear IS a category value —
+# because the measure ('revenue') bound to a summary table and the probe stopped after a
+# fixed cap, never reaching the category column that holds the value.
+_CONTRA = """\
+TABLE: lux.financial_summary  (60 rows)
+  platform  VARCHAR
+  segment  VARCHAR
+  owner  VARCHAR
+  region  VARCHAR
+  country  VARCHAR
+  channel  VARCHAR
+  brand  VARCHAR
+  vendor  VARCHAR
+  revenue_eur  DOUBLE
+TABLE: lux.order_items  (100000 rows)
+  order_id  BIGINT
+  category  VARCHAR  -- [womenswear, menswear, shoes, accessories]
+  refund_eur  DOUBLE
+"""
+
+
+def test_category_value_resolves_not_falsely_absent():
+    # End-to-end: 8 summary dims sort ahead of order_items.category (the 9th), and the measure
+    # binds to the summary table — the exact shape that used to false-abstain. The question
+    # names "categories", so the category column floats up and womenswear resolves.
+    db = _FakeDB(hits={"category": [["womenswear"]]})
+    r = R.resolve("What contra-revenue categories are driving losses in womenswear?",
+                  schema=_CONTRA, db=db)
+    assert r.not_found == []                    # was ['womenswear'] before the fix
+    assert any(b.column == "category" and b.value == "womenswear" for b in r.entity_bindings)
+
+
+def test_sweeps_past_the_old_cap_before_binding():
+    # No dimension hint in the question: the value still binds because the probe sweeps EVERY
+    # candidate column (order_items.category is the 9th) instead of stopping at the old 8-cap.
+    db = _FakeDB(hits={"order_items": [["womenswear"]]})   # value lives only in order_items
+    out = R._db_find_value(db, _CONTRA, "womenswear")
+    assert out == ("lux.order_items", "category", "womenswear")
+
+
+def test_genuinely_absent_value_still_abstains():
+    # The contract cuts both ways: a value in NO column is still confirmed absent (after the
+    # full sweep), so ground-first honesty is preserved.
+    db = _FakeDB(hits={})                       # every probe returns no rows
+    assert R._db_find_value(db, _CONTRA, "blorpwear") == "absent"
+
+
+def test_question_named_column_is_probed_first():
+    # Ranking optimisation: a column the question names is probed before the summary dims, so
+    # the common filter-by-<dimension> case binds in the first probe, not after a full sweep.
+    db = _FakeDB(hits={"category": [["womenswear"]]})
+    out = R._db_find_value(db, _CONTRA, "womenswear", question="losses by category")
+    assert out == ("lux.order_items", "category", "womenswear")
+    assert "category" in db.seen[0]             # the named column went first

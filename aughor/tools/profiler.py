@@ -526,7 +526,9 @@ _SAMPLE_PCT            = 5          # % to sample for top-values on large tables
 # NAME with 30 < distinct ≤ cap, so binding can happen offline. Columns above the
 # cap (customer names, SKUs, free text) stay live-probe — the sample stays bounded.
 _VALUE_SAMPLE_MAX_DISTINCT = 2000   # only persist a column's values when it has this many or fewer
-_VALUE_SAMPLE_MAX_COLS     = 8      # cap entity-dim columns sampled per table (matches resolve's max_cols)
+_VALUE_SAMPLE_MAX_COLS     = 8      # cap entity-dim columns sampled per table (the warmed offline set;
+#                                    resolve now live-sweeps every column before abstaining, so this
+#                                    only bounds how many bind OFFLINE without a live probe)
 _ENTITY_DIM_RE = re.compile(
     r"(name|platform|brand|franchise|company|merchant|vendor|segment|category|"
     r"channel|region|country|city|store|entity|product|customer|owner|type|status|label)",

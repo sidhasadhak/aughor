@@ -367,30 +367,62 @@ def _string_dim_columns(schema: str) -> list[tuple[str, str]]:
     return out
 
 
-def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] = None,
-                   max_cols: int = 8, value_samples: Optional[dict] = None):
-    """Bounded, injection-safe existence probe: is ``token`` a value in any string
-    dimension column? Returns (table, col, value) on the first hit, "absent" when
-    every probed column is confirmed to lack it, or None when we couldn't tell
-    (no db / no candidate columns) — in which case the caller must NOT abstain.
-    Measure-bearing tables are probed first so a found value binds to the right one.
+def _stem(w: str) -> str:
+    """Crudest singular stem, so a plural question word matches a singular column name
+    ('categories' → 'category', 'brands' → 'brand'). Good enough for column-name matching."""
+    if w.endswith("ies") and len(w) > 4:
+        return w[:-3] + "y"
+    if w.endswith("es") and len(w) > 4:
+        return w[:-2]
+    if w.endswith("s") and len(w) > 3:
+        return w[:-1]
+    return w
 
-    ``value_samples`` (R5) is the warmed {(table, col): distinct-values} map: a token
-    already present there binds OFFLINE, skipping the live warehouse probe entirely.
-    A sample MISS still falls through to the live probe below — the persisted set can
-    lag the data, and the ground-first contract forbids declaring a value absent
-    without live DB confirmation."""
-    cols = _string_dim_columns(schema)
-    if prefer_tables:
-        cols = sorted(cols, key=lambda tc: tc[0] not in prefer_tables)
-    cols = cols[:max_cols]
+
+def _rank_dim_columns(cols: list[tuple[str, str]], prefer_tables: Optional[set],
+                      question: str) -> list[tuple[str, str]]:
+    """Order candidate dimension columns so the ones the QUESTION points at are probed first:
+    (1) a column whose name (stem-matched) appears in the question — a 'categories' question
+    floats the ``category`` columns — then (2) measure-bearing tables, then the rest. So a
+    filter-by-<dimension> value binds in the first few probes, not buried past a cap. Ranking
+    is an optimisation for the common case; correctness comes from probing EVERY column before
+    abstaining (see :func:`_db_find_value`)."""
+    qstems = {_stem(w) for w in re.findall(r"[a-z]{3,}", (question or "").lower())}
+    prefer = prefer_tables or set()
+
+    def named(col: str) -> bool:
+        cl = col.lower()
+        return any(s in cl or _stem(cl) == s for s in qstems)
+
+    return sorted(cols, key=lambda tc: (0 if named(tc[1]) else 1,
+                                        0 if tc[0] in prefer else 1))
+
+
+def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] = None,
+                   value_samples: Optional[dict] = None, question: str = ""):
+    """Injection-safe existence probe: is ``token`` a value in any string dimension column?
+    Returns (table, col, value) on the first hit, "absent" when EVERY candidate column is
+    confirmed to lack it, or None when we couldn't tell (no db / no candidate columns) — in
+    which case the caller must NOT abstain.
+
+    Columns are probed in RELEVANCE order (a column the ``question`` names → measure-bearing
+    tables → the rest) so the answer binds fast in the common case. Crucially for the
+    ground-first contract ("never a false abstain"), "absent" is returned only after ALL
+    candidate columns have been checked — never after a fixed cap. (A prior 8-of-N cap declared
+    present values absent when the value lived in a lower-ranked column: e.g. a ``category``
+    value like 'womenswear' while the measure bound to a summary table that has no category.)
+
+    ``value_samples`` (R5) is the warmed {(table, col): distinct-values} map: a token already
+    present there binds OFFLINE, skipping the live probe. A MISS still falls through to the live
+    probe — the persisted set can lag the data, and the contract forbids a sample-only absent."""
+    cols = _rank_dim_columns(_string_dim_columns(schema), prefer_tables, question)
     if not cols:
         return None
 
-    # Offline first: bind from the warmed high-card value sample when we can.
+    low = token.lower()
+    # Offline first, over ALL ranked columns (in-memory; no DB) — cheapest and complete.
     if value_samples:
         from aughor.sql.value_index import ValueIndex
-        low = token.lower()
         for table, col in cols:
             sample = value_samples.get((table, col))
             if not sample:
@@ -406,6 +438,9 @@ def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] 
         return None
     lit = token.replace("'", "''")  # SQL-literal escape; the read-only gate blocks non-SELECT
     checked = 0
+    # Live sweep over EVERY candidate column (relevance-ordered; early-return on the first hit).
+    # A genuine "absent" therefore costs a full sweep — acceptable on the rare not-found path,
+    # where a correct "here's what IS present" beats a fast but wrong "not present".
     for table, col in cols:
         sql = (f"SELECT CAST({col} AS VARCHAR) FROM {table} "
                f"WHERE lower(CAST({col} AS VARCHAR)) = lower('{lit}') LIMIT 1")
@@ -540,7 +575,7 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
                 r.entity_bindings.append(EntityBinding(token, t, c, v, conf))
                 continue
             probe = _db_find_value(db, schema, token, prefer_tables=mtables,
-                                   value_samples=value_samples)
+                                   value_samples=value_samples, question=question)
             if isinstance(probe, tuple):
                 r.entity_bindings.append(EntityBinding(token, probe[0], probe[1], probe[2], 0.95))
             elif probe == "absent":
