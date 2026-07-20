@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChartType } from "./chartTypeInference";
+import { CHART_TYPE_LABEL, type ChartType } from "./chartTypeInference";
 
 interface Props {
   value: ChartType | "auto";
@@ -23,26 +23,20 @@ const ICONS: Record<ChartType | "auto", string> = {
   matrix:         "⊞",
   pie:            "◔",
   treemap:        "⊞",
+  counter:        "#",
+  funnel:         "▽",
+  histogram:      "≣",
+  boxplot:        "⧗",
+  sankey:         "⋈",
+  waterfall:      "▨",
+  "line-forecast": "⤳",
+  gantt:          "▤",
+  choropleth:     "◍",
+  "point-map":    "◉",
   table:          "≡",
 };
 
-const LABELS: Record<ChartType | "auto", string> = {
-  auto:           "Auto",
-  line:           "Line",
-  "multi-line":   "Multi-line",
-  "small-multiples": "Small multiples",
-  area:           "Area",
-  bar:            "Bar",
-  "grouped-bar":  "Grouped",
-  "combo":        "Combo",
-  "stacked-bar":  "Stacked",
-  scatter:        "Scatter",
-  heatmap:        "Heatmap",
-  matrix:         "Matrix",
-  pie:            "Pie",
-  treemap:        "Treemap",
-  table:          "Table",
-};
+// Labels come from the shared CHART_TYPE_LABEL (single source of truth).
 
 export function ChartTypeToggle({ value, available, onChange }: Props) {
   const options: (ChartType | "auto")[] = ["auto", ...available, "table"];
@@ -54,7 +48,7 @@ export function ChartTypeToggle({ value, available, onChange }: Props) {
       {unique.map((t) => (
         <button
           key={t}
-          title={LABELS[t]}
+          title={CHART_TYPE_LABEL[t]}
           onClick={() => onChange(t)}
           className={`px-1.5 py-0.5 rounded aug-fs-xs font-mono transition-colors ${
             value === t

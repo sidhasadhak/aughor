@@ -9,15 +9,15 @@
  * now build their charts from ONE engine — no more parallel spec-builders.
  *
  * Type vocab bridge: chartTypeInference emits hyphenated ChartType names; the
- * <Chart> engine speaks underscore "hints". TYPE_TO_HINT maps between them.
- * grouped-bar folds into combo (multi-measure comparison) and matrix into
- * heatmap (a matrix IS a heatmap) — the two types the engine doesn't render
- * natively; both are kept out of the offered toggle options below.
+ * <Chart> engine speaks underscore "hints". The shared TYPE_TO_HINT (in
+ * chartTypeInference — the single source of truth) maps between them. grouped-bar
+ * folds into combo (multi-measure comparison) and matrix into heatmap (a matrix IS
+ * a heatmap); both are kept out of the offered toggle options below.
  */
 
 import { useState } from "react";
 import { ChartWrapper } from "@/components/charts/ChartWrapper";
-import { inferChartType, availableTypesFor, type ChartType } from "@/components/charts/chartTypeInference";
+import { inferChartType, availableTypesFor, TYPE_TO_HINT, type ChartType } from "@/components/charts/chartTypeInference";
 import { Chart, type ChartCustom } from "@/components/Chart";
 
 interface Props {
@@ -35,23 +35,6 @@ interface Props {
   /** Click a mark to drill in — receives the datum behind the clicked bar/point. */
   onSelect?: (datum: Record<string, unknown>) => void;
 }
-
-const TYPE_TO_HINT: Record<ChartType, string> = {
-  "line":        "line",
-  "area":        "area",
-  "multi-line":  "multi_line",
-  "small-multiples": "small_multiples",
-  "bar":         "bar",
-  "grouped-bar": "combo",
-  "combo":       "combo",
-  "stacked-bar": "stacked_bar",
-  "scatter":     "scatter",
-  "heatmap":     "heatmap",
-  "matrix":      "heatmap",
-  "pie":         "pie",
-  "treemap":     "treemap",
-  "table":       "auto",
-};
 
 export function InvestigationChart({ columns, rows, title, controlled, typeOverride, showLabels: showLabelsProp, custom, heightScale, onSelect }: Props) {
   const inferred = inferChartType(columns, rows);

@@ -133,7 +133,8 @@ export function buildAughorTheme(t: ChartTokens): Record<string, unknown> {
       textStyle: { color: t.t1, fontSize: 11, fontFamily: FONT_STACK },
       extraCssText: "border-radius:4px;box-shadow:0 4px 16px rgba(0,0,0,.4);",
     },
-    grid: { left: 8, right: 12, top: 28, bottom: 8, containLabel: true },
+    // ECharts 6: the outerBounds equivalent of the deprecated `containLabel: true`.
+    grid: { left: 8, right: 12, top: 28, bottom: 8, outerBoundsMode: "same", outerBoundsContain: "axisLabel" },
   };
 }
 

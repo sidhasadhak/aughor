@@ -15,6 +15,7 @@ import {
   lineOption, multiLineOption, barOption, groupedBarOption,
   stackedBarOption, pieOption, scatterOption, buildAutoOption,
   comboOption, heatmapOption, treemapOption, paretoOption,
+  counterOption, funnelOption, histogramOption, boxplotOption, sankeyOption, waterfallOption,
   type Row,
 } from "@/components/charts/echarts";
 import { Chart } from "@/components/Chart";
@@ -83,6 +84,63 @@ const delayScatter: Row[] = ([
 ] as [string, string, number, number][]).map(
   ([aircraft_id, aircraft_type, flight_count, avg_delay_min]) =>
     ({ aircraft_id, aircraft_type, flight_count, avg_delay_min }));
+
+// ── native-fit viz types (2026-07 wave) + the Databricks color-binding examples ──
+// Aircraft example mirrors the two Databricks screenshots: the SAME load-factor ranking,
+// coloured categorically by haul (long/short → legend) or continuously by revenue (gradient).
+const aircraftPerf: Row[] = ([
+  ["A350-900", 71.2, 302000, "long"], ["B777-300ER", 74.6, 268000, "long"],
+  ["A340-300", 76.1, 254000, "long"], ["A320", 78.4, 96000, "short"],
+  ["A330-300", 77.9, 231000, "long"], ["A321", 78.8, 88000, "short"],
+  ["A220-300", 79.1, 72000, "short"], ["A220-100", 78.7, 64000, "short"],
+] as [string, number, number, string][]).map(
+  ([aircraft_type, load_factor_pct, revenue_per_flight, haul]) => ({ aircraft_type, load_factor_pct, revenue_per_flight, haul }));
+
+// Funnel — an onboarding drop-off.
+const funnelStages: Row[] = ([
+  ["Visited", 48000], ["Signed up", 21500], ["Activated", 12800], ["Subscribed", 5400], ["Renewed", 3100],
+] as [string, number][]).map(([stage, users]) => ({ stage, users }));
+
+// Histogram — order-value distribution (raw values, one row each; deterministic spread).
+const orderValues: Row[] = Array.from({ length: 240 }, (_, i) =>
+  ({ order_value: Math.round(Math.abs(40 + 55 * Math.sin(i * 0.7) + (i % 11) * 6 + (i % 3) * 14) + 8) }));
+
+// Box plot — delivery time distribution per region (repeated values per group).
+const deliveryTimes: Row[] = REGIONS.flatMap((region, ri) =>
+  Array.from({ length: 14 }, (_, k) => ({ region, delivery_hrs: 24 + ri * 8 + (k % 5) * 6 + (k % 2) * 4 - (k % 3) * 3 })));
+
+// Sankey — flow from acquisition channel → device (two dimensions + a measure).
+const channelDevice: Row[] = ([
+  ["Paid search", "Mobile", 3200], ["Paid search", "Desktop", 1800], ["Organic", "Mobile", 2600],
+  ["Organic", "Desktop", 2100], ["Social", "Mobile", 2900], ["Social", "Desktop", 700],
+  ["Email", "Desktop", 1400], ["Email", "Mobile", 900],
+] as [string, string, number][]).map(([channel, device, sessions]) => ({ channel, device, sessions }));
+
+// Waterfall — an ARR bridge (signed contributions building to the total).
+const arrBridge: Row[] = ([
+  ["Starting ARR", 1200000], ["New", 340000], ["Expansion", 180000], ["Contraction", -90000], ["Churn", -160000],
+] as [string, number][]).map(([stage, arr_delta]) => ({ stage, arr_delta }));
+
+// ── Tier-2 (forecast · gantt · geo) + scatter/line colour binding ──
+const projectPlan: Row[] = ([
+  ["Discovery", "Research", "2024-01-05", "2024-02-10"], ["Design", "Research", "2024-02-01", "2024-03-15"],
+  ["Backend build", "Build", "2024-03-01", "2024-05-20"], ["Frontend build", "Build", "2024-03-20", "2024-06-10"],
+  ["Beta", "Launch", "2024-06-05", "2024-07-05"], ["GA launch", "Launch", "2024-07-01", "2024-08-01"],
+] as [string, string, string, string][]).map(([task, phase, start_date, end_date]) => ({ task, phase, start_date, end_date }));
+const revByCountry: Row[] = ([
+  ["United States", 4200000], ["China", 3100000], ["India", 1400000], ["Germany", 1800000],
+  ["Japan", 1500000], ["United Kingdom", 1200000], ["Brazil", 760000], ["Australia", 520000],
+] as [string, number][]).map(([country, revenue]) => ({ country, revenue }));
+const salesByCity: Row[] = ([
+  ["New York", 40.71, -74.01, 9200], ["London", 51.51, -0.13, 7400], ["Tokyo", 35.68, 139.69, 8100],
+  ["Singapore", 1.35, 103.82, 4300], ["Sao Paulo", -23.55, -46.63, 5200], ["Mumbai", 19.08, 72.88, 6100],
+] as [string, number, number, number][]).map(([city, lat, lon, sales]) => ({ city, lat, lon, sales }));
+// Stores: 3 measures + region → scatter coloured by region (cat) or volume (continuous).
+const storeScatter: Row[] = ([
+  ["Aloha", "West", 42, 4.6, 9200], ["Cedar", "East", 33, 4.8, 15300], ["Echo", "North", 25, 4.9, 21000],
+  ["Fern", "North", 64, 4.0, 3300], ["Haze", "South", 39, 4.7, 11800], ["Jade", "East", 29, 4.85, 18400],
+  ["Kite", "North", 61, 3.95, 3900], ["Lark", "South", 44, 4.5, 8600], ["Bay", "West", 58, 4.2, 4100],
+] as [string, string, number, number, number][]).map(([store, region, price, rating, volume]) => ({ store, region, price, rating, volume }));
 
 function Card({ title, height = 300, children }: { title: string; height?: number; children: React.ReactNode }) {
   return (
@@ -195,6 +253,92 @@ export default function ChartLab() {
             chartType="scatter" chrome={false}
             exhibit={{ label_points: true, quadrant: { x: 20, y: 14.5 } }}
           />
+        </Card>
+      </div>
+
+      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+        Native-fit viz types (2026-07 wave) — Counter · Funnel · Histogram · Box · Sankey · Waterfall
+      </h2>
+      <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
+        New pure builders, zero new dependencies (ECharts modules registered in EChart.tsx). Each is offered
+        in the viz editor only when the data shape supports it.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 16 }}>
+        <Card title="Counter — total revenue (KPI)">
+          <EChart option={counterOption({ rows: revByMonth, x: "month", ys: ["revenue"] })} height={200} />
+        </Card>
+        <Card title="Funnel — onboarding drop-off">
+          <EChart option={funnelOption({ rows: funnelStages, x: "stage", ys: ["users"], labels: true })} height={270} />
+        </Card>
+        <Card title="Histogram — order-value distribution (240 orders)">
+          <EChart option={histogramOption({ rows: orderValues, x: "order_value", ys: ["order_value"] })} height={270} />
+        </Card>
+        <Card title="Box plot — delivery hours by region">
+          <EChart option={boxplotOption({ rows: deliveryTimes, x: "region", ys: ["delivery_hrs"] })} height={270} />
+        </Card>
+        <Card title="Sankey — acquisition channel → device">
+          <EChart option={sankeyOption({ rows: channelDevice, x: "channel", color: "device", ys: ["sessions"] })} height={270} />
+        </Card>
+        <Card title="Waterfall — ARR bridge (signed contributions)">
+          <EChart option={waterfallOption({ rows: arrBridge, x: "stage", ys: ["arr_delta"], labels: true })} height={270} />
+        </Card>
+      </div>
+
+      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+        Color binding — colour marks by a chosen field (the Databricks &quot;Color&quot;)
+      </h2>
+      <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
+        The two screenshots: the SAME load-factor ranking, coloured categorically by <code>haul</code>
+        (dimension → discrete legend) or continuously by <code>revenue_per_flight</code> (measure → gradient legend).
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 16 }}>
+        <Card title="Categorical — colour by haul (dimension → legend)" height={370}>
+          <Chart
+            {...toTable(aircraftPerf, ["aircraft_type", "load_factor_pct", "revenue_per_flight", "haul"])}
+            chartType="bar_horizontal" chrome={false} showLabels columnUnits={{ load_factor_pct: "percent" }}
+            exhibit={{ color: { mode: "categorical", field: "haul", name: "Haul type" } }}
+          />
+        </Card>
+        <Card title="Continuous — colour by revenue/flight (measure → gradient)" height={370}>
+          <Chart
+            {...toTable(aircraftPerf, ["aircraft_type", "load_factor_pct", "revenue_per_flight", "haul"])}
+            chartType="bar_horizontal" chrome={false} showLabels columnUnits={{ load_factor_pct: "percent" }}
+            exhibit={{ color: { mode: "continuous", field: "revenue_per_flight", name: "Revenue / flight" } }}
+          />
+        </Card>
+        <Card title="Scatter — colour by region (dimension → legend)" height={300}>
+          <Chart {...toTable(storeScatter, ["store", "region", "price", "rating", "volume"])}
+            chartType="scatter" chrome={false} exhibit={{ color: { mode: "categorical", field: "region", name: "Region" } }} />
+        </Card>
+        <Card title="Scatter — colour by volume (measure → gradient)" height={300}>
+          <Chart {...toTable(storeScatter, ["store", "region", "price", "rating", "volume"])}
+            chartType="scatter" chrome={false} exhibit={{ color: { mode: "continuous", field: "volume", name: "Volume" } }} />
+        </Card>
+        <Card title="Line — colour by region → multi-line" height={300}>
+          <Chart {...toTable(revByRegionMonth, ["month", "region", "revenue"])}
+            chartType="line" chrome={false} exhibit={{ color: { mode: "categorical", field: "region", name: "Region" } }} />
+        </Card>
+      </div>
+
+      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+        Tier-2 viz types — Line (forecast) · Gantt · Choropleth · Point map
+      </h2>
+      <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
+        The heavier-infra set. Forecast is a deterministic least-squares projection; the maps lazy-load a
+        world geojson from <code>/geo/world.json</code> only when first rendered (zero main-bundle cost).
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 16 }}>
+        <Card title="Line (forecast) — revenue projected + 95% band" height={300}>
+          <Chart {...toTable(revByMonth, ["month", "revenue"])} chartType="line_forecast" chrome={false} />
+        </Card>
+        <Card title="Gantt — project plan (tasks coloured by phase)" height={300}>
+          <Chart {...toTable(projectPlan, ["task", "phase", "start_date", "end_date"])} chartType="gantt" chrome={false} />
+        </Card>
+        <Card title="Choropleth — revenue by country" height={320}>
+          <Chart {...toTable(revByCountry, ["country", "revenue"])} chartType="choropleth" chrome={false} />
+        </Card>
+        <Card title="Point map — sales by city (bubble size)" height={320}>
+          <Chart {...toTable(salesByCity, ["city", "lat", "lon", "sales"])} chartType="point_map" chrome={false} />
         </Card>
       </div>
 

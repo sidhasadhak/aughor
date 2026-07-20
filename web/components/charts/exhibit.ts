@@ -25,9 +25,19 @@ export interface ExhibitRefLine {
 }
 
 export interface ExhibitColor {
-  mode: "neutral" | "categorical" | "severity" | "sign";
-  /** categorical: the column whose values pick the hue. */
+  mode: "neutral" | "categorical" | "severity" | "sign" | "continuous";
+  /** categorical/continuous: the column whose values pick the hue. When set, the
+   *  renderer colours each mark by THAT column instead of the plotted measure —
+   *  the Databricks "Color" binding (a dimension → discrete legend, a measure →
+   *  gradient legend). Absent → the mode's own default (severity ramps the plotted
+   *  measure; categorical needs a field). */
   field?: string | null;
+  /** Legend / gradient title — the "Display name" the user typed (else the field label). */
+  name?: string | null;
+  /** Where the colour legend sits ("right" | "bottom" | "top" | "none"). The colour legend
+   *  reflects THIS field (a discrete key for categorical, a gradient for continuous) — never
+   *  the plotted measure. */
+  legend?: string | null;
 }
 
 export interface ExhibitSpec {
@@ -60,6 +70,14 @@ function hexToRgb(h: string): [number, number, number] {
 function mix(a: [number, number, number], b: [number, number, number], t: number): string {
   const c = a.map((av, i) => Math.round(av + (b[i] - av) * t));
   return `#${c.map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** The 3-stop gradient (as ECharts linear-gradient colorStops) for a continuous color
+ *  field — cost metrics ramp red, everything else calm blue, mirroring severityRamp's
+ *  family choice. Used to draw the gradient legend beside a continuous color binding. */
+export function rampStops(field: string): { offset: number; color: string }[] {
+  const ramp = COST_METRIC_COL.test(field) ? RED_RAMP : BLUE_RAMP;
+  return ramp.map((color, k) => ({ offset: k / (ramp.length - 1), color }));
 }
 
 /** Piecewise-linear interpolation through a 3-stop ramp, normalised to [min, max].
