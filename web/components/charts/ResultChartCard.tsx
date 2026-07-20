@@ -56,11 +56,8 @@ const AUTO_OPT = "__auto__";
 // copies were the exact drift that module exists to prevent).
 
 // Databricks-style Customize vocabularies — kept in sync with the Query Builder Customize tab so a
-// card and a query offer the same knobs. Chart.applyCustom honors each (unknown schemes no-op).
-const COLOR_SCHEMES: { v: string; t: string }[] = [
-  { v: "", t: "Default" }, { v: "tableau10", t: "Tableau 10" }, { v: "category10", t: "Category 10" },
-  { v: "set2", t: "Set 2" }, { v: "dark2", t: "Dark 2" }, { v: "pastel1", t: "Pastel" }, { v: "tableau20", t: "Tableau 20" },
-];
+// card and a query offer the same knobs. Chart.applyCustom honors each. (Colour palette "Scheme"
+// was removed from the editor — the org-default palette applies; Color-by binding drives hue now.)
 const NUMBER_FORMATS: { v: string; t: string }[] = [
   { v: "", t: "Auto" }, { v: ",.0f", t: "1,234" }, { v: ",.2f", t: "1,234.56" }, { v: "$,.0f", t: "$1,234" },
   { v: "$,.2f", t: "$1,234.56" }, { v: "~s", t: "1.2K (compact)" }, { v: ".0%", t: "12%" }, { v: ".1%", t: "12.3%" },
@@ -176,7 +173,6 @@ export function ResultChartCard({
   const [showLabels, setShowLabels] = useState<boolean>(defaultShowLabels ?? false);
   // Customize overrides (Color / Format / Legend / Tooltip / Annotation) layered OVER the passed
   // `custom`/`exhibit`, so an untouched card renders byte-identically to before.
-  const [colorScheme, setColorScheme] = useState("");
   // Color binding (the Databricks "Color" field): colour marks by a CHOSEN column instead
   // of the plotted measure. "" field = off (default coloring). Scale "" = auto by role
   // (a measure → continuous gradient; a dimension → categorical legend); name = legend title.
@@ -271,13 +267,12 @@ export function ResultChartCard({
   // Customize overrides merged over the passed props (empty string = "unset" → keep the prop).
   const effCustom: ChartCustom = useMemo(() => ({
     ...(custom || {}),
-    ...(colorScheme ? { colorScheme } : {}),
     ...(numberFormat ? { format: numberFormat } : {}),
     ...(legendPos ? { legend: legendPos as ChartCustom["legend"] } : {}),
     ...(xTitle ? { xTitle } : {}),
     ...(yTitle ? { yTitle } : {}),
     ...(tooltipOff ? { tooltip: "off" as const } : {}),
-  }), [custom, colorScheme, numberFormat, legendPos, xTitle, yTitle, tooltipOff]);
+  }), [custom, numberFormat, legendPos, xTitle, yTitle, tooltipOff]);
 
   // The color binding the user built (or null): a chosen field, its scale (explicit, else
   // auto by role — a measure ramps continuous, a dimension is categorical), and legend title.
@@ -344,8 +339,6 @@ export function ResultChartCard({
     setTransform: (v) => setTransformOp(v as PostprocOp | "none"),
     transformErr: tErr || undefined,
     showLabels, setShowLabels,
-    // Color
-    colorSchemeValue: colorScheme, colorSchemeOptions: COLOR_SCHEMES, setColorScheme,
     legendValue: legendPos, legendOptions: LEGEND_POS, setLegend: setLegendPos,
     // Color binding (the Databricks "Color" field) — colour by a chosen column.
     colorFieldValue: colorField,
