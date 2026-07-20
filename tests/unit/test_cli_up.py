@@ -46,9 +46,10 @@ def test_llm_backends_mirror_matches_provider():
     assert tuple(cli_mod.LLM_BACKENDS) == tuple(BACKENDS)
 
 
-def test_investigate_accepts_all_five_backends():
+def test_investigate_accepts_all_backends():
     r = CliRunner().invoke(cli_mod.cli, ["investigate", "--help"])
     assert r.exit_code == 0
+    assert "gemini" in cli_mod.LLM_BACKENDS       # the newest backend is exposed on the CLI
     for backend in cli_mod.LLM_BACKENDS:
         assert backend in r.output, f"--backend missing choice {backend}"
 

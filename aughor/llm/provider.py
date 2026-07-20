@@ -1,4 +1,4 @@
-"""LLM provider abstraction — Ollama, LM Studio, Groq, Together, or Anthropic.
+"""LLM provider abstraction — Ollama, LM Studio, Groq, Together, Anthropic, or Gemini.
 
 Two roles, two model slots:
   coder   — SQL generation, hypothesis scoring, decomposition (structured reasoning)
@@ -18,7 +18,7 @@ its cache whenever the config changes (a version bump on every save).
 Env vars (still honoured as the layer-2 fallback):
   AUGHOR_BACKEND, AUGHOR_CODER_MODEL, AUGHOR_NARRATOR_MODEL, AUGHOR_FAST_NARRATOR_MODEL,
   AUGHOR_MODEL, OLLAMA_BASE_URL, LMSTUDIO_BASE_URL, GROQ_API_KEY, TOGETHER_API_KEY,
-  ANTHROPIC_API_KEY, AUGHOR_FALLBACK_MODEL, AUGHOR_FALLBACK_DISABLED.
+  ANTHROPIC_API_KEY, GEMINI_API_KEY, AUGHOR_FALLBACK_MODEL, AUGHOR_FALLBACK_DISABLED.
 """
 from __future__ import annotations
 
@@ -42,13 +42,14 @@ T = TypeVar("T", bound=BaseModel)
 
 Role = Literal["coder", "narrator", "fast"]
 ROLES: tuple[Role, ...] = ("coder", "narrator", "fast")
-BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anthropic")
+BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anthropic", "gemini")
 # Backends that require an API key (the others are local).
-NEEDS_KEY: tuple[str, ...] = ("groq", "together", "anthropic")
+NEEDS_KEY: tuple[str, ...] = ("groq", "together", "anthropic", "gemini")
 # Backends whose base URL is user-overridable (the hosted ones are fixed).
 LOCAL_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio")
 
-_KEY_ENV = {"groq": "GROQ_API_KEY", "together": "TOGETHER_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+_KEY_ENV = {"groq": "GROQ_API_KEY", "together": "TOGETHER_API_KEY", "anthropic": "ANTHROPIC_API_KEY",
+            "gemini": "GEMINI_API_KEY"}
 _BASE_URL_ENV = {"ollama": "OLLAMA_BASE_URL", "lmstudio": "LMSTUDIO_BASE_URL"}
 
 _DEFAULT_BASE_URLS = {
@@ -56,6 +57,8 @@ _DEFAULT_BASE_URLS = {
     "lmstudio": "http://localhost:1234/v1",
     "groq":     "https://api.groq.com/openai/v1",
     "together": "https://api.together.xyz/v1",
+    # Google Gemini's OpenAI-compatibility endpoint (chat/completions + tools + json_schema).
+    "gemini":   "https://generativelanguage.googleapis.com/v1beta/openai/",
 }
 
 _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
@@ -64,6 +67,10 @@ _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
     "groq":      {"coder": "llama-3.3-70b-versatile",          "narrator": "llama-3.3-70b-versatile"},
     "together":  {"coder": "Qwen/Qwen2.5-Coder-32B-Instruct",  "narrator": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
     "anthropic": {"coder": "claude-sonnet-4-6",                "narrator": "claude-sonnet-4-6"},
+    # "…-latest" aliases never deprecate (a pinned gemini-2.5-flash is already 404 for new keys)
+    # and gemini-flash-latest works on the free tier. Bump coder → "gemini-pro-latest" for stronger
+    # SQL generation on a paid key (Pro is quota-limited on the free tier).
+    "gemini":    {"coder": "gemini-flash-latest", "narrator": "gemini-flash-latest", "fast": "gemini-flash-latest"},
 }
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / "data" / "llm_config.json"
@@ -260,6 +267,19 @@ def _build_openai_compat(base_url: str, api_key: str) -> instructor.Instructor:
     return instructor.from_openai(raw, mode=instructor.Mode.JSON)
 
 
+def _build_gemini_client(base_url: str, api_key: str) -> instructor.Instructor:
+    """Google Gemini via its OpenAI-compatibility endpoint. Gemini 2.x are thinking models,
+    so TOOLS mode (schema-native function-calling structured output) keeps reasoning tokens out
+    of the JSON — same rationale as the ollama reasoning-model path, where plain JSON mode lets
+    <thinking> pollute the output. Tune with AUGHOR_GEMINI_INSTRUCTOR_MODE (TOOLS|JSON|JSON_SCHEMA)."""
+    if not api_key:
+        raise RuntimeError("missing Gemini API key — set it in Settings → Inference (or GEMINI_API_KEY)")
+    raw = OpenAI(base_url=base_url, api_key=api_key)
+    mode = getattr(instructor.Mode, os.getenv("AUGHOR_GEMINI_INSTRUCTOR_MODE", "TOOLS").upper(),
+                   instructor.Mode.TOOLS)
+    return instructor.from_openai(raw, mode=mode)
+
+
 def _build_anthropic_client(api_key: str) -> instructor.Instructor:
     if not api_key:
         raise RuntimeError("missing Anthropic API key — set it in Settings → Inference")
@@ -393,6 +413,8 @@ class LLMProvider:
             self._client = _build_lmstudio_client(url)
         elif backend in ("groq", "together"):
             self._client = _build_openai_compat(url, key)
+        elif backend == "gemini":
+            self._client = _build_gemini_client(url, key)
         elif backend == "anthropic":
             self._client = _build_anthropic_client(key)
         else:

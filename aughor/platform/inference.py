@@ -65,6 +65,7 @@ _TOOLS_KEYWORDS = ("qwen3", "kimi", "deepseek-r1", "qwq", "qwen-coder", "qwen2.5
 # over-estimating risks overflow. Override per-model as real limits are confirmed.
 _CONTEXT_WINDOWS: dict[str, int] = {
     "claude": 200_000,
+    "gemini": 1_048_576,          # Gemini 1.5/2.x — 1M-token window (Pro may exceed; under-estimate is safe)
     "qwen3-coder": 131_072,
     "qwen2.5-coder": 131_072,
     "kimi": 131_072,
@@ -88,7 +89,7 @@ def _is_cloud_ollama(model: str) -> bool:
 def _cache_mode(backend: str, model: str, base_url: str) -> CacheMode:
     if backend == "anthropic":
         return "explicit_breakpoint"            # cache_control breakpoints
-    if backend in ("ollama", "lmstudio", "groq", "together"):
+    if backend in ("ollama", "lmstudio", "groq", "together", "gemini"):
         if backend == "ollama" and _is_cloud_ollama(model):
             # Hosted/multiplexed — prefix-KV reuse across separate requests is not
             # guaranteed; flag it so Layer B never *assumes* a cache hit (measure first).
@@ -98,7 +99,7 @@ def _cache_mode(backend: str, model: str, base_url: str) -> CacheMode:
 
 
 def _tooling(backend: str, model: str) -> Tooling:
-    if backend in ("anthropic", "groq", "together"):
+    if backend in ("anthropic", "groq", "together", "gemini"):
         return "native_tools"
     if backend == "ollama":
         return "native_tools" if any(k in model.lower() for k in _TOOLS_KEYWORDS) else "none"
@@ -108,8 +109,8 @@ def _tooling(backend: str, model: str) -> Tooling:
 def _structured_output(backend: str, model: str) -> StructuredOutput:
     # "native" = provider enforces the schema (tool / json_schema mode);
     # "instructor_emulated" = plain JSON mode with reprompt-on-mismatch.
-    if backend in ("anthropic", "lmstudio"):
-        return "native"
+    if backend in ("anthropic", "lmstudio", "gemini"):
+        return "native"                          # gemini: schema-native via TOOLS/json_schema mode
     if backend == "ollama":
         return "native" if any(k in model.lower() for k in _TOOLS_KEYWORDS) else "instructor_emulated"
     return "instructor_emulated"                 # groq / together JSON mode
@@ -121,7 +122,7 @@ def _token_accounting(backend: str) -> TokenAccounting:
 
 
 def _privacy_class(backend: str, model: str, base_url: str) -> PrivacyClass:
-    if backend in ("anthropic", "groq", "together"):
+    if backend in ("anthropic", "groq", "together", "gemini"):
         return "public_api"
     if backend == "ollama":
         if _is_cloud_ollama(model):
@@ -133,7 +134,7 @@ def _privacy_class(backend: str, model: str, base_url: str) -> PrivacyClass:
 
 
 def _cost(backend: str, model: str, base_url: str) -> Cost:
-    if backend in ("anthropic", "groq", "together"):
+    if backend in ("anthropic", "groq", "together", "gemini"):
         return "per_token"
     if backend == "ollama" and _is_cloud_ollama(model):
         return "unknown"                          # cloud pricing not modelled here
