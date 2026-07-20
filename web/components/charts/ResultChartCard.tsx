@@ -284,19 +284,23 @@ export function ResultChartCard({
   const effCustom: ChartCustom = useMemo(() => ({
     ...(custom || {}),
     ...(numberFormat ? { format: numberFormat } : {}),
-    ...(legendPos ? { legend: legendPos as ChartCustom["legend"] } : {}),
+    // A bound colour owns the legend (handled in the builder); otherwise the generic legend
+    // position applies to the series legend.
+    ...(legendPos && !colorField ? { legend: legendPos as ChartCustom["legend"] } : {}),
     ...(xTitle ? { xTitle } : {}),
     ...(yTitle ? { yTitle } : {}),
     ...(tooltipOff ? { tooltip: "off" as const } : {}),
-  }), [custom, numberFormat, legendPos, xTitle, yTitle, tooltipOff]);
+  }), [custom, numberFormat, legendPos, colorField, xTitle, yTitle, tooltipOff]);
 
   // The color binding the user built (or null): a chosen field, its scale (explicit, else
   // auto by role — a measure ramps continuous, a dimension is categorical), and legend title.
   const colorBinding: ExhibitColor | null = useMemo(() => {
     if (!colorField) return null;
     const scale = colorScaleSel || (metricCols.includes(colorField) ? "continuous" : "categorical");
-    return { mode: scale, field: colorField, name: colorName || null };
-  }, [colorField, colorScaleSel, colorName, metricCols]);
+    // The "Legend" position drives the COLOUR legend (which reflects colorField), not the
+    // plotted-measure series legend — so it rides on the binding, not effCustom (below).
+    return { mode: scale, field: colorField, name: colorName || null, legend: legendPos || null };
+  }, [colorField, colorScaleSel, colorName, legendPos, metricCols]);
 
   // User annotation lines ride on top of any backend exhibit ref-lines; a color binding, when
   // set, overrides the backend's own color mode (the user asked to colour by that column).

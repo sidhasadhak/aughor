@@ -149,7 +149,7 @@ function colorIsNumeric(rows: Row[], field: string): boolean {
 }
 
 /** The effective color binding for a builder: null when there's no usable field. */
-function colorBinding(i: BuildInput): { field: string; scale: "categorical" | "continuous"; name: string } | null {
+function colorBinding(i: BuildInput): { field: string; scale: "categorical" | "continuous"; name: string; legend: string } | null {
   const c = i.exhibit?.color;
   const field = c?.field;
   if (!field || !i.rows.length || !(field in i.rows[0])) return null;
@@ -158,14 +158,43 @@ function colorBinding(i: BuildInput): { field: string; scale: "categorical" | "c
     c?.mode === "continuous" ? "continuous"
     : c?.mode === "categorical" ? "categorical"
     : colorIsNumeric(i.rows, field) ? "continuous" : "categorical";
-  return { field, scale, name: c?.name || fieldLabel(field) };
+  return { field, scale, name: c?.name || fieldLabel(field), legend: c?.legend || "" };
 }
 
-/** A small vertical gradient legend (ECharts `graphic`) for a continuous color binding —
- *  the "Haul Type 300k…100k" ramp in the Databricks screenshot. Drawn top-right; callers
- *  reserve grid space so it never overlaps the marks. */
-function continuousLegend(min: number, max: number, field: string, name: string, fmt: (v: unknown) => string): Record<string, unknown>[] {
+/** ECharts `legend` block placing the DISCRETE colour key (categorical binding) at the
+ *  chosen edge — the legend reflects the colour field's values, not the plotted measure. */
+function colorLegendBlock(data: string[], pos: string): Record<string, unknown> | undefined {
+  if (pos === "none") return { show: false };
+  const vert = pos === "right" || pos === "left";
+  return {
+    data, type: "scroll",
+    orient: vert ? "vertical" : "horizontal",
+    top: pos === "top" || !pos || pos === "" ? 0 : vert ? "middle" : undefined,
+    bottom: pos === "bottom" ? 0 : undefined,
+    left: pos === "left" ? 0 : undefined,
+    right: pos === "right" ? 0 : undefined,
+  };
+}
+
+/** A gradient legend (ECharts `graphic`) for a continuous color binding — the "Total GMV
+ *  min…max" ramp keyed to the COLOR field, never the plotted measure. Vertical at the right
+ *  (default), horizontal at the bottom/top, or hidden ("none"). Callers reserve grid space. */
+function continuousLegend(min: number, max: number, field: string, name: string, fmt: (v: unknown) => string, pos = "right"): Record<string, unknown>[] {
+  if (pos === "none") return [];
   const stops = rampStops(field);
+  if (pos === "bottom" || pos === "top") {
+    // Horizontal: name · [min ▏gradient▕ max]
+    const y = pos === "top" ? undefined : 0;
+    return [{
+      type: "group", left: "center", top: pos === "top" ? 2 : undefined, bottom: pos === "bottom" ? 2 : undefined, z: 10,
+      children: [
+        { type: "text", left: 0, top: (y ?? 0) + 3, style: { text: name, fontSize: 10, fontWeight: 600, fill: REF_NEUTRAL } },
+        { type: "text", left: 78, top: (y ?? 0) + 3, style: { text: fmt(min), fontSize: 9, fill: REF_NEUTRAL } },
+        { type: "rect", left: 120, top: (y ?? 0) + 3, shape: { width: 90, height: 10 }, style: { fill: { type: "linear", x: 0, y: 0, x2: 1, y2: 0, colorStops: stops } } },
+        { type: "text", left: 216, top: (y ?? 0) + 3, style: { text: fmt(max), fontSize: 9, fill: REF_NEUTRAL } },
+      ],
+    }];
+  }
   return [{
     type: "group", right: 8, top: 6, z: 10,
     children: [
@@ -368,11 +397,16 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
       xcats.sort((a, b) => (asc ? (xtotal.get(a)! - xtotal.get(b)!) : (xtotal.get(b)! - xtotal.get(a)!)));
     }
     const pivotCat = { ...catAxis, data: xcats };
+    const lp = binding.legend;
     return {
       ...withTitle(i.title),
       tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
-      legend: { data: groups, top: 0, type: "scroll" },
-      grid: { top: 30, left: 8, right: 12, bottom: 8, containLabel: true },
+      // The legend reflects the COLOUR field's values (the groups), positioned per the binding.
+      legend: colorLegendBlock(groups, lp) as EChartsOption["legend"],
+      grid: {
+        top: lp === "top" || !lp ? 30 : 10, bottom: lp === "bottom" ? 30 : 8,
+        left: lp === "left" ? 92 : 8, right: lp === "right" ? 92 : 12, containLabel: true,
+      },
       xAxis: style.horizontal ? valAxis : pivotCat,
       yAxis: style.horizontal ? pivotCat : valAxis,
       series: groups.map((g, gi) => ({
@@ -393,11 +427,18 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
     const lo = cvals.length ? Math.min(...cvals) : 0, hi = cvals.length ? Math.max(...cvals) : 1;
     const ramp = severityRamp(lo, hi, binding.field);
     const cfmt = valueFormatter(i.rows, binding.field, i.units);
+    const lp = binding.legend || "right";
     return {
       ...withTitle(i.title),
       tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
-      grid: { top: 10, left: 8, right: 76, bottom: 8, containLabel: true },
-      graphic: continuousLegend(lo, hi, binding.field, binding.name, cfmt) as EChartsOption["graphic"],
+      // The gradient legend (keyed to the colour field) IS the legend — the plotted measure's
+      // series legend is suppressed (it's already named on the value axis).
+      legend: { show: false },
+      grid: {
+        top: lp === "top" ? 30 : 10, bottom: lp === "bottom" ? 34 : 8,
+        left: 8, right: lp === "right" ? 76 : 14, containLabel: true,
+      },
+      graphic: continuousLegend(lo, hi, binding.field, binding.name, cfmt, lp) as EChartsOption["graphic"],
       xAxis: style.horizontal ? valAxis : catAxis,
       yAxis: style.horizontal ? catAxis : valAxis,
       series: [{
@@ -572,7 +613,7 @@ export function scatterOption(i: BuildInput): EChartsOption {
     const lo = cvals.length ? Math.min(...cvals) : 0, hi = cvals.length ? Math.max(...cvals) : 1;
     const ramp = severityRamp(lo, hi, continuous.field);
     const cfmt = valueFormatter(i.rows, continuous.field, i.units);
-    graphic = continuousLegend(lo, hi, continuous.field, continuous.name, cfmt);
+    graphic = continuousLegend(lo, hi, continuous.field, continuous.name, cfmt, continuous.legend || "right");
     series = [{
       type: "scatter", symbolSize: 9,
       data: i.rows.map((r) => ({ ...pointOf(r), itemStyle: { color: ramp(Number(r[continuous.field])) } })),

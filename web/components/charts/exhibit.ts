@@ -34,6 +34,10 @@ export interface ExhibitColor {
   field?: string | null;
   /** Legend / gradient title — the "Display name" the user typed (else the field label). */
   name?: string | null;
+  /** Where the colour legend sits ("right" | "bottom" | "top" | "none"). The colour legend
+   *  reflects THIS field (a discrete key for categorical, a gradient for continuous) — never
+   *  the plotted measure. */
+  legend?: string | null;
 }
 
 export interface ExhibitSpec {
