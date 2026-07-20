@@ -5,7 +5,7 @@ The gate treats a generated finding as untrusted until it passes a deterministic
 battery: self-ratio tautology, fan-out (incl. CTE-hidden + parent), boundary-saturated
 rate (scale-robust), part>whole, and claim-grounding.
 """
-from aughor.sql.fanout import self_ratio_tautology
+from aughor.sql.fanout import self_ratio_tautology, group_by_continuous_measure
 from aughor.explorer.verify import (
     is_degenerate_result, _part_exceeds_whole, _claim_numbers_grounded, verify_insight,
 )
@@ -102,3 +102,130 @@ class TestVerifyInsightEndToEnd:
         # internal error path must not suppress (fail-open)
         ok, _ = verify_insight(None, "x", "not sql")
         assert ok
+
+
+class TestAggregateTypeGate:
+    """Generation-side guard (#182 type check, lifted from the display stamp to the source):
+    a non-additive aggregate over a non-numeric column is DROPPED at the emission gate — never
+    stored — using the conn's DECLARED column types. SUM(signup_fy) where signup_fy is a
+    VARCHAR fiscal-year label makes DuckDB coerce and sum the year-strings into a real-looking,
+    meaningless number; the query 'succeeds', so grounding can't catch it — the column's type can."""
+
+    _SCHEMA = (
+        "TABLE: customers (1000 rows)\n"
+        "  signup_fy  VARCHAR\n"
+        "  revenue  DECIMAL(18,2)\n"
+        "  tier  VARCHAR\n"
+    )
+
+    class _Conn:
+        """Minimal conn: the gate only needs get_schema() for the type map (the oracle /
+        metric-vocab lookups fail-open without a live cursor)."""
+        def __init__(self, schema):
+            self._schema = schema
+
+        def get_schema(self):
+            return self._schema
+
+    def _conn(self):
+        return self._Conn(self._SCHEMA)
+
+    def test_sum_over_varchar_dropped_at_gate(self):
+        ok, why = verify_insight(
+            [["enterprise", "2493788"], ["smb", "1200000"]],
+            "Signups total 2,493,788 across the base, led by the enterprise tier.",
+            "SELECT tier, SUM(signup_fy) AS signups FROM customers GROUP BY tier",
+            conn=self._conn())
+        assert not ok
+        assert "signup_fy" in why          # the reason names the offending column
+
+    def test_sum_over_numeric_survives(self):
+        # SUM over a real numeric column is a legitimate measure — must pass the type gate.
+        ok, why = verify_insight(
+            [["enterprise", "8200000"], ["smb", "3100000"]],
+            "Enterprise revenue leads at 8.2M.",
+            "SELECT tier, SUM(revenue) AS rev FROM customers GROUP BY tier",
+            conn=self._conn())
+        assert ok, why
+
+    def test_no_conn_leaves_type_gate_off(self):
+        # Without a conn there are no declared types → the aggregate-type check cannot fire
+        # (fail-open, backward-compatible). Guards the "no conn → no-op" contract that keeps
+        # every pre-existing verify_insight call site unchanged.
+        ok, _ = verify_insight(
+            [["enterprise", "2493788"], ["smb", "1200000"]],
+            "Signups total 2,493,788 across the base.",
+            "SELECT tier, SUM(signup_fy) AS signups FROM customers GROUP BY tier")
+        assert ok
+
+
+class TestGroupByContinuousMeasure:
+    """(b) — GROUP BY a continuous measure is a scatter mislabelled as a breakdown. Fires only
+    on a measure-named, non-dimension column whose LIVE distinct-count confirms it is continuous."""
+    TC = {"luxexperience.orders": ["order_id", "revenue", "rating", "region", "price_tier"]}
+
+    @staticmethod
+    def _count(mapping):
+        return lambda tbl, col: mapping.get(col)
+
+    def test_group_by_continuous_revenue_flagged(self):
+        why = group_by_continuous_measure(
+            "SELECT revenue, COUNT(*) FROM orders GROUP BY revenue",
+            self.TC, distinct_count=self._count({"revenue": 4000}))
+        assert why and "continuous measure" in why and "revenue" in why
+
+    def test_pre_binned_measure_is_ok(self):
+        # few distinct values → a legitimate breakdown, even though 'revenue' is measure-named
+        assert group_by_continuous_measure(
+            "SELECT revenue, COUNT(*) FROM orders GROUP BY revenue",
+            self.TC, distinct_count=self._count({"revenue": 6})) is None
+
+    def test_dimensions_never_flagged(self):
+        # rating/region are not measure-named; price_tier carries a _tier dimension marker
+        for col in ("rating", "region", "price_tier"):
+            assert group_by_continuous_measure(
+                f"SELECT {col}, COUNT(*) FROM orders GROUP BY {col}",
+                self.TC, distinct_count=self._count({col: 9999})) is None
+
+    def test_no_probe_no_flag(self):
+        # without the cardinality oracle the guard stays OFF (fail-safe, no false positives)
+        assert group_by_continuous_measure(
+            "SELECT revenue, COUNT(*) FROM orders GROUP BY revenue", self.TC, distinct_count=None) is None
+
+
+def test_make_cardinality_oracle_probes_and_caches():
+    from aughor.profile.validate import make_cardinality_oracle
+
+    class _Conn:
+        calls = 0
+
+        def execute(self, qid, sql):
+            _Conn.calls += 1
+
+            class _R:
+                error = None
+                rows = [["1234"]]     # the executor returns stringified cells
+
+            return _R()
+
+    oracle = make_cardinality_oracle(_Conn(), {"luxexperience.orders": ["revenue"]})
+    assert oracle("orders", "revenue") == 1234
+    assert oracle("orders", "revenue") == 1234       # served from cache
+    assert _Conn.calls == 1                           # probed exactly once
+
+
+def test_col_types_from_schema_maps_bare_and_qualified():
+    # The shared parse behind BOTH the insight cards/brief (routers) and the emission gate.
+    from aughor.tools.schema import col_types_from_schema
+    ct = col_types_from_schema(
+        "TABLE: customers (10 rows)\n"
+        "  signup_fy  VARCHAR\n"
+        "  revenue  DECIMAL(18,2)\n"
+        "TABLE: orders (20 rows)\n"
+        "  revenue  BIGINT\n"                 # same bare name, different table + type
+    )
+    assert ct["signup_fy"] == "VARCHAR" and ct["customers.signup_fy"] == "VARCHAR"
+    # Bare 'revenue' keeps the FIRST type seen; the qualified keys disambiguate the collision.
+    assert ct["revenue"] == "DECIMAL(18,2)"
+    assert ct["customers.revenue"] == "DECIMAL(18,2)" and ct["orders.revenue"] == "BIGINT"
+    assert col_types_from_schema("") == {}     # fail-open on empty/junk

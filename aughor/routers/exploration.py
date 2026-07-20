@@ -334,24 +334,13 @@ def _connection_col_types(conn_id: str) -> dict[str, str]:
     try:
         from aughor.db.connection import open_connection_for
         from aughor.routers._shared import get_schema_cached as _schema_cached
-        from aughor.tools.schema import build_rich_schema
+        from aughor.tools.schema import col_types_from_schema
         db = open_connection_for(conn_id)
         try:
             schema_str = _schema_cached(conn_id, db)
         finally:
             db.close()   # any close error propagates to the outer fail-open tolerate()
-        out: dict[str, str] = {}
-        for t in build_rich_schema(schema_str).get("tables", []):
-            tname = (t.get("name") or "").split(".")[-1].lower()   # bare table
-            for c in t.get("columns", []):
-                cname = (c.get("name") or "").lower()
-                ctype = (c.get("type") or "").strip()
-                if not cname or not ctype:
-                    continue
-                out.setdefault(cname, ctype)          # bare col (first real type wins)
-                if tname:
-                    out[f"{tname}.{cname}"] = ctype    # qualified — cross-table disambiguation
-        return out
+        return col_types_from_schema(schema_str)
     except Exception as _e:
         from aughor.kernel.errors import tolerate
         tolerate(_e, "domains: build col-types for triage", counter="domains.coltypes_failed")
@@ -545,6 +534,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         profile=profile,
         metric_moves=_metric_moves_provider(conn_id, profile),
         workspace_id=workspace_id,
+        col_types=_connection_col_types(conn_id),
     )
     return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}
 
@@ -587,6 +577,7 @@ def generate_canvas_briefing(canvas_id: str, refresh: bool = False, workspace_id
         profile=profile,
         metric_moves=_metric_moves_provider(conn_id, profile),
         workspace_id=workspace_id,
+        col_types=_connection_col_types(conn_id),
     )
     return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}
 

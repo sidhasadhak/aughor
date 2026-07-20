@@ -179,6 +179,71 @@ def test_count_distinct_int_id_is_ok():
                         {"customer_id": "BIGINT"}).ok
 
 
+# ── plausibility: averaging an already-computed rate (suppress) ────────────────
+
+def test_avg_of_rate_column_is_implausible():
+    v = plausibility("Average margin rate is 24.1% across categories",
+                     "SELECT category, AVG(margin_rate) FROM v GROUP BY category")
+    assert not v.ok and v.severity == "implausible"
+    assert "margin_rate" in v.reason and "ratio of sums" in v.reason
+
+
+def test_avg_of_pct_share_ratio_columns_flagged():
+    # rate-named suffixes / tokens, mirroring semantic.measure_grain._RATE_RE
+    assert not plausibility("x", "SELECT AVG(conversion_pct) FROM t").ok
+    assert not plausibility("x", "SELECT AVG(mobile_share) FROM t").ok
+    assert not plausibility("x", "SELECT AVG(gross_ratio) FROM t").ok
+    assert not plausibility("x", "SELECT AVG(pct_change) FROM t").ok
+
+
+def test_avg_of_measure_column_is_ok():
+    # Averaging a real measure (a price, an amount) is a legitimate average — NOT a rate.
+    assert plausibility("avg order value 68.40", "SELECT AVG(order_amount) FROM o").ok
+    assert plausibility("avg price 42.50", "SELECT AVG(price) FROM p").ok
+
+
+def test_sum_of_rate_column_not_flagged_as_averaging():
+    # The gap is AVERAGING a rate; SUM(rate) is a different concern, and SUM over a numeric
+    # rate column passes the type check — this guard must not overreach onto it.
+    assert plausibility("x", "SELECT SUM(margin_rate) FROM t", {"margin_rate": "DOUBLE"}).ok
+
+
+def test_inline_row_ratio_left_to_the_sql_guard():
+    # AVG(a/b) is the INLINE per-row-ratio form, handled by sql.fanout.avg_of_row_ratios at the
+    # emission gate — deliberately NOT re-flagged here (plausibility only matches a bare column).
+    assert plausibility("x", "SELECT AVG(freight / price) FROM t").ok
+
+
+# ── plausibility: COUNT(DISTINCT <measure>) — cardinality, not a count (suppress) ──
+
+def test_count_distinct_measure_is_implausible():
+    v = plausibility("There are 4,213 distinct order amounts",
+                     "SELECT COUNT(DISTINCT order_amount) FROM orders")
+    assert not v.ok and v.severity == "implausible"
+    assert "order_amount" in v.reason
+
+
+def test_count_distinct_revenue_and_price_flagged():
+    assert not plausibility("x", "SELECT COUNT(DISTINCT revenue) FROM t").ok
+    assert not plausibility("x", "SELECT COUNT(DISTINCT unit_price) FROM t").ok
+    assert not plausibility("x", "SELECT COUNT(DISTINCT gmv_eur) FROM t").ok
+
+
+def test_count_distinct_id_and_dimensions_are_ok():
+    # The analytics backbone + categorical dimensions must never be flagged.
+    assert plausibility("x", "SELECT COUNT(DISTINCT customer_id) FROM o").ok
+    assert plausibility("x", "SELECT COUNT(DISTINCT price_tier) FROM o").ok      # _tier dimension
+    assert plausibility("x", "SELECT COUNT(DISTINCT region) FROM o").ok
+    assert plausibility("x", "SELECT COUNT(DISTINCT network) FROM o").ok         # not a measure token
+    assert plausibility("x", "SELECT COUNT(DISTINCT product_category) FROM o").ok
+
+
+def test_plain_count_and_count_star_not_flagged():
+    # Only COUNT(DISTINCT <measure>) is a grain error; a non-distinct COUNT is fine.
+    assert plausibility("x", "SELECT COUNT(order_amount) FROM o").ok
+    assert plausibility("x", "SELECT COUNT(*) FROM o").ok
+
+
 # ── plausibility: anti-causal correlation (demote) ────────────────────────────
 
 def test_stockout_lead_time_is_confound():

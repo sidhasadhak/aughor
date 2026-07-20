@@ -404,6 +404,67 @@ def count_star_entity_fanout(sql: str, table_cols: dict | None = None) -> str | 
     return None
 
 
+# GROUP BY <continuous measure> — the grouped column must be MEASURE-named (the tight monetary
+# set the triage uses) AND carry no dimension/key/period marker, so a rating / fiscal_year /
+# price_tier / region axis is never touched. A live distinct-count probe then confirms the column
+# is actually continuous before flagging (a pre-binned measure stays a legitimate breakdown).
+_GROUPABLE_MEASURE = re.compile(
+    r"(?:^|_)(price|cost|margin|amount|revenue|sales|spend|gmv|cogs|profit|freight|"
+    r"subtotal|payment|turnover|markup|markdown)(?:$|_)", re.I)
+_GROUP_DIM_MARKER = re.compile(
+    r"(?:^|_)(id|key|sk|code|no|tier|band|segment|group|category|cat|bucket|class|level|"
+    r"grade|rank|range|bin|zone|region|status|type|flag|name|label|kind|year|yr|month|mon|"
+    r"qtr|quarter|week|day|date|dt|ts|timestamp)(?:$|_)", re.I)
+# Above this many distinct values a numeric measure is CONTINUOUS for grouping purposes; a
+# discrete dimension (rating 1–5, day-of-week, a handful of bands) stays well under it.
+_CONTINUOUS_DISTINCT = 50
+
+
+def group_by_continuous_measure(sql: str, table_cols: dict | None = None,
+                                distinct_count=None, dialect: str = "duckdb") -> str | None:
+    """``GROUP BY <continuous measure>`` — grouping by a raw money/quantity column (revenue,
+    order_amount) makes one row per distinct value: a scatter mislabelled as a breakdown, and a
+    briefing slot spent on noise. High precision: the grouped column must be MEASURE-named, carry
+    no dimension/key/period marker (so GROUP BY rating / fiscal_year / price_tier / region are
+    safe), AND a live distinct-count probe must confirm it is actually continuous (>50 distinct)
+    — so a pre-binned measure (discount ∈ {0,10,20}) is left alone. No probe → not flagged."""
+    s = sql or ""
+    if "group by" not in s.lower():
+        return None
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(s, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+    group = tree.find(exp.Group)
+    if group is None or distinct_count is None:
+        return None
+    q_tables = [t.split(".")[-1].lower() for t in _FROM_JOIN_TBL.findall(s)]
+    tc = {str(t).split(".")[-1].lower(): {str(c).lower() for c in (cols or [])}
+          for t, cols in (table_cols or {}).items()}
+    for e in group.expressions:
+        if not isinstance(e, exp.Column):
+            continue                             # GROUP BY expr / ordinal / date_trunc(..) — skip
+        col = (e.name or "").lower()
+        if not col or _GROUP_DIM_MARKER.search(col) or not _GROUPABLE_MEASURE.search(col):
+            continue
+        tbl = (e.table or "").lower()
+        if tbl not in tc:                        # unqualified or an alias → find the owning table
+            tbl = next((qt for qt in q_tables if col in tc.get(qt, set())),
+                       q_tables[0] if q_tables else "")
+        if not tbl:
+            continue
+        n = distinct_count(tbl, col)
+        if n is not None and n > _CONTINUOUS_DISTINCT:
+            return (f"GROUP BY {col} groups by a continuous measure ({n} distinct values) — one "
+                    f"row per value is a scatter, not a breakdown; group by a dimension (tier, "
+                    f"region, period) or bucket {col} into ranges")
+    return None
+
+
 def _chasm_roots(tree, root, table_cols: dict | None, is_unique_on=None) -> dict[str, set[str]]:
     """Hubs that have ≥2 RAW base-table satellites joined directly in the OUTER
     scope — i.e. a chasm. Returns {hub_fk_root: {satellite tables}} with ≥2 sats
