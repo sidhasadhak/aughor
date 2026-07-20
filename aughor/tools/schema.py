@@ -464,6 +464,33 @@ def build_rich_schema(schema_str: str) -> dict:
     }
 
 
+def col_types_from_schema(schema_str: str) -> dict[str, str]:
+    """Map bare + qualified column name → declared dtype, parsed from a rich-schema string.
+
+    The single source of truth for the aggregate↔type guard (``knowledge.triage``: a SUM/AVG
+    over a VARCHAR column is a coercion artifact, not a measure). Used at BOTH the insight
+    cards / brief (``routers.exploration._connection_col_types``) and the explorer's
+    pre-emission gate (``explorer.verify``) so every consumer stamps by the same authority.
+    Bare name maps to the first real type seen; the qualified ``table.col`` key disambiguates
+    a name that appears on multiple tables. Fail-open ({}) — a schema hiccup must never blank
+    the guard (which would silently re-admit the coercion artifacts it exists to catch)."""
+    out: dict[str, str] = {}
+    try:
+        for t in build_rich_schema(schema_str).get("tables", []):
+            tname = (t.get("name") or "").split(".")[-1].lower()   # bare table
+            for c in t.get("columns", []):
+                cname = (c.get("name") or "").lower()
+                ctype = (c.get("type") or "").strip()
+                if not cname or not ctype:
+                    continue
+                out.setdefault(cname, ctype)          # bare col (first real type wins)
+                if tname:
+                    out[f"{tname}.{cname}"] = ctype    # qualified — cross-table disambiguation
+    except Exception:
+        return out
+    return out
+
+
 def validate_join_path(from_table: str, to_table: str, schema_str: str) -> tuple[bool, str]:
     """
     Check whether two tables have a detectable join path in the schema.

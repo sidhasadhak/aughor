@@ -215,6 +215,69 @@ def _aggregate_type_mismatch(sql: str, col_types: dict[str, str]) -> Optional[st
     return None
 
 
+# ── averaging an already-computed rate ──────────────────────────────────────────
+# A column whose NAME marks it as a stored rate / ratio / share / percentage (mirrors the
+# proven semantic.measure_grain._RATE_RE). AVG() over such a column is an UNWEIGHTED mean of
+# per-group rates: every group counts equally regardless of its denominator, so small groups
+# dominate and the number is biased (the freight-% 1.48%-vs-2.17% class of scar). The correct
+# group-level rate is the RATIO OF SUMS. This complements sql.fanout.avg_of_row_ratios, which
+# catches the INLINE AVG(a/b) form; here we catch the pre-computed rate-COLUMN form.
+_RATE_COL = re.compile(r"_(pct|percent|rate|ratio|share)$|(?:^|_)(pct|percent)(?:_|$)", re.I)
+
+
+def _averages_a_rate(sql: str) -> Optional[str]:
+    """Why a finding is untrustworthy: its SQL takes AVG() of a stored rate-named column, an
+    unweighted mean of per-group rates that biases toward small groups. Fires only on a bare
+    AVG of a rate-named column — AVG(a/b) (handled elsewhere), AVG(amount), a windowed AVG, or
+    an AVG of an expression are all left alone (the tight ')' in _AGG_CALL won't match them)."""
+    if not sql:
+        return None
+    for m in _AGG_CALL.finditer(sql):
+        if m.group(1).lower() != "avg":
+            continue
+        bare = m.group(2).split(".")[-1]
+        if _RATE_COL.search(bare):
+            return (f"AVG('{bare}') averages an already-computed rate — an unweighted mean of "
+                    f"per-group rates over-weights small groups and biases the result; the "
+                    f"group rate is the ratio of sums SUM(numerator)/NULLIF(SUM(denominator),0)")
+    return None
+
+
+# ── COUNT(DISTINCT <measure>) — cardinality of a continuous quantity, not a count ────────
+# Counting distinct values is meaningful for a KEY or a DIMENSION (distinct customers, distinct
+# regions) but MEANINGLESS for a raw continuous measure (distinct revenues, distinct prices) —
+# and it is a frequent mislabel ("4,213 customers" that is really COUNT(DISTINCT order_amount)).
+# High precision: the column name must be a monetary/quantity token AND carry no key/dimension
+# marker, so the analytics backbone COUNT(DISTINCT customer_id) and COUNT(DISTINCT price_tier)
+# are left alone. (Complements the aggregate↔type check, which is about type, not grain.)
+_COUNT_DISTINCT = re.compile(r"\bcount\s*\(\s*distinct\s+([a-z_]\w*(?:\.[a-z_]\w*)?)\s*\)", re.I)
+_MEASURE_TOKEN = re.compile(
+    r"(?:^|_)(price|cost|margin|amount|revenue|sales|spend|gmv|cogs|profit|freight|"
+    r"subtotal|payment|turnover|markup|markdown)(?:$|_)", re.I)
+_DIMENSIONISH = re.compile(
+    r"(?:^|_)(id|key|sk|code|no|num|tier|band|segment|group|category|cat|bucket|class|"
+    r"level|grade|rank|range|bin|zone|region|status|type|flag|name|label|kind|date|ts|"
+    r"timestamp|at)(?:$|_)", re.I)
+
+
+def _count_distinct_measure(sql: str) -> Optional[str]:
+    """Why a finding is untrustworthy: COUNT(DISTINCT <measure>) counts how many distinct values
+    a continuous measure takes — a cardinality of a quantity, not a business count, and often a
+    mislabel. Fires only on a monetary/quantity-named column with no key/dimension marker, so
+    COUNT(DISTINCT customer_id) / COUNT(DISTINCT price_tier) / COUNT(DISTINCT region) are safe."""
+    if not sql:
+        return None
+    for m in _COUNT_DISTINCT.finditer(sql):
+        bare = m.group(1).split(".")[-1]
+        if _DIMENSIONISH.search(bare):
+            continue
+        if _MEASURE_TOKEN.search(bare):
+            return (f"COUNT(DISTINCT {bare}) counts how many distinct values the measure "
+                    f"'{bare}' takes — a cardinality of a continuous quantity, not a business "
+                    f"count; a count of entities uses COUNT(DISTINCT <the entity id>)")
+    return None
+
+
 def plausibility(finding: str, sql: str = "", col_types: Optional[dict[str, str]] = None) -> Verdict:
     """Deterministic trust verdict. Implausible magnitude beats confound beats ok —
     an impossible number is never worth surfacing even if it also reads causal.
@@ -228,6 +291,18 @@ def plausibility(finding: str, sql: str = "", col_types: Optional[dict[str, str]
     # whose type can't support it. Highest priority: the number is meaningless regardless of
     # what the prose claims about it.
     reason = _aggregate_type_mismatch(sql, col_types or {})
+    if reason:
+        return Verdict(False, "implausible", reason)
+
+    # (0b) Averaging an already-computed rate — AVG(<rate column>) is a biased unweighted mean
+    # of per-group rates; the number is methodologically wrong, not just imprecise, so it is
+    # never worth headlining. The explorer re-derives the ratio of sums (its prompts mandate it).
+    reason = _averages_a_rate(sql)
+    if reason:
+        return Verdict(False, "implausible", reason)
+
+    # (0c) COUNT(DISTINCT <measure>) — the cardinality of a continuous quantity, not a count.
+    reason = _count_distinct_measure(sql)
     if reason:
         return Verdict(False, "implausible", reason)
 

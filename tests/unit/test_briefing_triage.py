@@ -141,3 +141,45 @@ def test_org_currency_rewrites_dollar_figures_in_narrative(monkeypatch):
     out = generate_narrative(MISSIMI, patterns=[], connection_id="missimi", profile=PROFILE)
     assert "£1.2M" in out["narrative"]
     assert "$" not in out["narrative"]
+
+
+# ── col_types → narrative: a non-additive aggregate is held back BEFORE synthesis ──────
+# A grounded-but-void finding: SUM over a VARCHAR fiscal-year label. DuckDB coerces the
+# year-strings and sums them, so the query "succeeds" with a big, meaningless number that
+# used to headline the brief. The type guard (knowledge.triage check 0) suppresses it — but
+# ONLY when generate_narrative is given the connection's column types (the #182 wiring that
+# stamped the cards, now threaded into the narrator's own selection path).
+_TYPE_VOID = {
+    "Customer": [
+        {"id": "f-signup", "domain": "Customer", "angle": "Growth", "confidence": 0.7, "novelty": 4,
+         "finding": "Signups total 2,493,788 across the base, concentrated in the enterprise tier.",
+         "sql": "SELECT tier, SUM(signup_fy) AS signups FROM customers GROUP BY tier"},
+        {"id": "f-clean", "domain": "Customer", "angle": "Retention", "confidence": 0.6, "novelty": 3,
+         "finding": "Repeat-purchase revenue reached 4.1M among returning customers.",
+         "sql": "SELECT SUM(revenue) FROM orders"},
+    ]
+}
+_COL_TYPES = {"signup_fy": "VARCHAR", "customers.signup_fy": "VARCHAR",
+              "revenue": "DECIMAL(18,2)", "orders.revenue": "DECIMAL(18,2)"}
+
+
+def test_col_types_suppress_sum_over_varchar_before_the_narrator(monkeypatch):
+    monkeypatch.setattr(provider_mod, "get_provider", lambda *_a, **_k: _StubProvider())
+    out = generate_narrative(_TYPE_VOID, patterns=[], connection_id="c",
+                             profile=PROFILE, col_types=_COL_TYPES)
+    signup = next(h for h in out["held_back"] if "Signups total" in h["finding"])
+    assert signup["severity"] == "implausible"
+    assert "signup_fy" in signup["reason"]          # names the offending column
+    # The narrator prompt never carries the type-void number → the AI prose can't cite it.
+    assert "2,493,788" not in _StubProvider.last_user
+    # The clean SUM(revenue) finding (numeric column) is untouched.
+    assert not any("Repeat-purchase revenue" in h["finding"] for h in out["held_back"])
+
+
+def test_narrative_type_guard_no_ops_without_col_types(monkeypatch):
+    # Omitting col_types must leave behaviour byte-identical to before the wiring: the
+    # aggregate-type guard simply cannot fire, so the SUM(varchar) finding is NOT held back
+    # on type grounds. Guards the "omit → no regression" contract for every other caller.
+    monkeypatch.setattr(provider_mod, "get_provider", lambda *_a, **_k: _StubProvider())
+    out = generate_narrative(_TYPE_VOID, patterns=[], connection_id="c", profile=PROFILE)
+    assert not any("Signups total" in h["finding"] for h in out["held_back"])

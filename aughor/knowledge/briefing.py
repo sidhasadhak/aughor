@@ -259,6 +259,7 @@ def generate_narrative(
     macro_context: Optional[dict] = None,
     profile: Any = None,
     workspace_id: Optional[str] = None,
+    col_types: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
     """
     Call the LLM narrator and return a serialisable briefing dict.
@@ -315,7 +316,11 @@ def generate_narrative(
     trusted:   list[dict] = []
     for ins in all_insights:
         finding = ins.get("finding", "")
-        verdict = plausibility(finding, ins.get("sql", ""))
+        # `col_types` (bare + qualified column → declared dtype) lets triage suppress a
+        # finding whose SQL applies a non-additive aggregate to a non-numeric column
+        # (SUM over a VARCHAR fiscal-year) BEFORE the narrator sees it — so the AI prose
+        # can never cite a type-void number. Omitted → that check no-ops (no regression).
+        verdict = plausibility(finding, ins.get("sql", ""), col_types)
         if not verdict.ok:
             held_back.append({
                 "finding":  _cur(finding),
@@ -481,6 +486,7 @@ def get_briefing(
     profile: Any = None,
     metric_moves: "Optional[Any]" = None,
     workspace_id: Optional[str] = None,
+    col_types: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
     """Return cached briefing narrative if fresh, otherwise generate and cache.
 
@@ -494,6 +500,11 @@ def get_briefing(
     `metric_moves` is an OPTIONAL zero-arg callable returning synthetic metric-move findings
     (north-star trends). It is called ONLY on a cache miss — so the chart_sql it runs never
     burdens the cache-hit path — and its moves join the candidates as a 'Key Metrics' domain.
+
+    `col_types` (bare + qualified column → declared dtype) is threaded into the triage so a
+    finding whose SQL applies a non-additive aggregate to a non-numeric column is held back
+    from the narrative — the same authority the insight cards stamp by. Omit → the check
+    no-ops. Only consulted on a cache miss (where generate_narrative runs).
     """
     key = scope_key or connection_id
     if not force_refresh:
@@ -516,7 +527,8 @@ def get_briefing(
             domain_data = {**domain_data, "Key Metrics": list(moves) + list(domain_data.get("Key Metrics", []))}
 
     briefing = generate_narrative(domain_data, patterns, connection_id, macro_context,
-                                  profile=profile, workspace_id=workspace_id)
+                                  profile=profile, workspace_id=workspace_id,
+                                  col_types=col_types)
 
     try:
         _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)

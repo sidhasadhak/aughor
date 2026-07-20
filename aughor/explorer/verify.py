@@ -162,6 +162,47 @@ def _uniqueness_oracle_for(conn):
         return None
 
 
+def _cardinality_oracle_for(conn):
+    """Build (and cache on conn) the distinct-count probe the group-by-continuous-measure guard
+    uses to tell a continuous measure from a discrete dimension. Reuses the cached
+    conn._insight_table_cols parse. Returns None if conn/schema unavailable (guard stays off)."""
+    if conn is None:
+        return None
+    try:
+        from aughor.profile.validate import make_cardinality_oracle
+        from aughor.tools.schema import parse_schema_tables
+        tc = getattr(conn, "_insight_table_cols", None)
+        if tc is None:
+            tc = parse_schema_tables(conn.get_schema())
+            if hasattr(conn, "__dict__"):
+                conn._insight_table_cols = tc
+        return make_cardinality_oracle(conn, tc)
+    except Exception as _e:
+        tolerate(_e, "insight-gate: cardinality oracle unavailable", counter="insight_gate.cardinality_oracle_failed")
+        return None
+
+
+def _insight_col_types(conn) -> dict[str, str]:
+    """Column → declared-dtype map for the conn's schema, cached on the conn (mirrors
+    ``_insight_table_cols``) so the emission gate parses the schema once per run, not per
+    candidate. Lets the plausibility check REJECT a non-additive aggregate over a non-numeric
+    column (SUM of a VARCHAR fiscal-year) at the SOURCE — the finding is never stored, not
+    merely stamped implausible for the reader downstream. Fail-open ({})."""
+    if conn is None:
+        return {}
+    try:
+        ct = getattr(conn, "_insight_col_types", None)
+        if ct is None:
+            from aughor.tools.schema import col_types_from_schema
+            ct = col_types_from_schema(conn.get_schema())
+            if hasattr(conn, "__dict__"):
+                conn._insight_col_types = ct
+        return ct
+    except Exception as _e:
+        tolerate(_e, "insight-gate: column types unavailable", counter="insight_gate.col_types_failed")
+        return {}
+
+
 def _insight_sql_unsound(sql: str, conn=None) -> str | None:
     """Static SQL-trust battery for a CANDIDATE INSIGHT's query — the same authorities the
     profile audit applies, now enforced BEFORE an explorer finding can be emitted. Returns a
@@ -179,7 +220,7 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
         from aughor.sql.fanout import (
             self_ratio_tautology, detect_fanout, sum_over_chasm_fanout,
             count_star_chasm_fanout, avg_over_chasm_fanout, measure_times_key_arithmetic,
-            avg_of_row_ratios, dimension_ratio_chasm,
+            avg_of_row_ratios, dimension_ratio_chasm, group_by_continuous_measure,
         )
     except Exception:
         return None
@@ -241,6 +282,18 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
                     return f"fan-out in CTE '{cte.alias_or_name}': {rc[:140]}"
     except Exception as _e:
         tolerate(_e, "insight-gate: fan-out analysis", counter="insight_gate.fanout_failed")
+
+    # GROUP BY a continuous measure — a scatter (one row per value) mislabelled as a breakdown.
+    # Needs the LIVE distinct-count probe (a measure name alone can't tell revenue from a pre-
+    # binned discount), so it lives here at the emission gate, not in the conn-less display triage.
+    try:
+        card = _cardinality_oracle_for(conn)
+        if card is not None:
+            gb = group_by_continuous_measure(s, table_cols, distinct_count=card)
+            if gb:
+                return gb
+    except Exception as _e:
+        tolerate(_e, "insight-gate: group-by-measure analysis", counter="insight_gate.groupby_measure_failed")
     return None
 
 
@@ -463,15 +516,19 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
         vc = _vacuous_case_dimension(sql, rows)
         if vc:
             return (False, vc)
-        # Impossible-magnitude check (operating bands), shared with the briefing's triage so
-        # there is ONE band KB. Lifted to the EMISSION gate so an impossible value (inventory
-        # turnover 3,600×) never gets stored — protecting the insight cards and any other
-        # consumer, not just the brief. Only the 'implausible' severity hard-rejects here; the
-        # 'confound' severity is deliberately NOT rejected (an inverse relationship can be a
+        # Deterministic plausibility, shared with the briefing's triage so there is ONE KB.
+        # Lifted to the EMISSION gate so an impossible/void value never gets stored —
+        # protecting the insight cards and any other consumer, not just the brief. Two things
+        # hard-reject here (both 'implausible'):
+        #   • an impossible magnitude (inventory turnover 3,600× — operating-band KB), and
+        #   • an aggregate↔type mismatch: SUM/AVG/STDDEV over a column whose DECLARED type
+        #     can't support it (SUM of a VARCHAR fiscal-year), passing the conn's column types
+        #     so the coercion artifact is dropped at the source, not just stamped for the reader.
+        # The 'confound' severity is deliberately NOT rejected (an inverse relationship can be a
         # real finding — "churn falls as engagement rises") and stays a soft demotion at synthesis.
         try:
             from aughor.knowledge.triage import plausibility as _plausibility
-            _pv = _plausibility(finding_text, sql)
+            _pv = _plausibility(finding_text, sql, _insight_col_types(conn))
             if _pv.severity == "implausible":
                 return (False, _pv.reason)
         except Exception as _e:

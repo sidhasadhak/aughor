@@ -144,6 +144,44 @@ def make_uniqueness_oracle(conn, table_cols: dict):
     return is_unique_on
 
 
+def make_cardinality_oracle(conn, table_cols: dict):
+    """Build a `distinct_count(table_bare, col) -> int | None` backed by a live
+    `COUNT(DISTINCT col)` probe (cached on the conn). Lets a guard tell a CONTINUOUS
+    measure (revenue: hundreds/thousands of distinct values) from a DISCRETE dimension
+    (a 1–5 rating, a fiscal year) when a column's name/type alone can't — the signal the
+    group-by-continuous-measure guard needs. Returns None if no conn (guard stays conservative)."""
+    if conn is None:
+        return None
+    qualified: dict[str, str] = {}
+    for t in (table_cols or {}):
+        qualified.setdefault(str(t).split(".")[-1].lower(), str(t))
+    cache = getattr(conn, "_fanout_cardinality_cache", None)
+    if cache is None:
+        cache = {}
+        if hasattr(conn, "__dict__"):
+            conn._fanout_cardinality_cache = cache
+
+    def distinct_count(bare: str, col: str):
+        key = (bare.lower(), col.lower())
+        if key in cache:
+            return cache[key]
+        tbl = qualified.get(bare.lower(), bare)
+        val = None
+        try:
+            res = conn.execute("cardinality-probe",
+                               f'SELECT COUNT(DISTINCT "{col}") FROM {tbl}')
+            if not getattr(res, "error", None):
+                rows = getattr(res, "rows", None) or []
+                if rows and rows[0] and rows[0][0] is not None:
+                    val = int(float(str(rows[0][0])))     # results come back stringified
+        except Exception:
+            val = None
+        cache[key] = val
+        return val
+
+    return distinct_count
+
+
 def _first_numeric(rows: list[list]) -> float | None:
     """The single scalar a value_sql is supposed to return — first numeric cell of
     the first row. None if absent/NULL/non-numeric (a value_sql that can't produce
