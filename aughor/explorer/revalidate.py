@@ -53,8 +53,11 @@ def validate_insight(ins: dict, col_types: Optional[dict[str, str]] = None) -> O
         v = plausibility(finding, sql, col_types or {})
         if v.severity == "implausible":
             return ("quarantine", v.reason)
-    except Exception:
-        pass
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "revalidate: plausibility gate unavailable; the stored finding is KEPT "
+                       "(fail-open — a gate bug must never quarantine a real finding)",
+                 counter="revalidate.plausibility_failed")
     nv = ins.get("novelty")
     if isinstance(nv, (int, float)) and not isinstance(nv, bool) and not (1 <= nv <= 5):
         return ("repair", f"novelty {nv} out of range")

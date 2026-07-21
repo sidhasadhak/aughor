@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -327,7 +326,10 @@ def get_exploration_findings(conn_id: str, schema: str | None = None):
 
     if distributions and any("col_type" not in v for v in distributions.values()):
         try:
-            cache_path = Path(__file__).parent.parent.parent / "data" / "schema_profiles.json"
+            # The path is OWNED by tools.profile_cache — re-deriving it here meant a test that
+            # redirected that store still had this reader hitting the live file.
+            from aughor.tools.profile_cache import cache_path as _profile_cache_path
+            cache_path = _profile_cache_path()
             if cache_path.exists():
                 cache = json.loads(cache_path.read_text())
                 col_dtype_map: dict[str, str] = {}

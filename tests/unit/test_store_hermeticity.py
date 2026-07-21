@@ -102,6 +102,14 @@ def test_explore_watermark_is_isolated():
     assert "aughor-test-stores" in str(watermark._PATH)
 
 
+def test_schema_fingerprint_cache_is_isolated():
+    """Found by the whole-directory canary, not by reasoning about which stores exist —
+    it was a repo-absolute Path(__file__)…/data/ with no override, so it never appeared in
+    any AUGHOR_* audit."""
+    from aughor.db import schema_cache
+    assert "aughor-test-stores" in str(schema_cache._CACHE_PATH)
+
+
 def test_purge_resolves_the_SAME_dir_as_the_stores_it_deletes_from():
     """The second half of the incident: purge.py held its own Path("data"), so it UNLINKED
     from the live dir even when the store it was purging had been redirected. A redirect that
@@ -131,7 +139,8 @@ def test_no_generated_state_store_still_hardcodes_the_data_dir():
         for p in [root / "explorer" / "store.py", root / "explorer" / "watermark.py",
                   root / "explorer" / "revalidate_live.py", root / "profile" / "store.py",
                   root / "knowledge" / "briefing.py", root / "knowledge" / "patterns.py",
-                  root / "db" / "purge.py", root / "routers" / "exploration.py"]
-        if re.search(r'Path\(\s*["\']data["\']\s*\)', p.read_text())
+                  root / "db" / "purge.py", root / "routers" / "exploration.py",
+                  root / "db" / "schema_cache.py"]
+        if re.search(r'Path\(\s*["\']data["\']\s*\)|parent\s*/\s*["\']data["\']', p.read_text())
     ]
     assert offenders == [], f"re-hardcoded data/ instead of state_dir(): {offenders}"

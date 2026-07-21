@@ -793,7 +793,11 @@ def join_key_fanout(sql: str, table_cols: dict | None = None, dialect: str = "du
             try:
                 if is_unique_on(bare, col) is not False:
                     continue      # unique (1:1) or unknown → no proven multiplication
-            except Exception:
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, f"join-fanout: uniqueness oracle failed on {bare}.{col}; "
+                               "treating cardinality as unknown (stay silent)",
+                         counter="guard.join_key_fanout.oracle_failed")
                 continue
             # `bare` fans out on `col`; every OTHER base table in the join is duplicated.
             for other_alias, other_bare in alias_map.items():
