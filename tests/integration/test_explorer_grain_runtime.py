@@ -36,6 +36,14 @@ SUM_CHASM_SQL = ("SELECT c.name, SUM(k.amount) FROM campaigns c "
                  "JOIN impressions i ON c.campaign_id=i.campaign_id GROUP BY c.name")
 
 
+def _schema_text(table_cols: dict) -> str:
+    """Render a table_cols map in the schema-string format SqlWriter.schema exposes."""
+    return "\n".join(
+        f"TABLE: {t} (100 rows)\n" + "\n".join(f"  {c}  VARCHAR" for c in cols)
+        for t, cols in table_cols.items()
+    )
+
+
 def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
     """Drive the REAL `_phase8_domain_intelligence` loop with the coder forced to
     emit `forced_sql` (and a fake interpreter, reached only if the guard fails to
@@ -52,6 +60,10 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
     class FakeSqlWriter:
         def __init__(self, conn, *a, **k):
             self.table_cols = CHASM_TC
+            # Phase 8 hands `sql_writer.schema` to _run so model-written SQL routes through
+            # the shared guard battery — the fake must model that attribute or the real loop
+            # AttributeErrors before it ever reaches the guard under test.
+            self.schema = _schema_text(CHASM_TC)
 
         def fix(self, *a, **k):
             return SimpleNamespace(ok=False, sql="", final_error="")
@@ -87,7 +99,7 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
         ex._state = {}
         monkeypatch.setattr(ex, "_save_state", lambda: None)
 
-        async def fake_run(sql, think=""):
+        async def fake_run(sql, think="", *, schema=None):
             return [["A", 10], ["B", 20]]
 
         monkeypatch.setattr(ex, "_run", fake_run)
@@ -153,7 +165,7 @@ def test_explorer_phase7_emits_cross_table_insight(monkeypatch) -> None:
     monkeypatch.setattr(ex, "_gate", _no_gate)
 
     # avg measure varies ~2.5x across the dimension → ratio 2.5 > 1.15 → an insight
-    async def fake_run(sql, think=""):
+    async def fake_run(sql, think="", *, schema=None):
         return [["North", 100.0, 60], ["South", 40.0, 50]]
     monkeypatch.setattr(ex, "_run", fake_run)
 

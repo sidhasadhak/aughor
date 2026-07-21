@@ -308,6 +308,9 @@ class SchemaExplorer:
         # prior one, so TTFI isn't re-stamped (and re-emitted) on every restart.
         self._status.first_insight_at = self._state.get("first_insight_at")
         self._last_query_at: float = 0.0
+        # The SQL that ACTUALLY ran on the last _run — the shared guard battery may rewrite it
+        # (de-fan / preflight-repair), and a finding must cite the query that produced its rows.
+        self._last_executed_sql: str = ""
         self._rate_seconds: float = _RATE_SECONDS_SCHEMA
         self._time_window: Optional[tuple[str, str]] = None  # (start_iso, end_iso) — 12-month window
         # Negative knowledge — column/table names found not to exist — restored from a
@@ -496,21 +499,52 @@ class SchemaExplorer:
             if wait > 0:
                 await asyncio.sleep(wait)
 
-    async def _run(self, sql: str, think: str = "") -> Optional[list]:
-        """Execute one read-only SQL query off the event loop and record an episode turn."""
+    async def _run(self, sql: str, think: str = "", *, schema: Optional[str] = None) -> Optional[list]:
+        """Execute one read-only SQL query off the event loop and record an episode turn.
+
+        Pass ``schema`` when the SQL was WRITTEN BY A MODEL: execution then routes through the
+        shared guard battery (``aughor.sql.executor.execute_guarded``) instead of hitting the
+        connector raw, so the explorer gets the same deterministic hardening every other answer
+        path already had — de-fan and preflight-repair BEFORE the query runs, plus the
+        post-execute guard findings. This agent writes the Briefing, and it was the only
+        generate-and-execute path in the system still executing unguarded.
+
+        DETERMINISTIC-ONLY by construction: no ``fix_prompt_template``/``provider_factory`` is
+        passed, so the shared runner never adds an LLM retry — Phase 8 has its own repair loop
+        and a second one would double the cost and fight the first.
+
+        Without ``schema`` the raw path is kept, deliberately: the profiling / percentile /
+        catalog / join probes are built by the explorer itself from parsed schema metadata, not
+        by a model, so there is no generated SQL to guard and hardening them would be waste.
+
+        ``preflight_harden`` may REWRITE the SQL (dry-run gated). The rewritten text is what
+        actually ran, so it is what gets journalled — and callers that persist the query
+        alongside its rows must resync from :attr:`_last_executed_sql`, or the stored finding
+        would cite SQL that never produced its numbers.
+        """
         loop = asyncio.get_running_loop()
         self._last_query_at = time.monotonic()
         self._status.queries_executed += 1
+        self._last_executed_sql = sql
         try:
-            result = await loop.run_in_executor(
-                None, self._conn.execute, "__explorer__", sql
-            )
+            if schema:
+                from aughor.sql.executor import execute_guarded
+                result = await loop.run_in_executor(
+                    None, lambda: execute_guarded(
+                        self._conn, sql, query_id="__explorer__", schema=schema),
+                )
+            else:
+                result = await loop.run_in_executor(
+                    None, self._conn.execute, "__explorer__", sql
+                )
+            ran = (getattr(result, "sql", None) or sql).strip() or sql
+            self._last_executed_sql = ran
             if result.error:
-                self._episodes.add(think=think, sql=sql, observation=f"ERROR: {result.error}")
+                self._episodes.add(think=think, sql=ran, observation=f"ERROR: {result.error}")
                 return None
             obs_rows = "\n".join(str(r) for r in (result.rows or [])[:6])
             obs = f"{result.row_count} rows\ncols: {result.columns}\n{obs_rows}"
-            self._episodes.add(think=think, sql=sql, observation=obs)
+            self._episodes.add(think=think, sql=ran, observation=obs)
             return result.rows or []
         except Exception as e:
             self._episodes.add(think=think, sql=sql, observation=f"EXCEPTION: {e}")
@@ -1595,7 +1629,10 @@ class SchemaExplorer:
                 if is_redundant_insight(sql, _prior_sqls, _dialect):
                     continue
 
-                rows = await self._run(sql, think=f"[pinned] {q[:60]}")
+                # Model-written SQL → the shared guard battery; resync `sql` because a
+                # preflight rewrite must be what the stored finding cites.
+                rows = await self._run(sql, think=f"[pinned] {q[:60]}", schema=sql_writer.schema)
+                sql = self._last_executed_sql or sql
                 if not rows:
                     continue
                 if self._leaks_schema(sql):
@@ -3066,7 +3103,8 @@ class SchemaExplorer:
 
                 for attempt in range(MAX_ATTEMPTS):
                     label = think_str if attempt == 0 else f"[retry {attempt}] {think_str}"
-                    rows = await self._run(sql, think=label)
+                    rows = await self._run(sql, think=label, schema=sql_writer.schema)
+                    sql = self._last_executed_sql or sql
                     if rows is not None:
                         break
                     error_msg = _last_episode_error()
@@ -3800,7 +3838,9 @@ class SchemaExplorer:
                 tolerate(_exc, "synth join value-domain probe is best-effort; on failure keep the candidate",
                          counter="explorer.synth_join_guard_failed")
 
-            rows = await self._run(sql, think=f"[synth:{ctype}] {plan.confirm_question[:50]}")
+            rows = await self._run(sql, think=f"[synth:{ctype}] {plan.confirm_question[:50]}",
+                                   schema=sql_writer.schema)
+            sql = self._last_executed_sql or sql
             if not rows or self._leaks_schema(sql):
                 continue
 

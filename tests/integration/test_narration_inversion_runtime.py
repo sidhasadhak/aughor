@@ -121,6 +121,10 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
     class FakeSqlWriter:
         def __init__(self, conn, *a, **k):
             self.table_cols = {"customers": ["customer_id", "items", "order_count"]}
+            # Phase 8 passes `sql_writer.schema` to _run so model-written SQL goes through the
+            # shared guard battery; the fake must expose it or the real loop AttributeErrors.
+            self.schema = ("TABLE: customers (100 rows)\n"
+                           "  customer_id  VARCHAR\n  items  BIGINT\n  order_count  BIGINT")
 
         def fix(self, *a, **k):
             return SimpleNamespace(ok=False, sql="", final_error="")
@@ -155,7 +159,7 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
         monkeypatch.setattr(ex, "_save_state", lambda: None)  # never persist
         monkeypatch.setattr(ex._conn, "dry_run", lambda _sql: (True, ""))  # bind check green (no live tables)
 
-        async def fake_run(sql, think=""):
+        async def fake_run(sql, think="", *, schema=None):
             return VARYING                                    # every query → a varying distribution
 
         monkeypatch.setattr(ex, "_run", fake_run)

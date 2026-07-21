@@ -44,6 +44,7 @@ COMPLIANT = {
     "agent/investigate.py",   # Deep Analysis — execute_guarded (the original, extracted verbatim)
     "agent/nodes.py",         # quick / Insight — preflight_harden only (see PARTIAL below)
     "agent/explore.py",       # chat explore tool — preflight_harden only (see PARTIAL below)
+    "explorer/agent.py",      # autonomous Explorer (Scout) — execute_guarded, deterministic-only
     "sql/executor.py",        # the executor itself
 }
 
@@ -62,10 +63,6 @@ EXEMPT = {
 # Not yet routed through the shared executor. THIS LIST MAY ONLY SHRINK.
 # Ordered by how much a wrong number here costs a reader.
 UNGUARDED = {
-    "explorer/agent.py":
-        "THE gap. The autonomous Explorer (Scout) writes the Briefing and executes via a raw "
-        "`self._conn.execute` in `_run`, hand-assembling ~15 guard imports inline instead. Every "
-        "Briefing number comes from here.",
     "routers/exploration.py":
         "`__retry__` runs LLM-corrected SQL straight from `writer.fix(...)`; `__ground__` re-runs "
         "a stored insight's SQL.",
@@ -77,7 +74,8 @@ UNGUARDED = {
         "the agent-eval harness runs a model-generated query against a reference.",
 }
 
-UNGUARDED_BASELINE = len(UNGUARDED)   # 5 — lower this as each is wired, never raise it
+UNGUARDED_BASELINE = len(UNGUARDED)   # 4 (was 5 — explorer/agent.py wired 2026-07-21)
+#                                       lower this as each is wired, never raise it
 
 
 def _generate_and_execute() -> set[str]:
