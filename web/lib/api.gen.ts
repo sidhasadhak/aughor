@@ -5564,6 +5564,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/viz-configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Viz Configs Route
+         * @description Every saved chart config in a scope, as `{target_id: config}` — one fetch per brief.
+         */
+        get: operations["get_viz_configs_route_viz_configs_get"];
+        /**
+         * Put Viz Config Route
+         * @description Persist one chart's display config. An empty `config` resets it (deletes the row).
+         */
+        put: operations["put_viz_config_route_viz_configs_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces": {
         parameters: {
             query?: never;
@@ -7342,6 +7366,20 @@ export interface components {
             type: "video";
         } & {
             [key: string]: unknown;
+        };
+        /** VizConfigRequest */
+        VizConfigRequest: {
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Scope Key
+             * @default
+             */
+            scope_key: string;
+            /** Target Id */
+            target_id: string;
         };
         /** _ActionOverride */
         _ActionOverride: {
@@ -18525,6 +18563,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_viz_configs_route_viz_configs_get: {
+        parameters: {
+            query?: {
+                scope_key?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_viz_config_route_viz_configs_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VizConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

@@ -1498,6 +1498,39 @@ export async function listDashboardCards(
   return res.json();
 }
 
+/** Update a pinned card in place — the seam used to persist a chart's display config into
+ *  `card.render`. `PUT /cards/{id}` has existed since the cockpit shipped but had no client,
+ *  so every edit to a pinned chart was lost on unmount. */
+export async function updateDashboardCard(cardId: string, card: DashboardCard): Promise<DashboardCard> {
+  const res = await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(card),
+  });
+  if (!res.ok) throw new Error("Failed to update dashboard card");
+  return res.json();
+}
+
+/** Saved chart display configs for a scope, as `{target_id: config}` — one fetch per brief.
+ *  For charts that are NOT pinned cards (ledger rows, digest tiles, KPI trends) and therefore
+ *  have no `render` blob of their own. `scopeKey` matches the briefing's stamp. */
+export async function getVizConfigs(scopeKey: string): Promise<Record<string, Record<string, unknown>>> {
+  const res = await fetch(`${BASE}/viz-configs?scope_key=${encodeURIComponent(scopeKey)}`);
+  if (!res.ok) return {};                     // best-effort: display prefs never block a render
+  return res.json();
+}
+
+/** Persist one card-less chart's display config. An empty `config` resets it. */
+export async function saveVizConfig(
+  scopeKey: string, targetId: string, config: Record<string, unknown>,
+): Promise<void> {
+  await fetch(`${BASE}/viz-configs`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope_key: scopeKey, target_id: targetId, config }),
+  });
+}
+
 /** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
  *  last/prev value for a delta. */
 export async function runDashboardCard(cardId: string): Promise<CardRunResult> {

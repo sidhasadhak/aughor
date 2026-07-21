@@ -9,14 +9,15 @@
  * RF-free by design: it owns the card chrome + body + footer + the alert composer, but NOT the
  * resize handles / node wrapper (the canvas adds those) or the reorder DnD (the grid adds that).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { type ChartCustom } from "@/components/Chart";
 import { formatMetricValue, formatVariance } from "@/lib/format";
-import { graduateCard, type CardRunResult, type DashboardCard } from "@/lib/api";
+import { graduateCard, updateDashboardCard, type CardRunResult, type DashboardCard } from "@/lib/api";
+import { isEmptyVizConfig, type VizConfig } from "@/components/charts/vizConfig";
 import { toast } from "@/components/ui/toast";
 
 export type CardState = { card: DashboardCard; run?: CardRunResult; failed?: boolean };
@@ -62,7 +63,29 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
   const hist = run?.refresh?.history ?? [];
   const caveats = run?.caveats ?? [];
   const trend = useMemo(() => (run && !run.error ? seriesTrend(run.columns, run.rows) : null), [run]);
-  const render = (card.render || {}) as { chartType?: string; chartConfig?: Record<string, unknown>; custom?: ChartCustom };
+  // `render` is the card's own durable display slot. `viz` is the user's edits from the chart
+  // card; `showDataLabels`/`title` were being SAVED by the Query-Builder pin and then silently
+  // dropped here on read — the chart was told neither.
+  const render = (card.render || {}) as {
+    chartType?: string; chartConfig?: Record<string, unknown>; custom?: ChartCustom;
+    showDataLabels?: boolean; viz?: VizConfig;
+  };
+
+  // Persist a display change back onto the card. `PUT /cards/{id}` has existed since the
+  // cockpit shipped but had no client, so every edit to a pinned chart died on unmount.
+  // Debounced: the chart emits per interaction (typing an axis title would be a PUT/keystroke).
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const persistViz = useCallback((viz: VizConfig) => {
+    if (!card.id) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const next = { ...(card.render || {}) } as Record<string, unknown>;
+      if (isEmptyVizConfig(viz)) delete next.viz; else next.viz = viz;
+      // Best-effort: a display preference must never surface an error over the card.
+      void updateDashboardCard(card.id, { ...card, render: next }).catch(() => {});
+    }, 600);
+  }, [card]);
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
   const isTabular = !errored && !trend && val == null && !!run && !run.error
     && (run.columns?.length ?? 0) > 0 && (run.rows?.length ?? 0) > 0;
 
@@ -156,7 +179,10 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
             chartType={render.chartType ?? null}
             chartConfig={render.chartConfig ?? null}
             custom={render.custom ?? null}
+            defaultShowLabels={render.showDataLabels}
             fillHeight={dims.h > 60 ? dims.h - 6 : null}
+            config={render.viz ?? null}
+            onConfigChange={persistViz}
           />
         ) : (
           <div style={{ fontSize: 13, color: "var(--t3)" }}>{run ? `${run.row_count} rows` : "…"}</div>

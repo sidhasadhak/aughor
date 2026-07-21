@@ -34,6 +34,7 @@ import type { ExhibitSpec, ExhibitRefLine, ExhibitColor } from "@/components/cha
 import { cleanLabel } from "@/lib/format";
 import { applyPostproc, type PostprocOp } from "@/lib/api";
 import { VizEditorPanel, type VizEditorModel } from "@/components/charts/VizEditorPanel";
+import { sameVizConfig, type VizConfig } from "@/components/charts/vizConfig";
 import { useVizEditorOpen, openVizEditor, closeVizEditor } from "@/components/charts/vizEditorStore";
 
 const TRANSFORM_OPTS: { v: PostprocOp | "none"; t: string }[] = [
@@ -141,12 +142,26 @@ interface Props {
   /** Fill an exact pixel height — for a resizeable card/canvas node (chart + table grow to fill). */
   fillHeight?: number | null;
   onSelect?: (datum: Record<string, unknown>) => void;
+  /** The user's saved display choices, applied as the INITIAL state of every control. Read once
+   *  per mount (the component owns the controls after that), so restoring a card and editing it
+   *  can't fight each other. */
+  config?: VizConfig | null;
+  /** Fired whenever a display control changes, with the full config. The caller decides where it
+   *  goes (a pinned card's `render`, or `viz_configs` for a card-less chart) and is expected to
+   *  debounce — this fires per interaction. Absent → the chart is ephemeral, exactly as before. */
+  onConfigChange?: (config: VizConfig) => void;
 }
 
 export function ResultChartCard({
   columns, rows, title, chartType, chartConfig, custom, exhibit: exhibitProp,
   columnUnits, defaultShowLabels, heightScale, fillHeight, onSelect,
+  config, onConfigChange,
 }: Props) {
+  // Saved display choices seed the controls ONCE. A lazy useState (not a ref) because this is
+  // read during render: it captures the first value and never changes, so a parent re-render —
+  // a refetch, or a debounced save echoing back — can't yank a control out from under the user
+  // mid-edit. The component owns the controls from mount.
+  const [seed] = useState<VizConfig>(() => config ?? {});
   const { numericIdxs, catIdxs, dateIdxs } = useMemo(() => classifyColumns(columns, rows), [columns, rows]);
   const chartTypes = useMemo(() => availableChartTypes(columns, rows), [columns, rows]);
   // The editor offers EVERY chart type (Databricks-style), with the shape-compatible ones
@@ -179,26 +194,26 @@ export function ResultChartCard({
   // Chart-grammar gate: a stats/entity-profile grid opens on the TABLE (its honest
   // form — the chart toggle stays available); everything else opens on the chart.
   const [view, setView] = useState<"chart" | "table" | "pivot">(
-    chartTypes.length && !isUngraphableGrid(columns, rows) ? "chart" : "table");
-  const [typeSel, setTypeSel] = useState<ChartType | "auto">("auto");
-  const [metricSel, setMetricSel] = useState<string | null>(null);
-  const [dimSel, setDimSel] = useState<string | null>(null);
-  const [aggSel, setAggSel] = useState<Agg | null>(null);
-  const [showLabels, setShowLabels] = useState<boolean>(defaultShowLabels ?? false);
+    seed.view ?? (chartTypes.length && !isUngraphableGrid(columns, rows) ? "chart" : "table"));
+  const [typeSel, setTypeSel] = useState<ChartType | "auto">(seed.type ?? "auto");
+  const [metricSel, setMetricSel] = useState<string | null>(seed.metric ?? null);
+  const [dimSel, setDimSel] = useState<string | null>(seed.dim ?? null);
+  const [aggSel, setAggSel] = useState<Agg | null>(seed.agg ?? null);
+  const [showLabels, setShowLabels] = useState<boolean>(seed.showLabels ?? defaultShowLabels ?? false);
   // Customize overrides (Color / Format / Legend / Tooltip / Annotation) layered OVER the passed
   // `custom`/`exhibit`, so an untouched card renders byte-identically to before.
   // Color binding (the Databricks "Color" field): colour marks by a CHOSEN column instead
   // of the plotted measure. "" field = off (default coloring). Scale "" = auto by role
   // (a measure → continuous gradient; a dimension → categorical legend); name = legend title.
-  const [colorField, setColorField] = useState("");
-  const [colorScaleSel, setColorScaleSel] = useState<"" | "continuous" | "categorical">("");
-  const [colorName, setColorName] = useState("");
-  const [numberFormat, setNumberFormat] = useState("");
-  const [legendPos, setLegendPos] = useState("");
-  const [xTitle, setXTitle] = useState("");
-  const [yTitle, setYTitle] = useState("");
-  const [tooltipOff, setTooltipOff] = useState(false);
-  const [userRefLines, setUserRefLines] = useState<ExhibitRefLine[]>([]);
+  const [colorField, setColorField] = useState(seed.colorField ?? "");
+  const [colorScaleSel, setColorScaleSel] = useState<"" | "continuous" | "categorical">(seed.colorScale ?? "");
+  const [colorName, setColorName] = useState(seed.colorName ?? "");
+  const [numberFormat, setNumberFormat] = useState(seed.numberFormat ?? "");
+  const [legendPos, setLegendPos] = useState(seed.legend ?? "");
+  const [xTitle, setXTitle] = useState(seed.xTitle ?? "");
+  const [yTitle, setYTitle] = useState(seed.yTitle ?? "");
+  const [tooltipOff, setTooltipOff] = useState(seed.tooltipOff ?? false);
+  const [userRefLines, setUserRefLines] = useState<ExhibitRefLine[]>(seed.refLines ?? []);
 
   // Default metric MUST match what <Chart> resolves when untouched, or the strip
   // label contradicts the plot. <Chart> prefers a rate/share column as its primary
@@ -235,7 +250,7 @@ export function ResultChartCard({
 
   // On-demand post-processing transform (PoP / share / rolling / cumulative) — appends a
   // derived column on the chosen measure via /query/postproc. Off by default (today's view).
-  const [transformOp, setTransformOp] = useState<PostprocOp | "none">("none");
+  const [transformOp, setTransformOp] = useState<PostprocOp | "none">(seed.transform ?? "none");
   const [transformed, setTransformed] = useState<{ columns: string[]; rows: unknown[][] } | null>(null);
   const [tErr, setTErr] = useState("");
   useEffect(() => {
@@ -325,6 +340,41 @@ export function ResultChartCard({
     const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
     setUserRefLines(ls => [...ls, { value: Number(mean.toFixed(4)), label: "Average", kind: "global_avg" }]);
   };
+
+  // ── Persist the user's display choices ──
+  // Assemble the full config from the live controls and hand it up whenever it really changes.
+  // Fields are omitted at their default so an untouched chart emits {} — `isEmptyVizConfig` then
+  // treats that as "nothing to store", which is what makes it safe to wire this everywhere.
+  const liveConfig = useMemo<VizConfig>(() => {
+    const c: VizConfig = {};
+    if (view !== (chartTypes.length && !isUngraphableGrid(columns, rows) ? "chart" : "table")) c.view = view;
+    if (typeSel !== "auto") c.type = typeSel;
+    if (metricSel) c.metric = metricSel;
+    if (dimSel) c.dim = dimSel;
+    if (aggSel) c.agg = aggSel;
+    if (showLabels !== (defaultShowLabels ?? false)) c.showLabels = showLabels;
+    if (colorField) c.colorField = colorField;
+    if (colorScaleSel) c.colorScale = colorScaleSel;
+    if (colorName) c.colorName = colorName;
+    if (numberFormat) c.numberFormat = numberFormat;
+    if (legendPos) c.legend = legendPos;
+    if (xTitle) c.xTitle = xTitle;
+    if (yTitle) c.yTitle = yTitle;
+    if (tooltipOff) c.tooltipOff = true;
+    if (userRefLines.length) c.refLines = userRefLines;
+    if (transformOp !== "none") c.transform = transformOp;
+    return c;
+  }, [view, typeSel, metricSel, dimSel, aggSel, showLabels, colorField, colorScaleSel, colorName,
+      numberFormat, legendPos, xTitle, yTitle, tooltipOff, userRefLines, transformOp,
+      chartTypes.length, columns, rows, defaultShowLabels]);
+
+  // Seeded with what we were GIVEN, so restoring a saved chart doesn't immediately save it back.
+  const lastEmitted = useRef<VizConfig>(config ?? {});
+  useEffect(() => {
+    if (!onConfigChange || sameVizConfig(lastEmitted.current, liveConfig)) return;
+    lastEmitted.current = liveConfig;
+    onConfigChange(liveConfig);
+  }, [liveConfig, onConfigChange]);
 
   // Single-instance viz editor (one drawer open app-wide).
   const cardId = useId();

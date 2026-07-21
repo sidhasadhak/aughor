@@ -29,6 +29,7 @@ import { GroundedNumber } from "@/components/brief/GroundedNumber";
 import { seriesTrend } from "@/components/brief/Sparkline";
 import { StatTile } from "@/components/brief/StatTile";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { useVizConfigs } from "@/lib/useVizConfigs";
 import { effectiveCurrencySymbol } from "@/lib/orgSettings";
 import { useOrgSettings } from "@/lib/useOrgSettings";
 import { betterIsHigher } from "@/lib/favorability";
@@ -199,8 +200,13 @@ function KpiValue({ kpi }: { kpi: Kpi }) {
 }
 
 // ── Presentational view (no data fetching) — owns the expand/collapse UI state ──
-export function KpiStripView({ industry, period, kpis }: { industry?: string; period?: string; kpis: Kpi[] }) {
+export function KpiStripView({ industry, period, kpis, scopeKey }: {
+  industry?: string; period?: string; kpis: Kpi[];
+  /** Scope for persisting a KPI chart's display config (keyed `kpi:<name>` within it). */
+  scopeKey?: string;
+}) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { configFor, save } = useVizConfigs(scopeKey ?? "");
   if (!kpis.length) return null;
   const expanded = kpis.find(k => k.name === expandedId && k.chart && k.chart.rows.length >= 2) ?? null;
 
@@ -255,7 +261,9 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
               ×
             </button>
           </div>
-          <ResultChartCard columns={expanded.chart.columns} rows={expanded.chart.rows} title={expanded.name} />
+          <ResultChartCard columns={expanded.chart.columns} rows={expanded.chart.rows} title={expanded.name}
+            config={configFor(`kpi:${expanded.name}`)}
+            onConfigChange={scopeKey ? c => save(`kpi:${expanded.name}`, c) : undefined} />
         </div>
       )}
     </div>
@@ -281,7 +289,11 @@ function DefineKpiCta() {
 }
 
 // ── Live container ──────────────────────────────────────────────────────────────
-export function IndustryKpiStrip({ connectionId, schema }: { connectionId: string; schema?: string }) {
+export function IndustryKpiStrip({ connectionId, schema, scopeKey }: {
+  connectionId: string; schema?: string;
+  /** Passed straight through to the view so KPI chart edits persist per scope. */
+  scopeKey?: string;
+}) {
   const [industry, setIndustry] = useState("");
   const [period, setPeriod] = useState("");
   const [kpis, setKpis] = useState<Kpi[]>([]);
@@ -335,6 +347,6 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
     return () => { alive = false; };
   }, [connectionId, schema, orgV]);
 
-  if (kpis.length > 0) return <KpiStripView industry={industry} period={period} kpis={kpis} />;
+  if (kpis.length > 0) return <KpiStripView industry={industry} period={period} kpis={kpis} scopeKey={scopeKey} />;
   return noMetrics ? <DefineKpiCta /> : null;
 }

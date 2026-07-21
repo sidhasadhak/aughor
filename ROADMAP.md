@@ -14,6 +14,17 @@
 
 ## 0 · Immediate next action ⏭️
 
+### 🧭 Session handoff — 2026-07-21 (c) · Chart edits persist · "Numbers that moved" expands (branch `2026-07-21-viz-config-persistence`)
+
+**PR 3 of the briefing arc.** tsc 0 · ruff 0 · 3404 passed (+9) · eslint errors unchanged, warnings +2 · raw-button ratchet 73 · **live-verified through a full page reload**.
+
+- **🔑 Durable finding — NOTHING a user edited on a chart persisted. Not one control.** All 16 affordances in `ResultChartCard` (type · view chart⇄table⇄pivot · x/y/agg · the PR #187 colour binding · legend · number format · axis titles · labels · tooltip · transform · reference lines) were bare `useState`, and the component's props were strictly INBOUND — there was no `onConfigChange` at all. Worse than "lost on reload": the ledger is single-open, so **expanding a second row destroyed the first row's edits in the same session**.
+- **The durable slot already existed and was uncalled.** `DashboardCard.render` is persisted opaque JSON and `PUT /cards/{card_id}` has shipped since the cockpit — but `web/lib/api.ts` had **no `updateDashboardCard`**, so the endpoint was dead code. Now called (debounced) from `PinnedCardBody`. Also fixed a live read bug there: `render.showDataLabels` was being SAVED by the Query-Builder pin and silently **dropped on read**.
+- **New: `viz_configs`** (table + `GET/PUT /viz-configs`) for charts that have NO card row — ledger rows, digest-tile details, KPI trends — keyed by the insight and by the **same `scope_key` the briefing stamps**, so one schema's edits never surface under another's. Empty config DELETES the row: "back to default" must leave no trace, or the user is pinned to a snapshot of today's default forever.
+- **Contract:** `VizConfig` omits every field at its default, so an untouched chart emits `{}` and persists **nothing** — that is what makes it safe to wire everywhere. `ResultChartCard` seeds its controls ONCE from a lazy `useState` (not a ref: it's read during render), so a debounced save echoing back can't yank a control mid-edit.
+- **`<FindingDetail>` extracted** from the ledger row and reused by the digest tiles, which now **expand in place** (⤢ affordance that `StatTile` already had but the digest never passed) into the full untruncated statement + the grounded chart + Evidence/Investigate. The big scalar there now takes the PROSE precision policy — it's a headline, not a grid cell, and read `45.4865` directly under a statement saying `45.49%`.
+- **⚠️ GOTCHA (cost me twice):** `read_console_messages` replays the **pre-restart buffer**. A stale `ReferenceError` looked like a live bug both times; `tsc` + the file on disk + the *served chunk* are the authority. Also: don't `git stash` with the dev server running — it wedges Turbopack (`rm -rf web/.next`, restart, then **navigate**, don't reload).
+
 ### 🧭 Session handoff — 2026-07-21 (b) · One number-format authority — `aughor/util/format.py` (branch `2026-07-21-number-format-standard`)
 
 **PR 2 of the briefing arc.** Fixes `…is 43.959061407888164%` in the verdict lede and `45.4865%` / `24.188549041748047%` in the digest tiles. tsc 0 · ruff 0 · unit suite green · **live-verified** (43.96% · 45.49% · 24.19%, grouping and short decimals untouched).
