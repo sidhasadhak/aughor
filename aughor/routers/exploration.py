@@ -809,11 +809,20 @@ async def retry_query(conn_id: str, body: RetryQueryRequest):
     if not fix.ok:
         raise HTTPException(status_code=422, detail=f"LLM correction failed: {fix.final_error}")
     try:
-        result = db.execute("__retry__", fix.sql)
+        # This is LLM-CORRECTED SQL — a query that already failed once and was rewritten by a
+        # model — so it is the last thing that should reach the warehouse unguarded. Routed
+        # through the shared battery in DETERMINISTIC-ONLY mode: `writer.fix` above is already
+        # the repair loop, and handing the runner a second one would fight it.
+        from aughor.sql.executor import execute_guarded
+        result = execute_guarded(db, fix.sql, query_id="__retry__", schema=writer.schema)
+        # Report the SQL that ACTUALLY RAN. `preflight_harden` may rewrite it (de-fan /
+        # preflight-repair), and the client shows `corrected_sql` as the fix to keep — handing
+        # back the pre-rewrite text would show a query that did not produce these rows.
+        ran = (getattr(result, "sql", None) or fix.sql).strip() or fix.sql
         if result.error:
-            return {"ok": False, "corrected_sql": fix.sql, "explanation": fix.explanation, "error": result.error, "rows": [], "columns": []}
+            return {"ok": False, "corrected_sql": ran, "explanation": fix.explanation, "error": result.error, "rows": [], "columns": []}
         return {
-            "ok": True, "corrected_sql": fix.sql, "explanation": fix.explanation,
+            "ok": True, "corrected_sql": ran, "explanation": fix.explanation,
             "rows": [[str(c) for c in r] for r in (result.rows or [])[:50]],
             "columns": result.columns or [], "row_count": result.row_count,
         }
@@ -1275,6 +1284,12 @@ def ground_briefing_number(conn_id: str, body: GroundRequest):
 
     fallback: dict | None = None
     for iid in ordered[:6]:   # bounded: usually grounds on the first (the nearest citation)
+        # DELIBERATELY unguarded, unlike /retry-query above. This re-runs a STORED insight's SQL
+        # to prove a cited number came from it — the receipt's entire value is that it reproduces
+        # the finding's own query verbatim. `preflight_harden` may REWRITE a query, which would
+        # make the receipt cite SQL the finding does not contain. The stored SQL was already
+        # gated at emission (verify_insight + the explorer's execute_guarded), so this is a
+        # replay of a guarded artifact, not fresh generation.
         result = db.execute("__ground__", (index[iid].get("sql") or "").strip())
         if result.error:
             if fallback is None:

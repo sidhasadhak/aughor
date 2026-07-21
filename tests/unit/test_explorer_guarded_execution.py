@@ -150,3 +150,94 @@ def test_every_model_sql_call_site_passes_a_schema(call_site):
         "synthesis":    'schema=sql_writer.schema)',
     }[call_site]
     assert marker in src, f"the {call_site} call site no longer passes schema= to _run"
+
+
+class TestRetryQueryIsGuarded:
+    """`/exploration/{conn}/retry-query` runs LLM-CORRECTED SQL — a query that already failed once
+    and was rewritten by a model. It went to the warehouse raw, which is arguably worse than the
+    Explorer's case: the model is patching a query it has already got wrong once, with no guard
+    between the patch and the data."""
+
+    def test_retry_query_routes_through_the_shared_battery(self, monkeypatch):
+        import aughor.routers.exploration as ex
+        import aughor.sql.executor as executor_mod
+        import aughor.sql.writer as wmod
+        seen: list[dict] = []
+
+        class _Conn:
+            dialect = "duckdb"
+
+            def execute(self, qid, sql):
+                raise AssertionError("retry-query must not execute raw")
+
+            def get_schema(self):
+                return SCHEMA
+
+        class _Writer:
+            schema = SCHEMA
+
+            def __init__(self, db, *a, **k):
+                pass
+
+            def fix(self, sql, err, hint=None, max_retries=2):
+                return SimpleNamespace(ok=True, sql="SELECT 1", explanation="fixed", final_error="")
+
+        monkeypatch.setattr(ex, "open_connection_for", lambda cid: _Conn())
+        monkeypatch.setattr(wmod, "SqlWriter", _Writer)
+
+        def _guarded(conn, sql, *, query_id, schema=None, **kw):
+            seen.append({"sql": sql, "query_id": query_id, "schema": schema})
+            return SimpleNamespace(error=None, rows=[[1]], columns=["n"], row_count=1, sql=sql)
+
+        monkeypatch.setattr(executor_mod, "execute_guarded", _guarded)
+
+        out = asyncio.run(ex.retry_query("c1", SimpleNamespace(sql="SELECT bad", error="boom", hint=None)))
+
+        assert out["ok"] is True
+        assert len(seen) == 1 and seen[0]["query_id"] == "__retry__"
+        assert seen[0]["schema"] == SCHEMA
+
+    def test_the_response_reports_the_sql_that_actually_ran(self, monkeypatch):
+        """The client shows `corrected_sql` as the fix to keep. If preflight rewrites the query,
+        returning the PRE-rewrite text hands the user SQL that did not produce the rows beside it."""
+        import aughor.routers.exploration as ex
+        import aughor.sql.executor as executor_mod
+        import aughor.sql.writer as wmod
+        REWRITTEN = "SELECT SUM(x) FROM (SELECT DISTINCT id, x FROM t) d"
+
+        class _Conn:
+            dialect = "duckdb"
+
+            def get_schema(self):
+                return SCHEMA
+
+        class _Writer:
+            schema = SCHEMA
+
+            def __init__(self, db, *a, **k):
+                pass
+
+            def fix(self, sql, err, hint=None, max_retries=2):
+                return SimpleNamespace(ok=True, sql="SELECT SUM(t.x) FROM t JOIN u ON t.id=u.id",
+                                       explanation="fixed", final_error="")
+
+        monkeypatch.setattr(ex, "open_connection_for", lambda cid: _Conn())
+        monkeypatch.setattr(wmod, "SqlWriter", _Writer)
+        monkeypatch.setattr(executor_mod, "execute_guarded",
+                            lambda conn, sql, *, query_id, schema=None, **kw: SimpleNamespace(
+                                error=None, rows=[[42]], columns=["s"], row_count=1, sql=REWRITTEN))
+
+        out = asyncio.run(ex.retry_query("c1", SimpleNamespace(sql="x", error="e", hint=None)))
+        assert out["corrected_sql"] == REWRITTEN
+
+    def test_grounding_replays_stored_sql_verbatim(self):
+        """The deliberate exception. `__ground__` proves a cited number came from a finding's own
+        query, so it must replay that SQL EXACTLY — a preflight rewrite would make the receipt
+        cite SQL the finding does not contain. Pinned in source so the exemption is a decision,
+        not an omission someone 'fixes' later."""
+        import inspect
+
+        import aughor.routers.exploration as ex
+        src = inspect.getsource(ex)
+        assert 'db.execute("__ground__"' in src, "grounding must stay a verbatim replay"
+        assert "DELIBERATELY unguarded" in src, "the exception must carry its reason in-place"

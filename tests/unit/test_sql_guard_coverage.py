@@ -45,8 +45,24 @@ COMPLIANT = {
     "agent/nodes.py",         # quick / Insight — preflight_harden only (see PARTIAL below)
     "agent/explore.py",       # chat explore tool — preflight_harden only (see PARTIAL below)
     "explorer/agent.py",      # autonomous Explorer (Scout) — execute_guarded, deterministic-only
+    "routers/exploration.py", # /retry-query — execute_guarded. See the __ground__ note below.
     "sql/executor.py",        # the executor itself
 }
+
+# KNOWN LIMITATION — this ratchet is MODULE-granular, not call-site granular. A module counts as
+# compliant once ANY execution routes through the shared executor, so a second, unguarded site in
+# the same file is invisible to it. One such site exists deliberately and is recorded here so the
+# decision is auditable rather than merely absent:
+#
+#   routers/exploration.py :: __ground__ — re-runs a STORED insight's SQL to prove a cited number
+#     came from it. The receipt's whole value is reproducing the finding's own query VERBATIM, and
+#     preflight_harden may rewrite a query — which would make the receipt cite SQL the finding does
+#     not contain. The stored SQL was already gated at emission (verify_insight + the explorer's
+#     execute_guarded), so this is a replay of a guarded artifact, not fresh generation.
+#
+# Making this call-site granular means parsing each `.execute(` and tracing its SQL argument to a
+# generator, which is a real analysis rather than a regex — worth doing if a second exception ever
+# needs recording, over-built for one.
 
 # Exempt, with the reason stated. An exemption is a claim that must stay true.
 EXEMPT = {
@@ -63,9 +79,6 @@ EXEMPT = {
 # Not yet routed through the shared executor. THIS LIST MAY ONLY SHRINK.
 # Ordered by how much a wrong number here costs a reader.
 UNGUARDED = {
-    "routers/exploration.py":
-        "`__retry__` runs LLM-corrected SQL straight from `writer.fix(...)`; `__ground__` re-runs "
-        "a stored insight's SQL.",
     "explorer/fix_persist.py":
         "`__fix_save__` executes a model-repaired query to validate it before persisting.",
     "routers/investigations.py":
@@ -74,7 +87,7 @@ UNGUARDED = {
         "the agent-eval harness runs a model-generated query against a reference.",
 }
 
-UNGUARDED_BASELINE = len(UNGUARDED)   # 4 (was 5 — explorer/agent.py wired 2026-07-21)
+UNGUARDED_BASELINE = len(UNGUARDED)   # 3 (5 → 4 explorer/agent.py, 4 → 3 retry-query)
 #                                       lower this as each is wired, never raise it
 
 
