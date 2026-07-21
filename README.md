@@ -275,7 +275,7 @@ aughor/
 ├── evals/            # run_tpch / run_tpcds / run_clickbench / run_golden / run_realdb
 ├── web/              # Next.js App Router — components, lib (api.ts), design tokens
 ├── docs/             # architecture, adaptive-temporal-scope, mode cross-pollination, audits
-└── tests/            # pytest suite (2,900+ unit + integration; failure-path / fault-injection / chaos)
+└── tests/            # pytest suite (3,400+ unit + integration; failure-path / fault-injection / chaos)
 ```
 
 ## Configuration
