@@ -497,6 +497,23 @@ def generate_narrative(
 
 # ── Cache layer ───────────────────────────────────────────────────────────────
 
+def peek_briefing(scope_key: str) -> dict[str, Any] | None:
+    """The cached brief for a scope, or None — READ ONLY, never generates.
+
+    `get_briefing` synthesizes on a miss (an LLM call plus a coverage fan-out), which is far
+    too expensive for a read-side consumer. "Ask this briefing" grounds its answers in the
+    brief the user is actually looking at, so it wants exactly this: the current artifact if
+    one exists, and otherwise nothing to say. Ignores the TTL deliberately — a slightly stale
+    brief is still the one on screen, and refreshing it is the Briefing's job, not the ask's."""
+    try:
+        if not _CACHE_PATH.exists():
+            return None
+        entry = json.loads(_CACHE_PATH.read_text()).get(scope_key)
+        return entry if isinstance(entry, dict) and entry.get("narrative") else None
+    except Exception:
+        return None
+
+
 def get_briefing(
     connection_id: str,
     domain_data: dict[str, list[dict]],

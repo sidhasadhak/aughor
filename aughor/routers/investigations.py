@@ -1087,6 +1087,7 @@ async def _stream_chat(
     canvas_id: Optional[str] = None,
     skip_clarify: bool = False,
     purpose: str = "",
+    schema_scope: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     # Resolve canvas scope so table names resolve correctly AND the model only
     # sees in-scope tables. Multi-dataset connections (local_upload) expose every
@@ -1104,7 +1105,11 @@ async def _stream_chat(
     # never by filtering the conn-keyed cached string — a snapshot predating a new upload
     # silently DROPPED the missing tables (live incident: Insight declared "no sales
     # transaction table available" while reading its sibling from the same schema).
-    _es = resolve_execution_scope(connection_id, canvas_id,
+    # `schema_scope` pins a NON-canvas run to one schema, exactly as a canvas's declared schema
+    # pins a canvas run. Omitting it was why a quick answer ignored the shared schema selector
+    # (the deep path already forwarded it) — and why a user agent's schema_scope binding didn't
+    # constrain a quick answer either.
+    _es = resolve_execution_scope(connection_id, canvas_id, schema_scope=schema_scope,
                                   schema_context_builder=build_canvas_schema_context)
     connection_id = _es.connection_id                # canvas's primary connection wins
     canvas_scope_schema = _es.declared_schema        # raw declared → the prompt note
@@ -1374,6 +1379,21 @@ async def _stream_chat(
         _agent_brief = _grounding_agent_brief()  # == agent_brief_block() (shared Rec 5 producer)
         if _agent_brief:
             prompt = _agent_brief + prompt
+        # "Ask this briefing" — ground the answer in the brief the user is LOOKING AT, read
+        # server-side from the same `conn:schema` cache entry the Briefing rendered (never
+        # posted up by the client, so it can't drift from what's on screen or be spoofed).
+        # Best-effort and empty when no brief is cached: no context beats invented context.
+        from aughor.kernel.flags import flag_enabled as _flag
+        if _flag("ask.brief_context"):
+            try:
+                from aughor.knowledge.brief_context import brief_block_for_scope
+                _brief_sec = brief_block_for_scope(connection_id, canvas_scope_schema, canvas_id)
+                if _brief_sec:
+                    prompt = _brief_sec + "\n" + prompt
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "brief grounding is best-effort; answering without the brief",
+                         counter="chat.brief_section")
         # Playbook context — when org playbook items match this question, give them
         # to the model AND surface them to the user (emitted below) so they can
         # keep / modify / remove them.
@@ -3605,7 +3625,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         async for sse in _metered_stream(
             _stream_chat(req.question, conn_id, req.history, request,
                          session_id=req.session_id, canvas_id=req.canvas_id,
-                         skip_clarify=req.skip_clarify, purpose=req.purpose),
+                         skip_clarify=req.skip_clarify, purpose=req.purpose,
+                         schema_scope=req.schema_name),
             budget=_insight_budget(conn_id),
         ):
             yield sse

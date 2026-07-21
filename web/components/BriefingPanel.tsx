@@ -73,7 +73,7 @@ import { toast } from "@/components/ui/toast";
 import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
 import { GroundedNumber, withGroundedNumbers } from "@/components/brief/GroundedNumber";
-import { BriefAskBox } from "@/components/brief/BriefAskBox";
+import { BriefAskPanel } from "@/components/brief/BriefAskPanel";
 import { NewCardComposer } from "@/components/brief/NewCardComposer";
 import { Button } from "@/components/ui/button";
 
@@ -2282,6 +2282,9 @@ export function BriefingPanel({
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [pinnedRefresh, setPinnedRefresh]   = useState(0);
+  // The ask side panel. Closed by default — the brief is the page; asking is a mode
+  // you enter, and an always-mounted panel would cost every reader ~420px of width.
+  const [askOpen, setAskOpen]               = useState(false);
   // Scope chips: narrow the narrative layer (supporting signals + top patterns) to one
   // domain; null = all. The standing cockpit layer is intentionally left unscoped — it's
   // the user's arranged surface, not a per-cycle finding view.
@@ -2560,7 +2563,11 @@ export function BriefingPanel({
   }
 
   return (
-    <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
+    // Row, not a column: the ask panel is a fixed-width SIBLING that pushes the brief left
+    // rather than overlaying it — the whole point is reading an answer against the brief it
+    // is about. (Same shape as ChatPanel's source drawer.) The brief keeps its own scroller.
+    <div style={{ flex: 1, display: "flex", minHeight: 0, minWidth: 0 }}>
+    <div ref={scrollRef} style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "20px 28px" }}>
 
       {/* Evidence drill-through drawer (finding actions, #4). Transient hints/side-effect
           feedback now go through the shared <Toaster/> (toast.*), mounted in the root layout. */}
@@ -2694,19 +2701,20 @@ export function BriefingPanel({
         )}
       />
 
-      {/* ── Living brief ── ask anything anchored to this briefing's context; answers
-          stream inline as a stack of investigations (capability E). */}
-      <BriefAskBox
-        connectionId={connectionId}
-        schema={schema}
-        canvasId={canvasId}
-        briefContext={[
-          narrative?.headline_theme ? `BRIEFING THEME: ${narrative.headline_theme}` : "",
-          briefing.headline ? `HEADLINE FINDING: ${briefing.headline.insight.finding}` : "",
-          ...briefing.signals.slice(0, 3).map(s => `- ${s.insight.finding}`),
-        ].filter(Boolean).join("\n")}
-        onOpenInAsk={onInvestigate}
-      />
+      {/* ── Ask this briefing ── a launcher, not the surface. The conversation lives in a
+          side panel (BriefAskPanel) so it can hold a real multi-turn thread beside the brief
+          instead of stacking one-shot cards down the middle of the page. */}
+      {!askOpen && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Button variant="default" onClick={() => setAskOpen(true)}
+            style={{ padding: "9px 16px", height: "auto" }}>
+            Ask this briefing →
+          </Button>
+          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+            quick answers, scoped to this brief and its schema
+          </span>
+        </div>
+      )}
 
       {/* ── Scope chips ── focus the narrative layer (signals + patterns) on one domain. */}
       <ScopeChips domains={briefing.domains} total={briefing.totalInsights} active={scopeDomain} onChange={setScope} />
@@ -2796,5 +2804,16 @@ export function BriefingPanel({
 
       {/* Spinner keyframe */}
           </div>
+
+      {askOpen && (
+        <BriefAskPanel
+          connectionId={connectionId}
+          schema={schema}
+          canvasId={canvasId}
+          onClose={() => setAskOpen(false)}
+          onOpenInAsk={onInvestigate}
+        />
+      )}
+    </div>
   );
 }

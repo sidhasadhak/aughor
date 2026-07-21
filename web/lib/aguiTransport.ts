@@ -24,6 +24,8 @@ export interface AguiAskInput {
   question: string;
   connectionId: string;
   canvasId?: string | null;
+  /** Pins a non-canvas answer to one schema (the backend reads `schema` off forwardedProps). */
+  schema?: string | null;
   sessionId: string;
   history?: unknown[];
   depth?: string;
@@ -195,6 +197,7 @@ export async function runAskViaAgui(
     forwardedProps: {
       connection_id: input.connectionId,
       canvas_id: input.canvasId ?? null,
+      schema: input.schema ?? null,
       depth: input.depth ?? "auto",
       agent_id: input.agentId ?? null,
       skip_clarify: input.skipClarify ?? false,

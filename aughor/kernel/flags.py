@@ -54,6 +54,7 @@ FLAG_ENV = {
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
     "ask.resolve_first": "AUGHOR_ASK_RESOLVE_FIRST",
     "ask.conversation_context": "AUGHOR_ASK_CONVERSATION_CONTEXT",
+    "ask.brief_context": "AUGHOR_ASK_BRIEF_CONTEXT",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
     "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
     "join.key_reconciliation": "AUGHOR_JOIN_KEY_RECONCILIATION",
@@ -314,6 +315,10 @@ FLAG_META = {
     "ask.conversation_context": {
         "label": "Conversation-aware resolution (follow-ups inherit context)",
         "description": "Make the ground-first resolver (ask.resolve_first) conversation-aware so a follow-up doesn't lose the prior turn's grounding — including across a mode switch. When THIS turn is a follow-up (is_followup) it inherits the previous turn's entity/filter (so 'break that down by platform' keeps the earlier 'womenswear' filter), and the resolver never DEAD-ENDS a follow-up with a terminal 'not present in this data' — an entity implicit from the conversation is left to the already history-aware generator instead of a hard abstention. Only affects follow-ups; a fresh question resolves exactly as before. Requires ask.resolve_first. Off by default = byte-identical.",
+    },
+    "ask.brief_context": {
+        "label": "Ask this briefing — ground the answer in the brief on screen",
+        "description": "When a question is asked from the Briefing, prepend the brief the user is LOOKING AT (its verdict, synthesis and cited findings) to the quick-answer prompt, so 'why is that?' and 'break that down' have a referent instead of arriving cold. Read SERVER-SIDE from the same conn:schema cache entry the Briefing rendered — never posted up by the client, so it cannot drift from what is on screen or be spoofed into the prompt. CONTEXT ONLY: it resolves references and pins the entities/time window; every number in the answer still comes from the query that runs. Bounded (verdict + up to 8 cited findings + a capped synthesis) and empty when no brief is cached — no context beats invented context. Off by default = byte-identical.",
     },
     "closed_loop": {
         "label": "Closed-loop corrections",

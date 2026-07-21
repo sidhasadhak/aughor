@@ -14,6 +14,19 @@
 
 ## 0 · Immediate next action ⏭️
 
+### 🧭 Session handoff — 2026-07-21 (d) · "Ask this briefing" → a scoped, insights-mode side panel (branch `2026-07-21-brief-ask-panel`)
+
+**PR 4 — the last of the briefing arc.** tsc 0 · ruff 0 · 3421 passed (+17) · eslint + ratchet unchanged · **live-verified with a real two-turn conversation**.
+
+- **🔑 The old box was the opposite of what it claimed.** `BriefAskBox` was neither a conversation (each question spawned an INDEPENDENT card with no shared history) nor an insight-mode ask — it called **`POST /investigate` with `deep: true`**, so a two-word follow-up kicked off a full ADA research job and still couldn't see the answer above it. Its context was five hand-assembled lines.
+- **`depth:"quick"` is a total pin, and it already existed.** Honoured at `ask_router.py:180` with no model call, and every pre-router hijack (overview tour · clarify gate · federation · plan-as-program) is `auto`-gated, so `quick` skips them all. ⚠️ **`mode`, `insight_id` and `deep` are checked BEFORE `depth`** — send them null/false or the pin loses.
+- **🔑 GAP FOUND: a quick answer was never schema-scoped.** `req.schema_name` was forwarded only on the deep branch; `_stream_chat` had no schema parameter at all and its `resolve_execution_scope` call omitted `schema_scope`. On a multi-schema connection an unqualified `FROM orders` could resolve against a sibling schema's same-named table — the exact failure the scope resolver exists to prevent. Fixed on the quick path (and on the client, which never sent `schema` either). **Side effect: a user agent's `schema_scope` binding didn't constrain a quick answer either — that's fixed too.**
+- **Grounding is read SERVER-SIDE** (`knowledge/brief_context.py`) from the same `conn:schema` cache entry the Briefing rendered, behind new flag **`ask.brief_context`** (default off). Nothing about the brief is sent from the client, so it can't drift from what's on screen or be spoofed into the prompt. Bounded (verdict + ≤8 cited findings + capped synthesis) and **empty when no brief is cached — no context beats invented context**. `peek_briefing` is read-only: `get_briefing` would SYNTHESIZE on a miss.
+- **The panel** (`BriefAskPanel`) is one `useChat` conversation pinned to `depth:"quick"`, laid out as a fixed-width flex sibling that PUSHES the brief left (ChatPanel's shape) — you read the answer against the brief it's about. Deep analysis is deliberately deferred: `onDeeper` hands off to the full Ask surface. Closed by default; an always-mounted panel would cost every reader 420px.
+- **Live-verified:** "How many titles are there in total?" → 8.8K, then "Break that down by type" (no standalone referent) → 6,131 movies / 2,676 TV shows, `Source: netflix.netflix_titles`. Route receipt: `depth: quick · forced: quick`.
+
+**⏭️ NEXT for this arc:** flags-on soak for `ask.brief_context`, then graduate · deep mode inside the panel (deliberately deferred) · the org `company_name` bleed noted in (a).
+
 ### 🧭 Session handoff — 2026-07-21 (c) · Chart edits persist · "Numbers that moved" expands (branch `2026-07-21-viz-config-persistence`)
 
 **PR 3 of the briefing arc.** tsc 0 · ruff 0 · 3404 passed (+9) · eslint errors unchanged, warnings +2 · raw-button ratchet 73 · **live-verified through a full page reload**.

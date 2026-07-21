@@ -60,7 +60,7 @@ export function useChat() {
     eventLogRef.current = [...eventLogRef.current.slice(-(MAX_LOG - 1)), e];
   }, []);
 
-  async function ask(question: string, connectionId: string, mode: "auto" | "ask" | "investigate" = "auto", opts: { skipCache?: boolean; canvasId?: string; insightId?: string; seedSql?: string | null; seedContext?: string; deep?: boolean; depth?: "quick" | "deep"; skipClarify?: boolean; clarifyReading?: string; clarifySubject?: string; clarifySource?: string; agentId?: string; requestMode?: "investigate" | "explore"; purpose?: string } = {}) {
+  async function ask(question: string, connectionId: string, mode: "auto" | "ask" | "investigate" = "auto", opts: { skipCache?: boolean; canvasId?: string; schema?: string | null; insightId?: string; seedSql?: string | null; seedContext?: string; deep?: boolean; depth?: "quick" | "deep"; skipClarify?: boolean; clarifyReading?: string; clarifySubject?: string; clarifySource?: string; agentId?: string; requestMode?: "investigate" | "explore"; purpose?: string } = {}) {
     const id = Math.random().toString(36).slice(2);
     // The turn's initial mode is corrected by the `route` event for auto turns
     // (deep → investigate, else ask); start auto as "ask" so the loading state is
@@ -112,6 +112,7 @@ export function useChat() {
           // owns its own consumeStream call (with WP-2 drop-recovery), so this path returns here.
           await runAskViaAgui({
             question, connectionId, canvasId: opts.canvasId ?? null,
+            schema: opts.schema ?? null,
             sessionId: sessionIdRef.current, history: chatHistory(),
             depth: opts.depth ?? "auto", agentId: opts.agentId,
             skipClarify: opts.skipClarify, clarifyReading: opts.clarifyReading,
@@ -129,6 +130,10 @@ export function useChat() {
             question,
             connection_id: connectionId,
             canvas_id: opts.canvasId ?? null,
+            // Scope a non-canvas answer to the selected schema. The backend forwards this
+            // to resolve_execution_scope on BOTH branches now; without it a quick answer
+            // could resolve `FROM orders` against a sibling schema's same-named table.
+            schema: opts.schema ?? null,
             history: chatHistory(),
             session_id: sessionIdRef.current,
             depth: opts.depth ?? "auto",
