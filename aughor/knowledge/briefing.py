@@ -253,6 +253,38 @@ def _profile_signals(profile: Any, workspace_id: Optional[str] = None) -> tuple[
     return north_star_tokens(names), currency_symbol(resolve_currency(code or "", workspace_id))
 
 
+def _dataset_subject(profile: Any) -> str:
+    """A 'THIS DATASET:' block from the schema's own BusinessProfile — '' when there is none.
+
+    The brief's subject is the data being briefed, not the organization reading it. Those are
+    the same thing for a single-company deployment and emphatically NOT the same when one
+    workspace holds several unrelated datasets as schemas — which is exactly when the narrator
+    used to hand the org's name to someone else's data.
+
+    `industry` and `summary` are already inferred PER SCHEMA by the profiler and were being
+    loaded and then dropped: only the profile's north-star tokens and currency ever reached the
+    prompt. This just stops throwing the rest away."""
+    if profile is None:
+        return ""
+    get = (lambda k: profile.get(k)) if isinstance(profile, dict) else (lambda k: getattr(profile, k, None))
+    industry = (get("industry") or "").strip()
+    summary = (get("summary") or "").strip()
+    model = (get("business_model") or "").strip()
+    if not (industry or summary):
+        return ""
+    bits = " · ".join(b for b in (industry, model) if b)
+    lines = ["THIS DATASET — what the findings below are ABOUT:"]
+    if bits:
+        lines.append(f"  {bits}")
+    if summary:
+        lines.append(f"  {summary}")
+    lines.append(
+        "  Write about THIS dataset. Do not attribute its activity to the reader's organization "
+        "unless they are plainly the same business."
+    )
+    return "\n".join(lines) + "\n"
+
+
 def group_held_back(held_back: list[dict]) -> list[dict]:
     """Collapse held-back signals that were suppressed for the SAME reason into one entry.
 
@@ -413,9 +445,24 @@ def generate_narrative(
         top[:8], patterns[:3], macro_context, coverage_digest=coverage,
         multi_schema=multi_schema, currency_sym=currency_sym,
     )
-    # Identity context (company/HQ/website/industry) so the narrator frames the brief for THIS
-    # business by name, not a generic org — declared identity only, '' when unset (a no-op for
-    # unconfigured orgs), workspace override-wins.
+    # WHAT THIS DATA IS — the dataset's OWN characterization, from the per-schema
+    # BusinessProfile that was already loaded for this scope. Without it the narrator had only
+    # the org's identity to go on and attributed the data to the org: a Netflix title catalog
+    # opened "LuxExperience has aggressively scaled content production…". The subject of the
+    # brief is the DATASET; the organization is who's reading it. Deterministic — no new
+    # inference, just passing through what the profiler already decided for this schema.
+    try:
+        _subject = _dataset_subject(profile)
+        if _subject:
+            user_prompt = _subject + "\n" + user_prompt
+    except Exception as _e:
+        import logging as _l
+        _l.getLogger(__name__).debug("briefing: dataset subject unavailable: %s", _e)
+
+    # Identity context (company/HQ/website/industry) — declared identity only, '' when unset (a
+    # no-op for unconfigured orgs), workspace override-wins. Framed explicitly as the READER's
+    # organization, because org settings are workspace-global while a brief is schema-scoped:
+    # one workspace can hold several unrelated datasets, and the org does not own all of them.
     try:
         from aughor.orgsettings import org_context
         _org = org_context(workspace_id)

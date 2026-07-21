@@ -14,6 +14,16 @@
 
 ## 0 · Immediate next action ⏭️
 
+### 🧭 Session handoff — 2026-07-21 (e) · The brief's SUBJECT is the dataset, not the reader (branch `2026-07-21-brief-subject-scoping`)
+
+**PR 5 — the follow-on flagged in (a).** ruff 0 · suite green · **live-verified by regenerating both briefs**.
+
+- **🐛 A Netflix title catalog opened "LuxExperience has aggressively scaled content production by over 1,200%…".** Org settings are **workspace-global** (`ORGANIZATION: LuxExperience, HQ Munich — industry: Ecommerce; reports in EUR`) and were stamped on EVERY schema's brief — so the netflix dataset was told it was a Munich e-commerce company reporting in EUR.
+- **🔑 Root cause was an omission, not the org block.** The narrator was given the ORG's identity and **never the DATASET's**, so it had nothing else to attribute the findings to. `BusinessProfile` is already loaded PER SCHEMA and carries `industry` / `business_model` / `summary` — but only its north-star tokens and currency ever reached the prompt; the rest was loaded and dropped. `_dataset_subject()` stops throwing it away, and `org_context()` is relabelled **"ORGANIZATION reading this brief:"** — who's reading, not what the data is.
+- **No new inference.** Everything comes from what the profiler already decided for this scope; an unprofiled schema contributes NOTHING (a fabricated subject would be worse than none).
+- **Live proof, both directions:** netflix now opens *"**The streaming platform** has aggressively scaled its content volume…"*, while luxexperience — which genuinely IS the org's business — still writes *"**our** womenswear category"*. The model distinguishes correctly once it has both identities.
+- **Glossary cleaned:** `data/glossary.yaml` reverted (the +2410/−192 live-run drift). Analysis first — **0 removed, 73 added, 10 overwritten**, and 220/224 entries are `auto_generated` (autoseed regenerates on demand); the only 4 hand-written entries were untouched either way. **⚠️ ROOT CAUSE STILL OPEN:** the glossary is keyed by BARE table name and is global across schemas, so `order_items`/`products`/`brands` mean different things per schema and whichever ran last wins. Same class as the briefing scope bug. Tracked as `task_170ac04a` ("Glossary/docs still global").
+
 ### 🧭 Session handoff — 2026-07-21 (d) · "Ask this briefing" → a scoped, insights-mode side panel (branch `2026-07-21-brief-ask-panel`)
 
 **PR 4 — the last of the briefing arc.** tsc 0 · ruff 0 · 3421 passed (+17) · eslint + ratchet unchanged · **live-verified with a real two-turn conversation**.
