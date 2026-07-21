@@ -148,7 +148,7 @@ def _gather_context(connection_id: str, schema_name: Optional[str]) -> tuple[str
           if schema_name else open_connection_for(connection_id))
     schema = db.get_schema()
     try:
-        schema = apply_glossary(schema)
+        schema = apply_glossary(schema, schema=schema_name)   # scoped: see semantic.glossary.lookup_table
     except Exception as exc:
         logger.debug("apply_glossary failed (non-fatal): %s", exc)
 

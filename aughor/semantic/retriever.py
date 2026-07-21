@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import re
 
+from aughor.tools.table_names import same_table
+
 SCHEMA_COLLECTION = "aughor_schema"
 TABLE_THRESHOLD = 12  # below this, skip retrieval and pass the full schema
 
@@ -128,6 +130,21 @@ def _retrieve(hypothesis: str, full_schema_str: str, top_k_tables: int) -> str:
     return _filter_schema(full_schema_str, set(relevant_tables))
 
 
+def _keep(table: str | None, keep_tables: set[str]) -> bool:
+    """Is this ``TABLE:`` header one of the retrieved tables?
+
+    Tolerant of qualified-vs-bare, because the two sides come from different producers:
+    ``keep_tables`` holds GLOSSARY keys (now schema-qualified whenever the schema was known),
+    while the header is whatever the connector emitted — and DuckDB qualifies while Postgres /
+    SQLite / Snowflake / MySQL / BigQuery do not. An exact-string check silently dropped a
+    retrieved table's block from the prompt whenever the two forms disagreed, which is a far
+    worse failure than over-inclusion: the model is told the table does not exist.
+    ``schema_strict`` still prevents a different schema's same-named table from matching."""
+    if not table:
+        return False
+    return any(same_table(k, table, schema_strict=True) for k in keep_tables)
+
+
 def _filter_schema(schema_str: str, keep_tables: set[str]) -> str:
     """Return only the TABLE: blocks for the specified tables, with a header note."""
     blocks: list[str] = []
@@ -137,7 +154,7 @@ def _filter_schema(schema_str: str, keep_tables: set[str]) -> str:
     for line in schema_str.splitlines():
         m = re.match(r"^TABLE:\s+([\w.]+)", line)
         if m:
-            if current_table and current_table in keep_tables:
+            if _keep(current_table, keep_tables):
                 blocks.append("\n".join(current_lines))
             current_table = m.group(1)
             current_lines = [line]
@@ -145,7 +162,7 @@ def _filter_schema(schema_str: str, keep_tables: set[str]) -> str:
             current_lines.append(line)
 
     # Flush last block
-    if current_table and current_table in keep_tables:
+    if _keep(current_table, keep_tables):
         blocks.append("\n".join(current_lines))
 
     if not blocks:

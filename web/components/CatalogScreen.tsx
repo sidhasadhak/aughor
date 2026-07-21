@@ -706,9 +706,12 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
         onChange={id => setTab(id as TableTab)}
       />
 
-      {/* ── Comments (glossary) tab ── */}
+      {/* ── Comments (glossary) tab ──
+            The schema was being stripped here and thrown away, so a comment on `orders` in one
+            schema overwrote every other schema's. It was already in scope — sibling calls above
+            pass it (alterColumn / getTableColumns) and the breadcrumb renders it. */}
       {tab === "comments" && (
-        <GlossaryPanel table={bare(sel.table.name)} columns={cols.map(c => c.name)} />
+        <GlossaryPanel table={bare(sel.table.name)} columns={cols.map(c => c.name)} schema={sel.schemaName} />
       )}
 
       {/* ── Distribution tab — per-column profile + shape, scoped to this table.

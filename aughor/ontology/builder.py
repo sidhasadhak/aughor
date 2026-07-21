@@ -36,6 +36,7 @@ from aughor.ontology.models import (
     OntologyRelationship,
 )
 from aughor.tools.table_names import bare, leaf, resolve_in
+from aughor.semantic.glossary import lookup_table
 
 # ── Identifier helpers ────────────────────────────────────────────────────────
 
@@ -247,6 +248,7 @@ _NOT_IN_HINT = re.compile(
 def _extract_default_filters(
     table: str,
     glossary: dict,
+    schema_name: str | None = None,
 ) -> tuple[list[str], list[str]]:
     """
     Parse glossary caveats for a table to extract filter hints.
@@ -256,7 +258,10 @@ def _extract_default_filters(
     default_filters: list[str] = []
     exclude_when: list[str] = []
 
-    table_meta = glossary.get("tables", {}).get(table, {})
+    # BARE key in, possibly-qualified key stored — resolve per schema (see
+    # semantic.glossary.lookup_table). The ontology cache is already schema-scoped;
+    # it was being fed from a lookup that could not tell two schemas apart.
+    table_meta = lookup_table(glossary.get("tables", {}), table, schema_name)
     if not table_meta:
         return [], []
 
@@ -511,6 +516,7 @@ def _build_entity_properties(
     grain_column: str,
     column_profiles: "dict[str, ColumnProfile]",
     glossary: dict,
+    schema_name: str | None = None,
 ) -> "dict[str, EntityProperty]":
     """
     Build the EntityProperty dict for an entity from its column profiles.
@@ -523,7 +529,7 @@ def _build_entity_properties(
     """
     props: dict[str, EntityProperty] = {}
     table_glossary_cols = (
-        glossary.get("tables", {}).get(table, {}).get("columns") or {}
+        lookup_table(glossary.get("tables", {}), table, schema_name).get("columns") or {}
     )
 
     for key, cp in column_profiles.items():
@@ -850,7 +856,7 @@ def extract_structural_ontology(
 
         # Glossary description for this table
         description = (
-            glossary.get("tables", {}).get(table, {}).get("description", "")
+            lookup_table(glossary.get("tables", {}), table, schema_name).get("description", "")
             or ""
         )
         description = description.replace("\n", " ").strip()
@@ -861,7 +867,7 @@ def extract_structural_ontology(
         )
 
         # Default filters from glossary
-        default_filters, exclude_when = _extract_default_filters(table, glossary)
+        default_filters, exclude_when = _extract_default_filters(table, glossary, schema_name)
 
         has_lifecycle = lifecycle_col is not None
         entity_type = _infer_entity_type(table, has_lifecycle, bool(tp.grain_verified))
@@ -872,6 +878,7 @@ def extract_structural_ontology(
             grain_column=tp.grain_column,
             column_profiles=column_profiles,
             glossary=glossary,
+            schema_name=schema_name,
         )
 
         # Object sets — named composable filters derived from lifecycle states

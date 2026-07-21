@@ -16,6 +16,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from aughor.tools.table_names import qualify, resolve_in
+
 try:
     import yaml
 except ImportError:
@@ -103,6 +105,37 @@ def load_merged_glossary(path: Path | None = None) -> dict:
     return result
 
 
+def lookup_table(tables_meta: dict, table: str, schema: str | None = None) -> dict:
+    """The glossary entry for a table, tolerant of qualified-vs-bare keys. {} when absent.
+
+    THE SCOPE SEAM. The store is keyed by whatever the ``TABLE:`` header carried when the
+    entry was written, and the connectors disagree — DuckDB qualifies, Postgres/SQLite/
+    Snowflake/MySQL/BigQuery don't. So the file holds BOTH forms (81 bare and 70 qualified
+    keys, 61 colliding leaves: ``orders`` alone has five competing entries). An exact-string
+    ``.get()`` therefore never found a qualified entry from a bare header, and vice versa —
+    every schema's description silently overwrote the last one's.
+
+    Resolution: qualify the lookup with the caller's schema, then match exact-first,
+    schema-tolerant-second via the canonical ``resolve_in`` (``tools/table_names.py``, which
+    exists precisely to stop this class of bug recurring). ``schema_strict=True`` means
+    ``beauty.orders`` can never answer for ``ecommerce.orders`` — while a BARE key still
+    matches any schema, so the pre-existing unqualified entries keep working as fallbacks
+    until a scoped write supersedes them."""
+    if not tables_meta:
+        return {}
+    return resolve_in(tables_meta, qualify(table, schema), schema_strict=True) or {}
+
+
+def canonical_key(table: str, schema: str | None = None) -> str:
+    """The key a glossary WRITE should use: schema-qualified whenever the schema is known.
+
+    Canonical on write, tolerant on read. New entries stop colliding across schemas; old
+    bare entries are left alone rather than migrated, because there is no way to know which
+    schema an unqualified entry was written for — guessing would move one schema's
+    description under another's name, which is the bug, not the fix."""
+    return qualify(table, schema)
+
+
 def save_glossary(data: dict, path: Path | None = None) -> None:
     if yaml is None:
         raise RuntimeError("PyYAML is required: uv add pyyaml")
@@ -113,11 +146,12 @@ def save_glossary(data: dict, path: Path | None = None) -> None:
 
 
 def update_table(table: str, description: str | None = None, grain: str | None = None,
-                 joins: list[str] | None = None, path: Path | None = None) -> None:
-    """Upsert table-level glossary entry."""
+                 joins: list[str] | None = None, path: Path | None = None,
+                 schema: str | None = None) -> None:
+    """Upsert table-level glossary entry, keyed per schema when one is known."""
     data = _load_raw(path)
     tables = data.setdefault("tables", {})
-    entry = tables.setdefault(table, {})
+    entry = tables.setdefault(canonical_key(table, schema), {})
     if description is not None:
         entry["description"] = description
     if grain is not None:
@@ -129,12 +163,12 @@ def update_table(table: str, description: str | None = None, grain: str | None =
 
 def update_column(table: str, column: str, description: str | None = None,
                   values: str | None = None, caveats: str | None = None,
-                  path: Path | None = None) -> None:
-    """Upsert column-level glossary entry."""
+                  path: Path | None = None, schema: str | None = None) -> None:
+    """Upsert column-level glossary entry, keyed per schema when one is known."""
     data = _load_raw(path)
     col_entry = (
         data.setdefault("tables", {})
-            .setdefault(table, {})
+            .setdefault(canonical_key(table, schema), {})
             .setdefault("columns", {})
             .setdefault(column, {})
     )
@@ -149,7 +183,7 @@ def update_column(table: str, column: str, description: str | None = None,
 
 # ── Enrichment ────────────────────────────────────────────────────────────────
 
-def apply_glossary(schema_str: str, path: Path | None = None) -> str:
+def apply_glossary(schema_str: str, path: Path | None = None, schema: str | None = None) -> str:
     """
     Enrich a raw schema string with business glossary annotations.
 
@@ -175,7 +209,7 @@ def apply_glossary(schema_str: str, path: Path | None = None) -> str:
         if table_match:
             current_table = table_match.group(1)
             out.append(line)
-            meta = tables_meta.get(current_table, {})
+            meta = lookup_table(tables_meta, current_table, schema)
             if meta.get("description"):
                 out.append(f"  -- {meta['description']}")
             if meta.get("grain"):
@@ -187,7 +221,7 @@ def apply_glossary(schema_str: str, path: Path | None = None) -> str:
         if col_match and current_table:
             col_name = col_match.group(1)
             col_match.group(3)
-            meta = tables_meta.get(current_table, {})
+            meta = lookup_table(tables_meta, current_table, schema)
             col_meta = (meta.get("columns") or {}).get(col_name, {})
 
             annotation_parts: list[str] = []
@@ -210,7 +244,7 @@ def apply_glossary(schema_str: str, path: Path | None = None) -> str:
 
         # Detect blank line after a table block — emit join hints before it
         if line == "" and current_table:
-            meta = tables_meta.get(current_table, {})
+            meta = lookup_table(tables_meta, current_table, schema)
             joins = meta.get("joins") or []
             if joins:
                 out.append(f"  -- Joins: {'; '.join(joins)}")
@@ -222,7 +256,7 @@ def apply_glossary(schema_str: str, path: Path | None = None) -> str:
 
     # Flush join hints if schema ended without a trailing blank line
     if current_table:
-        meta = tables_meta.get(current_table, {})
+        meta = lookup_table(tables_meta, current_table, schema)
         joins = meta.get("joins") or []
         if joins:
             out.append(f"  -- Joins: {'; '.join(joins)}")
