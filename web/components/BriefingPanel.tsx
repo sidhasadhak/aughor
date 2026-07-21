@@ -74,11 +74,6 @@ import { GroundedNumber, withGroundedNumbers } from "@/components/brief/Grounded
 import { BriefAskBox } from "@/components/brief/BriefAskBox";
 import { NewCardComposer } from "@/components/brief/NewCardComposer";
 import { Button } from "@/components/ui/button";
-import dynamic from "next/dynamic";
-
-// React Flow measures the DOM — load the argument-graph lens client-only (the repo's pattern for
-// heavy client libs, e.g. ECharts), so it never renders during SSR.
-const ArgumentGraph = dynamic(() => import("@/components/brief/ArgumentGraph"), { ssr: false });
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -263,25 +258,56 @@ interface CitationActionContext {
 /** The trust-gate audit trail: signals the brief deliberately withheld. An impossible
  *  number (turnover 3,600×) is SUPPRESSED; an anti-causal correlation (stockouts fall as
  *  lead time rises) is DEMOTED. Showing why we held them back is what earns trust. */
+/** Distinct reasons shown before the strip collapses behind a "Show N more". */
+const VISIBLE_HELD_BACK = 4;
+
+/** Held-back reasons are grouped by (severity, reason) server-side. Group again here so a
+ *  brief cached BEFORE grouping existed (no `count`) still renders as one line per distinct
+ *  reason instead of the same sentence seven times. `sum(count)` is the true signal total. */
+function groupHeldBack(items: HeldBackSignal[]): HeldBackSignal[] {
+  const by = new Map<string, HeldBackSignal>();
+  for (const h of items) {
+    const key = `${h.severity}|${h.reason}`;
+    const seen = by.get(key);
+    if (seen) seen.count = (seen.count ?? 1) + (h.count ?? 1);
+    else by.set(key, { ...h, count: h.count ?? 1 });
+  }
+  return [...by.values()].sort((a, b) => (b.count ?? 1) - (a.count ?? 1));
+}
+
 function HeldBackStrip({ items }: { items: HeldBackSignal[] }) {
+  const [showAll, setShowAll] = useState(false);
   if (!items?.length) return null;
+  const groups = groupHeldBack(items);
+  const total = groups.reduce((n, h) => n + (h.count ?? 1), 0);
+  const shown = showAll ? groups : groups.slice(0, VISIBLE_HELD_BACK);
+  const hidden = groups.length - shown.length;
   return (
     <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--b1)" }}>
       <div className="aug-label" style={{ marginBottom: 6 }}>
-        {items.length} signal{items.length > 1 ? "s" : ""} held back by the trust gate
+        {total} signal{total > 1 ? "s" : ""} held back by the trust gate
+        {groups.length < total && ` · ${groups.length} reason${groups.length > 1 ? "s" : ""}`}
       </div>
-      {items.map((h, i) => {
+      {shown.map(h => {
         const danger = h.severity === "implausible";
+        const n = h.count ?? 1;
         return (
-          <div key={i} style={{ fontSize: 11.5, color: "var(--t3)", lineHeight: 1.6, marginBottom: 3 }}>
+          <div key={`${h.severity}|${h.reason}`} style={{ fontSize: 11.5, color: "var(--t3)", lineHeight: 1.6, marginBottom: 3 }}>
             <span style={{ color: danger ? "var(--red4)" : "var(--amb4)", fontWeight: 600 }}>
               {danger ? "Implausible" : "Confound"}
             </span>
+            {n > 1 && <span style={{ color: "var(--t4)" }}> ×{n}</span>}
             <span style={{ color: "var(--t4)" }}> — </span>
             {h.reason}
           </div>
         );
       })}
+      {hidden > 0 && (
+        <Button variant="ghost" size="xs" onClick={() => setShowAll(true)}
+          style={{ padding: 0, height: "auto", fontSize: 11, color: "var(--t4)", cursor: "pointer" }}>
+          Show {hidden} more reason{hidden > 1 ? "s" : ""}
+        </Button>
+      )}
     </div>
   );
 }
@@ -2160,8 +2186,6 @@ export function BriefingPanel({
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [pinnedRefresh, setPinnedRefresh]   = useState(0);
-  // Argument-graph lens (Slice 3): swap the linear narrative body for the node+edge graph.
-  const [lens, setLens]                     = useState<"linear" | "graph">("linear");
   // Scope chips: narrow the narrative layer (supporting signals + top patterns) to one
   // domain; null = all. The standing cockpit layer is intentionally left unscoped — it's
   // the user's arranged surface, not a per-cycle finding view.
@@ -2171,6 +2195,10 @@ export function BriefingPanel({
   const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
   const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [narrativeError, setNarrativeError] = useState<string | null>(null);
+  // The scope this panel is currently rendering. Mirrors the server's `scope_key` EXACTLY
+  // (`canvas:<id>` | `<conn>:<schema>` | `<conn>`) so a returned brief can be checked
+  // against it — see the scope guard in `generateNarrative`.
+  const narrativeScope = canvasId ? `canvas:${canvasId}` : (schema ? `${connectionId}:${schema}` : connectionId);
   // Scope the narrative auto-fetch by connection+schema so the AI Synthesis card
   // re-fetches when the shared schema selector changes (it previously short-circuited
   // on `narrative !== null`, leaving the synthesis stale while every other card updated).
@@ -2231,13 +2259,27 @@ export function BriefingPanel({
   const generateNarrative = useCallback(async (forceRefresh = false) => {
     if (!canvasId && !connectionId) return;
     const myReq = ++reqSeq.current;   // WP-5 — this call is now the latest
+    const forScope = narrativeScope;
     setNarrativeLoading(true);
     setNarrativeError(null);
+    // Drop the OUTGOING brief up front. It belongs to whatever scope was current when it
+    // was fetched; from here on the only correct thing to paint is this call's result or
+    // an error. Leaving it up is how a previous schema's synthesis ended up rendered under
+    // a new schema's verdict (the two are separate state; only the hero re-derived).
+    setNarrative(null);
     try {
       const result = canvasId
         ? await generateCanvasBriefingNarrative(canvasId, forceRefresh, workspaceId)
         : await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId);
       if (myReq !== reqSeq.current) return;   // superseded → don't paint a stale brief (the flip guard)
+      // Scope guard: the server stamps the scope it generated FOR. A brief that doesn't
+      // claim THIS scope is never painted — that makes a cross-scope leak structurally
+      // impossible rather than merely unlikely. (Briefs cached before `scope_key` existed
+      // carry none; those are refused too and simply regenerate.)
+      if (result.available && result.scope_key && result.scope_key !== forScope) {
+        setNarrativeError("This briefing was generated for a different scope — regenerating.");
+        return;
+      }
       if (result.available) setNarrative(result);
       else setNarrativeError("No domain intelligence available — run an exploration first.");
     } catch (e) {
@@ -2245,7 +2287,7 @@ export function BriefingPanel({
     } finally {
       if (myReq === reqSeq.current) setNarrativeLoading(false);
     }
-  }, [connectionId, canvasId, schema, workspaceId]);
+  }, [connectionId, canvasId, schema, workspaceId, narrativeScope]);
 
   // Shared explorer actions — used by both the control bar and the empty-state CTA.
   // In canvas mode (canvasId set) every action drives the *canvas* explorer, scoped to
@@ -2307,12 +2349,11 @@ export function BriefingPanel({
     // WP-5 — wait for the shared schema selector to settle before the first connection-scoped
     // fetch, so we never issue an unscoped briefing request that then races the scoped one.
     if (!canvasId && !schemaReady) return;
-    const scope = canvasId ?? `${connectionId}:${schema ?? ""}`;
-    if (scope === fetchedScope.current) return;
-    fetchedScope.current = scope;
+    if (narrativeScope === fetchedScope.current) return;
+    fetchedScope.current = narrativeScope;
     generateNarrative(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, canvasId, schema, schemaReady]);
+  }, [connectionId, canvasId, schema, schemaReady, narrativeScope]);
 
   // Poll explorer status — canvas-scoped when a canvasId is set (#7), so the control
   // bar + empty-state reflect the *canvas* explorer's phase, not the connection's.
@@ -2516,22 +2557,6 @@ export function BriefingPanel({
         onFinding={(ident) => setLedgerFocus({ ident, expand: true })}
         controls={
           <>
-            {narrative?.graph && narrative.graph.nodes.length > 1 && (
-              <div style={{ display: "inline-flex", borderRadius: "var(--r2)", border: "1px solid var(--b1)", overflow: "hidden" }}>
-                {(["linear", "graph"] as const).map(m => (
-                  <Button key={m} variant="ghost" size="xs" onClick={() => setLens(m)}
-                    title={m === "graph" ? "See the verdict, its drivers and their evidence as an argument graph" : "The linear brief"}
-                    style={{
-                      padding: "4px 10px", fontSize: 11, height: "auto", borderRadius: 0, cursor: "pointer",
-                      background: lens === m ? "var(--bg-1)" : "transparent",
-                      color: lens === m ? "var(--blue4)" : "var(--t3)",
-                      fontWeight: lens === m ? 600 : 400,
-                    }}>
-                    {m === "linear" ? "Linear" : "Graph"}
-                  </Button>
-                ))}
-              </div>
-            )}
             <GenerateBriefButton
               loading={narrativeLoading}
               hasNarrative={hasNarrative}
@@ -2577,17 +2602,6 @@ export function BriefingPanel({
         onOpenInAsk={onInvestigate}
       />
 
-      {lens === "graph" && narrative?.graph ? (
-        /* ── Argument graph ── the verdict, its drivers, and their typed evidence edges,
-           a lens over the same brief (Slice 3). Linear stays the default. */
-        <ArgumentGraph
-          graph={narrative.graph}
-          connectionId={connectionId}
-          schema={schema}
-          onOpenFinding={(iid) => onInvestigate("Investigate this finding", iid)}
-        />
-      ) : (
-      <>
       {/* ── Scope chips ── focus the narrative layer (signals + patterns) on one domain. */}
       <ScopeChips domains={briefing.domains} total={briefing.totalInsights} active={scopeDomain} onChange={setScope} />
 
@@ -2632,8 +2646,6 @@ export function BriefingPanel({
           )}
         </div>
       )}
-      </>
-      )}
 
       {/* ── Standing layer ── the cockpit + KPIs, marked off from this cycle's narrative by a
             single violet rule (violet = user/pinned, already the system's semantic). The layer
@@ -2656,7 +2668,6 @@ export function BriefingPanel({
         <IndustryKpiStrip connectionId={connectionId} schema={schema} />
       </div>
 
-      {lens === "linear" && (<>
       {/* ── The findings now render as chart/table cards in the cockpit above (PinnedCards),
           replacing the old text "Dashboard" section — one unified, arrangeable card surface. ── */}
 
@@ -2673,7 +2684,6 @@ export function BriefingPanel({
           </div>
         </div>
       )}
-      </>)}
     </>
   )}
 

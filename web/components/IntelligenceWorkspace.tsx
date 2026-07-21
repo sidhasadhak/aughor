@@ -168,7 +168,11 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       headerControls={headerControls}
       renderLayer={id => {
-        if (id === "briefing") return <BriefingPanel connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />;
+        // `key` on the scope: a schema switch REMOUNTS the brief rather than mutating it in
+        // place. Without it the panel keeps every piece of per-scope state it doesn't
+        // explicitly reset — which is how one schema's synthesis stayed on screen under
+        // another schema's verdict. Belt to the server-side scope_key guard's braces.
+        if (id === "briefing") return <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />;
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
         if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;

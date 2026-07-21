@@ -45,10 +45,29 @@ def _tables_from_sql(sql: str) -> set[str]:
     return out
 
 
+class SchemaScopeUnavailable(RuntimeError):
+    """A schema view fell back to the CONNECTION-level state, but the schema's table set
+    could not be resolved — so no insight in hand can be PROVEN to belong to this schema.
+
+    Callers must fail CLOSED (serve nothing for this scope). Serving the unfiltered set
+    would put another schema's findings under this schema's header, which is a trust
+    breach, not a display nit — the class of bug fixed in #181. "Over-inclusion is safe"
+    holds for a superset of the SAME scope; it is false here, where the superset is a
+    different schema's data entirely."""
+
+    def __init__(self, schema: str):
+        super().__init__(
+            f"cannot resolve the table set for schema '{schema}' — refusing to serve "
+            f"connection-level findings under a schema scope"
+        )
+        self.schema = schema
+
+
 def _schema_table_set(conn_id: str, schema: str | None) -> set[str] | None:
     """The bare, lowercased table names in ``schema`` for ``conn_id`` — or None when it
-    can't be determined (the caller then skips filtering: over-inclusion is safe, wrong
-    exclusion is not)."""
+    can't be determined. None means "unknown", NOT "everything": the filter callers turn it
+    into :class:`SchemaScopeUnavailable` and fail closed, because the data they hold at that
+    point may belong to another schema entirely."""
     if not schema:
         return None
     try:
@@ -98,10 +117,17 @@ def _refs_in_schema(refs: set[str], bare: set[str], qual: set[str]) -> bool:
 
 
 def _filter_by_schema(domain_data: dict, conn_id: str, schema: str | None) -> dict:
-    """Filter domain insights to only those referencing tables in the given schema."""
+    """Filter domain insights to only those referencing tables in the given schema.
+
+    FAILS CLOSED — raises :class:`SchemaScopeUnavailable` when the schema's table set can't
+    be resolved. This only ever runs under ``_needs_filter`` (a schema view reading the
+    connection-level state), so the rows in hand may belong to ANY schema; returning them
+    unfiltered is a cross-schema leak."""
+    if not schema:
+        return domain_data
     tables_in_schema = _schema_table_set(conn_id, schema)
     if tables_in_schema is None:
-        return domain_data
+        raise SchemaScopeUnavailable(schema)
     qual = _qualified_set(schema, tables_in_schema)
     filtered = {}
     for domain, data in domain_data.items():
@@ -116,11 +142,15 @@ def _filter_findings_by_schema(findings: dict, conn_id: str, schema: str | None)
     """Scope an exploration-findings payload to one schema's tables so the Domains layer
     follows the shared schema selector. Sections are keyed by table (``lifecycle_maps``)
     or ``"table:column"`` (``null_meanings``, ``distributions``); insights reference
-    tables via their SQL/entities. Returns ``findings`` unchanged when the schema's table
-    set can't be determined (over-inclusion beats wrong exclusion)."""
+    tables via their SQL/entities.
+
+    FAILS CLOSED — raises :class:`SchemaScopeUnavailable` when the schema's table set can't
+    be determined, for the same reason as :func:`_filter_by_schema`."""
+    if not schema:
+        return findings
     tset = _schema_table_set(conn_id, schema)
     if tset is None:
-        return findings
+        raise SchemaScopeUnavailable(schema)
     qual = _qualified_set(schema, tset)
 
     def _key_in_schema(key: str) -> bool:
@@ -321,9 +351,17 @@ def get_exploration_findings(conn_id: str, schema: str | None = None):
         "distributions": distributions,
         "insights": state.get("insights", []),
     }
-    # Scope to the shared schema selector (Domains layer) when one is supplied.
+    # Scope to the shared schema selector (Domains layer) when one is supplied. Fails CLOSED:
+    # an unresolvable schema scope serves an EMPTY payload with a reason, never the
+    # connection-wide one (which would be another schema's data under this schema's name).
     if _needs_filter(conn_id, schema):
-        result = _filter_findings_by_schema(result, conn_id, schema)
+        try:
+            result = _filter_findings_by_schema(result, conn_id, schema)
+        except SchemaScopeUnavailable as e:
+            logger.warning("findings scope unavailable (conn=%s schema=%s): %s", conn_id, schema, e)
+            return {k: ([] if isinstance(v, list) else {}) for k, v in result.items()} | {
+                "scope_error": str(e),
+            }
     return result
 
 
@@ -376,7 +414,11 @@ def get_domain_insights(conn_id: str, schema: str | None = None):
     coverage = state.get("domain_coverage", {})
     by_domain = _domain_insights_for(conn_id, schema)
     if _needs_filter(conn_id, schema):
-        by_domain = _filter_by_schema(by_domain, conn_id, schema)
+        try:
+            by_domain = _filter_by_schema(by_domain, conn_id, schema)
+        except SchemaScopeUnavailable as e:
+            logger.warning("domains scope unavailable (conn=%s schema=%s): %s", conn_id, schema, e)
+            return {}   # fail closed — no domains beats another schema's domains
     result = {}
     for domain, insights in by_domain.items():
         result[domain] = {
@@ -397,7 +439,11 @@ def get_connection_patterns(conn_id: str, refresh: bool = False, schema: str | N
     from aughor.knowledge.patterns import get_patterns
     by_domain = _domain_insights_for(conn_id, schema)
     if _needs_filter(conn_id, schema):
-        by_domain = _filter_by_schema(by_domain, conn_id, schema)
+        try:
+            by_domain = _filter_by_schema(by_domain, conn_id, schema)
+        except SchemaScopeUnavailable as e:
+            logger.warning("patterns scope unavailable (conn=%s schema=%s): %s", conn_id, schema, e)
+            return {"patterns": [], "count": 0, "scope_error": str(e)}
     patterns = get_patterns(conn_id, by_domain, force_refresh=refresh)
     return {"patterns": patterns, "count": len(patterns)}
 
@@ -504,9 +550,18 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
             tolerate(exc, "pre-brief re-validation is best-effort; the brief still builds from "
                      "stored findings", counter="briefing.revalidate")
 
+    # The scope this brief is FOR. Stamped onto the response (below) so the client can
+    # prove a narrative belongs to the scope it is about to paint it under — without it,
+    # a stale brief from another schema is structurally undetectable on the client.
+    scope_key = f"{conn_id}:{schema}" if schema else conn_id
+
     by_domain = _domain_insights_for(conn_id, schema)
     if _needs_filter(conn_id, schema):
-        by_domain = _filter_by_schema(by_domain, conn_id, schema)
+        try:
+            by_domain = _filter_by_schema(by_domain, conn_id, schema)
+        except SchemaScopeUnavailable as e:
+            logger.warning("briefing scope unavailable (conn=%s schema=%s): %s", conn_id, schema, e)
+            by_domain = {}   # fail closed → the unavailable brief below, never another schema's
     if not by_domain:
         return {
             "narrative": "",
@@ -514,6 +569,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
             "citations": [],
             "generated_at": None,
             "available": False,
+            "scope_key": scope_key,
         }
 
     patterns = get_patterns(conn_id, by_domain, force_refresh=False)
@@ -529,14 +585,19 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         domain_data=by_domain,
         patterns=patterns,
         force_refresh=refresh,
-        scope_key=f"{conn_id}:{schema}" if schema else conn_id,
+        scope_key=scope_key,
         macro_context=macro,
         profile=profile,
         metric_moves=_metric_moves_provider(conn_id, profile),
         workspace_id=workspace_id,
         col_types=_connection_col_types(conn_id),
     )
-    return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}
+    return {
+        **result,
+        "macro_context": macro,
+        "available": bool(result.get("narrative")),
+        "scope_key": scope_key,
+    }
 
 
 @router.post("/exploration/canvas/{canvas_id}/briefing")
@@ -579,7 +640,12 @@ def generate_canvas_briefing(canvas_id: str, refresh: bool = False, workspace_id
         workspace_id=workspace_id,
         col_types=_connection_col_types(conn_id),
     )
-    return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}
+    return {
+        **result,
+        "macro_context": macro,
+        "available": bool(result.get("narrative")),
+        "scope_key": f"canvas:{canvas_id}",
+    }
 
 
 @router.post("/exploration/{conn_id}/domains/{domain}/extend", dependencies=[gate(Capability.AUTO_EXPLORATION)])

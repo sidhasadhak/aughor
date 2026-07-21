@@ -4,6 +4,15 @@
 `2026-07-18-briefing-cockpit` (not pushed) — the full co-authored cockpit. See §10.**
 Build is gated slice-by-slice in §10; nothing here ships until a v1 slice is picked.
 
+> ⚠️ **SUPERSEDED IN PART — 2026-07-21.** The **argument-graph lens** (Slice 3, and the
+> `relates_to` card↔finding edges of Slice 4) was **removed from the product**: it did not
+> help readers reach the conclusion, and a brief that argues one thing should have one
+> reading order. Deleted: `web/components/brief/ArgumentGraph.tsx`,
+> `aughor/knowledge/argument_graph.py`, `POST /cards/relations`, the `graph` field on the
+> briefing response, and `tests/unit/test_argument_graph.py`. **The cockpit (Slices 0–2, 4's
+> watch→monitor graduation) is unaffected and still ships** — it keeps `@xyflow/react`.
+> Everything below about the graph is retained as design history, not current behaviour.
+
 All file:line references below were verified against the current tree on 2026-07-18. Where a
 claim depends on machinery that does *not* exist yet, it is called out as a **GAP**.
 
