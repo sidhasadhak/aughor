@@ -14,73 +14,91 @@
 
 ## 0 · Immediate next action ⏭️
 
-### 🧭 Session handoff — 2026-07-21 (f) · The glossary is scoped per schema (branch `2026-07-21-glossary-schema-scoping`) — closes `task_170ac04a`
+### ⏭️ NEXT SESSION — start here
 
-**PR 6 — the root cause behind the glossary drift cleaned up in (e).** ruff 0 · tsc 0 · eslint + ratchet unchanged.
+The briefing arc below is **fully merged**; `main` is `ef887ef`, suite 3444 green, tree clean. Pick up with:
 
-- **🔑 The store was never "bare-keyed" — it was INCONSISTENTLY keyed, and that was the bug.** The key is whatever the connector's `TABLE:` header carried, and the connectors disagree: DuckDB qualifies (`schema_render.py:85`), Postgres / SQLite / Snowflake / MySQL / BigQuery / gsheets / s3 emit bare. The live file held **81 bare + 70 qualified keys with 61 colliding leaves** — `orders` alone had five competing entries (`orders`, `analytics.orders`, `beauty.orders`, `ecommerce.orders`, `main.orders`). The lookup was an exact-string `.get()`, so **the schema dimension was already half-present in the data and completely invisible to the reader**, and every seed wrote under whichever form the header used.
-- **Fixed at the store, not at ten producers:** canonical on WRITE (`canonical_key` qualifies when the schema is known), tolerant on READ (`lookup_table` → the canonical `tools/table_names.resolve_in`, whose own docstring says it exists to stop this class of bug recurring). `schema_strict=True` → a qualified key answers only for its own schema, while a BARE key still answers for any — the migration path for the 81 unqualified entries already on disk. **No connector changes, no data migration** (guessing which schema an unqualified entry belonged to would move one schema's description under another's name — the bug, not the fix).
-- **Schema threaded where it was already in scope and simply dropped:** `apply_schema_enrichment` → `seed_missing_tables` + `apply_glossary` (`tools/schema.py`), `profile/infer.py`, and the three ontology-builder lookups (`builder.py:259/526/853`, which sat four lines from an existing `resolve_in` import). Autoseed's existence check and drift re-seed are scoped too, so it no longer re-seeds a table already covered under the other form.
-- **⚠️ REGRESSION CAUGHT BEFORE SHIPPING — trace the consumers of a re-keyed store.** `retriever._filter_schema` matched `current_table in keep_tables` by **exact string**, where `keep_tables` holds glossary keys and `current_table` is the connector's header. Writing more qualified keys would have made bare-header connectors filter their own tables OUT of the retrieved schema — telling the model the table does not exist, which is far worse than over-inclusion. Now matches via `same_table(schema_strict=True)`.
-- **UI:** `CatalogScreen` was calling `bare(sel.table.name)` and **throwing the schema away** while sibling calls on the same lines passed it. `GlossaryPanel` now takes `schema`, reads via a `lookupGlossaryTable` mirror of the backend rule, and all six writes carry it. `PUT /glossary/{table}[/{column}]?schema=` — a QUERY param, since a schema path segment would be ambiguous with `{column}`; optional and additive, so existing callers are unaffected.
+1. **`ask.brief_context` flags-on soak, then graduate.** Shipped default-off (#191). Turn it on
+   (`PUT /system/flags/ask.brief_context {"value":true}` — no restart needed), ask a few follow-ups from
+   the Briefing, confirm the answers reference the brief, then move it to `AUTO_ELIGIBLE`.
+2. **The four glossary follow-ons #193 documents but does not fix** (each needs its own decision):
+   the Qdrant `aughor_schema` collection is still globally namespaced (point ids/payloads carry no
+   connection) · `explore.py::_learn_from_exploration` writes `update_column` from LLM-emitted table
+   strings with `conn_id` in scope but unused and no schema at all · the dbt merge layer keys
+   bare+lowercased (`dbt.py:105`) so a dbt entry can't override a qualified YAML one ·
+   `compute_fingerprint` hashes only table names, so two structurally identical schemas share a
+   "fully seeded" marker.
+3. **Sub-1 shares still read `0.275985`, not `27.6%`** (#189). 6dp is the tested contract and protects
+   small rates; 3-significant-digits was rejected because `0.0000123` renders in scientific notation.
+   Turning shares into percents is a semantic change (is `0.27` a share or a correlation?).
+4. Older queue, untouched by this arc: P7 frontier-model pin · Platform WP-1..5 · Direction B follow-ons.
 
-**⏭️ DELIBERATELY DEFERRED (each needs its own decision, none blocks this):** the Qdrant `aughor_schema` collection is still globally namespaced (point ids/payloads carry no connection) — scoping it is a collection-design choice, and `_filter_schema` is now tolerant so it degrades safely · `explore.py::_learn_from_exploration` writes `update_column` from LLM-emitted table strings with `conn_id` in scope but unused and no schema at all · the dbt merge layer keys bare+lowercased (`dbt.py:105`), so a dbt entry can't override a qualified YAML one · `compute_fingerprint` hashes only table names, so two structurally identical schemas share a "fully seeded" marker.
+---
 
-### 🧭 Session handoff — 2026-07-21 (e) · The brief's SUBJECT is the dataset, not the reader (branch `2026-07-21-brief-subject-scoping`)
+### ✅ MERGED 2026-07-21 · The briefing arc — six PRs, one screenshot
 
-**PR 5 — the follow-on flagged in (a).** ruff 0 · suite green · **live-verified by regenerating both briefs**.
+One user screenshot of the Netflix briefing reported six defects. All six shipped, in order, each
+squash-merged CI-green: **[#188](https://github.com/sidhasadhak/aughor/pull/188)** `e716a00` →
+**[#189](https://github.com/sidhasadhak/aughor/pull/189)** `867c819` →
+**[#190](https://github.com/sidhasadhak/aughor/pull/190)** `4607bda` →
+**[#191](https://github.com/sidhasadhak/aughor/pull/191)** `a0b8359` →
+**[#192](https://github.com/sidhasadhak/aughor/pull/192)** `55e35c8` →
+**[#193](https://github.com/sidhasadhak/aughor/pull/193)** `ef887ef`. Suite 3369 → **3444** (+75 tests).
 
-- **🐛 A Netflix title catalog opened "LuxExperience has aggressively scaled content production by over 1,200%…".** Org settings are **workspace-global** (`ORGANIZATION: LuxExperience, HQ Munich — industry: Ecommerce; reports in EUR`) and were stamped on EVERY schema's brief — so the netflix dataset was told it was a Munich e-commerce company reporting in EUR.
-- **🔑 Root cause was an omission, not the org block.** The narrator was given the ORG's identity and **never the DATASET's**, so it had nothing else to attribute the findings to. `BusinessProfile` is already loaded PER SCHEMA and carries `industry` / `business_model` / `summary` — but only its north-star tokens and currency ever reached the prompt; the rest was loaded and dropped. `_dataset_subject()` stops throwing it away, and `org_context()` is relabelled **"ORGANIZATION reading this brief:"** — who's reading, not what the data is.
-- **No new inference.** Everything comes from what the profiler already decided for this scope; an unprofiled schema contributes NOTHING (a fabricated subject would be worse than none).
-- **Live proof, both directions:** netflix now opens *"**The streaming platform** has aggressively scaled its content volume…"*, while luxexperience — which genuinely IS the org's business — still writes *"**our** womenswear category"*. The model distinguishes correctly once it has both identities.
-- **Glossary cleaned:** `data/glossary.yaml` reverted (the +2410/−192 live-run drift). Analysis first — **0 removed, 73 added, 10 overwritten**, and 220/224 entries are `auto_generated` (autoseed regenerates on demand); the only 4 hand-written entries were untouched either way. **⚠️ ROOT CAUSE STILL OPEN:** the glossary is keyed by BARE table name and is global across schemas, so `order_items`/`products`/`brands` mean different things per schema and whichever ran last wins. Same class as the briefing scope bug. Tracked as `task_170ac04a` ("Glossary/docs still global").
+**🔑 The pattern worth remembering: five of the six had their real cause one layer BELOW the symptom,
+and in four the fix was to stop discarding something the platform already had.**
 
-### 🧭 Session handoff — 2026-07-21 (d) · "Ask this briefing" → a scoped, insights-mode side panel (branch `2026-07-21-brief-ask-panel`)
+- **#188 · Trust plane.** A NETFLIX-headed brief rendered luxexperience's prose. Reproduced from
+  `data/briefing_cache.json`, which disproved the obvious theory — the server cache was CORRECT and
+  per-`conn:schema`. The leak was client-side retention. The response carried **no scope identity**, so
+  a retained brief was undetectable; it now stamps `scope_key` and the client refuses any narrative that
+  doesn't claim the scope it is rendering under. **Durable: a fail-OPEN filter is a cross-schema leak** —
+  `_filter_by_schema` returned data unfiltered when a schema's table set couldn't be resolved, justified
+  as *"over-inclusion is safe"*. True for a superset of the SAME scope, false when the superset is another
+  schema's data. Now `SchemaScopeUnavailable`, all four call sites fail CLOSED. Held-back reasons grouped
+  (a reason derives from the SQL idiom, so one bad idiom emitted 7 identical lines). Graph lens deleted
+  (−1,241 lines); ⚠️ `@xyflow/react` STAYS — the cockpit canvas uses it.
+- **#189 · Number-format authority.** `…is 43.959061407888164%` was **never a frontend bug**;
+  `web/lib/format.ts` was already canonical and simply bypassed. `str(row)` → prompt → the interpret
+  prompts *require* quoting a value from the result → the model copied all 17 digits → persisted →
+  narrated → rendered verbatim by a UI whose rule is "never invent a number". Fixed at BOTH ends:
+  `aughor/util/format.py` (prevent at prompt input via `rows_for_prompt`, guarantee at every
+  persist/response boundary). Two contexts kept deliberately different — prose 2dp/6dp, data cells 4dp.
+- **#190 · Chart edits persist · movers expand.** NOTHING a user edited on a chart persisted; 16 bare
+  `useState`s and strictly inbound props. The ledger is single-open, so expanding a second row destroyed
+  the first row's edits *without a reload*. The durable slot already existed and was **uncalled**:
+  `PUT /cards/{id}` shipped with the cockpit and had no frontend client. New `viz_configs` store for
+  card-less charts, keyed by insight + the same `scope_key`. `<FindingDetail>` extracted so digest tiles
+  expand in place.
+- **#191 · Ask this briefing.** The old box was neither a conversation nor an insight-mode ask — it ran
+  `POST /investigate` with `deep: true` per question. Now one `useChat` thread pinned to `depth:"quick"`
+  in a side panel that pushes the brief left. **Gap found: a quick answer was NEVER schema-scoped**
+  (`schema_name` forwarded only on the deep branch) — which also meant a user agent's `schema_scope`
+  binding didn't constrain quick answers. Grounding read server-side from the same cache entry the
+  Briefing rendered, behind `ask.brief_context` (default off).
+- **#192 · The brief's subject is the DATASET.** Org settings are workspace-global, so every schema's
+  brief was stamped `ORGANIZATION: LuxExperience, HQ Munich — industry: Ecommerce; reports in EUR`.
+  Root cause an OMISSION: the narrator got the org's identity and never the dataset's, though
+  `BusinessProfile.industry`/`summary` were loaded per schema and dropped. Netflix now opens *"The
+  streaming platform…"*; luxexperience still writes *"our womenswear category"*.
+- **#193 · Glossary scoped per schema** (closes `task_170ac04a`). The store was never "bare-keyed" — it
+  was **inconsistently** keyed (81 bare + 70 qualified, 61 colliding leaves; `orders` had five competing
+  entries) because the connectors disagree on the `TABLE:` header. The schema dimension was already
+  half-present in the data and invisible to an exact-string `.get()`. Canonical on write, tolerant on
+  read via the existing `tools/table_names.resolve_in`. **⚠️ Regression caught before shipping:**
+  `retriever._filter_schema` matched exact strings, so more qualified keys would have made bare-header
+  connectors filter their own tables OUT of the retrieved schema.
 
-**PR 4 — the last of the briefing arc.** tsc 0 · ruff 0 · 3421 passed (+17) · eslint + ratchet unchanged · **live-verified with a real two-turn conversation**.
-
-- **🔑 The old box was the opposite of what it claimed.** `BriefAskBox` was neither a conversation (each question spawned an INDEPENDENT card with no shared history) nor an insight-mode ask — it called **`POST /investigate` with `deep: true`**, so a two-word follow-up kicked off a full ADA research job and still couldn't see the answer above it. Its context was five hand-assembled lines.
-- **`depth:"quick"` is a total pin, and it already existed.** Honoured at `ask_router.py:180` with no model call, and every pre-router hijack (overview tour · clarify gate · federation · plan-as-program) is `auto`-gated, so `quick` skips them all. ⚠️ **`mode`, `insight_id` and `deep` are checked BEFORE `depth`** — send them null/false or the pin loses.
-- **🔑 GAP FOUND: a quick answer was never schema-scoped.** `req.schema_name` was forwarded only on the deep branch; `_stream_chat` had no schema parameter at all and its `resolve_execution_scope` call omitted `schema_scope`. On a multi-schema connection an unqualified `FROM orders` could resolve against a sibling schema's same-named table — the exact failure the scope resolver exists to prevent. Fixed on the quick path (and on the client, which never sent `schema` either). **Side effect: a user agent's `schema_scope` binding didn't constrain a quick answer either — that's fixed too.**
-- **Grounding is read SERVER-SIDE** (`knowledge/brief_context.py`) from the same `conn:schema` cache entry the Briefing rendered, behind new flag **`ask.brief_context`** (default off). Nothing about the brief is sent from the client, so it can't drift from what's on screen or be spoofed into the prompt. Bounded (verdict + ≤8 cited findings + capped synthesis) and **empty when no brief is cached — no context beats invented context**. `peek_briefing` is read-only: `get_briefing` would SYNTHESIZE on a miss.
-- **The panel** (`BriefAskPanel`) is one `useChat` conversation pinned to `depth:"quick"`, laid out as a fixed-width flex sibling that PUSHES the brief left (ChatPanel's shape) — you read the answer against the brief it's about. Deep analysis is deliberately deferred: `onDeeper` hands off to the full Ask surface. Closed by default; an always-mounted panel would cost every reader 420px.
-- **Live-verified:** "How many titles are there in total?" → 8.8K, then "Break that down by type" (no standalone referent) → 6,131 movies / 2,676 TV shows, `Source: netflix.netflix_titles`. Route receipt: `depth: quick · forced: quick`.
-
-**⏭️ NEXT for this arc:** flags-on soak for `ask.brief_context`, then graduate · deep mode inside the panel (deliberately deferred) · the org `company_name` bleed noted in (a).
-
-### 🧭 Session handoff — 2026-07-21 (c) · Chart edits persist · "Numbers that moved" expands (branch `2026-07-21-viz-config-persistence`)
-
-**PR 3 of the briefing arc.** tsc 0 · ruff 0 · 3404 passed (+9) · eslint errors unchanged, warnings +2 · raw-button ratchet 73 · **live-verified through a full page reload**.
-
-- **🔑 Durable finding — NOTHING a user edited on a chart persisted. Not one control.** All 16 affordances in `ResultChartCard` (type · view chart⇄table⇄pivot · x/y/agg · the PR #187 colour binding · legend · number format · axis titles · labels · tooltip · transform · reference lines) were bare `useState`, and the component's props were strictly INBOUND — there was no `onConfigChange` at all. Worse than "lost on reload": the ledger is single-open, so **expanding a second row destroyed the first row's edits in the same session**.
-- **The durable slot already existed and was uncalled.** `DashboardCard.render` is persisted opaque JSON and `PUT /cards/{card_id}` has shipped since the cockpit — but `web/lib/api.ts` had **no `updateDashboardCard`**, so the endpoint was dead code. Now called (debounced) from `PinnedCardBody`. Also fixed a live read bug there: `render.showDataLabels` was being SAVED by the Query-Builder pin and silently **dropped on read**.
-- **New: `viz_configs`** (table + `GET/PUT /viz-configs`) for charts that have NO card row — ledger rows, digest-tile details, KPI trends — keyed by the insight and by the **same `scope_key` the briefing stamps**, so one schema's edits never surface under another's. Empty config DELETES the row: "back to default" must leave no trace, or the user is pinned to a snapshot of today's default forever.
-- **Contract:** `VizConfig` omits every field at its default, so an untouched chart emits `{}` and persists **nothing** — that is what makes it safe to wire everywhere. `ResultChartCard` seeds its controls ONCE from a lazy `useState` (not a ref: it's read during render), so a debounced save echoing back can't yank a control mid-edit.
-- **`<FindingDetail>` extracted** from the ledger row and reused by the digest tiles, which now **expand in place** (⤢ affordance that `StatTile` already had but the digest never passed) into the full untruncated statement + the grounded chart + Evidence/Investigate. The big scalar there now takes the PROSE precision policy — it's a headline, not a grid cell, and read `45.4865` directly under a statement saying `45.49%`.
-- **⚠️ GOTCHA (cost me twice):** `read_console_messages` replays the **pre-restart buffer**. A stale `ReferenceError` looked like a live bug both times; `tsc` + the file on disk + the *served chunk* are the authority. Also: don't `git stash` with the dev server running — it wedges Turbopack (`rm -rf web/.next`, restart, then **navigate**, don't reload).
-
-### 🧭 Session handoff — 2026-07-21 (b) · One number-format authority — `aughor/util/format.py` (branch `2026-07-21-number-format-standard`)
-
-**PR 2 of the briefing arc.** Fixes `…is 43.959061407888164%` in the verdict lede and `45.4865%` / `24.188549041748047%` in the digest tiles. tsc 0 · ruff 0 · unit suite green · **live-verified** (43.96% · 45.49% · 24.19%, grouping and short decimals untouched).
-
-- **🔑 Durable finding — this was NEVER a frontend formatting bug.** `web/lib/format.ts` was already canonical and well-adopted (38 importers, every `toLocaleString` inside it). The digits arrived from the backend *already inside a sentence*: `explorer/agent.py` serialized rows with `"\n".join(str(r) …)` → raw float64 repr into the prompt → the interpret prompts **require** the model to quote a value that appears in the result → it copied all 17 digits → persisted → narrated → rendered verbatim by a UI whose rule is "never invent a number". Formatting at the render boundary alone cannot fix that class of bug.
-- **The policy, one place — `aughor/util/format.py`:** `|v| >= 1 → 2dp` · `|v| < 1 → 6dp` · whole results drop the point · only runs of **4+ fractional digits** are touched (so `3.14`, `$1.50`, `1,234` are untouched). Mirrored in `normalizeNumberPrecision` (`web/lib/format.ts`). **Two contexts, deliberately different:** prose uses the policy; DATA CELLS keep up to 4dp (`formatMetricValue`) because dropping digits from a grid is information loss, not noise.
-- **Applied at both ends.** PREVENT: `rows_for_prompt` replaces the 3 `str(r)` sites, and `round_cell` is finally wired into `format_result_for_llm` (it was **dead code** — `cap_cell` sanitizes but never rounded). GUARANTEE: hygiene at the 4 explorer emit points (before verification/embedding/persist, so every consumer sees one canonical form — well inside `_number_grounded`'s 1% tolerance), at the narrator output, and `_normalize_insight_numbers` on the domains read path, which fixes the whole **back catalogue** of already-stored findings for every surface at once instead of patching each render.
-- **Consolidation:** `round_long_decimals` / `unify_percent_fractions` / `round_cell` moved out of `tools/executor.py` into the new authority; the 4 importers point at the real home (no re-export indirection). `keyFigure.ts` routed every branch through the policy — it had `trimNum` on the *range* branch but raw passthrough on the far more common single-percent and integer branches.
-- **Known limitation (not a regression):** a sub-1 *share* still reads as `0.275985` rather than `27.6%`. 6dp is the tested contract and protects small rates; 3-significant-digits was rejected because Python/JS render `0.0000123` in scientific notation, which is worse in prose. Turning shares into percents is a semantic change (is `0.27` a share or a correlation?) — out of scope.
-
-### 🧭 Session handoff — 2026-07-21 · Briefing trust plane — scope guard · held-back grouping · Graph lens removed (branch `2026-07-21-briefing-trust-fixes`)
-
-**PR 1 of a 4-PR briefing arc** (the other three: a global number-format standard · expandable "Numbers that moved" + persisted chart/table edits · "Ask this briefing" as a scoped side panel). tsc 0 · ruff 0 · unit suite green · **live-verified on the real app** (schema switch luxexperience → netflix).
-
-- **🐛 The bug, reproduced not guessed:** a NETFLIX-headed brief rendered luxexperience's synthesis prose and its 15 trust-gate reasons. `data/briefing_cache.json` proved the server cache was CORRECT and per-`conn:schema` — a correct netflix entry existed while the fashion prose sat under its own `workspace:luxexperience` key. The leak was **client-side retention**, not the cache.
-- **Root cause + the guard that makes it structural:** the briefing response carried **no scope identity**, so a retained narrative was undetectable. It now stamps **`scope_key`** (`<conn>:<schema>` | `<conn>` | `canvas:<id>`) and the client **refuses to paint any brief whose `scope_key` ≠ the scope it is rendering under**. Plus: `generateNarrative` drops the outgoing brief up front (it only ever replaced state on SUCCESS), and `<BriefingPanel>` is now `key`ed on scope so a schema switch remounts.
-- **🔑 Durable finding — a fail-OPEN filter is a cross-schema leak.** `_filter_by_schema` / `_filter_findings_by_schema` returned the data **unfiltered** when the schema's table set couldn't be resolved, justified as *"over-inclusion is safe, wrong exclusion is not"*. That reasoning holds for a superset of the SAME scope and is false here — the superset is a different schema's data. Both now raise `SchemaScopeUnavailable` and **all four call sites fail CLOSED** with a logged reason (`scope_error` where the shape allows). Same class as #181.
-- **Held-back spam:** a trust-gate reason derives from the SQL *idiom*, so N findings sharing one bad idiom emitted N byte-identical strings (7× `signup_fy`, 6× `return_rate`). `group_held_back` collapses by `(severity, reason)` carrying `count` + `domains`; the strip renders "**15 signals · 4 reasons**" with `×7` / `×6` and caps at 4 with a Show-more. `sum(count)` is preserved — grouped, never silently truncated. The frontend groups defensively too, so briefs cached before grouping existed also render correctly.
-- **Graph lens deleted entirely** (`ArgumentGraph.tsx` · `knowledge/argument_graph.py` · `POST /cards/relations` · the `graph` response field · types · `test_argument_graph.py` · the design-handoff sections). **⚠️ `@xyflow/react` STAYS** — `PinnedCardsCanvas.tsx` uses it for the cockpit. Net −1,241 lines.
-
-**⏭️ NEXT:** PR 2 (number-format standard — live example: a verdict lede reading `…is 43.959061407888164%`; root cause is backend `str(row)` → prompt → verbatim copy, NOT frontend formatting — `web/lib/format.ts` is already canonical and simply bypassed) · PR 3 · PR 4. **Noticed, not fixed:** the netflix brief opens *"LuxExperience has aggressively scaled content production…"* — the org profile's `company_name` is connection-level and bleeds into a schema-scoped brief. Same scope family, separate fix.
+**⚠️ OPS lessons earned (all now in memory):** `read_console_messages` **replays the pre-restart buffer**
+— a stale `ReferenceError` caused two false diagnoses; `tsc` + the file on disk + the *served chunk* are
+the authority · never `git stash` with the web dev server running (wedges Turbopack; `rm -rf web/.next`,
+restart, then **navigate**) · CI's `API client · codegen drift` job fails if you add an endpoint without
+`cd web && npm run gen:api` · **stacked-merge recipe:** `git rebase --onto <new-parent> <OLD-parent-sha>
+<branch>` per child (replays only its own commits, so the squash-duplicate conflict never arises), verify
+`git diff origin/<branch> HEAD` is EMPTY before `--force-with-lease` · **RETARGET the child before
+DELETING the merged base** — deleting it auto-CLOSES the child, and a closed PR with a missing base can
+be neither reopened nor retargeted (recover by re-pushing the SHA) · **a retargeted PR gets NO CI run for
+its new head** — verify run SHA == head SHA before merging; a green tick is not proof it ran on this code.
 
 ### 🧭 Session handoff — 2026-07-18→19 · Briefing cockpit — the self-explaining briefing + UX polish — PR [#178](https://github.com/sidhasadhak/aughor/pull/178) OPEN (35 commits)
 
@@ -377,9 +395,11 @@ reviewer-loop; lakehouse connectors queued in parallel.
 3. **Narrative beat generation in the thinking trace** — first-person beats ("I found a
    critical issue!") between the nested query steps. Deliberately deferred until after P7
    (it's LLM prose quality; the structure is already shipped).
-4. **Glossary + document stores per-connection/schema scoping** — the last global stores
-   (same-named tables across connections share one glossary entry). Deep migration touching
-   the NL2SQL read paths; queued as its own task.
+4. ~~**Glossary** + document stores per-connection/schema scoping~~ — **glossary DONE 2026-07-21
+   (#193, `task_170ac04a` closed)**: canonical-on-write / tolerant-on-read via
+   `tools/table_names.resolve_in`, no connector changes and no data migration. **Documents remain
+   global** — same treatment still to do. Four glossary follow-ons stay open (Qdrant namespacing,
+   `_learn_from_exploration`, dbt key form, `compute_fingerprint`) — see §0.
 5. **Live verification pass** on the repaired canvas: criterion-complete tie note (all three
    \$3.00/txn franchises), daily temporal grain, humanized chart labels — all shipped, each
    needs one fresh Deep run to confirm visually.
@@ -640,6 +660,15 @@ An **autonomous data-analysis platform** that replaces the dashboard-and-analyst
 ---
 
 ## 2 · What we've built ✅
+
+### The briefing arc — six PRs off one screenshot (2026-07-21, #188–#193, `e716a00`…`ef887ef`)
+Full per-PR detail + the ops lessons in §0. Suite 3369 → **3444** (+75 tests).
+- **Trust plane (#188)** — the briefing response stamps `scope_key` and the client refuses a narrative that doesn't claim the scope it renders under; `_filter_by_schema` fails **CLOSED** (`SchemaScopeUnavailable`) instead of serving another schema's findings; trust-gate reasons grouped with counts; the React-Flow **argument-graph lens removed** (−1,241 lines, `@xyflow/react` retained for the cockpit).
+- **Number-format authority (#189)** — `aughor/util/format.py` is the one precision policy (prose `|v|≥1`→2dp, `|v|<1`→6dp; data cells keep 4dp), applied at BOTH ends: `rows_for_prompt` rounds on the way INTO the prompt, `round_long_decimals` at every persist/response boundary. Mirrored by `normalizeNumberPrecision` in `web/lib/format.ts`.
+- **Viz-config persistence (#190)** — `VizConfig` + a controlled `ResultChartCard`; pinned cards persist to `DashboardCard.render` via the previously-uncalled `PUT /cards/{id}`; card-less charts (ledger rows, digest tiles, KPI trends) to a new `viz_configs` store keyed by insight + `scope_key`. `<FindingDetail>` shared so "Numbers that moved" tiles expand in place.
+- **Ask this briefing (#191)** — a scoped side panel: one conversation pinned to `depth:"quick"`, grounded server-side in the cached brief (`ask.brief_context`, default off). Fixed a real gap — a quick `/ask` answer was never schema-scoped, which also broke user-agent `schema_scope` bindings.
+- **Brief subject (#192)** — the dataset's own `BusinessProfile` characterization now reaches the narrator; the org block is relabelled "ORGANIZATION reading this brief". A Netflix catalog no longer opens "LuxExperience has…".
+- **Glossary schema-scoping (#193)** — canonical-on-write / tolerant-on-read; closes `task_170ac04a`. `PUT /glossary/{table}[/{column}]?schema=`; the Catalog UI stops discarding the schema.
 
 ### Trust-plane closure — WP-1 of the platform review (2026-07-12, branch `2026-07-12-wp1-trust-caveats`)
 Source: [`docs/PLATFORM_REVIEW_AND_IMPLEMENTATION_PROGRAM_2026-07-12.md`](docs/PLATFORM_REVIEW_AND_IMPLEMENTATION_PROGRAM_2026-07-12.md) (WP-1, the review's #1 finding: guard findings computed then dropped).

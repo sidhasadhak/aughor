@@ -261,6 +261,9 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   it and `/query/semantic-context` surfaces it, flag-gated (`semantic.contract_live`) and byte-identical off —
   the "20-year ontology bet" type unification (REC-U10).
 - **Business glossary** — manual + dbt-manifest + LLM auto-seed (override precedence), injected into context.
+  **Scoped per schema**: canonical-on-write (`schema.table` whenever the schema is known) and tolerant-on-read
+  (exact first, then schema-tolerant via `tools/table_names.resolve_in`), so two schemas that share a table name
+  no longer overwrite each other's descriptions — a bare key still answers for any schema as the migration path.
 - **Industry-aware intelligence** — `BusinessProfile` + per-industry metric knowledge base.
 
 ## 5. Data understanding & schema intelligence
@@ -297,6 +300,18 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
 - **Briefing live dashboard**, **CEO-grade triage** (impact-ranked lead, trust gate, currency),
   **interactive briefings** (interrogate the brief in place), conclusion-first design.
 - **Briefing trust** — gated on governed metrics with live re-validation; multi-tier dedup; metric-explainer charts.
+- **Scope-guarded briefs** — the response stamps the `scope_key` it was generated for and the client refuses to paint a
+  narrative that doesn't claim the scope it is rendering under; the schema filter fails **CLOSED** rather than serving
+  another schema's findings. Trust-gate reasons are grouped with occurrence counts (`15 signals · 4 reasons`) instead of
+  repeating one sentence per finding.
+- **"Numbers that moved" expands in place** — a digest tile opens its finding's untruncated statement plus the grounded
+  chart/table and the same Evidence / Investigate actions the ledger row offers (one shared `<FindingDetail>`).
+- **Ask this briefing** — a side panel holding ONE conversation pinned to insights mode (`depth:"quick"`, honoured by the
+  router with no model call), scoped to the brief's connection AND schema, and grounded server-side in the same cached
+  brief the page is rendering (flag `ask.brief_context`). Deep analysis escalates to the full Ask surface.
+- **The brief is about the DATASET** — the per-schema `BusinessProfile` characterization leads the narrator prompt and the
+  org block is explicitly the reader ("ORGANIZATION reading this brief"), so a workspace holding several unrelated
+  datasets never attributes one schema's activity to the company that owns another.
 
 ## 8. Query Builder
 
@@ -307,6 +322,10 @@ Builder" from Insights/Deep. Schema-qualified correctness; user-typed SQL is **g
 
 ## 9. Charts & the answer surface
 
+- **Display edits persist** — chart type, chart/table/pivot view, x/y/aggregation, colour binding, legend, number
+  format, axis titles, labels, tooltip, transform and reference lines survive collapse, remount and reload. A pinned card
+  stores its `VizConfig` in `DashboardCard.render`; a card-less chart (findings-ledger row, digest tile, KPI trend) in the
+  `viz_configs` store, keyed by the insight and the brief's `scope_key`. An untouched chart persists nothing.
 - **Identifiers are never measures** — one camelCase-aware `isIdLike()` shared by the column classifier,
   chart inference, LLM chart-config validation, captions, and the PDF export renderer, so `franchiseID`
   can't be plotted (or captioned) as a quantity on any surface; export grouped bars also drop >25×
@@ -507,6 +526,10 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 
 ## 13. Quality bar & engineering discipline
 
+- **One number-format authority** (`aughor/util/format.py`, mirrored by `normalizeNumberPrecision` in
+  `web/lib/format.ts`) — prose rounds `|v| ≥ 1` to 2dp and `|v| < 1` to 6dp, touching only runs of 4+ fractional digits;
+  data-grid cells keep up to 4dp on purpose. Applied at BOTH ends: rows are rounded on the way INTO an LLM prompt (so a
+  17-digit float never exists for the model to quote) and prose is rounded at every persist/response boundary.
 - **Eval suite** (`evals/`) — the 53-pair golden NL→SQL set with an execution-scored runner
   (`run_golden.py`: hermetic reference-replay / raw / full-pipeline modes), a delta-measurement
   **ratchet** (`ratchet.py`: accuracy + tokens vs a pinned baseline), and the interaction-arc evals
