@@ -120,7 +120,12 @@ class TestOrgContext:
             industry="DTC Beauty", currency_code="GBP",
         ))
         ctx = S.org_context()
-        assert ctx.startswith("ORGANIZATION:")
+        # "reading this brief", not a bare "ORGANIZATION:". These settings are workspace-global
+        # while a brief is schema-scoped, so the block must describe who is READING rather than
+        # what the data is — a bare label let the narrator hand the org's name to an unrelated
+        # dataset ("LuxExperience has aggressively scaled content production…" over a Netflix
+        # title catalog). See tests/unit/test_brief_subject.py.
+        assert ctx.startswith("ORGANIZATION reading this brief:")
         assert "Acme" in ctx and "London, UK" in ctx and "https://acme.com" in ctx
         assert "DTC Beauty" in ctx and "GBP" in ctx
 

@@ -80,7 +80,13 @@ def resolve_industry(profile_industry: str = "", workspace_id: Optional[str] = N
 def org_context(workspace_id: Optional[str] = None) -> str:
     """A short 'ORGANIZATION:' block for prompt injection, built only from identity
     the user has EXPLICITLY declared. Returns '' when nothing is set, so callers can
-    prepend it unconditionally without polluting prompts for unconfigured orgs."""
+    prepend it unconditionally without polluting prompts for unconfigured orgs.
+
+    These settings are WORKSPACE-GLOBAL, so this describes the organization *using* Aughor —
+    never the data being analysed. One workspace can hold several unrelated datasets as
+    schemas, and stating this as the subject made a schema-scoped brief open "LuxExperience
+    has aggressively scaled content production…" over a Netflix title catalog. Callers that
+    brief a specific dataset must also say what that dataset IS."""
     s = effective_settings(workspace_id)
     head = ", ".join(b for b in (s.company_name, f"HQ {s.hq_location}" if s.hq_location else "", s.website) if b)
     tail = []
@@ -91,4 +97,5 @@ def org_context(workspace_id: Optional[str] = None) -> str:
     if s.fiscal_year_start_month and s.fiscal_year_start_month != 1:
         tail.append(f"fiscal year starts month {s.fiscal_year_start_month}")
     line = head + ((" — " if head else "") + "; ".join(tail) if tail else "")
-    return f"ORGANIZATION: {line}.\n" if line else ""
+    # "reading this brief", not a claim of ownership over the data.
+    return f"ORGANIZATION reading this brief: {line}.\n" if line else ""
