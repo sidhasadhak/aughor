@@ -35,11 +35,15 @@ import re
 import shutil
 from pathlib import Path
 
+from aughor.db.paths import state_dir
 from aughor.kernel.errors import tolerate
 
 logger = logging.getLogger(__name__)
 
-_DATA_DIR = Path("data")
+# MUST resolve the same dir as the stores it purges. This module used to hard-code the
+# directory itself, so it unlinked from the LIVE one even when a test had redirected the
+# target store — a redirect the deleter doesn't share is not isolation.
+_DATA_DIR = state_dir()
 
 
 def _safe(s: str) -> str:

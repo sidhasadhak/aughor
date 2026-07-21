@@ -9,6 +9,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from aughor.db.paths import state_dir
+
 from aughor.db.connection import open_connection_for
 from aughor.util.format import round_long_decimals
 from aughor.explorer.episodes import episodes_dir  # WP-4: honour AUGHOR_EPISODES_DIR
@@ -174,8 +176,7 @@ def _store_key(conn_id: str, schema: str | None) -> str:
     fall back to the connection-level state (the single-run case, then schema-FILTERED by the
     callers). Lets the same endpoints serve per-schema runs and the legacy connection run."""
     if schema:
-        from pathlib import Path
-        if (Path("data") / f"exploration_{conn_id}__{schema}.json").exists():
+        if (state_dir() / f"exploration_{conn_id}__{schema}.json").exists():
             return f"{conn_id}__{schema}"
     return conn_id
 
@@ -759,7 +760,7 @@ def _purge_exploration_state(conn_id: str) -> list[str]:
         _explorer_tasks.pop(key, None)
 
     deleted: list[str] = []
-    data = Path("data")
+    data = state_dir()
     for fname in (f"exploration_{conn_id}.json", f"episodes_{conn_id}.jsonl"):
         p = data / fname
         if p.exists():

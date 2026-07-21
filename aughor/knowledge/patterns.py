@@ -18,10 +18,11 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
-from pathlib import Path
 from typing import Any
 
-_CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "patterns_cache.json"
+from aughor.db.paths import state_dir
+
+_CACHE_PATH = state_dir() / "patterns_cache.json"
 _CACHE_TTL_HOURS = 6
 
 

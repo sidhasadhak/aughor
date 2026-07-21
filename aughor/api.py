@@ -15,6 +15,8 @@ except ImportError:
     pass
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security
+
+from aughor.db.paths import state_dir
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 
@@ -361,7 +363,7 @@ async def _boot_canvas_explorers() -> None:
 
     canvas_states = [
         p.stem.replace("exploration_canvas_", "")
-        for p in Path("data").glob("exploration_canvas_*.json")
+        for p in state_dir().glob("exploration_canvas_*.json")
         if p.exists()
     ]
     for canvas_id in canvas_states:

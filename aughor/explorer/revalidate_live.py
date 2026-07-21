@@ -16,6 +16,8 @@ import hashlib
 import logging
 from typing import Optional
 
+from aughor.db.paths import state_dir
+
 logger = logging.getLogger(__name__)
 
 # In-process memo so a refresh doesn't re-run every finding's SQL again.
@@ -121,8 +123,7 @@ def revalidate_for_briefing(conn_id: str, schema: Optional[str], limit: int = _R
     if schema:
         store_key = f"{conn_id}__{schema}"
         # specific schema: per-schema file if it exists, else the connection store
-        from pathlib import Path
-        if (Path("data") / f"exploration_{store_key}.json").exists():
+        if (state_dir() / f"exploration_{store_key}.json").exists():
             runs.append((store_key, schema))
         else:
             runs.append((conn_id, None))

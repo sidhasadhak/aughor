@@ -69,7 +69,16 @@ for _env, _file in (
 # had no env override: episode collectors (data/episodes_*.jsonl), agent procedural memory
 # (data/agent_runs.json, data/learned_actions.json), and the Action Hub (data/action_*.json).
 # Point each dir at the throwaway temp dir so the suite never writes/deletes the live files.
-for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR"):
+#
+# AUGHOR_STATE_DIR (2026-07-21) closes the family WP-4 missed — the per-connection GENERATED
+# state: exploration_*.json, business_profile_*.json, briefing_cache.json, patterns_cache.json,
+# explore_watermark.json, AND aughor/db/purge.py, which resolved its own Path("data") and so
+# UNLINKED from the live dir even when the store it was purging had been redirected. A suite
+# run destroyed a real exploration_workspace.json (89 findings; data/*.json is gitignored, so
+# it was unrecoverable). One env for the whole family → a new store in it is isolated by
+# construction. Authored files (glossary/kb/rules) keep their own vars and stay repo-readable.
+for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
+                 "AUGHOR_STATE_DIR"):
     os.environ.setdefault(_dir_env, _test_stores_dir)
 
 # R11 — the per-column config store is a YAML file tree (data/ontology_column_config/)
