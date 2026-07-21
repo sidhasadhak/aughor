@@ -15,7 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.dashboard.models import CardProvenance, DashboardCard
 from aughor.dashboard.store import (
-    delete_card, get_card, get_layout, list_cards, set_layout, upsert_card,
+    delete_card, get_card, get_layout, get_viz_configs, list_cards, set_layout,
+    set_viz_config, upsert_card,
 )
 from aughor.kernel.errors import tolerate
 
@@ -66,6 +67,33 @@ def get_layout_route(request: Request, connection_id: str) -> Dict[str, Any]:
 def put_layout_route(request: Request, req: LayoutRequest) -> dict:
     """Persist the caller's cockpit layout (position + size per card) for a connection."""
     set_layout(req.connection_id, _layout_user_id(request), req.layout or {})
+    return {"ok": True}
+
+
+# ── Per-chart display config for card-less surfaces (ledger rows, digest tiles, KPIs) ──
+#
+# A pinned card stores its display in `DashboardCard.render`. Charts that are NOT cards had
+# nowhere to put it, so every edit — chart type, axes, colour binding, legend, transform,
+# table/pivot view — was lost the moment the row collapsed. Keyed by the insight the chart is
+# about, and by the SAME scope_key the briefing stamps, so edits never cross schemas.
+
+
+class VizConfigRequest(BaseModel):
+    scope_key: str = ""
+    target_id: str
+    config: Dict[str, Any] = Field(default_factory=dict)   # opaque, frontend-owned (like `render`)
+
+
+@router.get("/viz-configs")
+def get_viz_configs_route(request: Request, scope_key: str = "") -> Dict[str, Any]:
+    """Every saved chart config in a scope, as `{target_id: config}` — one fetch per brief."""
+    return get_viz_configs(scope_key, _layout_user_id(request))
+
+
+@router.put("/viz-configs")
+def put_viz_config_route(request: Request, req: VizConfigRequest) -> dict:
+    """Persist one chart's display config. An empty `config` resets it (deletes the row)."""
+    set_viz_config(req.scope_key, req.target_id, _layout_user_id(request), req.config or {})
     return {"ok": True}
 
 

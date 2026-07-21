@@ -67,6 +67,8 @@ import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
 import { PinnedCards } from "@/components/brief/PinnedCards";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import type { VizConfig } from "@/components/charts/vizConfig";
+import { useVizConfigs } from "@/lib/useVizConfigs";
 import { toast } from "@/components/ui/toast";
 import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
@@ -1471,11 +1473,15 @@ interface DigestTile {
   sublabel?:  string;   // a short descriptor (for the cockpit's suggested-pin chips)
   domain:     string;
   accent:     string;   // domain colour (honest — not a fabricated favorability judgement)
+  /** The finding itself, so a tile can open the same detail its ledger row does — the chart,
+   *  the untruncated statement, Evidence/Investigate — without a round-trip to find it. */
+  insight:    ExplorationInsight;
 }
 
 function VerdictHero({
   narrative, headline, domainCount, totalInsights, synthesizedAt,
   onInvestigate, controls, actions, scope, digest, onFinding,
+  connectionId, onEvidence, vizConfigFor, onVizConfigChange,
 }: {
   narrative:     BriefingNarrativeResponse | null;
   headline:      SynthesisSignal | null;
@@ -1492,7 +1498,16 @@ function VerdictHero({
    *  deep-links to its finding. Empty/absent → the row is omitted. */
   digest?:       DigestTile[];
   onFinding?:    (ident: string) => void;
+  /** Everything a tile needs to expand in place into its finding's detail. */
+  connectionId?: string;
+  onEvidence?:   (ins: ExplorationInsight, domain: string) => void;
+  vizConfigFor?:      (insightId: string) => VizConfig | null;
+  onVizConfigChange?: (insightId: string, c: VizConfig) => void;
 }) {
+  // Master-detail on the digest: a tile opens its finding in place (chart + full statement)
+  // rather than only deep-linking down to the ledger. One open at a time, like the ledger.
+  const [openIdent, setOpenIdent] = useState<string | null>(null);
+  const openTile = digest?.find(d => d.ident === openIdent) ?? null;
   // Both are grounded prose quoted verbatim — normalise float noise, never the wording.
   const theme   = normalizeNumberPrecision(narrative?.headline_theme?.trim());
   const finding = normalizeNumberPrecision(headline?.insight.finding?.trim());
@@ -1580,6 +1595,10 @@ function VerdictHero({
                   labelLines={2}
                   label={d.label}
                   value={<span>{d.value}{d.secondary && <span style={{ color: "var(--t4)", fontSize: 15 }}>{d.secondary}</span>}</span>}
+                  expandable={!!connectionId}
+                  open={openIdent === d.ident}
+                  onClick={connectionId ? () => setOpenIdent(id => (id === d.ident ? null : d.ident)) : undefined}
+                  title={connectionId ? (openIdent === d.ident ? "Collapse" : "Click to open the finding — chart, full statement, evidence") : d.label}
                   footer={
                     <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.domain}</span>
@@ -1590,6 +1609,40 @@ function VerdictHero({
                 />
               ))}
             </div>
+
+            {/* Master-detail: the clicked tile opens its finding IN PLACE — the untruncated
+                statement (the tile clamps to 2 lines) plus the grounded chart/table and the
+                same Evidence / Investigate actions the ledger row offers. Rendered below the
+                grid, not inside it, so it spans the full width regardless of column count. */}
+            {openTile && connectionId && (
+              <div className="aug-anim-up" style={{
+                marginTop: 12, padding: "12px 14px", borderRadius: "var(--r3)", background: "var(--bg-2)",
+                borderTop: "1px solid var(--b1)", borderRight: "1px solid var(--b1)",
+                borderBottom: "1px solid var(--b1)", borderLeft: `3px solid ${openTile.accent}`,
+              }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--t1)" }}>
+                    {normalizeNumberPrecision(openTile.insight.finding)}
+                  </div>
+                  <Button variant="ghost" size="xs" onClick={() => setOpenIdent(null)}
+                    title="Close" aria-label="Close"
+                    style={{ marginLeft: "auto", color: "var(--t3)", fontSize: 15, lineHeight: 1, height: "auto", padding: 2, cursor: "pointer" }}>
+                    ×
+                  </Button>
+                </div>
+                <FindingDetail
+                  key={openTile.ident}
+                  insight={openTile.insight}
+                  domain={openTile.domain}
+                  connectionId={connectionId}
+                  chartHeight={LEDGER_CHART_H}
+                  onInvestigate={onInvestigate}
+                  onEvidence={onEvidence ?? (() => {})}
+                  vizConfig={vizConfigFor?.(openTile.insight.id) ?? null}
+                  onVizConfigChange={onVizConfigChange ? c => onVizConfigChange(openTile.insight.id, c) : undefined}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1623,32 +1676,38 @@ function renderFigures(text: string): ReactNode[] {
   return out;
 }
 
-function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, onEvidence, rowRef }: {
-  signal:        SynthesisSignal;
+/**
+ * The expanded body of a finding — its grounded result as a chart (or a big scalar, or an
+ * honest "no chartable result"), plus Evidence / Investigate.
+ *
+ * Extracted from the ledger row so a digest tile can open the SAME detail: the tile and the
+ * row are two entry points to one finding, and they were never going to stay in step as two
+ * copies. Display edits persist through `vizConfig`/`onVizConfigChange`, keyed by the insight.
+ */
+function FindingDetail({
+  insight, domain, connectionId, chartHeight, onInvestigate, onEvidence,
+  vizConfig, onVizConfigChange,
+}: {
+  insight:       ExplorationInsight;
+  domain:        string;
   connectionId:  string;
-  expanded:      boolean;
-  onToggle:      () => void;
+  chartHeight:   number;
   onInvestigate: (q: string, insightId?: string) => void;
   onEvidence:    (ins: ExplorationInsight, domain: string) => void;
-  rowRef:        (el: HTMLDivElement | null) => void;
+  vizConfig?:      VizConfig | null;
+  onVizConfigChange?: (c: VizConfig) => void;
 }) {
-  const { insight, domain } = signal;
-  const fig = extractKeyFigure(insight.finding);
-  const hot = insight.novelty >= 5;      // Notable/High → amber novelty dot; else quiet --b3
-  const [hover, setHover] = useState(false);
-
-  // The finding's own grounded result — fetched LAZILY on first expand (server-cached, same
-  // query the explorer ran), then kept. Collapsed rows never fetch. A single scalar shows as
-  // the big figure; anything richer renders through the chart card; error/empty → text only.
+  // The finding's own grounded result — fetched LAZILY on first mount of the detail
+  // (server-cached, same query the explorer ran). A single scalar shows as the big figure;
+  // anything richer renders through the chart card; error/empty → text only.
   const [run, setRun]     = useState<{ columns: string[]; rows: unknown[][] } | null>(null);
   const [phase, setPhase] = useState<"idle" | "loading" | "chart" | "text">("idle");
-  // Lazy chart fetch on first expand. `phase` is deliberately NOT a dependency: including it
-  // makes the effect re-run the instant it flips to "loading", and that re-run's cleanup sets
-  // alive=false on the fetch just kicked off — so it never reaches "chart" and the row sticks on
-  // the shimmer. Guard on `run` so a collapse→re-expand doesn't refetch; StrictMode's remount
-  // simply starts a fresh (server-cached) call.
+  // `phase` is deliberately NOT a dependency: including it makes the effect re-run the instant
+  // it flips to "loading", and that re-run's cleanup sets alive=false on the fetch just kicked
+  // off — so it never reaches "chart" and the body sticks on the shimmer. Guard on `run` so a
+  // re-render doesn't refetch; StrictMode's remount simply starts a fresh (server-cached) call.
   useEffect(() => {
-    if (!expanded || run) return;
+    if (run) return;
     const sql = (insight.sql || "").trim();
     if (!sql || !connectionId) { setPhase("text"); return; }
     setPhase("loading");
@@ -1662,10 +1721,61 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
       })
       .catch(() => { if (alive) setPhase("text"); });
     return () => { alive = false; };
-  }, [expanded, run, connectionId, insight.sql]);
+  }, [run, connectionId, insight.sql]);
 
   const scalar = run && run.rows.length === 1 && run.columns.length === 1 && !isNaN(Number(run.rows[0][0]))
     ? Number(run.rows[0][0]) : null;
+
+  return (
+    <div style={{ background: "var(--bg-1)", border: "1px solid var(--b0)", borderRadius: "var(--r2)", padding: 12 }}>
+      {phase === "loading" && <Shimmer h={chartHeight} r="var(--r2)" />}
+      {phase === "text" && (
+        <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "8px 2px" }}>
+          No chartable result for this finding — the statement above is the finding.
+        </div>
+      )}
+      {phase === "chart" && run && (scalar != null ? (
+        <div className="aug-fs-display" style={{ color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1, padding: "18px 2px" }}>
+          {/* Rendered as a HEADLINE, not a grid cell, so it takes the prose precision policy —
+              otherwise it reads "45.4865" directly beneath a statement saying "45.49%".
+              `formatMetricValue` still owns the K/M/B abbreviation. */}
+          {normalizeNumberPrecision(formatMetricValue(scalar))}
+        </div>
+      ) : (
+        <div style={{ minHeight: chartHeight }}>
+          <ResultChartCard columns={run.columns} rows={run.rows} fillHeight={chartHeight}
+            config={vizConfig} onConfigChange={onVizConfigChange} />
+        </div>
+      ))}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle || "The finding's grounded query"}</span>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
+          <Button variant="ghost" size="xs" onClick={() => onEvidence(insight, domain)}
+            title="See the query + provenance behind this finding"
+            style={{ fontSize: 11, color: "var(--vio4)", padding: "2px 6px" }}>Evidence</Button>
+          <Button variant="ghost" size="xs" onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
+            style={{ fontSize: 11, fontWeight: 600, color: "var(--blue4)", padding: "2px 6px" }}>Investigate →</Button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, onEvidence, rowRef, vizConfig, onVizConfigChange }: {
+  signal:        SynthesisSignal;
+  connectionId:  string;
+  expanded:      boolean;
+  onToggle:      () => void;
+  onInvestigate: (q: string, insightId?: string) => void;
+  onEvidence:    (ins: ExplorationInsight, domain: string) => void;
+  rowRef:        (el: HTMLDivElement | null) => void;
+  vizConfig?:      VizConfig | null;
+  onVizConfigChange?: (c: VizConfig) => void;
+}) {
+  const { insight, domain } = signal;
+  const fig = extractKeyFigure(insight.finding);
+  const hot = insight.novelty >= 5;      // Notable/High → amber novelty dot; else quiet --b3
+  const [hover, setHover] = useState(false);
 
   return (
     <div ref={rowRef} data-finding={signalIdentity(insight)}
@@ -1703,40 +1813,16 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
 
       {expanded && (
         <div style={{ padding: "0 18px 16px" }}>
-          <div style={{ background: "var(--bg-1)", border: "1px solid var(--b0)", borderRadius: "var(--r2)", padding: 12 }}>
-            {phase === "loading" && <Shimmer h={LEDGER_CHART_H} r="var(--r2)" />}
-            {phase === "text" && (
-              <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "8px 2px" }}>
-                No chartable result for this finding — the statement above is the finding.
-              </div>
-            )}
-            {phase === "chart" && run && (scalar != null ? (
-              <div className="aug-fs-display" style={{ color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1, padding: "18px 2px" }}>
-                {formatMetricValue(scalar)}
-              </div>
-            ) : (
-              <div style={{ minHeight: LEDGER_CHART_H }}>
-                <ResultChartCard columns={run.columns} rows={run.rows} fillHeight={LEDGER_CHART_H} />
-              </div>
-            ))}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
-              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle || "The finding's grounded query"}</span>
-              <span style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
-                <Button variant="ghost" size="xs" onClick={() => onEvidence(insight, domain)}
-                  title="See the query + provenance behind this finding"
-                  style={{ fontSize: 11, color: "var(--vio4)", padding: "2px 6px" }}>Evidence</Button>
-                <Button variant="ghost" size="xs" onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-                  style={{ fontSize: 11, fontWeight: 600, color: "var(--blue4)", padding: "2px 6px" }}>Investigate →</Button>
-              </span>
-            </div>
-          </div>
+          <FindingDetail insight={insight} domain={domain} connectionId={connectionId}
+            chartHeight={LEDGER_CHART_H} onInvestigate={onInvestigate} onEvidence={onEvidence}
+            vizConfig={vizConfig} onVizConfigChange={onVizConfigChange} />
         </div>
       )}
     </div>
   );
 }
 
-function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, focus, onFocusHandled, scrollRef }: {
+function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, focus, onFocusHandled, scrollRef, vizConfigFor, onVizConfigChange }: {
   signals:        SynthesisSignal[];
   connectionId:   string;
   onInvestigate:  (q: string, insightId?: string) => void;
@@ -1746,6 +1832,10 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, focu
   onFocusHandled?: () => void;
   /** The Briefing's own scroll container — so a deep-link scrolls the panel, not the app shell. */
   scrollRef?:     { current: HTMLDivElement | null };
+  /** Saved chart display per insight — so an edit survives collapsing the row (or opening
+   *  another, since the ledger is single-open and used to destroy the first row's edits). */
+  vizConfigFor?:      (insightId: string) => VizConfig | null;
+  onVizConfigChange?: (insightId: string, c: VizConfig) => void;
 }) {
   const [shown, setShown]           = useState(LEDGER_DEFAULT);
   const [expandedId, setExpandedId] = useState<string | null>(null);   // one row open at a time
@@ -1806,7 +1896,9 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, focu
               expanded={expandedId === ident}
               onToggle={() => setExpandedId(id => (id === ident ? null : ident))}
               onInvestigate={onInvestigate} onEvidence={onEvidence}
-              rowRef={el => { if (el) rowRefs.current.set(ident, el); else rowRefs.current.delete(ident); }} />
+              rowRef={el => { if (el) rowRefs.current.set(ident, el); else rowRefs.current.delete(ident); }}
+              vizConfig={vizConfigFor?.(sig.insight.id) ?? null}
+              onVizConfigChange={onVizConfigChange ? c => onVizConfigChange(sig.insight.id, c) : undefined} />
           );
         })}
         {/* footer — Show next N · count · jump to domain (replaces the removed sticky nav rail) */}
@@ -2445,11 +2537,17 @@ export function BriefingPanel({
         ident: signalIdentity(s.insight), insightId: s.insight.id,
         value: fig.value, secondary: fig.secondary, sublabel: fig.sublabel,
         label: s.insight.finding, domain: s.domain, accent: domainColor(s.domain),
+        insight: s.insight,
       });
       if (out.length >= 6) break;
     }
     return out;
   }, [briefing]);
+
+  // Saved chart display per finding, for every card-less chart in the brief (ledger rows and
+  // digest-tile details). Scoped exactly like the narrative, so one schema's edits never show
+  // up under another's. Pinned cards persist their own display in `card.render` instead.
+  const { configFor: vizConfigFor, save: saveVizConfigFor } = useVizConfigs(narrativeScope);
 
   if (loading)  return <BriefingLoading />;
 
@@ -2559,6 +2657,10 @@ export function BriefingPanel({
         onInvestigate={onInvestigate}
         digest={movers}
         onFinding={(ident) => setLedgerFocus({ ident, expand: true })}
+        connectionId={connectionId}
+        onEvidence={openEvidence}
+        vizConfigFor={vizConfigFor}
+        onVizConfigChange={saveVizConfigFor}
         controls={
           <>
             <GenerateBriefButton
@@ -2613,7 +2715,8 @@ export function BriefingPanel({
           impact-ordered and scoped by the chips; keyed by scope so it resets on a scope change. */}
       <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId}
         onInvestigate={onInvestigate} onEvidence={openEvidence}
-        focus={ledgerFocus} onFocusHandled={() => setLedgerFocus(null)} scrollRef={scrollRef} />
+        focus={ledgerFocus} onFocusHandled={() => setLedgerFocus(null)} scrollRef={scrollRef}
+        vizConfigFor={vizConfigFor} onVizConfigChange={saveVizConfigFor} />
 
       {/* ── Full synthesis ── the multi-paragraph narrative + interactive citations.
           The hero above already carries the conclusion, so this card hides its header. */}
@@ -2669,7 +2772,7 @@ export function BriefingPanel({
 
         {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live; click a
               card to expand its trend. Renders a define-CTA (not nothing) when none are set. */}
-        <IndustryKpiStrip connectionId={connectionId} schema={schema} />
+        <IndustryKpiStrip connectionId={connectionId} schema={schema} scopeKey={narrativeScope} />
       </div>
 
       {/* ── The findings now render as chart/table cards in the cockpit above (PinnedCards),

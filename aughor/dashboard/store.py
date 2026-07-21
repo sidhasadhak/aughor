@@ -66,6 +66,22 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             PRIMARY KEY (connection_id, user_id)
         )
     """)
+    # Per-chart display config for surfaces that have NO card row of their own — a findings-ledger
+    # row, a digest tile, a KPI trend. A pinned card already persists its display in
+    # `dashboard_cards.render`; these are charts the user edits in place, keyed by the thing they
+    # are ABOUT (the insight) rather than by a card. Account-keyed like `card_layouts`, and scoped
+    # by the same `scope_key` the briefing stamps ('<conn>:<schema>' | '<conn>' | 'canvas:<id>')
+    # so one schema's edits never surface under another's.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS viz_configs (
+            scope_key   TEXT NOT NULL DEFAULT '',
+            target_id   TEXT NOT NULL,
+            user_id     TEXT NOT NULL DEFAULT 'default',
+            config_json TEXT NOT NULL DEFAULT '{}',
+            updated_at  TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (scope_key, target_id, user_id)
+        )
+    """)
     c.commit()
 
 
@@ -172,6 +188,42 @@ def set_layout(connection_id: str, user_id: str, layout: dict) -> None:
              layout_json = excluded.layout_json, updated_at = excluded.updated_at""",
         (connection_id, user_id, json.dumps(layout or {}), _now()),
     )
+    c.commit()
+
+
+def get_viz_configs(scope_key: str, user_id: str) -> dict:
+    """Every saved chart config in a scope, as ``{target_id: config}``.
+
+    Returned whole rather than per-chart: a brief renders many charts at once, and one fetch
+    on mount beats N round-trips as rows expand."""
+    c = _conn()
+    _ensure_schema(c)
+    rows = c.execute(
+        "SELECT target_id, config_json FROM viz_configs WHERE scope_key = ? AND user_id = ?",
+        (scope_key, user_id),
+    ).fetchall()
+    return {r["target_id"]: _loads(r["config_json"] or "{}", {}) for r in rows}
+
+
+def set_viz_config(scope_key: str, target_id: str, user_id: str, config: dict) -> None:
+    """Persist one chart's display config. An EMPTY config deletes the row — "back to default"
+    must leave no trace, so a later change to the default is picked up rather than shadowed by
+    a stored copy of the old one."""
+    c = _conn()
+    _ensure_schema(c)
+    if not config:
+        c.execute(
+            "DELETE FROM viz_configs WHERE scope_key = ? AND target_id = ? AND user_id = ?",
+            (scope_key, target_id, user_id),
+        )
+    else:
+        c.execute(
+            """INSERT INTO viz_configs (scope_key, target_id, user_id, config_json, updated_at)
+               VALUES (?,?,?,?,?)
+               ON CONFLICT(scope_key, target_id, user_id) DO UPDATE SET
+                 config_json = excluded.config_json, updated_at = excluded.updated_at""",
+            (scope_key, target_id, user_id, json.dumps(config), _now()),
+        )
     c.commit()
 
 
