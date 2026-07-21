@@ -111,3 +111,45 @@ def test_retrieval_is_measurable(counter, monkeypatch):
     the whole point of the exercise is that a capability nobody can measure gets left unwired."""
     src = TestEveryGenerationPathConsultsTheKb.SRC
     assert counter in src
+
+
+class TestKbPathResolution:
+    """The KB ships WITH the repo, so it must work on a fresh clone with no configuration.
+
+    It didn't: the default was "", making `build_kb_index()` a silent no-op unless an operator
+    knew to set AUGHOR_KB_PATH — and this install had drifted onto a path in a DIFFERENT repo
+    that no longer existed. Retrieval kept working only because the Qdrant collection outlived
+    its source directory, and 5 of the 63 KB files had therefore never been indexed at all.
+    A store whose source is unreachable fails silently: it keeps answering, just never improves.
+    """
+
+    def test_default_points_at_the_repo_kb_and_it_exists(self):
+        import os
+
+        from aughor.semantic import kb_retriever
+        assert os.path.isdir(kb_retriever.KB_PATH), (
+            f"KB_PATH {kb_retriever.KB_PATH!r} is not a directory — build_kb_index() would "
+            f"silently index nothing"
+        )
+        assert kb_retriever.KB_PATH.rstrip("/").endswith("data/kb")
+
+    def test_the_repo_kb_actually_loads_entries(self):
+        """Guards the path AND the parse: a directory that exists but yields zero entries is the
+        same silent no-op."""
+        from aughor.semantic.kb_loader import load_kb_entries
+        from aughor.semantic.kb_retriever import KB_PATH
+        entries = load_kb_entries(KB_PATH)
+        assert len(entries) > 200, f"only {len(entries)} KB entries loadable from {KB_PATH}"
+
+    def test_an_explicit_override_still_wins(self, monkeypatch, tmp_path):
+        """Operators must keep the escape hatch — the default is a fallback, not a hard-code."""
+        import importlib
+
+        monkeypatch.setenv("AUGHOR_KB_PATH", str(tmp_path))
+        from aughor.semantic import kb_retriever
+        reloaded = importlib.reload(kb_retriever)
+        try:
+            assert reloaded.KB_PATH == str(tmp_path)
+        finally:
+            monkeypatch.delenv("AUGHOR_KB_PATH", raising=False)
+            importlib.reload(kb_retriever)   # restore module state for the rest of the session
