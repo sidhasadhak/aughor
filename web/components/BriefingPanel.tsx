@@ -49,7 +49,6 @@ import {
   type OrgInsight,
   type BriefingCitation,
   type BriefingNarrativeResponse,
-  type HeldBackSignal,
   type ExplorerStatus,
   type ActionTrigger,
   getInsightReceipt,
@@ -260,63 +259,6 @@ interface CitationActionContext {
   onInvestigate:  (q: string, insightId?: string) => void;
 }
 
-/** The trust-gate audit trail: signals the brief deliberately withheld. An impossible
- *  number (turnover 3,600×) is SUPPRESSED; an anti-causal correlation (stockouts fall as
- *  lead time rises) is DEMOTED. Showing why we held them back is what earns trust. */
-/** Distinct reasons shown before the strip collapses behind a "Show N more". */
-const VISIBLE_HELD_BACK = 4;
-
-/** Held-back reasons are grouped by (severity, reason) server-side. Group again here so a
- *  brief cached BEFORE grouping existed (no `count`) still renders as one line per distinct
- *  reason instead of the same sentence seven times. `sum(count)` is the true signal total. */
-function groupHeldBack(items: HeldBackSignal[]): HeldBackSignal[] {
-  const by = new Map<string, HeldBackSignal>();
-  for (const h of items) {
-    const key = `${h.severity}|${h.reason}`;
-    const seen = by.get(key);
-    if (seen) seen.count = (seen.count ?? 1) + (h.count ?? 1);
-    else by.set(key, { ...h, count: h.count ?? 1 });
-  }
-  return [...by.values()].sort((a, b) => (b.count ?? 1) - (a.count ?? 1));
-}
-
-function HeldBackStrip({ items }: { items: HeldBackSignal[] }) {
-  const [showAll, setShowAll] = useState(false);
-  if (!items?.length) return null;
-  const groups = groupHeldBack(items);
-  const total = groups.reduce((n, h) => n + (h.count ?? 1), 0);
-  const shown = showAll ? groups : groups.slice(0, VISIBLE_HELD_BACK);
-  const hidden = groups.length - shown.length;
-  return (
-    <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--b1)" }}>
-      <div className="aug-label" style={{ marginBottom: 6 }}>
-        {total} signal{total > 1 ? "s" : ""} held back by the trust gate
-        {groups.length < total && ` · ${groups.length} reason${groups.length > 1 ? "s" : ""}`}
-      </div>
-      {shown.map(h => {
-        const danger = h.severity === "implausible";
-        const n = h.count ?? 1;
-        return (
-          <div key={`${h.severity}|${h.reason}`} style={{ fontSize: 11.5, color: "var(--t3)", lineHeight: 1.6, marginBottom: 3 }}>
-            <span style={{ color: danger ? "var(--red4)" : "var(--amb4)", fontWeight: 600 }}>
-              {danger ? "Implausible" : "Confound"}
-            </span>
-            {n > 1 && <span style={{ color: "var(--t4)" }}> ×{n}</span>}
-            <span style={{ color: "var(--t4)" }}> — </span>
-            {h.reason}
-          </div>
-        );
-      })}
-      {hidden > 0 && (
-        <Button variant="ghost" size="xs" onClick={() => setShowAll(true)}
-          style={{ padding: 0, height: "auto", fontSize: 11, color: "var(--t4)", cursor: "pointer" }}>
-          Show {hidden} more reason{hidden > 1 ? "s" : ""}
-        </Button>
-      )}
-    </div>
-  );
-}
-
 function NarrativeCard({
   narrative,
   ctx,
@@ -364,8 +306,10 @@ function NarrativeCard({
       {/* Narrative prose with inline citations. When collapsible, only the lede shows —
           clamped with a bottom fade to the card surface — until "Read full synthesis". */}
       <div style={{ position: "relative" }}>
+        {/* No measure cap: a 72ch column left most of a wide panel empty and wrapped the
+            synthesis into a narrow ribbon. The prose fills the card it was given. */}
         <div className="aug-fs-ui" style={{
-          color: "var(--t1)", lineHeight: 1.7, fontWeight: 400, maxWidth: "72ch",
+          color: "var(--t1)", lineHeight: 1.7, fontWeight: 400,
           ...(clamped ? { maxHeight: 150, overflow: "hidden" as const } : {}),
         }}>
           <NarrativeText
@@ -392,9 +336,14 @@ function NarrativeCard({
       {/* Citation legend removed — the inline [n] chips in the prose are the pointers;
           the repeated list below was redundant. */}
 
-      {/* Trust-gate audit trail — the signals we suppressed/demoted, and why. Hidden while
-          the synthesis is collapsed so the lede stays a clean close. */}
-      {(!collapsible || expanded) && <HeldBackStrip items={narrative.held_back ?? []} />}
+      {/* The trust-gate audit trail used to render here, and it read as an error log at the
+          foot of the brief: red "Implausible ×7 — SUM() over the text column 'signup_fy'".
+          Those are DECISIONS ALREADY MADE — signals the gate correctly withheld — so a reader
+          gets nothing actionable, only the impression the brief is broken. Worse, the entries
+          were stale: nothing had produced them since the emission gate landed, and every brief
+          re-derived the same rejects from findings sitting in the store (now retired at source
+          by explorer/revalidate.py). `held_back` still ships on the response for the Trust
+          Receipt, which is where a provenance trail belongs. */}
 
       {active && (
         <CitationActionsPopover
@@ -1480,7 +1429,7 @@ interface DigestTile {
 
 function VerdictHero({
   narrative, headline, domainCount, totalInsights, synthesizedAt,
-  onInvestigate, controls, actions, scope, digest, onFinding,
+  onInvestigate, controls, actions, scope, digest,
   connectionId, onEvidence, vizConfigFor, onVizConfigChange,
 }: {
   narrative:     BriefingNarrativeResponse | null;
@@ -1495,9 +1444,8 @@ function VerdictHero({
   controls?:     ReactNode;   // Generate / Reload buttons (top-right)
   actions?:      ReactNode;   // FindingActions menu for the headline finding
   /** "Numbers that moved" digest — figures extracted from this cycle's findings; each tile
-   *  deep-links to its finding. Empty/absent → the row is omitted. */
+   *  opens its finding in place. Empty/absent → the row is omitted. */
   digest?:       DigestTile[];
-  onFinding?:    (ident: string) => void;
   /** Everything a tile needs to expand in place into its finding's detail. */
   connectionId?: string;
   onEvidence?:   (ins: ExplorationInsight, domain: string) => void;
@@ -1600,10 +1548,11 @@ function VerdictHero({
                   onClick={connectionId ? () => setOpenIdent(id => (id === d.ident ? null : d.ident)) : undefined}
                   title={connectionId ? (openIdent === d.ident ? "Collapse" : "Click to open the finding — chart, full statement, evidence") : d.label}
                   footer={
+                    /* No "finding →" deep-link any more: the tile's own row is now excluded from
+                       the ledger below (it was printing twice), so the link had nothing left to
+                       jump to — and the tile already opens the same detail in place on click. */
                     <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.domain}</span>
-                      <a onClick={e => { e.stopPropagation(); onFinding?.(d.ident); }}
-                        style={{ marginLeft: "auto", cursor: "pointer", color: "var(--blue4)", whiteSpace: "nowrap" }}>finding →</a>
                     </div>
                   }
                 />
@@ -1822,15 +1771,12 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
   );
 }
 
-function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, focus, onFocusHandled, scrollRef, vizConfigFor, onVizConfigChange }: {
+function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, scrollRef, vizConfigFor, onVizConfigChange }: {
   signals:        SynthesisSignal[];
   connectionId:   string;
   onInvestigate:  (q: string, insightId?: string) => void;
   onEvidence:     (ins: ExplorationInsight, domain: string) => void;
-  /** A deep-link request (from a digest tile / jump menu): expand + scroll to this row. */
-  focus?:         { ident: string; expand: boolean } | null;
-  onFocusHandled?: () => void;
-  /** The Briefing's own scroll container — so a deep-link scrolls the panel, not the app shell. */
+  /** The ledger's own scroll container — so the jump menu scrolls the panel, not the app shell. */
   scrollRef?:     { current: HTMLDivElement | null };
   /** Saved chart display per insight — so an edit survives collapsing the row (or opening
    *  another, since the ledger is single-open and used to destroy the first row's edits). */
@@ -1843,8 +1789,6 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, focu
   const [pending, setPending]       = useState<{ ident: string; expand: boolean } | null>(null);
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  useEffect(() => { if (focus) setPending(focus); }, [focus]);
-
   const scrollToRow = useCallback((el: HTMLElement) => {
     const reduce = typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const c = scrollRef?.current;
@@ -1854,18 +1798,17 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, focu
     c.scrollTo({ top, behavior: reduce ? "auto" : "smooth" });
   }, [scrollRef]);
 
-  // Resolve a focus request: grow the list to include the row (if past the visible count),
+  // Resolve a jump request: grow the list to include the row (if past the visible count),
   // expand it (unless it's a plain jump), then scroll it into view.
   useEffect(() => {
     if (!pending) return;
     const idx = signals.findIndex(s => signalIdentity(s.insight) === pending.ident);
-    if (idx < 0) { setPending(null); onFocusHandled?.(); return; }
+    if (idx < 0) { setPending(null); return; }
     if (idx >= shown) { setShown(Math.min(signals.length, Math.ceil((idx + 1) / LEDGER_STEP) * LEDGER_STEP)); return; }
     if (pending.expand) setExpandedId(pending.ident);
     const el = rowRefs.current.get(pending.ident);
     if (el) requestAnimationFrame(() => scrollToRow(el));
     setPending(null);
-    onFocusHandled?.();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending, shown]);
 
@@ -2312,10 +2255,9 @@ export function BriefingPanel({
   const [triggers, setTriggers]               = useState<ActionTrigger[]>([]);
   const [evidenceInsight, setEvidenceInsight] = useState<ExplorationInsight | null>(null);
   const [evidenceDomain, setEvidenceDomain]   = useState<string>("");
-  // Deep-linking within the brief: a digest tile / jump menu asks the ledger to expand +
-  // scroll to a finding, and it scrolls THIS container (never a shell-yanking scrollIntoView).
+  // The ledger's jump menu expands + scrolls to a finding, and it scrolls THIS container
+  // (never a shell-yanking scrollIntoView).
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [ledgerFocus, setLedgerFocus] = useState<{ ident: string; expand: boolean } | null>(null);
 
   // Available delivery channels for the Share action (Action Hub triggers).
   useEffect(() => {
@@ -2507,22 +2449,6 @@ export function BriefingPanel({
   // domain signals) and extends into the full impact-ranked list behind "Show more".
   const scopeDomain    = scope && briefing?.domains.some(d => d.name === scope) ? scope : null;
   const headlineIdent  = briefing?.headline ? signalIdentity(briefing.headline.insight) : null;
-  const scopedSignals  = !briefing
-    ? []
-    : dedupeSignals(
-        scopeDomain
-          ? briefing.allSignals.filter(s => s.domain === scopeDomain)
-          : [...briefing.signals, ...briefing.allSignals],
-      ).filter(s => signalIdentity(s.insight) !== headlineIdent);
-  const scopedPatterns = !briefing
-    ? []
-    : scopeDomain
-      ? briefing.patterns.filter(p => p.domains?.includes(scopeDomain))
-      : briefing.patterns;
-
-  const hasPatterns    = scopedPatterns.length > 0;
-  const hasNarrative   = !!narrative?.narrative;
-  const isEmpty        = !briefing || briefing.totalInsights === 0;
 
   // "Numbers that moved" (hero digest) + the cockpit's suggested pins share ONE extraction:
   // the top findings (unscoped, headline excluded) that yield a key figure, in impact order.
@@ -2546,6 +2472,33 @@ export function BriefingPanel({
     }
     return out;
   }, [briefing]);
+
+  // The digest and the ledger were reading the SAME ranked list, so the tiles WERE the ledger's
+  // first rows — every "Number that moved" printed twice on one screen. The tiles win: they lead
+  // the page and (since #190) expand in place into the same detail the ledger row offers, so
+  // nothing is lost by dropping them from the list below. Excluded by IDENTITY, like the
+  // headline, and unscoped — a tile stays on screen under a scope chip, so its ledger row would
+  // still be the duplicate.
+  const moverIdents    = useMemo(() => new Set(movers.map(m => m.ident)), [movers]);
+  const scopedSignals  = !briefing
+    ? []
+    : dedupeSignals(
+        scopeDomain
+          ? briefing.allSignals.filter(s => s.domain === scopeDomain)
+          : [...briefing.signals, ...briefing.allSignals],
+      ).filter(s => {
+        const ident = signalIdentity(s.insight);
+        return ident !== headlineIdent && !moverIdents.has(ident);
+      });
+  const scopedPatterns = !briefing
+    ? []
+    : scopeDomain
+      ? briefing.patterns.filter(p => p.domains?.includes(scopeDomain))
+      : briefing.patterns;
+
+  const hasPatterns    = scopedPatterns.length > 0;
+  const hasNarrative   = !!narrative?.narrative;
+  const isEmpty        = !briefing || briefing.totalInsights === 0;
 
   // Saved chart display per finding, for every card-less chart in the brief (ledger rows and
   // digest-tile details). Scoped exactly like the narrative, so one schema's edits never show
@@ -2663,7 +2616,6 @@ export function BriefingPanel({
         scope={schema}
         onInvestigate={onInvestigate}
         digest={movers}
-        onFinding={(ident) => setLedgerFocus({ ident, expand: true })}
         connectionId={connectionId}
         onEvidence={openEvidence}
         vizConfigFor={vizConfigFor}
@@ -2722,8 +2674,7 @@ export function BriefingPanel({
       {/* ── Findings ── the bulletin ledger: one scannable row per finding, chart on expand,
           impact-ordered and scoped by the chips; keyed by scope so it resets on a scope change. */}
       <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId}
-        onInvestigate={onInvestigate} onEvidence={openEvidence}
-        focus={ledgerFocus} onFocusHandled={() => setLedgerFocus(null)} scrollRef={scrollRef}
+        onInvestigate={onInvestigate} onEvidence={openEvidence} scrollRef={scrollRef}
         vizConfigFor={vizConfigFor} onVizConfigChange={saveVizConfigFor} />
 
       {/* ── Full synthesis ── the multi-paragraph narrative + interactive citations.

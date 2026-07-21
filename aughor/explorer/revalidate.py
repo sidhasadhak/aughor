@@ -25,9 +25,12 @@ from typing import Optional
 from aughor.explorer.verify import has_fabricated_dimension, clamp_novelty, _NO_DATA_RE
 
 
-def validate_insight(ins: dict) -> Optional[tuple[str, str]]:
+def validate_insight(ins: dict, col_types: Optional[dict[str, str]] = None) -> Optional[tuple[str, str]]:
     """Return (action, reason) for a problem finding, where action is 'quarantine'
-    or 'repair'; None when the finding is fine (or already quarantined)."""
+    or 'repair'; None when the finding is fine (or already quarantined).
+
+    `col_types` (bare + qualified column → declared dtype) enables the aggregate↔type
+    half of the plausibility check; omit it and that half simply no-ops."""
     if ins.get("invalid"):
         return None
     sql = ins.get("sql") or ""
@@ -36,6 +39,22 @@ def validate_insight(ins: dict) -> Optional[tuple[str, str]]:
     finding = ins.get("finding") or ""
     if finding and _NO_DATA_RE.search(finding):
         return ("quarantine", "no-data interpretation")
+    # The SAME deterministic plausibility gate the explorer applies at EMISSION
+    # (verify.py) — but findings written before that gate existed sit in the store
+    # untouched, and every brief since has re-triaged them into its "held back by the
+    # trust gate" strip. That strip is the audit trail of a decision already made; it
+    # was reporting the same 14 stale rejects forever (luxexperience, all generated
+    # 2026-06-30) while nothing was still producing them. Quarantining retires the
+    # reject once instead of re-deriving it on every read. 'confound' is deliberately
+    # NOT quarantined — an inverse relationship can be a real finding, and stays a soft
+    # demotion at synthesis. Fail-open: a check that can't run keeps the finding.
+    try:
+        from aughor.knowledge.triage import plausibility
+        v = plausibility(finding, sql, col_types or {})
+        if v.severity == "implausible":
+            return ("quarantine", v.reason)
+    except Exception:
+        pass
     nv = ins.get("novelty")
     if isinstance(nv, (int, float)) and not isinstance(nv, bool) and not (1 <= nv <= 5):
         return ("repair", f"novelty {nv} out of range")
@@ -140,12 +159,13 @@ def revalidate_finding(dossier: dict, conn) -> dict:
     }
 
 
-def revalidate_state(state: dict, *, apply: bool = False) -> dict:
+def revalidate_state(state: dict, *, apply: bool = False,
+                     col_types: Optional[dict[str, str]] = None) -> dict:
     """Scan a store state's insights. Returns a report. Mutates state only if apply."""
     quarantined: list[dict] = []
     repaired: list[dict] = []
     for ins in state.get("insights", []):
-        verdict = validate_insight(ins)
+        verdict = validate_insight(ins, col_types)
         if not verdict:
             continue
         action, reason = verdict
@@ -167,12 +187,16 @@ def revalidate_state(state: dict, *, apply: bool = False) -> dict:
     return {"quarantined": quarantined, "repaired": repaired}
 
 
-def revalidate_file(path, *, apply: bool = False) -> dict:
+def revalidate_file(path, *, apply: bool = False,
+                    col_types: Optional[dict[str, str]] = None) -> dict:
     """Load an exploration store JSON, revalidate, optionally write back. Works for
-    both connection and canvas stores (identical on-disk shape)."""
+    both connection and canvas stores (identical on-disk shape).
+
+    `col_types` is optional so the pass stays runnable OFFLINE (no connection needed):
+    without it the type-free checks still fire, with it the aggregate↔type check does too."""
     p = Path(path)
     state = json.loads(p.read_text())
-    report = revalidate_state(state, apply=apply)
+    report = revalidate_state(state, apply=apply, col_types=col_types)
     if apply and (report["quarantined"] or report["repaired"]):
         p.write_text(json.dumps(state, indent=2, default=str))
     report["file"] = str(p)
