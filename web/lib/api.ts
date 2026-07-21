@@ -3478,6 +3478,31 @@ export interface GlossaryTable {
 }
 export interface Glossary { tables?: Record<string, GlossaryTable>; }
 
+/** Look up a table's glossary entry tolerantly, mirroring `semantic.glossary.lookup_table`.
+ *  The store is keyed by whatever the connector's `TABLE:` header carried, so it holds BOTH
+ *  bare and `schema.table` keys. Exact-first, then schema-tolerant: a qualified key only
+ *  answers for its own schema, while a bare key answers for any (the pre-scoping fallback). */
+export function lookupGlossaryTable(
+  g: Glossary | null | undefined, table: string, schema?: string | null,
+): GlossaryTable | undefined {
+  const tables = g?.tables ?? {};
+  const leaf = (n: string) => (n || "").split(".").pop()!.trim().replace(/"/g, "").toLowerCase();
+  const schemaOf = (n: string) => {
+    const parts = (n || "").split(".").map(x => x.trim().replace(/"/g, "")).filter(Boolean);
+    return parts.length >= 2 ? parts[parts.length - 2].toLowerCase() : null;
+  };
+  const want = schema && !table.includes(".") ? `${schema}.${table}` : table;
+  if (tables[want]) return tables[want];
+  const wantLeaf = leaf(want), wantSchema = schemaOf(want);
+  for (const [k, v] of Object.entries(tables)) {
+    if (leaf(k) !== wantLeaf) continue;
+    const ks = schemaOf(k);
+    if (ks && wantSchema && ks !== wantSchema) continue;   // never cross schemas
+    return v;
+  }
+  return undefined;
+}
+
 export async function getGlossary(): Promise<Glossary> {
   const res = await fetch(`${BASE}/glossary`);
   if (!res.ok) return { tables: {} };
@@ -3489,8 +3514,10 @@ export async function getGlossary(): Promise<Glossary> {
 export async function updateTableGlossary(
   table: string,
   patch: { description?: string; grain?: string; joins?: string[] },
+  schema?: string | null,
 ): Promise<void> {
-  const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}`, {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}${q}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error("Failed to save table comment");
@@ -3501,8 +3528,10 @@ export async function updateColumnGlossary(
   table: string,
   column: string,
   patch: { description?: string; values?: string; caveats?: string },
+  schema?: string | null,
 ): Promise<void> {
-  const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}/${encodeURIComponent(column)}`, {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}/${encodeURIComponent(column)}${q}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error("Failed to save column comment");

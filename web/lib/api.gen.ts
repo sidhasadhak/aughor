@@ -13075,7 +13075,9 @@ export interface operations {
     };
     put_table_glossary_glossary__table__put: {
         parameters: {
-            query?: never;
+            query?: {
+                schema?: string | null;
+            };
             header?: never;
             path: {
                 table: string;
@@ -13110,7 +13112,9 @@ export interface operations {
     };
     put_column_glossary_glossary__table___column__put: {
         parameters: {
-            query?: never;
+            query?: {
+                schema?: string | null;
+            };
             header?: never;
             path: {
                 table: string;

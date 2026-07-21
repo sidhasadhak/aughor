@@ -131,36 +131,45 @@ def _columns_drifted(stored: set[str], live: set[str]) -> bool:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def seed_missing_tables(raw_schema: str) -> bool:
+def seed_missing_tables(raw_schema: str, schema: str | None = None) -> bool:
     """
     Seed glossary entries for tables not yet in glossary.yaml.
     Called by get_schema() before apply_glossary().
     Returns True if any new entries were written.
     Never raises — failures are silent so schema load is never blocked.
+
+    ``schema`` scopes both the existence check and the written key, so seeding one schema
+    can no longer overwrite a same-named table in another. It is optional because the
+    signature was schema-blind; the only caller (``tools.schema.apply_schema_enrichment``)
+    always had it in scope.
     """
     if not _ENABLED:
         return False
 
     try:
-        return _seed(raw_schema)
+        return _seed(raw_schema, schema)
     except Exception:
         return False
 
 
-def _seed(raw_schema: str) -> bool:
+def _seed(raw_schema: str, schema: str | None = None) -> bool:
     from aughor.llm.provider import get_provider
-    from aughor.semantic.glossary import load_merged_glossary
+    from aughor.semantic.glossary import canonical_key, load_merged_glossary, lookup_table
     from aughor.db.schema_cache import compute_fingerprint, is_complete, mark_complete
 
     # Check the fully merged glossary (manual + dbt) so we never re-seed
     # tables that dbt already covers.
-    existing = set((load_merged_glossary().get("tables") or {}).keys())
+    merged = load_merged_glossary().get("tables") or {}
 
     # But write new entries only to the YAML file (not dbt manifest)
     glossary = load_glossary()
     yaml_tables = glossary.get("tables") or {}
     table_blocks = _parse_table_blocks(raw_schema)
-    missing = {t: b for t, b in table_blocks.items() if t not in existing}
+    # Resolve per schema rather than by exact key: the store holds BOTH bare and qualified
+    # keys (the connectors disagree on the TABLE: header), so an exact-set check re-seeded
+    # tables that were already covered under the other form — and then wrote the answer
+    # under a key another schema was reading.
+    missing = {t: b for t, b in table_blocks.items() if not lookup_table(merged, t, schema)}
 
     # Schema-drift invalidation (F6): glossary is keyed by bare schema.table, so a new
     # connection's `analytics.orders` used to inherit a DELETED warehouse's annotations
@@ -169,7 +178,7 @@ def _seed(raw_schema: str) -> bool:
     for t, block in table_blocks.items():
         if t in missing:
             continue
-        ent = yaml_tables.get(t)
+        ent = lookup_table(yaml_tables, t, schema) or None
         if not isinstance(ent, dict) or not ent.get("auto_generated"):
             continue
         if _columns_drifted(set((ent.get("columns") or {}).keys()), _block_columns(block)):
@@ -207,7 +216,7 @@ def _seed(raw_schema: str) -> bool:
                     entry["caveats"] = col.caveats
                 col_dict[col.name] = entry
 
-            tables_meta[table_name] = {
+            tables_meta[canonical_key(table_name, schema)] = {
                 "description": annotation.description,
                 "grain": annotation.grain,
                 "auto_generated": True,
@@ -225,10 +234,8 @@ def _seed(raw_schema: str) -> bool:
         save_glossary(glossary)
         # If all tables are now covered, record the fingerprint so the next
         # call with the same schema skips LLM calls entirely.
-        remaining = {
-            t for t in table_blocks
-            if t not in (load_merged_glossary().get("tables") or {})
-        }
+        _after = load_merged_glossary().get("tables") or {}
+        remaining = {t for t in table_blocks if not lookup_table(_after, t, schema)}
         if not remaining:
             mark_complete(fp)
 

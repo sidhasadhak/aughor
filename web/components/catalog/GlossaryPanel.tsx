@@ -11,12 +11,16 @@
  *  Table level   → description · grain · join hints
  *  Column level  → description · known values · caveats
  *
- * Wires to /glossary (GET) and /glossary/{table}[/{column}] (PUT). The glossary is
- * keyed by bare table name (a global store), so pass the bare name.
+ * Wires to /glossary (GET) and /glossary/{table}[/{column}]?schema= (PUT).
+ *
+ * SCOPED BY SCHEMA. The store holds both bare and `schema.table` keys (the connectors
+ * disagree on the `TABLE:` header), so reads resolve tolerantly via `lookupGlossaryTable`
+ * and writes carry the schema — otherwise editing `orders` here overwrote the `orders`
+ * comment belonging to every other schema. Pass the BARE table name plus its schema.
  */
 import { useEffect, useState } from "react";
 import {
-  getGlossary, updateTableGlossary, updateColumnGlossary,
+  getGlossary, lookupGlossaryTable, updateTableGlossary, updateColumnGlossary,
   type GlossaryTable,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -87,14 +91,19 @@ function SubField({ caption, value, placeholder, accent, onSave }: {
   );
 }
 
-export function GlossaryPanel({ table, columns }: { table: string; columns: string[] }) {
+export function GlossaryPanel({ table, columns, schema }: {
+  table: string;
+  columns: string[];
+  /** The table's schema — scopes both the lookup and the write. */
+  schema?: string | null;
+}) {
   const [entry, setEntry] = useState<GlossaryTable>({});
   const [loading, setLoading] = useState(true);
 
   const load = () => {
     setLoading(true);
     getGlossary()
-      .then(g => setEntry((g.tables ?? {})[table] ?? {}))
+      .then(g => setEntry(lookupGlossaryTable(g, table, schema) ?? {}))
       .catch(() => setEntry({}))
       .finally(() => setLoading(false));
   };
@@ -120,13 +129,13 @@ export function GlossaryPanel({ table, columns }: { table: string; columns: stri
       <div style={{ marginBottom: 22 }}>
         <div style={LABEL}>Table comment</div>
         <EditableField value={entry.description ?? ""} placeholder="Describe what this table represents…"
-          onSave={async v => { await updateTableGlossary(table, { description: v }); load(); }} />
+          onSave={async v => { await updateTableGlossary(table, { description: v }, schema); load(); }} />
 
         <SubField
           caption="Grain — one row per…"
           value={entry.grain ?? ""}
           placeholder="e.g. one row per order line"
-          onSave={async v => { await updateTableGlossary(table, { grain: v }); load(); }}
+          onSave={async v => { await updateTableGlossary(table, { grain: v }, schema); load(); }}
         />
 
         <div style={{ marginTop: 6 }}>
@@ -136,7 +145,7 @@ export function GlossaryPanel({ table, columns }: { table: string; columns: stri
             placeholder="e.g. customers on customer_id"
             onSave={async v => {
               const joins = v.split("\n").map(s => s.trim()).filter(Boolean);
-              await updateTableGlossary(table, { joins }); load();
+              await updateTableGlossary(table, { joins }, schema); load();
             }}
           />
         </div>
@@ -154,19 +163,19 @@ export function GlossaryPanel({ table, columns }: { table: string; columns: stri
             </div>
             <div>
               <EditableField value={ce.description ?? ""} placeholder="Add a comment…"
-                onSave={async v => { await updateColumnGlossary(table, c, { description: v }); load(); }} />
+                onSave={async v => { await updateColumnGlossary(table, c, { description: v }, schema); load(); }} />
               <SubField
                 caption="Known values"
                 value={ce.values ?? ""}
                 placeholder="e.g. pending · paid · refunded · canceled"
-                onSave={async v => { await updateColumnGlossary(table, c, { values: v }); load(); }}
+                onSave={async v => { await updateColumnGlossary(table, c, { values: v }, schema); load(); }}
               />
               <SubField
                 caption="⚠ Caveats"
                 value={ce.caveats ?? ""}
                 placeholder="e.g. NULL until the order ships; excludes test accounts"
                 accent="var(--amb4)"
-                onSave={async v => { await updateColumnGlossary(table, c, { caveats: v }); load(); }}
+                onSave={async v => { await updateColumnGlossary(table, c, { caveats: v }, schema); load(); }}
               />
             </div>
           </div>

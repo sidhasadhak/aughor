@@ -109,13 +109,21 @@ class UpdateColumnRequest(BaseModel):
     caveats: Optional[str] = None
 
 
+# `schema` rides as a QUERY param, not a path segment: `/glossary/{table}` and
+# `/glossary/{table}/{column}` are already two- and three-segment routes, so a schema segment
+# would be ambiguous with a column. Additive and optional — an omitted schema keeps the old
+# unqualified behaviour, so existing callers are unaffected.
+
 @router.put("/glossary/{table}")
-def put_table_glossary(table: str, req: UpdateTableRequest):
-    update_table(table, description=req.description, grain=req.grain, joins=req.joins)
-    return {"ok": True, "table": table}
+def put_table_glossary(table: str, req: UpdateTableRequest, schema: Optional[str] = None):
+    update_table(table, description=req.description, grain=req.grain, joins=req.joins,
+                 schema=schema)
+    return {"ok": True, "table": table, "schema": schema}
 
 
 @router.put("/glossary/{table}/{column}")
-def put_column_glossary(table: str, column: str, req: UpdateColumnRequest):
-    update_column(table, column, description=req.description, values=req.values, caveats=req.caveats)
-    return {"ok": True, "table": table, "column": column}
+def put_column_glossary(table: str, column: str, req: UpdateColumnRequest,
+                        schema: Optional[str] = None):
+    update_column(table, column, description=req.description, values=req.values,
+                  caveats=req.caveats, schema=schema)
+    return {"ok": True, "table": table, "column": column, "schema": schema}

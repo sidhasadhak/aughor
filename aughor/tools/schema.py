@@ -633,8 +633,12 @@ def apply_schema_enrichment(
             from aughor.kernel.errors import tolerate
             tolerate(_cc_exc, "column-config schema pruning is best-effort",
                      counter="ontology.column_config", conn_id=connection_id)
-    seed_missing_tables(raw)
-    enriched = apply_glossary(raw)
+    # Both are schema-scoped now: the glossary is keyed per schema when one is known, so a
+    # write from THIS schema can no longer overwrite a same-named table in another (the
+    # `orders` collision — five competing entries in one store). `schema_name` was already
+    # in scope here and simply wasn't passed.
+    seed_missing_tables(raw, schema=schema_name)
+    enriched = apply_glossary(raw, schema=schema_name)
     build_schema_index()  # best-effort; keeps vector index fresh after glossary changes
     join_hints = infer_joins(enriched)
     if join_hints:
