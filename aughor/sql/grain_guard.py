@@ -51,13 +51,13 @@ class FanoutFinding:
                 f"its own grain (pre-aggregate in a CTE) before joining, or use COUNT(DISTINCT …).")
 
 
-def _alias_to_table(tree: exp.Expression) -> dict[str, str]:
-    m: dict[str, str] = {}
-    for t in tree.find_all(exp.Table):
-        m[t.name.lower()] = t.name
-        if t.alias:
-            m[t.alias.lower()] = t.name
-    return m
+def _qualified(t: exp.Table) -> str:
+    """The table reference AS WRITTEN, catalog/schema qualifier included — `lux.orders`, not
+    `orders`. The probe below runs against the real connection, so a bare name resolves only
+    when the table happens to sit in the session's default schema; every schema-qualified
+    query (what the explorer writes) would otherwise probe a non-existent table, error, and
+    silently disable the guard."""
+    return ".".join(p for p in (t.catalog, t.db, t.name) if p)
 
 
 def _additive_aggregates(tree: exp.Expression) -> list[str]:
@@ -87,7 +87,6 @@ def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[
     if not aggregates:
         return []  # no additive aggregate ⇒ fan-out cannot inflate a number
 
-    _alias_to_table(tree)
     findings: list[FanoutFinding] = []
     seen: set[tuple[str, str]] = set()
 
@@ -95,7 +94,7 @@ def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[
         right = j.this
         if not isinstance(right, exp.Table):
             continue
-        rt = right.name
+        rt = _qualified(right)
         # join key(s) on the right side
         keys: list[str] = []
         using = j.args.get("using")

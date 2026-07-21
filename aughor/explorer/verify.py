@@ -221,6 +221,7 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
             self_ratio_tautology, detect_fanout, sum_over_chasm_fanout,
             count_star_chasm_fanout, avg_over_chasm_fanout, measure_times_key_arithmetic,
             avg_of_row_ratios, dimension_ratio_chasm, group_by_continuous_measure,
+            join_key_fanout,
         )
     except Exception:
         return None
@@ -269,6 +270,17 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
                 r = fn(s, table_cols, is_unique_on=oracle)
                 if r:
                     return f"fan-out: {r[:160]}"
+            # The NON-FK join fan-out the detectors above are structurally blind to: they
+            # recognise a key by NAME (fk_root), so a join on a plain categorical column
+            # ('ON f.platform = d.platform') roots to nothing and passes every one of them
+            # while multiplying the fact. Execution-grounded — the oracle must have PROBED
+            # the joined table and found it non-unique on that key, so it can't fire on a
+            # naming guess. (luxexperience Briefing: €102.87B attributed GMV = the true
+            # total × the collaborations-per-type count.)
+            if not weighted:
+                r = join_key_fanout(s, table_cols, is_unique_on=oracle)
+                if r:
+                    return f"fan-out: {r[:200]}"
             import sqlglot
             from sqlglot import exp as _exp
             for cte in sqlglot.parse_one(s, read="duckdb").find_all(_exp.CTE):

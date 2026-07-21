@@ -696,6 +696,139 @@ def sum_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str
     return None
 
 
+def _outer_alias_map(root, cte_names: set[str]) -> dict[str, str]:
+    """alias (lowercased) → bare table name, for the OUTER scope's RAW base tables only.
+    CTE/subquery sources are omitted, so a join onto a pre-aggregated CTE — the CORRECT
+    fix for fan-out — can never be mistaken for the defect."""
+    from sqlglot import exp
+    out: dict[str, str] = {}
+    for alias, source in (root.sources or {}).items():
+        if isinstance(source, exp.Table) and source.name.lower() not in cte_names:
+            out[str(alias).lower()] = source.name.lower()
+    return out
+
+
+def _equi_join_keys(join, alias_map: dict[str, str]) -> list[tuple[str, str]]:
+    """(alias, column) pairs for a join whose ON is PURELY ANDed `a.x = b.y` equalities
+    between qualified columns of known base-table aliases. Any other conjunct yields
+    nothing at all.
+
+    The all-or-nothing rule is what makes a whole-table uniqueness probe sound evidence.
+    An extra predicate — `ON f.platform = d.platform AND d.type = 'capsule'` — can make the
+    join 1:1 even though `d` is non-unique on `platform` across the whole table, so the probe
+    would prove a fan-out the query doesn't have. Rather than reason about the filter, bail."""
+    from sqlglot import exp
+    on = join.args.get("on")
+    if on is None:
+        return []
+    pairs: list[tuple[str, str]] = []
+    for conj in _split_and(on):
+        if not isinstance(conj, exp.EQ):
+            return []
+        l, r = conj.this, conj.expression
+        if not (isinstance(l, exp.Column) and isinstance(r, exp.Column)):
+            return []
+        la, ra = (l.table or "").lower(), (r.table or "").lower()
+        if la not in alias_map or ra not in alias_map or la == ra:
+            return []
+        pairs.append((la, l.name))
+        pairs.append((ra, r.name))
+    return pairs
+
+
+def join_key_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb",
+                    is_unique_on=None) -> str | None:
+    """A SUM/AVG inflated by a join whose OTHER side is not unique on the join key.
+
+    The general case the FK-shaped detectors above structurally cannot see. Every one of
+    them routes through ``fk_root()``, which recognises a key by its NAME (``order_id`` →
+    ``order``); a join on a plain categorical column — ``ON f.platform = d.platform`` —
+    roots to nothing, so ``detect_fanout`` and the whole chasm battery stay silent while
+    each fact row is silently multiplied by the other table's rows-per-value.
+
+    The real-path scar (luxexperience Briefing, 2026-07-21): ``marketing_campaigns ⋈
+    brand_collaborations ON platform`` reported attributed GMV of **€102,870,539,329** —
+    ``SUM(all campaign GMV) × (collaborations of that type)``. The tell was two campaign
+    types with byte-identical totals and a third at exactly 3.0×.
+
+    Unlike its FK-shaped siblings this guard is EXECUTION-GROUNDED, not structural: it
+    fires only when the cardinality oracle has actually probed the joined table and
+    returned a definite "not unique on this key". Oracle absent, or `None` (unknown) →
+    silent. So it cannot flag a correct query on a naming guess — the failure mode the
+    module exists to avoid.
+    """
+    if is_unique_on is None:
+        return None   # execution-grounded only — no oracle, no verdict
+    try:
+        import sqlglot
+        from sqlglot import exp
+        from sqlglot.optimizer.scope import build_scope
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+        root = build_scope(tree) if tree is not None else None
+    except Exception:
+        return None
+    if tree is None or root is None:
+        return None
+
+    cte_names = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+    alias_map = _outer_alias_map(root, cte_names)
+    if len(set(alias_map.values())) < 2:
+        return None
+
+    outer = root.expression
+
+    # Which base tables does the join duplicate? A side that is NOT unique on its own join
+    # key repeats every row of the other side once per duplicate — so the OTHER side's
+    # measures are the ones inflated.
+    fanned: dict[str, tuple[str, str]] = {}   # victim alias → (fanning table, join key)
+    for join in outer.find_all(exp.Join):
+        pairs = _equi_join_keys(join, alias_map)
+        if not pairs:
+            continue
+        for (alias, col) in pairs:
+            bare = alias_map[alias]
+            try:
+                if is_unique_on(bare, col) is not False:
+                    continue      # unique (1:1) or unknown → no proven multiplication
+            except Exception:
+                continue
+            # `bare` fans out on `col`; every OTHER base table in the join is duplicated.
+            for other_alias, other_bare in alias_map.items():
+                if other_bare != bare:
+                    fanned.setdefault(other_alias, (bare, col))
+    if not fanned:
+        return None
+
+    # A non-DISTINCT, non-windowed SUM/AVG over a column of a duplicated table.
+    for agg in outer.find_all(exp.Sum, exp.Avg):
+        inner = agg.this
+        if isinstance(inner, exp.Distinct) or isinstance(agg.parent, exp.Window):
+            continue
+        cols = [inner] if isinstance(inner, exp.Column) else list(agg.find_all(exp.Column))
+        for c in cols:
+            victim = (c.table or "").lower()
+            if victim not in fanned:
+                continue
+            fan_table, key = fanned[victim]
+            fn = "SUM" if isinstance(agg, exp.Sum) else "AVG"
+            # Counted like the probe-based sibling (grain_guard bumps guard.grain_fanout.fired)
+            # so "is this guard earning its keep on the real path?" is answerable from stats
+            # rather than by grepping logs.
+            from aughor.stats import bump
+            bump("guard.join_key_fanout.fired")
+            return (
+                f"{fn}({c.sql()}) is inflated by the join to '{fan_table}' on '{key}': that "
+                f"table has MANY rows per '{key}', so every "
+                f"'{alias_map.get(victim, victim)}' row repeats once per match and the total "
+                f"is multiplied by the match count. Pre-aggregate each side to '{key}' in its "
+                f"own CTE and 1:1-join the CTEs, or aggregate without the join."
+            )
+    return None
+
+
 # ── Measure × key arithmetic — a fabrication the fan-out guards CAN'T see: the row
 # count is right, but the VALUE is invented by multiplying a measure by a nominal id.
 # Tight key suffixes by design (NOT _code/_num/_number — those can be real measures):

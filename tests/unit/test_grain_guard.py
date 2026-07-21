@@ -111,3 +111,41 @@ def test_wiring_plumbing_through_product_connector(tmp_path):
     conn.close()
     assert len(findings) == 1 and findings[0].fanned_table == "tags"
     assert findings[0].ratio == 1.5 and "over-count" in findings[0].caveat().lower()
+
+
+def test_probe_keeps_the_schema_qualifier():
+    """REGRESSION (luxexperience Briefing, 2026-07-21): the probe was built from `right.name`,
+    which sqlglot returns WITHOUT the catalog/schema — so a schema-qualified query (everything
+    the explorer writes) probed a table that doesn't exist, errored, and the guard silently
+    returned no findings. The guard was structurally disabled on the majority of real SQL.
+
+    Locks the probe text itself, so the qualifier can't be dropped again by a refactor."""
+    issued: list[str] = []
+
+    def probe(sql: str):
+        issued.append(sql)
+        return True, [(6, 2)], ""       # 3 rows per key ⇒ genuine fan-out
+
+    findings = detect_fanout(
+        "SELECT f.platform, d.type, SUM(f.gmv) AS m "
+        "FROM lux.marketing_campaigns f JOIN lux.brand_collaborations d ON f.platform = d.platform "
+        "GROUP BY f.platform, d.type",
+        probe, dialect="duckdb")
+
+    assert issued == ["SELECT COUNT(*), COUNT(DISTINCT platform) FROM lux.brand_collaborations"]
+    assert len(findings) == 1
+    assert findings[0].fanned_table == "lux.brand_collaborations"
+    assert findings[0].ratio == 3.0
+
+
+def test_unqualified_table_probe_stays_unqualified():
+    """The qualifier fix must not invent one: a bare table name still probes bare."""
+    issued: list[str] = []
+
+    def probe(sql: str):
+        issued.append(sql)
+        return True, [(4, 2)], ""
+
+    detect_fanout("SELECT SUM(f.amount) FROM fact f JOIN tags t ON f.id = t.fact_id",
+                  probe, dialect="duckdb")
+    assert issued == ["SELECT COUNT(*), COUNT(DISTINCT fact_id) FROM tags"]
