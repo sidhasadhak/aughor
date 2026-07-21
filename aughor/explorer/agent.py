@@ -38,6 +38,7 @@ from aughor.explorer.models import (
 )
 from aughor.explorer import store as _store
 from aughor.explorer.frontier import signature_fields
+from aughor.util.format import rows_for_prompt, round_long_decimals
 from aughor.explorer.episodes import EpisodeCollector
 from aughor.explorer.grounding import (
     GroundingResult,
@@ -1610,7 +1611,7 @@ class SchemaExplorer:
                     continue
 
                 # Interpret.
-                result_text = "\n".join(str(r) for r in rows[:20])
+                result_text = rows_for_prompt(rows)
                 try:
                     interp: _PinInterp = await _loop.run_in_executor(
                         None,
@@ -1624,6 +1625,12 @@ class SchemaExplorer:
                     )
                 except Exception:
                     continue
+
+                # Number hygiene at the SOURCE. Do it here — before verification, embedding,
+                # redundancy and persist — so every downstream consumer sees one canonical
+                # form of the finding. Rounding is well inside `_number_grounded`'s 1%
+                # tolerance, so a grounded finding stays grounded.
+                interp.finding = round_long_decimals(interp.finding)
 
                 if self._leaks_schema(sql):
                     continue
@@ -3142,7 +3149,7 @@ class SchemaExplorer:
                         continue
 
                 # Format result for LLM interpretation (max 20 rows)
-                result_text = "\n".join(str(r) for r in rows[:20])
+                result_text = rows_for_prompt(rows)
 
                 # ── Sanity-check: detect impossible ratios before interpretation ──
                 # If the SQL contains COUNT(DISTINCT ...) / COUNT(*) across a join,
@@ -3293,6 +3300,8 @@ class SchemaExplorer:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM interpretation failed for {domain}: {e}")
                     continue
 
+                interp.finding = round_long_decimals(interp.finding)   # number hygiene at the source
+
                 # Drop "no data" findings — an empty/all-NULL result or an interpretation
                 # that says as much. They pollute the Briefing and turn into broken monitors.
                 if self._leaks_schema(sql):
@@ -3392,6 +3401,7 @@ class SchemaExplorer:
                             None,
                             lambda: llm.complete(system=_sys_rg, user=_usr_rg, response_model=_Interpretation),
                         )
+                        interp_rg.finding = round_long_decimals(interp_rg.finding)
                         if verify_finding(interp_rg.finding, rows).grounded:
                             interp = interp_rg
                             _g = GroundingResult(grounded=True)
@@ -3796,7 +3806,7 @@ class SchemaExplorer:
 
             # Interpret the EMERGENT finding from the real result — the number is the
             # query's, never the LLM's prediction.
-            _result_text = "\n".join(str(r) for r in rows[:20])
+            _result_text = rows_for_prompt(rows)
             try:
                 interp: _SynthInterp = await _loop.run_in_executor(
                     None,
@@ -3819,6 +3829,8 @@ class SchemaExplorer:
                 logger.debug("[explorer:%s] Phase 9: interpret call failed (%s)",
                              self.connection_id, ctype, exc_info=True)
                 continue
+
+            interp.finding = round_long_decimals(interp.finding)   # number hygiene at the source
 
             # Plausibility hardening (same authorities Phase 8 applies): fix a mislabeled
             # metric against the real vocab, then reject an impossible value. A share or

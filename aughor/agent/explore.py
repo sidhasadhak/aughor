@@ -1681,7 +1681,7 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
     # headline/conclusion/narrative ("0.20829576194770064"). Collapse any over-long decimal run in the
     # prose fields deterministically before the report leaves the graph.
     try:
-        from aughor.tools.executor import round_long_decimals
+        from aughor.util.format import round_long_decimals
         report = ExplorationReport(**{**report.model_dump(),
             "headline": round_long_decimals(report.headline or ""),
             "conclusion": round_long_decimals(report.conclusion or ""),

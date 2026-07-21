@@ -10,6 +10,8 @@
  * Pure/string-only so it has no React or data-layer coupling and is trivially testable.
  */
 
+import { normalizeNumberPrecision } from "@/lib/format";
+
 export interface KeyFigure {
   /** The headline figure, formatted as it appears ("33.88%", "3,704", "$2.8B"). */
   value:      string;
@@ -24,6 +26,11 @@ export interface KeyFigure {
 const NUM = String.raw`\d[\d,]*(?:\.\d+)?`;
 const toNum = (s: string) => parseFloat(s.replace(/,/g, ""));
 const trimNum = (n: number) => String(Math.round(n * 100) / 100);
+// Figures are LIFTED from grounded prose, so whatever precision the finding carries lands in
+// the tile verbatim — that is how `43.959061407888164%` reached the verdict. Every branch below
+// routes its value through the platform precision policy (see web/lib/format.ts). Comma
+// grouping survives: the pattern only matches a long FRACTIONAL run.
+const fig = (raw: string) => normalizeNumberPrecision(raw);
 
 // Words that shouldn't start/end a sublabel (prepositions, articles, hedges).
 const FILLER = new Set([
@@ -60,19 +67,19 @@ export function extractKeyFigure(finding: string): KeyFigure | null {
   }
   const pct = text.match(new RegExp(`(${NUM})\\s*%`));
   if (pct && pct.index != null) {
-    return { value: `${pct[1]}%`, sublabel: sublabelBefore(text, pct.index) };
+    return { value: `${fig(pct[1])}%`, sublabel: sublabelBefore(text, pct.index) };
   }
 
   // 2) Ratio — "N vs M" / "N versus M": the finding contrasts two magnitudes.
   const ratio = text.match(new RegExp(`(${NUM})[^\\d]{0,40}?\\b(?:vs\\.?|versus)\\b[^\\d]{0,40}?(${NUM})`, "i"));
   if (ratio && ratio.index != null) {
-    return { value: ratio[1], secondary: `/${ratio[2]}`, sublabel: sublabelBefore(text, ratio.index) };
+    return { value: fig(ratio[1]), secondary: `/${fig(ratio[2])}`, sublabel: sublabelBefore(text, ratio.index) };
   }
 
   // 3) Currency.
   const cur = text.match(new RegExp(`[$€£¥₹]\\s?${NUM}\\s?[BMK]?`));
   if (cur && cur.index != null) {
-    return { value: cur[0].replace(/\s+/g, ""), sublabel: sublabelBefore(text, cur.index) };
+    return { value: fig(cur[0].replace(/\s+/g, "")), sublabel: sublabelBefore(text, cur.index) };
   }
 
   // 4) Largest grouped integer (thousands or more) — a raw count worth surfacing.
@@ -81,7 +88,7 @@ export function extractKeyFigure(finding: string): KeyFigure | null {
     .filter(x => !isNaN(x.n));
   if (ints.length) {
     const big = ints.reduce((a, b) => (b.n > a.n ? b : a));
-    if (big.n >= 1000) return { value: big.raw, sublabel: sublabelBefore(text, big.i) };
+    if (big.n >= 1000) return { value: fig(big.raw), sublabel: sublabelBefore(text, big.i) };
   }
   return null;
 }

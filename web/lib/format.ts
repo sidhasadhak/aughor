@@ -15,6 +15,18 @@
  * still lives in ./formatCell and is re-exported below — it is the table-cell
  * formatter that `<DataTable>` will own in Phase 3. Use the leaf helpers here
  * (compactNumber / formatPercent / cleanLabel / date suite) for everything else.
+ *
+ * ── PRECISION: two contexts, one rule each ──────────────────────────────────
+ *
+ * PROSE (a headline, a finding, a synthesis, a figure lifted out of one) — the
+ * platform policy, mirrored from `aughor/util/format.py`:
+ *      |v| >= 1 → 2dp        |v| < 1 → 6dp        whole → no decimal point
+ * Applied by `normalizeNumberPrecision`. Prose is quoted verbatim from grounded
+ * text, so this is a CORRECTION of someone else's string, never our own output.
+ *
+ * DATA CELLS (a results grid) keep more precision on purpose — `formatMetricValue`
+ * allows up to 4 decimals, because dropping digits from a table is information
+ * loss, whereas in a sentence they are noise. Don't collapse the two.
  */
 
 export {
@@ -100,6 +112,31 @@ export function formatPercent(n: number | null | undefined, digits = 1): string 
 export function pct(ratio: number | null | undefined, digits = 0): string {
   if (ratio === null || ratio === undefined || isNaN(ratio)) return "—";
   return `${(ratio * 100).toFixed(digits)}%`;
+}
+
+// A decimal run long enough to be float noise rather than intended precision. MIRRORS
+// `_LONG_DECIMAL_RE` in aughor/util/format.py — keep the two in step.
+const LONG_DECIMAL_RE = /-?\d+\.\d{4,}/g;
+
+/**
+ * Collapse over-long decimal runs inside a STRING we did not compose — grounded prose the
+ * backend wrote, or a figure lifted out of it. The platform quotes its own numbers verbatim
+ * ("never invent a number"), so a raw float64 that reached a finding is reproduced here
+ * exactly: `…is 43.959061407888164%`.
+ *
+ * The real fix is upstream (aughor/util/format.py rounds rows on the way into the prompt and
+ * findings on the way out), so this is the render-boundary backstop that also corrects prose
+ * persisted before that landed. Same policy as the backend: |v| ≥ 1 → 2dp, |v| < 1 → 6dp,
+ * whole results drop the decimal point. Comma grouping, currency symbols and already-short
+ * numbers are untouched. Idempotent; safe on null/empty.
+ */
+export function normalizeNumberPrecision(text: string | null | undefined): string {
+  if (!text) return text ?? "";
+  return text.replace(LONG_DECIMAL_RE, m => {
+    const v = parseFloat(m);
+    const r = Math.abs(v) >= 1 ? Math.round(v * 1e2) / 1e2 : Math.round(v * 1e6) / 1e6;
+    return String(r);
+  });
 }
 
 /** Signed variance percent for scorecards: +12.5% / -3.0%. Input is a ratio. */

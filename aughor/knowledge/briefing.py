@@ -61,6 +61,7 @@ class BriefingNarrative(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+from aughor.util.format import round_long_decimals
 from aughor.util.time import now_iso as _now_iso
 
 
@@ -435,7 +436,11 @@ def generate_narrative(
     # echoes a '$' straight from a finding's prose, and for a non-USD business every '$' figure
     # in the brief is wrong. Bounded fix at the synthesis authority (explorer-side prevention
     # is tracked separately).
-    narrative_text = _cur(result.narrative)
+    # …and number-normalise it, for the same reason one layer up: the narrator echoes digits
+    # straight out of a finding's prose. Explorer-side prevention (rows_for_prompt + hygiene at
+    # emit) means this should now be a no-op on fresh findings — it stays as the response-boundary
+    # guarantee, covering findings persisted before that landed. `aughor.util.format` owns the rule.
+    narrative_text = round_long_decimals(_cur(result.narrative))
 
     # Map citation refs back to actual insight IDs
     ref_to_insight: dict[str, dict] = {str(i + 1): ins for i, ins in enumerate(top[:8])}

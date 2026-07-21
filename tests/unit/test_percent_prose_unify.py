@@ -8,7 +8,7 @@ p-value, a price) is never rescaled. These tests pin both the rewrites and the g
 """
 from __future__ import annotations
 
-from aughor.tools.executor import unify_percent_fractions as U
+from aughor.util.format import unify_percent_fractions as U
 
 
 # ── Rewrites the inconsistency ────────────────────────────────────────────────────

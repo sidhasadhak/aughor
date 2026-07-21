@@ -43,83 +43,9 @@ def validate_sql(sql: str) -> tuple[bool, str]:
     return True, "ok"
 
 
-def _round_cell(v) -> str:
-    """Trim floating-point display noise before a value reaches the LLM (or a rendered table).
-    A raw '39.99999999998568' becomes '40' and '39.97968526236183' becomes '39.98', so the model
-    never copies a 15-digit float into a headline. Values |v|>=1 round to 2dp (percentages,
-    currency, counts); smaller values keep more precision so rates like 0.0034 survive. Handles
-    float, Decimal, and pure-numeric STRINGS (DuckDB returns DECIMAL columns as Decimal/str, which
-    the float-only check used to miss — '711231.2900000175' stayed raw). Bools/text pass through."""
-    if isinstance(v, bool):
-        return str(v)
-    from decimal import Decimal
-    if isinstance(v, Decimal):
-        v = float(v)
-    if isinstance(v, float) and v == v and v not in (float("inf"), float("-inf")):
-        r = round(v, 2) if abs(v) >= 1 else round(v, 6)
-        return str(int(r) if r == int(r) else r)
-    if isinstance(v, str) and re.fullmatch(r'-?\d+\.\d{4,}', v.strip()):
-        f = float(v.strip())
-        r = round(f, 2) if abs(f) >= 1 else round(f, 6)
-        return str(int(r) if r == int(r) else r)
-    return str(v)
-
-
-_LONG_DECIMAL_RE = re.compile(r'-?\d+\.\d{4,}')
-
-
-def round_long_decimals(text: str) -> str:
-    """Collapse over-long decimal runs (4+ fractional digits) embedded in PROSE, so a report never
-    ships a raw 17-significant-digit float in a headline/narrative (the '0.20829576194770064'
-    render-boundary miss). Applies the same precision rule as ``_round_cell`` (|v|>=1 → 2dp, else
-    6dp) to each match; all surrounding text, already-short numbers, and $/%/comma grouping are
-    untouched. Deterministic; safe on None/empty."""
-    if not text:
-        return text
-
-    def _sub(m):
-        v = float(m.group(0))
-        r = round(v, 2) if abs(v) >= 1 else round(v, 6)
-        return str(int(r) if r == int(r) else r)
-
-    return _LONG_DECIMAL_RE.sub(_sub, text)
-
-
-# An explicit percent in prose — the NUMBER before a "%" ("20.8%", "5 %"). The lookbehind keeps it
-# from matching a digit inside a larger token.
-_EXPLICIT_PCT_RE = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)\s*%")
-# A bare decimal fraction ("0.208", ".208") NOT already a percent, currency, or percentage-points, and
-# not a fragment of a larger number (the lookbehind excludes a preceding word char / dot / $).
-_BARE_FRACTION_RE = re.compile(r"(?<![\w.$])(0?\.\d+)(?!\s*%)(?!\s*pp\b)")
-
-
-def unify_percent_fractions(text: str) -> str:
-    """Normalize a percentage written BOTH ways in the same prose — an explicit "20.8%" AND its bare
-    fraction "0.208" — to the percent form, so one value never reads as two (the "0.208 next to 20.8%"
-    render miss T3-2 didn't cover). SELF-GROUNDED: a fraction is rewritten only when its ×100 value is
-    ALSO present in the text as an explicit percent, reusing that twin's exact number string — so an
-    unrelated sub-1 number (a correlation 0.82, a p-value 0.05, a $0.50 price) is never touched. The
-    caller gates on the metric being a percentage; this adds a second, textual guard. Deterministic;
-    idempotent; safe on None/empty."""
-    if not text or "%" not in text:
-        return text
-    # Both regexes capture only well-formed decimal literals, so float() can't raise here.
-    pct_str: dict[float, str] = {}
-    for m in _EXPLICIT_PCT_RE.finditer(text):
-        pct_str.setdefault(round(float(m.group(1)), 1), m.group(1))
-    if not pct_str:
-        return text
-
-    def _sub(m):
-        frac = m.group(1)
-        v = float(frac)
-        if 0 < v < 1:
-            twin = pct_str.get(round(v * 100, 1))
-            if twin is not None:
-                return f"{twin}%"
-        return frac
-
-    return _BARE_FRACTION_RE.sub(_sub, text)
+# Number formatting lives in ONE place — `aughor.util.format` owns the precision policy for the
+# whole platform (prose, table cells, and LLM prompt input alike).
+from aughor.util.format import round_cell  # noqa: E402  (after the module's own constants)
 
 
 def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
@@ -156,7 +82,11 @@ def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
         col_str = " | ".join(cap_cell(c) for c in result.columns)
         table_lines = [col_str, "-" * len(col_str)]
         for row in result.rows[:max_rows]:
-            table_lines.append(" | ".join(cap_cell(v) for v in row))
+            # `cap_cell` sanitizes and truncates but does NOT round — so a raw float64 repr
+            # reached the model here, and the interpret prompts require it to quote a value
+            # that appears in the result. Round FIRST: the 17-digit form never exists for it
+            # to copy. (aughor.util.format owns the precision policy.)
+            table_lines.append(" | ".join(cap_cell(round_cell(v)) for v in row))
         if result.row_count > max_rows:
             table_lines.append(f"... ({result.row_count - max_rows} more rows)")
         lines.append(fence_untrusted("\n".join(table_lines)))
