@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Table, ConfigProvider, theme, type ThemeConfig } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
-import { cleanLabel, formatMetricValue, formatPercent, displayCellValue } from "@/lib/format";
+import { cleanLabel, formatTableNumber, formatPercent, displayCellValue } from "@/lib/format";
 import { isMoneyColumn, columnCurrencySymbol } from "@/lib/orgSettings";
 import { useOrgSettings } from "@/lib/useOrgSettings";
 
@@ -159,14 +159,15 @@ function fmt(col: string, v: unknown): React.ReactNode {
     // A column that names its own currency (refund_chf → CHF) overrides the workspace default.
     const sym = columnCurrencySymbol(col);
     if (sym && !isNaN(money) && s.trim() !== "") {
-      return <span style={{ fontVariantNumeric: "tabular-nums" }}>{sym}{formatMetricValue(money)}</span>;
+      return <span style={{ fontVariantNumeric: "tabular-nums" }}>{sym}{formatTableNumber(money)}</span>;
     }
   }
-  // Large / numeric cells — canonical data-table value formatting. Skip key columns
-  // (ids + temporal grouping keys) so a month "6" or year "2024" renders raw, not "2.02K".
+  // Large / numeric cells — the FULL number with separators, never K/M/B: a column is read
+  // down, and a per-row magnitude suffix makes two cells incomparable at a glance. Skip key
+  // columns (ids + temporal grouping keys) so a month "6" or year "2024" renders raw.
   const n = Number(v);
   if (!isNaN(n) && !ORDINAL_COL.test(col) && !DIMENSION_KEY_COL.test(col) && s.trim() !== "") {
-    return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatMetricValue(n)}</span>;
+    return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatTableNumber(n)}</span>;
   }
   // Collapse a DATE_TRUNC'd midnight timestamp ("2025-04-01 00:00:00") to its date.
   return displayCellValue(s);

@@ -9,11 +9,22 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 import aughor.explorer.store as store
 
 
+@pytest.fixture(autouse=True)
+def _isolate_store(tmp_path, monkeypatch):
+    """Redirect the explorer store per test.
+
+    Was a bare `store._DATA_DIR = tmp_path` inside `_seed` — a module-global assignment with
+    NO teardown, so it leaked one test's tmp_path into every later test in the session.
+    monkeypatch restores it; the assignment never did."""
+    monkeypatch.setattr(store, "_DATA_DIR", tmp_path)
+
+
 def _seed(tmp_path, key, **state_bits):
-    store._DATA_DIR = tmp_path
     state = store._empty()
     state.update(state_bits)
     store.save(key, state)

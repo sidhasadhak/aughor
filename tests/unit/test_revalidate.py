@@ -71,3 +71,70 @@ def test_apply_is_idempotent():
     second = revalidate_state(state, apply=True)
     # already quarantined / already clamped → nothing left to do
     assert second["quarantined"] == [] and second["repaired"] == []
+
+
+class TestStalePlausibilityRejectsAreRetired:
+    """The explorer's EMISSION gate (verify.py) rejects a methodologically-void finding, but
+    anything written BEFORE that gate landed sits in the store untouched — and every brief
+    re-triaged it into a red "held back by the trust gate" strip. On the real luxexperience
+    store all 14 such signals were generated 2026-06-30, weeks after nothing was producing
+    them any more. Retiring the reject once beats re-deriving it on every read.
+
+    The two checks differ in what they need: the rate check is pure SQL, so it works offline;
+    the aggregate↔type check needs declared column types and fail-opens without them."""
+
+    AVG_OF_RATE = {
+        "id": "Operations__fulfillment__3", "novelty": 3, "confidence": 0.7,
+        "finding": "Asia concentrates the highest total duty exposure across all platforms.",
+        "sql": "SELECT region, AVG(duty_rate) FROM shipments GROUP BY region",
+    }
+    SUM_OF_VARCHAR = {
+        "id": "Customer__tier__1", "novelty": 3, "confidence": 0.7,
+        "finding": "Signups total 2,493,788 across the base, led by the enterprise tier.",
+        "sql": "SELECT tier, SUM(signup_fy) AS m_signupfy FROM customers GROUP BY tier",
+    }
+
+    def test_avg_of_a_stored_rate_is_retired_without_column_types(self):
+        action, reason = validate_insight(self.AVG_OF_RATE)
+        assert action == "quarantine"
+        assert "duty_rate" in reason and "already-computed rate" in reason
+
+    def test_sum_over_varchar_needs_types_and_fails_open_without_them(self):
+        assert validate_insight(self.SUM_OF_VARCHAR) is None      # no types → check no-ops
+        action, reason = validate_insight(self.SUM_OF_VARCHAR, {"signup_fy": "VARCHAR"})
+        assert action == "quarantine"
+        assert "signup_fy" in reason
+
+    def test_a_confound_is_demoted_not_retired(self):
+        """'confound' severity stays a soft demotion at synthesis — an inverse relationship
+        can be a real finding, so it must NOT be quarantined out of the store."""
+        confounded = {
+            "id": "Ops__lead_time__2", "novelty": 3, "confidence": 0.7,
+            "finding": "Stockouts decrease as supplier lead time increases across all warehouses.",
+            "sql": "SELECT w, AVG(stockouts) FROM inv GROUP BY w",
+        }
+        from aughor.knowledge.triage import plausibility
+        assert plausibility(confounded["finding"], confounded["sql"]).severity == "confound"
+        assert validate_insight(confounded) is None
+
+    def test_a_sound_finding_is_untouched(self):
+        assert validate_insight(GOOD, {"revenue": "DECIMAL(18,2)"}) is None
+
+    def test_apply_flags_in_place_and_the_store_read_path_hides_it(self):
+        state = {"insights": [copy.deepcopy(self.AVG_OF_RATE), copy.deepcopy(GOOD)]}
+        report = revalidate_state(state, apply=True)
+        assert len(report["quarantined"]) == 1
+        assert state["insights"][0]["invalid"] is True
+        assert "duty_rate" in state["insights"][0]["invalid_reason"]
+        assert "invalid" not in state["insights"][1]        # the sound finding is untouched
+        # quarantine HIDES, never deletes — the row survives for inspection and is reversible
+        visible = [i for i in state["insights"] if not i.get("invalid")]
+        assert [i["id"] for i in visible] == [GOOD["id"]]
+
+    def test_column_types_thread_through_revalidate_state(self):
+        state = {"insights": [copy.deepcopy(self.SUM_OF_VARCHAR)]}
+        assert revalidate_state(state, apply=True)["quarantined"] == []      # no types → kept
+        assert "invalid" not in state["insights"][0]
+        rep = revalidate_state(state, apply=True, col_types={"signup_fy": "VARCHAR"})
+        assert len(rep["quarantined"]) == 1
+        assert state["insights"][0]["invalid"] is True

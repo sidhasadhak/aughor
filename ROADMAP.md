@@ -16,22 +16,112 @@
 
 ### ⏭️ NEXT SESSION — start here
 
-The briefing arc below is **fully merged**; `main` is `ef887ef`, suite 3444 green, tree clean. Pick up with:
-
-1. **`ask.brief_context` flags-on soak, then graduate.** Shipped default-off (#191). Turn it on
-   (`PUT /system/flags/ask.brief_context {"value":true}` — no restart needed), ask a few follow-ups from
-   the Briefing, confirm the answers reference the brief, then move it to `AUTO_ELIGIBLE`.
-2. **The four glossary follow-ons #193 documents but does not fix** (each needs its own decision):
+1. **Four flags are ON in the live ledger but still default-off in code** — `chart.exhibit_grammar`,
+   `intake.loss_signals`, `lens.decision_grade`, `report.argument_style`. A fresh clone, CI, or anyone
+   else's install gets NONE of that work. Three handoffs in a row say "flags-on soak"; the soak has
+   happened in the live runtime. Graduating them is the cheapest real leverage on the board.
+2. **`ask.brief_context` + `ask.conversation_context` soak, then graduate.** Both read `off` in the
+   live ledger. Turn on (`PUT /system/flags/<name> {"value":true}` — no restart), ask follow-ups from
+   the Briefing, confirm the answers reference the brief and inherit prior grounding, then move to
+   `AUTO_ELIGIBLE`.
+3. **The four glossary follow-ons #193 documents but does not fix** (each needs its own decision):
    the Qdrant `aughor_schema` collection is still globally namespaced (point ids/payloads carry no
    connection) · `explore.py::_learn_from_exploration` writes `update_column` from LLM-emitted table
-   strings with `conn_id` in scope but unused and no schema at all · the dbt merge layer keys
-   bare+lowercased (`dbt.py:105`) so a dbt entry can't override a qualified YAML one ·
-   `compute_fingerprint` hashes only table names, so two structurally identical schemas share a
-   "fully seeded" marker.
-3. **Sub-1 shares still read `0.275985`, not `27.6%`** (#189). 6dp is the tested contract and protects
+   strings with `conn_id` in scope but unused and no schema at all (`update_column` now TAKES a
+   `schema=`; this is the one gap actively writing wrong-scoped data on every exploration run) ·
+   the dbt merge layer keys bare+lowercased (`dbt.py:102`) so a dbt entry can't override a qualified
+   YAML one · `compute_fingerprint` hashes only table names, so two structurally identical schemas
+   share a "fully seeded" marker.
+4. **Sub-1 shares still read `0.275985`, not `27.6%`** (#189). 6dp is the tested contract and protects
    small rates; 3-significant-digits was rejected because `0.0000123` renders in scientific notation.
    Turning shares into percents is a semantic change (is `0.27` a share or a correlation?).
-4. Older queue, untouched by this arc: P7 frontier-model pin · Platform WP-1..5 · Direction B follow-ons.
+5. **Retire the 7 remaining stale rejects in `data/exploration_workspace.json`** — the AVG-of-rate half
+   is done (`scripts/revalidate_findings.py --apply`); the 7 `SUM(signup_fy)` ones need live column
+   types, which fail open because the luxexperience tables are gone from the current workspace DB.
+   Re-run the script once that schema is back.
+6. Older queue: P7 frontier *tier* (same-tier bakeoff decided — keep `glm-5.2:cloud`) · Platform
+   WP-5/8/9/12–16 (WP-1/2/3/4 shipped; 7/10/11 partial) · Direction B follow-ons.
+
+---
+
+### 🚨 2026-07-21 · `data/` hermeticity — an ordinary `pytest` run destroyed live user data
+
+**A full-suite run DELETED `data/exploration_workspace.json` (89 findings — the luxexperience
+Briefing's own source), `episodes_workspace.jsonl`, `business_profile_workspace*.json`, and 2 of the
+4 `briefing_cache.json` scopes. Unrecoverable: `data/*.json` is gitignored, no APFS snapshot, newest
+backup 3 weeks stale.** Second time this has happened (the registry, 2026-07-02, `806ad6e`).
+
+**Cause.** `explorer/store.py` — and `profile/store.py`, `knowledge/briefing.py`, `patterns.py`,
+`explorer/watermark.py` — each hard-coded `Path("data")` with no env override, unlike their WP-4
+siblings (`AUGHOR_EPISODES_DIR`/`_MEMORY_DIR`/`_ACTIONS_DIR`). **And a second, subtler half:
+`db/purge.py` resolved its OWN `data/` dir**, so it unlinked from the LIVE directory even when a test
+had redirected the store it was purging — *a redirect the deleter doesn't share is not isolation*.
+That is why `episodes_workspace.jsonl` died despite `AUGHOR_EPISODES_DIR` being redirected.
+
+**Fix.** One resolver, one env, whole family: `aughor/db/paths.py::state_dir()` / `AUGHOR_STATE_DIR`,
+adopted by all six stores **plus purge and the router/api readers** — so a NEW store in this family is
+isolated by construction rather than one env var at a time. Registered in `tests/conftest.py`.
+Deliberately NOT a global `data/` switch: authored, version-controlled files (`glossary.yaml`, `kb/`,
+`global_rules.md`) keep their own resolvers and stay repo-readable during tests.
+6 sentinels in `test_store_hermeticity.py`, including `purge._DATA_DIR == store._DATA_DIR` and a
+ratchet that fails if any of those modules re-hardcodes the dir. Also fixed a leaked global:
+`test_multischema_wiring.py` did a bare `store._DATA_DIR = tmp_path` inside a helper — no teardown,
+so it leaked one test's tmp dir into the rest of the session (now an autouse `monkeypatch` fixture).
+
+**⚠️ OPS (durable): snapshot `data/` — size+mtime+md5 per file — BEFORE any full-suite run and diff
+after.** Cheap, and the only thing that would have caught either incident at the time. "The stores
+look isolated" is not evidence; this exact gap was written down in an audit on 2026-07-05 and sat
+unfixed for two weeks.
+
+---
+
+### ✅ 2026-07-21 (later) · Second screenshot round — and a real wrong number
+
+Four more defects off Briefing screenshots. **#3 was a genuine correctness bug that had shipped a
+number to the reader: attributed GMV of €102,870,539,329.**
+
+- **Duplicate findings.** "Numbers that moved" and the FINDINGS ledger were reading the SAME expression
+  — `dedupeSignals([...signals, ...allSignals])` minus the headline — so the tiles WERE the ledger's
+  first rows. The tiles win (they lead the page and, since #190, expand in place into the same detail),
+  so the ledger now excludes them by identity. `7 of 47` → `7 of 41`. The tiles' `finding →` deep-link
+  went with them (nothing left to jump to), and the whole external ledger-focus mechanism it fed was
+  dead code once removed — the ledger's own jump menu is untouched.
+- **K/M/B out of data cells.** New `formatTableNumber` (`web/lib/format.ts`); `formatMetricValue` is now
+  explicitly the TILE/BADGE formatter. A column is read down, and a per-row magnitude suffix makes two
+  cells incomparable at a glance — one cell "980K", the next "1.02M". `€2.80B` → `€2,798,626,484`.
+- **🔑 #3 — the fan-out, and why every guard missed it.** `marketing_campaigns ⋈ brand_collaborations
+  ON platform` — a categorical column, not a key — so each group was `SUM(all that platform's GMV) ×
+  (collaborations of that type)`. The tell was in the rendered table: two campaign types with
+  byte-identical totals and a third at exactly 3.0×. **Two independent root causes, both silent:**
+  **(a) The FK-shaped assumption.** All seven detectors in `sql/fanout.py` route through `fk_root()`,
+  which recognises a key by its NAME (`order_id` → `order`). `fk_root('platform')` is None, so every
+  one returned None. New `join_key_fanout` closes it — EXECUTION-GROUNDED (the existing cardinality
+  oracle must have PROBED the joined table and returned a definite "not unique on this key"), so it
+  can't flag a correct query on a naming guess. All-or-nothing on the ON clause: an extra predicate
+  (`AND d.type='capsule'`) can make a join 1:1 even when the table is non-unique on the key, so a
+  whole-table probe stops being sound evidence and the guard bails. Wired into `verify_insight`.
+  **(b) `grain_guard.py` was structurally disabled on the majority of real SQL.** It builds its probe
+  from `right.name`, which sqlglot returns WITHOUT the schema — so every schema-qualified query (what
+  the explorer always writes) probed a table that doesn't exist, errored, hit `if not ok: continue`,
+  and returned no findings. It had been failing silent, not passing. Probe text is now locked by test.
+  *(Also removed a `_alias_to_table(tree)` call whose result was discarded.)*
+- **Synthesis panel.** Dropped the `maxWidth: 72ch` measure cap — it wrapped the prose into a ribbon
+  down the left of a wide panel. Removed the trust-gate "held back" strip: it read as an error log
+  (red `Implausible ×7 — SUM() over the text column 'signup_fy'`) at the foot of the brief, and those
+  are **decisions already made** — nothing actionable for a reader. **The entries were also stale:**
+  all 14 were generated 2026-06-30, and the explorer's emission gate has rejected that class ever
+  since — every brief was re-deriving the same rejects from findings nobody was producing. Fixed at
+  source: `explorer/revalidate.py` now quarantines a stored finding the current plausibility gate
+  rejects (the mechanism already existed for fabricated dimensions), so a reject is retired ONCE
+  instead of re-derived on every read. `held_back` still ships on the response for the Trust Receipt,
+  where a provenance trail belongs.
+
+**🔑 Durable:** *a guard that builds its own probe SQL must preserve the schema qualifier* — and a
+guard whose failure mode is `continue` reports "clean" when it is broken, which is why this one sat
+dead. **Prefer an execution-grounded oracle to a name-shaped heuristic**: `fk_root()` gave the fan-out
+battery its precision AND its blind spot, and the fix was not a better name regex but a probe. And
+**an audit trail of suppressed signals is provenance, not content** — it belongs in the receipt, and
+it needs a retirement path or it accumulates forever.
 
 ---
 

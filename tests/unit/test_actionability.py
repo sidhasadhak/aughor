@@ -17,10 +17,20 @@ from aughor.routers.exploration import promote_connection_insight
 from aughor.routers.actions import send_finding_to_trigger, _SendFindingBody
 
 
+@pytest.fixture(autouse=True)
+def _isolate_store(tmp_path, monkeypatch):
+    """Redirect the explorer store per test.
+
+    Was a bare `store._DATA_DIR = tmp_path` inside `_seed_conn` — a module-global assignment
+    with NO teardown, so it leaked this file's tmp_path into every later test in the session
+    (caught by test_store_hermeticity's sentinel, which sorts after this file). monkeypatch
+    restores it; the assignment never did."""
+    monkeypatch.setattr(store, "_DATA_DIR", tmp_path)
+
+
 # ── #20a: connection-scoped promote ──────────────────────────────────────────
 
 def _seed_conn(tmp_path, conn_id, insights):
-    store._DATA_DIR = tmp_path  # redirect persistence
     state = store._empty()
     state["insights"] = insights
     store.save(conn_id, state)

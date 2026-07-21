@@ -77,11 +77,10 @@ export function formatCount(n: number | null | undefined): string {
 }
 
 /**
- * Canonical DATA-TABLE cell value (scale unknown, full precision wanted):
+ * Compact metric value for a TILE or BADGE — somewhere with no room for twelve digits:
  *   ≥1B → "1.23B", ≥1M → "4.56M", ≥1K → "12,345" (thousands separators),
  *   integers as-is, small decimals trimmed ("3.1400" → "3.14").
- * Use for numeric cells in a results grid. For a compact headline/badge use
- * `compactNumber`; for a known ratio use `pct`/`formatPercent`.
+ * NOT for table cells — see `formatTableNumber`. For a known ratio use `pct`/`formatPercent`.
  */
 export function formatMetricValue(n: number | null | undefined): string {
   if (n === null || n === undefined || isNaN(n)) return "—";
@@ -91,6 +90,24 @@ export function formatMetricValue(n: number | null | undefined): string {
   if (a >= 1e3) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
   if (Number.isInteger(n)) return String(n);
   return n.toFixed(4).replace(/\.?0+$/, "");
+}
+
+/**
+ * Canonical DATA-TABLE cell value — the FULL number, always, with thousands separators:
+ * 102870539329 → "102,870,539,329". Small decimals trimmed ("3.1400" → "3.14").
+ *
+ * A column is a set of values read against each other, and K/M/B abbreviation fights that:
+ * it silently re-scales per row (one cell "980K", the next "1.02M"), so a reader has to
+ * decode each magnitude suffix before they can compare two numbers in the same column, and
+ * "€102.87B" hides the digits that would have shown the total was absurd. Tiles and badges
+ * still abbreviate via `formatMetricValue` — they have one number and no room.
+ */
+export function formatTableNumber(n: number | null | undefined): string {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  if (Number.isInteger(n)) return n.toLocaleString("en-US");
+  // Keep up to 4dp for small magnitudes, 2dp once the integer part carries the signal.
+  const digits = Math.abs(n) >= 1e3 ? 2 : 4;
+  return n.toLocaleString("en-US", { maximumFractionDigits: digits });
 }
 
 // ── Percentages ──────────────────────────────────────────────────────────────

@@ -11,8 +11,35 @@ which only HIDES the finding from intel; it stays in the store and is reversible
 """
 import argparse
 import glob
+import os
 
 from aughor.explorer.revalidate import revalidate_file
+
+
+def _col_types_for(store_path: str) -> dict:
+    """Declared column types for the connection a store file belongs to, so the
+    aggregate↔type check (SUM over a VARCHAR) can fire on stored findings too.
+
+    `data/exploration_workspace__netflix.json` → connection `workspace`. Entirely
+    best-effort: no connection, no registry, no live schema → {} and the pass still
+    runs every type-free check offline.
+
+    Opens via `open_connection_for` — NOT `build_connector(get_dsn(...))`. The latter
+    builds a bare connector that has not ATTACHed the connection's uploaded databases,
+    so `get_schema()` comes back without the user's schemas and every type-dependent
+    check silently no-ops (it reported "no offenders" against a workspace whose 33
+    luxexperience tables were sitting right there)."""
+    try:
+        from aughor.db.connection import open_connection_for
+        from aughor.tools.schema import col_types_from_schema
+
+        stem = os.path.basename(store_path).removeprefix("exploration_").removesuffix(".json")
+        if stem.startswith("canvas_"):
+            return {}
+        conn_id = stem.split("__", 1)[0]
+        return col_types_from_schema(open_connection_for(conn_id).get_schema()) or {}
+    except Exception:
+        return {}
 
 
 def main() -> None:
@@ -26,7 +53,7 @@ def main() -> None:
     tot_q = tot_r = 0
     for f in sorted(files):
         try:
-            rep = revalidate_file(f, apply=args.apply)
+            rep = revalidate_file(f, apply=args.apply, col_types=_col_types_for(f))
         except Exception as e:
             print(f"  (skip {f}: {e})")
             continue

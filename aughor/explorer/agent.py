@@ -308,6 +308,9 @@ class SchemaExplorer:
         # prior one, so TTFI isn't re-stamped (and re-emitted) on every restart.
         self._status.first_insight_at = self._state.get("first_insight_at")
         self._last_query_at: float = 0.0
+        # The SQL that ACTUALLY ran on the last _run — the shared guard battery may rewrite it
+        # (de-fan / preflight-repair), and a finding must cite the query that produced its rows.
+        self._last_executed_sql: str = ""
         self._rate_seconds: float = _RATE_SECONDS_SCHEMA
         self._time_window: Optional[tuple[str, str]] = None  # (start_iso, end_iso) — 12-month window
         # Negative knowledge — column/table names found not to exist — restored from a
@@ -496,25 +499,86 @@ class SchemaExplorer:
             if wait > 0:
                 await asyncio.sleep(wait)
 
-    async def _run(self, sql: str, think: str = "") -> Optional[list]:
-        """Execute one read-only SQL query off the event loop and record an episode turn."""
+    async def _run(self, sql: str, think: str = "", *, schema: Optional[str] = None) -> Optional[list]:
+        """Execute one read-only SQL query off the event loop and record an episode turn.
+
+        Pass ``schema`` when the SQL was WRITTEN BY A MODEL: execution then routes through the
+        shared guard battery (``aughor.sql.executor.execute_guarded``) instead of hitting the
+        connector raw, so the explorer gets the same deterministic hardening every other answer
+        path already had — de-fan and preflight-repair BEFORE the query runs, plus the
+        post-execute guard findings. This agent writes the Briefing, and it was the only
+        generate-and-execute path in the system still executing unguarded.
+
+        DETERMINISTIC-ONLY by construction: no ``fix_prompt_template``/``provider_factory`` is
+        passed, so the shared runner never adds an LLM retry — Phase 8 has its own repair loop
+        and a second one would double the cost and fight the first.
+
+        Without ``schema`` the raw path is kept, deliberately: the profiling / percentile /
+        catalog / join probes are built by the explorer itself from parsed schema metadata, not
+        by a model, so there is no generated SQL to guard and hardening them would be waste.
+
+        ``preflight_harden`` may REWRITE the SQL (dry-run gated). The rewritten text is what
+        actually ran, so it is what gets journalled — and callers that persist the query
+        alongside its rows must resync from :attr:`_last_executed_sql`, or the stored finding
+        would cite SQL that never produced its numbers.
+        """
         loop = asyncio.get_running_loop()
         self._last_query_at = time.monotonic()
         self._status.queries_executed += 1
+        self._last_executed_sql = sql
         try:
-            result = await loop.run_in_executor(
-                None, self._conn.execute, "__explorer__", sql
-            )
+            if schema:
+                from aughor.sql.executor import execute_guarded
+                result = await loop.run_in_executor(
+                    None, lambda: execute_guarded(
+                        self._conn, sql, query_id="__explorer__", schema=schema),
+                )
+            else:
+                result = await loop.run_in_executor(
+                    None, self._conn.execute, "__explorer__", sql
+                )
+            ran = (getattr(result, "sql", None) or sql).strip() or sql
+            self._last_executed_sql = ran
             if result.error:
-                self._episodes.add(think=think, sql=sql, observation=f"ERROR: {result.error}")
+                self._episodes.add(think=think, sql=ran, observation=f"ERROR: {result.error}")
                 return None
             obs_rows = "\n".join(str(r) for r in (result.rows or [])[:6])
             obs = f"{result.row_count} rows\ncols: {result.columns}\n{obs_rows}"
-            self._episodes.add(think=think, sql=sql, observation=obs)
+            self._episodes.add(think=think, sql=ran, observation=obs)
             return result.rows or []
         except Exception as e:
             self._episodes.add(think=think, sql=sql, observation=f"EXCEPTION: {e}")
             return None
+
+    @staticmethod
+    def _kb_context(query: str, top_k: int = 3) -> str:
+        """Curated SQL/domain patterns for `query` from the knowledge base, or "".
+
+        The ADA path has consulted this on every plan since it shipped; the explorer never did —
+        so the agent that writes the Briefing was the one generating SQL with no access to the
+        library describing the mistakes it kept making. The KB carries a "Fan-out Detection and
+        Prevention" entry (pre-aggregate the child before joining) and a "Return Rate" entry
+        whose misconception note is exactly the ratio-of-sums rule; Phase 8 has been rediscovering
+        both the hard way, one guard rejection at a time.
+
+        Bounded and fail-open by construction — `retrieve_for_planning` already returns "" on any
+        failure, so a missing index or an unreachable Qdrant costs nothing but the lookup.
+        """
+        if not query or not query.strip():
+            return ""
+        try:
+            from aughor.semantic.kb_retriever import retrieve_for_planning
+            block = retrieve_for_planning(query.strip()[:400], top_k=top_k) or ""
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "explorer KB retrieval is best-effort; generation proceeds without it",
+                     counter="explorer.kb_retrieval_failed")
+            return ""
+        if block:
+            from aughor.stats import stats as _s
+            _s.inc("explorer.kb_retrieved")
+            return block.rstrip() + "\n\n"
+        return ""
 
     # ── Time window helpers ───────────────────────────────────────────────────
 
@@ -1556,7 +1620,11 @@ class SchemaExplorer:
                 if _cached:
                     sql = _cached                                  # build-time audited; deterministic
                 else:
-                    sql = await _loop.run_in_executor(None, lambda: sql_writer.write(q, extra_context=_pin_context))
+                    # KB patterns for THIS question — _pin_context is built once for all
+                    # pinned questions, so retrieval has to happen per question here.
+                    _pin_ctx_q = self._kb_context(q) + _pin_context
+                    sql = await _loop.run_in_executor(
+                        None, lambda: sql_writer.write(q, extra_context=_pin_ctx_q))
                 if not sql or not sql.strip():
                     continue
 
@@ -1595,7 +1663,10 @@ class SchemaExplorer:
                 if is_redundant_insight(sql, _prior_sqls, _dialect):
                     continue
 
-                rows = await self._run(sql, think=f"[pinned] {q[:60]}")
+                # Model-written SQL → the shared guard battery; resync `sql` because a
+                # preflight rewrite must be what the stored finding cites.
+                rows = await self._run(sql, think=f"[pinned] {q[:60]}", schema=sql_writer.schema)
+                sql = self._last_executed_sql or sql
                 if not rows:
                     continue
                 if self._leaks_schema(sql):
@@ -2103,32 +2174,34 @@ class SchemaExplorer:
                     )
                 from aughor.orgsettings import org_context, resolve_industry
                 _eff_industry = resolve_industry(_bp.industry)
-                # When the user has explicitly SELECTED an industry that differs from the one
-                # inferred for this dataset, the profile's metrics/recipes still describe the
-                # inferred vertical — so pull the SELECTED industry's curated KB and steer the
-                # explorer by ITS metrics (names + formula + grain + anti-patterns). Deterministic,
-                # no LLM: this is how "pick an industry → the explorer looks for that industry's
-                # signals" takes effect immediately, without waiting for a profile rebuild.
+                # Steer by the effective industry's CURATED metrics — names + formula + grain +
+                # anti-patterns. Deterministic, no LLM.
+                #
+                # This used to fire ONLY when the user's SELECTED industry differed from the one
+                # inferred for the dataset, on the reasoning that a matching pair made the curated
+                # KB redundant with the profile. It doesn't: the profile carries metrics INFERRED
+                # from column names, while the KB carries a human-authored formula, grain, sane
+                # range and anti-pattern per metric. The common case — selected == inferred — is
+                # exactly when that curation is most trustworthy, and it was the one case that got
+                # none of it.
                 _kb_block = ""
                 try:
-                    if (_eff_industry or "").strip().lower() != (_bp.industry or "").strip().lower():
-                        from aughor.profile.metric_kb import match_industry
-                        _sel_kb = match_industry(_eff_industry)
-                        if _sel_kb and (_sel_kb.get("metrics") or []):
-                            _kb_lines = "\n".join(
-                                f"  • {m.get('name')}: {str(m.get('formula') or '')[:120]} "
-                                f"(grain: {str(m.get('grain') or '')[:90]}; sane: {m.get('sane_range', '—')}; "
-                                f"AVOID: {'; '.join((m.get('anti_patterns') or [])[:1])})"
-                                for m in (_sel_kb.get('metrics') or [])[:10]
-                            )
-                            _kb_block = (
-                                f"SELECTED INDUSTRY — the user set this business's industry to "
-                                f"{_sel_kb.get('industry')}. Treat THESE curated {_sel_kb.get('industry')} "
-                                f"metrics as the priority lens for what to look for (compute each by its "
-                                f"formula/grain, honour its sane range, avoid its anti-patterns); only fall "
-                                f"back to the dataset-inferred metrics below when a question isn't covered "
-                                f"here:\n{_kb_lines}\n\n"
-                            )
+                    from aughor.profile.metric_kb import match_industry
+                    _sel_kb = match_industry(_eff_industry)
+                    if _sel_kb and (_sel_kb.get("metrics") or []):
+                        _kb_lines = "\n".join(
+                            f"  • {m.get('name')}: {str(m.get('formula') or '')[:120]} "
+                            f"(grain: {str(m.get('grain') or '')[:90]}; sane: {m.get('sane_range', '—')}; "
+                            f"AVOID: {'; '.join((m.get('anti_patterns') or [])[:1])})"
+                            for m in (_sel_kb.get('metrics') or [])[:10]
+                        )
+                        _kb_block = (
+                            f"CURATED {_sel_kb.get('industry')} METRICS — treat these as the "
+                            f"priority lens for what to look for (compute each by its "
+                            f"formula/grain, honour its sane range, avoid its anti-patterns); only fall "
+                            f"back to the dataset-inferred metrics below when a question isn't covered "
+                            f"here:\n{_kb_lines}\n\n"
+                        )
                 except Exception as _exc:
                     from aughor.kernel.errors import tolerate
                     tolerate(_exc, "selected-industry KB steering is best-effort; fall back to the "
@@ -2784,7 +2857,11 @@ class SchemaExplorer:
                         # PRIMARY: grounded generation — the LLM picks columns from the real
                         # schema and we COMPILE the SQL, so a non-existent column can't be
                         # emitted (kills the line_total invention class + its ~40% token waste).
-                        _steer = (f"DOMAIN: {domain}\n\n{frontier_block}{playbook_block}{_followup_hint}"
+                        # Phase 8 INVENTS the question, so retrieval cannot key on one —
+                        # key on the domain + its tables, which are known before generation.
+                        _kb_steer = self._kb_context(
+                            f"{domain} " + " ".join(list(domain_table_cols)[:8]))
+                        _steer = (f"DOMAIN: {domain}\n\n{_kb_steer}{frontier_block}{playbook_block}{_followup_hint}"
                                   f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n")
                         nq = await self._grounded_probe_nq(domain, domain_table_cols, cp,
                                                            _NextQuestion, llm, _steer)
@@ -3066,7 +3143,8 @@ class SchemaExplorer:
 
                 for attempt in range(MAX_ATTEMPTS):
                     label = think_str if attempt == 0 else f"[retry {attempt}] {think_str}"
-                    rows = await self._run(sql, think=label)
+                    rows = await self._run(sql, think=label, schema=sql_writer.schema)
+                    sql = self._last_executed_sql or sql
                     if rows is not None:
                         break
                     error_msg = _last_episode_error()
@@ -3763,6 +3841,7 @@ class SchemaExplorer:
                 "the CTEs — never aggregate across a multi-table join directly (fan-out). "
                 "Every rate = SUM(numerator)/NULLIF(SUM(denominator),0) at the correct grain.\n"
             )
+            _ctx = self._kb_context(plan.confirm_question) + _ctx
             try:
                 sql = await _loop.run_in_executor(
                     None, lambda: sql_writer.write(plan.confirm_question, extra_context=_ctx))
@@ -3800,7 +3879,9 @@ class SchemaExplorer:
                 tolerate(_exc, "synth join value-domain probe is best-effort; on failure keep the candidate",
                          counter="explorer.synth_join_guard_failed")
 
-            rows = await self._run(sql, think=f"[synth:{ctype}] {plan.confirm_question[:50]}")
+            rows = await self._run(sql, think=f"[synth:{ctype}] {plan.confirm_question[:50]}",
+                                   schema=sql_writer.schema)
+            sql = self._last_executed_sql or sql
             if not rows or self._leaks_schema(sql):
                 continue
 

@@ -4,10 +4,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+
+from aughor.db.paths import state_dir
 
 from aughor.db.connection import open_connection_for
 from aughor.util.format import round_long_decimals
@@ -174,8 +175,7 @@ def _store_key(conn_id: str, schema: str | None) -> str:
     fall back to the connection-level state (the single-run case, then schema-FILTERED by the
     callers). Lets the same endpoints serve per-schema runs and the legacy connection run."""
     if schema:
-        from pathlib import Path
-        if (Path("data") / f"exploration_{conn_id}__{schema}.json").exists():
+        if (state_dir() / f"exploration_{conn_id}__{schema}.json").exists():
             return f"{conn_id}__{schema}"
     return conn_id
 
@@ -326,7 +326,10 @@ def get_exploration_findings(conn_id: str, schema: str | None = None):
 
     if distributions and any("col_type" not in v for v in distributions.values()):
         try:
-            cache_path = Path(__file__).parent.parent.parent / "data" / "schema_profiles.json"
+            # The path is OWNED by tools.profile_cache — re-deriving it here meant a test that
+            # redirected that store still had this reader hitting the live file.
+            from aughor.tools.profile_cache import cache_path as _profile_cache_path
+            cache_path = _profile_cache_path()
             if cache_path.exists():
                 cache = json.loads(cache_path.read_text())
                 col_dtype_map: dict[str, str] = {}
@@ -759,7 +762,7 @@ def _purge_exploration_state(conn_id: str) -> list[str]:
         _explorer_tasks.pop(key, None)
 
     deleted: list[str] = []
-    data = Path("data")
+    data = state_dir()
     for fname in (f"exploration_{conn_id}.json", f"episodes_{conn_id}.jsonl"):
         p = data / fname
         if p.exists():
@@ -806,11 +809,20 @@ async def retry_query(conn_id: str, body: RetryQueryRequest):
     if not fix.ok:
         raise HTTPException(status_code=422, detail=f"LLM correction failed: {fix.final_error}")
     try:
-        result = db.execute("__retry__", fix.sql)
+        # This is LLM-CORRECTED SQL — a query that already failed once and was rewritten by a
+        # model — so it is the last thing that should reach the warehouse unguarded. Routed
+        # through the shared battery in DETERMINISTIC-ONLY mode: `writer.fix` above is already
+        # the repair loop, and handing the runner a second one would fight it.
+        from aughor.sql.executor import execute_guarded
+        result = execute_guarded(db, fix.sql, query_id="__retry__", schema=writer.schema)
+        # Report the SQL that ACTUALLY RAN. `preflight_harden` may rewrite it (de-fan /
+        # preflight-repair), and the client shows `corrected_sql` as the fix to keep — handing
+        # back the pre-rewrite text would show a query that did not produce these rows.
+        ran = (getattr(result, "sql", None) or fix.sql).strip() or fix.sql
         if result.error:
-            return {"ok": False, "corrected_sql": fix.sql, "explanation": fix.explanation, "error": result.error, "rows": [], "columns": []}
+            return {"ok": False, "corrected_sql": ran, "explanation": fix.explanation, "error": result.error, "rows": [], "columns": []}
         return {
-            "ok": True, "corrected_sql": fix.sql, "explanation": fix.explanation,
+            "ok": True, "corrected_sql": ran, "explanation": fix.explanation,
             "rows": [[str(c) for c in r] for r in (result.rows or [])[:50]],
             "columns": result.columns or [], "row_count": result.row_count,
         }
@@ -1272,6 +1284,12 @@ def ground_briefing_number(conn_id: str, body: GroundRequest):
 
     fallback: dict | None = None
     for iid in ordered[:6]:   # bounded: usually grounds on the first (the nearest citation)
+        # DELIBERATELY unguarded, unlike /retry-query above. This re-runs a STORED insight's SQL
+        # to prove a cited number came from it — the receipt's entire value is that it reproduces
+        # the finding's own query verbatim. `preflight_harden` may REWRITE a query, which would
+        # make the receipt cite SQL the finding does not contain. The stored SQL was already
+        # gated at emission (verify_insight + the explorer's execute_guarded), so this is a
+        # replay of a guarded artifact, not fresh generation.
         result = db.execute("__ground__", (index[iid].get("sql") or "").strip())
         if result.error:
             if fallback is None:

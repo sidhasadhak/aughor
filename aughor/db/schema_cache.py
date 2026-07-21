@@ -11,9 +11,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 
-_CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "schema_cache.json"
+from aughor.db.paths import state_dir
+
+# Generated per-connection state, so it belongs to the AUGHOR_STATE_DIR family. It was a
+# repo-absolute `Path(__file__).parent…/data/` — an override-free hole the 2026-07-21 canary
+# caught only because it diffed the WHOLE directory rather than the stores we knew about.
+_CACHE_PATH = state_dir() / "schema_cache.json"
 _MAX_ENTRIES = 50
 
 

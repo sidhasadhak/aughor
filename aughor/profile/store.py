@@ -21,9 +21,10 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from aughor.db.paths import state_dir
 from aughor.profile.models import BusinessProfile
 
-_DATA_DIR = Path("data")
+_DATA_DIR = state_dir()
 
 
 def _safe(s: str) -> str:

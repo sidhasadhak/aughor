@@ -27,7 +27,19 @@ except ImportError as exc:
     tolerate(exc, "python-dotenv is optional; env vars from the real environment are used when it is absent", counter="kb_retriever.dotenv")
 
 KB_COLLECTION = "sql_knowledge_base"
-KB_PATH = os.getenv("AUGHOR_KB_PATH", "")
+
+# The KB ships WITH the repo (63 authored, version-controlled JSON files under data/kb), so the
+# default is the repo's own copy — not "". An empty default made `build_kb_index()` a silent
+# no-op on a fresh clone and left the whole knowledge base unreachable unless an operator knew
+# to set AUGHOR_KB_PATH. It also let this install drift onto a path in a DIFFERENT repo
+# (~/dev/hermes/data/kb) that no longer exists: retrieval kept working only because the Qdrant
+# collection outlived its source, and 5 of the 63 files had therefore never been indexed at all.
+#
+# Repo-relative is right HERE, unlike the generated-state stores that must resolve
+# AUGHOR_STATE_DIR (aughor/db/paths.py): this is authored content that travels with the code,
+# not per-connection state a test must be able to redirect.
+_REPO_KB = Path(__file__).parent.parent.parent / "data" / "kb"
+KB_PATH = os.getenv("AUGHOR_KB_PATH") or str(_REPO_KB)
 KB_ENABLED = os.getenv("AUGHOR_KB_ENABLED", "true").lower() != "false"
 
 

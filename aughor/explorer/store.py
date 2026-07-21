@@ -9,9 +9,12 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from aughor.db.paths import state_dir
 from aughor.explorer.models import ExplorationPhase
 
-_DATA_DIR = Path("data")
+# Honours AUGHOR_STATE_DIR — this store had NO override and the suite destroyed a real
+# exploration_workspace.json (2026-07-21). See aughor/db/paths.py.
+_DATA_DIR = state_dir()
 
 
 def _path(connection_id: str) -> Path:

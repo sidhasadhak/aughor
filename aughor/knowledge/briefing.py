@@ -14,12 +14,13 @@ Cache: data/briefing_cache.json  |  TTL: 2 hours per connection
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-_CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "briefing_cache.json"
+from aughor.db.paths import state_dir
+
+_CACHE_PATH = state_dir() / "briefing_cache.json"
 _CACHE_TTL_HOURS = 2
 
 

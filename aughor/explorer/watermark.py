@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Optional
+
+from aughor.db.paths import state_dir
 
 logger = logging.getLogger(__name__)
 
-_PATH = Path("data") / "explore_watermark.json"
+_PATH = state_dir() / "explore_watermark.json"
 
 
 def _load() -> dict:

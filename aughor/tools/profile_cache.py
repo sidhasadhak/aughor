@@ -16,15 +16,24 @@ File: data/schema_profiles.json
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 from typing import Optional
 
 from aughor.tools.profiler import ColumnProfile, TableProfile
+from aughor.db.paths import state_dir
 from aughor.util.json_store import KeyedJsonStore
 
-_CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "schema_profiles.json"
+_CACHE_PATH = state_dir() / "schema_profiles.json"
 _MAX_ENTRIES = 20
 _store = KeyedJsonStore(_CACHE_PATH, max_entries=_MAX_ENTRIES)
+
+
+def cache_path():
+    """Where the schema-profile cache lives — this module OWNS the path.
+
+    Public so a reader elsewhere consumes it instead of re-deriving `…/data/schema_profiles.json`
+    (the exploration router did, which meant a test redirecting this store still had that reader
+    hitting the live file). Reads `_store` so a monkeypatched store is honoured too."""
+    return getattr(_store, "path", _CACHE_PATH)
 
 
 # ── Fingerprint helpers ───────────────────────────────────────────────────────
