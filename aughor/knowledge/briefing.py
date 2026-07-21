@@ -252,6 +252,29 @@ def _profile_signals(profile: Any, workspace_id: Optional[str] = None) -> tuple[
     return north_star_tokens(names), currency_symbol(resolve_currency(code or "", workspace_id))
 
 
+def group_held_back(held_back: list[dict]) -> list[dict]:
+    """Collapse held-back signals that were suppressed for the SAME reason into one entry.
+
+    A trust-gate reason is derived from the SQL *idiom* (``AVG()`` over a rate, ``SUM()``
+    over a VARCHAR), not from the finding — so N findings sharing one bad idiom produce N
+    byte-identical strings, and the strip renders the same sentence seven times. Grouping
+    is the honest fix: one line per DISTINCT reason, carrying ``count`` (and the domains it
+    hit) so nothing is silently dropped — ``sum(count)`` still equals the number of signals
+    the gate held back. Order is preserved (first occurrence wins), most-frequent first."""
+    groups: dict[tuple[str, str], dict] = {}
+    for h in held_back:
+        key = (h.get("severity", ""), h.get("reason", ""))
+        g = groups.get(key)
+        if g is None:
+            groups[key] = {**h, "count": 1, "domains": [h.get("domain", "")] if h.get("domain") else []}
+            continue
+        g["count"] += 1
+        dom = h.get("domain", "")
+        if dom and dom not in g["domains"]:
+            g["domains"].append(dom)
+    return sorted(groups.values(), key=lambda g: -g["count"])
+
+
 def generate_narrative(
     domain_data: dict[str, list[dict]],
     patterns: list[dict],
@@ -279,7 +302,8 @@ def generate_narrative(
             "narrative":      str,
             "headline_theme": str,
             "citations":      [{"ref", "insight_id", "domain", "angle", "finding"}, ...],
-            "held_back":      [{"finding", "domain", "severity", "reason"}, ...],
+            "held_back":      [{"finding", "domain", "severity", "reason", "count", "domains"}, ...],
+                              # grouped by (severity, reason) — see `group_held_back`
             "currency_code":  str,
             "generated_at":   str,
         }
@@ -363,8 +387,7 @@ def generate_narrative(
             "narrative":      "",
             "headline_theme": "",
             "citations":      [],
-            "held_back":      held_back,
-            "graph":          {"nodes": [], "edges": []},
+            "held_back":      group_held_back(held_back),
             "currency_code":  currency_code,
             "generated_at":   _now_iso(),
         }
@@ -457,18 +480,11 @@ def generate_narrative(
         import logging
         logging.getLogger(__name__).debug("per-finding narrative attribution failed", exc_info=True)
 
-    # Argument-graph lens (Slice 3): the SAME impact-ranked drivers + the explorer's own typed
-    # composition/drill edges, projected into a {nodes, edges} graph the frontend renders as an
-    # alternative to the linear brief. Deterministic — rides along with the narrative + citations.
-    from aughor.knowledge.argument_graph import build_argument_graph
-    graph = build_argument_graph(top, result.headline_theme, domain_data, citations_out)
-
     return {
         "narrative":      narrative_text,
         "headline_theme": result.headline_theme,
         "citations":      citations_out,
-        "held_back":      held_back,
-        "graph":          graph,
+        "held_back":      group_held_back(held_back),
         "currency_code":  currency_code,
         "generated_at":   _now_iso(),
     }

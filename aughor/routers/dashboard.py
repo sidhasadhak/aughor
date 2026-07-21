@@ -276,35 +276,6 @@ def pin_query_route(req: PinQueryRequest) -> dict:
     return {"card": saved.model_dump(), "preview": _preview(result), "caveats": result.caveats or []}
 
 
-# ── Card ↔ finding relations (argument-graph connective tissue, Slice 4) ──────
-
-class CardRelationsRequest(BaseModel):
-    """Compute `relates_to` edges between this connection's pinned cards and the given argument-
-    graph findings (by id). Live — reflects the current cockpit, not a cached brief."""
-    model_config = ConfigDict(populate_by_name=True)
-    connection_id: str
-    schema_name: Optional[str] = Field(default=None, alias="schema")
-    finding_ids: list[str] = Field(default_factory=list)
-
-
-@router.post("/cards/relations")
-def card_relations_route(req: CardRelationsRequest) -> dict:
-    """Wire the standing cockpit into the narrative argument graph: for each pinned card on this
-    connection, emit a `relates_to` edge to the graph finding(s) it shares the most SQL structure
-    with (deterministic table/measure/dimension overlap). Returns `{nodes, edges}` the frontend
-    merges onto the graph. Empty when there are no cards or no findings to relate to."""
-    from aughor.routers import exploration
-    from aughor.knowledge.argument_graph import relate_cards
-
-    cards = [c.model_dump() for c in list_cards(scope="connection", scope_ref=req.connection_id)]
-    if not cards or not req.finding_ids:
-        return {"nodes": [], "edges": []}
-    by_domain = exploration._domain_insights_for(req.connection_id, req.schema_name)
-    want = set(req.finding_ids)
-    findings = [i for items in by_domain.values() for i in (items or []) if i.get("id") in want]
-    return relate_cards(cards, findings)
-
-
 # ── Graduate a card to a Monitor (watch → alert, Slice 4) ────────────────────
 
 class GraduateCardRequest(BaseModel):

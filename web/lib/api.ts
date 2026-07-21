@@ -1547,26 +1547,6 @@ export async function graduateCard(
   return res.json();
 }
 
-/** Card↔finding `relates_to` edges for the argument-graph lens (Slice 4): links this
- *  connection's pinned cards to the given graph findings by deterministic SQL-signature overlap.
- *  Live (reflects the current cockpit). Returns card nodes + edges to merge onto the graph. */
-export async function fetchCardRelations(
-  connectionId: string,
-  opts: { schema?: string; findingIds: string[] },
-): Promise<{ nodes: ArgumentGraphNode[]; edges: ArgumentGraphEdge[] }> {
-  const res = await fetch(`${BASE}/cards/relations`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      connection_id: connectionId,
-      schema: opts.schema,
-      finding_ids: opts.findingIds,
-    }),
-  });
-  if (!res.ok) return { nodes: [], edges: [] };   // best-effort: relations never block the graph
-  return res.json();
-}
-
 export async function dismissCanvasInsight(canvasId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
   const res = await fetch(
     `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/insights/${encodeURIComponent(insightId)}/dismiss`,
@@ -2852,42 +2832,12 @@ export interface HeldBackSignal {
   domain: string;
   severity: "implausible" | "confound";
   reason: string;
-}
-
-/** The briefing's narrative layer made structural (Slice 3 — argument-graph lens). Nodes are the
- *  verdict + the impact-ranked drivers; edges are the explorer's OWN typed relationships
- *  (supports from the ranking; chain/tension/confound/concentration/share from composition;
- *  explains_why from drills). Built deterministically server-side; the frontend only renders it. */
-export type ArgumentEdgeType =
-  | "supports" | "chain" | "tension" | "confound" | "concentration" | "share" | "explains_why"
-  | "relates_to"   // card ↔ finding (Slice 4 — wires the cockpit into the graph)
-  | "related";     // finding ↔ finding, densify: a shared join key (structural, not validated)
-
-export interface ArgumentGraphNode {
-  id: string;
-  kind: "verdict" | "finding" | "card";
-  title: string;
-  domain: string;
-  angle: string;
-  impact: number;
-  plausibility: "implausible" | "confound" | null;
-  has_sql: boolean;
-  composition_type: string | null;
-  is_driver: boolean;
-  cited: boolean;
-}
-
-export interface ArgumentGraphEdge {
-  source: string;
-  target: string;
-  type: ArgumentEdgeType;
-  /** Optional per-edge label (e.g. the shared join key on a `related` edge). */
-  label?: string;
-}
-
-export interface ArgumentGraph {
-  nodes: ArgumentGraphNode[];
-  edges: ArgumentGraphEdge[];
+  /** How many findings the gate held back for THIS reason (grouped server-side by
+   *  (severity, reason) — a reason derives from the SQL idiom, so one bad idiom suppresses
+   *  many findings identically). Absent on pre-grouping cached briefs → treat as 1. */
+  count?: number;
+  /** The domains this reason hit (grouped). */
+  domains?: string[];
 }
 
 export interface BriefingNarrativeResponse {
@@ -2895,11 +2845,14 @@ export interface BriefingNarrativeResponse {
   headline_theme: string;
   citations: BriefingCitation[];
   held_back?: HeldBackSignal[];
-  /** The argument-graph projection of this brief (verdict + drivers + typed edges). */
-  graph?: ArgumentGraph;
   currency_code?: string;
   generated_at: string | null;
   available: boolean;
+  /** The scope this brief was generated FOR (`conn:schema`, or `canvas:<id>`). The client
+   *  MUST refuse to paint a narrative whose scope_key ≠ the scope it is rendering under —
+   *  otherwise a retained brief from a previous schema is undetectable. Absent on briefs
+   *  cached before this field existed → the client falls back to not trusting them. */
+  scope_key?: string;
 }
 
 export async function generateBriefingNarrative(

@@ -1012,29 +1012,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/cards/relations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Card Relations Route
-         * @description Wire the standing cockpit into the narrative argument graph: for each pinned card on this
-         *     connection, emit a `relates_to` edge to the graph finding(s) it shares the most SQL structure
-         *     with (deterministic table/measure/dimension overlap). Returns `{nodes, edges}` the frontend
-         *     merges onto the graph. Empty when there are no cards or no findings to relate to.
-         */
-        post: operations["card_relations_route_cards_relations_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/cards/{card_id}": {
         parameters: {
             query?: never;
@@ -6024,19 +6001,6 @@ export interface components {
             /** Prev Value */
             prev_value?: number | null;
         };
-        /**
-         * CardRelationsRequest
-         * @description Compute `relates_to` edges between this connection's pinned cards and the given argument-
-         *     graph findings (by id). Live — reflects the current cockpit, not a cached brief.
-         */
-        CardRelationsRequest: {
-            /** Connection Id */
-            connection_id: string;
-            /** Finding Ids */
-            finding_ids?: string[];
-            /** Schema */
-            schema?: string | null;
-        };
         /** ChatHistoryTurn */
         ChatHistoryTurn: {
             /**
@@ -9998,41 +9962,6 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    card_relations_route_cards_relations_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CardRelationsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
                 headers: {
                     [name: string]: unknown;
                 };
