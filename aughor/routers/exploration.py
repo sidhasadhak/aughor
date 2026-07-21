@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.db.connection import open_connection_for
+from aughor.util.format import round_long_decimals
 from aughor.explorer.episodes import episodes_dir  # WP-4: honour AUGHOR_EPISODES_DIR
 from aughor.explorer.models import ExplorationPhase, elapsed_seconds
 from aughor.routers._shared import (
@@ -385,6 +386,21 @@ def _connection_col_types(conn_id: str) -> dict[str, str]:
         return {}
 
 
+def _normalize_insight_numbers(by_domain: dict) -> None:
+    """Apply the platform precision policy to every served finding. Mutates in place.
+
+    The explorer now rounds at emit, so freshly-written findings arrive clean — but the store
+    holds findings written BEFORE that landed, and they are what the cards, tiles and key-figure
+    extractor quote verbatim (`43.959061407888164%` came from one). Normalising on the way OUT
+    fixes the whole back catalogue for every consumer at once, instead of each surface patching
+    its own render. Separate from triage so a triage failure can't silently skip it."""
+    for payload in by_domain.values():
+        insights = payload if isinstance(payload, list) else payload.get("insights", [])
+        for ins in insights or []:
+            if isinstance(ins, dict) and ins.get("finding"):
+                ins["finding"] = round_long_decimals(ins["finding"])
+
+
 def _annotate_insights_triage(by_domain: dict, profile, col_types: dict[str, str] | None = None) -> None:
     """Stamp each insight with `impact` (the briefing's ranking score) and `plausibility`
     (None | 'implausible' | 'confound'), reusing knowledge.triage so the insight CARDS rank
@@ -429,6 +445,7 @@ def get_domain_insights(conn_id: str, schema: str | None = None):
         }
     # Impact-rank + plausibility for the cards (same authority as the brief). Pass the
     # connection's column types so the triage can catch SUM/AVG over a non-numeric column.
+    _normalize_insight_numbers(result)
     _annotate_insights_triage(result, _load_business_profile(conn_id, schema), _connection_col_types(conn_id))
     return result
 
@@ -562,6 +579,9 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         except SchemaScopeUnavailable as e:
             logger.warning("briefing scope unavailable (conn=%s schema=%s): %s", conn_id, schema, e)
             by_domain = {}   # fail closed → the unavailable brief below, never another schema's
+    # Clean numbers BEFORE the narrator sees them: findings are interpolated verbatim into its
+    # prompt and echoed back into the synthesis, and they are returned as citation text.
+    _normalize_insight_numbers(by_domain)
     if not by_domain:
         return {
             "narrative": "",

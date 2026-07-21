@@ -6,7 +6,7 @@ narrative. `round_long_decimals` collapses any decimal run with 4+ fractional di
 string, using the same precision rule as the table-cell rounder (`_round_cell`), leaving short
 numbers, currency, and percentages untouched. See aughor/tools/executor.py.
 """
-from aughor.tools.executor import round_long_decimals
+from aughor.util.format import round_long_decimals
 
 
 def test_collapses_the_inv2_float():

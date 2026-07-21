@@ -6959,7 +6959,7 @@ def ada_synthesize(state: AgentState) -> dict:
     # into prose ("0.20829576194770064"); collapse any over-long decimal run in the prose fields so a
     # report never ships a 17-significant-digit number. Deterministic, no unit inference.
     if synth:
-        from aughor.tools.executor import round_long_decimals, unify_percent_fractions
+        from aughor.util.format import round_long_decimals, unify_percent_fractions
         # P3: when the metric is a PERCENTAGE, also unify a value written both as a fraction and a
         # percent in the same prose ("0.208" next to "20.8%") — self-grounded, so it can't rescale an
         # unrelated sub-1 number. Composed after the long-decimal collapse. No-op for a non-percent

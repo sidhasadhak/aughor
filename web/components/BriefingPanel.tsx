@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
-import { formatTimestamp, formatMetricValue } from "@/lib/format";
+import { formatTimestamp, formatMetricValue, normalizeNumberPrecision } from "@/lib/format";
 import {
   runDirectQuery,
   getDomainInsights,
@@ -182,8 +182,11 @@ function NarrativeText({
   // Every cited insight — a synthesized number may have come from any of them, so we
   // ground against all (primary = nearest) rather than only the nearest citation.
   const allInsightIds = Array.from(new Set(citations.map(c => c.insight_id).filter(Boolean)));
-  // Split on [N] markers
-  const parts = text.split(/(\[\d+\])/g);
+  // Render-boundary backstop for float noise. Upstream (aughor/util/format.py) now rounds on
+  // the way into the prompt AND at emit, so this is a no-op on fresh briefs — it exists to
+  // correct prose synthesized before that landed, including anything still in the 2h cache.
+  // Rounding only shortens a decimal run, so the GroundedNumber receipt still matches its cell.
+  const parts = normalizeNumberPrecision(text).split(/(\[\d+\])/g);
   // The insight a number is grounded against = the NEAREST citation marker (claims usually
   // precede their [N], so prefer the following marker, falling back to the preceding one).
   const markerRefAt = (i: number): string | null => {
@@ -1490,8 +1493,9 @@ function VerdictHero({
   digest?:       DigestTile[];
   onFinding?:    (ident: string) => void;
 }) {
-  const theme   = narrative?.headline_theme?.trim();
-  const finding = headline?.insight.finding?.trim();
+  // Both are grounded prose quoted verbatim — normalise float noise, never the wording.
+  const theme   = normalizeNumberPrecision(narrative?.headline_theme?.trim());
+  const finding = normalizeNumberPrecision(headline?.insight.finding?.trim());
   const title   = theme || finding || "Intelligence briefing";
   // When the AI theme is the headline, the top finding becomes the supporting lead.
   const lead    = theme ? finding : undefined;

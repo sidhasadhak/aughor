@@ -14,6 +14,16 @@
 
 ## 0 · Immediate next action ⏭️
 
+### 🧭 Session handoff — 2026-07-21 (b) · One number-format authority — `aughor/util/format.py` (branch `2026-07-21-number-format-standard`)
+
+**PR 2 of the briefing arc.** Fixes `…is 43.959061407888164%` in the verdict lede and `45.4865%` / `24.188549041748047%` in the digest tiles. tsc 0 · ruff 0 · unit suite green · **live-verified** (43.96% · 45.49% · 24.19%, grouping and short decimals untouched).
+
+- **🔑 Durable finding — this was NEVER a frontend formatting bug.** `web/lib/format.ts` was already canonical and well-adopted (38 importers, every `toLocaleString` inside it). The digits arrived from the backend *already inside a sentence*: `explorer/agent.py` serialized rows with `"\n".join(str(r) …)` → raw float64 repr into the prompt → the interpret prompts **require** the model to quote a value that appears in the result → it copied all 17 digits → persisted → narrated → rendered verbatim by a UI whose rule is "never invent a number". Formatting at the render boundary alone cannot fix that class of bug.
+- **The policy, one place — `aughor/util/format.py`:** `|v| >= 1 → 2dp` · `|v| < 1 → 6dp` · whole results drop the point · only runs of **4+ fractional digits** are touched (so `3.14`, `$1.50`, `1,234` are untouched). Mirrored in `normalizeNumberPrecision` (`web/lib/format.ts`). **Two contexts, deliberately different:** prose uses the policy; DATA CELLS keep up to 4dp (`formatMetricValue`) because dropping digits from a grid is information loss, not noise.
+- **Applied at both ends.** PREVENT: `rows_for_prompt` replaces the 3 `str(r)` sites, and `round_cell` is finally wired into `format_result_for_llm` (it was **dead code** — `cap_cell` sanitizes but never rounded). GUARANTEE: hygiene at the 4 explorer emit points (before verification/embedding/persist, so every consumer sees one canonical form — well inside `_number_grounded`'s 1% tolerance), at the narrator output, and `_normalize_insight_numbers` on the domains read path, which fixes the whole **back catalogue** of already-stored findings for every surface at once instead of patching each render.
+- **Consolidation:** `round_long_decimals` / `unify_percent_fractions` / `round_cell` moved out of `tools/executor.py` into the new authority; the 4 importers point at the real home (no re-export indirection). `keyFigure.ts` routed every branch through the policy — it had `trimNum` on the *range* branch but raw passthrough on the far more common single-percent and integer branches.
+- **Known limitation (not a regression):** a sub-1 *share* still reads as `0.275985` rather than `27.6%`. 6dp is the tested contract and protects small rates; 3-significant-digits was rejected because Python/JS render `0.0000123` in scientific notation, which is worse in prose. Turning shares into percents is a semantic change (is `0.27` a share or a correlation?) — out of scope.
+
 ### 🧭 Session handoff — 2026-07-21 · Briefing trust plane — scope guard · held-back grouping · Graph lens removed (branch `2026-07-21-briefing-trust-fixes`)
 
 **PR 1 of a 4-PR briefing arc** (the other three: a global number-format standard · expandable "Numbers that moved" + persisted chart/table edits · "Ask this briefing" as a scoped side panel). tsc 0 · ruff 0 · unit suite green · **live-verified on the real app** (schema switch luxexperience → netflix).
