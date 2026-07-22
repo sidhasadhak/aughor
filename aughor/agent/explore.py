@@ -1251,7 +1251,7 @@ class _SchemaLearning(BaseModel):
 def _learn_from_exploration(
     report: ExplorationReport,
     chain_summary: str,
-    conn_id: str,
+    schema: str = "",
 ) -> int:
     """
     Persist schema discoveries from an exploration run back to the glossary.
@@ -1261,20 +1261,33 @@ def _learn_from_exploration(
       2. LLM-based   — lightweight coder pass over the chain summary to catch
                        subtler patterns the structured notes missed
 
+    ``schema`` is the run's owning schema (``AgentState['scope_schema']``); it scopes every
+    write. It replaced a ``conn_id`` parameter that was accepted and never read — so this
+    function LOOKED scoped while writing bare, unqualified table keys on every exploration
+    run. With several schemas in one workspace an ``orders`` caveat learned in one landed on
+    every other schema's ``orders`` (#193 fixed this class elsewhere; this writer was missed).
+    The glossary is a single file keyed by schema-qualified table name, so the connection was
+    never the scoping dimension — the schema is.
+
+    ``""`` (an unscoped run) keeps the previous bare-key behaviour: there is no schema to
+    qualify with, and inventing one would file the caveat under the wrong table.
+
     Returns the number of new caveat entries written. Never raises — best-effort only.
     """
     try:
-        from aughor.semantic.glossary import load_glossary, update_column
+        from aughor.semantic.glossary import load_glossary, lookup_table, update_column
 
         written = 0
         glossary = load_glossary()
 
         def _existing_caveat(table: str, column: str) -> str:
-            return (glossary.get("tables", {})
-                            .get(table, {})
-                            .get("columns", {})
-                            .get(column, {})
-                            .get("caveats", "") or "")
+            # Tolerant read through THE SCOPE SEAM: matches this schema's qualified entry
+            # first and a legacy bare one second, so an existing caveat is still found (and
+            # not duplicated) while new writes go to the qualified key.
+            return (lookup_table(glossary.get("tables", {}), table, schema)
+                    .get("columns", {})
+                    .get(column, {})
+                    .get("caveats", "") or "")
 
         def _write_caveat(table: str, column: str, text: str) -> bool:
             """Write caveat only if it adds new information. Returns True if written."""
@@ -1285,7 +1298,7 @@ def _learn_from_exploration(
             if text in existing:
                 return False
             combined = f"{existing} | {text}" if existing else text
-            update_column(table, column, caveats=combined)
+            update_column(table, column, caveats=combined, schema=schema or None)
             # Reload so subsequent writes see the updated state
             glossary = load_glossary()
             return True
@@ -1674,8 +1687,10 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
         tolerate(_exc, "flywheel distil best-effort; run unaffected", counter="packs.flywheel")
 
     # ── Learning loop: persist schema discoveries back to the glossary ────────
-    conn_id = state.get("connection_id", "")
-    _learn_from_exploration(report, chain_summary, conn_id)
+    # Scoped by the run's owning schema, not the connection: the glossary is one file keyed
+    # by schema-qualified table name, so a bare key lets one schema's caveats answer for
+    # every sibling's same-named table.
+    _learn_from_exploration(report, chain_summary, state.get("scope_schema", "") or "")
 
     # T3-2: render-boundary number hygiene — the explore narrator copied raw 17-digit floats into the
     # headline/conclusion/narrative ("0.20829576194770064"). Collapse any over-long decimal run in the

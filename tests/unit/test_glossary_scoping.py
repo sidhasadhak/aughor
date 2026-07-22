@@ -171,3 +171,101 @@ def test_bare_index_and_bare_header_still_match():
     from aughor.semantic.retriever import _filter_schema
 
     assert "TABLE: orders" in _filter_schema(RETRIEVAL_SCHEMA, {"orders"})
+
+
+# ── The exploration WRITER — the one path #193 missed ─────────────────────────
+# `explore.py::_learn_from_exploration` persists schema discoveries back to the glossary
+# after every exploration run. It took a `conn_id` it never read and called `update_column`
+# with no schema at all — so it LOOKED scoped while writing bare keys. The connection was
+# never the scoping dimension: the glossary is one file keyed by qualified table name.
+
+from types import SimpleNamespace                                        # noqa: E402
+
+from aughor.agent.explore import _learn_from_exploration                 # noqa: E402
+
+
+def _report(table: str, column: str, issue: str):
+    """An ExplorationReport stand-in carrying one data-quality note (pass 1 — no LLM)."""
+    return SimpleNamespace(
+        data_quality_notes=[SimpleNamespace(table=table, column=column, issue=issue)],
+        conclusion="",
+    )
+
+
+def test_exploration_writes_under_the_runs_own_schema(gloss):
+    _learn_from_exploration(
+        _report("orders", "status", "status is free text, not an enum — never group on it"),
+        chain_summary="", schema="luxexperience")
+
+    tables = load_glossary()["tables"]
+    assert "luxexperience.orders" in tables
+    assert "orders" not in tables                    # no bare key written
+
+
+def test_two_schemas_exploring_the_same_table_name_no_longer_collide(gloss):
+    """THE BUG, on the writer side. Both workspaces have an `orders`; exploring one used to
+    append its caveats onto the other's entry, so a caveat learned about luxexperience data
+    would be shown to an analyst querying creditcard."""
+    _learn_from_exploration(_report("orders", "status", "luxexperience: status is free text"),
+                            chain_summary="", schema="luxexperience")
+    _learn_from_exploration(_report("orders", "status", "creditcard: status uses ISO codes"),
+                            chain_summary="", schema="creditcard")
+
+    tables = load_glossary()["tables"]
+    lux = tables["luxexperience.orders"]["columns"]["status"]["caveats"]
+    ccd = tables["creditcard.orders"]["columns"]["status"]["caveats"]
+    assert "luxexperience: status is free text" in lux
+    assert "creditcard" not in lux                   # neither leaked into the other
+    assert "creditcard: status uses ISO codes" in ccd
+    assert "luxexperience" not in ccd
+
+
+def test_unscoped_exploration_keeps_the_legacy_bare_key(gloss):
+    """An unscoped run has no schema to qualify with, and inventing one would file the
+    caveat under the wrong table — so bare stays bare."""
+    _learn_from_exploration(_report("orders", "status", "some caveat about this column"),
+                            chain_summary="", schema="")
+    assert "orders" in load_glossary()["tables"]
+
+
+def test_an_already_qualified_table_name_is_not_double_qualified(gloss):
+    """Pass 2 takes table names from an LLM, which often emits `schema.table` — that must
+    not become `luxexperience.luxexperience.orders`."""
+    _learn_from_exploration(
+        _report("luxexperience.orders", "status", "a caveat long enough to be written"),
+        chain_summary="", schema="luxexperience")
+    assert "luxexperience.orders" in load_glossary()["tables"]
+
+
+def test_an_existing_legacy_caveat_is_found_and_not_duplicated(gloss):
+    """Tolerant read: a bare entry written before scoping existed must still be seen, so the
+    same caveat is not appended a second time under the qualified key."""
+    update_column("orders", "status", caveats="status is free text, not an enum", schema=None)
+    written = _learn_from_exploration(
+        _report("orders", "status", "status is free text, not an enum"),
+        chain_summary="", schema="luxexperience")
+    assert written == 0                              # recognised as already known
+
+
+def test_caveats_accumulate_within_one_schema(gloss):
+    """Scoping must not break the append behaviour the writer already had."""
+    _learn_from_exploration(_report("orders", "status", "first caveat about this column"),
+                            chain_summary="", schema="lux")
+    _learn_from_exploration(_report("orders", "status", "second caveat about this column"),
+                            chain_summary="", schema="lux")
+
+    caveats = load_glossary()["tables"]["lux.orders"]["columns"]["status"]["caveats"]
+    assert "first caveat" in caveats and "second caveat" in caveats
+
+
+def test_the_call_site_passes_the_schema_not_the_connection(gloss):
+    """Wiring ratchet. The fix is worthless if the caller reverts to handing over
+    `connection_id` — the function would still look scoped and still write bare keys, with
+    every test above passing. Guards the seam, not just the function."""
+    from pathlib import Path
+    src = Path("aughor/agent/explore.py").read_text()
+    call = [ln.strip() for ln in src.splitlines() if "_learn_from_exploration(" in ln
+            and not ln.lstrip().startswith(("#", "def "))]
+    assert call, "call site not found — did the learning loop move?"
+    assert all("scope_schema" in ln for ln in call), call
+    assert all("connection_id" not in ln for ln in call), call
