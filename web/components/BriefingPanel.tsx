@@ -310,6 +310,10 @@ function NarrativeCard({
             synthesis into a narrow ribbon. The prose fills the card it was given. */}
         <div className="aug-fs-ui" style={{
           color: "var(--t1)", lineHeight: 1.7, fontWeight: 400,
+          // The narrative is multi-paragraph prose (blank-line separated). NarrativeText renders it
+          // into a <span> so citation chips can sit inline, and HTML would collapse those breaks
+          // into one run-on block — pre-wrap keeps the paragraphing the narrator wrote.
+          whiteSpace: "pre-wrap",
           ...(clamped ? { maxHeight: 150, overflow: "hidden" as const } : {}),
         }}>
           <NarrativeText

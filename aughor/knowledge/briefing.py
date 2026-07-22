@@ -3,8 +3,10 @@ Briefing Synthesis — M24b
 
 Generates an LLM-authored executive narrative from cross-domain intelligence.
 
-The narrator reads the top findings and patterns, then writes a 2-3 sentence
-brief that connects them with inline citation markers [1], [2], etc.
+The narrator reads the top findings and patterns, then writes a multi-paragraph
+brief that connects them with inline citation markers [1], [2], etc. — a 2-3
+sentence lede (all the UI's collapsed card shows) followed by the depth behind it
+(what "Read full synthesis" expands to).
 
 Each citation maps back to a specific insight so the UI can render clickable
 references that deep-link to the source finding.
@@ -47,8 +49,10 @@ class BriefingCitation(BaseModel):
 class BriefingNarrative(BaseModel):
     narrative: str = Field(
         description=(
-            "2-3 sentence executive synthesis. Must embed citation markers like [1], [2], [3] "
-            "inline at the exact place each finding is referenced. Business language, no jargon."
+            "Executive synthesis: a 2-3 sentence LEDE paragraph carrying the headline, then 2-4 "
+            "short paragraphs of depth, separated by blank lines. Must embed citation markers like "
+            "[1], [2], [3] inline at the exact place each finding is referenced. Business language, "
+            "no jargon."
         )
     )
     citations: list[BriefingCitation] = Field(
@@ -73,16 +77,26 @@ from aughor.util.time import age_hours as _age_hours
 
 _SYSTEM = """\
 You are an intelligence analyst writing a Monday morning executive briefing for a business data team.
-Your role is to synthesise the most important cross-domain findings into a tight, readable narrative.
+Your role is to synthesise the most important cross-domain findings into a readable narrative that
+stands on its own.
+
+Structure:
+- Open with a LEDE of 2-3 sentences carrying the single biggest business move. A reader who stops
+  after the lede must still have the headline.
+- Then 2-4 short paragraphs of depth: what connects the findings, what appears to be driving what,
+  what it means for the business, and what deserves attention first.
+- Separate paragraphs with a blank line. Aim for 200-350 words in total.
 
 Rules:
-- Write exactly 2-3 sentences. Be concise and direct.
-- Identify connections between findings across different domains — don't just list.
+- Identify connections between findings across different domains — don't just list them.
+- Carry every finding that does real work in the argument, not only the first two or three.
 - Use business language a CFO would understand: no SQL, no technical jargon.
 - Embed citation markers like [1], [2], [3] inline at the exact point each finding is referenced.
 - Every citation marker you use MUST appear in the citations list.
 - At least 2 different domains must be referenced.
 - Highlight urgency or opportunity where the data supports it.
+- Never pad. If the findings only support a short brief, write a short one — length must come from
+  evidence, never from filler, restatement, or speculation beyond what the findings show.
 """
 
 # Used for the "All schemas" aggregate brief, where findings come from SEPARATE businesses.
@@ -92,13 +106,19 @@ _SYSTEM_MULTI = """\
 You are an intelligence analyst writing a Monday morning executive briefing that spans SEVERAL
 SEPARATE, UNRELATED businesses (each finding is tagged with its Business).
 
+Structure:
+- Open with a LEDE of 2-3 sentences on the single most important signal, NAMING its business.
+- Then one short paragraph per other business covered, each self-contained.
+- Separate paragraphs with a blank line. Aim for 200-350 words in total.
+
 Rules:
-- Write exactly 2-3 sentences. Be concise and direct.
 - These findings come from DIFFERENT businesses — do NOT draw connections, comparisons, or
-  shared causes across them. Treat each business independently.
-- Lead with the single most important signal and NAME its business; cover at least two businesses.
+  shared causes across them. Treat each business independently. This holds for every paragraph:
+  more room to write is not licence to link them.
+- Cover at least two businesses.
 - Use business language a CFO would understand: no SQL, no technical jargon.
 - Embed citation markers like [1], [2], [3] inline; every marker MUST appear in the citations list.
+- Never pad. Length must come from evidence, never from filler or speculation.
 """
 
 
@@ -176,7 +196,8 @@ def _build_user_prompt(
             f"reports in that currency), never another currency symbol."
         )
     lines.append(
-        "\nGenerate a 2-3 sentence executive briefing narrative with inline citation markers."
+        "\nGenerate the executive briefing narrative: a 2-3 sentence lede, then 2-4 short "
+        "paragraphs of depth, separated by blank lines, with inline citation markers."
     )
     return "\n".join(lines)
 
