@@ -30,7 +30,7 @@ import random
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Literal, Optional, Type, TypeVar
+from typing import Any, Callable, Literal, Optional, Type, TypeVar
 
 import instructor
 from openai import OpenAI
@@ -374,7 +374,9 @@ def _record_llm_call(*, backend: str, model: str, role: str,
                      prompt_tokens: Optional[int], completion_tokens: Optional[int],
                      ms: float, ok: bool = True, error_class: Optional[str] = None,
                      retries: int = 0, temperature: Optional[float] = None,
-                     fallback: bool = False, streamed: bool = False) -> None:
+                     fallback: bool = False, streamed: bool = False,
+                     system: Optional[str] = None, user: Optional[str] = None,
+                     output: Any = None) -> None:
     """Mirror one model call into the session log (flag ``obs.session_log``).
 
     ``metering.record_llm`` sums the same numbers into a per-run aggregate, which
@@ -404,8 +406,29 @@ def _record_llm_call(*, backend: str, model: str, role: str,
         payload={"role": role, "fallback": fallback, "streamed": streamed,
                  **({"temperature": temperature} if temperature is not None else {}),
                  **({"usage_reported": False} if prompt_tokens is None
-                    and completion_tokens is None else {})},
+                    and completion_tokens is None else {}),
+                 # Content only when `obs.prompt_capture` is separately opted in;
+                 # the helper owns the capping + truncation-marking policy.
+                 **session_log.capture_prompt(system, user, _response_text(output))},
     )
+
+
+def _response_text(output: Any) -> Optional[str]:
+    """A model response as text, across the shapes the three paths produce
+    (pydantic model, dict, str). Only ever consumed under `obs.prompt_capture`;
+    returns None when there is nothing to record."""
+    if output is None:
+        return None
+    try:
+        dump = getattr(output, "model_dump_json", None)
+        if callable(dump):
+            return dump()
+        if isinstance(output, (dict, list)):
+            import json as _json
+            return _json.dumps(output, default=str)
+        return str(output)
+    except Exception:
+        return None
 
 
 def _usage_or_none(raw) -> tuple[Optional[int], Optional[int]]:
@@ -605,7 +628,7 @@ class LLMProvider:
                              ms=(time.monotonic() - _t0) * 1000.0, ok=False,
                              error_class=type(exc).__name__,
                              retries=_stats.get("retries", 0), temperature=temperature,
-                             fallback=fallback)
+                             fallback=fallback, system=system, user=user)
             raise
         pt, ct = _extract_usage(raw)
         _ms = (time.monotonic() - _t0) * 1000.0
@@ -613,7 +636,8 @@ class LLMProvider:
         _pt, _ct = _usage_or_none(raw)
         _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
                          completion_tokens=_ct, ms=_ms, retries=_stats.get("retries", 0),
-                         temperature=temperature, fallback=fallback)
+                         temperature=temperature, fallback=fallback,
+                         system=system, user=user, output=out)
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         return out
 
@@ -669,7 +693,8 @@ class LLMProvider:
                                  ms=(time.monotonic() - _t0) * 1000.0, ok=False,
                                  error_class=type(exc).__name__,
                                  retries=_stats.get("retries", 0),
-                                 temperature=temperature, streamed=True)
+                                 temperature=temperature, streamed=True,
+                                 system=system, user=user)
                 raise
             pt, ct = _extract_usage(raw_usage_src)
             _ms = (time.monotonic() - _t0) * 1000.0
@@ -678,7 +703,7 @@ class LLMProvider:
             _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
                              completion_tokens=_ct, ms=_ms,
                              retries=_stats.get("retries", 0), temperature=temperature,
-                             streamed=True)
+                             streamed=True, system=system, user=user, output=last)
             metering.check_budget()
             # Partial[...] objects skipped required-field validation mid-stream —
             # re-validate the terminal one; a failure heals via the complete() fallback.
@@ -746,7 +771,8 @@ class LLMProvider:
                              ms=(time.monotonic() - _t0) * 1000.0, ok=False,
                              error_class=type(exc).__name__,
                              retries=_stats.get("retries", 0),
-                             temperature=temperature, streamed=True)
+                             temperature=temperature, streamed=True,
+                             system=system, user=user)
             raise
         from types import SimpleNamespace
         _raw = SimpleNamespace(usage=usage)
@@ -756,7 +782,8 @@ class LLMProvider:
         _pt, _ct = _usage_or_none(_raw)
         _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
                          completion_tokens=_ct, ms=_ms, retries=_stats.get("retries", 0),
-                         temperature=temperature, streamed=True)
+                         temperature=temperature, streamed=True,
+                         system=system, user=user, output=final_dict)
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         # Terminal validation is the contract; a mismatch heals via complete() fallback.
         return response_model.model_validate(final_dict)

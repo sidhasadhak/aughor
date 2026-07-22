@@ -57,6 +57,11 @@ EVENT_KINDS = (
 # span sink's cap so the two tables truncate identically.
 _MAX_TEXT = 2000
 
+#: Payload keys the producer has already capped, with truncation marked. `_clip`
+#: leaves them alone so a deliberately larger prompt cap is not silently cut back
+#: to `_MAX_TEXT` — which would make the `*_truncated` markers lie.
+_LONGFORM_KEYS = frozenset({"system_prompt", "user_prompt", "response"})
+
 
 def enabled() -> bool:
     """True when the ``obs.session_log`` flag is on. Never raises — a flag-store
@@ -75,6 +80,61 @@ def _clip(value: Any) -> Any:
     if isinstance(value, (int, float, bool)) or value is None:
         return value
     return str(value)[:_MAX_TEXT]
+
+
+def prompt_capture_enabled() -> bool:
+    """True when ``obs.prompt_capture`` is on — the opt-in to storing the actual
+    content of model calls, deliberately separate from ``obs.session_log``.
+
+    The rest of the log is metadata; this is the material itself (schema,
+    sampled values, glossary, the user's question). Same flag-store failure
+    posture as :func:`enabled` — a failure means off.
+    """
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("obs.prompt_capture")
+    except Exception:
+        return False
+
+
+def _prompt_cap() -> int:
+    try:
+        return max(0, int(os.environ.get("AUGHOR_OBS_PROMPT_MAX_CHARS", str(_MAX_TEXT))))
+    except ValueError:
+        return _MAX_TEXT
+
+
+def _cap_text(value: Any, cap: int) -> tuple[str, bool]:
+    """(text, was_truncated). Truncation is reported, never silent: a shortened
+    prompt reproduces a *different* call than the one that ran, so a consumer
+    that replays it must be able to tell."""
+    text = value if isinstance(value, str) else str(value)
+    if cap and len(text) > cap:
+        return text[:cap], True
+    return text, False
+
+
+def capture_prompt(system: Any = None, user: Any = None, output: Any = None) -> dict:
+    """The prompt/response fields for an ``llm_call`` payload, or ``{}`` when
+    ``obs.prompt_capture`` is off.
+
+    The capping and truncation-marking policy lives here rather than at each
+    call site, so every producer stores content the same way and there is one
+    place to change if redaction is ever added.
+    """
+    if not prompt_capture_enabled():
+        return {}
+    cap = _prompt_cap()
+    out: dict[str, Any] = {}
+    for key, value in (("system_prompt", system), ("user_prompt", user),
+                       ("response", output)):
+        if value is None:
+            continue
+        text, truncated = _cap_text(value, cap)
+        out[key] = text
+        if truncated:
+            out[f"{key}_truncated"] = True
+    return out
 
 
 def emit(
@@ -144,7 +204,8 @@ def emit(
                              else (prompt_tokens or 0) + (completion_tokens or 0)),
             "row_count": row_count,
             "retries": retries,
-            "payload": {k: _clip(v) for k, v in (payload or {}).items()} or None,
+            "payload": {k: (v if k in _LONGFORM_KEYS else _clip(v))
+                        for k, v in (payload or {}).items()} or None,
         })
     except Exception as exc:
         from aughor.kernel.errors import tolerate

@@ -505,6 +505,120 @@ def test_final_response_captures_the_answer(
         "the answer itself was not recorded"
 
 
+def _one_llm_call(trace: str, *, system="SYS", user="USER"):
+    """Drive one successful model call and return its recorded event."""
+    from types import SimpleNamespace
+
+    from aughor import telemetry
+    from aughor.llm.provider import LLMProvider
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        answer: str = "forty-two"
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            return _Out(), SimpleNamespace(
+                usage=SimpleNamespace(prompt_tokens=5, completion_tokens=2))
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_Endpoint()))
+    with telemetry.bind_trace(trace):
+        LLMProvider._complete_on(client, "ollama", "m", system, user, _Out, 0.0, role="coder")
+    return [e for e in _all_events(trace_id=trace) if e["kind"] == session_log.LLM_CALL][0]
+
+
+def test_prompt_capture_off_by_default(monkeypatch):
+    """The session log is metadata by default. Content is a separate decision
+    with a different blast radius, so it needs its own opt-in."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    monkeypatch.delenv("AUGHOR_OBS_PROMPT_CAPTURE", raising=False)
+
+    payload = _one_llm_call("t-nocapture")["payload"]
+    assert "system_prompt" not in payload
+    assert "user_prompt" not in payload
+    assert "response" not in payload
+    assert payload["role"] == "coder"     # metadata still recorded
+
+
+def test_prompt_capture_records_content_when_enabled(monkeypatch):
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
+
+    payload = _one_llm_call("t-capture", system="SCHEMA CONTEXT", user="why did revenue drop?")
+    assert payload["payload"]["system_prompt"] == "SCHEMA CONTEXT"
+    assert payload["payload"]["user_prompt"] == "why did revenue drop?"
+    assert "forty-two" in payload["payload"]["response"]
+
+
+def test_prompt_capture_needs_the_session_log_too(monkeypatch):
+    """Content capture is an add-on: with the session log off nothing is written
+    at all, so enabling it alone cannot leak anything."""
+    monkeypatch.delenv("AUGHOR_OBS_SESSION_LOG", raising=False)
+    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
+
+    from types import SimpleNamespace
+
+    from aughor import telemetry
+    from aughor.llm.provider import LLMProvider
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            return _Out(), SimpleNamespace(usage=None)
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_Endpoint()))
+    with telemetry.bind_trace("t-capture-only"):
+        LLMProvider._complete_on(client, "ollama", "m", "SYS", "USER", _Out, 0.0, role="coder")
+
+    assert _all_events(trace_id="t-capture-only") == []
+
+
+def test_truncated_prompts_say_so(monkeypatch):
+    """A silently shortened prompt reproduces a different call than the one that
+    ran — worse than not capturing it, because it looks authoritative."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
+    monkeypatch.setenv("AUGHOR_OBS_PROMPT_MAX_CHARS", "10")
+
+    payload = _one_llm_call("t-trunc", system="x" * 500, user="short")["payload"]
+    assert payload["system_prompt"] == "x" * 10
+    assert payload["system_prompt_truncated"] is True
+    assert "user_prompt_truncated" not in payload     # fit, so unmarked
+
+
+def test_failed_call_still_captures_the_prompt(monkeypatch):
+    """The failing call is precisely the one you want to reproduce."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "0")
+    from types import SimpleNamespace
+
+    from aughor import telemetry
+    from aughor.llm.provider import LLMProvider
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            raise RuntimeError("nope")
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_Endpoint()))
+    with telemetry.bind_trace("t-failcap"):
+        with pytest.raises(RuntimeError):
+            LLMProvider._complete_on(client, "ollama", "m", "SYS", "ASK", _Out, 0.0, role="coder")
+
+    call = [e for e in _all_events(trace_id="t-failcap")
+            if e["kind"] == session_log.LLM_CALL][0]
+    assert call["ok"] is False
+    assert call["payload"]["user_prompt"] == "ASK"
+    assert "response" not in call["payload"]     # there wasn't one
+
+
 def test_journal_events_carry_the_ambient_trace(monkeypatch):
     """All ~29 event kinds correlate at once because emit() defaults trace_id
     from the ambient run — no call site was touched. Before this, `node.span`
