@@ -130,6 +130,19 @@ path, make it async-buffered before shipping, not after.
 
 ## PR-E2 — Evaluator library: one protocol over the guard battery
 
+> **Status: BUILT** (`6ff12a0`, 17 tests). 26 evaluators registered over the guard battery with
+> **zero guard rewrites** — five thin adapters, one per return shape. S5 (repairs) deliberately has
+> no adapter: its only candidate, `safety.preflight_repair`, can call the LLM, and a
+> "deterministic" evaluator that quietly makes a model call would corrupt every baseline here.
+> Decision gate PASSED as a standing test: the set covers every finding `/query/validate` produces.
+>
+> **What the proof run found** (26 evaluators × the 53 golden queries on the real DB): 72% of
+> known-correct SQL passes every guard. Of the 15 flagged — `lint` ×5 are TRUE positives (genuinely
+> missing NULLIF), `chasm_avg` ×3 are TRUE positives **in our own golden reference SQL** (the CIDR
+> "benchmarks are broken" pattern, in our gold), and `grain_fanout` ×5 are FALSE positives on safe
+> 1:N aggregation. Both actionable findings are filed as separate tasks. This was the battery's
+> first-ever precision measurement.
+
 **Why.** Guards are our differentiator and they are already standalone-callable — proven by precedent,
 not theory: the deleted `evals/guard_coverage.py` (recover with `git show cad2d49:evals/guard_coverage.py`)
 fired them over 135 predictions with zero agent, zero LLM, zero FastAPI, constructing a bare
@@ -176,6 +189,21 @@ that endpoint is refactored onto it. If it cannot, the adapters are wrong and th
 ---
 
 ## PR-E3 — Suites, runs, and the consolidation
+
+> **Status: BUILT** (`ac1f47f` store+runner, `8048356` consolidation; 18 tests).
+>
+> **I split this PR's decision gate — as written it conflated two things.** "Reproduce the ratchet's
+> ~65%" mixes *harness correctness* with *model performance*, and the ratchet's `runs` table has no
+> model column, so its five historical runs (0.6254–0.6551) cannot be compared with anything.
+> Replaced with: (a) **harness gate — a model-free reference replay must score ~100%**;
+> (b) a model-backed run is a *measurement*, not a pass/fail. **Gate PASSED: 159 replays (53 × 3) =
+> 100% accuracy, 0 errors, 0 flakes.** Guard-clean was 71.7% on the same run, matching E2's
+> independent number exactly. Runs now record the model/backend/flags they ran under — the thing the
+> ratchet structurally could not do.
+>
+> `eval.suite` now gates something (it was declared, sold as Enterprise, and gated nothing).
+> `POST /eval/run` removed; `/semantic/{conn}/benchmarks` deprecated in place until the UI moves in
+> E5. Golden SQL + its hermetic CI gate untouched.
 
 **Scope**
 
@@ -295,6 +323,27 @@ through the gate before declaring the arc complete. A promotion gate that has ne
 is a demo.
 
 ---
+
+## Interlude — OpenRouter + the model picker (unplanned, 2026-07-22)
+
+Not part of the arc, but it lands in the same branch and E4 depends on it. OpenRouter as a provider
+(14 curated free text models, ids verified against the live `/models` endpoint), a model picker with
+live catalogue + persisted custom entries, and **per-agent model bindings surfaced in Fleet →
+Agents** with an apply-recommended action.
+
+Three bugs found by running it rather than reasoning about it, each worth remembering as a *class*:
+
+- **Registered but not wired.** OpenRouter was added to every metadata table but not to the
+  client-builder dispatch, so selecting it raised *"Unknown backend: 'openrouter'. Use one of …,
+  openrouter"* — an error listing the backend it refused. `test_every_backend_builds_a_client` now
+  constructs one per registered backend.
+- **Guessed ids.** Two default model ids did not exist. Ids are now verified against the live
+  endpoint and a test keeps defaults inside the curated list.
+- **Tested only the coder model.** `test_provider` hardcoded `role="coder"`, so a green "Test
+  connection" said nothing about the narrator or fast bindings. Now tests every distinct bound model
+  (roles + agent pins), deduplicated, in parallel, with retries off — 38.6s → 9.1s. It immediately
+  surfaced a rate-limited narrator model and, on Ollama, a *retired* coder model behind a
+  *subscription-gated* narrator.
 
 ## Sequencing
 
