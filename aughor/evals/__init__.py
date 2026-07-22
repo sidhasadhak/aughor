@@ -32,6 +32,13 @@ from aughor.evals.evaluator import (
     sql_of,
 )
 from aughor.evals.probe import ProbeFn, probe_fn_for
+from aughor.evals.runner import CaseOutcome, RunSummary, Target, run_suite
+from aughor.evals.targets import (
+    ask_target,
+    reference_checker,
+    reference_target,
+    sql_generator_target,
+)
 from aughor.evals.registry import (
     clear,
     deterministic_evaluators,
@@ -45,8 +52,10 @@ from aughor.evals.registry import (
 register_builtins()
 
 __all__ = [
-    "REQUIREMENTS", "EvalCase", "EvalObservation", "EvalScore", "Evaluator",
-    "ProbeFn", "available", "clear", "deterministic_evaluators", "get_evaluator",
-    "probe_fn_for", "register_builtins", "register_evaluator",
-    "registered_evaluators", "run_all", "run_evaluator", "sql_of",
+    "REQUIREMENTS", "CaseOutcome", "EvalCase", "EvalObservation", "EvalScore",
+    "Evaluator", "ProbeFn", "RunSummary", "Target", "ask_target", "available",
+    "clear", "deterministic_evaluators", "get_evaluator", "probe_fn_for",
+    "reference_checker", "reference_target", "register_builtins",
+    "register_evaluator", "registered_evaluators", "run_all", "run_evaluator",
+    "run_suite", "sql_generator_target", "sql_of",
 ]
