@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from aughor.tools.table_names import qualify, resolve_in
+from aughor.tools.table_names import qualify, resolve_in, same_table
 
 try:
     import yaml
@@ -65,6 +65,31 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
+def _align_keys(dbt_tables: dict, yaml_keys: set[str]) -> dict:
+    """Re-key dbt entries onto the YAML key space so the two layers can actually meet.
+
+    The layering below unions on EXACT keys. dbt keys by what the manifest declares and the
+    YAML by what the connector's ``TABLE:`` header carried, and those disagree on both
+    qualification and case — so ``orders`` and ``analytics.orders`` were layered as two
+    unrelated tables and a dbt description never reached the entry anyone reads.
+
+    Aligns only when the match is UNAMBIGUOUS. With both ``beauty.orders`` and
+    ``ecommerce.orders`` in the YAML, a bare dbt ``orders`` could belong to either; picking
+    one would attach a description to the wrong table, which is the bug this is fixing. Such
+    an entry keeps its own key — visible and separate rather than silently misfiled. A dbt
+    node that declares its schema is already qualified and matches exactly, so the ambiguous
+    case only arises for manifests that omit it.
+    """
+    aligned: dict = {}
+    for key, entry in dbt_tables.items():
+        if key not in yaml_keys:
+            matches = [y for y in yaml_keys if same_table(y, key, schema_strict=True)]
+            if len(matches) == 1:
+                key = matches[0]
+        aligned[key] = entry
+    return aligned
+
+
 def load_merged_glossary(path: Path | None = None) -> dict:
     """
     Return the fully merged glossary with three-layer precedence:
@@ -84,7 +109,8 @@ def load_merged_glossary(path: Path | None = None) -> dict:
     # Split YAML entries: auto-generated (weak) vs manually provided (strong)
     auto_tables:   dict = {t: e for t, e in yaml_tables.items() if e.get("auto_generated")}
     manual_tables: dict = {t: e for t, e in yaml_tables.items() if not e.get("auto_generated")}
-    dbt_tables:    dict = dbt.get("tables", {}) if dbt else {}
+    dbt_tables:    dict = _align_keys(dbt.get("tables", {}) if dbt else {},
+                                      set(auto_tables) | set(manual_tables))
 
     all_names = set(auto_tables) | set(dbt_tables) | set(manual_tables)
     merged_tables: dict = {}

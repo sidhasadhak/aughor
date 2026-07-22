@@ -4,7 +4,9 @@ Schema fingerprint cache.
 Stores MD5 fingerprints of database schemas that have been fully auto-seeded.
 On reconnect to an unchanged database, autoseed skips all LLM calls instantly.
 
-Fingerprint = MD5(sorted_table_names + column_counts_per_table).
+Fingerprint = MD5(scope + sorted_table_names + column_counts_per_table), where scope is the
+owning connection + schema — structure alone does not identify a schema, and two copies of
+the same DDL used to share one "seeded" marker.
 Cache is a simple JSON file capped at MAX_ENTRIES (LRU eviction).
 """
 from __future__ import annotations
@@ -21,15 +23,35 @@ _CACHE_PATH = state_dir() / "schema_cache.json"
 _MAX_ENTRIES = 50
 
 
-def compute_fingerprint(table_blocks: dict[str, str]) -> str:
+def compute_fingerprint(table_blocks: dict[str, str], scope: str = "") -> str:
     """
     Stable fingerprint of a schema based on table names and approximate
     column counts (number of lines in each table block).
     Cheap to compute — no LLM, no DB calls.
+
+    ``scope`` identifies WHOSE schema this is (connection + schema name). Without it the
+    fingerprint described only *structure*, so two schemas built from the same DDL — a dev
+    and a prod copy, two tenants, two schemas in one workspace — hashed identically and the
+    second inherited the first's "fully seeded" marker without ever being seeded. Structure
+    alone cannot identify a schema; only structure plus owner can.
+
+    Omitted → the legacy structure-only hash, so a caller that genuinely has no scope
+    (and any stored fingerprint it wrote) keeps working unchanged.
     """
     parts = sorted(f"{t}:{blk.count(chr(10))}" for t, blk in table_blocks.items())
     raw = "|".join(parts)
+    if scope:
+        # NUL-separated: no schema or connection id can contain it, so no scope+structure
+        # pair can be confused with a different pair that happens to concatenate the same.
+        raw = f"{scope}\x00{raw}"
     return hashlib.md5(raw.encode()).hexdigest()[:16]
+
+
+def scope_key(connection_id: str | None, schema: str | None) -> str:
+    """The ``scope`` for :func:`compute_fingerprint` — ``""`` when neither is known."""
+    conn = (connection_id or "").strip()
+    sch = (schema or "").strip()
+    return f"{conn}\x00{sch}" if (conn or sch) else ""
 
 
 def is_complete(fingerprint: str) -> bool:

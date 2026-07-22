@@ -637,9 +637,11 @@ def apply_schema_enrichment(
     # write from THIS schema can no longer overwrite a same-named table in another (the
     # `orders` collision — five competing entries in one store). `schema_name` was already
     # in scope here and simply wasn't passed.
-    seed_missing_tables(raw, schema=schema_name)
+    seed_missing_tables(raw, schema=schema_name, connection_id=connection_id)
     enriched = apply_glossary(raw, schema=schema_name)
-    build_schema_index()  # best-effort; keeps vector index fresh after glossary changes
+    # best-effort; keeps vector index fresh after glossary changes. Scoped, so this
+    # connection's points can neither overwrite nor answer for another's.
+    build_schema_index(connection_id=connection_id or "", schema_name=schema_name or "")
     join_hints = infer_joins(enriched)
     if join_hints:
         enriched += "\n\n" + join_hints

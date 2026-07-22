@@ -533,7 +533,14 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
     #    `preflight.parallel` they run concurrently; the result is byte-identical either way. ──
     def _get_schema() -> str:
         from aughor.semantic.retriever import retrieve_relevant_schema
-        return retrieve_relevant_schema(h.description, state["schema_context"])
+        # Scoped to this run: the index holds every connection's tables in one collection,
+        # and an unfiltered search let a sibling's tables consume top-k slots that the
+        # schema filter then dropped — silently returning fewer tables than asked for.
+        return retrieve_relevant_schema(
+            h.description, state["schema_context"],
+            connection_id=state.get("connection_id", "") or "",
+            schema_name=state.get("scope_schema", "") or "",
+        )
 
     def _get_kb() -> str:
         from aughor.semantic.kb_retriever import retrieve_for_planning
