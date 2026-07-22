@@ -142,7 +142,7 @@ def _build_user_prompt(
     if coverage_digest:
         lines.append("")
         lines.append(
-            "FULL COVERAGE (every finding, summarized per domain — use for context and breadth; "
+            "FULL COVERAGE (the remaining findings, per domain — use for context and breadth; "
             "do NOT cite these as numbered findings, only the FINDINGS above are citable):"
         )
         lines.append(coverage_digest)
@@ -181,59 +181,59 @@ def _build_user_prompt(
     return "\n".join(lines)
 
 
-# ── Coverage digest (hierarchical tree-reduce over ALL findings) ──────────────
-# The narrative cites only the top-N findings; when more exist, fold ALL of them into a compact,
-# partition-aware (per-domain) digest so the synthesis reflects the full picture instead of silently
-# dropping findings N+1.. Within a domain the findings are themselves tree-reduced (pack → summarize
-# → recurse). Fail-open: any LLM error returns "" → the briefing falls back to the top-N-only prompt.
+# ── Coverage digest (deterministic per-domain listing) ────────────────────────
+# The narrative cites only the top-N findings; when more exist, the rest are listed here so the
+# synthesis reflects the full picture instead of silently dropping findings N+1..
+#
+# This WAS an LLM tree-reduce (pack → summarize → recurse, fanout 8). Measured on a real brief it
+# spent ~5 model calls compressing 1,291 characters into ~3 sentences — for a narrator whose context
+# window holds 32k+ tokens. That trade only makes sense when the source cannot fit; here it cost
+# latency and quota (a free tier's whole per-minute allowance went on the digest alone, so the brief
+# died before the narrator ran), added a failure mode, and DISCARDED detail the narrator could have
+# used. Listing the findings verbatim is cheaper, faster, and strictly more faithful.
+#
+# Only UNCITED findings are listed: the top-N are already in the prompt above, in full.
 
-class _Digest(BaseModel):
-    text: str = Field(description="One tight sentence — the key signal only, no preamble, no citations.")
-
-
-_DIGEST_SYSTEM = (
-    "You compress analytical findings into ONE tight sentence capturing the key signal. "
-    "No preamble, no citation markers, business language a CFO would understand."
-)
-_DIGEST_FANOUT = 8
+_DIGEST_MAX_PER_DOMAIN = 12     # findings listed per domain before the tail is counted, not shown
+_DIGEST_MAX_CHARS = 4000        # whole-digest budget; the narrator's window is far larger
 
 
 def _coverage_digest(domain_data: dict[str, list[dict]], cited_ids: set[str]) -> str:
-    """Per-domain fold of every finding, for the narrator's context. ``""`` when nothing was dropped
-    (the top-N prompt already holds everything) or on any failure (fail-open)."""
-    groups = {d: ins for d, ins in domain_data.items() if ins}
-    total = sum(len(v) for v in groups.values())
-    if total <= len(cited_ids):
+    """Per-domain listing of the findings the prompt did NOT already carry.
+
+    ``""`` when nothing was dropped (the top-N prompt already holds everything). Deterministic:
+    no LLM call, so it cannot fail, stall, or invent — the old version's fail-open ``except``
+    returned "" on any model error, which silently cost the narrative its breadth."""
+    remaining: dict[str, list[str]] = {}
+    for domain, insights in domain_data.items():
+        texts = [t for ins in insights
+                 if ins.get("id", "") not in cited_ids
+                 and (t := str(ins.get("finding", "")).strip())]
+        if texts:
+            remaining[domain] = texts
+    if not remaining:
         return ""
-    try:
-        from aughor.llm.provider import get_provider
-        from aughor.llm.reduce import hierarchical_reduce, partitioned_reduce
 
-        provider = get_provider("fast")
-
-        def _one(prompt: str) -> str:
-            return provider.complete(system=_DIGEST_SYSTEM, user=prompt,
-                                     response_model=_Digest, temperature=0.2).text.strip()
-
-        def summarize_group(domain: str, findings: list[dict]) -> str:
-            def leaf(batch: list[dict]) -> str:
-                listing = "\n".join(f"- {f.get('finding', '')}" for f in batch)
-                return _one(f"Domain: {domain}\nFindings:\n{listing}\n\nOne sentence capturing the key signal.")
-
-            def comb(parts: list[str]) -> str:
-                listing = "\n".join(f"- {p}" for p in parts)
-                return _one(f"Domain: {domain}\nPartial summaries:\n{listing}\n\nMerge into one sentence.")
-
-            digest = hierarchical_reduce(findings, summarize=leaf, combine=comb, fanout=_DIGEST_FANOUT)
-            return f"{domain}: {digest}"
-
-        # Domains are distinct buckets — keep them on separate lines, never blended.
-        return partitioned_reduce(
-            groups, summarize_group=summarize_group,
-            combine=lambda parts: "\n".join(parts), fanout=_DIGEST_FANOUT,
-        )
-    except Exception:
-        return ""
+    lines: list[str] = []
+    budget = _DIGEST_MAX_CHARS
+    for domain, texts in remaining.items():
+        shown, hidden = texts[:_DIGEST_MAX_PER_DOMAIN], texts[_DIGEST_MAX_PER_DOMAIN:]
+        head = f"{domain}:"
+        entries: list[str] = []
+        for t in shown:
+            entry = f"  - {t}"
+            if len(entry) > budget:                    # budget spent — count the tail, never drop it silently
+                hidden = texts[len(entries):]
+                break
+            entries.append(entry)
+            budget -= len(entry)
+        if not entries:
+            continue
+        lines.append(head)
+        lines.extend(entries)
+        if hidden:
+            lines.append(f"  - (+{len(hidden)} further findings in this domain)")
+    return "\n".join(lines)
 
 
 def _profile_signals(profile: Any, workspace_id: Optional[str] = None) -> tuple[list, str]:

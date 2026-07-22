@@ -352,3 +352,76 @@ def test_primary_still_tried_when_it_is_the_only_option(monkeypatch):
 
     assert prov.complete("s", "u", _Out, 0.3).text == "recovered"
     assert seen == ["openrouter"]
+
+
+# ── Server-stated retry delay ────────────────────────────────────────────────
+# Our ladder tops out near 15s. Gemini's free-tier throttle says "Please retry in 42.3s",
+# so every retry was spent inside a window that had not reopened — the call failed even
+# though waiting slightly longer would have succeeded.
+
+def test_retry_after_is_parsed_from_the_provider_message():
+    msg = ("429 You exceeded your current quota … limit: 20, model: gemini-3.6-flash "
+           "Please retry in 42.327199508s.")
+    assert P._retry_after_seconds(Exception(msg)) == pytest.approx(42.327, abs=0.01)
+
+
+def test_retry_after_handles_the_common_spellings():
+    for msg, want in (("Retry-After: 30s", 30.0),
+                      ('"retryDelay": "17s"', 17.0),
+                      ("please retry again in 5s", 5.0)):
+        assert P._retry_after_seconds(Exception(msg)) == pytest.approx(want), msg
+
+
+def test_retry_after_absent_returns_none():
+    assert P._retry_after_seconds(Exception("429 Too Many Requests")) is None
+
+
+def test_retry_after_is_capped():
+    """A pathological value must not park a request indefinitely."""
+    assert P._retry_after_seconds(Exception("retry in 99999s")) == P._RETRY_AFTER_MAX_S
+
+
+def test_ladder_waits_the_server_stated_delay(monkeypatch):
+    slept: list[float] = []
+    monkeypatch.setattr(P.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "1")
+    calls = {"n": 0}
+
+    def do():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise Exception("429 rate limit. Please retry in 42.3s")
+        return "ok"
+
+    assert P._run_resilient(do, "u-retry-after") == "ok"
+    assert slept and slept[0] == pytest.approx(42.3, abs=0.01)   # not the ~2s ladder guess
+
+
+def test_ladder_keeps_its_own_backoff_when_the_delay_is_shorter(monkeypatch):
+    """The server's number wins only when it is LONGER — a "retry in 0s" must not
+    turn the ladder into a hot loop."""
+    slept: list[float] = []
+    monkeypatch.setattr(P.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "1")
+    calls = {"n": 0}
+
+    def do():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise Exception("429 rate limit. Please retry in 0.1s")
+        return "ok"
+
+    assert P._run_resilient(do, "u-retry-short") == "ok"
+    assert slept[0] >= 2.0
+
+
+def test_gemini_daily_quota_id_is_an_exhausted_allowance():
+    """Verbatim from a live Gemini 429. The prose is IDENTICAL to its per-minute throttle —
+    only the quotaId distinguishes them, and it spells the period with no separator. It also
+    advertises "retry in 36s", which is wrong for a day-long block: honouring that retried a
+    dead backend three times and cost ~110s. The id is the authority, not the prose."""
+    msg = ('Error code: 429 - You exceeded your current quota, please check your plan and '
+           'billing details. "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier". '
+           'Please retry in 36.284972143s.')
+    assert P._is_quota_exhausted(Exception(msg))
+    assert not P._is_transient(Exception(msg))     # no retry, and no cooldown-defeating wait

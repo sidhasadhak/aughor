@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import random
+import re
 import threading
 import time
 from pathlib import Path
@@ -479,8 +480,36 @@ _TRANSIENT_MSGS = (
 # 60-second throttle. Only phrases naming a day, or a balance that needs topping up, count.
 _QUOTA_EXHAUSTED_MSGS = (
     "per-day", "per day", "daily limit", "requests per day",
+    # Google names the exhausted quota in a camel-case id with no separators —
+    # "GenerateRequestsPerDayPerProjectPerModel-FreeTier" — which none of the spaced
+    # forms above match. Its message ALSO carries a "retry in 36s" that is simply wrong
+    # for a daily cap, so missing this meant retrying a day-long block three times.
+    "perday",
     "insufficient_quota", "credit limit exceeded", "add credits", "payment required",
 )
+
+
+# Providers usually say how long to wait — Gemini as "Please retry in 42.3s", OpenAI-compatible
+# shims as a retryDelay field or a Retry-After header. Our ladder tops out around 15s, so a 42s
+# window was never survived: we exhausted the retries and failed a call that would have succeeded.
+# Honour the server's own number when it gives one.
+_RETRY_AFTER_RE = re.compile(
+    r"(?:retry(?:\s+again)?\s+in|retry[-_]?after|retrydelay)\D{0,12}?(\d+(?:\.\d+)?)\s*s",
+    re.IGNORECASE,
+)
+_RETRY_AFTER_MAX_S = 120.0
+
+
+def _retry_after_seconds(exc: BaseException) -> Optional[float]:
+    """Seconds the provider asked us to wait, or None. Capped so a pathological value
+    cannot park a request for minutes; the overall deadline still bounds everything."""
+    m = _RETRY_AFTER_RE.search(str(exc))
+    if not m:
+        return None
+    try:
+        return min(_RETRY_AFTER_MAX_S, max(0.0, float(m.group(1))))
+    except ValueError:
+        return None
 
 
 def _is_quota_exhausted(exc: BaseException) -> bool:
@@ -611,6 +640,11 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
                     stats["retries"] = attempt
                 err_name = type(e).__name__   # `e` is unbound after the except block
                 wait = min(30.0, 2.0 ** attempt) + random.uniform(0.0, 0.5 * attempt)
+                # The provider's own number wins when it is LONGER than our guess: a
+                # throttle that says "retry in 42s" is not survivable on a 15s ladder.
+                asked = _retry_after_seconds(e)
+                if asked is not None and asked > wait:
+                    wait = asked
         if time.monotonic() + wait >= deadline:
             wait = max(0.0, deadline - time.monotonic())
         logger.warning("llm: transient error (%s); retry %d/%d in %.1fs",
