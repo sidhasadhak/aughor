@@ -20,6 +20,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import BaseModel
 
+from aughor.llm import provider as P
 from aughor.llm.provider import LLMProvider
 
 
@@ -275,3 +276,91 @@ def test_metering_budget_exceeded_propagates(monkeypatch):
     with pytest.raises(_Budget):
         prov._stream_on(prov._client, "ollama", "stub-model", "s", "u", _Out, 0.0,
                         "narrative", lambda t: None, base_url="http://localhost:1/v1")
+
+
+# ── Output cap on the streamed path (2026-07-22 request budget, follow-on to #200) ──
+# #200 put max_tokens + reasoning.effort on the BLOCKING path only. Streaming is
+# default-on (`ask.stream_text`, `ada.progress_events`) and carries the three highest-
+# volume calls in the app — the quick-path headline, the post-answer insight, and the
+# deep synthesis — so the runaway #200 diagnosed (3 requests × 600s emitting 13.5k–18.9k
+# reasoning tokens, 58% of all output tokens) was still unbounded on every one of them.
+
+def _stream_once(backend: str, completions, **kw):
+    """Drive the real _stream_on against a stubbed raw client."""
+    return LLMProvider._stream_on(
+        _FakeInstructorWrapper(completions), backend, "stub-model", "s", "u",
+        _Out, 0.1, "narrative", lambda t: None, **kw)
+
+
+def test_streamed_openai_compat_calls_carry_the_output_cap():
+    completions = _FakeRawCompletions(chunks=_happy_chunks())
+    _stream_once("ollama", completions)
+    assert completions.calls[0]["max_tokens"] == P._max_output_tokens()
+
+
+def test_streamed_openrouter_calls_carry_the_reasoning_bound():
+    completions = _FakeRawCompletions(chunks=_happy_chunks())
+    _stream_once("openrouter", completions)
+    assert completions.calls[0]["extra_body"] == {"reasoning": {"effort": "low"}}
+
+
+class _RejectsExtras(_FakeRawCompletions):
+    """A shim that 400s on `reasoning` — why the extras have to stay optional."""
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if "extra_body" in kwargs:
+            raise ValueError("400: unrecognized field 'reasoning'")
+        return iter(self._chunks)
+
+
+def test_the_output_cap_survives_every_rung_of_the_degrade_ladder():
+    """`reasoning` and `stream_options` are shim-optional; `max_tokens` is core OpenAI
+    and is NOT. A cap that gets dropped alongside the extras is not a cap."""
+    completions = _RejectsExtras(chunks=_happy_chunks())
+    out = _stream_once("openrouter", completions)
+    assert out.narrative == _EXPECT_DELTAS[-1]              # the call still succeeded
+    assert len(completions.calls) == 2
+    assert "extra_body" in completions.calls[0] and "extra_body" not in completions.calls[1]
+    assert all(c["max_tokens"] == P._max_output_tokens() for c in completions.calls)
+
+
+def test_a_rate_limit_opening_the_stream_is_not_degraded_away(monkeypatch):
+    """Every rung of the ladder is another REQUEST against the limit that just refused
+    us — that is exactly the 19-vs-15-RPM spiral #200 fixed on the blocking path. A 429
+    must propagate to the retry ladder and the fallback chain, never trigger a degrade."""
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "0")
+    completions = _FakeRawCompletions(chunks=_happy_chunks(),
+                                      exc=RuntimeError("429 rate limit exceeded"))
+    with pytest.raises(Exception):
+        _stream_once("openrouter", completions)
+    assert len(completions.calls) == 1                      # one attempt, not the ladder
+    assert "extra_body" in completions.calls[0]             # never degraded
+
+
+def test_anthropic_streaming_honours_the_output_cap_override(monkeypatch):
+    """AUGHOR_MAX_OUTPUT_TOKENS is documented as *the* knob on the runaway, but both
+    Anthropic branches hardcoded 4096, so it never reached them."""
+    monkeypatch.setenv("AUGHOR_MAX_OUTPUT_TOKENS", "1024")
+    seen: dict = {}
+
+    def _create_partial(**kw):
+        seen.update(kw)
+        return iter([_Out(narrative="hi", questions=[])])
+
+    client = SimpleNamespace(messages=SimpleNamespace(create_partial=_create_partial))
+    LLMProvider._stream_on(client, "anthropic", "m", "s", "u", _Out, 0.1,
+                           "narrative", lambda t: None)
+    assert seen["max_tokens"] == 1024
+
+
+def test_streamed_calls_record_their_role(monkeypatch):
+    """complete_streaming never forwarded `role`, so the highest-volume calls in the app
+    all landed in the session log as role="" — which is the log we need to read to price
+    a token budget at all."""
+    rec: dict = {}
+    monkeypatch.setattr(P, "_record_llm_call", lambda **kw: rec.update(kw))
+    prov = _provider_with(_FakeRawCompletions(chunks=_happy_chunks()))
+    prov.complete_streaming(system="s", user="u", response_model=_Out,
+                            text_field="narrative", on_text=lambda t: None)
+    assert rec["role"] == "narrator"

@@ -676,7 +676,7 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
                    max_retries: Optional[int] = None):
     """Run ``do()`` under the per-endpoint semaphore, retrying transient errors with exponential
     backoff + jitter, bounded by AUGHOR_LLM_MAX_RETRIES (default 3) and an overall deadline
-    AUGHOR_LLM_DEADLINE_S (default 600s). Non-transient errors raise immediately.
+    AUGHOR_LLM_DEADLINE_S (default 180s, see _DEADLINE_S). Non-transient errors raise immediately.
 
     ``stats`` (optional, mutated in place) reports ``retries`` — the count was
     previously local and discarded, so a model that only ever succeeds on its
@@ -699,13 +699,21 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
                 # how a throttle becomes a spiral — the live Gemini account peaked at 19 RPM
                 # against a 15 RPM cap with a 429-dominated error chart. One retry, at the delay
                 # the server itself asked for, is the most that can help.
-                budget = 1 if _is_rate_limited(e) else max_retries
+                # min(), not a bare 1: this is a CEILING on the ladder, and written as a
+                # plain assignment it became a FLOOR — a caller that explicitly asked for
+                # max_retries=0 got one retry anyway, plus a sleep honouring the server's
+                # retry-after (up to 120s). That silently defeats the health check, which
+                # passes 0 precisely so it reports what is true NOW; and the health check is
+                # the likeliest place to meet a 429 (12 of 62 requests in the 2026-07-22
+                # export were health probes, against a 50/day cap).
+                budget = min(1, max_retries) if _is_rate_limited(e) else max_retries
                 if not _is_transient(e) or attempt >= budget or time.monotonic() >= deadline:
                     raise
                 attempt += 1
                 if stats is not None:
                     stats["retries"] = attempt
                 err_name = type(e).__name__   # `e` is unbound after the except block
+                err_budget = budget           # ditto — report the ladder we actually ran
                 wait = min(30.0, 2.0 ** attempt) + random.uniform(0.0, 0.5 * attempt)
                 # The provider's own number wins when it is LONGER than our guess: a
                 # throttle that says "retry in 42s" is not survivable on a 15s ladder.
@@ -715,7 +723,7 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
         if time.monotonic() + wait >= deadline:
             wait = max(0.0, deadline - time.monotonic())
         logger.warning("llm: transient error (%s); retry %d/%d in %.1fs",
-                       err_name, attempt, max_retries, wait)
+                       err_name, attempt, err_budget, wait)
         time.sleep(wait)
 
 
@@ -840,7 +848,8 @@ class LLMProvider:
         try:
             return self._stream_on(self._client, self.backend, self._model,
                                    system, user, response_model, temperature,
-                                   text_field, on_text, base_url=self._base_url)
+                                   text_field, on_text, base_url=self._base_url,
+                                   role=self.role)
         except Exception as stream_exc:
             logger.warning("provider: partial streaming failed (%s); falling back to blocking complete()",
                            str(stream_exc)[:120])
@@ -872,7 +881,7 @@ class LLMProvider:
         from aughor.kernel import metering
         if backend == "anthropic":
             endpoint = client.messages
-            kwargs = dict(model=model, max_tokens=4096, system=system,
+            kwargs = dict(model=model, max_tokens=_max_output_tokens(), system=system,
                           messages=[{"role": "user", "content": user}],
                           response_model=response_model)
         else:
@@ -954,7 +963,7 @@ class LLMProvider:
             create_partial = getattr(client.messages, "create_partial", None)
             if create_partial is None:
                 raise RuntimeError("anthropic client has no create_partial — partial streaming unavailable")
-            kwargs = dict(model=model, max_tokens=4096, system=system,
+            kwargs = dict(model=model, max_tokens=_max_output_tokens(), system=system,
                           messages=[{"role": "user", "content": user}],
                           response_model=response_model)
 
@@ -1014,18 +1023,46 @@ class LLMProvider:
         if raw_client is None:
             raise RuntimeError(f"{backend} instructor wrapper exposes no raw client — streaming unavailable")
         sys_prompt = system + LLMProvider._json_stream_instruction(response_model)
+        # max_tokens rides here for the same reason it rides on _complete_on: without it the
+        # only brake on a reasoning model is the deadline. It was set on the blocking path only,
+        # so the three highest-volume calls in the app — the quick-path headline, the post-answer
+        # insight, and the deep synthesis — are all STREAMED and were all still unbounded.
+        # It is deliberately NOT part of the degrade ladder below: `max_tokens` is core OpenAI,
+        # every compat shim takes it, and a cap that can be silently dropped is not a cap.
         base_kwargs = dict(model=model, temperature=temperature, stream=True,
+                           max_tokens=_max_output_tokens(),
                            messages=[{"role": "system", "content": sys_prompt},
                                      {"role": "user", "content": user}])
+        extra = _reasoning_extra_body(backend)
+        if extra:
+            base_kwargs["extra_body"] = extra
+
+        # Degrade ladder, richest first. `stream_options` and `reasoning` are both shim-optional
+        # and an endpoint that has never heard of one rejects the whole request, so drop them one
+        # at a time rather than lose the call.
+        _ladder = [dict(stream_options={"include_usage": True}, **base_kwargs)]
+        if extra:
+            _ladder.append({k: v for k, v in _ladder[0].items() if k != "extra_body"})
+        _ladder.append({k: v for k, v in base_kwargs.items() if k != "extra_body"})
+
+        def _open_stream():
+            last = len(_ladder) - 1
+            for i, kw in enumerate(_ladder):
+                try:
+                    return raw_client.chat.completions.create(**kw)
+                except Exception as exc:
+                    # Only a 4xx-shaped "I don't know that field" earns a degrade. A transient
+                    # error or a quota block must propagate untouched: re-sending it here is
+                    # another request against the very limit that just refused us (#200), and it
+                    # would hide the failure from the retry ladder and the fallback chain.
+                    if i == last or _is_transient(exc) or _is_quota_exhausted(exc):
+                        raise
+                    logger.warning("llm: %s rejected a streaming extra (%s); degrading",
+                                   backend, str(exc)[:100])
 
         def _do():
             # Semaphore held for the stream's whole life (drained fully in here).
-            try:
-                stream = raw_client.chat.completions.create(
-                    stream_options={"include_usage": True}, **base_kwargs)
-            except Exception:
-                # Some OpenAI-compat shims reject stream_options — retry without.
-                stream = raw_client.chat.completions.create(**base_kwargs)
+            stream = _open_stream()
             buf, seen, usage = "", "", None
             for chunk in stream:
                 usage = getattr(chunk, "usage", None) or usage
