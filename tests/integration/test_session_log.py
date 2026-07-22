@@ -303,6 +303,70 @@ def test_prune_disabled_when_both_limits_are_zero(monkeypatch):
     assert len(_all_events(trace_id="t-keep")) == 1
 
 
+def test_llm_calls_are_recorded_per_call(monkeypatch):
+    """metering.record_llm sums tokens into a per-run aggregate; the per-call
+    detail — which model, how long, was it the fallback — used to be discarded
+    (telemetry.log_generation existed with zero call sites)."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    from types import SimpleNamespace
+
+    from aughor import telemetry
+    from aughor.llm.provider import LLMProvider
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            return _Out(), SimpleNamespace(
+                usage=SimpleNamespace(prompt_tokens=11, completion_tokens=7))
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_Endpoint()))
+
+    with telemetry.bind_trace("t-llm"):
+        LLMProvider._complete_on(client, "ollama", "qwen-test", "s", "u", _Out, 0.0,
+                                 role="coder")
+
+    calls = [e for e in _all_events(trace_id="t-llm") if e["kind"] == session_log.LLM_CALL]
+    assert len(calls) == 1
+    p = calls[0]["payload"]
+    assert calls[0]["name"] == "qwen-test"
+    assert (p["backend"], p["role"], p["model"]) == ("ollama", "coder", "qwen-test")
+    assert (p["prompt_tokens"], p["completion_tokens"], p["total_tokens"]) == (11, 7, 18)
+    assert p["fallback"] is False
+    assert calls[0]["duration_ms"] is not None
+
+
+def test_fallback_model_swap_is_visible(monkeypatch):
+    """The silent Anthropic fallback can change the model mid-run, which would
+    quietly invalidate any measurement attributing the result to the primary."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    from types import SimpleNamespace
+
+    from aughor import telemetry
+    from aughor.llm.provider import LLMProvider
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    class _Messages:
+        def create_with_completion(self, **kw):
+            return _Out(), SimpleNamespace(
+                usage=SimpleNamespace(input_tokens=3, output_tokens=2))
+
+    client = SimpleNamespace(messages=_Messages())
+
+    with telemetry.bind_trace("t-fb"):
+        LLMProvider._complete_on(client, "anthropic", "claude-x", "s", "u", _Out, 0.0,
+                                 role="coder", fallback=True)
+
+    call = [e for e in _all_events(trace_id="t-fb") if e["kind"] == session_log.LLM_CALL][0]
+    assert call["payload"]["fallback"] is True
+    assert call["payload"]["model"] == "claude-x"
+
+
 def test_session_events_is_queryable_as_an_ops_table():
     """The table joins the curated aughor_ops surface, so Deep Analysis can
     investigate the agent's own behaviour with NL2SQL — the same one-line move

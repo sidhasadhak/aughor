@@ -370,6 +370,30 @@ def _is_transient(exc: BaseException) -> bool:
     return any(k in msg for k in _TRANSIENT_MSGS)
 
 
+def _record_llm_call(*, backend: str, model: str, role: str, prompt_tokens: int,
+                     completion_tokens: int, ms: float, fallback: bool = False,
+                     streamed: bool = False) -> None:
+    """Mirror one model call into the session log (flag ``obs.session_log``).
+
+    ``metering.record_llm`` sums the same numbers into a per-run aggregate, which
+    answers "what did this run cost" but not "which model was asked what, how
+    long did it take, and did the fallback quietly swap it mid-run" — the
+    questions a measurement needs before it can be trusted. The dedicated
+    per-call record (``telemetry.log_generation``) existed but had no call sites,
+    so all of it was discarded.
+
+    Strict no-op when the flag is off; never raises (the sink swallows).
+    """
+    from aughor.obs import session_log
+    session_log.emit(
+        session_log.LLM_CALL, name=model, ok=True, duration_ms=round(ms, 1),
+        payload={"backend": backend, "role": role, "model": model,
+                 "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
+                 "total_tokens": prompt_tokens + completion_tokens,
+                 "fallback": fallback, "streamed": streamed},
+    )
+
+
 def _run_resilient(do, base_url: str):
     """Run ``do()`` under the per-endpoint semaphore, retrying transient errors with exponential
     backoff + jitter, bounded by AUGHOR_LLM_MAX_RETRIES (default 3) and an overall deadline
@@ -442,7 +466,7 @@ class LLMProvider:
         try:
             return self._complete_on(self._client, self.backend, self._model,
                                      system, user, response_model, temperature,
-                                     base_url=self._base_url)
+                                     base_url=self._base_url, role=self.role)
         except Exception as primary_exc:
             # Resilience: if the primary backend (e.g. local/cloud Ollama) is
             # unreachable or erroring, transparently fall back to Anthropic when
@@ -457,7 +481,8 @@ class LLMProvider:
             try:
                 return self._complete_on(fb, "anthropic", _fallback_model(),
                                          system, user, response_model, temperature,
-                                         base_url="anthropic-fallback")
+                                         base_url="anthropic-fallback",
+                                         role=self.role, fallback=True)
             except Exception:
                 raise primary_exc  # surface the original failure if fallback also fails
 
@@ -512,7 +537,7 @@ class LLMProvider:
 
     @staticmethod
     def _complete_on(client, backend, model, system, user, response_model, temperature,
-                     base_url: str = ""):
+                     base_url: str = "", *, role: str = "", fallback: bool = False):
         from aughor.kernel import metering
         if backend == "anthropic":
             endpoint = client.messages
@@ -536,7 +561,10 @@ class LLMProvider:
         _t0 = time.monotonic()
         out, raw = _run_resilient(_do, base_url)   # concurrency cap + transient-error retry/backoff
         pt, ct = _extract_usage(raw)
-        metering.record_llm(pt, ct, (time.monotonic() - _t0) * 1000.0)
+        _ms = (time.monotonic() - _t0) * 1000.0
+        metering.record_llm(pt, ct, _ms)
+        _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=pt,
+                         completion_tokens=ct, ms=_ms, fallback=fallback)
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         return out
 
@@ -553,7 +581,7 @@ class LLMProvider:
 
     @staticmethod
     def _stream_on(client, backend, model, system, user, response_model, temperature,
-                   text_field, on_text, base_url: str = ""):
+                   text_field, on_text, base_url: str = "", *, role: str = ""):
         from aughor.kernel import metering
         if backend == "anthropic":
             # instructor's anthropic wrapper streams tool-mode JSON reliably.
@@ -585,7 +613,10 @@ class LLMProvider:
             _t0 = time.monotonic()
             last, raw_usage_src = _run_resilient(_do, base_url)
             pt, ct = _extract_usage(raw_usage_src)
-            metering.record_llm(pt, ct, (time.monotonic() - _t0) * 1000.0)
+            _ms = (time.monotonic() - _t0) * 1000.0
+            metering.record_llm(pt, ct, _ms)
+            _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=pt,
+                             completion_tokens=ct, ms=_ms, streamed=True)
             metering.check_budget()
             # Partial[...] objects skipped required-field validation mid-stream —
             # re-validate the terminal one; a failure heals via the complete() fallback.
@@ -647,7 +678,10 @@ class LLMProvider:
         final_dict, usage = _run_resilient(_do, base_url)
         from types import SimpleNamespace
         pt, ct = _extract_usage(SimpleNamespace(usage=usage))   # extractor reads .usage
-        metering.record_llm(pt, ct, (time.monotonic() - _t0) * 1000.0)
+        _ms = (time.monotonic() - _t0) * 1000.0
+        metering.record_llm(pt, ct, _ms)
+        _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=pt,
+                         completion_tokens=ct, ms=_ms, streamed=True)
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         # Terminal validation is the contract; a mismatch heals via complete() fallback.
         return response_model.model_validate(final_dict)
