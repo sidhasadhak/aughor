@@ -3290,6 +3290,30 @@ export interface AgentRosterEntry {
   default_budget: { token_budget: number | null; time_budget_s: number | null };
   governance: AgentGovernance;
   spend: AgentSpend;
+  /** the charter's suggestion RESOLVED for the backend currently bound — model
+   *  ids are provider-specific, so a recommendation for another provider would
+   *  be unusable advice */
+  recommended_model?: string;
+  backend?: string;
+}
+
+export interface ApplyRecommendedResult {
+  backend: string;
+  applied: { agent_id: string; model: string }[];
+  skipped: { agent_id: string; reason: string }[];
+}
+
+/** Pin each agent to its recommended model for the active backend. Existing
+ *  operator pins are kept unless `overwrite` — a suggestion must not silently
+ *  replace a choice someone made. */
+export async function applyRecommendedAgentModels(
+  body: { workspace_id?: string; agent_ids?: string[]; overwrite?: boolean } = {},
+): Promise<ApplyRecommendedResult | null> {
+  const res = await fetch(`${BASE}/agents/apply-recommended-models`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) return null;
+  return res.json();
 }
 
 export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[]> {

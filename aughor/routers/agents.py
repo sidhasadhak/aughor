@@ -40,18 +40,75 @@ def _spend_by_agent(limit: int = 500) -> dict[str, dict]:
     return out
 
 
+def _active_backend_id() -> str:
+    """The backend the fleet would run under right now."""
+    try:
+        from aughor.llm.provider import resolve_binding
+        return resolve_binding("coder")[0]
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "agent roster: backend unresolved; recommendations omitted",
+                 counter="agents.backend")
+        return ""
+
+
 @router.get("/agents")
 def list_agents(workspace_id: Optional[str] = None):
-    """The fleet roster: each agent's charter + effective governance + recent spend."""
+    """The fleet roster: each agent's charter + effective governance + recent spend.
+
+    ``recommended_model`` is the charter's suggestion RESOLVED for the backend in
+    use — the ids are provider-specific, so a recommendation shown while a
+    different provider is bound would be unusable advice.
+    """
     spend = _spend_by_agent()
+    backend = _active_backend_id()
     return [
         {
             **c.to_dict(),
             "governance": effective_governance(c.id, workspace_id).to_dict(),
             "spend": spend.get(c.id, {"runs": 0, "total_tokens": 0, "query_count": 0}),
+            "recommended_model": (c.recommended_models or {}).get(backend, ""),
+            "backend": backend,
         }
         for c in list_charters()
     ]
+
+
+class ApplyRecommendedIn(BaseModel):
+    workspace_id: Optional[str] = None
+    agent_ids: Optional[list[str]] = None     # None → the whole fleet
+    overwrite: bool = False                   # keep operator-set pins unless asked
+
+
+@router.post("/agents/apply-recommended-models")
+def apply_recommended_models(body: ApplyRecommendedIn):
+    """Pin each agent to its recommended model for the ACTIVE backend.
+
+    Skips agents that already carry an explicit pin unless ``overwrite`` — a
+    suggestion should never silently replace a choice someone made. Agents with
+    no recommendation for this backend are skipped and reported, so "nothing
+    happened" is never ambiguous.
+    """
+    backend = _active_backend_id()
+    if not backend:
+        raise HTTPException(status_code=400, detail="no inference backend resolved")
+
+    wanted = set(body.agent_ids or [])
+    applied, skipped = [], []
+    for c in list_charters():
+        if wanted and c.id not in wanted:
+            continue
+        rec = (c.recommended_models or {}).get(backend, "")
+        if not rec:
+            skipped.append({"agent_id": c.id, "reason": f"no recommendation for {backend}"})
+            continue
+        current = effective_governance(c.id, body.workspace_id).model
+        if current and not body.overwrite:
+            skipped.append({"agent_id": c.id, "reason": f"already pinned to {current}"})
+            continue
+        set_governance(c.id, scope=body.workspace_id, model=rec)
+        applied.append({"agent_id": c.id, "model": rec})
+    return {"backend": backend, "applied": applied, "skipped": skipped}
 
 
 class AgentGovernancePatch(BaseModel):

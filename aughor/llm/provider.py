@@ -537,7 +537,12 @@ class LLMProvider:
             self._client = _build_ollama_client(self._model, url)
         elif backend == "lmstudio":
             self._client = _build_lmstudio_client(url)
-        elif backend in ("groq", "together"):
+        elif backend in ("groq", "together", "openrouter"):
+            # OpenRouter is OpenAI-compatible, so it shares this client. Registering
+            # a backend in the metadata tables without a branch here is silent until
+            # someone selects it: the constructor falls through to the error below,
+            # which then lists the backend it just refused. test_every_backend_builds
+            # covers the whole set so that cannot recur.
             self._client = _build_openai_compat(url, key)
         elif backend == "gemini":
             self._client = _build_gemini_client(url, key)

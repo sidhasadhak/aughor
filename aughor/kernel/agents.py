@@ -44,6 +44,10 @@ class AgentCharter:
     default_enabled: bool = True
     default_budget: Budget = field(default_factory=Budget)
     reserved: bool = False          # defined but not yet wired to runs (Phase 0 → 3)
+    #: Suggested model per BACKEND — the ids are provider-specific, so a single
+    #: recommendation would be meaningless the moment the backend changes. A
+    #: suggestion only: nothing here is applied without the operator asking.
+    recommended_models: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -62,21 +66,27 @@ AGENTS: tuple[AgentCharter, ...] = (
         goal="Continuously explore connected data and surface findings — no prompts, no dashboards.",
         lane="background", job_kinds=("exploration",),
         tools=("schema profiling", "grounded SQL", "finding synthesis"),
-        icon="telescope", default_budget=Budget(token_budget=200_000, time_budget_s=600),
+        icon="telescope", recommended_models={"openrouter": "nvidia/nemotron-3-super-120b-a12b:free"},
+        # runs continuously at volume — 66 t/s at coding 37.7 is the throughput/quality point
+        default_budget=Budget(token_budget=200_000, time_budget_s=600),
     ),
     AgentCharter(
         id="analyst", name="Analyst", role="Deep-analysis reasoner",
         goal="Root-cause a question with evidence — plan → query → score → synthesize.",
         lane="interactive", job_kinds=("investigation", "investigation_salvage"),
         tools=("NL→SQL", "fan-out / additivity guards", "evidence scoring", "Trust Receipt"),
-        icon="microscope", default_budget=Budget(token_budget=500_000, time_budget_s=900),
+        icon="microscope", recommended_models={"openrouter": "nvidia/nemotron-3-ultra-550b-a55b:free"},
+        # highest stakes + 1M ctx for wide schemas; 2.2s latency is noise on a 900s job
+        default_budget=Budget(token_budget=500_000, time_budget_s=900),
     ),
     AgentCharter(
         id="insight", name="Insight", role="Quick answerer",
         goal="Answer a question fast in chat — grounded NL→SQL with a Trust Receipt.",
         lane="interactive", job_kinds=(),
         tools=("NL→SQL", "auto-repair", "Trust Receipt"),
-        icon="search", default_budget=Budget(token_budget=150_000, time_budget_s=300),
+        icon="search", recommended_models={"openrouter": "google/gemma-4-31b-it:free"},
+        # the user is WAITING — best coding score (43.4) under ~1s latency
+        default_budget=Budget(token_budget=150_000, time_budget_s=300),
     ),
     AgentCharter(
         id="watcher", name="Watcher", role="KPI sentinel",
@@ -85,6 +95,8 @@ AGENTS: tuple[AgentCharter, ...] = (
         icon="radar",
         # WP-7: a tick is a scalar/threshold SQL check (rarely any LLM) — a small token
         # ceiling + generous time for a slow warehouse query. Governable per-agent.
+        recommended_models={"openrouter": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"},
+        # threshold checks are near-trivial; 410ms and a 50k budget say pick the cheapest fast one
         default_budget=Budget(token_budget=50_000, time_budget_s=120)),
     AgentCharter(
         id="briefer", name="Briefer", role="Verdict synthesizer",
@@ -92,6 +104,8 @@ AGENTS: tuple[AgentCharter, ...] = (
         lane="background", job_kinds=("brief",), tools=("tree-reduce", "grounding"),
         icon="newspaper",
         # WP-7: a brief runs real tree-reduce synthesis (LLM) over the workspace insights.
+        recommended_models={"openrouter": "nvidia/nemotron-3-ultra-550b-a55b:free"},
+        # scheduled so latency-tolerant, and brief prose quality is user-visible
         default_budget=Budget(token_budget=400_000, time_budget_s=300)),
     AgentCharter(
         id="curator", name="Curator", role="Semantic-layer keeper",
@@ -101,6 +115,8 @@ AGENTS: tuple[AgentCharter, ...] = (
         # R12: the birth job's intelligence step includes ONE ontology-enrichment LLM
         # pass (+ deterministic profiling/validation SQL) — a modest token ceiling with
         # generous time for slow warehouses. Exploration runs under Scout's own budget.
+        recommended_models={"openrouter": "nvidia/nemotron-3-super-120b-a12b:free"},
+        # background glossary/ontology enrichment — quality matters, urgency does not
         default_budget=Budget(token_budget=200_000, time_budget_s=900)),
 )
 
