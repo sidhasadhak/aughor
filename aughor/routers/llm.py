@@ -47,15 +47,22 @@ def set_llm_config(patch: _ConfigPatch):
 
 class _TestRequest(BaseModel):
     backend: Optional[str] = None
-    model: Optional[str] = None
+    model: Optional[str] = None            # explicit → test just that one
+    include_agents: bool = False           # also ping each per-agent pinned model
 
 
 @router.post("/llm/config/test")
 def test_llm_config(req: Optional[_TestRequest] = None):
-    """Run a tiny real completion against a backend (defaults to the active one,
-    using the saved/env key) to confirm it's reachable and configured."""
+    """Real completions against a backend to confirm it is reachable and configured.
+
+    Tests every DISTINCT model the deployment would use — all three role
+    bindings, and the per-agent pins with ``include_agents`` — not just the coder
+    model. A single-model check said nothing about a narrator or fast binding
+    that may be a different model entirely.
+    """
     req = req or _TestRequest()
-    return _provider.test_provider(backend=req.backend, model=req.model)
+    return _provider.test_provider(backend=req.backend, model=req.model,
+                                   include_agents=req.include_agents)
 
 
 class _CustomModelIn(BaseModel):

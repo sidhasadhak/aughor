@@ -7,7 +7,7 @@
  * key is set, so nothing sensitive round-trips back to the browser.
  */
 import { useCallback, useEffect, useState } from "react";
-import { addLlmModel, cacheProbe, getLlmConfig, getLlmModels, removeLlmModel, setLlmConfig, testLlmConfig, type CacheProbeResult, type LlmCapability, type LlmConfig, type LlmModelCatalog } from "@/lib/api";
+import { addLlmModel, cacheProbe, getLlmConfig, getLlmModels, removeLlmModel, setLlmConfig, testLlmConfig, type CacheProbeResult, type LlmCapability, type LlmConfig, type LlmModelCatalog, type LlmTestReport } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 const BACKEND_LABEL: Record<string, string> = {
@@ -202,7 +202,7 @@ export function InferencePanel() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; error?: string; model?: string } | null>(null);
+  const [result, setResult] = useState<LlmTestReport | null>(null);
   const [probing, setProbing] = useState(false);
   const [probe, setProbe] = useState<CacheProbeResult | null>(null);
   const [catalog, setCatalog] = useState<LlmModelCatalog | null>(null);
@@ -297,7 +297,7 @@ export function InferencePanel() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
-      setResult({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      setResult({ ok: false, backend, error: e instanceof Error ? e.message : String(e) });
     }
     setSaving(false);
   };
@@ -305,9 +305,9 @@ export function InferencePanel() {
   const test = async () => {
     setTesting(true); setResult(null);
     try {
-      setResult(await testLlmConfig(backend, models.coder || undefined));
+      setResult(await testLlmConfig(backend, undefined, true));
     } catch (e) {
-      setResult({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      setResult({ ok: false, backend, error: e instanceof Error ? e.message : String(e) });
     }
     setTesting(false);
   };
@@ -469,7 +469,26 @@ export function InferencePanel() {
           color: result.ok ? "var(--grn5)" : "var(--red4)",
           fontFamily: "var(--font-mono)", wordBreak: "break-word",
         }}>
-          {result.ok
+          {/* Per-model, because the roles can be bound to different models and a
+              single headline would hide a narrator or fast binding that is broken. */}
+          {result.results?.length ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <div style={{ fontWeight: 600 }}>
+                {result.ok
+                  ? `✓ ${BACKEND_LABEL[backend] ?? backend} — ${result.tested} model${result.tested === 1 ? "" : "s"} responded`
+                  : `✗ ${result.failed} of ${result.tested} failed`}
+              </div>
+              {result.results.map((r) => (
+                <div key={r.model} style={{ color: r.ok ? "inherit" : "var(--red4)" }}>
+                  {r.ok ? "✓" : "✗"} {r.model}
+                  <span style={{ opacity: 0.7 }}>
+                    {" · "}{r.used_by.join(", ")}{r.ok && r.ms ? ` · ${Math.round(r.ms)}ms` : ""}
+                  </span>
+                  {!r.ok && r.error ? <div style={{ paddingLeft: 14 }}>{r.error}</div> : null}
+                </div>
+              ))}
+            </div>
+          ) : result.ok
             ? `✓ ${BACKEND_LABEL[backend] ?? backend} responded${result.model ? ` (${result.model})` : ""}`
             : `✗ ${result.error || "test failed"}`}
         </div>

@@ -310,3 +310,79 @@ def test_roster_resolves_the_recommendation_for_the_active_backend(client, monke
     roster = {a["id"]: a for a in client.get("/agents").json()}
     assert roster["analyst"]["recommended_model"] == "", \
         "an OpenRouter id must not be advertised while Ollama is bound"
+
+
+# ── connection test coverage ──────────────────────────────────────────────────
+
+def test_connection_test_covers_every_role_not_just_coder(monkeypatch):
+    """The bug: test_provider hardcoded role "coder" in three places and the UI
+    passed models.coder, so exactly ONE completion ran. A green result said
+    nothing about the narrator or fast bindings, which can be different models
+    with their own ids and quotas — visible as a single call in the provider's
+    own request log."""
+    pinged: list = []
+    monkeypatch.setattr(P, "_ping",
+                        lambda b, m, role="coder": pinged.append((m, role)) or
+                        {"model": m, "ok": True, "ms": 1.0})
+
+    out = P.test_provider(backend="openrouter")
+
+    tested = {m for m, _ in pinged}
+    assert tested == set(P._DEFAULT_MODELS["openrouter"].values()), \
+        f"only tested {tested}"
+    assert out["tested"] == len(tested)
+    assert out["ok"] is True
+
+
+def test_identical_role_models_are_pinged_once(monkeypatch):
+    """Most setups point several roles at one model; three identical pings would
+    be three times the cost for one fact."""
+    pinged: list = []
+    monkeypatch.setattr(P, "_ping",
+                        lambda b, m, role="coder": pinged.append(m) or
+                        {"model": m, "ok": True, "ms": 1.0})
+    monkeypatch.setattr(P, "_active_model", lambda b, role: "one/model")
+    monkeypatch.setattr(P, "_active_backend", lambda: "openrouter")
+
+    out = P.test_provider(backend="openrouter")
+    assert pinged == ["one/model"]
+    assert out["results"][0]["used_by"] == ["coder", "narrator", "fast"]
+
+
+def test_one_broken_binding_fails_the_whole_test(monkeypatch):
+    """A narrator model that 404s must not be hidden behind a working coder."""
+    def _ping(b, m, role="coder"):
+        ok = "gemma" not in m
+        return {"model": m, "ok": ok, "ms": 1.0, **({} if ok else {"error": "404 no such model"})}
+
+    monkeypatch.setattr(P, "_ping", _ping)
+    out = P.test_provider(backend="openrouter")
+
+    assert out["ok"] is False
+    assert out["failed"] == 1
+    assert "gemma" in out["error"]
+    assert [r for r in out["results"] if r["ok"]], "the working ones still report ok"
+
+
+def test_agent_pins_are_tested_when_asked(monkeypatch):
+    pinged: list = []
+    monkeypatch.setattr(P, "_ping",
+                        lambda b, m, role="coder": pinged.append(m) or
+                        {"model": m, "ok": True, "ms": 1.0})
+    monkeypatch.setattr(P, "_active_backend", lambda: "openrouter")
+    monkeypatch.setattr("aughor.kernel.agents.effective_governance",
+                        lambda aid, ws=None: type("G", (), {"model": "pinned/only-for-agents"})())
+
+    out = P.test_provider(backend="openrouter", include_agents=True)
+    assert "pinned/only-for-agents" in pinged
+    entry = next(r for r in out["results"] if r["model"] == "pinned/only-for-agents")
+    assert any(u.startswith("agent:") for u in entry["used_by"])
+
+
+def test_explicit_model_still_tests_just_that_one(monkeypatch):
+    pinged: list = []
+    monkeypatch.setattr(P, "_ping",
+                        lambda b, m, role="coder": pinged.append(m) or
+                        {"model": m, "ok": True, "ms": 1.0})
+    P.test_provider(backend="openrouter", model="just/this-one")
+    assert pinged == ["just/this-one"]

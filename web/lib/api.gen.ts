@@ -3427,8 +3427,12 @@ export interface paths {
         put?: never;
         /**
          * Test Llm Config
-         * @description Run a tiny real completion against a backend (defaults to the active one,
-         *     using the saved/env key) to confirm it's reachable and configured.
+         * @description Real completions against a backend to confirm it is reachable and configured.
+         *
+         *     Tests every DISTINCT model the deployment would use — all three role
+         *     bindings, and the per-agent pins with ``include_agents`` — not just the coder
+         *     model. A single-model check said nothing about a narrator or fast binding
+         *     that may be a different model entirely.
          */
         post: operations["test_llm_config_llm_config_test_post"];
         delete?: never;
@@ -8156,6 +8160,11 @@ export interface components {
         _TestRequest: {
             /** Backend */
             backend?: string | null;
+            /**
+             * Include Agents
+             * @default false
+             */
+            include_agents: boolean;
             /** Model */
             model?: string | null;
         };

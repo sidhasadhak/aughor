@@ -3049,11 +3049,34 @@ export async function setLlmConfig(patch: LlmConfigPatch): Promise<LlmConfig> {
   return res.json();
 }
 
-export async function testLlmConfig(backend?: string, model?: string): Promise<{ ok: boolean; backend: string; model?: string; error?: string }> {
+export interface LlmTestResult {
+  model: string;
+  ok: boolean;
+  ms?: number;
+  error?: string;
+  /** which roles / agents are bound to this model */
+  used_by: string[];
+}
+
+export interface LlmTestReport {
+  ok: boolean;
+  backend: string;
+  model?: string;          // the coder model — the headline
+  error?: string;          // the first failure, if any
+  results?: LlmTestResult[];
+  tested?: number;
+  failed?: number;
+}
+
+/** Test every DISTINCT model the deployment would use — all three role bindings,
+ *  plus per-agent pins with `includeAgents`. Pass `model` to test just one. */
+export async function testLlmConfig(
+  backend?: string, model?: string, includeAgents = false,
+): Promise<LlmTestReport> {
   const res = await fetch(`${BASE}/llm/config/test`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ backend, model }),
+    body: JSON.stringify({ backend, model, include_agents: includeAgents }),
   });
   return res.json();
 }

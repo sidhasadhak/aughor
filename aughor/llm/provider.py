@@ -487,7 +487,8 @@ def _usage_or_none(raw) -> tuple[Optional[int], Optional[int]]:
     return _extract_usage(raw)
 
 
-def _run_resilient(do, base_url: str, *, stats: dict | None = None):
+def _run_resilient(do, base_url: str, *, stats: dict | None = None,
+                   max_retries: Optional[int] = None):
     """Run ``do()`` under the per-endpoint semaphore, retrying transient errors with exponential
     backoff + jitter, bounded by AUGHOR_LLM_MAX_RETRIES (default 3) and an overall deadline
     AUGHOR_LLM_DEADLINE_S (default 600s). Non-transient errors raise immediately.
@@ -499,7 +500,8 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None):
     if stats is not None:
         stats["retries"] = 0
     sem = _semaphore_for(base_url)
-    max_retries = max(0, _int_env("AUGHOR_LLM_MAX_RETRIES", 3))
+    max_retries = (max(0, int(max_retries)) if max_retries is not None
+                   else max(0, _int_env("AUGHOR_LLM_MAX_RETRIES", 3)))
     deadline = time.monotonic() + max(1.0, _float_env("AUGHOR_LLM_DEADLINE_S", 600.0))
     attempt = 0
     while True:
@@ -644,7 +646,8 @@ class LLMProvider:
 
     @staticmethod
     def _complete_on(client, backend, model, system, user, response_model, temperature,
-                     base_url: str = "", *, role: str = "", fallback: bool = False):
+                     base_url: str = "", *, role: str = "", fallback: bool = False,
+                     max_retries: Optional[int] = None):
         from aughor.kernel import metering
         if backend == "anthropic":
             endpoint = client.messages
@@ -669,7 +672,7 @@ class LLMProvider:
         _stats: dict = {}
         try:
             # concurrency cap + transient-error retry/backoff
-            out, raw = _run_resilient(_do, base_url, stats=_stats)
+            out, raw = _run_resilient(_do, base_url, stats=_stats, max_retries=max_retries)
         except Exception as exc:
             # A call that fails past its retries must still leave a record —
             # otherwise "which model fails" is unanswerable precisely when it
@@ -981,27 +984,104 @@ def set_config(patch: dict) -> dict:
     return current_config()
 
 
-def test_provider(backend: Optional[str] = None, model: Optional[str] = None) -> dict:
-    """Do a tiny real completion to validate a backend (defaults to the active one),
-    using the saved/env key. Returns {ok, backend, model, error?}."""
+def _ping(backend: str, model: str, role: Role = "coder") -> dict:
+    """One tiny real completion against an explicit (backend, model)."""
     class _Ping(BaseModel):
         ok: bool
 
+    t0 = time.monotonic()
+    try:
+        prov = LLMProvider(backend, role, model=model)
+        # The fallback would mask a real failure — test the chosen backend directly.
+        # max_retries=0: a health check reports what is true NOW. Backing off a 429
+        # for 30s to eventually report the same rate limit is the wrong trade when
+        # someone is waiting on a button.
+        prov._complete_on(prov._client, backend, prov._model,
+                          "You are a health check. Reply with ok=true.",
+                          "Return ok=true.", _Ping, 0.0, max_retries=0)
+        return {"model": prov._model, "ok": True,
+                "ms": round((time.monotonic() - t0) * 1000, 1)}
+    except Exception as e:
+        return {"model": model, "ok": False, "error": str(e)[:240],
+                "ms": round((time.monotonic() - t0) * 1000, 1)}
+
+
+def test_provider(backend: Optional[str] = None, model: Optional[str] = None, *,
+                  include_agents: bool = False) -> dict:
+    """Validate a backend with real completions. Returns {ok, backend, model, results[]}.
+
+    With no explicit ``model`` this tests EVERY DISTINCT model the deployment
+    would actually use — the three role bindings, plus the per-agent pins when
+    ``include_agents``. It previously tested only the coder model, so a green
+    result said nothing about the narrator or fast bindings even though they can
+    be different models with their own ids, quotas and availability.
+
+    Models are deduplicated: most setups point several roles at one model, and
+    three identical pings would be three times the cost for one fact. Each result
+    reports which roles/agents map to it.
+    """
     b = (backend or _active_backend()).strip()
     if b not in BACKENDS:
-        return {"ok": False, "backend": b, "error": f"unknown backend {b!r}"}
-    if not model:
-        # Probe a non-active backend with ITS own default model — the env/active
-        # model is tuned for the active backend and would 404 elsewhere.
-        model = (_active_model(b, "coder") if b == _active_backend()
-                 else _DEFAULT_MODELS.get(b, _DEFAULT_MODELS["ollama"])["coder"])
-    try:
-        prov = LLMProvider(b, "coder", model=model)
-        # The fallback would mask a real failure — test the chosen backend directly.
-        prov._complete_on(prov._client, b, prov._model,
-                          "You are a health check. Reply with ok=true.",
-                          "Return ok=true.", _Ping, 0.0)
-        return {"ok": True, "backend": b, "model": prov._model}
-    except Exception as e:
-        return {"ok": False, "backend": b, "model": model or _active_model(b, "coder"),
-                "error": str(e)[:240]}
+        return {"ok": False, "backend": b, "error": f"unknown backend {b!r}", "results": []}
+
+    is_active = b == _active_backend()
+    # model -> what uses it. A non-active backend is probed with ITS OWN defaults;
+    # the active model is tuned for the active backend and would 404 elsewhere.
+    targets: dict[str, list[str]] = {}
+    if model:
+        targets[model] = ["explicit"]
+    else:
+        for role in ROLES:
+            m = (_active_model(b, role) if is_active
+                 else _DEFAULT_MODELS.get(b, _DEFAULT_MODELS["ollama"]).get(role))
+            if m:
+                targets.setdefault(m, []).append(role)
+        if include_agents and is_active:
+            try:
+                from aughor.kernel.agents import effective_governance, list_charters
+                for c in list_charters():
+                    pinned = effective_governance(c.id).model
+                    if pinned:
+                        targets.setdefault(pinned, []).append(f"agent:{c.id}")
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "connection test: agent pins unresolved; roles still tested",
+                         counter="llm.test.agents")
+
+    def _role_for(used_by: list[str]) -> Role:
+        for u in used_by:
+            if u in ROLES:
+                return u  # type: ignore[return-value]
+        return "coder"
+
+    # Independent calls — run them together so the wait is the slowest model, not
+    # the sum. The per-endpoint semaphore still bounds real concurrency.
+    results = []
+    if len(targets) == 1:
+        (m, used_by), = targets.items()
+        results.append({**_ping(b, m, _role_for(used_by)), "used_by": used_by})
+    else:
+        from aughor.kernel.concurrency import ContextThreadPoolExecutor
+        with ContextThreadPoolExecutor(max_workers=min(len(targets), 4)) as pool:
+            futures = {pool.submit(_ping, b, m, _role_for(u)): (m, u)
+                       for m, u in targets.items()}
+            for fut in futures:
+                m, used_by = futures[fut]
+                results.append({**fut.result(), "used_by": used_by})
+    results.sort(key=lambda r: (ROLES.index(r["used_by"][0])
+                                if r["used_by"] and r["used_by"][0] in ROLES else 99))
+
+    failed = [r for r in results if not r["ok"]]
+    coder_model = next((r["model"] for r in results if "coder" in r["used_by"]),
+                       results[0]["model"] if results else (model or ""))
+    out = {
+        "ok": not failed,
+        "backend": b,
+        "model": coder_model,          # back-compat: the headline model
+        "results": results,
+        "tested": len(results),
+        "failed": len(failed),
+    }
+    if failed:
+        out["error"] = f"{failed[0]['model']}: {failed[0].get('error', 'failed')}"
+    return out
