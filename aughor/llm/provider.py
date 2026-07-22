@@ -42,14 +42,15 @@ T = TypeVar("T", bound=BaseModel)
 
 Role = Literal["coder", "narrator", "fast"]
 ROLES: tuple[Role, ...] = ("coder", "narrator", "fast")
-BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anthropic", "gemini")
+BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anthropic",
+                             "gemini", "openrouter")
 # Backends that require an API key (the others are local).
-NEEDS_KEY: tuple[str, ...] = ("groq", "together", "anthropic", "gemini")
+NEEDS_KEY: tuple[str, ...] = ("groq", "together", "anthropic", "gemini", "openrouter")
 # Backends whose base URL is user-overridable (the hosted ones are fixed).
 LOCAL_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio")
 
 _KEY_ENV = {"groq": "GROQ_API_KEY", "together": "TOGETHER_API_KEY", "anthropic": "ANTHROPIC_API_KEY",
-            "gemini": "GEMINI_API_KEY"}
+            "gemini": "GEMINI_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
 _BASE_URL_ENV = {"ollama": "OLLAMA_BASE_URL", "lmstudio": "LMSTUDIO_BASE_URL"}
 
 _DEFAULT_BASE_URLS = {
@@ -59,6 +60,9 @@ _DEFAULT_BASE_URLS = {
     "together": "https://api.together.xyz/v1",
     # Google Gemini's OpenAI-compatibility endpoint (chat/completions + tools + json_schema).
     "gemini":   "https://generativelanguage.googleapis.com/v1beta/openai/",
+    # OpenRouter — one key, many vendors, OpenAI-compatible. Its /models endpoint is
+    # public, which is what lets the model picker show a live catalogue.
+    "openrouter": "https://openrouter.ai/api/v1",
 }
 
 _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
@@ -71,6 +75,11 @@ _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
     # and gemini-flash-latest works on the free tier. Bump coder → "gemini-pro-latest" for stronger
     # SQL generation on a paid key (Pro is quota-limited on the free tier).
     "gemini":    {"coder": "gemini-flash-latest", "narrator": "gemini-flash-latest", "fast": "gemini-flash-latest"},
+    # OpenRouter ids are "vendor/model". These defaults are free-tier so a fresh key
+    # works immediately; the picker's live catalogue is the way to reach paid models.
+    "openrouter": {"coder": "nvidia/nemotron-3-ultra:free",
+                   "narrator": "google/gemma-4-31b:free",
+                   "fast": "nvidia/nemotron-3-nano-30b-a3b:free"},
 }
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / "data" / "llm_config.json"
@@ -144,6 +153,40 @@ def load_config() -> None:
     global _runtime, _config_version
     _runtime = _read_config()
     _config_version += 1
+
+
+# ── Public accessors for the rest of the inference plane ─────────────────────
+# The catalogue (aughor/llm/models.py) needs the effective base URL, key and
+# defaults for a backend, and a way to persist. Exposed as public names so it
+# imports an interface rather than reaching into this module's internals.
+
+def read_config() -> dict:
+    """The on-disk config as written (secrets still encrypted)."""
+    return _read_config()
+
+
+def write_config(cfg: dict) -> None:
+    """Persist and reload. One writer, because the file holds encrypted keys and
+    the mkdir/write/chmod/reload sequence must not drift between call sites."""
+    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+    try:
+        _CONFIG_PATH.chmod(0o600)  # it holds encrypted keys
+    except Exception:
+        logger.debug("could not chmod %s (non-fatal)", _CONFIG_PATH, exc_info=True)
+    load_config()
+
+
+def active_base_url(backend: str) -> str:
+    return _active_base_url(backend)
+
+
+def active_key(backend: str) -> str:
+    return _active_key(backend)
+
+
+def default_models(backend: str) -> dict:
+    return dict(_DEFAULT_MODELS.get(backend, {}))
 
 
 # ── Active accessors (runtime config → env → default) ─────────────────────────
@@ -926,13 +969,7 @@ def set_config(patch: dict) -> dict:
                 keys[b] = encrypt_secret(str(k).strip())
         cfg["keys"] = keys
 
-    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-    try:
-        _CONFIG_PATH.chmod(0o600)  # it holds encrypted keys
-    except Exception:
-        logger.debug("could not chmod %s (non-fatal)", _CONFIG_PATH, exc_info=True)
-    load_config()
+    write_config(cfg)
     return current_config()
 
 

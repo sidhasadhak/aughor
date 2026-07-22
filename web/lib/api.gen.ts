@@ -3408,6 +3408,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/llm/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Llm Models
+         * @description The model catalogue for the picker — live list where the backend serves
+         *     one, a curated floor otherwise, plus the user's kept custom entries.
+         *
+         *     Not gated: reading which models exist is not privileged, and the picker needs
+         *     it to render. Writing the config (which model to USE, and the keys) stays
+         *     behind SECURITY_SUITE on POST /llm/config.
+         */
+        get: operations["list_llm_models_llm_models_get"];
+        put?: never;
+        /**
+         * Add Llm Model
+         * @description Keep a typed model in the picker for next time. Idempotent.
+         *
+         *     Gated with the rest of the inference config: a custom entry is a suggestion
+         *     an operator will later click, so writing it is the same trust boundary as
+         *     writing the config it feeds.
+         */
+        post: operations["add_llm_model_llm_models_post"];
+        /**
+         * Remove Llm Model
+         * @description Drop a custom entry. Built-in and live entries are not removable — hiding
+         *     a model the backend actually serves would make the picker lie.
+         */
+        delete: operations["remove_llm_model_llm_models_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metastore/catalogs/{catalog_id}/volumes": {
         parameters: {
             query?: never;
@@ -7717,6 +7755,13 @@ export interface components {
             right_key: string;
             /** Right Table */
             right_table: string;
+        };
+        /** _CustomModelIn */
+        _CustomModelIn: {
+            /** Backend */
+            backend: string;
+            /** Model */
+            model: string;
         };
         /** _DecompileRequest */
         _DecompileRequest: {
@@ -14500,6 +14545,106 @@ export interface operations {
                 "application/json": components["schemas"]["_TestRequest"] | null;
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_llm_models_llm_models_get: {
+        parameters: {
+            query?: {
+                backend?: string | null;
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_llm_model_llm_models_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_CustomModelIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_llm_model_llm_models_delete: {
+        parameters: {
+            query: {
+                backend: string;
+                model: string;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

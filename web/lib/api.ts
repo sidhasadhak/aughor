@@ -2983,6 +2983,59 @@ export async function getLlmConfig(): Promise<LlmConfig> {
   return res.json();
 }
 
+export interface LlmModelEntry {
+  id: string;
+  /** where it came from: the backend itself, our curated floor, or the user */
+  source: "live" | "known" | "custom";
+  label?: string;
+  context?: number;
+  free?: boolean;
+}
+
+export interface LlmModelCatalog {
+  backend: string;
+  models: LlmModelEntry[];
+  custom: string[];
+  live: boolean;
+  live_count: number;
+  /** why the live fetch failed, when it did — shown rather than hidden, so a
+   *  stale fallback is never presented as though it were authoritative */
+  error: string;
+  defaults: Record<string, string>;
+}
+
+export async function getLlmModels(backend?: string, refresh = false): Promise<LlmModelCatalog> {
+  const q = new URLSearchParams();
+  if (backend) q.set("backend", backend);
+  if (refresh) q.set("refresh", "true");
+  const res = await fetch(`${BASE}/llm/models?${q}`);
+  if (!res.ok) throw new Error("Failed to load model catalogue");
+  return res.json();
+}
+
+export async function addLlmModel(backend: string, model: string): Promise<{ backend: string; custom: string[] }> {
+  const res = await fetch(`${BASE}/llm/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ backend, model }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { detail?: string }).detail ?? "Failed to add model");
+  }
+  return res.json();
+}
+
+export async function removeLlmModel(backend: string, model: string): Promise<{ backend: string; custom: string[] }> {
+  const q = new URLSearchParams({ backend, model });
+  const res = await fetch(`${BASE}/llm/models?${q}`, { method: "DELETE" });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { detail?: string }).detail ?? "Failed to remove model");
+  }
+  return res.json();
+}
+
 export async function setLlmConfig(patch: LlmConfigPatch): Promise<LlmConfig> {
   const res = await fetch(`${BASE}/llm/config`, {
     method: "POST",

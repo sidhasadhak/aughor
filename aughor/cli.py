@@ -37,7 +37,8 @@ DEFAULT_DB = Path(__file__).parent.parent / "data" / "aughor.duckdb"
 # Mirrors aughor.llm.provider.BACKENDS — kept as a literal so `aughor --help` stays
 # instant (importing the provider pulls in instructor/openai at module scope).
 # tests/unit/test_cli_up.py pins the two lists in sync.
-LLM_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anthropic", "gemini")
+LLM_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anthropic",
+                                 "gemini", "openrouter")
 
 
 # ── CLI group ────────────────────────────────────────────────────────────────

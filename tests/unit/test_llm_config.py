@@ -31,7 +31,8 @@ def test_defaults_when_empty(clean_cfg):
     assert c["models"]["fast"] == "qwen3-coder-next:cloud"    # fast shares the coder default
     assert c["models"]["narrator"] == "kimi-k2.6:cloud"       # narrator is the one exception
     assert set(c["backends"]) >= {"ollama", "groq", "anthropic"}
-    assert c["keys_set"] == {"groq": False, "together": False, "anthropic": False, "gemini": False}
+    assert c["keys_set"] == {"groq": False, "together": False, "anthropic": False,
+                             "gemini": False, "openrouter": False}
 
 
 def test_config_surfaces_per_role_capability_profile(clean_cfg):

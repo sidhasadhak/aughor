@@ -58,6 +58,59 @@ def test_llm_config(req: Optional[_TestRequest] = None):
     return _provider.test_provider(backend=req.backend, model=req.model)
 
 
+class _CustomModelIn(BaseModel):
+    backend: str
+    model: str
+
+
+@router.get("/llm/models")
+def list_llm_models(backend: Optional[str] = None, refresh: bool = False):
+    """The model catalogue for the picker — live list where the backend serves
+    one, a curated floor otherwise, plus the user's kept custom entries.
+
+    Not gated: reading which models exist is not privileged, and the picker needs
+    it to render. Writing the config (which model to USE, and the keys) stays
+    behind SECURITY_SUITE on POST /llm/config.
+    """
+    from aughor.llm import models as _models
+
+    target = backend or _provider.current_config()["backend"]
+    try:
+        return _models.list_models(target, refresh=refresh)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/llm/models", dependencies=[gate(Capability.SECURITY_SUITE)])
+def add_llm_model(body: _CustomModelIn):
+    """Keep a typed model in the picker for next time. Idempotent.
+
+    Gated with the rest of the inference config: a custom entry is a suggestion
+    an operator will later click, so writing it is the same trust boundary as
+    writing the config it feeds.
+    """
+    from aughor.llm import models as _models
+
+    try:
+        return {"backend": body.backend,
+                "custom": _models.add_custom_model(body.backend, body.model)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/llm/models", dependencies=[gate(Capability.SECURITY_SUITE)])
+def remove_llm_model(backend: str, model: str):
+    """Drop a custom entry. Built-in and live entries are not removable — hiding
+    a model the backend actually serves would make the picker lie."""
+    from aughor.llm import models as _models
+
+    try:
+        return {"backend": backend,
+                "custom": _models.remove_custom_model(backend, model)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 class _ProbeRequest(BaseModel):
     role: Optional[str] = None       # which role's bound model to probe (default coder)
     rounds: Optional[int] = None     # shared/distinct calls per series (default 3)
