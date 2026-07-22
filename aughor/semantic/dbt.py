@@ -20,6 +20,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from aughor.tools.table_names import qualify
+
 
 def _manifest_path() -> Path | None:
     v = os.getenv("AUGHOR_DBT_MANIFEST")
@@ -52,6 +54,25 @@ def _parse_columns(raw_cols: dict) -> dict[str, dict]:
         if desc:
             out[col_name.lower()] = {"description": desc}
     return out
+
+
+def _table_key(node: dict) -> str:
+    """The glossary key for a dbt node — schema-qualified whenever dbt declares a schema.
+
+    Every manifest node carries the schema it materialises into, and the glossary is keyed
+    by schema-qualified table name. Keying dbt entries bare meant a dbt annotation could
+    never meet a qualified YAML entry for the same physical table: the merge unions on exact
+    keys, so ``orders`` and ``analytics.orders`` were layered as two unrelated tables and
+    the dbt description silently never applied.
+
+    ``alias`` wins over ``name`` when set — that is the identifier the warehouse actually
+    holds, and therefore the one the schema reader will present. Lowercased leaf, matching
+    the column keys and the comparison convention in ``tools.table_names.bare``.
+    """
+    leaf = (node.get("alias") or node.get("name") or "").strip().lower()
+    if not leaf:
+        return ""
+    return qualify(leaf, (node.get("schema") or "").strip().lower() or None)
 
 
 def _parse_node(node: dict) -> dict[str, Any] | None:
@@ -99,7 +120,7 @@ def load_dbt_glossary() -> dict:
             continue
         if node.get("config", {}).get("materialized") == "ephemeral":
             continue
-        table_name = node.get("name", "").lower()
+        table_name = _table_key(node)
         if not table_name:
             continue
         entry = _parse_node(node)
@@ -108,7 +129,7 @@ def load_dbt_glossary() -> dict:
 
     # ── Sources ───────────────────────────────────────────────────────────────
     for uid, node in (manifest.get("sources") or {}).items():
-        table_name = node.get("name", "").lower()
+        table_name = _table_key(node)
         if not table_name:
             continue
         entry = _parse_node(node)

@@ -131,7 +131,8 @@ def _columns_drifted(stored: set[str], live: set[str]) -> bool:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def seed_missing_tables(raw_schema: str, schema: str | None = None) -> bool:
+def seed_missing_tables(raw_schema: str, schema: str | None = None,
+                        connection_id: str | None = None) -> bool:
     """
     Seed glossary entries for tables not yet in glossary.yaml.
     Called by get_schema() before apply_glossary().
@@ -142,20 +143,25 @@ def seed_missing_tables(raw_schema: str, schema: str | None = None) -> bool:
     can no longer overwrite a same-named table in another. It is optional because the
     signature was schema-blind; the only caller (``tools.schema.apply_schema_enrichment``)
     always had it in scope.
+
+    ``connection_id`` joins ``schema`` to scope the fingerprint fast-path. Both are needed:
+    the fingerprint described structure only, so two schemas built from the same DDL shared
+    one "fully seeded" marker and the second skipped seeding entirely.
     """
     if not _ENABLED:
         return False
 
     try:
-        return _seed(raw_schema, schema)
+        return _seed(raw_schema, schema, connection_id)
     except Exception:
         return False
 
 
-def _seed(raw_schema: str, schema: str | None = None) -> bool:
+def _seed(raw_schema: str, schema: str | None = None,
+          connection_id: str | None = None) -> bool:
     from aughor.llm.provider import get_provider
     from aughor.semantic.glossary import canonical_key, load_merged_glossary, lookup_table
-    from aughor.db.schema_cache import compute_fingerprint, is_complete, mark_complete
+    from aughor.db.schema_cache import compute_fingerprint, is_complete, mark_complete, scope_key
 
     # Check the fully merged glossary (manual + dbt) so we never re-seed
     # tables that dbt already covers.
@@ -185,8 +191,10 @@ def _seed(raw_schema: str, schema: str | None = None) -> bool:
             logger.info("autoseed: re-seeding %r — stored glossary columns drifted from live schema", t)
             missing[t] = block
 
-    # Fast-path: schema fingerprint matches a previously fully-seeded schema
-    fp = compute_fingerprint(table_blocks)
+    # Fast-path: schema fingerprint matches a previously fully-seeded schema. Scoped to THIS
+    # connection+schema — an unscoped hash meant a structurally identical sibling (or a dev
+    # copy of the same warehouse) counted as already seeded.
+    fp = compute_fingerprint(table_blocks, scope=scope_key(connection_id, schema))
     if not missing and is_complete(fp):
         return False  # identical schema, all tables already covered — skip LLM calls
 

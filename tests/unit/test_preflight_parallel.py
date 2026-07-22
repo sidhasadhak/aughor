@@ -27,7 +27,9 @@ class _CaptureLLM:
 
 def _install(monkeypatch, *, sleep=0.0):
     """Deterministic retrievals so the ONLY variable across a flag toggle is serial-vs-parallel."""
-    def _schema(desc, schema):
+    # **kwargs absorbs the retrieval SCOPE (connection_id / schema) the node now passes —
+    # this stub asserts on parallel-vs-serial, not on the retriever's signature.
+    def _schema(desc, schema, **kwargs):
         if sleep:
             time.sleep(sleep)
         return "SCHEMA-BLOCK"
