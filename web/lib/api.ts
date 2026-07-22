@@ -2983,6 +2983,59 @@ export async function getLlmConfig(): Promise<LlmConfig> {
   return res.json();
 }
 
+export interface LlmModelEntry {
+  id: string;
+  /** where it came from: the backend itself, our curated floor, or the user */
+  source: "live" | "known" | "custom";
+  label?: string;
+  context?: number;
+  free?: boolean;
+}
+
+export interface LlmModelCatalog {
+  backend: string;
+  models: LlmModelEntry[];
+  custom: string[];
+  live: boolean;
+  live_count: number;
+  /** why the live fetch failed, when it did — shown rather than hidden, so a
+   *  stale fallback is never presented as though it were authoritative */
+  error: string;
+  defaults: Record<string, string>;
+}
+
+export async function getLlmModels(backend?: string, refresh = false): Promise<LlmModelCatalog> {
+  const q = new URLSearchParams();
+  if (backend) q.set("backend", backend);
+  if (refresh) q.set("refresh", "true");
+  const res = await fetch(`${BASE}/llm/models?${q}`);
+  if (!res.ok) throw new Error("Failed to load model catalogue");
+  return res.json();
+}
+
+export async function addLlmModel(backend: string, model: string): Promise<{ backend: string; custom: string[] }> {
+  const res = await fetch(`${BASE}/llm/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ backend, model }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { detail?: string }).detail ?? "Failed to add model");
+  }
+  return res.json();
+}
+
+export async function removeLlmModel(backend: string, model: string): Promise<{ backend: string; custom: string[] }> {
+  const q = new URLSearchParams({ backend, model });
+  const res = await fetch(`${BASE}/llm/models?${q}`, { method: "DELETE" });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { detail?: string }).detail ?? "Failed to remove model");
+  }
+  return res.json();
+}
+
 export async function setLlmConfig(patch: LlmConfigPatch): Promise<LlmConfig> {
   const res = await fetch(`${BASE}/llm/config`, {
     method: "POST",
@@ -2996,11 +3049,34 @@ export async function setLlmConfig(patch: LlmConfigPatch): Promise<LlmConfig> {
   return res.json();
 }
 
-export async function testLlmConfig(backend?: string, model?: string): Promise<{ ok: boolean; backend: string; model?: string; error?: string }> {
+export interface LlmTestResult {
+  model: string;
+  ok: boolean;
+  ms?: number;
+  error?: string;
+  /** which roles / agents are bound to this model */
+  used_by: string[];
+}
+
+export interface LlmTestReport {
+  ok: boolean;
+  backend: string;
+  model?: string;          // the coder model — the headline
+  error?: string;          // the first failure, if any
+  results?: LlmTestResult[];
+  tested?: number;
+  failed?: number;
+}
+
+/** Test every DISTINCT model the deployment would use — all three role bindings,
+ *  plus per-agent pins with `includeAgents`. Pass `model` to test just one. */
+export async function testLlmConfig(
+  backend?: string, model?: string, includeAgents = false,
+): Promise<LlmTestReport> {
   const res = await fetch(`${BASE}/llm/config/test`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ backend, model }),
+    body: JSON.stringify({ backend, model, include_agents: includeAgents }),
   });
   return res.json();
 }
@@ -3237,6 +3313,30 @@ export interface AgentRosterEntry {
   default_budget: { token_budget: number | null; time_budget_s: number | null };
   governance: AgentGovernance;
   spend: AgentSpend;
+  /** the charter's suggestion RESOLVED for the backend currently bound — model
+   *  ids are provider-specific, so a recommendation for another provider would
+   *  be unusable advice */
+  recommended_model?: string;
+  backend?: string;
+}
+
+export interface ApplyRecommendedResult {
+  backend: string;
+  applied: { agent_id: string; model: string }[];
+  skipped: { agent_id: string; reason: string }[];
+}
+
+/** Pin each agent to its recommended model for the active backend. Existing
+ *  operator pins are kept unless `overwrite` — a suggestion must not silently
+ *  replace a choice someone made. */
+export async function applyRecommendedAgentModels(
+  body: { workspace_id?: string; agent_ids?: string[]; overwrite?: boolean } = {},
+): Promise<ApplyRecommendedResult | null> {
+  const res = await fetch(`${BASE}/agents/apply-recommended-models`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) return null;
+  return res.json();
 }
 
 export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[]> {

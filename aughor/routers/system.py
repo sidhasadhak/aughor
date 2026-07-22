@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -11,92 +10,6 @@ from pydantic import BaseModel
 from aughor.db.registry import BUILTIN_ID
 
 router = APIRouter(tags=["system"])
-
-
-@router.post("/eval/run")
-async def run_eval_endpoint(
-    dataset: str = "evals/golden_sql_expanded.jsonl",
-    connection: str = "samples",
-    limit: int | None = None,
-    by_category: bool = True,
-):
-    """Run the golden dataset SQL accuracy evaluator (reference replay mode)."""
-    import asyncio
-    import json
-
-    from aughor.db.connection import open_connection_for
-
-    # The golden-SQL eval harness is an optional dev/CI component. Degrade
-    # gracefully when it (or its dataset) isn't present, so a minimal deployment
-    # gets a clear 503/404 instead of an ImportError/FileNotFoundError 500.
-    try:
-        from evals.run_golden import run_eval
-    except ImportError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Evaluation harness not available: {exc}",
-        )
-
-    dataset_path = Path(dataset)
-    if not dataset_path.is_file():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Eval dataset not found: {dataset}",
-        )
-
-    records = [json.loads(line) for line in dataset_path.read_text().splitlines() if line.strip()]
-    if limit:
-        records = records[:limit]
-
-    db = open_connection_for(connection)
-    schema = ""
-    try:
-        schema = db.get_schema()
-    except Exception:
-        pass
-
-    loop = asyncio.get_running_loop()
-    def _work():
-        results = []
-        for rec in records:
-            results.append(run_eval(rec, db, live=False, schema=schema))
-        return results
-
-    try:
-        results = await loop.run_in_executor(None, _work)
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
-
-    total = len(results)
-    perfect = sum(1 for r in results if r["scores"].get("overall", 0) >= 0.99)
-    passed_80 = sum(1 for r in results if r["scores"].get("overall", 0) >= 0.80)
-    errors = sum(1 for r in results if r["scores"].get("error"))
-
-    by_diff = {}
-    for r in results:
-        d = r["difficulty"]
-        by_diff.setdefault(d, {"total": 0, "perfect": 0, "passed_80": 0, "errors": 0})
-        by_diff[d]["total"] += 1
-        if r["scores"].get("overall", 0) >= 0.99:
-            by_diff[d]["perfect"] += 1
-        if r["scores"].get("overall", 0) >= 0.80:
-            by_diff[d]["passed_80"] += 1
-        if r["scores"].get("error"):
-            by_diff[d]["errors"] += 1
-
-    summary = {
-        "total": total,
-        "perfect": perfect,
-        "passed_80": passed_80,
-        "errors": errors,
-        "by_difficulty": by_diff,
-    }
-
-    return {"results": results, "summary": summary}
-
 
 
 def _llm_readiness() -> dict:

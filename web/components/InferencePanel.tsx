@@ -6,8 +6,9 @@
  * the server stores them secretvault-encrypted and only ever reports whether a
  * key is set, so nothing sensitive round-trips back to the browser.
  */
-import { useEffect, useState } from "react";
-import { cacheProbe, getLlmConfig, setLlmConfig, testLlmConfig, type CacheProbeResult, type LlmCapability, type LlmConfig } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { addLlmModel, cacheProbe, getLlmConfig, getLlmModels, removeLlmModel, setLlmConfig, testLlmConfig, type CacheProbeResult, type LlmCapability, type LlmConfig, type LlmModelCatalog, type LlmTestReport } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 const BACKEND_LABEL: Record<string, string> = {
   ollama: "Ollama (local)",
@@ -16,6 +17,7 @@ const BACKEND_LABEL: Record<string, string> = {
   together: "Together AI",
   anthropic: "Anthropic",
   gemini: "Google Gemini",
+  openrouter: "OpenRouter",
 };
 const ROLE_LABEL: Record<string, string> = {
   coder: "Coder — SQL & reasoning",
@@ -71,6 +73,125 @@ const inputStyle: React.CSSProperties = {
 };
 const labelStyle: React.CSSProperties = { fontSize: 11, color: "var(--t3)", marginBottom: 4, display: "block" };
 
+/** A model id field: free text, with the backend's catalogue as suggestions.
+ *
+ *  Deliberately an input+datalist rather than a select. Model catalogues change
+ *  weekly and a closed dropdown that has gone stale means "you cannot use the
+ *  model you are paying for" — the list should help, never gate. "Keep" pins a
+ *  typed id into the list for next time. */
+function ModelField({ value, onChange, placeholder, catalog, listId, onKeep, busy }: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  catalog: LlmModelCatalog | null;
+  listId: string;
+  onKeep: (model: string) => void;
+  busy: boolean;
+}) {
+  const trimmed = value.trim();
+  const known = new Set((catalog?.models ?? []).map((m) => m.id));
+  const isCustom = (catalog?.custom ?? []).includes(trimmed);
+  const canKeep = !!trimmed && !isCustom && !known.has(trimmed);
+
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        list={listId}
+        spellCheck={false}
+        autoComplete="off"
+        style={{ ...inputStyle, flex: 1 }}
+      />
+      {canKeep && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => onKeep(trimmed)}
+          title="Keep this model in the list for next time"
+          style={{ fontSize: 11, whiteSpace: "nowrap" }}
+        >
+          + Keep
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** The shared <datalist> plus the catalogue's provenance and custom entries. */
+function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
+  catalog: LlmModelCatalog | null;
+  busy: boolean;
+  error: string | null;
+  onRefresh: () => void;
+  onRemove: (model: string) => void;
+}) {
+  if (!catalog) return null;
+  const custom = catalog.custom ?? [];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <datalist id={`llm-models-${catalog.backend}`}>
+        {catalog.models.map((m) => (
+          <option key={m.id} value={m.id}>
+            {[m.label ?? m.id,
+              m.context ? `${Math.round(m.context / 1000)}k ctx` : "",
+              m.free ? "free" : ""].filter(Boolean).join(" · ")}
+          </option>
+        ))}
+      </datalist>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "var(--t4)" }}>
+        <span>
+          {catalog.live
+            ? `${catalog.live_count} models from ${BACKEND_LABEL[catalog.backend] ?? catalog.backend}`
+            : `${catalog.models.length} built-in suggestions`}
+          {custom.length > 0 && ` · ${custom.length} custom`}
+        </span>
+        <Button variant="ghost" size="sm" disabled={busy} onClick={onRefresh}
+                style={{ fontSize: 10, height: "auto", padding: "1px 6px" }}>
+          {busy ? "…" : "Refresh"}
+        </Button>
+      </div>
+
+      {/* A failed live fetch is stated, not hidden — otherwise the built-in
+          floor silently poses as the real catalogue. */}
+      {!catalog.live && (error || catalog.error) && (
+        <div style={{ fontSize: 10, color: "var(--amb4)" }}>
+          Live list unavailable ({error || catalog.error}) — showing built-in suggestions.
+        </div>
+      )}
+
+      {custom.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {custom.map((m) => (
+            <span key={m} style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              fontSize: 10, fontFamily: "var(--font-mono)",
+              background: "var(--bg-3)", border: "1px solid var(--b2)",
+              borderRadius: "var(--r-pill)", padding: "1px 4px 1px 8px",
+            }}>
+              {m}
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => onRemove(m)}
+                title={`Remove ${m} from the list`}
+                style={{ fontSize: 11, lineHeight: 1, height: "auto",
+                         padding: "0 4px", color: "var(--t3)" }}
+              >
+                ×
+              </Button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function InferencePanel() {
   const [cfg, setCfg] = useState<LlmConfig | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -81,9 +202,12 @@ export function InferencePanel() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; error?: string; model?: string } | null>(null);
+  const [result, setResult] = useState<LlmTestReport | null>(null);
   const [probing, setProbing] = useState(false);
   const [probe, setProbe] = useState<CacheProbeResult | null>(null);
+  const [catalog, setCatalog] = useState<LlmModelCatalog | null>(null);
+  const [catalogBusy, setCatalogBusy] = useState(false);
+  const [catalogErr, setCatalogErr] = useState<string | null>(null);
 
   const load = () =>
     getLlmConfig()
@@ -96,7 +220,48 @@ export function InferencePanel() {
       })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
 
+  const loadCatalog = useCallback((b: string, refresh = false) => {
+    if (!b) return;
+    setCatalogBusy(true);
+    setCatalogErr(null);
+    getLlmModels(b, refresh)
+      .then((c) => setCatalog(c))
+      .catch((e) => setCatalogErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setCatalogBusy(false));
+  }, []);
+
   useEffect(() => { load(); }, []);
+
+  // Refetch when the provider changes — a catalogue belongs to its backend, and
+  // showing Anthropic's models while OpenRouter is selected would be worse than
+  // showing none. State is only touched in the callbacks, and `ignore` drops a
+  // late response: switching provider twice quickly could otherwise land the
+  // first fetch after the second and show the wrong backend's models.
+  useEffect(() => {
+    if (!backend) return;
+    let ignore = false;
+    getLlmModels(backend)
+      .then((c) => { if (!ignore) { setCatalog(c); setCatalogErr(null); } })
+      .catch((e) => { if (!ignore) setCatalogErr(e instanceof Error ? e.message : String(e)); })
+      .finally(() => { if (!ignore) setCatalogBusy(false); });
+    return () => { ignore = true; };
+  }, [backend]);
+
+  const keepModel = (model: string) => {
+    if (!backend) return;
+    setCatalogBusy(true);
+    addLlmModel(backend, model)
+      .then(() => loadCatalog(backend))
+      .catch((e) => { setCatalogErr(e instanceof Error ? e.message : String(e)); setCatalogBusy(false); });
+  };
+
+  const removeModel = (model: string) => {
+    if (!backend) return;
+    setCatalogBusy(true);
+    removeLlmModel(backend, model)
+      .then(() => loadCatalog(backend))
+      .catch((e) => { setCatalogErr(e instanceof Error ? e.message : String(e)); setCatalogBusy(false); });
+  };
 
   if (loadErr) return <div style={{ fontSize: 12, color: "var(--red4)" }}>Inference config unavailable: {loadErr}</div>;
   if (!cfg) return <div style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</div>;
@@ -132,7 +297,7 @@ export function InferencePanel() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
-      setResult({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      setResult({ ok: false, backend, error: e instanceof Error ? e.message : String(e) });
     }
     setSaving(false);
   };
@@ -140,9 +305,9 @@ export function InferencePanel() {
   const test = async () => {
     setTesting(true); setResult(null);
     try {
-      setResult(await testLlmConfig(backend, models.coder || undefined));
+      setResult(await testLlmConfig(backend, undefined, true));
     } catch (e) {
-      setResult({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      setResult({ ok: false, backend, error: e instanceof Error ? e.message : String(e) });
     }
     setTesting(false);
   };
@@ -212,17 +377,30 @@ export function InferencePanel() {
         {(["coder", "narrator", "fast"] as const).map((role) => (
           <div key={role}>
             <label style={labelStyle}>{ROLE_LABEL[role]}</label>
-            <input
+            <ModelField
               value={models[role] ?? ""}
-              onChange={(e) => setModels({ ...models, [role]: e.target.value })}
+              onChange={(v) => setModels({ ...models, [role]: v })}
               placeholder={defaults[role] || cfg.models[role] || "default"}
-              style={inputStyle}
+              catalog={catalog}
+              listId={`llm-models-${backend}`}
+              onKeep={keepModel}
+              busy={catalogBusy}
             />
             {cfg.capabilities?.[role] && <CapabilityRow cap={cfg.capabilities[role]} />}
           </div>
         ))}
+
+        <CatalogFooter
+          catalog={catalog}
+          busy={catalogBusy}
+          error={catalogErr}
+          onRefresh={() => loadCatalog(backend, true)}
+          onRemove={removeModel}
+        />
+
         <div style={{ fontSize: 10, color: "var(--t4)" }}>
-          Leave a model blank to use the provider's default (shown as the placeholder).
+          Leave a model blank to use the provider&apos;s default (shown as the placeholder).
+          Any model id works — the list is a suggestion, not a restriction.
         </div>
         {(() => {
           // The bound models' privacy classes — a saved-config view (§5b.4 governance).
@@ -291,7 +469,26 @@ export function InferencePanel() {
           color: result.ok ? "var(--grn5)" : "var(--red4)",
           fontFamily: "var(--font-mono)", wordBreak: "break-word",
         }}>
-          {result.ok
+          {/* Per-model, because the roles can be bound to different models and a
+              single headline would hide a narrator or fast binding that is broken. */}
+          {result.results?.length ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <div style={{ fontWeight: 600 }}>
+                {result.ok
+                  ? `✓ ${BACKEND_LABEL[backend] ?? backend} — ${result.tested} model${result.tested === 1 ? "" : "s"} responded`
+                  : `✗ ${result.failed} of ${result.tested} failed`}
+              </div>
+              {result.results.map((r) => (
+                <div key={r.model} style={{ color: r.ok ? "inherit" : "var(--red4)" }}>
+                  {r.ok ? "✓" : "✗"} {r.model}
+                  <span style={{ opacity: 0.7 }}>
+                    {" · "}{r.used_by.join(", ")}{r.ok && r.ms ? ` · ${Math.round(r.ms)}ms` : ""}
+                  </span>
+                  {!r.ok && r.error ? <div style={{ paddingLeft: 14 }}>{r.error}</div> : null}
+                </div>
+              ))}
+            </div>
+          ) : result.ok
             ? `✓ ${BACKEND_LABEL[backend] ?? backend} responded${result.model ? ` (${result.model})` : ""}`
             : `✗ ${result.error || "test failed"}`}
         </div>

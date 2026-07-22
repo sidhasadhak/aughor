@@ -133,10 +133,39 @@ export interface paths {
         /**
          * List Agents
          * @description The fleet roster: each agent's charter + effective governance + recent spend.
+         *
+         *     ``recommended_model`` is the charter's suggestion RESOLVED for the backend in
+         *     use — the ids are provider-specific, so a recommendation shown while a
+         *     different provider is bound would be unusable advice.
          */
         get: operations["list_agents_agents_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/apply-recommended-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Recommended Models
+         * @description Pin each agent to its recommended model for the ACTIVE backend.
+         *
+         *     Skips agents that already carry an explicit pin unless ``overwrite`` — a
+         *     suggestion should never silently replace a choice someone made. Agents with
+         *     no recommendation for this backend are skipped and reported, so "nothing
+         *     happened" is never ambiguous.
+         */
+        post: operations["apply_recommended_models_agents_apply_recommended_models_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1959,7 +1988,131 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/eval/run": {
+    "/evals/cases/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Case */
+        delete: operations["delete_case_evals_cases__case_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evals/evaluators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Evaluators
+         * @description The registered evaluator set — what a suite can be scored against.
+         */
+        get: operations["list_evaluators_evals_evaluators_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evals/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Runs */
+        get: operations["list_runs_evals_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evals/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_evals_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evals/suites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Suites */
+        get: operations["list_suites_evals_suites_get"];
+        put?: never;
+        /** Create Suite */
+        post: operations["create_suite_evals_suites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evals/suites/{suite_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Suite */
+        get: operations["get_suite_evals_suites__suite_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Suite */
+        delete: operations["delete_suite_evals_suites__suite_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evals/suites/{suite_id}/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Cases */
+        post: operations["add_cases_evals_suites__suite_id__cases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evals/suites/{suite_id}/run": {
         parameters: {
             query?: never;
             header?: never;
@@ -1969,10 +2122,15 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Run Eval Endpoint
-         * @description Run the golden dataset SQL accuracy evaluator (reference replay mode).
+         * Run Suite Route
+         * @description Run a suite against its declared target.
+         *
+         *     Synchronous by design for now: a suite is bounded by its case count and the
+         *     caller chose the iteration count, so the cost is knowable up front rather
+         *     than discovered. A long model-backed suite belongs on the job kernel, which
+         *     is the natural follow-on once a target that calls a model is wired here.
          */
-        post: operations["run_eval_endpoint_eval_run_post"];
+        post: operations["run_suite_route_evals_suites__suite_id__run_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3269,11 +3427,53 @@ export interface paths {
         put?: never;
         /**
          * Test Llm Config
-         * @description Run a tiny real completion against a backend (defaults to the active one,
-         *     using the saved/env key) to confirm it's reachable and configured.
+         * @description Real completions against a backend to confirm it is reachable and configured.
+         *
+         *     Tests every DISTINCT model the deployment would use — all three role
+         *     bindings, and the per-agent pins with ``include_agents`` — not just the coder
+         *     model. A single-model check said nothing about a narrator or fast binding
+         *     that may be a different model entirely.
          */
         post: operations["test_llm_config_llm_config_test_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llm/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Llm Models
+         * @description The model catalogue for the picker — live list where the backend serves
+         *     one, a curated floor otherwise, plus the user's kept custom entries.
+         *
+         *     Not gated: reading which models exist is not privileged, and the picker needs
+         *     it to render. Writing the config (which model to USE, and the keys) stays
+         *     behind SECURITY_SUITE on POST /llm/config.
+         */
+        get: operations["list_llm_models_llm_models_get"];
+        put?: never;
+        /**
+         * Add Llm Model
+         * @description Keep a typed model in the picker for next time. Idempotent.
+         *
+         *     Gated with the rest of the inference config: a custom entry is a suggestion
+         *     an operator will later click, so writing it is the same trust boundary as
+         *     writing the config it feeds.
+         */
+        post: operations["add_llm_model_llm_models_post"];
+        /**
+         * Remove Llm Model
+         * @description Drop a custom entry. Built-in and live entries are not removable — hiding
+         *     a model the backend actually serves would make the picker lie.
+         */
+        delete: operations["remove_llm_model_llm_models_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5727,6 +5927,18 @@ export interface components {
              */
             scope: string;
         };
+        /** ApplyRecommendedIn */
+        ApplyRecommendedIn: {
+            /** Agent Ids */
+            agent_ids?: string[] | null;
+            /**
+             * Overwrite
+             * @default false
+             */
+            overwrite: boolean;
+            /** Workspace Id */
+            workspace_id?: string | null;
+        };
         /**
          * AskRequest
          * @description The unified entry (Phase 0 of the Insight+Deep merge, docs/UNIFIED_ANSWER_PATH.md).
@@ -6024,6 +6236,30 @@ export interface components {
             last_value?: number | null;
             /** Prev Value */
             prev_value?: number | null;
+        };
+        /** CaseIn */
+        CaseIn: {
+            /**
+             * Artifact
+             * @default
+             */
+            artifact: string;
+            /** Expected */
+            expected?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Question
+             * @default
+             */
+            question: string;
+            /** Tags */
+            tags?: string[];
+        };
+        /** CasesIn */
+        CasesIn: {
+            /** Cases */
+            cases: components["schemas"]["CaseIn"][];
         };
         /** ChatHistoryTurn */
         ChatHistoryTurn: {
@@ -7050,6 +7286,21 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** RunIn */
+        RunIn: {
+            /** Evaluators */
+            evaluators?: string[] | null;
+            /**
+             * Iterations
+             * @default 1
+             */
+            iterations: number;
+            /**
+             * Persist
+             * @default true
+             */
+            persist: boolean;
+        };
         /** SuggestNameRequest */
         SuggestNameRequest: {
             /** Connection Id */
@@ -7059,6 +7310,30 @@ export interface components {
              * @default []
              */
             tables: string[];
+        };
+        /** SuiteIn */
+        SuiteIn: {
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Name */
+            name: string;
+            /**
+             * Target
+             * @default reference
+             */
+            target: string;
         };
         /**
          * SystemMessage
@@ -7526,6 +7801,13 @@ export interface components {
             /** Right Table */
             right_table: string;
         };
+        /** _CustomModelIn */
+        _CustomModelIn: {
+            /** Backend */
+            backend: string;
+            /** Model */
+            model: string;
+        };
         /** _DecompileRequest */
         _DecompileRequest: {
             /**
@@ -7878,6 +8160,11 @@ export interface components {
         _TestRequest: {
             /** Backend */
             backend?: string | null;
+            /**
+             * Include Agents
+             * @default false
+             */
+            include_agents: boolean;
             /** Model */
             model?: string | null;
         };
@@ -8198,6 +8485,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_recommended_models_agents_apply_recommended_models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyRecommendedIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -11787,19 +12107,321 @@ export interface operations {
             };
         };
     };
-    run_eval_endpoint_eval_run_post: {
+    delete_case_evals_cases__case_id__delete: {
         parameters: {
             query?: {
-                dataset?: string;
-                connection?: string;
-                limit?: number | null;
-                by_category?: boolean;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_evaluators_evals_evaluators_get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
             };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_runs_evals_runs_get: {
+        parameters: {
+            query?: {
+                suite_id?: string | null;
+                limit?: number;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_evals_runs__run_id__get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_suites_evals_suites_get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_suite_evals_suites_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuiteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_suite_evals_suites__suite_id__get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                suite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_suite_evals_suites__suite_id__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                suite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_cases_evals_suites__suite_id__cases_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                suite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CasesIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_suite_route_evals_suites__suite_id__run_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                suite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -14006,6 +14628,106 @@ export interface operations {
                 "application/json": components["schemas"]["_TestRequest"] | null;
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_llm_models_llm_models_get: {
+        parameters: {
+            query?: {
+                backend?: string | null;
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_llm_model_llm_models_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_CustomModelIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_llm_model_llm_models_delete: {
+        parameters: {
+            query: {
+                backend: string;
+                model: string;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -18197,7 +18919,9 @@ export interface operations {
     };
     delete_benchmark_semantic__conn_id__benchmarks__case_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                connection_id?: string | null;
+            };
             header?: never;
             path: {
                 conn_id: string;

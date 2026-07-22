@@ -74,6 +74,8 @@ import {
   getAgents,
   patchAgent,
   getLlmConfig,
+  getLlmModels,
+  applyRecommendedAgentModels,
   type Connection,
   type ExplorationStatus,
   type OntologyGraph,
@@ -1061,13 +1063,34 @@ function AgentsPanel({ workspaceId, workspaceName }: { workspaceId?: string; wor
   const toggle = (id: string, enabled: boolean) => { patchAgent(id, { enabled, workspace_id: workspaceId }).then(() => reload()); };
   const setModel = (id: string, model: string) => { patchAgent(id, { model, workspace_id: workspaceId }).then(() => reload()); };
 
-  // Available LLM models for the per-agent override (the distinct effective models).
+  // The full catalogue for the backend in use — the old list was just the three
+  // role models, so most of what the provider offers was unreachable from here.
   const [models, setModels] = useState<string[]>([]);
+  const [applying, setApplying] = useState(false);
+  const [applyNote, setApplyNote] = useState<string>("");
   useEffect(() => {
-    getLlmConfig()
-      .then(c => setModels([...new Set(Object.values(c.models || {}))].filter(Boolean) as string[]))
-      .catch(() => setModels([]));
+    getLlmModels()
+      .then(c => setModels(c.models.map(m => m.id)))
+      .catch(() => {
+        getLlmConfig()
+          .then(c => setModels([...new Set(Object.values(c.models || {}))].filter(Boolean) as string[]))
+          .catch(() => setModels([]));
+      });
   }, []);
+
+  const applyRecommended = (overwrite: boolean) => {
+    setApplying(true);
+    applyRecommendedAgentModels({ workspace_id: workspaceId, overwrite })
+      .then(r => {
+        if (!r) { setApplyNote("Could not apply recommendations."); return; }
+        const kept = r.skipped.filter(s => s.reason.startsWith("already pinned")).length;
+        setApplyNote(
+          `Pinned ${r.applied.length} agent${r.applied.length === 1 ? "" : "s"} for ${r.backend}` +
+          (kept ? ` · ${kept} left as you set ${kept === 1 ? "it" : "them"}` : ""));
+        return reload();
+      })
+      .finally(() => setApplying(false));
+  };
 
   if (!tried) {
     return <div style={{ padding: "40px 0", textAlign: "center" }}><p style={{ fontSize: 12, color: "var(--t3)" }}>Loading agents…</p></div>;
@@ -1083,6 +1106,27 @@ function AgentsPanel({ workspaceId, workspaceName }: { workspaceId?: string; wor
         a run that exceeds its token or time budget is cancelled, because every run is metered.
         {workspaceName && " Unset values inherit the Org default."}
       </p>
+      {agents.some(a => a.recommended_model) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+                      fontSize: 11, color: "var(--t3)" }}>
+          <Button variant="ghost" size="sm" disabled={applying}
+                  onClick={() => applyRecommended(false)} style={{ fontSize: 11 }}>
+            {applying ? "Applying…" : "Apply recommended models"}
+          </Button>
+          <span>
+            Binds each agent to the model suited to its job — quality where a wrong
+            answer is expensive, speed where a user is waiting. Your own pins are kept;{" "}
+            <Button variant="ghost" size="sm" onClick={() => applyRecommended(true)}
+                    disabled={applying}
+                    style={{ padding: 0, height: "auto", fontSize: 11, color: "var(--blue4)",
+                             textDecoration: "underline" }}>
+              overwrite them
+            </Button>{" "}
+            to reset.
+          </span>
+          {applyNote && <span style={{ color: "var(--grn4)" }}>{applyNote}</span>}
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(400px, 1fr))", gap: 12 }}>
       {agents.map(a => {
         const isBackground = a.lane === "background";
@@ -1137,6 +1181,17 @@ function AgentsPanel({ workspaceId, workspaceName }: { workspaceId?: string; wor
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                     {a.governance.model && !models.includes(a.governance.model) && <option value={a.governance.model}>{a.governance.model}</option>}
                   </select>
+                  {a.recommended_model && a.governance.model !== a.recommended_model && (
+                    <Button variant="ghost" size="sm"
+                            onClick={() => setModel(a.id, a.recommended_model!)}
+                            title={`Recommended for ${a.name}: ${a.recommended_model}`}
+                            style={{ padding: 0, height: "auto", fontSize: 10, color: "var(--blue4)" }}>
+                      use recommended
+                    </Button>
+                  )}
+                  {a.recommended_model && a.governance.model === a.recommended_model && (
+                    <span style={{ fontSize: 10, color: "var(--grn4)" }}>recommended</span>
+                  )}
                 </span>
                 <span>Recent <span style={{ color: "var(--t2)" }}>{a.spend.runs} runs · {fmtCompact(a.spend.total_tokens)} tokens · {a.spend.query_count} queries</span></span>
               </div>

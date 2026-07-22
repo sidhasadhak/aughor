@@ -66,6 +66,8 @@ FLAG_ENV = {
     "rbac.row_policy": "AUGHOR_RBAC_ROW_POLICY",
     "obs.mlflow": "AUGHOR_OBS_MLFLOW",
     "obs.task_table": "AUGHOR_OBS_TASK_TABLE",
+    "obs.session_log": "AUGHOR_OBS_SESSION_LOG",
+    "obs.prompt_capture": "AUGHOR_OBS_PROMPT_CAPTURE",
     "obs.popularity": "AUGHOR_OBS_POPULARITY",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
     "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
@@ -139,6 +141,14 @@ FLAG_META = {
     "obs.task_table": {
         "label": "task_history — spans as a queryable table",
         "description": "Sink the kernel ledger's node/tool span events into one append-only task_history table (trace_id, span_id, parent_span_id, task, input, captured_output, timing, error, labels) — the queryable spine of \"what the agent actually did.\" It is a SINK over the spans telemetry already emits, not new instrumentation: MLflow/Langfuse stay the rich-trace backends; this makes the same exhaust answerable with plain SQL, so evals recover generated SQL by querying the table (no log parsing) and Deep Analysis can investigate its own behaviour via the aughor_ops schema. Off by default = byte-identical (no rows written). Wave 2 · Rec 4 of the combined platform study.",
+    },
+    "obs.session_log": {
+        "label": "session_events — the agent-session log",
+        "description": "Record one append-only session_events row per agent-session event (user_request · tool_call · tool_call_result · llm_call · final_response · execution_error) with a stable trace id, a monotonic sequence, explicit success/duration/error-class, and the ambient session/user/agent identity. Fills the gap task_history cannot: it mints the trace at the /ask door, so the QUICK answer path — which today creates no trace id at all and whose SQL bypasses the span-emitting executor — becomes reconstructible; it writes tool_call on ENTRY, so a call that hangs or is cancelled still leaves evidence, where a span row only ever appears after the body returns; and it records each LLM call (model, role, tokens, latency, retries, whether the fallback swapped the model mid-run), which today is aggregated into counters and discarded. Queryable as SQL via the aughor_ops schema, and the substrate a later evals harness turns real sessions into test cases from. Retention is enforced on write (AUGHOR_SESSION_LOG_KEEP_DAYS / _MAX_ROWS). Off by default = byte-identical (no rows written). Wave E1.",
+    },
+    "obs.prompt_capture": {
+        "label": "Capture prompts and completions on llm_call rows",
+        "description": "Store the system prompt, user prompt and model response alongside each llm_call in the session log. SEPARATE from obs.session_log and off by default because the blast radius is entirely different: the rest of the log is metadata (model, tokens, latency, outcome), whereas this writes the actual content of every model call — which for this product means schema, sampled values, glossary text and the user's own question, i.e. potentially the most sensitive material in the deployment. It has no effect unless obs.session_log is also on (nothing writes rows otherwise). Turn it on deliberately, for a bounded window, when you need to reproduce or grade a run — a captured prompt is what lets a recorded session become an eval case or a bug report, rather than a claim about one. Values are capped (AUGHOR_OBS_PROMPT_MAX_CHARS, default 2000) and truncation is marked explicitly, because a silently-shortened prompt reproduces a different call than the one that ran. Consider a retention window (AUGHOR_SESSION_LOG_KEEP_DAYS) and access controls on data/system.db before enabling in production.",
     },
     "obs.popularity": {
         "label": "Query popularity as a shared notability signal",

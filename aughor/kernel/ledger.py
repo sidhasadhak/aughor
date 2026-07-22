@@ -19,8 +19,9 @@ Design constraints honoured here:
 Tables:
   kv(store, key, value, seq, updated_at)  — the cache backend; ``seq`` is a
       ledger-monotonic counter giving each store an MRU order (oldest = lowest).
-  events(seq, at, kind, conn_id, canvas_id, job_id, payload)  — append-only.
+  events(seq, at, kind, conn_id, canvas_id, job_id, trace_id, payload)  — append-only.
   meta(k, v)  — kernel bookkeeping (e.g. one-time legacy-import markers).
+  session_events(...)  — the agent-session log (Wave E1, flag `obs.session_log`).
 """
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ import logging
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -39,6 +40,9 @@ from aughor.org.context import current_org_id
 logger = logging.getLogger(__name__)
 
 _DEFAULT_DB = Path(__file__).parent.parent.parent / "data" / "system.db"
+
+# Amortise session-log retention over inserts (see Ledger._session_events_maybe_prune).
+_SESSION_EVENT_PRUNE_EVERY = 500
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS kv (
@@ -146,12 +150,95 @@ def _create_task_history(c: sqlite3.Connection) -> None:
     )
 
 
+def _create_session_events(c: sqlite3.Connection) -> None:
+    """The `session_events` log (Wave E1, flag `obs.session_log`): one append-only
+    row per agent-session event, so "reconstruct this run" is a single ordered
+    SELECT.
+
+    Distinct from `task_history`, which is SPAN-shaped — one row per *completed*
+    unit of work, ordered by a start-time string. This is EVENT-shaped: separate
+    records with a monotonic `seq`, written as things happen. That difference is
+    the point. A `tool_call` is written on entry, so a call that hangs, is
+    cancelled, or dies with the process still leaves evidence; a span row only
+    ever appears after the body returns. It also carries the identity
+    (`session_id`/`user_id`/`agent_id`) and the explicit `ok` boolean that
+    `task_history` has no column for.
+
+    A pure SINK: nothing writes here unless `obs.session_log` is on.
+    """
+    c.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS session_events (
+          seq              INTEGER PRIMARY KEY AUTOINCREMENT,
+          at               TEXT NOT NULL,
+          trace_id         TEXT NOT NULL,
+          kind             TEXT NOT NULL,
+          name             TEXT,
+          span_id          TEXT,
+          parent_span_id   TEXT,
+          ok               INTEGER,
+          duration_ms      REAL,
+          error_class      TEXT,
+          investigation_id TEXT,
+          session_id       TEXT,
+          user_id          TEXT,
+          agent_id         TEXT,
+          conn_id          TEXT,
+          org_id           TEXT NOT NULL DEFAULT 'default',
+          payload          TEXT
+        );
+        CREATE INDEX IF NOT EXISTS session_events_trace ON session_events(trace_id, seq);
+        CREATE INDEX IF NOT EXISTS session_events_kind ON session_events(kind, seq);
+        CREATE INDEX IF NOT EXISTS session_events_session ON session_events(session_id, seq);
+        """
+    )
+
+
+def _add_session_event_measures(c: sqlite3.Connection) -> None:
+    """Promote the measurable facts out of the JSON payload into real columns.
+
+    They were recorded from the start, but inside ``payload`` — which makes the
+    questions worth asking ("tokens by model this week", "p95 latency per
+    provider", "which model fails") a JSON-extraction exercise instead of a
+    GROUP BY, and makes them near-unusable through the ``aughor_ops`` NL2SQL
+    surface where an agent has to write the SQL itself.
+
+    Sparse by design: ``model``/``provider``/token counts are only set on
+    ``llm_call`` rows, ``row_count`` only on tool results. NULLs are cheap, and
+    ``task_history`` already sets the precedent with input/captured_output.
+
+    Tokens are nullable rather than 0-defaulted on purpose: a backend that does
+    not report usage must not be indistinguishable from a genuinely empty call,
+    or every cost aggregate is quietly wrong.
+    """
+    for col, decl in (
+        ("provider", "TEXT"),
+        ("model", "TEXT"),
+        ("prompt_tokens", "INTEGER"),
+        ("completion_tokens", "INTEGER"),
+        ("total_tokens", "INTEGER"),
+        ("row_count", "INTEGER"),
+        ("retries", "INTEGER"),
+    ):
+        add_column_if_missing(c, "session_events", col, decl)
+    c.executescript(
+        "CREATE INDEX IF NOT EXISTS session_events_model ON session_events(model, seq);")
+
+
 # Schema evolution (DATA-05). The kernel tables in _SCHEMA are v1; changes are Migration(v>=2).
 _MIGRATIONS = [
     Migration(2, "per-run compute metering (jobs.metrics)",
               lambda c: add_column_if_missing(c, "jobs", "metrics", "TEXT")),
     Migration(3, "tenant key on jobs/artifacts/lineage", _add_kernel_org_ids),
     Migration(4, "task_history spans-as-a-table (obs.task_table)", _create_task_history),
+    Migration(5, "session_events agent-session log (obs.session_log)", _create_session_events),
+    # Wave E1: correlate the journal to the run that produced it. All ~29 event
+    # kinds gain this at once because emit() defaults it from the ambient trace —
+    # no call site changes. Until now `node.span` smuggled the trace into job_id
+    # and nothing else in the journal was correlated at all.
+    Migration(6, "correlation key: trace_id on events",
+              lambda c: add_column_if_missing(c, "events", "trace_id", "TEXT NOT NULL DEFAULT ''")),
+    Migration(7, "session_events: measurable facts as columns", _add_session_event_measures),
 ]
 
 
@@ -165,6 +252,7 @@ class Ledger:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._session_event_writes = 0  # drives amortised session-log retention
         self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't SQLITE_BUSY instantly (DATA-02)
@@ -472,16 +560,27 @@ class Ledger:
         conn_id: Optional[str] = None,
         canvas_id: Optional[str] = None,
         job_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
     ) -> int:
         """Append one event; returns its seq. Every state transition the kernel
         cares about flows through here — 'why did X happen at 14:32' becomes a
-        query instead of an archaeology dig."""
+        query instead of an archaeology dig.
+
+        ``trace_id`` defaults to the ambient run, so every kind correlates to the
+        run that caused it without a single call site being touched."""
+        if trace_id is None:
+            try:
+                from aughor.telemetry import current_trace_id
+                trace_id = current_trace_id()
+            except Exception:
+                trace_id = ""
         with self._lock, self._conn:
             cur = self._conn.execute(
-                "INSERT INTO events (at, kind, conn_id, canvas_id, job_id, payload) "
-                "VALUES (?,?,?,?,?,?)",
+                "INSERT INTO events (at, kind, conn_id, canvas_id, job_id, payload, trace_id) "
+                "VALUES (?,?,?,?,?,?,?)",
                 (_now(), kind, conn_id, canvas_id, job_id,
-                 json.dumps(payload, default=str) if payload is not None else None),
+                 json.dumps(payload, default=str) if payload is not None else None,
+                 trace_id or ""),
             )
         return int(cur.lastrowid)
 
@@ -491,11 +590,15 @@ class Ledger:
         kind: Optional[str] = None,
         conn_id: Optional[str] = None,
         job_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
         since_seq: Optional[int] = None,
         limit: int = 200,
     ) -> list[dict]:
-        q = "SELECT seq, at, kind, conn_id, canvas_id, job_id, payload FROM events WHERE 1=1"
+        q = ("SELECT seq, at, kind, conn_id, canvas_id, job_id, payload, trace_id "
+             "FROM events WHERE 1=1")
         args: list[Any] = []
+        if trace_id:
+            q += " AND trace_id=?"; args.append(trace_id)
         if kind:
             q += " AND kind=?"; args.append(kind)
         if conn_id:
@@ -508,10 +611,10 @@ class Ledger:
         with self._lock:
             rows = self._conn.execute(q, args).fetchall()
         out = []
-        for seq, at, k, c, cv, j, p in rows:
+        for seq, at, k, c, cv, j, p, tid in rows:
             out.append({
                 "seq": seq, "at": at, "kind": k, "conn_id": c,
-                "canvas_id": cv, "job_id": j,
+                "canvas_id": cv, "job_id": j, "trace_id": tid,
                 "payload": json.loads(p) if p else None,
             })
         return out
@@ -576,3 +679,156 @@ class Ledger:
                 "labels": json.loads(lbl) if lbl else None, "org_id": org,
             })
         return out
+
+    # ── session_events: the agent-session log (Wave E1, flag obs.session_log) ──
+
+    _SESSION_EVENT_COLS = (
+        "seq", "at", "trace_id", "kind", "name", "span_id", "parent_span_id",
+        "ok", "duration_ms", "error_class", "investigation_id", "session_id",
+        "user_id", "agent_id", "conn_id", "org_id",
+        # Migration 7 — measurable facts as columns, not payload JSON.
+        "provider", "model", "prompt_tokens", "completion_tokens", "total_tokens",
+        "row_count", "retries",
+        "payload",
+    )
+
+    def session_event_insert(self, row: dict) -> int:
+        """Append one session event; returns its ``seq``.
+
+        Unlike ``task_history_insert`` this is NOT idempotent on a key — every
+        call is a distinct occurrence, and ``seq`` (AUTOINCREMENT) is the
+        within-run ordering that ``task_history``'s start-time string cannot give
+        (equal-millisecond spans there tie-break on a random span id).
+
+        Retention runs opportunistically here rather than from a sweep so the
+        table cannot grow unbounded if no scheduler is running — the failure mode
+        `events`/`task_history` both have today.
+        """
+        payload = row.get("payload")
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "INSERT INTO session_events "
+                "(at, trace_id, kind, name, span_id, parent_span_id, ok, duration_ms, "
+                " error_class, investigation_id, session_id, user_id, agent_id, conn_id, "
+                " org_id, provider, model, prompt_tokens, completion_tokens, total_tokens, "
+                " row_count, retries, payload) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    row.get("at") or _now(), row["trace_id"], row["kind"], row.get("name"),
+                    row.get("span_id"), row.get("parent_span_id"),
+                    None if row.get("ok") is None else int(bool(row["ok"])),
+                    row.get("duration_ms"), row.get("error_class"),
+                    row.get("investigation_id"), row.get("session_id"),
+                    row.get("user_id"), row.get("agent_id"), row.get("conn_id"),
+                    row.get("org_id") or "default",
+                    row.get("provider"), row.get("model"),
+                    row.get("prompt_tokens"), row.get("completion_tokens"),
+                    row.get("total_tokens"), row.get("row_count"), row.get("retries"),
+                    json.dumps(payload, default=str) if payload is not None else None,
+                ),
+            )
+            seq = int(cur.lastrowid)
+        self._session_events_maybe_prune()
+        return seq
+
+    def session_events(
+        self,
+        *,
+        trace_id: Optional[str] = None,
+        kind: Optional[str] = None,
+        session_id: Optional[str] = None,
+        investigation_id: Optional[str] = None,
+        org_id: Optional[str] = None,
+        since_seq: Optional[int] = None,
+        limit: int = 500,
+        ascending: bool = False,
+    ) -> list[dict]:
+        """Read session events. Defaults to newest-first (the feed shape); pass
+        ``ascending=True`` for replay order, which is what reconstructing a single
+        run wants."""
+        q = f"SELECT {', '.join(self._SESSION_EVENT_COLS)} FROM session_events WHERE 1=1"
+        args: list[Any] = []
+        if trace_id:
+            q += " AND trace_id=?"; args.append(trace_id)
+        if kind:
+            q += " AND kind=?"; args.append(kind)
+        if session_id:
+            q += " AND session_id=?"; args.append(session_id)
+        if investigation_id:
+            q += " AND investigation_id=?"; args.append(investigation_id)
+        if org_id:
+            q += " AND org_id=?"; args.append(org_id)
+        if since_seq is not None:
+            q += " AND seq>?"; args.append(since_seq)
+        q += f" ORDER BY seq {'ASC' if ascending else 'DESC'} LIMIT ?"
+        args.append(int(limit))
+        with self._lock:
+            rows = self._conn.execute(q, args).fetchall()
+        out = []
+        for r in rows:
+            d = dict(zip(self._SESSION_EVENT_COLS, r))
+            if d.get("ok") is not None:
+                d["ok"] = bool(d["ok"])
+            if d.get("payload"):
+                try:
+                    d["payload"] = json.loads(d["payload"])
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, f"session_events seq={d.get('seq')} has an unparseable "
+                                  "payload; serving it as the raw string",
+                             counter="obs.session_log.bad_payload")
+            out.append(d)
+        return out
+
+    def session_events_clear(self, *, trace_id: Optional[str] = None,
+                             org_id: Optional[str] = None) -> int:
+        """Delete a run's session log (or the whole table when unscoped); returns
+        rows deleted. Distinct from :meth:`session_events_prune`, which is
+        age/size retention — this is a deliberate purge of a named run, the
+        primitive a "forget this session" request needs."""
+        q = "DELETE FROM session_events WHERE 1=1"
+        args: list[Any] = []
+        if trace_id:
+            q += " AND trace_id=?"; args.append(trace_id)
+        if org_id:
+            q += " AND org_id=?"; args.append(org_id)
+        with self._lock, self._conn:
+            return max(self._conn.execute(q, args).rowcount, 0)
+
+    def _session_events_maybe_prune(self) -> None:
+        """Prune every ``_SESSION_EVENT_PRUNE_EVERY`` inserts (amortised, so the
+        common insert stays one statement). Best-effort: a prune failure must
+        never surface to the answer path that produced the event."""
+        with self._lock:
+            self._session_event_writes += 1
+            due = self._session_event_writes % _SESSION_EVENT_PRUNE_EVERY == 0
+        if not due:
+            return
+        try:
+            self.session_events_prune()
+        except Exception as exc:
+            logger.debug("session_events prune failed: %s", exc)
+
+    def session_events_prune(self, *, keep_days: Optional[int] = None,
+                             max_rows: Optional[int] = None) -> int:
+        """Delete events older than ``keep_days`` and any beyond ``max_rows``
+        (newest kept). Returns rows deleted. Env-tunable via
+        ``AUGHOR_SESSION_LOG_KEEP_DAYS`` / ``AUGHOR_SESSION_LOG_MAX_ROWS``; set
+        either to 0 to disable that half."""
+        if keep_days is None:
+            keep_days = int(os.environ.get("AUGHOR_SESSION_LOG_KEEP_DAYS", "14") or 0)
+        if max_rows is None:
+            max_rows = int(os.environ.get("AUGHOR_SESSION_LOG_MAX_ROWS", "200000") or 0)
+        deleted = 0
+        with self._lock, self._conn:
+            if keep_days > 0:
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
+                deleted += self._conn.execute(
+                    "DELETE FROM session_events WHERE at < ?", (cutoff,)).rowcount
+            if max_rows > 0:
+                deleted += self._conn.execute(
+                    "DELETE FROM session_events WHERE seq NOT IN ("
+                    "  SELECT seq FROM session_events ORDER BY seq DESC LIMIT ?)",
+                    (max_rows,),
+                ).rowcount
+        return max(deleted, 0)

@@ -16,15 +16,35 @@
 
 ### ⏭️ NEXT SESSION — start here
 
-1. **Four flags are ON in the live ledger but still default-off in code** — `chart.exhibit_grammar`,
+**Branch `2026-07-22-e1-session-log` — 17 commits, NOT pushed, no PR.** Wave E1–E3 built and
+proved, plus the OpenRouter provider. See [`docs/WAVE_E_SESSIONS_EVALS_ARC.md`](docs/WAVE_E_SESSIONS_EVALS_ARC.md)
+and [`docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md`](docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md).
+
+0. **⛔ Full synthesis is not being generated.** Reported 2026-07-22, NOT yet investigated. The
+   Briefing's cross-domain synthesis does not produce a full narrative. Start by reproducing on the
+   live path and reading a real run — the new session log makes this tractable for the first time:
+   turn on `obs.session_log`, run the brief, then read `session_events` for that trace (the
+   `llm_call` rows now carry model, tokens, latency, retries and — under `obs.prompt_capture` — the
+   actual prompt and response). Note the Briefer is pinned to `nemotron-3-ultra`, and that a bound
+   model being rate-limited is now a visible, ordinary failure: check Settings → Models → Test
+   connection FIRST, since a 429 on a role model degrades output without erroring loudly.
+
+1. **Wave E4 — per-run overrides / grid experiments** (the next arc PR). `provider.set_run_model()`
+   already exists as a contextvar; the flag override does NOT and must wrap `build_graph_generic`
+   for topology flags (`graph.py:128/140/229`). Ceiling to respect: no seed, no response cache,
+   default temp 0.1 not 0.0, Anthropic drops temperature — so measure with replication, never claim
+   deterministic replay. E4 is what turns the per-agent model advice from reasoning into
+   measurement.
+
+2. **Four flags are ON in the live ledger but still default-off in code** — `chart.exhibit_grammar`,
    `intake.loss_signals`, `lens.decision_grade`, `report.argument_style`. A fresh clone, CI, or anyone
    else's install gets NONE of that work. Three handoffs in a row say "flags-on soak"; the soak has
    happened in the live runtime. Graduating them is the cheapest real leverage on the board.
-2. **`ask.brief_context` + `ask.conversation_context` soak, then graduate.** Both read `off` in the
+3. **`ask.brief_context` + `ask.conversation_context` soak, then graduate.** Both read `off` in the
    live ledger. Turn on (`PUT /system/flags/<name> {"value":true}` — no restart), ask follow-ups from
    the Briefing, confirm the answers reference the brief and inherit prior grounding, then move to
    `AUTO_ELIGIBLE`.
-3. **The four glossary follow-ons #193 documents but does not fix** (each needs its own decision):
+4. **The four glossary follow-ons #193 documents but does not fix** (each needs its own decision):
    the Qdrant `aughor_schema` collection is still globally namespaced (point ids/payloads carry no
    connection) · `explore.py::_learn_from_exploration` writes `update_column` from LLM-emitted table
    strings with `conn_id` in scope but unused and no schema at all (`update_column` now TAKES a
@@ -32,14 +52,14 @@
    the dbt merge layer keys bare+lowercased (`dbt.py:102`) so a dbt entry can't override a qualified
    YAML one · `compute_fingerprint` hashes only table names, so two structurally identical schemas
    share a "fully seeded" marker.
-4. **Sub-1 shares still read `0.275985`, not `27.6%`** (#189). 6dp is the tested contract and protects
+5. **Sub-1 shares still read `0.275985`, not `27.6%`** (#189). 6dp is the tested contract and protects
    small rates; 3-significant-digits was rejected because `0.0000123` renders in scientific notation.
    Turning shares into percents is a semantic change (is `0.27` a share or a correlation?).
-5. **Retire the 7 remaining stale rejects in `data/exploration_workspace.json`** — the AVG-of-rate half
+6. **Retire the 7 remaining stale rejects in `data/exploration_workspace.json`** — the AVG-of-rate half
    is done (`scripts/revalidate_findings.py --apply`); the 7 `SUM(signup_fy)` ones need live column
    types, which fail open because the luxexperience tables are gone from the current workspace DB.
    Re-run the script once that schema is back.
-6. Older queue: P7 frontier *tier* (same-tier bakeoff decided — keep `glm-5.2:cloud`) · Platform
+7. Older queue: P7 frontier *tier* (same-tier bakeoff decided — keep `glm-5.2:cloud`) · Platform
    WP-5/8/9/12–16 (WP-1/2/3/4 shipped; 7/10/11 partial) · Direction B follow-ons.
 
 ---

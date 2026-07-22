@@ -277,6 +277,21 @@ class JobKernel:
         _m_token = metering.start()
         metering.register_job(job_id)   # so the heartbeat can enforce this run's budget
         _model_token = self._set_run_model(job_id)   # per-agent LLM model override (best-effort)
+        # Correlate background work (explorer, briefs, monitors, birth) — those
+        # never pass an ask door, so nothing else would bind them a trace and their
+        # spans would land uncorrelated. Only when none is bound: a deep /ask
+        # investigation submits its job from inside the ask stream and inherits
+        # that run's trace through the context copy, which must win over the job id.
+        _trace_cm = None
+        try:
+            from aughor import telemetry as _tel
+            if not _tel.current_trace_id():
+                _trace_cm = _tel.bind_trace(job_id)
+                _trace_cm.__enter__()
+        except Exception as _t_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_t_exc, "job trace binding is best-effort; the run proceeds",
+                     counter="obs.job_trace")
         try:
             await coro_factory()
             final = JobState.SUCCEEDED
@@ -306,6 +321,12 @@ class JobKernel:
             if _model_token is not None:
                 from aughor.llm.provider import reset_run_model
                 reset_run_model(_model_token)
+            if _trace_cm is not None:
+                try:
+                    _trace_cm.__exit__(None, None, None)
+                except Exception as _t_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_t_exc, "job trace unbind", counter="obs.job_trace")
             _current_job.reset(_token)
             reset_org_id(_org_token)
             hb.cancel()

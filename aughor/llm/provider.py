@@ -30,7 +30,7 @@ import random
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Literal, Optional, Type, TypeVar
+from typing import Any, Callable, Literal, Optional, Type, TypeVar
 
 import instructor
 from openai import OpenAI
@@ -42,14 +42,15 @@ T = TypeVar("T", bound=BaseModel)
 
 Role = Literal["coder", "narrator", "fast"]
 ROLES: tuple[Role, ...] = ("coder", "narrator", "fast")
-BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anthropic", "gemini")
+BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anthropic",
+                             "gemini", "openrouter")
 # Backends that require an API key (the others are local).
-NEEDS_KEY: tuple[str, ...] = ("groq", "together", "anthropic", "gemini")
+NEEDS_KEY: tuple[str, ...] = ("groq", "together", "anthropic", "gemini", "openrouter")
 # Backends whose base URL is user-overridable (the hosted ones are fixed).
 LOCAL_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio")
 
 _KEY_ENV = {"groq": "GROQ_API_KEY", "together": "TOGETHER_API_KEY", "anthropic": "ANTHROPIC_API_KEY",
-            "gemini": "GEMINI_API_KEY"}
+            "gemini": "GEMINI_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
 _BASE_URL_ENV = {"ollama": "OLLAMA_BASE_URL", "lmstudio": "LMSTUDIO_BASE_URL"}
 
 _DEFAULT_BASE_URLS = {
@@ -59,6 +60,9 @@ _DEFAULT_BASE_URLS = {
     "together": "https://api.together.xyz/v1",
     # Google Gemini's OpenAI-compatibility endpoint (chat/completions + tools + json_schema).
     "gemini":   "https://generativelanguage.googleapis.com/v1beta/openai/",
+    # OpenRouter — one key, many vendors, OpenAI-compatible. Its /models endpoint is
+    # public, which is what lets the model picker show a live catalogue.
+    "openrouter": "https://openrouter.ai/api/v1",
 }
 
 _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
@@ -71,6 +75,14 @@ _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
     # and gemini-flash-latest works on the free tier. Bump coder → "gemini-pro-latest" for stronger
     # SQL generation on a paid key (Pro is quota-limited on the free tier).
     "gemini":    {"coder": "gemini-flash-latest", "narrator": "gemini-flash-latest", "fast": "gemini-flash-latest"},
+    # OpenRouter ids are "vendor/model". These defaults are free-tier so a fresh key
+    # works immediately; the picker's live catalogue is the way to reach paid models.
+    # Free-tier ids VERIFIED against OpenRouter's live /models (the first pass
+    # guessed two that do not exist). Coder gets the strongest coder available
+    # because wrong SQL is the expensive failure; fast gets the throughput pick.
+    "openrouter": {"coder": "nvidia/nemotron-3-ultra-550b-a55b:free",
+                   "narrator": "google/gemma-4-31b-it:free",
+                   "fast": "nvidia/nemotron-3-nano-30b-a3b:free"},
 }
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / "data" / "llm_config.json"
@@ -144,6 +156,40 @@ def load_config() -> None:
     global _runtime, _config_version
     _runtime = _read_config()
     _config_version += 1
+
+
+# ── Public accessors for the rest of the inference plane ─────────────────────
+# The catalogue (aughor/llm/models.py) needs the effective base URL, key and
+# defaults for a backend, and a way to persist. Exposed as public names so it
+# imports an interface rather than reaching into this module's internals.
+
+def read_config() -> dict:
+    """The on-disk config as written (secrets still encrypted)."""
+    return _read_config()
+
+
+def write_config(cfg: dict) -> None:
+    """Persist and reload. One writer, because the file holds encrypted keys and
+    the mkdir/write/chmod/reload sequence must not drift between call sites."""
+    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+    try:
+        _CONFIG_PATH.chmod(0o600)  # it holds encrypted keys
+    except Exception:
+        logger.debug("could not chmod %s (non-fatal)", _CONFIG_PATH, exc_info=True)
+    load_config()
+
+
+def active_base_url(backend: str) -> str:
+    return _active_base_url(backend)
+
+
+def active_key(backend: str) -> str:
+    return _active_key(backend)
+
+
+def default_models(backend: str) -> dict:
+    return dict(_DEFAULT_MODELS.get(backend, {}))
 
 
 # ── Active accessors (runtime config → env → default) ─────────────────────────
@@ -370,12 +416,92 @@ def _is_transient(exc: BaseException) -> bool:
     return any(k in msg for k in _TRANSIENT_MSGS)
 
 
-def _run_resilient(do, base_url: str):
+def _record_llm_call(*, backend: str, model: str, role: str,
+                     prompt_tokens: Optional[int], completion_tokens: Optional[int],
+                     ms: float, ok: bool = True, error_class: Optional[str] = None,
+                     retries: int = 0, temperature: Optional[float] = None,
+                     fallback: bool = False, streamed: bool = False,
+                     system: Optional[str] = None, user: Optional[str] = None,
+                     output: Any = None) -> None:
+    """Mirror one model call into the session log (flag ``obs.session_log``).
+
+    ``metering.record_llm`` sums the same numbers into a per-run aggregate, which
+    answers "what did this run cost" but not "which model was asked, how long it
+    took, how hard it had to try, or whether the fallback quietly swapped it
+    mid-run" — the questions a measurement must answer before it can be trusted.
+    The dedicated per-call record (``telemetry.log_generation``) existed but had
+    no call sites, so all of it was discarded.
+
+    Provider, model and token counts go to real columns rather than payload JSON:
+    "tokens by model this week" should be a GROUP BY, not a JSON extraction —
+    especially through ``aughor_ops``, where an agent writes the SQL itself.
+
+    ``prompt_tokens``/``completion_tokens`` are ``None`` when the backend did not
+    report usage. That is deliberately distinct from 0: several local backends
+    omit usage entirely, and folding them into zero makes every cost aggregate
+    silently wrong.
+
+    Strict no-op when the flag is off; never raises (the sink swallows).
+    """
+    from aughor.obs import session_log
+    session_log.emit(
+        session_log.LLM_CALL, name=model, ok=ok, duration_ms=round(ms, 1),
+        error_class=error_class, provider=backend, model=model,
+        prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+        retries=retries or None,
+        payload={"role": role, "fallback": fallback, "streamed": streamed,
+                 **({"temperature": temperature} if temperature is not None else {}),
+                 **({"usage_reported": False} if prompt_tokens is None
+                    and completion_tokens is None else {}),
+                 # Content only when `obs.prompt_capture` is separately opted in;
+                 # the helper owns the capping + truncation-marking policy.
+                 **session_log.capture_prompt(system, user, _response_text(output))},
+    )
+
+
+def _response_text(output: Any) -> Optional[str]:
+    """A model response as text, across the shapes the three paths produce
+    (pydantic model, dict, str). Only ever consumed under `obs.prompt_capture`;
+    returns None when there is nothing to record."""
+    if output is None:
+        return None
+    try:
+        dump = getattr(output, "model_dump_json", None)
+        if callable(dump):
+            return dump()
+        if isinstance(output, (dict, list)):
+            import json as _json
+            return _json.dumps(output, default=str)
+        return str(output)
+    except Exception:
+        return None
+
+
+def _usage_or_none(raw) -> tuple[Optional[int], Optional[int]]:
+    """Token counts, or (None, None) when the backend reported no usage at all.
+
+    ``_extract_usage`` collapses that case to (0, 0) because metering only needs
+    a number to add; the per-call record needs to know it was never measured."""
+    if getattr(raw, "usage", None) is None:
+        return None, None
+    return _extract_usage(raw)
+
+
+def _run_resilient(do, base_url: str, *, stats: dict | None = None,
+                   max_retries: Optional[int] = None):
     """Run ``do()`` under the per-endpoint semaphore, retrying transient errors with exponential
     backoff + jitter, bounded by AUGHOR_LLM_MAX_RETRIES (default 3) and an overall deadline
-    AUGHOR_LLM_DEADLINE_S (default 600s). Non-transient errors raise immediately."""
+    AUGHOR_LLM_DEADLINE_S (default 600s). Non-transient errors raise immediately.
+
+    ``stats`` (optional, mutated in place) reports ``retries`` — the count was
+    previously local and discarded, so a model that only ever succeeds on its
+    second attempt looked identical to one that never struggles. A degrading
+    endpoint should be visible before it starts failing outright."""
+    if stats is not None:
+        stats["retries"] = 0
     sem = _semaphore_for(base_url)
-    max_retries = max(0, _int_env("AUGHOR_LLM_MAX_RETRIES", 3))
+    max_retries = (max(0, int(max_retries)) if max_retries is not None
+                   else max(0, _int_env("AUGHOR_LLM_MAX_RETRIES", 3)))
     deadline = time.monotonic() + max(1.0, _float_env("AUGHOR_LLM_DEADLINE_S", 600.0))
     attempt = 0
     while True:
@@ -386,6 +512,8 @@ def _run_resilient(do, base_url: str):
                 if not _is_transient(e) or attempt >= max_retries or time.monotonic() >= deadline:
                     raise
                 attempt += 1
+                if stats is not None:
+                    stats["retries"] = attempt
                 err_name = type(e).__name__   # `e` is unbound after the except block
                 wait = min(30.0, 2.0 ** attempt) + random.uniform(0.0, 0.5 * attempt)
         if time.monotonic() + wait >= deadline:
@@ -411,7 +539,12 @@ class LLMProvider:
             self._client = _build_ollama_client(self._model, url)
         elif backend == "lmstudio":
             self._client = _build_lmstudio_client(url)
-        elif backend in ("groq", "together"):
+        elif backend in ("groq", "together", "openrouter"):
+            # OpenRouter is OpenAI-compatible, so it shares this client. Registering
+            # a backend in the metadata tables without a branch here is silent until
+            # someone selects it: the constructor falls through to the error below,
+            # which then lists the backend it just refused. test_every_backend_builds
+            # covers the whole set so that cannot recur.
             self._client = _build_openai_compat(url, key)
         elif backend == "gemini":
             self._client = _build_gemini_client(url, key)
@@ -442,7 +575,7 @@ class LLMProvider:
         try:
             return self._complete_on(self._client, self.backend, self._model,
                                      system, user, response_model, temperature,
-                                     base_url=self._base_url)
+                                     base_url=self._base_url, role=self.role)
         except Exception as primary_exc:
             # Resilience: if the primary backend (e.g. local/cloud Ollama) is
             # unreachable or erroring, transparently fall back to Anthropic when
@@ -457,7 +590,8 @@ class LLMProvider:
             try:
                 return self._complete_on(fb, "anthropic", _fallback_model(),
                                          system, user, response_model, temperature,
-                                         base_url="anthropic-fallback")
+                                         base_url="anthropic-fallback",
+                                         role=self.role, fallback=True)
             except Exception:
                 raise primary_exc  # surface the original failure if fallback also fails
 
@@ -512,7 +646,8 @@ class LLMProvider:
 
     @staticmethod
     def _complete_on(client, backend, model, system, user, response_model, temperature,
-                     base_url: str = ""):
+                     base_url: str = "", *, role: str = "", fallback: bool = False,
+                     max_retries: Optional[int] = None):
         from aughor.kernel import metering
         if backend == "anthropic":
             endpoint = client.messages
@@ -534,9 +669,29 @@ class LLMProvider:
             return endpoint.create(**kwargs), None
 
         _t0 = time.monotonic()
-        out, raw = _run_resilient(_do, base_url)   # concurrency cap + transient-error retry/backoff
+        _stats: dict = {}
+        try:
+            # concurrency cap + transient-error retry/backoff
+            out, raw = _run_resilient(_do, base_url, stats=_stats, max_retries=max_retries)
+        except Exception as exc:
+            # A call that fails past its retries must still leave a record —
+            # otherwise "which model fails" is unanswerable precisely when it
+            # matters, and the log flatters the provider it is meant to audit.
+            _record_llm_call(backend=backend, model=model, role=role,
+                             prompt_tokens=None, completion_tokens=None,
+                             ms=(time.monotonic() - _t0) * 1000.0, ok=False,
+                             error_class=type(exc).__name__,
+                             retries=_stats.get("retries", 0), temperature=temperature,
+                             fallback=fallback, system=system, user=user)
+            raise
         pt, ct = _extract_usage(raw)
-        metering.record_llm(pt, ct, (time.monotonic() - _t0) * 1000.0)
+        _ms = (time.monotonic() - _t0) * 1000.0
+        metering.record_llm(pt, ct, _ms)
+        _pt, _ct = _usage_or_none(raw)
+        _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
+                         completion_tokens=_ct, ms=_ms, retries=_stats.get("retries", 0),
+                         temperature=temperature, fallback=fallback,
+                         system=system, user=user, output=out)
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         return out
 
@@ -553,7 +708,7 @@ class LLMProvider:
 
     @staticmethod
     def _stream_on(client, backend, model, system, user, response_model, temperature,
-                   text_field, on_text, base_url: str = ""):
+                   text_field, on_text, base_url: str = "", *, role: str = ""):
         from aughor.kernel import metering
         if backend == "anthropic":
             # instructor's anthropic wrapper streams tool-mode JSON reliably.
@@ -583,9 +738,26 @@ class LLMProvider:
                 return last, getattr(last, "_raw_response", None)
 
             _t0 = time.monotonic()
-            last, raw_usage_src = _run_resilient(_do, base_url)
+            _stats: dict = {}
+            try:
+                last, raw_usage_src = _run_resilient(_do, base_url, stats=_stats)
+            except Exception as exc:
+                _record_llm_call(backend=backend, model=model, role=role,
+                                 prompt_tokens=None, completion_tokens=None,
+                                 ms=(time.monotonic() - _t0) * 1000.0, ok=False,
+                                 error_class=type(exc).__name__,
+                                 retries=_stats.get("retries", 0),
+                                 temperature=temperature, streamed=True,
+                                 system=system, user=user)
+                raise
             pt, ct = _extract_usage(raw_usage_src)
-            metering.record_llm(pt, ct, (time.monotonic() - _t0) * 1000.0)
+            _ms = (time.monotonic() - _t0) * 1000.0
+            metering.record_llm(pt, ct, _ms)
+            _pt, _ct = _usage_or_none(raw_usage_src)
+            _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
+                             completion_tokens=_ct, ms=_ms,
+                             retries=_stats.get("retries", 0), temperature=temperature,
+                             streamed=True, system=system, user=user, output=last)
             metering.check_budget()
             # Partial[...] objects skipped required-field validation mid-stream —
             # re-validate the terminal one; a failure heals via the complete() fallback.
@@ -644,10 +816,28 @@ class LLMProvider:
             return _json.loads(buf[start:end + 1]), usage
 
         _t0 = time.monotonic()
-        final_dict, usage = _run_resilient(_do, base_url)
+        _stats: dict = {}
+        try:
+            final_dict, usage = _run_resilient(_do, base_url, stats=_stats)
+        except Exception as exc:
+            _record_llm_call(backend=backend, model=model, role=role,
+                             prompt_tokens=None, completion_tokens=None,
+                             ms=(time.monotonic() - _t0) * 1000.0, ok=False,
+                             error_class=type(exc).__name__,
+                             retries=_stats.get("retries", 0),
+                             temperature=temperature, streamed=True,
+                             system=system, user=user)
+            raise
         from types import SimpleNamespace
-        pt, ct = _extract_usage(SimpleNamespace(usage=usage))   # extractor reads .usage
-        metering.record_llm(pt, ct, (time.monotonic() - _t0) * 1000.0)
+        _raw = SimpleNamespace(usage=usage)
+        pt, ct = _extract_usage(_raw)   # extractor reads .usage
+        _ms = (time.monotonic() - _t0) * 1000.0
+        metering.record_llm(pt, ct, _ms)
+        _pt, _ct = _usage_or_none(_raw)
+        _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
+                         completion_tokens=_ct, ms=_ms, retries=_stats.get("retries", 0),
+                         temperature=temperature, streamed=True,
+                         system=system, user=user, output=final_dict)
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         # Terminal validation is the contract; a mismatch heals via complete() fallback.
         return response_model.model_validate(final_dict)
@@ -790,37 +980,108 @@ def set_config(patch: dict) -> dict:
                 keys[b] = encrypt_secret(str(k).strip())
         cfg["keys"] = keys
 
-    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-    try:
-        _CONFIG_PATH.chmod(0o600)  # it holds encrypted keys
-    except Exception:
-        logger.debug("could not chmod %s (non-fatal)", _CONFIG_PATH, exc_info=True)
-    load_config()
+    write_config(cfg)
     return current_config()
 
 
-def test_provider(backend: Optional[str] = None, model: Optional[str] = None) -> dict:
-    """Do a tiny real completion to validate a backend (defaults to the active one),
-    using the saved/env key. Returns {ok, backend, model, error?}."""
+def _ping(backend: str, model: str, role: Role = "coder") -> dict:
+    """One tiny real completion against an explicit (backend, model)."""
     class _Ping(BaseModel):
         ok: bool
 
+    t0 = time.monotonic()
+    try:
+        prov = LLMProvider(backend, role, model=model)
+        # The fallback would mask a real failure — test the chosen backend directly.
+        # max_retries=0: a health check reports what is true NOW. Backing off a 429
+        # for 30s to eventually report the same rate limit is the wrong trade when
+        # someone is waiting on a button.
+        prov._complete_on(prov._client, backend, prov._model,
+                          "You are a health check. Reply with ok=true.",
+                          "Return ok=true.", _Ping, 0.0, max_retries=0)
+        return {"model": prov._model, "ok": True,
+                "ms": round((time.monotonic() - t0) * 1000, 1)}
+    except Exception as e:
+        return {"model": model, "ok": False, "error": str(e)[:240],
+                "ms": round((time.monotonic() - t0) * 1000, 1)}
+
+
+def test_provider(backend: Optional[str] = None, model: Optional[str] = None, *,
+                  include_agents: bool = False) -> dict:
+    """Validate a backend with real completions. Returns {ok, backend, model, results[]}.
+
+    With no explicit ``model`` this tests EVERY DISTINCT model the deployment
+    would actually use — the three role bindings, plus the per-agent pins when
+    ``include_agents``. It previously tested only the coder model, so a green
+    result said nothing about the narrator or fast bindings even though they can
+    be different models with their own ids, quotas and availability.
+
+    Models are deduplicated: most setups point several roles at one model, and
+    three identical pings would be three times the cost for one fact. Each result
+    reports which roles/agents map to it.
+    """
     b = (backend or _active_backend()).strip()
     if b not in BACKENDS:
-        return {"ok": False, "backend": b, "error": f"unknown backend {b!r}"}
-    if not model:
-        # Probe a non-active backend with ITS own default model — the env/active
-        # model is tuned for the active backend and would 404 elsewhere.
-        model = (_active_model(b, "coder") if b == _active_backend()
-                 else _DEFAULT_MODELS.get(b, _DEFAULT_MODELS["ollama"])["coder"])
-    try:
-        prov = LLMProvider(b, "coder", model=model)
-        # The fallback would mask a real failure — test the chosen backend directly.
-        prov._complete_on(prov._client, b, prov._model,
-                          "You are a health check. Reply with ok=true.",
-                          "Return ok=true.", _Ping, 0.0)
-        return {"ok": True, "backend": b, "model": prov._model}
-    except Exception as e:
-        return {"ok": False, "backend": b, "model": model or _active_model(b, "coder"),
-                "error": str(e)[:240]}
+        return {"ok": False, "backend": b, "error": f"unknown backend {b!r}", "results": []}
+
+    is_active = b == _active_backend()
+    # model -> what uses it. A non-active backend is probed with ITS OWN defaults;
+    # the active model is tuned for the active backend and would 404 elsewhere.
+    targets: dict[str, list[str]] = {}
+    if model:
+        targets[model] = ["explicit"]
+    else:
+        for role in ROLES:
+            m = (_active_model(b, role) if is_active
+                 else _DEFAULT_MODELS.get(b, _DEFAULT_MODELS["ollama"]).get(role))
+            if m:
+                targets.setdefault(m, []).append(role)
+        if include_agents and is_active:
+            try:
+                from aughor.kernel.agents import effective_governance, list_charters
+                for c in list_charters():
+                    pinned = effective_governance(c.id).model
+                    if pinned:
+                        targets.setdefault(pinned, []).append(f"agent:{c.id}")
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "connection test: agent pins unresolved; roles still tested",
+                         counter="llm.test.agents")
+
+    def _role_for(used_by: list[str]) -> Role:
+        for u in used_by:
+            if u in ROLES:
+                return u  # type: ignore[return-value]
+        return "coder"
+
+    # Independent calls — run them together so the wait is the slowest model, not
+    # the sum. The per-endpoint semaphore still bounds real concurrency.
+    results = []
+    if len(targets) == 1:
+        (m, used_by), = targets.items()
+        results.append({**_ping(b, m, _role_for(used_by)), "used_by": used_by})
+    else:
+        from aughor.kernel.concurrency import ContextThreadPoolExecutor
+        with ContextThreadPoolExecutor(max_workers=min(len(targets), 4)) as pool:
+            futures = {pool.submit(_ping, b, m, _role_for(u)): (m, u)
+                       for m, u in targets.items()}
+            for fut in futures:
+                m, used_by = futures[fut]
+                results.append({**fut.result(), "used_by": used_by})
+    results.sort(key=lambda r: (ROLES.index(r["used_by"][0])
+                                if r["used_by"] and r["used_by"][0] in ROLES else 99))
+
+    failed = [r for r in results if not r["ok"]]
+    coder_model = next((r["model"] for r in results if "coder" in r["used_by"]),
+                       results[0]["model"] if results else (model or ""))
+    out = {
+        "ok": not failed,
+        "backend": b,
+        "model": coder_model,          # back-compat: the headline model
+        "results": results,
+        "tested": len(results),
+        "failed": len(failed),
+    }
+    if failed:
+        out["error"] = f"{failed[0]['model']}: {failed[0].get('error', 'failed')}"
+    return out
