@@ -77,8 +77,11 @@ _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
     "gemini":    {"coder": "gemini-flash-latest", "narrator": "gemini-flash-latest", "fast": "gemini-flash-latest"},
     # OpenRouter ids are "vendor/model". These defaults are free-tier so a fresh key
     # works immediately; the picker's live catalogue is the way to reach paid models.
-    "openrouter": {"coder": "nvidia/nemotron-3-ultra:free",
-                   "narrator": "google/gemma-4-31b:free",
+    # Free-tier ids VERIFIED against OpenRouter's live /models (the first pass
+    # guessed two that do not exist). Coder gets the strongest coder available
+    # because wrong SQL is the expensive failure; fast gets the throughput pick.
+    "openrouter": {"coder": "nvidia/nemotron-3-ultra-550b-a55b:free",
+                   "narrator": "google/gemma-4-31b-it:free",
                    "fast": "nvidia/nemotron-3-nano-30b-a3b:free"},
 }
 

@@ -43,11 +43,30 @@ KNOWN_MODELS: dict[str, tuple[str, ...]] = {
                   "claude-haiku-4-5-20251001"),
     "gemini": ("gemini-flash-latest", "gemini-pro-latest",
                "gemini-3.1-flash-lite"),
-    "openrouter": ("nvidia/nemotron-3-ultra:free", "google/gemma-4-31b:free",
-                   "google/gemma-4-26b-a4b:free", "openai/gpt-oss-20b:free",
-                   "nvidia/nemotron-3-super:free",
-                   "nvidia/nemotron-3-nano-30b-a3b:free",
-                   "cohere/north-mini-code:free", "poolside/laguna-m.1:free"),
+    # OpenRouter — the free text models, ids verified against the live /models
+    # endpoint (guessing them cost two broken defaults on the first pass).
+    # Ordered strongest-first on OpenRouter's own Coding score; the trailing
+    # entries are unscored there, so their placement is not a ranking.
+    #
+    # Deliberately EXCLUDED: google/lyria-3-*-preview. They appear in
+    # OpenRouter's Text tab and the API reports them free, but Lyria is a
+    # music-generation model — offering it where a SQL writer is chosen is a trap.
+    "openrouter": (
+        "nvidia/nemotron-3-ultra-550b-a55b:free",             # 1M ctx · coding 49.3 · the ceiling
+        "google/gemma-4-31b-it:free",                         # coding 43.4 @ 1089ms · best balance
+        "google/gemma-4-26b-a4b-it:free",                     # coding 39.3 but 5110ms
+        "nvidia/nemotron-3-super-120b-a12b:free",             # coding 37.7 · 66 t/s
+        "cohere/north-mini-code:free",                        # coding 36.5 · code-tuned
+        "openai/gpt-oss-20b:free",                            # coding 20.7 · slow (3702ms)
+        "nvidia/nemotron-3-nano-30b-a3b:free",                # 91 t/s · the throughput pick
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",  # 410ms · the latency pick
+        "poolside/laguna-m.1:free",
+        "poolside/laguna-s-2.1:free",
+        "poolside/laguna-xs-2.1:free",
+        "nvidia/nemotron-nano-9b-v2:free",
+        "nvidia/nemotron-nano-12b-v2-vl:free",                # vision-language
+        "nvidia/nemotron-3.5-content-safety:free",            # a safety classifier, not a general LLM
+    ),
 }
 
 _CACHE_TTL_S = 300.0

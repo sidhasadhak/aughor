@@ -194,3 +194,25 @@ def test_config_exposes_openrouter_to_the_ui(client):
     assert "openrouter" in body["backends"]
     assert "openrouter" in body["needs_key"]
     assert "openrouter" in body["default_models"]
+
+
+# ── the curated OpenRouter list ───────────────────────────────────────────────
+
+def test_openrouter_floor_is_all_free_tier():
+    """We only run free models on this provider, so a paid id in the floor would
+    quietly start costing money the moment someone picked it."""
+    assert all(m.endswith(":free") for m in M.KNOWN_MODELS["openrouter"])
+
+
+def test_openrouter_defaults_are_in_the_floor():
+    """The first pass shipped two default ids that do not exist on OpenRouter
+    (guessed rather than looked up). This keeps defaults and the list in step."""
+    floor = set(M.KNOWN_MODELS["openrouter"])
+    for role, model in P._DEFAULT_MODELS["openrouter"].items():
+        assert model in floor, f"{role} default {model!r} is not in the curated list"
+
+
+def test_music_models_are_not_offered_as_text_models():
+    """Lyria is a music-generation model. OpenRouter lists it under Text and
+    reports it free, but offering it where a SQL writer is chosen is a trap."""
+    assert not [m for m in M.KNOWN_MODELS["openrouter"] if "lyria" in m]
