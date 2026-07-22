@@ -32,4 +32,16 @@ def manifest() -> dict[str, list[str]]:
         "post_execute_hooks": [n for n, _ in _eh._POST_EXECUTE],
         "on_connect_hooks": [n for n, _ in _eh._ON_CONNECT],
         "resource_org_resolvers": _ro.registered_kinds(),
+        "evaluators": _registered_evaluators(),
     }
+
+
+def _registered_evaluators() -> list[str]:
+    """The Evals plane's registrations (Wave E2). Imported lazily and tolerantly:
+    the manifest is introspection, and a plane failing to load must show up as an
+    empty list here rather than breaking the view that would have revealed it."""
+    try:
+        from aughor.evals.registry import registered_evaluators
+        return registered_evaluators()
+    except Exception:
+        return []

@@ -69,6 +69,28 @@ class Verdict:
         b = self.blockers
         return b[0].reason if b else ""
 
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-safe projection, including the derived `ok`/`reason`.
+
+        Three call sites hand-projected this in three shapes (`routers/query.py`,
+        the MLflow scorers, the capability result), so "what a verdict looks like
+        over the wire" depended on which door you came through. `ok` and `reason`
+        are computed properties and would otherwise be dropped by a naive
+        `asdict`, which is exactly the field a consumer most wants."""
+        return {
+            "kind": self.kind,
+            "ok": self.ok,
+            "reason": self.reason,
+            "artifact": self.artifact,
+            "repaired": self.repaired,
+            "original": self.original,
+            "checks": [
+                {"name": c.name, "ok": c.ok, "severity": c.severity,
+                 "reason": c.reason, "detail": c.detail}
+                for c in self.checks
+            ],
+        }
+
 
 @dataclass
 class Scope:
