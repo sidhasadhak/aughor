@@ -166,7 +166,13 @@ def test_fix_temporal_extreme_key_numbers_matches_the_full_series():
     assert f["key_numbers"][3]["value"] == "31.3% – 36.2%"  # range spans the real extremes
 
 
-def test_chart_type_for_finding_by_intent():
+def test_chart_type_for_finding_by_intent(monkeypatch):
+    """The LEGACY intent→chart-type mapping, still reachable when an operator forces the
+    exhibit grammar off. Pinned explicitly since `chart.exhibit_grammar` graduated to
+    default-ON (2026-07-22 audit) — the grammar drops the donut entirely ("zero donuts"),
+    and its own mapping is covered in test_chart_exhibit.py."""
+    monkeypatch.setenv("AUGHOR_CHART_EXHIBIT_GRAMMAR", "0")
+
     def _f(nrows, cols=("k", "pct_of_total")):
         return {"rows": [[i, 0.1] for i in range(nrows)], "columns": list(cols)}
     # composition: a donut for a few parts, a ranked bar once there are too many slices

@@ -114,6 +114,25 @@ FLAG_DEFAULT = {
     "obs.task_table": True,        # the queryable spine — a sink over spans already emitted
     "ada.progress_events": True,   # deep-run dead-air fix (CK-0.4): fine-grained progress beats
     "ask.stream_text": True,       # CK-0.2 dual-emit insight deltas; terminal event stays authoritative
+    # Presentation/intake graduation — Batch 1 of the flag-drift audit (2026-07-22).
+    # See docs/FLAG_GRADUATION_AUDIT_2026-07-22.md.
+    #
+    # These four had been ON in one developer's runtime ledger for weeks while the code
+    # shipped them OFF, so every fresh clone, every CI run, and every other user got none of
+    # them — and CI was validating a configuration nobody actually ran. They graduate first
+    # because they share the property that makes a default flip safe to review: each is
+    # DETERMINISTIC (no model in the loop, no extra query) and each is byte-identical when
+    # off, so flipping the default cannot change behaviour except along its intended axis.
+    # An operator can still force any of them off (env `=0` or a runtime override).
+    #
+    # `intake.loss_signals` is the load-bearing one: it does not add polish, it fixes a
+    # WRONG ANSWER. The 2026-07-16 A/B caught a revenue ranking reporting "broadly healthy"
+    # over 2.4M CHF of refund leakage and a 1.2M CHF utilization gap, and it forbids the
+    # un-computable verdict ("profitable" / "no losses" without cost data).
+    "intake.loss_signals": True,    # deterministic loss-signal scan at question intake
+    "report.argument_style": True,  # deterministic re-composition of the SAME report data
+    "chart.exhibit_grammar": True,  # exhibit spec computed from rows already fetched
+    "lens.decision_grade": True,    # opportunity-cost + named-outlier lenses (one bounded probe)
 }
 
 # Human-facing copy for the Settings UI.
