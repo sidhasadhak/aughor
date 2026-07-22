@@ -401,6 +401,58 @@ def test_audited_sql_carries_the_ambient_trace(monkeypatch, tmp_path):
     assert row["trace_id"] == "t-sql"
 
 
+def test_background_jobs_get_a_trace(monkeypatch):
+    """Explorer/brief/monitor/birth runs never pass an ask door, so the kernel
+    binds the job id as their trace — otherwise their spans land uncorrelated."""
+    import asyncio
+
+    from aughor import telemetry
+    from aughor.kernel.jobs import JobKernel
+
+    seen: dict[str, str] = {}
+
+    async def _drive():
+        k = JobKernel()
+        job_id = await k.submit("exploration", _capture)
+        for _ in range(200):                    # let the supervised task run
+            await asyncio.sleep(0.01)
+            if "trace" in seen:
+                break
+        return job_id
+
+    async def _capture():
+        seen["trace"] = telemetry.current_trace_id()
+
+    job_id = asyncio.run(_drive())
+    assert seen.get("trace") == job_id, "a background job ran with no trace bound"
+
+
+def test_ask_trace_wins_over_the_job_id(monkeypatch):
+    """A deep /ask submits its job from inside the ask stream, so it inherits that
+    run's trace through the context copy — the job id must not override it."""
+    import asyncio
+
+    from aughor import telemetry
+    from aughor.kernel.jobs import JobKernel
+
+    seen: dict[str, str] = {}
+
+    async def _capture():
+        seen["trace"] = telemetry.current_trace_id()
+
+    async def _drive():
+        with telemetry.bind_trace("t-from-ask"):
+            k = JobKernel()
+            await k.submit("investigation", _capture)
+            for _ in range(200):
+                await asyncio.sleep(0.01)
+                if "trace" in seen:
+                    break
+
+    asyncio.run(_drive())
+    assert seen.get("trace") == "t-from-ask"
+
+
 def test_session_events_is_queryable_as_an_ops_table():
     """The table joins the curated aughor_ops surface, so Deep Analysis can
     investigate the agent's own behaviour with NL2SQL — the same one-line move
