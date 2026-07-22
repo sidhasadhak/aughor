@@ -49,6 +49,7 @@ class _TestRequest(BaseModel):
     backend: Optional[str] = None
     model: Optional[str] = None            # explicit → test just that one
     include_agents: bool = False           # also ping each per-agent pinned model
+    force: bool = False                    # bypass the short-TTL verdict cache (real re-probe)
 
 
 @router.post("/llm/config/test")
@@ -62,7 +63,7 @@ def test_llm_config(req: Optional[_TestRequest] = None):
     """
     req = req or _TestRequest()
     return _provider.test_provider(backend=req.backend, model=req.model,
-                                   include_agents=req.include_agents)
+                                   include_agents=req.include_agents, force=req.force)
 
 
 class _CustomModelIn(BaseModel):

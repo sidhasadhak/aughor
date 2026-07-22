@@ -16,51 +16,134 @@
 
 ### ⏭️ NEXT SESSION — start here
 
-**Branch `2026-07-22-e1-session-log` — 17 commits, NOT pushed, no PR.** Wave E1–E3 built and
-proved, plus the OpenRouter provider. See [`docs/WAVE_E_SESSIONS_EVALS_ARC.md`](docs/WAVE_E_SESSIONS_EVALS_ARC.md)
-and [`docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md`](docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md).
+**Session 2026-07-22 (later) shipped four merged PRs — see the "2026-07-22 · request budget" block
+below.** `main` carries the provider failover chain, all four glossary-scoping gaps, flag-graduation
+Batch 1, and the LLM request-budget work. Two findings are parked as task chips rather than fixed.
 
-0. **⛔ Full synthesis is not being generated.** Reported 2026-07-22, NOT yet investigated. The
-   Briefing's cross-domain synthesis does not produce a full narrative. Start by reproducing on the
-   live path and reading a real run — the new session log makes this tractable for the first time:
-   turn on `obs.session_log`, run the brief, then read `session_events` for that trace (the
-   `llm_call` rows now carry model, tokens, latency, retries and — under `obs.prompt_capture` — the
-   actual prompt and response). Note the Briefer is pinned to `nemotron-3-ultra`, and that a bound
-   model being rate-limited is now a visible, ordinary failure: check Settings → Models → Test
-   connection FIRST, since a 429 on a role model degrades output without erroring loudly.
+0. **⏭️ Wave K — the kinetic plane.** User-chosen as the next arc (2026-07-22). The Foundry study's
+   named differentiator and the one flank not started: an `actions:` block in the per-connection
+   ontology YAML (typed params, **submission criteria with authored failure messages** shown verbatim
+   to humans AND the LLM, side effects), ONE executor path reusing `govern/actions.py` graduated
+   autonomy + approvals, and an **edits-as-overlay ledger** generalizing the ambiguity ledger from
+   resolutions to data annotations. The agent's write surface becomes declared actions, never
+   freeform. Builds on `ontology/actions.py`, ActionHub, approvals, RBAC. Scope in
+   [`docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md`](docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md) §5.
+   ⚠️ First arc in a while that genuinely needs working models to prove — check quota before starting.
 
-1. **Wave E4 — per-run overrides / grid experiments** (the next arc PR). `provider.set_run_model()`
-   already exists as a contextvar; the flag override does NOT and must wrap `build_graph_generic`
-   for topology flags (`graph.py:128/140/229`). Ceiling to respect: no seed, no response cache,
-   default temp 0.1 not 0.0, Anthropic drops temperature — so measure with replication, never claim
-   deterministic replay. E4 is what turns the per-agent model advice from reasoning into
-   measurement.
+1. **Two parked findings (task chips filed, neither fixed):**
+   - **The 100% return rate.** A luxexperience brief reported "Beauty and jewelry_watches are
+     experiencing a 100% return rate". A literal 100% is the signature of a join fan-out or grain
+     artifact, which is exactly what `sql/fanout.py` + `grain_guard.py` exist to catch — so if it IS
+     an artifact, **a guard missed it and that gap matters more than the finding.** Read the source
+     finding's SQL in `data/exploration_workspace__luxexperience.json`, check numerator vs denominator.
+   - **Upload resurrection gap** (`connectors/file/local_upload.py`). LATENT, not active — verified
+     every orphaned upload dir on this machine holds 0 bytes, so the happy path deletes correctly.
+     But nothing catches the unhappy one: `_reload_existing_files()` re-registers every file under
+     every schema dir on startup and **never checks the tombstone** (the seed path does, ~line 249) ·
+     `drop_schema` uses `shutil.rmtree(..., ignore_errors=True)` so a partial delete is silently
+     swallowed · tombstones are written **only for seed-backed** objects, so an uploaded schema's
+     sole protection against returning is the file deletion having succeeded. Any surviving file —
+     failed unlink, lock, disk full, restore from backup — silently re-creates the schema.
 
-2. **Four flags are ON in the live ledger but still default-off in code** — `chart.exhibit_grammar`,
-   `intake.loss_signals`, `lens.decision_grade`, `report.argument_style`. A fresh clone, CI, or anyone
-   else's install gets NONE of that work. Three handoffs in a row say "flags-on soak"; the soak has
-   happened in the live runtime. Graduating them is the cheapest real leverage on the board.
-3. **`ask.brief_context` + `ask.conversation_context` soak, then graduate.** Both read `off` in the
+2. **Flag graduation Batches 2+.** Batch 1 (the four deterministic ones) merged in #199;
+   [`docs/FLAG_GRADUATION_AUDIT_2026-07-22.md`](docs/FLAG_GRADUATION_AUDIT_2026-07-22.md) dispositions
+   all 19 — 2 intentionally off, **5 that Wave E4 must measure**, 4 cost-vs-latency operator choices,
+   4 needing their own call (`agents.user_defined` is the likeliest next graduate). Two follow-ups the
+   audit deliberately deferred: clearing the 6 redundant live-ledger overrides (mutates user state),
+   and the `INTENTIONALLY_OFF` disposition ratchet (needs every flag dispositioned first).
+
+3. **Wave E4 — per-run overrides / grid experiments.** `provider.set_run_model()` already exists as a
+   contextvar; the flag override does NOT and must wrap `build_graph_generic` for topology flags
+   (`graph.py:128/140/229`). Ceiling: no seed, no response cache, default temp 0.1, Anthropic drops
+   temperature — measure with replication, never claim deterministic replay. **E4 now has a concrete
+   customer:** the 5 flags above whose delta is unproven.
+
+4. **`ask.brief_context` + `ask.conversation_context` soak, then graduate.** Both read `off` in the
    live ledger. Turn on (`PUT /system/flags/<name> {"value":true}` — no restart), ask follow-ups from
-   the Briefing, confirm the answers reference the brief and inherit prior grounding, then move to
+   the Briefing, confirm the answers reference the brief and inherit prior grounding, then
    `AUTO_ELIGIBLE`.
-4. **The four glossary follow-ons #193 documents but does not fix** (each needs its own decision):
-   the Qdrant `aughor_schema` collection is still globally namespaced (point ids/payloads carry no
-   connection) · `explore.py::_learn_from_exploration` writes `update_column` from LLM-emitted table
-   strings with `conn_id` in scope but unused and no schema at all (`update_column` now TAKES a
-   `schema=`; this is the one gap actively writing wrong-scoped data on every exploration run) ·
-   the dbt merge layer keys bare+lowercased (`dbt.py:102`) so a dbt entry can't override a qualified
-   YAML one · `compute_fingerprint` hashes only table names, so two structurally identical schemas
-   share a "fully seeded" marker.
-5. **Sub-1 shares still read `0.275985`, not `27.6%`** (#189). 6dp is the tested contract and protects
+
+5. **Re-measure LLM spend from our OWN log.** `obs.session_log` is now ON (it recorded 0 rows for
+   weeks because nobody turned it on). The API server must be RUNNING to collect. Open questions the
+   OpenRouter export raised but could not answer: **32 of 62 requests went to a model that is not a
+   role binding** — it comes from `recommended_models` per-agent pins in `kernel/agents.py`, so
+   per-agent bindings silently drive most token volume and deserve an audit of their own.
+   Also: `investigate.py:1930` still runs a `partitioned_reduce` LLM digest — the exact shape #197
+   deleted from the briefing (~5 model calls to compress a page for a 32k-window narrator). Worth
+   checking whether it too can be a deterministic listing. There are **80 `provider.complete` call
+   sites**; the digest fix suggests a real fraction need no model at all.
+
+6. **Sub-1 shares still read `0.275985`, not `27.6%`** (#189). 6dp is the tested contract and protects
    small rates; 3-significant-digits was rejected because `0.0000123` renders in scientific notation.
    Turning shares into percents is a semantic change (is `0.27` a share or a correlation?).
-6. **Retire the 7 remaining stale rejects in `data/exploration_workspace.json`** — the AVG-of-rate half
+7. **Retire the 7 remaining stale rejects in `data/exploration_workspace.json`** — the AVG-of-rate half
    is done (`scripts/revalidate_findings.py --apply`); the 7 `SUM(signup_fy)` ones need live column
    types, which fail open because the luxexperience tables are gone from the current workspace DB.
-   Re-run the script once that schema is back.
-7. Older queue: P7 frontier *tier* (same-tier bakeoff decided — keep `glm-5.2:cloud`) · Platform
+8. Older queue: P7 frontier *tier* (same-tier bakeoff decided — keep `glm-5.2:cloud`) · Platform
    WP-5/8/9/12–16 (WP-1/2/3/4 shipped; 7/10/11 partial) · Direction B follow-ons.
+
+---
+
+### ✅ 2026-07-22 (later) · The request budget — four PRs, and what measuring changed
+
+**#197 → #198 → #199 → #200.** Started as "full synthesis is not being generated" and ended as a
+measured account of where every LLM request goes.
+
+**#197 — the reported bug was never in `briefing.py`.** Every model bound to the app was
+rate-limited, and the fallback that should have absorbed it could not run: `_fallback_client()` was
+hardcoded to **Anthropic** and returned `None` without an Anthropic key, so an install without one
+had no fallback at all. Now a configured chain (`AUGHOR_FALLBACK_BACKENDS`), quota-aware fast-fail,
+and a self-healing cooldown. Two more things fell out: `_coverage_digest` was spending **~5 model
+calls to compress 1,291 characters** for a narrator with a 32k window — replaced with a deterministic
+listing (**a brief now makes 1 model call, was ~6**) — and the synthesis was capped at "exactly 2-3
+sentences" in **five** places while the UI card said "Full synthesis" and offered "Read full
+synthesis". Now a lede + 2-4 paragraphs, one field, no schema or cache change.
+
+**#198 — all four glossary-scoping gaps #193 documented and did not fix.** One bug shape in four
+layers: *a store keyed without the dimension that distinguishes its owners.* The exploration writer
+took a `conn_id` it never read and wrote bare keys on **every exploration run** (81 bare vs 77
+qualified keys on the live file, 61 colliding leaves) · the Qdrant index keyed points by table alone,
+so two connections wrote ONE point and the later index silently replaced the other's embedding · the
+dbt merge unioned on exact keys so a dbt annotation never met a qualified YAML entry · the autoseed
+fingerprint hashed structure only, so a same-DDL schema inherited "already seeded".
+
+**#199 — 19 features were ON in one developer's runtime ledger while the code shipped them OFF.**
+So **CI was validating a configuration nobody ran**, and the daily-driver configuration was tested by
+nothing. Batch 1 graduated the four that are deterministic AND byte-identical when off.
+`intake.loss_signals` is the load-bearing one — it fixes a **wrong answer** (a revenue ranking calling
+the business "broadly healthy" over 2.4M CHF of refund leakage). Full disposition of all 19 in
+[`docs/FLAG_GRADUATION_AUDIT_2026-07-22.md`](docs/FLAG_GRADUATION_AUDIT_2026-07-22.md).
+
+**#200 — then we measured, and the measurement corrected the plan.** The OpenRouter export and the
+Google AI Studio dashboard together said: **the constraint is REQUEST RATE, not tokens.**
+
+    Gemini 3.1 Flash Lite    RPM 19/15 (OVER)    RPD 422/500    TPM 109K/250K (44%)
+
+That **retired prompt caching** (cost-only) and **prompt trimming** (a limit at 44% utilisation) as
+answers — both of which had been proposed on architecture alone an hour earlier. Five fixes instead:
+`gemini-flash-latest` resolves to Gemini 3.6 Flash at **5 RPM / 20 requests per DAY** → rebound to
+`gemini-3.1-flash-lite` (**500 RPD, 25×**) · `max_tokens` on the OpenAI-compatible path, which had
+**never** carried one (three requests ran the full 600s emitting 13.5k–18.9k tokens of pure reasoning
+with no finish_reason: **4 requests = 6% of traffic = 58% of all output tokens**) · OpenRouter
+`reasoning.effort`, since **93% of every completion token was reasoning** · a rate limit now gets
+**ONE** retry, because every retry is itself another request against the limit that just refused
+(that is the 19-vs-15 spiral) · health-check verdicts cached, since those 113-token probes were
+**12 of 62 requests** against a 50/day cap.
+
+**🔑 Durable lessons, each earned the hard way:**
+- **"Quota exceeded" does not mean one thing.** A day cap and a per-minute throttle arrive as the
+  same 429 and need OPPOSITE handling. Google's `quotaId` is the authority; its "retry in 36s" prose
+  lies about a day-long block.
+- **A permission ceiling is not a balance.** `GET /api/v1/key`'s `limit` is the key's *spend cap*,
+  not money available — misread once, corrected by the user.
+- **The data beat the reasoning, twice.** The 90s deadline first proposed would have killed a
+  legitimate 86.7s call (shipped 180s); and the levers that looked obvious from architecture were
+  the wrong ones entirely.
+- **Flipping a default runs the whole suite in the new configuration** — which is how three tests
+  that had silently encoded the old one were found.
+- **Verify on the live path.** The final run proved every piece at once: OpenRouter 429 → automatic
+  Gemini failover → **1,563 chars, 4 paragraphs, 8 citations in 19.9s**, from an HTTP 500 at session
+  start.
 
 ---
 
