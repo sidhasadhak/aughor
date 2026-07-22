@@ -54,6 +54,29 @@ So Wave E is **consolidation**, not addition. Six PRs; none adds a sixth eval su
 
 ## PR-E1 — Session log: make the main path observable
 
+> **Status: BUILT** (branch `2026-07-22-e1-session-log`, 5 commits, 19 tests).
+> Both halves of the decision gate verified: a quick `/ask` turn reconstructs
+> from `session_events` alone (`user_request` → `tool_call(SELECT …)` →
+> `tool_call_result(ok, 3.9ms)` → `final_response(ok)`), and p95 write overhead
+> is **0.135 ms/span** against a 5 ms budget. 598 tests green across touched
+> subsystems; swallow ratchet held at baseline; `data/` byte-identical to its
+> pre-run snapshot.
+>
+> Two scope changes made while building, both because the original plan would
+> have shipped something that only looked complete:
+> - **The quick path's SQL had to be spanned.** It calls `db.execute` directly,
+>   so the reconstruction showed a request and a response with nothing between
+>   them. Wrapped both call sites in a tool span inside the existing
+>   `to_thread`, so the sink's write stays off the event loop.
+> - **`/chat` was wired too.** It has its own endpoint rather than going through
+>   `build_ask_stream`, so the original scope would have left a live door dark.
+>
+> **Deferred, honestly:** the receipt backfill (`trust/receipt.py:144,148`
+> `duration_ms`/`row_count`). It is not the "small commit" the plan assumed —
+> receipts are built from lineage and a quick-chat receipt has no job id, so
+> joining spans to it needs a real design pass. Everything else in the section
+> below shipped.
+
 **Why first.** The gap is worse than "no event schema". `telemetry.new_trace` is called *exactly once*
 in the codebase (`routers/investigations.py:2474`, inside the deep path), so **quick `/ask` and `/chat`
 never mint a trace id at all**. Their SQL goes through `db.execute` directly
