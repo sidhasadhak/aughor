@@ -228,6 +228,86 @@ def test_a_target_that_raises_fails_one_case_not_the_run(db):
     assert store.get_run(summary.run_id)["status"] == store.SUCCEEDED
 
 
+# ── the API surface + the consolidation ───────────────────────────────────────
+
+def test_suite_crud_over_http(client):
+    created = client.post("/evals/suites", json={"name": "http suite"})
+    assert created.status_code == 201, created.text
+    sid = created.json()["id"]
+
+    assert client.post(f"/evals/suites/{sid}/cases", json={
+        "cases": [{"question": "q", "artifact": "SELECT 1"}]}).status_code == 201
+
+    got = client.get(f"/evals/suites/{sid}")
+    assert got.status_code == 200
+    assert len(got.json()["cases"]) == 1
+
+    assert client.delete(f"/evals/suites/{sid}").status_code == 200
+    assert client.get(f"/evals/suites/{sid}").status_code == 404
+
+
+def test_eval_suite_capability_now_gates_something(client, monkeypatch):
+    """`eval.suite` was declared in the licensing table and sold as Enterprise
+    while gating NOTHING — there was not one gate(Capability.EVAL_SUITE) call
+    site. This is the test that it is real."""
+    from aughor.licensing import Capability
+
+    calls: list = []
+
+    def deny(cap, conn_id=None):
+        calls.append(cap)
+        return cap is not Capability.EVAL_SUITE
+
+    monkeypatch.setattr("aughor.licensing.deps.has_capability", deny)
+    r = client.get("/evals/suites")
+    assert r.status_code == 402, r.text
+    assert r.json()["detail"]["capability"] == "eval.suite"
+    assert Capability.EVAL_SUITE in calls
+
+
+def test_evaluators_endpoint_describes_the_set(client):
+    body = client.get("/evals/evaluators").json()
+    assert body["deterministic_count"] == len(body["evaluators"])
+    names = {e["name"] for e in body["evaluators"]}
+    assert "guard.readonly" in names
+    readonly = next(e for e in body["evaluators"] if e["name"] == "guard.readonly")
+    assert readonly["severity"] == "block"
+
+
+def test_dead_eval_run_stub_is_gone(client):
+    """It was ungated, hardcoded live=False so it scored reference SQL against
+    itself, read a CWD-relative path into an unpackaged directory (a permanent
+    503 from a wheel), and had zero callers. Keeping a broken ungated endpoint
+    because it happened to exist is worse than removing it."""
+    assert client.post("/eval/run").status_code == 404
+
+
+def test_run_a_suite_over_http(client, db, monkeypatch, tmp_path):
+    """End-to-end through the API against a registered connection."""
+    from aughor.db import registry
+
+    conn_id = registry.add_connection("evals-http", "duckdb", str(db._path))
+    created = client.post("/evals/suites", json={
+        "name": "run me", "target": "reference", "connection_id": conn_id})
+    sid = created.json()["id"]
+    client.post(f"/evals/suites/{sid}/cases", json={"cases": [
+        {"question": "rows", "artifact": "SELECT id, v FROM t ORDER BY id",
+         "expected": {"reference_sql": "SELECT id, v FROM t ORDER BY id"}}]})
+
+    r = client.post(f"/evals/suites/{sid}/run", json={"iterations": 2})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] == 1
+    assert body["accuracy"] == 1.0
+    assert body["iterations"] == 2
+    assert body["config"]["backend"]
+
+    runs = client.get("/evals/runs", params={"suite_id": sid}).json()["runs"]
+    assert len(runs) == 1
+    detail = client.get(f"/evals/runs/{runs[0]['id']}").json()
+    assert len(detail["results"]) == 2      # 1 case x 2 iterations
+
+
 def test_dry_run_leaves_no_trace(db):
     sid = _suite_with([{"question": "q", "artifact": "SELECT 1"}])
     summary = run_suite(sid, reference_target(db), persist=False)

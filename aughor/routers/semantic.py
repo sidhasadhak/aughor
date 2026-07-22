@@ -1,5 +1,13 @@
 """Semantic Layer router — annotations, connection KB, and benchmarks.
 
+DEPRECATED (Wave E3): the ``/benchmarks`` endpoints below are superseded by
+``/evals/suites`` (``aughor/routers/evals.py``), which is execution-grounded,
+org-scoped, replicated, and gated on the capability we actually sell. These score
+by string matching and their runner blanks every prompt-context section, so they
+measure a context-free model rather than the product. No records have ever been
+authored against them. They stay wired only because the Semantic Layer panel
+still calls them; the UI moves in E5 and they go with it.
+
 Endpoints
 ─────────
 Schema Annotations (per-connection, per-table, per-column descriptions):
@@ -235,7 +243,8 @@ def update_benchmark(conn_id: str, case_id: str, body: BenchmarkCaseIn):
     return saved.to_dict()
 
 
-@router.delete("/{conn_id}/benchmarks/{case_id}", status_code=200)
+@router.delete("/{conn_id}/benchmarks/{case_id}", status_code=200,
+               dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def delete_benchmark(conn_id: str, case_id: str):
     from aughor.agent.benchmarks import delete_case
     ok = delete_case(conn_id, case_id)

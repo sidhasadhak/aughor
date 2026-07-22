@@ -580,7 +580,7 @@ async def _start_brief_scheduler() -> None:
 
 # ── Router registration ───────────────────────────────────────────────────────
 
-from aughor.routers import (  # noqa: E402
+from aughor.routers import (
     system,
     agents,
     investigations,
@@ -613,6 +613,7 @@ from aughor.routers import (  # noqa: E402
     receipt as receipt_router,
     agui,
     dashboard,
+    evals,
 )
 
 app.include_router(system.router)
@@ -648,3 +649,4 @@ app.include_router(roles_router.router)
 app.include_router(receipt_router.router)
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
+app.include_router(evals.router)  # Wave E3 — eval suites/runs (gated on eval.suite)
