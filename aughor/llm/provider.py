@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import random
+import re
 import threading
 import time
 from pathlib import Path
@@ -96,6 +97,68 @@ def _fallback_model() -> str:
     """Anthropic model used when the primary backend fails. Defaults to the
     latest Opus; override with AUGHOR_FALLBACK_MODEL (e.g. claude-opus-4-6)."""
     return os.getenv("AUGHOR_FALLBACK_MODEL", "claude-opus-4-8")
+
+
+# Order the fallback chain is tried in when the primary backend fails. Anthropic stays
+# first so an install that already had a key keeps its exact previous behaviour; the rest
+# follow so a install WITHOUT an Anthropic key (the common case) still has somewhere to go
+# — which is the whole point: the fallback used to be Anthropic-or-nothing, so the majority
+# of installs had no fallback at all and a rate-limited role model surfaced as a 500.
+# Local backends are deliberately absent: they need no key, so they would always look
+# "configured" and a fallback would hang against a server that isn't running. Name one in
+# AUGHOR_FALLBACK_BACKENDS to opt in.
+_FALLBACK_ORDER: tuple[str, ...] = ("anthropic", "gemini", "groq", "together", "openrouter")
+
+
+def _fallback_backends() -> tuple[str, ...]:
+    """Backends to try, in order, when the primary fails.
+
+    Override with AUGHOR_FALLBACK_BACKENDS (comma-separated, e.g. "gemini,groq") to pin a
+    chain — order is honoured as given, and unknown names are dropped rather than raising,
+    so a typo degrades to a shorter chain instead of breaking every LLM call."""
+    raw = os.getenv("AUGHOR_FALLBACK_BACKENDS", "").strip()
+    if not raw:
+        return _FALLBACK_ORDER
+    return tuple(b for b in (p.strip() for p in raw.split(",")) if b in BACKENDS)
+
+
+# A backend that answered "quota exhausted" will answer the same way for every call until
+# its allowance resets, so re-probing it once per LLM call adds a guaranteed-failed round
+# trip to each one. A briefing fans out into dozens of calls: that cost a wasted probe every
+# time and turned a 9s brief into 76s. Cooldown is in-process and self-healing — the entry
+# simply expires, so a topped-up account recovers on its own without a restart.
+_QUOTA_COOLDOWN_S = 900.0
+_quota_cooldown: dict[str, float] = {}
+_quota_lock = threading.Lock()
+
+
+def _mark_quota_exhausted(backend: str) -> None:
+    with _quota_lock:
+        _quota_cooldown[backend] = time.monotonic() + max(
+            0.0, _float_env("AUGHOR_QUOTA_COOLDOWN_S", _QUOTA_COOLDOWN_S))
+
+
+def _in_quota_cooldown(backend: str) -> bool:
+    with _quota_lock:
+        until = _quota_cooldown.get(backend)
+        if until is None:
+            return False
+        if time.monotonic() >= until:      # expired — let it prove itself again
+            del _quota_cooldown[backend]
+            return False
+        return True
+
+
+def _fallback_model_for(backend: str, role: Role) -> str:
+    """The model a fallback backend should use for this role.
+
+    Anthropic keeps AUGHOR_FALLBACK_MODEL (the pre-existing contract); every other backend
+    uses its own role default, so a narrator falling back to Gemini gets Gemini's narrator
+    model rather than something pinned for a different vendor."""
+    if backend == "anthropic":
+        return _fallback_model()
+    defaults = _DEFAULT_MODELS.get(backend, {})
+    return defaults.get(role) or defaults.get("narrator", "")
 
 
 # ── Runtime config (data/llm_config.json) ────────────────────────────────────
@@ -399,12 +462,73 @@ _TRANSIENT_MSGS = (
     "timeout", "timed out", "rate limit", "too many requests", "overloaded",
     "temporarily unavailable", "service unavailable", "connection reset", "connection error",
     "econnreset", "bad gateway", "gateway timeout",
+    # A per-minute allowance throttle. Safe to retry because _is_quota_exhausted runs
+    # FIRST and has already claimed the day-scale and spent-balance wordings — so what
+    # reaches here is the kind that clears within the backoff ladder (Gemini's free tier
+    # caps requests per minute and phrases it exactly this way).
+    "quota exceeded", "exceeded your current quota",
 )
+# A 429 that will NOT clear on the retry timescale: a daily/monthly allowance or a spent
+# balance, not a per-minute throttle. Retrying these burns the whole backoff ladder
+# (~15s) on a counter that resets tomorrow — and, worse, delays the fallback that
+# WOULD have answered.
+#
+# These markers are deliberately narrow. The first cut also matched "billing" and
+# "quota exceeded", which sounded day-scale but are exactly the words Gemini uses for its
+# per-MINUTE free-tier limit ("You exceeded your current quota … limit: 5 … check your
+# plan and billing details"). That misread put a backend into a 15-minute cooldown over a
+# 60-second throttle. Only phrases naming a day, or a balance that needs topping up, count.
+_QUOTA_EXHAUSTED_MSGS = (
+    "per-day", "per day", "daily limit", "requests per day",
+    # Google names the exhausted quota in a camel-case id with no separators —
+    # "GenerateRequestsPerDayPerProjectPerModel-FreeTier" — which none of the spaced
+    # forms above match. Its message ALSO carries a "retry in 36s" that is simply wrong
+    # for a daily cap, so missing this meant retrying a day-long block three times.
+    "perday",
+    "insufficient_quota", "credit limit exceeded", "add credits", "payment required",
+)
+
+
+# Providers usually say how long to wait — Gemini as "Please retry in 42.3s", OpenAI-compatible
+# shims as a retryDelay field or a Retry-After header. Our ladder tops out around 15s, so a 42s
+# window was never survived: we exhausted the retries and failed a call that would have succeeded.
+# Honour the server's own number when it gives one.
+_RETRY_AFTER_RE = re.compile(
+    r"(?:retry(?:\s+again)?\s+in|retry[-_]?after|retrydelay)\D{0,12}?(\d+(?:\.\d+)?)\s*s",
+    re.IGNORECASE,
+)
+_RETRY_AFTER_MAX_S = 120.0
+
+
+def _retry_after_seconds(exc: BaseException) -> Optional[float]:
+    """Seconds the provider asked us to wait, or None. Capped so a pathological value
+    cannot park a request for minutes; the overall deadline still bounds everything."""
+    m = _RETRY_AFTER_RE.search(str(exc))
+    if not m:
+        return None
+    try:
+        return min(_RETRY_AFTER_MAX_S, max(0.0, float(m.group(1))))
+    except ValueError:
+        return None
+
+
+def _is_quota_exhausted(exc: BaseException) -> bool:
+    """True when the error is an exhausted allowance rather than a momentary throttle.
+
+    Such an error is 'transient' by status (429/402) but not by timescale, so it is
+    routed to the fallback chain immediately instead of through the retry ladder."""
+    return any(k in str(exc).lower() for k in _QUOTA_EXHAUSTED_MSGS)
 
 
 def _is_transient(exc: BaseException) -> bool:
     """True for errors worth retrying (throttle / transient network), False for real failures
-    (validation, 4xx-other, auth) which must surface immediately."""
+    (validation, 4xx-other, auth) which must surface immediately.
+
+    Checked before the type/status tests below, because an exhausted quota arrives as a
+    RateLimitError with status 429 and 'rate limit' in the message — it would match all
+    three and be retried pointlessly."""
+    if _is_quota_exhausted(exc):
+        return False
     if type(exc).__name__ in _TRANSIENT_TYPES:
         return True
     status = getattr(exc, "status_code", None)
@@ -516,6 +640,11 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
                     stats["retries"] = attempt
                 err_name = type(e).__name__   # `e` is unbound after the except block
                 wait = min(30.0, 2.0 ** attempt) + random.uniform(0.0, 0.5 * attempt)
+                # The provider's own number wins when it is LONGER than our guess: a
+                # throttle that says "retry in 42s" is not survivable on a 15s ladder.
+                asked = _retry_after_seconds(e)
+                if asked is not None and asked > wait:
+                    wait = asked
         if time.monotonic() + wait >= deadline:
             wait = max(0.0, deadline - time.monotonic())
         logger.warning("llm: transient error (%s); retry %d/%d in %.1fs",
@@ -572,28 +701,53 @@ class LLMProvider:
         temperature: float = 0.1,
     ) -> T:
         self._warn_if_over_window(system, user)
+        # A primary known to be out of allowance is skipped rather than re-probed: the
+        # answer cannot have changed, and the wasted round trip is paid by EVERY call.
+        if _in_quota_cooldown(self.backend) and self._fallback_candidates():
+            primary_exc: Exception = RuntimeError(
+                f"{self.backend} is in quota cooldown (allowance exhausted)")
+            return self._complete_via_fallback(
+                system, user, response_model, temperature, primary_exc)
         try:
             return self._complete_on(self._client, self.backend, self._model,
                                      system, user, response_model, temperature,
                                      base_url=self._base_url, role=self.role)
         except Exception as primary_exc:
-            # Resilience: if the primary backend (e.g. local/cloud Ollama) is
-            # unreachable or erroring, transparently fall back to Anthropic when
-            # a key is configured. Enabled by default; disable with
-            # AUGHOR_FALLBACK_DISABLED=1. Model via AUGHOR_FALLBACK_MODEL
-            # (default claude-opus-4-8 — the latest Opus).
-            fb = self._fallback_client()
-            if fb is None:
+            if _is_quota_exhausted(primary_exc):
+                _mark_quota_exhausted(self.backend)
+            # Resilience: if the primary backend is unreachable, erroring, or out of
+            # allowance, transparently fall back to the next CONFIGURED backend. Enabled
+            # by default; disable with AUGHOR_FALLBACK_DISABLED=1, pin the order with
+            # AUGHOR_FALLBACK_BACKENDS. This used to be Anthropic-or-nothing, which meant
+            # an install without an Anthropic key had no fallback at all: an exhausted
+            # free-tier quota took down every brief with an opaque 500.
+            if not self._fallback_candidates():
                 raise
-            logger.warning("provider: %s backend failed (%s); falling back to Anthropic %s",
-                           self.backend, str(primary_exc)[:120], _fallback_model())
+            return self._complete_via_fallback(
+                system, user, response_model, temperature, primary_exc)
+
+    def _complete_via_fallback(self, system: str, user: str, response_model: Type[T],
+                               temperature: float, primary_exc: BaseException) -> T:
+        """Walk the fallback chain for one call. Raises ``primary_exc`` if every link fails."""
+        for backend in self._fallback_candidates():
+            fb = self._fallback_provider(backend)
+            if fb is None:
+                continue
+            logger.warning("provider: %s failed (%s); falling back to %s %s",
+                           self.backend, str(primary_exc)[:120], backend, fb._model)
             try:
-                return self._complete_on(fb, "anthropic", _fallback_model(),
+                return self._complete_on(fb._client, backend, fb._model,
                                          system, user, response_model, temperature,
-                                         base_url="anthropic-fallback",
+                                         base_url=fb._base_url,
                                          role=self.role, fallback=True)
-            except Exception:
-                raise primary_exc  # surface the original failure if fallback also fails
+            except Exception as fb_exc:
+                # Try the next link rather than giving up on the first miss — the
+                # chain exists precisely because any one backend can be down or spent.
+                if _is_quota_exhausted(fb_exc):
+                    _mark_quota_exhausted(backend)
+                logger.warning("provider: fallback %s also failed (%s)",
+                               backend, str(fb_exc)[:120])
+        raise primary_exc  # every link failed — surface the ORIGINAL cause, not the last
 
     def complete_streaming(
         self,
@@ -842,21 +996,38 @@ class LLMProvider:
         # Terminal validation is the contract; a mismatch heals via complete() fallback.
         return response_model.model_validate(final_dict)
 
-    def _fallback_client(self):
-        """Lazily build (and cache) an Anthropic client for fallback, or None when
-        unavailable (already on anthropic, disabled, or no Anthropic key)."""
-        if self.backend == "anthropic":
-            return None
-        if _flag("AUGHOR_FALLBACK_DISABLED"):
-            return None
-        if not _active_key("anthropic"):
-            return None
-        if getattr(self, "_fb_client", None) is None:
+    def _fallback_provider(self, backend: str) -> Optional["LLMProvider"]:
+        """A provider bound to `backend` for this role, or None if it cannot be built.
+
+        Building a full LLMProvider (rather than a bare client) is what keeps the chain
+        honest: model resolution, base URL and client construction all come from the one
+        constructor that already knows every backend, so a backend added there is
+        fallback-capable for free."""
+        cache = getattr(self, "_fb_providers", None)
+        if cache is None:
+            cache = self._fb_providers = {}
+        if backend not in cache:
             try:
-                self._fb_client = _build_anthropic_client(_active_key("anthropic"))
-            except Exception:
-                self._fb_client = None
-        return self._fb_client
+                cache[backend] = LLMProvider(
+                    backend=backend, role=self.role,
+                    model=_fallback_model_for(backend, self.role) or None,
+                )
+            except Exception as exc:
+                logger.debug("provider: fallback %s unavailable (%s)", backend, exc)
+                cache[backend] = None
+        return cache[backend]
+
+    def _fallback_candidates(self) -> list[str]:
+        """Configured backends worth trying for this call, in order — never the primary,
+        only those holding a key (an unkeyed backend fails identically every time, so
+        trying it just adds latency to a call that is already failing), and never one
+        currently in quota cooldown."""
+        if _flag("AUGHOR_FALLBACK_DISABLED"):
+            return []
+        return [b for b in _fallback_backends()
+                if b != self.backend
+                and (b not in NEEDS_KEY or _active_key(b))
+                and not _in_quota_cooldown(b)]
 
 
 def get_provider(role: Role = "coder", *, model: Optional[str] = None) -> LLMProvider:

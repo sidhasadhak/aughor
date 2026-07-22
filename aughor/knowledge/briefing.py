@@ -3,8 +3,10 @@ Briefing Synthesis — M24b
 
 Generates an LLM-authored executive narrative from cross-domain intelligence.
 
-The narrator reads the top findings and patterns, then writes a 2-3 sentence
-brief that connects them with inline citation markers [1], [2], etc.
+The narrator reads the top findings and patterns, then writes a multi-paragraph
+brief that connects them with inline citation markers [1], [2], etc. — a 2-3
+sentence lede (all the UI's collapsed card shows) followed by the depth behind it
+(what "Read full synthesis" expands to).
 
 Each citation maps back to a specific insight so the UI can render clickable
 references that deep-link to the source finding.
@@ -47,8 +49,10 @@ class BriefingCitation(BaseModel):
 class BriefingNarrative(BaseModel):
     narrative: str = Field(
         description=(
-            "2-3 sentence executive synthesis. Must embed citation markers like [1], [2], [3] "
-            "inline at the exact place each finding is referenced. Business language, no jargon."
+            "Executive synthesis: a 2-3 sentence LEDE paragraph carrying the headline, then 2-4 "
+            "short paragraphs of depth, separated by blank lines. Must embed citation markers like "
+            "[1], [2], [3] inline at the exact place each finding is referenced. Business language, "
+            "no jargon."
         )
     )
     citations: list[BriefingCitation] = Field(
@@ -73,16 +77,26 @@ from aughor.util.time import age_hours as _age_hours
 
 _SYSTEM = """\
 You are an intelligence analyst writing a Monday morning executive briefing for a business data team.
-Your role is to synthesise the most important cross-domain findings into a tight, readable narrative.
+Your role is to synthesise the most important cross-domain findings into a readable narrative that
+stands on its own.
+
+Structure:
+- Open with a LEDE of 2-3 sentences carrying the single biggest business move. A reader who stops
+  after the lede must still have the headline.
+- Then 2-4 short paragraphs of depth: what connects the findings, what appears to be driving what,
+  what it means for the business, and what deserves attention first.
+- Separate paragraphs with a blank line. Aim for 200-350 words in total.
 
 Rules:
-- Write exactly 2-3 sentences. Be concise and direct.
-- Identify connections between findings across different domains — don't just list.
+- Identify connections between findings across different domains — don't just list them.
+- Carry every finding that does real work in the argument, not only the first two or three.
 - Use business language a CFO would understand: no SQL, no technical jargon.
 - Embed citation markers like [1], [2], [3] inline at the exact point each finding is referenced.
 - Every citation marker you use MUST appear in the citations list.
 - At least 2 different domains must be referenced.
 - Highlight urgency or opportunity where the data supports it.
+- Never pad. If the findings only support a short brief, write a short one — length must come from
+  evidence, never from filler, restatement, or speculation beyond what the findings show.
 """
 
 # Used for the "All schemas" aggregate brief, where findings come from SEPARATE businesses.
@@ -92,13 +106,19 @@ _SYSTEM_MULTI = """\
 You are an intelligence analyst writing a Monday morning executive briefing that spans SEVERAL
 SEPARATE, UNRELATED businesses (each finding is tagged with its Business).
 
+Structure:
+- Open with a LEDE of 2-3 sentences on the single most important signal, NAMING its business.
+- Then one short paragraph per other business covered, each self-contained.
+- Separate paragraphs with a blank line. Aim for 200-350 words in total.
+
 Rules:
-- Write exactly 2-3 sentences. Be concise and direct.
 - These findings come from DIFFERENT businesses — do NOT draw connections, comparisons, or
-  shared causes across them. Treat each business independently.
-- Lead with the single most important signal and NAME its business; cover at least two businesses.
+  shared causes across them. Treat each business independently. This holds for every paragraph:
+  more room to write is not licence to link them.
+- Cover at least two businesses.
 - Use business language a CFO would understand: no SQL, no technical jargon.
 - Embed citation markers like [1], [2], [3] inline; every marker MUST appear in the citations list.
+- Never pad. Length must come from evidence, never from filler or speculation.
 """
 
 
@@ -142,7 +162,7 @@ def _build_user_prompt(
     if coverage_digest:
         lines.append("")
         lines.append(
-            "FULL COVERAGE (every finding, summarized per domain — use for context and breadth; "
+            "FULL COVERAGE (the remaining findings, per domain — use for context and breadth; "
             "do NOT cite these as numbered findings, only the FINDINGS above are citable):"
         )
         lines.append(coverage_digest)
@@ -176,64 +196,65 @@ def _build_user_prompt(
             f"reports in that currency), never another currency symbol."
         )
     lines.append(
-        "\nGenerate a 2-3 sentence executive briefing narrative with inline citation markers."
+        "\nGenerate the executive briefing narrative: a 2-3 sentence lede, then 2-4 short "
+        "paragraphs of depth, separated by blank lines, with inline citation markers."
     )
     return "\n".join(lines)
 
 
-# ── Coverage digest (hierarchical tree-reduce over ALL findings) ──────────────
-# The narrative cites only the top-N findings; when more exist, fold ALL of them into a compact,
-# partition-aware (per-domain) digest so the synthesis reflects the full picture instead of silently
-# dropping findings N+1.. Within a domain the findings are themselves tree-reduced (pack → summarize
-# → recurse). Fail-open: any LLM error returns "" → the briefing falls back to the top-N-only prompt.
+# ── Coverage digest (deterministic per-domain listing) ────────────────────────
+# The narrative cites only the top-N findings; when more exist, the rest are listed here so the
+# synthesis reflects the full picture instead of silently dropping findings N+1..
+#
+# This WAS an LLM tree-reduce (pack → summarize → recurse, fanout 8). Measured on a real brief it
+# spent ~5 model calls compressing 1,291 characters into ~3 sentences — for a narrator whose context
+# window holds 32k+ tokens. That trade only makes sense when the source cannot fit; here it cost
+# latency and quota (a free tier's whole per-minute allowance went on the digest alone, so the brief
+# died before the narrator ran), added a failure mode, and DISCARDED detail the narrator could have
+# used. Listing the findings verbatim is cheaper, faster, and strictly more faithful.
+#
+# Only UNCITED findings are listed: the top-N are already in the prompt above, in full.
 
-class _Digest(BaseModel):
-    text: str = Field(description="One tight sentence — the key signal only, no preamble, no citations.")
-
-
-_DIGEST_SYSTEM = (
-    "You compress analytical findings into ONE tight sentence capturing the key signal. "
-    "No preamble, no citation markers, business language a CFO would understand."
-)
-_DIGEST_FANOUT = 8
+_DIGEST_MAX_PER_DOMAIN = 12     # findings listed per domain before the tail is counted, not shown
+_DIGEST_MAX_CHARS = 4000        # whole-digest budget; the narrator's window is far larger
 
 
 def _coverage_digest(domain_data: dict[str, list[dict]], cited_ids: set[str]) -> str:
-    """Per-domain fold of every finding, for the narrator's context. ``""`` when nothing was dropped
-    (the top-N prompt already holds everything) or on any failure (fail-open)."""
-    groups = {d: ins for d, ins in domain_data.items() if ins}
-    total = sum(len(v) for v in groups.values())
-    if total <= len(cited_ids):
+    """Per-domain listing of the findings the prompt did NOT already carry.
+
+    ``""`` when nothing was dropped (the top-N prompt already holds everything). Deterministic:
+    no LLM call, so it cannot fail, stall, or invent — the old version's fail-open ``except``
+    returned "" on any model error, which silently cost the narrative its breadth."""
+    remaining: dict[str, list[str]] = {}
+    for domain, insights in domain_data.items():
+        texts = [t for ins in insights
+                 if ins.get("id", "") not in cited_ids
+                 and (t := str(ins.get("finding", "")).strip())]
+        if texts:
+            remaining[domain] = texts
+    if not remaining:
         return ""
-    try:
-        from aughor.llm.provider import get_provider
-        from aughor.llm.reduce import hierarchical_reduce, partitioned_reduce
 
-        provider = get_provider("fast")
-
-        def _one(prompt: str) -> str:
-            return provider.complete(system=_DIGEST_SYSTEM, user=prompt,
-                                     response_model=_Digest, temperature=0.2).text.strip()
-
-        def summarize_group(domain: str, findings: list[dict]) -> str:
-            def leaf(batch: list[dict]) -> str:
-                listing = "\n".join(f"- {f.get('finding', '')}" for f in batch)
-                return _one(f"Domain: {domain}\nFindings:\n{listing}\n\nOne sentence capturing the key signal.")
-
-            def comb(parts: list[str]) -> str:
-                listing = "\n".join(f"- {p}" for p in parts)
-                return _one(f"Domain: {domain}\nPartial summaries:\n{listing}\n\nMerge into one sentence.")
-
-            digest = hierarchical_reduce(findings, summarize=leaf, combine=comb, fanout=_DIGEST_FANOUT)
-            return f"{domain}: {digest}"
-
-        # Domains are distinct buckets — keep them on separate lines, never blended.
-        return partitioned_reduce(
-            groups, summarize_group=summarize_group,
-            combine=lambda parts: "\n".join(parts), fanout=_DIGEST_FANOUT,
-        )
-    except Exception:
-        return ""
+    lines: list[str] = []
+    budget = _DIGEST_MAX_CHARS
+    for domain, texts in remaining.items():
+        shown, hidden = texts[:_DIGEST_MAX_PER_DOMAIN], texts[_DIGEST_MAX_PER_DOMAIN:]
+        head = f"{domain}:"
+        entries: list[str] = []
+        for t in shown:
+            entry = f"  - {t}"
+            if len(entry) > budget:                    # budget spent — count the tail, never drop it silently
+                hidden = texts[len(entries):]
+                break
+            entries.append(entry)
+            budget -= len(entry)
+        if not entries:
+            continue
+        lines.append(head)
+        lines.extend(entries)
+        if hidden:
+            lines.append(f"  - (+{len(hidden)} further findings in this domain)")
+    return "\n".join(lines)
 
 
 def _profile_signals(profile: Any, workspace_id: Optional[str] = None) -> tuple[list, str]:
