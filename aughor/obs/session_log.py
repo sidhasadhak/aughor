@@ -89,6 +89,12 @@ def emit(
     error_class: Optional[str] = None,
     investigation_id: Optional[str] = None,
     conn_id: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    prompt_tokens: Optional[int] = None,
+    completion_tokens: Optional[int] = None,
+    row_count: Optional[int] = None,
+    retries: Optional[int] = None,
     payload: Optional[dict] = None,
 ) -> None:
     """Append one session event. Strict no-op when the flag is off.
@@ -128,6 +134,16 @@ def emit(
             "agent_id": agent_id or None,
             "conn_id": conn_id,
             "org_id": current_org_id() or "default",
+            "provider": provider,
+            "model": model,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            # Only a real total when at least one half was actually reported —
+            # summing two unknowns into 0 is how a cost aggregate starts lying.
+            "total_tokens": (None if prompt_tokens is None and completion_tokens is None
+                             else (prompt_tokens or 0) + (completion_tokens or 0)),
+            "row_count": row_count,
+            "retries": retries,
             "payload": {k: _clip(v) for k, v in (payload or {}).items()} or None,
         })
     except Exception as exc:
@@ -206,6 +222,46 @@ def tool_reliability(*, org_id: Optional[str] = None, scan: int = 5000) -> list[
         ms = e.get("duration_ms") or 0.0
         a["total_ms"] += ms
         a["max_ms"] = max(a["max_ms"], ms)
+    out = []
+    for a in agg.values():
+        a["mean_ms"] = round(a["total_ms"] / a["calls"], 1) if a["calls"] else 0.0
+        a["total_ms"] = round(a["total_ms"], 1)
+        a["failure_rate"] = round(a["failures"] / a["calls"], 3) if a["calls"] else 0.0
+        out.append(a)
+    return sorted(out, key=lambda a: a["calls"], reverse=True)
+
+
+def model_usage(*, org_id: Optional[str] = None, scan: int = 5000) -> list[dict]:
+    """Per-model call counts, token totals, latency and failure rate.
+
+    The question the per-call record exists to answer — "what did each model
+    cost us, and which one is failing" — folded from real columns rather than
+    JSON. ``tokens`` counts only calls whose backend actually reported usage;
+    ``calls_without_usage`` says how many did not, so a low token total is never
+    silently mistaken for a cheap model.
+    """
+    from aughor.kernel.ledger import Ledger
+    rows = Ledger.default().session_events(kind=LLM_CALL, org_id=org_id, limit=scan)
+    agg: dict[tuple, dict] = {}
+    for e in rows:
+        key = (e.get("provider") or "", e.get("model") or "(unknown)")
+        a = agg.setdefault(key, {
+            "provider": key[0], "model": key[1], "calls": 0, "failures": 0,
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+            "calls_without_usage": 0, "retried_calls": 0, "total_ms": 0.0,
+        })
+        a["calls"] += 1
+        if e.get("ok") is False:
+            a["failures"] += 1
+        if e.get("total_tokens") is None:
+            a["calls_without_usage"] += 1
+        else:
+            a["prompt_tokens"] += e.get("prompt_tokens") or 0
+            a["completion_tokens"] += e.get("completion_tokens") or 0
+            a["total_tokens"] += e.get("total_tokens") or 0
+        if e.get("retries"):
+            a["retried_calls"] += 1
+        a["total_ms"] += e.get("duration_ms") or 0.0
     out = []
     for a in agg.values():
         a["mean_ms"] = round(a["total_ms"] / a["calls"], 1) if a["calls"] else 0.0

@@ -194,6 +194,37 @@ def _create_session_events(c: sqlite3.Connection) -> None:
     )
 
 
+def _add_session_event_measures(c: sqlite3.Connection) -> None:
+    """Promote the measurable facts out of the JSON payload into real columns.
+
+    They were recorded from the start, but inside ``payload`` — which makes the
+    questions worth asking ("tokens by model this week", "p95 latency per
+    provider", "which model fails") a JSON-extraction exercise instead of a
+    GROUP BY, and makes them near-unusable through the ``aughor_ops`` NL2SQL
+    surface where an agent has to write the SQL itself.
+
+    Sparse by design: ``model``/``provider``/token counts are only set on
+    ``llm_call`` rows, ``row_count`` only on tool results. NULLs are cheap, and
+    ``task_history`` already sets the precedent with input/captured_output.
+
+    Tokens are nullable rather than 0-defaulted on purpose: a backend that does
+    not report usage must not be indistinguishable from a genuinely empty call,
+    or every cost aggregate is quietly wrong.
+    """
+    for col, decl in (
+        ("provider", "TEXT"),
+        ("model", "TEXT"),
+        ("prompt_tokens", "INTEGER"),
+        ("completion_tokens", "INTEGER"),
+        ("total_tokens", "INTEGER"),
+        ("row_count", "INTEGER"),
+        ("retries", "INTEGER"),
+    ):
+        add_column_if_missing(c, "session_events", col, decl)
+    c.executescript(
+        "CREATE INDEX IF NOT EXISTS session_events_model ON session_events(model, seq);")
+
+
 # Schema evolution (DATA-05). The kernel tables in _SCHEMA are v1; changes are Migration(v>=2).
 _MIGRATIONS = [
     Migration(2, "per-run compute metering (jobs.metrics)",
@@ -207,6 +238,7 @@ _MIGRATIONS = [
     # and nothing else in the journal was correlated at all.
     Migration(6, "correlation key: trace_id on events",
               lambda c: add_column_if_missing(c, "events", "trace_id", "TEXT NOT NULL DEFAULT ''")),
+    Migration(7, "session_events: measurable facts as columns", _add_session_event_measures),
 ]
 
 
@@ -653,7 +685,11 @@ class Ledger:
     _SESSION_EVENT_COLS = (
         "seq", "at", "trace_id", "kind", "name", "span_id", "parent_span_id",
         "ok", "duration_ms", "error_class", "investigation_id", "session_id",
-        "user_id", "agent_id", "conn_id", "org_id", "payload",
+        "user_id", "agent_id", "conn_id", "org_id",
+        # Migration 7 — measurable facts as columns, not payload JSON.
+        "provider", "model", "prompt_tokens", "completion_tokens", "total_tokens",
+        "row_count", "retries",
+        "payload",
     )
 
     def session_event_insert(self, row: dict) -> int:
@@ -674,7 +710,9 @@ class Ledger:
                 "INSERT INTO session_events "
                 "(at, trace_id, kind, name, span_id, parent_span_id, ok, duration_ms, "
                 " error_class, investigation_id, session_id, user_id, agent_id, conn_id, "
-                " org_id, payload) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " org_id, provider, model, prompt_tokens, completion_tokens, total_tokens, "
+                " row_count, retries, payload) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     row.get("at") or _now(), row["trace_id"], row["kind"], row.get("name"),
                     row.get("span_id"), row.get("parent_span_id"),
@@ -683,6 +721,9 @@ class Ledger:
                     row.get("investigation_id"), row.get("session_id"),
                     row.get("user_id"), row.get("agent_id"), row.get("conn_id"),
                     row.get("org_id") or "default",
+                    row.get("provider"), row.get("model"),
+                    row.get("prompt_tokens"), row.get("completion_tokens"),
+                    row.get("total_tokens"), row.get("row_count"), row.get("retries"),
                     json.dumps(payload, default=str) if payload is not None else None,
                 ),
             )

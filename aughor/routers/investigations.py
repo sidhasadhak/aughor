@@ -1094,8 +1094,15 @@ def _execute_chat_sql(db, sql: str, *, label: str = "chat"):
     the row lands correlated.
     """
     from aughor import telemetry
-    with telemetry.mlflow_tool_span("sql.execute", {"sql": sql, "query_id": label}):
-        return db.execute(label, sql)
+    attrs: dict = {"sql": sql, "query_id": label}
+    with telemetry.mlflow_tool_span("sql.execute", attrs):
+        result = db.execute(label, sql)
+        # Report what came back. The span re-reads its attributes on exit, so this
+        # lands as the row's row_count — "the query ran" and "the query returned
+        # nothing" are different facts and a zero-row answer is usually the
+        # interesting one.
+        attrs["row_count"] = getattr(result, "row_count", None)
+        return result
 
 
 async def _stream_chat(
@@ -3826,7 +3833,7 @@ async def _stream_as_agent(agent, stream: AsyncGenerator[str, None]) -> AsyncGen
 #: SSE types the session log needs to notice. Checked as cheap substrings before
 #: paying for a JSON parse — the stream is mostly high-frequency delta frames and
 #: an observability sink must not tax every one of them.
-_SESSION_LOG_SNIFF = ('"start"', '"error"', '"done"', '"receipt_id"')
+_SESSION_LOG_SNIFF = ('"start"', '"error"', '"headline"', '"receipt_id"')
 
 
 async def _stream_with_session_log(
@@ -3870,6 +3877,8 @@ async def _stream_with_session_log(
     run_id = _uuid.uuid4().hex[:8]
     inv_id: str | None = None
     failed: str | None = None
+    headline: str = ""
+    receipt_id: str | None = None
     t0 = _t.monotonic()
     with _tel.bind_trace(run_id):
         session_log.emit(
@@ -3887,6 +3896,13 @@ async def _stream_with_session_log(
                     kind = frame.get("type")
                     if kind == "start" and frame.get("investigation_id"):
                         inv_id = frame["investigation_id"]
+                    elif kind == "headline":
+                        # The answer, not just that there was one. A run whose
+                        # output was never captured cannot become a test case,
+                        # which is what the rest of this arc is for.
+                        headline = str(frame.get("headline") or "")[:2000]
+                    elif kind == "receipt_id":
+                        receipt_id = frame.get("receipt_id")
                     elif kind == "error":
                         failed = str(frame.get("message") or "")[:2000]
                         session_log.emit(
@@ -3911,6 +3927,9 @@ async def _stream_with_session_log(
                 session_log.FINAL_RESPONSE, name=door, trace_id=run_id,
                 investigation_id=inv_id, conn_id=conn_id, ok=failed is None,
                 duration_ms=round((_t.monotonic() - t0) * 1000, 1),
+                payload={**({"headline": headline} if headline else {}),
+                         **({"receipt_id": receipt_id} if receipt_id else {}),
+                         **({"error": failed} if failed else {})},
             )
 
 

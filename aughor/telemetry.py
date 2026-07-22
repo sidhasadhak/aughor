@@ -420,7 +420,7 @@ def _obs_span(task: str, trace_id: str, attributes: dict | None,
     tid = trace_id or _active_trace_id.get()
     tok_stack = _span_stack.set(parent + (span_id,))
     tok_tid = _active_trace_id.set(tid) if trace_id else None
-    inp, outp_attr, labels = _split_span_attrs(attributes)
+    inp, _, _ = _split_span_attrs(attributes)
     if session_log_on:
         from aughor.obs import session_log as _slog
         _slog.emit(_slog.TOOL_CALL, name=task, trace_id=tid, span_id=span_id,
@@ -441,6 +441,15 @@ def _obs_span(task: str, trace_id: str, attributes: dict | None,
         if tok_tid is not None:
             _active_trace_id.reset(tok_tid)
         duration_ms = round((_time.monotonic() - t0) * 1000, 1)
+        # Re-split at EXIT: `_split_span_attrs` copies, so a body that records
+        # what it produced (`attrs["row_count"] = …`) is reflected here. Reading
+        # the output at entry — before the work ran — could only ever see None.
+        _, outp_attr, labels = _split_span_attrs(attributes)
+        _rows = (attributes or {}).get("row_count")
+        try:
+            _rows = int(_rows) if _rows is not None else None
+        except (TypeError, ValueError):
+            _rows = None
         if task_table:
             try:
                 from aughor.kernel.ledger import Ledger
@@ -468,6 +477,7 @@ def _obs_span(task: str, trace_id: str, attributes: dict | None,
             _slog.emit(_slog.TOOL_CALL_RESULT, name=task, trace_id=tid,
                        span_id=span_id, parent_span_id=parent_id,
                        ok=err is None, duration_ms=duration_ms, error_class=err_class,
+                       row_count=_rows,
                        payload={"span_kind": span_kind,
                                 **({"output": outp_attr} if outp_attr else {}),
                                 **({"error": err} if err else {})})

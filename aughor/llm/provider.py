@@ -370,34 +370,65 @@ def _is_transient(exc: BaseException) -> bool:
     return any(k in msg for k in _TRANSIENT_MSGS)
 
 
-def _record_llm_call(*, backend: str, model: str, role: str, prompt_tokens: int,
-                     completion_tokens: int, ms: float, fallback: bool = False,
-                     streamed: bool = False) -> None:
+def _record_llm_call(*, backend: str, model: str, role: str,
+                     prompt_tokens: Optional[int], completion_tokens: Optional[int],
+                     ms: float, ok: bool = True, error_class: Optional[str] = None,
+                     retries: int = 0, temperature: Optional[float] = None,
+                     fallback: bool = False, streamed: bool = False) -> None:
     """Mirror one model call into the session log (flag ``obs.session_log``).
 
     ``metering.record_llm`` sums the same numbers into a per-run aggregate, which
-    answers "what did this run cost" but not "which model was asked what, how
-    long did it take, and did the fallback quietly swap it mid-run" — the
-    questions a measurement needs before it can be trusted. The dedicated
-    per-call record (``telemetry.log_generation``) existed but had no call sites,
-    so all of it was discarded.
+    answers "what did this run cost" but not "which model was asked, how long it
+    took, how hard it had to try, or whether the fallback quietly swapped it
+    mid-run" — the questions a measurement must answer before it can be trusted.
+    The dedicated per-call record (``telemetry.log_generation``) existed but had
+    no call sites, so all of it was discarded.
+
+    Provider, model and token counts go to real columns rather than payload JSON:
+    "tokens by model this week" should be a GROUP BY, not a JSON extraction —
+    especially through ``aughor_ops``, where an agent writes the SQL itself.
+
+    ``prompt_tokens``/``completion_tokens`` are ``None`` when the backend did not
+    report usage. That is deliberately distinct from 0: several local backends
+    omit usage entirely, and folding them into zero makes every cost aggregate
+    silently wrong.
 
     Strict no-op when the flag is off; never raises (the sink swallows).
     """
     from aughor.obs import session_log
     session_log.emit(
-        session_log.LLM_CALL, name=model, ok=True, duration_ms=round(ms, 1),
-        payload={"backend": backend, "role": role, "model": model,
-                 "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
-                 "total_tokens": prompt_tokens + completion_tokens,
-                 "fallback": fallback, "streamed": streamed},
+        session_log.LLM_CALL, name=model, ok=ok, duration_ms=round(ms, 1),
+        error_class=error_class, provider=backend, model=model,
+        prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+        retries=retries or None,
+        payload={"role": role, "fallback": fallback, "streamed": streamed,
+                 **({"temperature": temperature} if temperature is not None else {}),
+                 **({"usage_reported": False} if prompt_tokens is None
+                    and completion_tokens is None else {})},
     )
 
 
-def _run_resilient(do, base_url: str):
+def _usage_or_none(raw) -> tuple[Optional[int], Optional[int]]:
+    """Token counts, or (None, None) when the backend reported no usage at all.
+
+    ``_extract_usage`` collapses that case to (0, 0) because metering only needs
+    a number to add; the per-call record needs to know it was never measured."""
+    if getattr(raw, "usage", None) is None:
+        return None, None
+    return _extract_usage(raw)
+
+
+def _run_resilient(do, base_url: str, *, stats: dict | None = None):
     """Run ``do()`` under the per-endpoint semaphore, retrying transient errors with exponential
     backoff + jitter, bounded by AUGHOR_LLM_MAX_RETRIES (default 3) and an overall deadline
-    AUGHOR_LLM_DEADLINE_S (default 600s). Non-transient errors raise immediately."""
+    AUGHOR_LLM_DEADLINE_S (default 600s). Non-transient errors raise immediately.
+
+    ``stats`` (optional, mutated in place) reports ``retries`` — the count was
+    previously local and discarded, so a model that only ever succeeds on its
+    second attempt looked identical to one that never struggles. A degrading
+    endpoint should be visible before it starts failing outright."""
+    if stats is not None:
+        stats["retries"] = 0
     sem = _semaphore_for(base_url)
     max_retries = max(0, _int_env("AUGHOR_LLM_MAX_RETRIES", 3))
     deadline = time.monotonic() + max(1.0, _float_env("AUGHOR_LLM_DEADLINE_S", 600.0))
@@ -410,6 +441,8 @@ def _run_resilient(do, base_url: str):
                 if not _is_transient(e) or attempt >= max_retries or time.monotonic() >= deadline:
                     raise
                 attempt += 1
+                if stats is not None:
+                    stats["retries"] = attempt
                 err_name = type(e).__name__   # `e` is unbound after the except block
                 wait = min(30.0, 2.0 ** attempt) + random.uniform(0.0, 0.5 * attempt)
         if time.monotonic() + wait >= deadline:
@@ -559,12 +592,28 @@ class LLMProvider:
             return endpoint.create(**kwargs), None
 
         _t0 = time.monotonic()
-        out, raw = _run_resilient(_do, base_url)   # concurrency cap + transient-error retry/backoff
+        _stats: dict = {}
+        try:
+            # concurrency cap + transient-error retry/backoff
+            out, raw = _run_resilient(_do, base_url, stats=_stats)
+        except Exception as exc:
+            # A call that fails past its retries must still leave a record —
+            # otherwise "which model fails" is unanswerable precisely when it
+            # matters, and the log flatters the provider it is meant to audit.
+            _record_llm_call(backend=backend, model=model, role=role,
+                             prompt_tokens=None, completion_tokens=None,
+                             ms=(time.monotonic() - _t0) * 1000.0, ok=False,
+                             error_class=type(exc).__name__,
+                             retries=_stats.get("retries", 0), temperature=temperature,
+                             fallback=fallback)
+            raise
         pt, ct = _extract_usage(raw)
         _ms = (time.monotonic() - _t0) * 1000.0
         metering.record_llm(pt, ct, _ms)
-        _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=pt,
-                         completion_tokens=ct, ms=_ms, fallback=fallback)
+        _pt, _ct = _usage_or_none(raw)
+        _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
+                         completion_tokens=_ct, ms=_ms, retries=_stats.get("retries", 0),
+                         temperature=temperature, fallback=fallback)
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         return out
 
@@ -611,12 +660,25 @@ class LLMProvider:
                 return last, getattr(last, "_raw_response", None)
 
             _t0 = time.monotonic()
-            last, raw_usage_src = _run_resilient(_do, base_url)
+            _stats: dict = {}
+            try:
+                last, raw_usage_src = _run_resilient(_do, base_url, stats=_stats)
+            except Exception as exc:
+                _record_llm_call(backend=backend, model=model, role=role,
+                                 prompt_tokens=None, completion_tokens=None,
+                                 ms=(time.monotonic() - _t0) * 1000.0, ok=False,
+                                 error_class=type(exc).__name__,
+                                 retries=_stats.get("retries", 0),
+                                 temperature=temperature, streamed=True)
+                raise
             pt, ct = _extract_usage(raw_usage_src)
             _ms = (time.monotonic() - _t0) * 1000.0
             metering.record_llm(pt, ct, _ms)
-            _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=pt,
-                             completion_tokens=ct, ms=_ms, streamed=True)
+            _pt, _ct = _usage_or_none(raw_usage_src)
+            _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
+                             completion_tokens=_ct, ms=_ms,
+                             retries=_stats.get("retries", 0), temperature=temperature,
+                             streamed=True)
             metering.check_budget()
             # Partial[...] objects skipped required-field validation mid-stream —
             # re-validate the terminal one; a failure heals via the complete() fallback.
@@ -675,13 +737,26 @@ class LLMProvider:
             return _json.loads(buf[start:end + 1]), usage
 
         _t0 = time.monotonic()
-        final_dict, usage = _run_resilient(_do, base_url)
+        _stats: dict = {}
+        try:
+            final_dict, usage = _run_resilient(_do, base_url, stats=_stats)
+        except Exception as exc:
+            _record_llm_call(backend=backend, model=model, role=role,
+                             prompt_tokens=None, completion_tokens=None,
+                             ms=(time.monotonic() - _t0) * 1000.0, ok=False,
+                             error_class=type(exc).__name__,
+                             retries=_stats.get("retries", 0),
+                             temperature=temperature, streamed=True)
+            raise
         from types import SimpleNamespace
-        pt, ct = _extract_usage(SimpleNamespace(usage=usage))   # extractor reads .usage
+        _raw = SimpleNamespace(usage=usage)
+        pt, ct = _extract_usage(_raw)   # extractor reads .usage
         _ms = (time.monotonic() - _t0) * 1000.0
         metering.record_llm(pt, ct, _ms)
-        _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=pt,
-                         completion_tokens=ct, ms=_ms, streamed=True)
+        _pt, _ct = _usage_or_none(_raw)
+        _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
+                         completion_tokens=_ct, ms=_ms, retries=_stats.get("retries", 0),
+                         temperature=temperature, streamed=True)
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         # Terminal validation is the contract; a mismatch heals via complete() fallback.
         return response_model.model_validate(final_dict)

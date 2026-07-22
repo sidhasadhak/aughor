@@ -330,12 +330,14 @@ def test_llm_calls_are_recorded_per_call(monkeypatch):
 
     calls = [e for e in _all_events(trace_id="t-llm") if e["kind"] == session_log.LLM_CALL]
     assert len(calls) == 1
-    p = calls[0]["payload"]
-    assert calls[0]["name"] == "qwen-test"
-    assert (p["backend"], p["role"], p["model"]) == ("ollama", "coder", "qwen-test")
-    assert (p["prompt_tokens"], p["completion_tokens"], p["total_tokens"]) == (11, 7, 18)
-    assert p["fallback"] is False
-    assert calls[0]["duration_ms"] is not None
+    call = calls[0]
+    # Real columns, not payload JSON — "tokens by model" must be a GROUP BY.
+    assert (call["provider"], call["model"]) == ("ollama", "qwen-test")
+    assert (call["prompt_tokens"], call["completion_tokens"], call["total_tokens"]) == (11, 7, 18)
+    assert call["ok"] is True
+    assert call["duration_ms"] is not None
+    assert call["payload"]["role"] == "coder"
+    assert call["payload"]["fallback"] is False
 
 
 def test_fallback_model_swap_is_visible(monkeypatch):
@@ -364,7 +366,143 @@ def test_fallback_model_swap_is_visible(monkeypatch):
 
     call = [e for e in _all_events(trace_id="t-fb") if e["kind"] == session_log.LLM_CALL][0]
     assert call["payload"]["fallback"] is True
-    assert call["payload"]["model"] == "claude-x"
+    assert (call["provider"], call["model"]) == ("anthropic", "claude-x")
+    assert (call["prompt_tokens"], call["completion_tokens"]) == (3, 2)
+
+
+def test_failed_llm_call_is_recorded(monkeypatch):
+    """The record used to be written only after the call returned, so a model
+    that failed past its retries left NO row — making "which model fails"
+    unanswerable exactly when it matters."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "0")
+    from types import SimpleNamespace
+
+    from aughor import telemetry
+    from aughor.llm.provider import LLMProvider
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            raise RuntimeError("model exploded")
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_Endpoint()))
+
+    with telemetry.bind_trace("t-llm-fail"):
+        with pytest.raises(RuntimeError):
+            LLMProvider._complete_on(client, "ollama", "qwen-test", "s", "u", _Out, 0.0,
+                                     role="coder")
+
+    call = [e for e in _all_events(trace_id="t-llm-fail")
+            if e["kind"] == session_log.LLM_CALL][0]
+    assert call["ok"] is False
+    assert call["error_class"] == "RuntimeError"
+    assert call["model"] == "qwen-test"
+    # Unknown, not zero — the call never got far enough to report usage.
+    assert call["prompt_tokens"] is None
+    assert call["total_tokens"] is None
+
+
+def test_unreported_usage_is_null_not_zero(monkeypatch):
+    """Several local backends omit usage entirely. Folding that into 0 makes
+    every cost aggregate quietly wrong, so it stays NULL and says so."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    from types import SimpleNamespace
+
+    from aughor import telemetry
+    from aughor.llm.provider import LLMProvider
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            return _Out(), SimpleNamespace(usage=None)   # backend reported nothing
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_Endpoint()))
+
+    with telemetry.bind_trace("t-nousage"):
+        LLMProvider._complete_on(client, "ollama", "local-model", "s", "u", _Out, 0.0,
+                                 role="coder")
+
+    call = [e for e in _all_events(trace_id="t-nousage")
+            if e["kind"] == session_log.LLM_CALL][0]
+    assert call["prompt_tokens"] is None and call["completion_tokens"] is None
+    assert call["total_tokens"] is None
+    assert call["payload"]["usage_reported"] is False
+
+
+def test_retries_are_counted(monkeypatch):
+    """A model that only ever succeeds on its second attempt used to look
+    identical to one that never struggles — the count was local and discarded."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "3")
+    from types import SimpleNamespace
+
+    from aughor import telemetry
+    from aughor.llm import provider as prov
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    calls = {"n": 0}
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise TimeoutError("request timed out")   # _is_transient → retried
+            return _Out(), SimpleNamespace(
+                usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1))
+
+    monkeypatch.setattr(prov.time, "sleep", lambda _s: None)   # no real backoff
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_Endpoint()))
+
+    with telemetry.bind_trace("t-retry"):
+        prov.LLMProvider._complete_on(client, "ollama", "qwen-test", "s", "u", _Out, 0.0,
+                                      role="coder")
+
+    call = [e for e in _all_events(trace_id="t-retry")
+            if e["kind"] == session_log.LLM_CALL][0]
+    assert call["ok"] is True
+    assert call["retries"] == 2, "a call that needed two retries reported none"
+
+
+def test_tool_results_carry_row_count(monkeypatch):
+    """"The query ran" and "the query returned nothing" are different facts, and
+    the zero-row case is usually the interesting one."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    from aughor import telemetry
+
+    with telemetry.bind_trace("t-rows"):
+        attrs = {"sql": "SELECT 1", "query_id": "chat"}
+        with telemetry.mlflow_tool_span("sql.execute", attrs):
+            attrs["row_count"] = 0          # the body reports what it produced
+
+    result = [e for e in _all_events(trace_id="t-rows")
+              if e["kind"] == session_log.TOOL_CALL_RESULT][0]
+    assert result["ok"] is True
+    assert result["row_count"] == 0, "a zero-row result is indistinguishable from unknown"
+
+
+def test_final_response_captures_the_answer(
+        client: TestClient, builtin_conn_id: str, monkeypatch):
+    """A run whose output was never captured cannot become a test case — which is
+    what the rest of this arc needs from the log."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    _stub_providers(monkeypatch)
+
+    _ask(client, builtin_conn_id, "which group leads?")
+
+    final = _all_events()[-1]
+    assert final["kind"] == session_log.FINAL_RESPONSE
+    assert "leads" in (final["payload"] or {}).get("headline", ""), \
+        "the answer itself was not recorded"
 
 
 def test_journal_events_carry_the_ambient_trace(monkeypatch):
