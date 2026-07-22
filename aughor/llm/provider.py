@@ -72,10 +72,18 @@ _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
     "groq":      {"coder": "llama-3.3-70b-versatile",          "narrator": "llama-3.3-70b-versatile"},
     "together":  {"coder": "Qwen/Qwen2.5-Coder-32B-Instruct",  "narrator": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
     "anthropic": {"coder": "claude-sonnet-4-6",                "narrator": "claude-sonnet-4-6"},
-    # "…-latest" aliases never deprecate (a pinned gemini-2.5-flash is already 404 for new keys)
-    # and gemini-flash-latest works on the free tier. Bump coder → "gemini-pro-latest" for stronger
-    # SQL generation on a paid key (Pro is quota-limited on the free tier).
-    "gemini":    {"coder": "gemini-flash-latest", "narrator": "gemini-flash-latest", "fast": "gemini-flash-latest"},
+    # PINNED to flash-lite, deliberately against the "…-latest aliases never deprecate" rule used
+    # elsewhere here — the free-tier REQUEST budgets differ by 25×, and that dominates. Measured on
+    # the live account 2026-07-22 (Google AI Studio rate-limit dashboard):
+    #     gemini-flash-latest → Gemini 3.6 Flash :   5 RPM,  20 requests/DAY   ← unusable
+    #     gemini-3.1-flash-lite                  :  15 RPM, 500 requests/DAY
+    # 20 requests a day cannot serve a single briefing, and this binding is what the failover chain
+    # lands on. The alias would silently re-point at whatever "latest flash" becomes, whose quota is
+    # unknown; the whole reason for this binding is a quota we have actually measured. A pinned id
+    # that is retired fails loudly (404) and the fallback chain covers it.
+    # On a PAID key, bump coder → "gemini-pro-latest" for stronger SQL generation.
+    "gemini":    {"coder": "gemini-3.1-flash-lite", "narrator": "gemini-3.1-flash-lite",
+                  "fast": "gemini-3.1-flash-lite"},
     # OpenRouter ids are "vendor/model". These defaults are free-tier so a fresh key
     # works immediately; the picker's live catalogue is the way to reach paid models.
     # Free-tier ids VERIFIED against OpenRouter's live /models (the first pass
@@ -91,6 +99,38 @@ _CONFIG_PATH = Path(__file__).parent.parent.parent / "data" / "llm_config.json"
 
 def _flag(name: str, default: str = "") -> bool:
     return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+# Output ceiling for OpenAI-compatible backends. The Anthropic path has always passed
+# max_tokens=4096 (the SDK requires it); every other backend passed NOTHING, so generation was
+# bounded only by the model stopping or by our own 600s deadline. On a reasoning model that is a
+# runaway: the 2026-07-22 OpenRouter export shows three requests that each ran the full 600s and
+# emitted 13.5k / 15.4k / 18.9k tokens of pure reasoning with NO finish_reason and no usable
+# output — 4 requests (6% of traffic) burned 58% of all output tokens for nothing.
+_MAX_OUTPUT_TOKENS = 4096
+# Reasoning effort for backends that expose it. 93% of completion tokens in that same export were
+# reasoning, so this is the direct lever on output volume. OpenRouter reads `reasoning` from the
+# request body; other OpenAI-compat shims reject unknown fields, so it is sent ONLY where it is
+# known to be understood (see _complete_on's retry-without-extras path for the rest).
+_REASONING_EFFORT_DEFAULT = "low"
+
+
+def _max_output_tokens() -> int:
+    """Cap on generated tokens per call (AUGHOR_MAX_OUTPUT_TOKENS)."""
+    return max(256, _int_env("AUGHOR_MAX_OUTPUT_TOKENS", _MAX_OUTPUT_TOKENS))
+
+
+def _reasoning_extra_body(backend: str) -> dict:
+    """Provider-specific body extras that bound reasoning, or ``{}``.
+
+    ``AUGHOR_REASONING_EFFORT`` accepts low|medium|high, or ``off`` to omit the field
+    entirely (for a binding that rejects it)."""
+    effort = os.getenv("AUGHOR_REASONING_EFFORT", _REASONING_EFFORT_DEFAULT).strip().lower()
+    if backend != "openrouter" or effort in ("", "off", "none"):
+        return {}
+    if effort not in ("low", "medium", "high"):
+        effort = _REASONING_EFFORT_DEFAULT
+    return {"reasoning": {"effort": effort}}
 
 
 def _fallback_model() -> str:
@@ -512,6 +552,27 @@ def _retry_after_seconds(exc: BaseException) -> Optional[float]:
         return None
 
 
+# Overall budget for one logical call, INCLUDING backoff. Was 600s, which is the only reason
+# the runaway generations in the 2026-07-22 export ran exactly 600.2s — our own deadline was
+# the sole brake. Not lowered to 90s: the same export contains a legitimate call that finished
+# at 86.7s, and a ceiling that kills real work is worse than a loose one. 180s bounds the
+# runaway (now also capped by max_tokens) with real headroom above the observed honest maximum.
+_DEADLINE_S = 180.0
+
+# 429/quota-shaped: the errors where ANOTHER attempt is itself another request against the limit.
+_RATE_LIMIT_MSGS = ("rate limit", "too many requests", "quota", "resource_exhausted", "429")
+
+
+def _is_rate_limited(exc: BaseException) -> bool:
+    """True when the failure is the endpoint refusing on volume, not a transient fault."""
+    if type(exc).__name__ == "RateLimitError":
+        return True
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if status == 429:
+        return True
+    return any(k in str(exc).lower() for k in _RATE_LIMIT_MSGS)
+
+
 def _is_quota_exhausted(exc: BaseException) -> bool:
     """True when the error is an exhausted allowance rather than a momentary throttle.
 
@@ -626,14 +687,20 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
     sem = _semaphore_for(base_url)
     max_retries = (max(0, int(max_retries)) if max_retries is not None
                    else max(0, _int_env("AUGHOR_LLM_MAX_RETRIES", 3)))
-    deadline = time.monotonic() + max(1.0, _float_env("AUGHOR_LLM_DEADLINE_S", 600.0))
+    deadline = time.monotonic() + max(1.0, _float_env("AUGHOR_LLM_DEADLINE_S", _DEADLINE_S))
     attempt = 0
     while True:
         with sem:  # hold a slot only during the call, never during backoff sleep
             try:
                 return do()
             except Exception as e:
-                if not _is_transient(e) or attempt >= max_retries or time.monotonic() >= deadline:
+                # A rate limit gets ONE retry, not the full ladder. Every attempt is itself a
+                # REQUEST against the very limit that just rejected us, so firing three more is
+                # how a throttle becomes a spiral — the live Gemini account peaked at 19 RPM
+                # against a 15 RPM cap with a 429-dominated error chart. One retry, at the delay
+                # the server itself asked for, is the most that can help.
+                budget = 1 if _is_rate_limited(e) else max_retries
+                if not _is_transient(e) or attempt >= budget or time.monotonic() >= deadline:
                     raise
                 attempt += 1
                 if stats is not None:
@@ -811,16 +878,34 @@ class LLMProvider:
         else:
             endpoint = client.chat.completions
             kwargs = dict(model=model, temperature=temperature, response_model=response_model,
+                          max_tokens=_max_output_tokens(),
                           messages=[{"role": "system", "content": system},
                                     {"role": "user", "content": user}])
+            extra = _reasoning_extra_body(backend)
+            if extra:
+                kwargs["extra_body"] = extra
         # Prefer create_with_completion (instructor ≥1.0) so we can read token usage
         # off the raw response. Falls back to create() with no usage on older clients.
         cwc = getattr(endpoint, "create_with_completion", None)
 
-        def _do():
+        def _call(kw):
             if cwc is not None:
-                return cwc(**kwargs)
-            return endpoint.create(**kwargs), None
+                return cwc(**kw)
+            return endpoint.create(**kw), None
+
+        def _do():
+            try:
+                return _call(kwargs)
+            except Exception as exc:
+                # Same shape as the stream_options fallback below: an OpenAI-compat shim that
+                # rejects `reasoning` must not take the call down with it. Retry once without the
+                # extras, and only for a 4xx-shaped complaint — a rate limit or outage has to stay
+                # transient so the retry ladder and fallback chain still see it.
+                if "extra_body" not in kwargs or _is_transient(exc) or _is_quota_exhausted(exc):
+                    raise
+                logger.warning("llm: %s rejected the reasoning extras (%s); retrying without",
+                               backend, str(exc)[:100])
+                return _call({k: v for k, v in kwargs.items() if k != "extra_body"})
 
         _t0 = time.monotonic()
         _stats: dict = {}
@@ -1155,6 +1240,32 @@ def set_config(patch: dict) -> dict:
     return current_config()
 
 
+# Health-check verdicts, keyed (backend, model) → (expires_at, result). A connection test fires
+# one real completion PER BOUND MODEL, and the 2026-07-22 OpenRouter export shows those 113-token
+# probes were 12 of 62 requests — 19% of the traffic, against a 50-request DAILY cap. Roughly ten
+# of fifty daily requests spent re-proving that the models exist. A verdict is stable on the
+# minute scale; the UI can still force a fresh probe.
+_PING_TTL_S = 300.0
+_ping_cache: dict[tuple[str, str], tuple[float, dict]] = {}
+_ping_lock = threading.Lock()
+
+
+def _ping_cached(backend: str, model: str, role: Role = "coder", *, force: bool = False) -> dict:
+    """`_ping` behind a short TTL. ``force`` always re-probes (an operator asking "is it up NOW")."""
+    ttl = max(0.0, _float_env("AUGHOR_PING_TTL_S", _PING_TTL_S))
+    key = (backend, model)
+    if not force and ttl:
+        with _ping_lock:
+            hit = _ping_cache.get(key)
+            if hit and time.monotonic() < hit[0]:
+                return {**hit[1], "cached": True}
+    result = _ping(backend, model, role)
+    if ttl:
+        with _ping_lock:
+            _ping_cache[key] = (time.monotonic() + ttl, result)
+    return result
+
+
 def _ping(backend: str, model: str, role: Role = "coder") -> dict:
     """One tiny real completion against an explicit (backend, model)."""
     class _Ping(BaseModel):
@@ -1178,7 +1289,7 @@ def _ping(backend: str, model: str, role: Role = "coder") -> dict:
 
 
 def test_provider(backend: Optional[str] = None, model: Optional[str] = None, *,
-                  include_agents: bool = False) -> dict:
+                  include_agents: bool = False, force: bool = False) -> dict:
     """Validate a backend with real completions. Returns {ok, backend, model, results[]}.
 
     With no explicit ``model`` this tests EVERY DISTINCT model the deployment
@@ -1230,11 +1341,11 @@ def test_provider(backend: Optional[str] = None, model: Optional[str] = None, *,
     results = []
     if len(targets) == 1:
         (m, used_by), = targets.items()
-        results.append({**_ping(b, m, _role_for(used_by)), "used_by": used_by})
+        results.append({**_ping_cached(b, m, _role_for(used_by), force=force), "used_by": used_by})
     else:
         from aughor.kernel.concurrency import ContextThreadPoolExecutor
         with ContextThreadPoolExecutor(max_workers=min(len(targets), 4)) as pool:
-            futures = {pool.submit(_ping, b, m, _role_for(u)): (m, u)
+            futures = {pool.submit(_ping_cached, b, m, _role_for(u), force=force): (m, u)
                        for m, u in targets.items()}
             for fut in futures:
                 m, used_by = futures[fut]

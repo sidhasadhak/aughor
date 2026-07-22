@@ -12,7 +12,16 @@ from aughor.llm import provider as P
 
 
 class _Transient(Exception):
+    """A 429 — retryable, but capped at ONE retry since 2026-07-22: another attempt is
+    itself another request against the limit that just refused us."""
     status_code = 429
+
+
+class _Blip(Exception):
+    """A transient fault that is NOT a volume refusal (network/5xx), so it keeps the full
+    backoff ladder — retrying it costs the endpoint nothing. Used by the ladder tests,
+    which are about the ladder, not about rate limiting."""
+    status_code = 503
 
 
 class _Fatal(Exception):
@@ -30,6 +39,7 @@ def _clear_quota_cooldown():
 
 def test_is_transient_classification():
     assert P._is_transient(_Transient())                       # 429 status
+    assert P._is_transient(_Blip())                            # 503 status
     assert P._is_transient(Exception("Read timed out"))
     assert P._is_transient(Exception("429 Too Many Requests"))
     assert P._is_transient(Exception("upstream overloaded"))
@@ -47,7 +57,7 @@ def test_retries_transient_then_succeeds(monkeypatch):
     def do():
         calls["n"] += 1
         if calls["n"] < 3:
-            raise _Transient()
+            raise _Blip()
         return "ok"
     assert P._run_resilient(do, "u1") == "ok"
     assert calls["n"] == 3                                     # initial + 2 retries
@@ -70,8 +80,8 @@ def test_retries_bounded_by_max(monkeypatch):
     calls = {"n": 0}
     def do():
         calls["n"] += 1
-        raise _Transient()
-    with pytest.raises(_Transient):
+        raise _Blip()
+    with pytest.raises(_Blip):
         P._run_resilient(do, "u3")
     assert calls["n"] == 3                                     # initial + exactly 2 retries
 
@@ -425,3 +435,148 @@ def test_gemini_daily_quota_id_is_an_exhausted_allowance():
            'Please retry in 36.284972143s.')
     assert P._is_quota_exhausted(Exception(msg))
     assert not P._is_transient(Exception(msg))     # no retry, and no cooldown-defeating wait
+
+
+# ── Request budget (2026-07-22 usage audit) ──────────────────────────────────
+# Grounded in the live OpenRouter export + Gemini rate-limit dashboard:
+#   · 93% of all completion tokens were REASONING; 3 requests ran the full 600s
+#     deadline emitting 13.5k–18.9k reasoning tokens with no finish_reason at all.
+#   · Gemini peaked at 19 RPM against a 15 RPM cap, error chart dominated by 429s.
+#   · 12 of 62 requests were 113-token health-check probes — against a 50/day cap.
+
+def test_openai_compat_calls_now_carry_an_output_cap():
+    """The Anthropic path always passed max_tokens; every other backend passed NOTHING,
+    so a reasoning model generated until our own deadline. That is the runaway."""
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    seen = {}
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            seen.update(kw)
+            return _Out(), None
+
+    client = type("C", (), {"chat": type("Ch", (), {"completions": _Endpoint()})()})()
+    P.LLMProvider._complete_on(client, "openrouter", "m", "s", "u", _Out, 0.1, max_retries=0)
+    assert seen["max_tokens"] == P._max_output_tokens()
+
+
+def test_reasoning_effort_is_sent_only_where_it_is_understood():
+    """OpenRouter reads `reasoning` from the body; other OpenAI-compat shims reject
+    unknown fields, so sending it everywhere would break them."""
+    assert P._reasoning_extra_body("openrouter") == {"reasoning": {"effort": "low"}}
+    assert P._reasoning_extra_body("gemini") == {}
+    assert P._reasoning_extra_body("groq") == {}
+
+
+def test_reasoning_can_be_turned_off_for_a_binding_that_rejects_it(monkeypatch):
+    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "off")
+    assert P._reasoning_extra_body("openrouter") == {}
+
+
+def test_a_binding_that_rejects_the_extras_retries_without_them():
+    """Graceful degradation: an unknown-field complaint must cost the call nothing."""
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    calls = []
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            calls.append(kw)
+            if "extra_body" in kw:
+                raise ValueError("400: unrecognized field 'reasoning'")
+            return _Out(), None
+
+    client = type("C", (), {"chat": type("Ch", (), {"completions": _Endpoint()})()})()
+    P.LLMProvider._complete_on(client, "openrouter", "m", "s", "u", _Out, 0.1, max_retries=0)
+    assert len(calls) == 2
+    assert "extra_body" in calls[0] and "extra_body" not in calls[1]
+
+
+def test_a_rate_limit_still_reaches_the_fallback_chain_rather_than_being_swallowed():
+    """The retry-without-extras path must not eat a 429 — that has to stay transient
+    so the ladder and the provider failover still see it."""
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            raise Exception("Error code: 429 - rate limit exceeded")
+
+    client = type("C", (), {"chat": type("Ch", (), {"completions": _Endpoint()})()})()
+    with pytest.raises(Exception, match="429"):
+        P.LLMProvider._complete_on(client, "openrouter", "m", "s", "u", _Out, 0.1, max_retries=0)
+
+
+def test_a_rate_limit_gets_one_retry_not_the_full_ladder(monkeypatch):
+    """THE SPIRAL. Every retry is itself another REQUEST against the limit that just
+    rejected us. The live Gemini account peaked at 19 RPM against a 15 RPM cap."""
+    monkeypatch.setattr(P.time, "sleep", lambda *_: None)
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "3")
+    calls = {"n": 0}
+
+    def do():
+        calls["n"] += 1
+        raise _Transient()          # status_code 429
+
+    with pytest.raises(_Transient):
+        P._run_resilient(do, "u-rl")
+    assert calls["n"] == 2          # initial + exactly ONE retry, not four
+
+
+def test_a_non_rate_limit_transient_keeps_the_full_ladder(monkeypatch):
+    """A network blip is not a volume refusal — retrying it costs the endpoint nothing."""
+    monkeypatch.setattr(P.time, "sleep", lambda *_: None)
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "3")
+    calls = {"n": 0}
+
+    def do():
+        calls["n"] += 1
+        raise Exception("read timed out")
+
+    with pytest.raises(Exception):
+        P._run_resilient(do, "u-blip")
+    assert calls["n"] == 4          # initial + 3
+
+
+def test_the_deadline_leaves_headroom_over_the_observed_honest_maximum():
+    """180s, not 90s: the same export contains a LEGITIMATE call that finished at
+    86.7s, and a ceiling that kills real work is worse than a loose one."""
+    assert 90.0 < P._DEADLINE_S < 600.0
+
+
+def test_health_check_verdicts_are_cached(monkeypatch):
+    """12 of 62 requests were 113-token probes against a 50/day cap."""
+    P._ping_cache.clear()
+    calls = {"n": 0}
+    monkeypatch.setattr(P, "_ping", lambda b, m, r="coder": (calls.__setitem__("n", calls["n"] + 1),
+                                                            {"ok": True, "model": m})[1])
+    a = P._ping_cached("openrouter", "m")
+    b = P._ping_cached("openrouter", "m")
+    assert calls["n"] == 1
+    assert a.get("cached") is None and b.get("cached") is True
+
+
+def test_a_forced_health_check_really_re_probes(monkeypatch):
+    """The Settings button must still be able to ask "is it up NOW"."""
+    P._ping_cache.clear()
+    calls = {"n": 0}
+    monkeypatch.setattr(P, "_ping", lambda b, m, r="coder": (calls.__setitem__("n", calls["n"] + 1),
+                                                             {"ok": True, "model": m})[1])
+    P._ping_cached("openrouter", "m")
+    P._ping_cached("openrouter", "m", force=True)
+    assert calls["n"] == 2
+
+
+def test_gemini_is_bound_to_the_model_with_a_usable_daily_budget():
+    """gemini-flash-latest → Gemini 3.6 Flash = 20 requests/DAY, measured on the live
+    account. flash-lite gives 500. A briefing cannot run inside 20."""
+    assert set(P._DEFAULT_MODELS["gemini"].values()) == {"gemini-3.1-flash-lite"}

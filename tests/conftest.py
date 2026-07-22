@@ -168,3 +168,23 @@ def client() -> TestClient:
 def builtin_conn_id() -> str:
     """The built-in DuckDB fixture connection id ('fixture' or first listed)."""
     return "fixture"
+
+
+@pytest.fixture(autouse=True)
+def _reset_provider_process_caches():
+    """Clear the LLM provider's process-global caches between tests.
+
+    Both exist to survive a whole server lifetime on purpose — the health-check verdict
+    cache (so a connection test stops re-probing every bound model, 19% of one day's
+    request budget) and the quota cooldown (so an exhausted backend is skipped rather
+    than re-probed per call). Process-global is right in production and poison in a test
+    session: one file's cached verdict was served to another file's assertion, which
+    passed alone and failed in the suite. Cleared here rather than per-file because the
+    leak crosses file boundaries.
+    """
+    from aughor.llm import provider as _p
+    _p._ping_cache.clear()
+    _p._quota_cooldown.clear()
+    yield
+    _p._ping_cache.clear()
+    _p._quota_cooldown.clear()
