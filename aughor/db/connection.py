@@ -896,7 +896,7 @@ class AughorOpsConnection(DuckDBConnection):
     dialect = "duckdb"
     # The curated surface — system.db also holds kv/meta/artifacts/lineage, which
     # are noise for behavioural self-investigation.
-    _OPS_TABLES = ("task_history", "jobs", "events")
+    _OPS_TABLES = ("task_history", "jobs", "events", "session_events")
 
     def __init__(self, path: str | Path, connection_id: str = "aughor_ops"):
         self._path = Path(path)                 # the kernel ledger sqlite (system.db)

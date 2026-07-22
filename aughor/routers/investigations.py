@@ -1078,6 +1078,26 @@ def build_history_section(history, *, followup: bool = False) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _execute_chat_sql(db, sql: str, *, label: str = "chat"):
+    """Run a quick-path statement inside a tool span.
+
+    The quick path calls ``db.execute`` directly rather than going through the
+    guarded executor, which is why it emitted no spans at all — the SQL that
+    actually ran was missing from the record, so a quick answer could not be
+    reconstructed even once a trace existed. Spanning it here restores that
+    without touching execution semantics (the span is a no-op when the obs flags
+    are off).
+
+    Called inside ``asyncio.to_thread`` by design: the sink's sqlite write then
+    happens on the worker thread instead of blocking the streaming event loop.
+    Contextvars — trace id, span stack, identity — propagate into the thread, so
+    the row lands correlated.
+    """
+    from aughor import telemetry
+    with telemetry.mlflow_tool_span("sql.execute", {"sql": sql, "query_id": label}):
+        return db.execute(label, sql)
+
+
 async def _stream_chat(
     question: str,
     connection_id: str,
@@ -1859,7 +1879,7 @@ async def _stream_chat(
                 logger.debug("grounded-literal enforcement skipped: %s", _gl_exc)
 
         yield _sse("sql", {"sql": final_sql})
-        result = await asyncio.to_thread(db.execute, "chat", final_sql)
+        result = await asyncio.to_thread(_execute_chat_sql, db, final_sql)
 
         from aughor.agent.investigate import _zero_row_suspicious
         _chat_zero_diag = None
@@ -1887,7 +1907,7 @@ async def _stream_chat(
                     lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=2)
                 )
                 if fix.ok:
-                    retry = await asyncio.to_thread(db.execute, "chat", fix.sql)
+                    retry = await asyncio.to_thread(_execute_chat_sql, db, fix.sql)
                     if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint):
                         final_sql = fix.sql
                         result = retry
@@ -3125,12 +3145,15 @@ def _resolve_conn(req) -> str:
 @router.post("/chat")
 async def chat_endpoint(req: ChatRequest, request: Request):
     conn_id = _resolve_conn(req)
+    # The legacy door gets the same session log as /ask — it has its own endpoint
+    # rather than going through build_ask_stream, so without this it stays dark.
+    stream = _stream_with_session_log(
+        _stream_chat(req.question, conn_id, req.history, request,
+                     session_id=req.session_id, canvas_id=req.canvas_id),
+        question=req.question, conn_id=conn_id, door="chat",
+        canvas_id=req.canvas_id or "")
     return StreamingResponse(
-        _metered_stream(
-            _stream_chat(req.question, conn_id, req.history, request,
-                         session_id=req.session_id, canvas_id=req.canvas_id),
-            budget=_insight_budget(conn_id),
-        ),
+        _metered_stream(stream, budget=_insight_budget(conn_id)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -3646,6 +3669,12 @@ def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGener
     if agent is not None:
         conn_id = _apply_agent_bindings(req, agent, conn_id)
     stream = _stream_ask(req, request, conn_id)
+    # Innermost: binds the run's trace id (so the quick path is correlated at all)
+    # and records request/response, seeing the identity the outer wrappers pin.
+    stream = _stream_with_session_log(
+        stream, question=req.question, conn_id=conn_id, door="ask", depth=req.depth,
+        canvas_id=req.canvas_id or "", schema=req.schema_name or "",
+        purpose=req.purpose or "", agent_id=req.agent_id or "")
     stream = _stream_with_session(req.session_id, stream)  # ambient session → trace attribution
     if agent is not None:
         stream = _stream_as_agent(agent, stream)
@@ -3792,6 +3821,97 @@ async def _stream_as_agent(agent, stream: AsyncGenerator[str, None]) -> AsyncGen
             yield event
     finally:
         release_agent(token)
+
+
+#: SSE types the session log needs to notice. Checked as cheap substrings before
+#: paying for a JSON parse — the stream is mostly high-frequency delta frames and
+#: an observability sink must not tax every one of them.
+_SESSION_LOG_SNIFF = ('"start"', '"error"', '"done"', '"receipt_id"')
+
+
+async def _stream_with_session_log(
+    stream: AsyncGenerator[str, None], *, question: str, conn_id: str,
+    door: str = "ask", depth: str = "", canvas_id: str = "", schema: str = "",
+    purpose: str = "", agent_id: str = "",
+) -> AsyncGenerator[str, None]:
+    """Record the run in the session log (flag ``obs.session_log``).
+
+    Takes primitives rather than a request model so every door can use it —
+    ``/ask`` (via ``build_ask_stream``, which also serves ``/agui/run``) and the
+    legacy ``/chat``, which has its own endpoint and would otherwise stay dark.
+
+    Applied INNERMOST so the outer session/agent wrappers have already pinned
+    their contextvars by the time this emits — identity attribution then costs
+    nothing to thread.
+
+    This is where the quick path stops being invisible. ``new_trace`` is called
+    in exactly one place, inside the deep path, so a quick turn minted no trace
+    id at all; binding one here means every span the run opens inherits it,
+    quick and deep alike, with no change to the emitters themselves.
+
+    On the deep path the investigation keeps its own id for its spans (it is
+    created further down, after routing). Rather than fight that, we sniff it off
+    the ``start`` frame and record it as ``investigation_id``, so the two
+    correlate without either side having to know about the other.
+
+    A no-op wrapper when the flag is off: no id is minted, nothing is parsed.
+    """
+    from aughor.obs import session_log
+    if not session_log.enabled():
+        async for event in stream:
+            yield event
+        return
+
+    import json as _json
+    import time as _t
+    import uuid as _uuid
+    from aughor import telemetry as _tel
+
+    run_id = _uuid.uuid4().hex[:8]
+    inv_id: str | None = None
+    failed: str | None = None
+    t0 = _t.monotonic()
+    with _tel.bind_trace(run_id):
+        session_log.emit(
+            session_log.USER_REQUEST, name=door, trace_id=run_id, conn_id=conn_id,
+            payload={"question": question, "depth": depth, "canvas_id": canvas_id,
+                     "schema": schema, "purpose": purpose, "agent_id": agent_id},
+        )
+        try:
+            async for event in stream:
+                if any(h in event for h in _SESSION_LOG_SNIFF):
+                    try:
+                        frame = _json.loads(event[6:]) if event.startswith("data: ") else {}
+                    except Exception:
+                        frame = {}
+                    kind = frame.get("type")
+                    if kind == "start" and frame.get("investigation_id"):
+                        inv_id = frame["investigation_id"]
+                    elif kind == "error":
+                        failed = str(frame.get("message") or "")[:2000]
+                        session_log.emit(
+                            session_log.EXECUTION_ERROR, name=door, trace_id=run_id,
+                            investigation_id=inv_id, conn_id=conn_id, ok=False,
+                            payload={"message": failed},
+                        )
+                yield event
+        except BaseException as exc:
+            # A cancelled or crashed stream must leave the same evidence as a
+            # clean failure — otherwise the log's most interesting runs are
+            # exactly the ones missing from it.
+            session_log.emit(
+                session_log.EXECUTION_ERROR, name=door, trace_id=run_id,
+                investigation_id=inv_id, conn_id=conn_id, ok=False,
+                error_class=type(exc).__name__,
+                payload={"message": str(exc)[:2000]},
+            )
+            raise
+        finally:
+            session_log.emit(
+                session_log.FINAL_RESPONSE, name=door, trace_id=run_id,
+                investigation_id=inv_id, conn_id=conn_id, ok=failed is None,
+                duration_ms=round((_t.monotonic() - t0) * 1000, 1),
+            )
 
 
 async def _stream_with_session(session_id: str, stream: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:

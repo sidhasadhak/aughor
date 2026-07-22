@@ -714,6 +714,21 @@ class Ledger:
             out.append(d)
         return out
 
+    def session_events_clear(self, *, trace_id: Optional[str] = None,
+                             org_id: Optional[str] = None) -> int:
+        """Delete a run's session log (or the whole table when unscoped); returns
+        rows deleted. Distinct from :meth:`session_events_prune`, which is
+        age/size retention — this is a deliberate purge of a named run, the
+        primitive a "forget this session" request needs."""
+        q = "DELETE FROM session_events WHERE 1=1"
+        args: list[Any] = []
+        if trace_id:
+            q += " AND trace_id=?"; args.append(trace_id)
+        if org_id:
+            q += " AND org_id=?"; args.append(org_id)
+        with self._lock, self._conn:
+            return max(self._conn.execute(q, args).rowcount, 0)
+
     def _session_events_maybe_prune(self) -> None:
         """Prune every ``_SESSION_EVENT_PRUNE_EVERY`` inserts (amortised, so the
         common insert stays one statement). Best-effort: a prune failure must
