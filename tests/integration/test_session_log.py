@@ -367,6 +367,40 @@ def test_fallback_model_swap_is_visible(monkeypatch):
     assert call["payload"]["model"] == "claude-x"
 
 
+def test_journal_events_carry_the_ambient_trace(monkeypatch):
+    """All ~29 event kinds correlate at once because emit() defaults trace_id
+    from the ambient run — no call site was touched. Before this, `node.span`
+    smuggled the trace into job_id and nothing else in the journal correlated."""
+    from aughor import telemetry
+
+    led = Ledger.default()
+    with telemetry.bind_trace("t-journal"):
+        led.emit("monitor.alert", {"metric": "revenue"})
+    led.emit("api.started")   # outside any run → uncorrelated, and that is honest
+
+    correlated = led.events(trace_id="t-journal", limit=20)
+    assert [e["kind"] for e in correlated] == ["monitor.alert"]
+    assert all(e["trace_id"] == "t-journal" for e in correlated)
+
+
+def test_audited_sql_carries_the_ambient_trace(monkeypatch, tmp_path):
+    """audit_log sees EVERY execution, including the quick path that bypasses the
+    span-emitting executor — so it is where "which run ran this SQL" becomes
+    answerable for all paths at once."""
+    monkeypatch.setenv("AUGHOR_AUDIT_DB", str(tmp_path / "audit.db"))
+    import importlib
+
+    from aughor import telemetry
+    from aughor.security import audit as audit_mod
+    importlib.reload(audit_mod)
+
+    with telemetry.bind_trace("t-sql"):
+        audit_mod.AuditLogger.log(connection_id="c1", sql="SELECT 1", row_count=1)
+
+    row = audit_mod.AuditLogger.recent(limit=1)[0]
+    assert row["trace_id"] == "t-sql"
+
+
 def test_session_events_is_queryable_as_an_ops_table():
     """The table joins the curated aughor_ops surface, so Deep Analysis can
     investigate the agent's own behaviour with NL2SQL — the same one-line move

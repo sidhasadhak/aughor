@@ -19,8 +19,9 @@ Design constraints honoured here:
 Tables:
   kv(store, key, value, seq, updated_at)  — the cache backend; ``seq`` is a
       ledger-monotonic counter giving each store an MRU order (oldest = lowest).
-  events(seq, at, kind, conn_id, canvas_id, job_id, payload)  — append-only.
+  events(seq, at, kind, conn_id, canvas_id, job_id, trace_id, payload)  — append-only.
   meta(k, v)  — kernel bookkeeping (e.g. one-time legacy-import markers).
+  session_events(...)  — the agent-session log (Wave E1, flag `obs.session_log`).
 """
 from __future__ import annotations
 
@@ -200,6 +201,12 @@ _MIGRATIONS = [
     Migration(3, "tenant key on jobs/artifacts/lineage", _add_kernel_org_ids),
     Migration(4, "task_history spans-as-a-table (obs.task_table)", _create_task_history),
     Migration(5, "session_events agent-session log (obs.session_log)", _create_session_events),
+    # Wave E1: correlate the journal to the run that produced it. All ~29 event
+    # kinds gain this at once because emit() defaults it from the ambient trace —
+    # no call site changes. Until now `node.span` smuggled the trace into job_id
+    # and nothing else in the journal was correlated at all.
+    Migration(6, "correlation key: trace_id on events",
+              lambda c: add_column_if_missing(c, "events", "trace_id", "TEXT NOT NULL DEFAULT ''")),
 ]
 
 
@@ -521,16 +528,27 @@ class Ledger:
         conn_id: Optional[str] = None,
         canvas_id: Optional[str] = None,
         job_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
     ) -> int:
         """Append one event; returns its seq. Every state transition the kernel
         cares about flows through here — 'why did X happen at 14:32' becomes a
-        query instead of an archaeology dig."""
+        query instead of an archaeology dig.
+
+        ``trace_id`` defaults to the ambient run, so every kind correlates to the
+        run that caused it without a single call site being touched."""
+        if trace_id is None:
+            try:
+                from aughor.telemetry import current_trace_id
+                trace_id = current_trace_id()
+            except Exception:
+                trace_id = ""
         with self._lock, self._conn:
             cur = self._conn.execute(
-                "INSERT INTO events (at, kind, conn_id, canvas_id, job_id, payload) "
-                "VALUES (?,?,?,?,?,?)",
+                "INSERT INTO events (at, kind, conn_id, canvas_id, job_id, payload, trace_id) "
+                "VALUES (?,?,?,?,?,?,?)",
                 (_now(), kind, conn_id, canvas_id, job_id,
-                 json.dumps(payload, default=str) if payload is not None else None),
+                 json.dumps(payload, default=str) if payload is not None else None,
+                 trace_id or ""),
             )
         return int(cur.lastrowid)
 
@@ -540,11 +558,15 @@ class Ledger:
         kind: Optional[str] = None,
         conn_id: Optional[str] = None,
         job_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
         since_seq: Optional[int] = None,
         limit: int = 200,
     ) -> list[dict]:
-        q = "SELECT seq, at, kind, conn_id, canvas_id, job_id, payload FROM events WHERE 1=1"
+        q = ("SELECT seq, at, kind, conn_id, canvas_id, job_id, payload, trace_id "
+             "FROM events WHERE 1=1")
         args: list[Any] = []
+        if trace_id:
+            q += " AND trace_id=?"; args.append(trace_id)
         if kind:
             q += " AND kind=?"; args.append(kind)
         if conn_id:
@@ -557,10 +579,10 @@ class Ledger:
         with self._lock:
             rows = self._conn.execute(q, args).fetchall()
         out = []
-        for seq, at, k, c, cv, j, p in rows:
+        for seq, at, k, c, cv, j, p, tid in rows:
             out.append({
                 "seq": seq, "at": at, "kind": k, "conn_id": c,
-                "canvas_id": cv, "job_id": j,
+                "canvas_id": cv, "job_id": j, "trace_id": tid,
                 "payload": json.loads(p) if p else None,
             })
         return out
@@ -709,8 +731,11 @@ class Ledger:
             if d.get("payload"):
                 try:
                     d["payload"] = json.loads(d["payload"])
-                except Exception:
-                    pass
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, f"session_events seq={d.get('seq')} has an unparseable "
+                                  "payload; serving it as the raw string",
+                             counter="obs.session_log.bad_payload")
             out.append(d)
         return out
 

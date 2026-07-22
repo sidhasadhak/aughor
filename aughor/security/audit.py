@@ -27,6 +27,13 @@ _DB_PATH = resolve_db_path("AUGHOR_AUDIT_DB", Path("data/audit.db"))
 _MIGRATIONS = [
     Migration(2, "tenant key: org_id on audit_log",
               lambda c: add_column_if_missing(c, "audit_log", "org_id", "TEXT NOT NULL DEFAULT 'default'")),
+    # Wave E1: correlate an audited statement to the run that issued it. This table
+    # sees EVERY execution — including the quick path, which bypasses the
+    # span-emitting executor — so it is the one place where "which run ran this
+    # SQL" is answerable for all paths at once. Defaulted from the ambient trace,
+    # so no call site changes.
+    Migration(3, "correlation key: trace_id on audit_log",
+              lambda c: add_column_if_missing(c, "audit_log", "trace_id", "TEXT NOT NULL DEFAULT ''")),
 ]
 
 
@@ -77,24 +84,34 @@ class AuditLogger:
         pii_redacted: int = 0,
         error: str | None = None,
         org_id: str | None = None,
+        trace_id: str | None = None,
     ) -> str:
         """Write one audit record. Returns the new record ID. ``org_id`` defaults to
-        the current tenant context so every audited query is tenant-keyed."""
+        the current tenant context so every audited query is tenant-keyed, and
+        ``trace_id`` to the ambient run so the statement joins to the session log
+        without any caller threading it through."""
         from aughor.org.context import current_org_id
         record_id = str(uuid.uuid4())
         digest = sql[:120].replace("\n", " ").strip()
         ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         oid = org_id or current_org_id()
+        if trace_id is None:
+            try:
+                from aughor.telemetry import current_trace_id
+                trace_id = current_trace_id()
+            except Exception:
+                trace_id = ""
         c = _connect()
         try:
             _ensure_schema(c)
             c.execute(
                 """INSERT INTO audit_log
                    (id, ts, connection_id, hypothesis_id, sql_digest, sql_full,
-                    verdict, row_count, duration_ms, pii_redacted, error, org_id)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    verdict, row_count, duration_ms, pii_redacted, error, org_id, trace_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (record_id, ts, connection_id, hypothesis_id, digest, sql,
-                 verdict, row_count, round(duration_ms, 2), pii_redacted, error, oid),
+                 verdict, row_count, round(duration_ms, 2), pii_redacted, error, oid,
+                 trace_id or ""),
             )
             c.commit()
         finally:
