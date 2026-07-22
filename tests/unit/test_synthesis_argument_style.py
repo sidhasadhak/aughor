@@ -11,7 +11,9 @@ from aughor.agent.prompts_investigate import synthesis_system_prompt as _synthes
 
 
 def test_flag_off_prompt_is_the_legacy_one(monkeypatch):
-    monkeypatch.delenv("AUGHOR_REPORT_ARGUMENT_STYLE", raising=False)
+    # Explicit `=0`, not delenv — the flag is default-ON since the 2026-07-22 audit, so this
+    # now tests the operator escape hatch rather than the absence of a setting.
+    monkeypatch.setenv("AUGHOR_REPORT_ARGUMENT_STYLE", "0")
     p = _synthesis_system_prompt()
     assert p.startswith("You are a senior data analyst")
     assert "WRITING STYLE" not in p                     # byte-identical legacy prompt

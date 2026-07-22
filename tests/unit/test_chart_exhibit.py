@@ -409,10 +409,14 @@ def test_explore_export_produces_a_valid_pdf():
 
 # ── flag default ─────────────────────────────────────────────────────────────
 
-def test_exhibit_grammar_flag_defaults_off():
-    from aughor.kernel.flags import FLAG_ENV, flag_enabled
+def test_exhibit_grammar_flag_defaults_on():
+    """Graduated 2026-07-22 (flag-drift audit, Batch 1). It had been on in one runtime
+    ledger for weeks while the code shipped it off, so nobody else got it. Safe to default
+    because the grammar is computed from rows already fetched — no model, no extra query."""
+    from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV, flag_enabled
     assert "chart.exhibit_grammar" in FLAG_ENV
-    assert flag_enabled("chart.exhibit_grammar") is False
+    assert FLAG_DEFAULT.get("chart.exhibit_grammar") is True
+    assert flag_enabled("chart.exhibit_grammar") is True
 
 
 # ── P2 presentation cluster (flags-on soak, 2026-07-17) ──────────────────────

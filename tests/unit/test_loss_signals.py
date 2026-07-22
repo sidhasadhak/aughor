@@ -231,10 +231,15 @@ def test_lens_specs_carry_the_grain_guards_and_honesty():
         assert "no losses" in s["interpret_system"]
 
 
-def test_flag_defaults_off():
-    from aughor.kernel.flags import FLAG_ENV, flag_enabled
+def test_flag_defaults_on():
+    """Graduated 2026-07-22 (flag-drift audit, Batch 1). This one fixes a WRONG ANSWER, not
+    a presentation nicety: the A/B that motivated it caught a revenue ranking calling the
+    business "broadly healthy" over 2.4M CHF of refund leakage. Leaving it off by default
+    meant every install except one kept giving that answer."""
+    from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV, flag_enabled
     assert "intake.loss_signals" in FLAG_ENV
-    assert flag_enabled("intake.loss_signals") is False
+    assert FLAG_DEFAULT.get("intake.loss_signals") is True
+    assert flag_enabled("intake.loss_signals") is True
 
 
 def test_starter_question_names_the_loss_lenses():

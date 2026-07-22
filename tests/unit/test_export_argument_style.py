@@ -63,7 +63,10 @@ def _headings(doc):
 
 
 def test_flag_off_keeps_the_legacy_composition(monkeypatch):
-    monkeypatch.delenv("AUGHOR_REPORT_ARGUMENT_STYLE", raising=False)
+    # Explicit `=0`, not delenv: the flag graduated to default-ON (2026-07-22 audit), so an
+    # unset env now means ON. What still matters — and what this now actually tests — is the
+    # operator escape hatch: forcing it off must restore the legacy composition exactly.
+    monkeypatch.setenv("AUGHOR_REPORT_ARGUMENT_STYLE", "0")
     doc = build_export_doc(_inv())
     assert "Question Intake" in _headings(doc)          # machinery still in the body
     assert "keynums" in _kinds(doc)                     # tile block still emitted
