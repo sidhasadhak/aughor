@@ -83,6 +83,9 @@ FLAG_ENV = {
     "explorer.continuous": "AUGHOR_EXPLORER_CONTINUOUS",
     "ops.metered_monitors": "AUGHOR_METERED_MONITORS",
     "agui.endpoint": "AUGHOR_AGUI_ENDPOINT",
+    "kinetic.actions": "AUGHOR_KINETIC_ACTIONS",  # Wave K: overlay human-declared actions onto the graph
+    "kinetic.overlay": "AUGHOR_KINETIC_OVERLAY",  # Wave K3: merge human overlay edits onto query results
+    "kinetic.agent_actions": "AUGHOR_KINETIC_AGENT_ACTIONS",  # Wave K4: the agent may PROPOSE declared actions
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -144,6 +147,18 @@ FLAG_META = {
     "agui.endpoint": {
         "label": "AG-UI protocol endpoint (POST /agui/run)",
         "description": "Expose an additive AG-UI-compatible translator at POST /agui/run that re-frames the existing /ask event stream (via the shared build_ask_stream factory) into standard AG-UI protocol events (RunStarted / TextMessage* / ToolCall* / Custom / RunError / RunFinished) using the ag-ui-protocol SDK. Purely additive — the legacy /ask, /chat and /investigate emission is byte-identical and the frontend's default transport is unchanged; this is the backend half of the CopilotKit/AG-UI adoption plan's CK-1 seam, letting any AG-UI client (CopilotKit, the @ag-ui/client transport) drive Aughor. Off by default ⇒ the route 404s.",
+    },
+    "kinetic.actions": {
+        "label": "Declared actions in the ontology (Wave K)",
+        "description": "Overlay human-DECLARED KineticActions from the per-connection ontology overrides onto the graph at read time: typed-parameter operations with submission criteria (whose authored failure messages are shown verbatim to humans and the model) and side effects. Read-only substrate in K1 — the actions become visible in the ontology and the API but are not executed until the Wave-K executor (K2) lands. Additive: off = the graph's kinetic_actions stays empty (byte-identical), and a malformed declared action is rejected at overlay, never surfaced.",
+    },
+    "kinetic.overlay": {
+        "label": "Human overlay edits on query results (Wave K3)",
+        "description": "Merge human annotations and corrections ('this outlier is a known launch-day spike', 'order 8821 is a test order') onto query results at READ time, matched by the columns present in the result — never mutating the source data. Edits live in an independent org+connection-scoped store, so they survive schema refreshes and rebuilds, and a machine-sourced edit never overrides a human one on the same target. Off by default ⇒ results carry no annotations (byte-identical); best-effort so an overlay hiccup never takes down a real result.",
+    },
+    "kinetic.agent_actions": {
+        "label": "Agent proposes declared actions (Wave K4)",
+        "description": "Let the agent PROPOSE declared KineticActions from an analysis — the model returns structured proposals which are dry-run validated (typed params + submission criteria) and STAGED for a human to accept and run through the governed executor. Nothing is executed here; nothing above LOW risk ever auto-fires. Off by default ⇒ the agent never proposes actions (byte-identical) and the proposer makes no LLM call.",
     },
     "ask.stream_text": {
         "label": "Token-stream the answer narrative",

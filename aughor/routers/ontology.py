@@ -33,6 +33,20 @@ class _ActionOverride(BaseModel):
     returns: Optional[str] = None
 
 
+class _KineticActionBody(BaseModel):
+    """Wave K5 — author a DECLARED KineticAction (distinct from the read-side _ActionOverride)."""
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    entity: Optional[str] = None
+    kind: Optional[str] = None                       # annotate | side_effect | query
+    params: Optional[list] = None
+    rule: Optional[str] = None
+    submission_criteria: Optional[list] = None       # each {expr, message}
+    side_effects: Optional[list] = None              # each {kind, config}
+    risk: Optional[str] = None                       # read_only | low | high
+    origin: Optional[str] = None
+
+
 class _MergeEntitiesRequest(BaseModel):
     merge_ids: list[str]      # the cluster of entity ids to merge (must include canonical_id)
     canonical_id: str         # the survivor — others are merged into it
@@ -222,6 +236,21 @@ def get_ontology_actions(
     return {aid: a.model_dump() for aid, a in graph.actions.items()}
 
 
+@router.get("/ontology/kinetic-actions")
+def get_kinetic_actions(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Wave K: human-declared governed actions overlaid onto the graph. Read-only — empty unless
+    the `kinetic.actions` flag is on and the connection has declared actions in its ontology
+    overrides. These are NOT executed here (that is the K2 executor); this surfaces what is
+    declared, for the authoring UI and for the agent's action prompt-section."""
+    graph = _get_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+    return {aid: a.model_dump() for aid, a in graph.kinetic_actions.items()}
+
+
 @router.get("/ontology/entities/{entity_id}/object-sets")
 def get_entity_object_sets(
     entity_id: str,
@@ -346,6 +375,36 @@ def override_ontology_entity(
     ov, graph = _bind_and_persist(connection_id, effective, ov)
     if graph is not None and entity_id not in graph.entities:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    return _override_result(ov)
+
+
+@router.put("/ontology/kinetic-actions/{action_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def author_kinetic_action(
+    action_id: str,
+    body: _KineticActionBody,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Wave K5 — author (or edit) a DECLARED KineticAction as a per-connection ontology override: the
+    write path for the authoring UI. Persisted as ``target_kind='action'`` and overlaid onto the graph
+    at read time when ``kinetic.actions`` is on. The full spec is validated HERE, so a malformed
+    action (e.g. a submission criterion missing its authored message) is rejected at author time — not
+    silently dropped at overlay or discovered at execute."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)   # P4: mutating the semantic layer
+    from aughor.ontology.models import KineticAction
+    from aughor.ontology.overrides import OntologyOverride
+    effective = _resolve_schema(connection_id, schema_name)
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not fields.get("kind"):
+        raise HTTPException(status_code=400,
+                            detail="a kinetic action requires a 'kind' (annotate|side_effect|query)")
+    try:
+        KineticAction.model_validate({**fields, "id": action_id})
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"invalid action spec: {e}")
+    ov = OntologyOverride(target_kind="action", target_id=action_id, fields=fields)
+    ov, _ = _bind_and_persist(connection_id, effective, ov)
     return _override_result(ov)
 
 

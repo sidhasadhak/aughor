@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 from enum import Enum
+from typing import Optional
 
 from fastapi import HTTPException
 
@@ -102,10 +103,15 @@ def list_allowlist() -> list[dict]:
     return out
 
 
-def audit(action: str, scope: str, decision: str, *, actor: str = "", detail: str = "") -> None:
-    """Record one action decision to the audit ledger (attributed to the tenant)."""
+def audit(action: str, scope: str, decision: str, *, actor: str = "", detail: str = "",
+          risk: Optional[ActionRisk] = None) -> None:
+    """Record one action decision to the audit ledger (attributed to the tenant).
+
+    ``risk`` overrides the static ``classify`` lookup — needed for DYNAMIC actions (Wave K
+    declared actions) whose risk is carried on the action itself, not in the static registry.
+    Existing callers pass nothing and keep classifying as before."""
     Ledger.default().emit(_AUDIT_KIND, {
-        "action": action, "risk": classify(action).value, "decision": decision,
+        "action": action, "risk": (risk or classify(action)).value, "decision": decision,
         "scope": scope or "", "actor": actor or current_org_id(),
         "org_id": current_org_id(), "detail": detail,
     }, conn_id=(scope or None))
@@ -125,18 +131,22 @@ def recent_audit(limit: int = 100) -> list[dict]:
     return out
 
 
-def guard(action: str, scope: str = "", *, actor: str = "") -> None:
+def guard(action: str, scope: str = "", *, actor: str = "", risk: Optional[ActionRisk] = None) -> None:
     """Enforce the gate for a mutating action, then return (so the caller proceeds).
 
     No-op when approval is disabled. Otherwise: a HIGH-risk action that is not
     allowlisted for this scope is audited as ``blocked`` and raises HTTP 428
     ``approval_required``; every other case is audited (``auto`` / ``approved``)
-    and allowed through."""
+    and allowed through.
+
+    ``risk`` overrides the static ``classify`` lookup for DYNAMIC actions (Wave K declared
+    actions carry their own risk tier). Omitted for the static endpoints, which classify as
+    before — so this is byte-for-byte unchanged for the three existing call sites."""
     if not approval_enabled():
         return
-    risk = classify(action)
+    risk = risk or classify(action)
     if risk == ActionRisk.HIGH and not is_allowed(action, scope):
-        audit(action, scope, "blocked", actor=actor)
+        audit(action, scope, "blocked", actor=actor, risk=risk)
         raise HTTPException(status_code=428, detail={
             "error": "approval_required",
             "action": action,
@@ -145,4 +155,4 @@ def guard(action: str, scope: str = "", *, actor: str = "") -> None:
             "hint": (f"High-risk action '{action}' requires approval. "
                      f"POST /approvals/allow with this action + scope to approve it, then retry."),
         })
-    audit(action, scope, "approved" if risk == ActionRisk.HIGH else "auto", actor=actor)
+    audit(action, scope, "approved" if risk == ActionRisk.HIGH else "auto", actor=actor, risk=risk)

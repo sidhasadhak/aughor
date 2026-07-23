@@ -1906,6 +1906,32 @@ def _phases_evidence(phases: list[InvestigationPhaseResult]) -> str:
     return "\n".join(_one_phase_evidence(p) for p in phases)
 
 
+def _attach_kinetic_proposals(answer_report: dict, connection_id: str) -> None:
+    """K4b — after synthesis, let the agent PROPOSE declared actions grounded in the answer. Staged,
+    never executed (a human accepts and runs them through the K2 executor). Flag `kinetic.agent_actions`
+    (default off). Best-effort: the flag off, no declared actions, or a proposer hiccup all leave the
+    report untouched — a proposer must never disturb the answer it rides on."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        if not flag_enabled("kinetic.agent_actions"):
+            return
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(connection_id or "")
+        if graph is None or not getattr(graph, "kinetic_actions", None):
+            return
+        from aughor.kinetic.propose import propose_actions
+        context = f"{answer_report.get('headline', '')}\n\n{answer_report.get('executive_summary', '')}".strip()
+        answer_report["proposals"] = [
+            {"action_id": p.action_id, "status": p.status, "ok": p.ok, "params": p.params,
+             "reasoning": p.reasoning, "message": p.message}
+            for p in propose_actions(graph, context, scope=connection_id or "")]
+    except Exception:
+        import sys
+        from aughor.kernel.errors import tolerate
+        tolerate(sys.exc_info()[1], "kinetic proposer (K4b) is advisory; report proceeds",
+                 counter="kinetic.k4b_failed")
+
+
 _EVIDENCE_BUDGET = 6000
 _EV_DIGEST_SYS = (
     "You compress a single investigation phase's query evidence into 1-2 sentences, PRESERVING the key "
@@ -7114,6 +7140,9 @@ def ada_synthesize(state: AgentState) -> dict:
             orchestration_plan=orchestration_plan,
             plan_reconciliation=plan_reconciliation,
         )
+
+    # K4b — the agent may propose declared actions from the finished answer (flag-gated, staged).
+    _attach_kinetic_proposals(answer_report, state.get("connection_id", ""))
 
     # Also produce a legacy AnalysisReport for backward compat (history, cache)
     from aughor.agent.state import AnalysisReport, Finding
