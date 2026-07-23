@@ -3319,6 +3319,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kinetic-actions/annotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Annotate
+         * @description Wave K5 — write a human overlay annotation/correction directly (the 'annotate this cell'
+         *     affordance). Merged onto reads by K3 when `kinetic.overlay` is on; never mutates source. Flag-gated
+         *     on `kinetic.overlay` → 404 when off.
+         */
+        post: operations["annotate_kinetic_actions_annotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kinetic-actions/annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Annotations
+         * @description Wave K5 — the human overlay edits on a connection, for the review UI.
+         */
+        get: operations["list_annotations_kinetic_actions_annotations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kinetic-actions/propose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose Actions Route
+         * @description Wave K4: the agent proposes declared actions for a context. Returns STAGED, dry-run-validated
+         *     proposals — nothing is executed (a human accepts, then POSTs to .../execute). Flag-gated on
+         *     `kinetic.agent_actions` → 404 when off. The proposer LLM call runs on the `fast` role binding.
+         */
+        post: operations["propose_actions_route_kinetic_actions_propose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kinetic-actions/{action_id}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute Action
+         * @description Run one declared action. A criterion failure returns 422 with the authored message; a
+         *     high-risk action needing approval returns 428 (approve via POST /approvals/allow, then retry);
+         *     success returns 200 with the dispatch outcome.
+         */
+        post: operations["execute_action_kinetic_actions__action_id__execute_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning/summary": {
         parameters: {
             query?: never;
@@ -4230,6 +4316,53 @@ export interface paths {
          */
         get: operations["get_ontology_interfaces_ontology_interfaces_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/kinetic-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Kinetic Actions
+         * @description Wave K: human-declared governed actions overlaid onto the graph. Read-only — empty unless
+         *     the `kinetic.actions` flag is on and the connection has declared actions in its ontology
+         *     overrides. These are NOT executed here (that is the K2 executor); this surfaces what is
+         *     declared, for the authoring UI and for the agent's action prompt-section.
+         */
+        get: operations["get_kinetic_actions_ontology_kinetic_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/kinetic-actions/{action_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Author Kinetic Action
+         * @description Wave K5 — author (or edit) a DECLARED KineticAction as a per-connection ontology override: the
+         *     write path for the authoring UI. Persisted as ``target_kind='action'`` and overlaid onto the graph
+         *     at read time when ``kinetic.actions`` is on. The full spec is validated HERE, so a malformed
+         *     action (e.g. a submission criterion missing its authored message) is rejected at author time — not
+         *     silently dropped at overlay or discovered at execute.
+         */
+        put: operations["author_kinetic_action_ontology_kinetic_actions__action_id__put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5927,6 +6060,33 @@ export interface components {
              */
             scope: string;
         };
+        /** AnnotateRequest */
+        AnnotateRequest: {
+            /** Body */
+            body: string;
+            /**
+             * Column
+             * @default
+             */
+            column: string;
+            /**
+             * Key Column
+             * @default
+             */
+            key_column: string;
+            /**
+             * Kind
+             * @default annotation
+             */
+            kind: string;
+            /**
+             * Row Key
+             * @default
+             */
+            row_key: string;
+            /** Table */
+            table: string;
+        };
         /** ApplyRecommendedIn */
         ApplyRecommendedIn: {
             /** Agent Ids */
@@ -6606,6 +6766,18 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** ExecuteRequest */
+        ExecuteRequest: {
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+        };
         /** FeedbackRequest */
         FeedbackRequest: {
             /** Clarify Choice */
@@ -7192,6 +7364,16 @@ export interface components {
             table_cols?: {
                 [key: string]: string[];
             } | null;
+        };
+        /** ProposeRequest */
+        ProposeRequest: {
+            /**
+             * Actor
+             * @default agent
+             */
+            actor: string;
+            /** Context */
+            context: string;
         };
         /**
          * ReasoningMessage
@@ -7877,6 +8059,32 @@ export interface components {
             state?: string | null;
             /** Value */
             value?: boolean | null;
+        };
+        /**
+         * _KineticActionBody
+         * @description Wave K5 — author a DECLARED KineticAction (distinct from the read-side _ActionOverride).
+         */
+        _KineticActionBody: {
+            /** Description */
+            description?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Entity */
+            entity?: string | null;
+            /** Kind */
+            kind?: string | null;
+            /** Origin */
+            origin?: string | null;
+            /** Params */
+            params?: unknown[] | null;
+            /** Risk */
+            risk?: string | null;
+            /** Rule */
+            rule?: string | null;
+            /** Side Effects */
+            side_effects?: unknown[] | null;
+            /** Submission Criteria */
+            submission_criteria?: unknown[] | null;
         };
         /** _MeasureDef */
         _MeasureDef: {
@@ -14471,6 +14679,146 @@ export interface operations {
             };
         };
     };
+    annotate_kinetic_actions_annotate_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_annotations_kinetic_actions_annotations_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_actions_route_kinetic_actions_propose_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    execute_action_kinetic_actions__action_id__execute_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     learning_summary_learning_summary_get: {
         parameters: {
             query?: {
@@ -16360,6 +16708,76 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_kinetic_actions_ontology_kinetic_actions_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    author_kinetic_action_ontology_kinetic_actions__action_id__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_KineticActionBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

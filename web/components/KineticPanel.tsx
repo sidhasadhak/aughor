@@ -13,6 +13,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { API_BASE as BASE } from "@/lib/config";
+import { Button } from "@/components/ui/button";
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${BASE}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -30,25 +31,20 @@ type Tab = "Actions" | "Propose" | "Annotations";
 function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
   const tabs: Tab[] = ["Actions", "Propose", "Annotations"];
   return (
-    <div style={{ display: "flex", gap: 2, borderBottom: "1px solid var(--b0)", marginBottom: 16 }}>
+    <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--b0)", marginBottom: 16, paddingBottom: 6 }}>
       {tabs.map(t => (
-        <button key={t} onClick={() => onChange(t)} style={{
-          padding: "6px 14px", fontSize: 12, background: "none", cursor: "pointer",
-          border: "none", borderBottom: active === t ? "2px solid var(--fg)" : "2px solid transparent",
-          color: active === t ? "var(--fg)" : "var(--fg-dim)", fontWeight: active === t ? 600 : 400,
-        }}>{t}</button>
+        <Button key={t} size="sm" variant={active === t ? "secondary" : "ghost"} onClick={() => onChange(t)}>{t}</Button>
       ))}
     </div>
   );
 }
 
 const card: React.CSSProperties = { border: "1px solid var(--b0)", borderRadius: 8, padding: 12, marginBottom: 10 };
-const input: React.CSSProperties = { width: "100%", padding: "6px 8px", fontSize: 12, border: "1px solid var(--b0)", borderRadius: 6, background: "var(--bg)", color: "var(--fg)", marginBottom: 6, boxSizing: "border-box" };
-const btn: React.CSSProperties = { padding: "6px 12px", fontSize: 12, borderRadius: 6, border: "1px solid var(--b0)", background: "var(--bg-elev)", color: "var(--fg)", cursor: "pointer" };
-const hint: React.CSSProperties = { fontSize: 12, color: "var(--fg-dim)", padding: "8px 0" };
+const input: React.CSSProperties = { width: "100%", padding: "6px 8px", fontSize: 12, border: "1px solid var(--b0)", borderRadius: 6, background: "var(--bg-2)", color: "var(--t1)", marginBottom: 6, boxSizing: "border-box" };
+const hint: React.CSSProperties = { fontSize: 12, color: "var(--t3)", padding: "8px 0" };
 
 function Err({ e }: { e: string | null }) {
-  return e ? <div style={{ ...hint, color: "var(--danger, #c0392b)" }}>{e}</div> : null;
+  return e ? <div style={{ ...hint, color: "var(--destructive)" }}>{e}</div> : null;
 }
 
 // ── 1. Declared actions ─────────────────────────────────────────────────────────
@@ -87,13 +83,13 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
         ? <div style={hint}>No declared actions yet. Enable the <code>kinetic.actions</code> flag and author one below.</div>
         : Object.values(actions).map((a: any) => (
           <div key={a.id} style={card}>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>{a.id} <span style={{ color: "var(--fg-dim)", fontWeight: 400 }}>· {a.kind} · {a.risk}</span></div>
-            {a.description && <div style={{ fontSize: 12, color: "var(--fg-dim)", margin: "4px 0" }}>{a.description}</div>}
-            <div style={{ fontSize: 11, color: "var(--fg-dim)" }}>
+            <div style={{ fontWeight: 600, fontSize: 13 }}>{a.id} <span style={{ color: "var(--t3)", fontWeight: 400 }}>· {a.kind} · {a.risk}</span></div>
+            {a.description && <div style={{ fontSize: 12, color: "var(--t3)", margin: "4px 0" }}>{a.description}</div>}
+            <div style={{ fontSize: 11, color: "var(--t3)" }}>
               params: {(a.params || []).map((p: any) => `${p.name}:${p.data_type}`).join(", ") || "—"}
             </div>
             {(a.submission_criteria || []).map((c: any, i: number) => (
-              <div key={i} style={{ fontSize: 11, color: "var(--fg-dim)" }}>must satisfy: <code>{c.expr}</code></div>
+              <div key={i} style={{ fontSize: 11, color: "var(--t3)" }}>must satisfy: <code>{c.expr}</code></div>
             ))}
           </div>
         ))}
@@ -118,7 +114,7 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
         <textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={params} onChange={e => setParams(e.target.value)} />
         <label style={hint}>submission criteria (JSON) — each message is shown verbatim on failure</label>
         <textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={criteria} onChange={e => setCriteria(e.target.value)} />
-        <button style={btn} disabled={!id.trim()} onClick={save}>Save action</button>
+        <Button variant="default" size="sm" disabled={!id.trim()} onClick={save}>Save action</Button>
       </div>
     </div>
   );
@@ -154,16 +150,16 @@ function ProposeTab({ connectionId }: { connectionId: string }) {
       <Err e={err} />
       <div style={hint}>Paste a finding; the agent proposes any warranted declared actions (staged — nothing runs until you execute).</div>
       <textarea style={{ ...input, minHeight: 80 }} placeholder="e.g. Order X9001 was charged EUR 480 twice — a clear duplicate charge." value={context} onChange={e => setContext(e.target.value)} />
-      <button style={btn} disabled={busy || !context.trim()} onClick={propose}>{busy ? "Proposing…" : "Propose actions"}</button>
+      <Button variant="default" size="sm" disabled={busy || !context.trim()} onClick={propose}>{busy ? "Proposing…" : "Propose actions"}</Button>
 
       {proposals && proposals.length === 0 && <div style={hint}>The agent abstained — nothing to propose.</div>}
       {proposals && proposals.map((p, i) => (
         <div key={i} style={{ ...card, marginTop: 10 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>{p.action_id} <span style={{ color: p.ok ? "var(--success, #2e7d32)" : "var(--fg-dim)", fontWeight: 400 }}>· {p.status}</span></div>
-          {p.reasoning && <div style={{ fontSize: 12, color: "var(--fg-dim)", margin: "4px 0" }}>{p.reasoning}</div>}
-          <div style={{ fontSize: 11, fontFamily: "monospace", color: "var(--fg-dim)" }}>{JSON.stringify(p.params)}</div>
-          {p.message && <div style={{ fontSize: 12, color: "var(--danger, #c0392b)", marginTop: 4 }}>{p.message}</div>}
-          {p.ok && <button style={{ ...btn, marginTop: 8 }} onClick={() => execute(p)}>Execute (governed)</button>}
+          <div style={{ fontWeight: 600, fontSize: 13 }}>{p.action_id} <span style={{ color: p.ok ? "var(--t1)" : "var(--t3)", fontWeight: 400 }}>· {p.status}</span></div>
+          {p.reasoning && <div style={{ fontSize: 12, color: "var(--t3)", margin: "4px 0" }}>{p.reasoning}</div>}
+          <div style={{ fontSize: 11, fontFamily: "monospace", color: "var(--t3)" }}>{JSON.stringify(p.params)}</div>
+          {p.message && <div style={{ fontSize: 12, color: "var(--destructive)", marginTop: 4 }}>{p.message}</div>}
+          {p.ok && <div style={{ marginTop: 8 }}><Button variant="secondary" size="sm" onClick={() => execute(p)}>Execute (governed)</Button></div>}
         </div>
       ))}
     </div>
@@ -199,7 +195,7 @@ function AnnotationsTab({ connectionId }: { connectionId: string }) {
         : edits.map((e, i) => (
           <div key={i} style={card}>
             <div style={{ fontSize: 12, fontFamily: "monospace" }}>{e.table}{e.column ? `.${e.column}` : ""}{e.row_key ? `#${e.key_column}=${e.row_key}` : ""}</div>
-            <div style={{ fontSize: 12, marginTop: 2 }}>{e.body} <span style={{ color: "var(--fg-dim)" }}>· {e.source}</span></div>
+            <div style={{ fontSize: 12, marginTop: 2 }}>{e.body} <span style={{ color: "var(--t3)" }}>· {e.source}</span></div>
           </div>
         ))}
 
@@ -212,7 +208,7 @@ function AnnotationsTab({ connectionId }: { connectionId: string }) {
           <input style={{ ...input, flex: 1 }} placeholder="row key (optional)" value={f.row_key} onChange={e => setF({ ...f, row_key: e.target.value })} />
         </div>
         <input style={input} placeholder="annotation / correction text" value={f.body} onChange={e => setF({ ...f, body: e.target.value })} />
-        <button style={btn} disabled={!f.table.trim() || !f.body.trim()} onClick={save}>Save annotation</button>
+        <Button variant="default" size="sm" disabled={!f.table.trim() || !f.body.trim()} onClick={save}>Save annotation</Button>
       </div>
     </div>
   );
