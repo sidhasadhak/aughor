@@ -382,6 +382,10 @@ class AnswerReport(TypedDict):
     # A short closing "bottom line" rendered at the END of the report, before the recommendations
     # (the exec summary opens it; this closes it). "" when the synthesis didn't author one.
     closing_summary: Optional[str]
+    # Wave K4b — declared actions the agent PROPOSES from this answer (staged, never executed; flag
+    # `kinetic.agent_actions`, default off). Each `{action_id, status, ok, params, reasoning, message}`.
+    # Optional/additive — absent on older reports and when the connection declares no actions; UI reads via .get().
+    proposals: Optional[list]
 
 
 class AgentState(TypedDict):

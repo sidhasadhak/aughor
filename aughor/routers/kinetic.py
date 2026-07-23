@@ -28,6 +28,15 @@ class ProposeRequest(BaseModel):
     actor: str = "agent"
 
 
+class AnnotateRequest(BaseModel):
+    table: str
+    body: str                               # the annotation text / corrected value
+    column: str = ""                        # '' ⇒ whole-table
+    key_column: str = ""                    # column whose value identifies the row
+    row_key: str = ""                       # '' ⇒ whole-column
+    kind: str = "annotation"                # annotation | correction
+
+
 def _resolve_graph(connection_id: str, schema_name: Optional[str]):
     from aughor.ontology.store import load_latest_ontology
     graph = load_latest_ontology(connection_id, schema_name or None)
@@ -94,3 +103,28 @@ def propose_actions_route(
         {"action_id": p.action_id, "status": p.status, "ok": p.ok, "params": p.params,
          "reasoning": p.reasoning, "message": p.message}
         for p in proposals]}
+
+
+@router.post("/kinetic-actions/annotate")
+def annotate(body: AnnotateRequest, connection_id: str = BUILTIN_ID):
+    """Wave K5 — write a human overlay annotation/correction directly (the 'annotate this cell'
+    affordance). Merged onto reads by K3 when `kinetic.overlay` is on; never mutates source. Flag-gated
+    on `kinetic.overlay` → 404 when off."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("kinetic.overlay"):
+        raise HTTPException(status_code=404, detail="Overlay edits are not enabled")
+    if not body.table or not body.body:
+        raise HTTPException(status_code=400, detail="table and body are required")
+    from aughor.kinetic.overlay import OverlayEdit, save_edit
+    edit = save_edit(OverlayEdit(
+        connection_id=connection_id, table=body.table, column=body.column,
+        key_column=body.key_column, row_key=body.row_key, kind=body.kind, body=body.body,
+        source="user"))
+    return {"id": edit.id, "target": edit.target()}
+
+
+@router.get("/kinetic-actions/annotations")
+def list_annotations(connection_id: str = BUILTIN_ID):
+    """Wave K5 — the human overlay edits on a connection, for the review UI."""
+    from aughor.kinetic.overlay import edits_for_connection
+    return {"edits": [e.model_dump() for e in edits_for_connection(connection_id)]}

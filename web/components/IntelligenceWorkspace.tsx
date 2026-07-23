@@ -19,6 +19,7 @@ const OntologyPanel    = dynamic(() => import("@/components/OntologyPanel").then
 const IntelligenceHub  = dynamic(() => import("@/components/IntelligenceHub").then(m => ({ default: m.IntelligenceHub })),  { ssr: false, loading });
 const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then(m => ({ default: m.OrgIntelPanel })),      { ssr: false, loading });
 const EvidencePanel    = dynamic(() => import("@/components/EvidencePanel").then(m => ({ default: m.EvidencePanel })),      { ssr: false, loading });
+const KineticPanel     = dynamic(() => import("@/components/KineticPanel").then(m => ({ default: m.KineticPanel })),       { ssr: false, loading });
 
 // Minimal inline icon set — mirrors NavIcon paths used elsewhere in the shell.
 const ICONS: Record<string, string> = {
@@ -39,13 +40,14 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type IntelLayer = "briefing" | "hub" | "ontology" | "evidence" | "org";
+export type IntelLayer = "briefing" | "hub" | "ontology" | "evidence" | "kinetic" | "org";
 
 const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "briefing", icon: "brief",   label: "Briefing", blurb: "Cross-domain synthesis" },
   { id: "hub",      icon: "layers",  label: "Hub",      blurb: "Domain knowledge & data profile" },
   { id: "ontology", icon: "node",    label: "Ontology", blurb: "Object model & relationships" },
   { id: "evidence", icon: "check",   label: "Evidence", blurb: "Claim ledger & feedback" },
+  { id: "kinetic",  icon: "spark",   label: "Actions",  blurb: "Declared actions & overlay edits" },
   { id: "org",      icon: "spark",   label: "Org",      blurb: "Organizational knowledge" },
 ];
 
@@ -176,6 +178,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
         if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
+        if (id === "kinetic")  return <KineticPanel connectionId={connectionId} />;
         return <OrgIntelPanel />; // "org"
       }}
     />
