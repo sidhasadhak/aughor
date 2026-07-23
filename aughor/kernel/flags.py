@@ -85,6 +85,7 @@ FLAG_ENV = {
     "agui.endpoint": "AUGHOR_AGUI_ENDPOINT",
     "kinetic.actions": "AUGHOR_KINETIC_ACTIONS",  # Wave K: overlay human-declared actions onto the graph
     "kinetic.overlay": "AUGHOR_KINETIC_OVERLAY",  # Wave K3: merge human overlay edits onto query results
+    "kinetic.agent_actions": "AUGHOR_KINETIC_AGENT_ACTIONS",  # Wave K4: the agent may PROPOSE declared actions
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -154,6 +155,10 @@ FLAG_META = {
     "kinetic.overlay": {
         "label": "Human overlay edits on query results (Wave K3)",
         "description": "Merge human annotations and corrections ('this outlier is a known launch-day spike', 'order 8821 is a test order') onto query results at READ time, matched by the columns present in the result — never mutating the source data. Edits live in an independent org+connection-scoped store, so they survive schema refreshes and rebuilds, and a machine-sourced edit never overrides a human one on the same target. Off by default ⇒ results carry no annotations (byte-identical); best-effort so an overlay hiccup never takes down a real result.",
+    },
+    "kinetic.agent_actions": {
+        "label": "Agent proposes declared actions (Wave K4)",
+        "description": "Let the agent PROPOSE declared KineticActions from an analysis — the model returns structured proposals which are dry-run validated (typed params + submission criteria) and STAGED for a human to accept and run through the governed executor. Nothing is executed here; nothing above LOW risk ever auto-fires. Off by default ⇒ the agent never proposes actions (byte-identical) and the proposer makes no LLM call.",
     },
     "ask.stream_text": {
         "label": "Token-stream the answer narrative",

@@ -23,6 +23,19 @@ class ExecuteRequest(BaseModel):
     actor: str = ""
 
 
+class ProposeRequest(BaseModel):
+    context: str                            # a finding / question the proposal is grounded in
+    actor: str = "agent"
+
+
+def _resolve_graph(connection_id: str, schema_name: Optional[str]):
+    from aughor.ontology.store import load_latest_ontology
+    graph = load_latest_ontology(connection_id, schema_name or None)
+    if graph is None and schema_name:
+        graph = load_latest_ontology(connection_id, None)
+    return graph
+
+
 @router.post("/kinetic-actions/{action_id}/execute")
 def execute_action(
     action_id: str,
@@ -39,10 +52,7 @@ def execute_action(
 
     # The public store loader already overlays human overrides (so kinetic_actions are applied);
     # a declared action implies the ontology is cached, so the fast path is sufficient here.
-    from aughor.ontology.store import load_latest_ontology
-    graph = load_latest_ontology(connection_id, schema_name or None)
-    if graph is None and schema_name:
-        graph = load_latest_ontology(connection_id, None)
+    graph = _resolve_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
     action = graph.kinetic_actions.get(action_id)
@@ -60,3 +70,27 @@ def execute_action(
         detail={"status": result.status, "action_id": result.action_id,
                 "message": result.message, **result.detail},
     )
+
+
+@router.post("/kinetic-actions/propose")
+def propose_actions_route(
+    body: ProposeRequest,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Wave K4: the agent proposes declared actions for a context. Returns STAGED, dry-run-validated
+    proposals — nothing is executed (a human accepts, then POSTs to .../execute). Flag-gated on
+    `kinetic.agent_actions` → 404 when off. The proposer LLM call runs on the `fast` role binding."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("kinetic.agent_actions"):
+        raise HTTPException(status_code=404, detail="Agent action proposals are not enabled")
+    graph = _resolve_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+
+    from aughor.kinetic.propose import propose_actions
+    proposals = propose_actions(graph, body.context, scope=connection_id)
+    return {"proposals": [
+        {"action_id": p.action_id, "status": p.status, "ok": p.ok, "params": p.params,
+         "reasoning": p.reasoning, "message": p.message}
+        for p in proposals]}
