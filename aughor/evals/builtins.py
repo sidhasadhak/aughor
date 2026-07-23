@@ -105,6 +105,7 @@ def register_builtins() -> None:
         ("guard.avg_of_row_ratios", fanout.avg_of_row_ratios),
         ("guard.cte_grain_mismatch", fanout.cte_grain_mismatch_fanout),
         ("guard.groupby_continuous", fanout.group_by_continuous_measure),
+        ("guard.groupby_null_side", fanout.group_by_outer_null_side),
     ):
         register_evaluator(HintEvaluator(name, fn, args=sql_tablecols_dialect))
 

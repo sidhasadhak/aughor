@@ -53,6 +53,7 @@ class Verifier:
         from aughor.sql.fanout import (
             sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
             measure_times_key_arithmetic, avg_of_row_ratios, dimension_ratio_chasm,
+            group_by_outer_null_side,
         )
 
         def _dim_ratio_hint(sql, tc, d):
@@ -61,7 +62,8 @@ class Verifier:
             return f.to_prompt_text() if f else None
 
         battery = (sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
-                   measure_times_key_arithmetic, avg_of_row_ratios, _dim_ratio_hint)
+                   measure_times_key_arithmetic, avg_of_row_ratios, _dim_ratio_hint,
+                   group_by_outer_null_side)
         hits: list[str] = []
         for q in (queries or []):
             sql = getattr(q, "sql", "") or (q if isinstance(q, str) else "")
