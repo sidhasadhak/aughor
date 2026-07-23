@@ -236,6 +236,36 @@ def current_run_model() -> Optional[str]:
     return _run_model.get()
 
 
+def _pinned_model(role: Role, model: Optional[str]) -> str:
+    """The model this call is pinned to, or ``""`` for the role's tier default.
+
+    Precedence: an explicit ``model=`` wins for **every** role — that is a deliberate
+    direct pin (bakeoff arm, health-check probe, a test). The implicit per-agent run pin
+    (:func:`set_run_model`, set by the kernel from the agent's governance) deliberately
+    does **not** reach the ``fast`` tier.
+
+    Why ``fast`` is exempt: it is Aughor's cheap-by-declaration role — the call site chose
+    it because the work is a throwaway (a phase interpret, a question classify, the
+    evidence digest). A per-agent pin means "run *this agent's* reasoning on a stronger
+    model" (Analyst → 550B for 1M-ctx root-causing; Briefer → 550B for user-visible
+    synthesis) — none of the charter recommendations were chosen for the interpret calls.
+    Letting the scalar pin clobber ``fast`` runs those throwaways on a 550B reasoning
+    model: the single biggest per-run cost driver on a job-borne investigation, where the
+    interpret call fires once per phase (up to ~7) plus the digest reduce. The heavy roles
+    (``coder``/``narrator``) still take the pin, so intended quality is untouched.
+
+    ``AUGHOR_PIN_ALL_ROLES=1`` restores the old total-pin behaviour for an operator who
+    genuinely wants every call, cheap ones included, on the pinned model.
+    """
+    explicit = (model or "").strip()
+    if explicit:
+        return explicit
+    run = (current_run_model() or "").strip()
+    if run and role == "fast" and not _flag("AUGHOR_PIN_ALL_ROLES"):
+        return ""
+    return run
+
+
 def _read_config() -> dict:
     try:
         if _CONFIG_PATH.exists():
@@ -363,9 +393,10 @@ def resolve_binding(role: Role = "coder", *, model: Optional[str] = None) -> tup
     :func:`aughor.platform.inference.vend_llm` (control-plane seam, describes the binding),
     so a vended :class:`InferenceCapability` always matches the binding a real call uses.
     Model precedence mirrors :func:`get_provider`: explicit pin → run/agent contextvar
-    (``set_run_model``) → role default — i.e. Org default → … → Agent override."""
+    (``set_run_model``) → role default — i.e. Org default → … → Agent override. The
+    run/agent pin skips the ``fast`` tier (see :func:`_pinned_model`)."""
     backend = _active_backend()
-    pinned = (model or current_run_model() or "").strip()
+    pinned = _pinned_model(role, model)
     eff_model = pinned or _active_model(backend, role)
     return backend, eff_model, _active_base_url(backend)
 
@@ -1158,13 +1189,14 @@ def get_provider(role: Role = "coder", *, model: Optional[str] = None) -> LLMPro
     When a model is pinned — explicitly via ``model=`` or implicitly by the current run's
     ``set_run_model`` (the per-agent override) — returns a provider bound to that model,
     cached per ``(role, model)``. With no pin, the normal role-default provider is used, so
-    unpinned code is unaffected."""
+    unpinned code is unaffected. The implicit run pin skips the ``fast`` tier so an agent
+    pin never promotes cheap interpret calls to a heavy model (see :func:`_pinned_model`)."""
     global _cache_version
     if _cache_version != _config_version:
         _providers.clear()
         _pinned_providers.clear()
         _cache_version = _config_version
-    pinned = (model or current_run_model() or "").strip()
+    pinned = _pinned_model(role, model)
     if pinned:
         key = (role, pinned)
         if key not in _pinned_providers:
