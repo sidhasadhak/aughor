@@ -39,6 +39,7 @@ from pydantic import BaseModel, Field
 
 from aughor.ontology.models import (
     ComputedProperty,
+    KineticAction,
     ObjectSet,
     OntologyEntity,
     OntologyGraph,
@@ -47,7 +48,7 @@ from aughor.ontology.models import (
 
 _ROOT = Path(__file__).parent.parent.parent / "data" / "ontology_overrides"
 
-TargetKind = Literal["entity", "object_set", "computed_property", "metric"]
+TargetKind = Literal["entity", "object_set", "computed_property", "metric", "action"]
 
 # Whitelist of fields a human may override, per target kind. Anything outside
 # these sets is ignored on write *and* on apply, so an override file can never
@@ -60,6 +61,12 @@ _EDITABLE: dict[str, set[str]] = {
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
     "computed_property": {"label", "formula_sql", "unit"},
     "metric": {"display_name", "description", "formula_sql", "grain", "unit"},
+    # Wave K: a declared action AUTHORS a whole new object (like a brand-new metric), so its
+    # "editable" set is the KineticAction's own spec fields (id comes from target_id).
+    "action": {
+        "display_name", "description", "entity", "kind", "params", "rule",
+        "submission_criteria", "side_effects", "risk", "origin",
+    },
 }
 
 # Fields whose value is SQL and must EXPLAIN-bind before they earn `verified`.
@@ -264,6 +271,23 @@ def _apply_metric(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
     return touched
 
 
+def _apply_action(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
+    """Author a declared KineticAction from the override's fields into ``graph.kinetic_actions``.
+
+    Unlike the other ``_apply_*`` handlers this creates a whole NEW object (a declared action has
+    no auto-derived counterpart to patch — like a brand-new metric in ``_apply_metric``). The
+    ``id`` comes from ``target_id``; the rest of the spec comes from ``fields`` (whitelisted to
+    ``_EDITABLE["action"]``). ``model_validate`` raises on a malformed spec — e.g. a submission
+    criterion missing its authored ``message`` — which the caller's per-override ``try`` turns into
+    a SKIPPED entry, so a bad action is rejected at overlay and never enters the graph (the K1
+    "rejected at parse, not at execute" contract). Nothing here executes or binds SQL — that is K2."""
+    spec = {k: v for k, v in ov.fields.items() if k in _EDITABLE["action"]}
+    spec["id"] = ov.target_id
+    action = KineticAction.model_validate(spec)
+    graph.kinetic_actions[action.id] = action
+    return ["<declared>"]   # non-empty so the OverlayReport records it as applied
+
+
 def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> tuple[Optional[OntologyGraph], OverlayReport]:
     """Overlay all human overrides for {conn}/{schema} onto ``graph`` in place.
 
@@ -288,6 +312,13 @@ def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> t
                            else _apply_computed_property)(ent, ov)
             elif ov.target_kind == "metric":
                 touched = _apply_metric(graph, ov)
+            elif ov.target_kind == "action":
+                # Wave K substrate — flag-gated so off = byte-identical (empty kinetic_actions).
+                from aughor.kernel.flags import flag_enabled
+                if not flag_enabled("kinetic.actions"):
+                    report.skipped.append(f"action:{ov.target_id} — kinetic.actions off")
+                    continue
+                touched = _apply_action(graph, ov)
             else:
                 touched = []
 

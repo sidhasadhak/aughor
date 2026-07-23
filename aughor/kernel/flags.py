@@ -83,6 +83,7 @@ FLAG_ENV = {
     "explorer.continuous": "AUGHOR_EXPLORER_CONTINUOUS",
     "ops.metered_monitors": "AUGHOR_METERED_MONITORS",
     "agui.endpoint": "AUGHOR_AGUI_ENDPOINT",
+    "kinetic.actions": "AUGHOR_KINETIC_ACTIONS",  # Wave K: overlay human-declared actions onto the graph
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -144,6 +145,10 @@ FLAG_META = {
     "agui.endpoint": {
         "label": "AG-UI protocol endpoint (POST /agui/run)",
         "description": "Expose an additive AG-UI-compatible translator at POST /agui/run that re-frames the existing /ask event stream (via the shared build_ask_stream factory) into standard AG-UI protocol events (RunStarted / TextMessage* / ToolCall* / Custom / RunError / RunFinished) using the ag-ui-protocol SDK. Purely additive — the legacy /ask, /chat and /investigate emission is byte-identical and the frontend's default transport is unchanged; this is the backend half of the CopilotKit/AG-UI adoption plan's CK-1 seam, letting any AG-UI client (CopilotKit, the @ag-ui/client transport) drive Aughor. Off by default ⇒ the route 404s.",
+    },
+    "kinetic.actions": {
+        "label": "Declared actions in the ontology (Wave K)",
+        "description": "Overlay human-DECLARED KineticActions from the per-connection ontology overrides onto the graph at read time: typed-parameter operations with submission criteria (whose authored failure messages are shown verbatim to humans and the model) and side effects. Read-only substrate in K1 — the actions become visible in the ontology and the API but are not executed until the Wave-K executor (K2) lands. Additive: off = the graph's kinetic_actions stays empty (byte-identical), and a malformed declared action is rejected at overlay, never surfaced.",
     },
     "ask.stream_text": {
         "label": "Token-stream the answer narrative",

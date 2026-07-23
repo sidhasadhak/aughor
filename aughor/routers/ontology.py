@@ -222,6 +222,21 @@ def get_ontology_actions(
     return {aid: a.model_dump() for aid, a in graph.actions.items()}
 
 
+@router.get("/ontology/kinetic-actions")
+def get_kinetic_actions(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Wave K: human-declared governed actions overlaid onto the graph. Read-only — empty unless
+    the `kinetic.actions` flag is on and the connection has declared actions in its ontology
+    overrides. These are NOT executed here (that is the K2 executor); this surfaces what is
+    declared, for the authoring UI and for the agent's action prompt-section."""
+    graph = _get_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+    return {aid: a.model_dump() for aid, a in graph.kinetic_actions.items()}
+
+
 @router.get("/ontology/entities/{entity_id}/object-sets")
 def get_entity_object_sets(
     entity_id: str,

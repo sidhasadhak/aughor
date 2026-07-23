@@ -236,6 +236,50 @@ class OntologyAction(BaseModel):
     usage_count: int = 0
 
 
+# ── Wave K: declared, governed actions (the kinetic plane) ───────────────────────────
+# A KineticAction is DISTINCT from OntologyAction (above, a read-side SQL-template shortcut)
+# and from the ActionHub ActionTrigger (an outbound webhook). It is the write-surface unit:
+# typed parameters + submission criteria + graduated approval, composing the other two. It
+# never mutates source data — its `kind` is an annotation, a side effect, or a governed read
+# query. Declared by a human in the per-connection ontology overlay (overrides.py), not built.
+
+class SubmissionCriterion(BaseModel):
+    """A deterministic precondition on a KineticAction's parameters.
+
+    ``expr`` is a restricted predicate over the action's params, evaluated DETERMINISTICALLY by
+    the Wave-K executor (K2) — never by a model. ``message`` is the AUTHORED failure text shown
+    VERBATIM to the human AND the LLM when the criterion fails, so it is a required, non-empty
+    string that must never be paraphrased anywhere in the pipeline. A criterion missing either
+    field fails validation, which rejects the whole action at parse — it never reaches the graph."""
+    expr: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+
+
+class SideEffect(BaseModel):
+    """A declared consequence of a KineticAction, dispatched by the executor (K2) through an
+    existing primitive: ``notify``/``webhook`` → ``actions.fire_action``, ``trigger_investigation``
+    → ``kernel().submit``. ``config`` is opaque here; the executor validates it per kind."""
+    kind: Literal["notify", "webhook", "trigger_investigation"]
+    config: dict = Field(default_factory=dict)
+
+
+class KineticAction(BaseModel):
+    """A declared, governed action — the Wave K write-surface unit (see the block comment above)."""
+    id: str
+    display_name: str = ""
+    description: str = ""
+    entity: str = ""                              # optional owning entity id
+    kind: Literal["annotate", "side_effect", "query"]
+    params: list[ActionParameter] = Field(default_factory=list)
+    rule: str = ""                                # SQL template (kind="query"); empty otherwise
+    submission_criteria: list[SubmissionCriterion] = Field(default_factory=list)
+    side_effects: list[SideEffect] = Field(default_factory=list)
+    # Risk tier for the graduated-approval gate; K2 maps this to ``govern.ActionRisk``. Default
+    # HIGH is fail-safe: an unclassified declared action requires approval, never auto-fires.
+    risk: Literal["read_only", "low", "high"] = "high"
+    origin: Literal["manual", "learned", "structural"] = "manual"
+
+
 class OntologyGraph(BaseModel):
     connection_id: str
     schema_name: str = ""          # DB schema this ontology covers (e.g. "analytics", "public")
@@ -252,6 +296,10 @@ class OntologyGraph(BaseModel):
     relationships: dict[str, OntologyRelationship] = Field(default_factory=dict)
     metrics: dict[str, OntologyMetric] = Field(default_factory=dict)
     actions: dict[str, OntologyAction] = Field(default_factory=dict)
+    # Wave K: human-declared governed actions, overlaid at read time (kept separate from the
+    # read-side `actions` dict above so the two "action" concepts never collide). Additive —
+    # defaults empty, so an old JSON-cached graph deserialises unchanged.
+    kinetic_actions: dict[str, KineticAction] = Field(default_factory=dict)
     interfaces: dict[str, OntologyInterface] = Field(default_factory=dict)
 
     # Fast-lookup reverse maps
