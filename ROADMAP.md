@@ -16,71 +16,93 @@
 
 ### ⏭️ NEXT SESSION — start here
 
-**Session 2026-07-22 (later) shipped four merged PRs — see the "2026-07-22 · request budget" block
-below.** `main` carries the provider failover chain, all four glossary-scoping gaps, flag-graduation
-Batch 1, and the LLM request-budget work. Two findings are parked as task chips rather than fixed.
+**Session 2026-07-23 completed Wave K and merged two PRs.** `main` (`817e9ec`) carries the kinetic
+plane plus five cost/correctness fixes. **No open PRs, no unpushed branches — a clean slate.**
 
-0. **⏭️ Wave K — the kinetic plane.** User-chosen as the next arc (2026-07-22). The Foundry study's
-   named differentiator and the one flank not started: an `actions:` block in the per-connection
-   ontology YAML (typed params, **submission criteria with authored failure messages** shown verbatim
-   to humans AND the LLM, side effects), ONE executor path reusing `govern/actions.py` graduated
-   autonomy + approvals, and an **edits-as-overlay ledger** generalizing the ambiguity ledger from
-   resolutions to data annotations. The agent's write surface becomes declared actions, never
-   freeform. Builds on `ontology/actions.py`, ActionHub, approvals, RBAC. Scope in
+| PR | What |
+|---|---|
+| **#201** `ba06f6d` | **Wave K — the kinetic plane** (K1 declare · K2 execute · K3 overlay · K4 propose · K4b in-investigation · K5 UI) |
+| **#202** `817e9ec` | Streamed-output cap · fast-tier pin · null-side GROUP BY guard · upload-resurrection tombstone · deterministic evidence condensation |
+
+**Wave K is DONE and both parked findings are CLOSED.** Aughor's agents are now deterministically
+guarded on the read path and governed-by-declaration on the write path, with read-only safety on
+source data intact. It all sits behind default-off flags (`kinetic.actions` · `kinetic.overlay` ·
+`kinetic.agent_actions`), so `main` is byte-identical until they are switched on. Scope + the
+per-PR decision gates: [`docs/WAVE_K_KINETIC_PLANE_ARC.md`](docs/WAVE_K_KINETIC_PLANE_ARC.md).
+
+⚡ **Quota unblocked (2026-07-23).** $11 on OpenRouter crossed the credit **threshold** → the free-model
+cap went **50 → 1,000 requests/day, permanently**. Policy: **strictly `:free` models** — the credit is a
+threshold-unlock reserve, never a spend budget, and the app's bindings are all `:free`. The 20 RPM
+per-minute cap is UNCHANGED (bursty fan-out can still trip it). Do NOT enable Gemini billing — it
+deletes its free tier.
+
+### Pick the next arc
+
+1. **Wave A — Automations.** The natural successor: A depends on K ("effects execute declared
+   actions"). A condition→effect engine unifying monitors + briefs + explorer re-arm, with a
+   staged-proposal queue for autonomous writes. Alternatives: **V** (artifact lifecycle), **G**
+   (governance / tag plane), **S** (surface & composition) — all scoped in
    [`docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md`](docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md) §5.
-   ⚠️ First arc in a while that genuinely needs working models to prove — check quota before starting.
+2. **Wave E4–E6** — the other half-built flank (E1–E3 merged in #196): per-run overrides / grid
+   experiments, the Evals surface, and "add this run as a test case" + the flag-graduation gate.
+   `provider.set_run_model()` already exists; the *flag* override does NOT and must wrap
+   `build_graph_generic` (topology flags are read at COMPILE time).
+   Arc: [`docs/WAVE_E_SESSIONS_EVALS_ARC.md`](docs/WAVE_E_SESSIONS_EVALS_ARC.md).
+3. **Wave K follow-ons** (small, well-scoped, deliberately deferred):
+   - **K2b** — `query`-kind dispatch: run a governed read template through the read-only executor.
+   - **K5 polish** — an inline "annotate this cell" affordance on result tables; a persisted
+     proposal queue (proposals are live per-answer today).
+   - Wire `govern.guard` into the **9 pre-existing unenforced static `_RISK` actions** (Wave G work,
+     not the kinetic executor's).
 
-1. **Two parked findings (task chips filed, neither fixed):**
-   - **The 100% return rate.** A luxexperience brief reported "Beauty and jewelry_watches are
-     experiencing a 100% return rate". A literal 100% is the signature of a join fan-out or grain
-     artifact, which is exactly what `sql/fanout.py` + `grain_guard.py` exist to catch — so if it IS
-     an artifact, **a guard missed it and that gap matters more than the finding.** Read the source
-     finding's SQL in `data/exploration_workspace__luxexperience.json`, check numerator vs denominator.
-   - **Upload resurrection gap** (`connectors/file/local_upload.py`). LATENT, not active — verified
-     every orphaned upload dir on this machine holds 0 bytes, so the happy path deletes correctly.
-     But nothing catches the unhappy one: `_reload_existing_files()` re-registers every file under
-     every schema dir on startup and **never checks the tombstone** (the seed path does, ~line 249) ·
-     `drop_schema` uses `shutil.rmtree(..., ignore_errors=True)` so a partial delete is silently
-     swallowed · tombstones are written **only for seed-backed** objects, so an uploaded schema's
-     sole protection against returning is the file deletion having succeeded. Any surviving file —
-     failed unlink, lock, disk full, restore from backup — silently re-creates the schema.
+### Still open from earlier sessions
 
-2. **Flag graduation Batches 2+.** Batch 1 (the four deterministic ones) merged in #199;
+4. **Flag graduation Batches 2+.** Batch 1 merged in #199;
    [`docs/FLAG_GRADUATION_AUDIT_2026-07-22.md`](docs/FLAG_GRADUATION_AUDIT_2026-07-22.md) dispositions
    all 19 — 2 intentionally off, **5 that Wave E4 must measure**, 4 cost-vs-latency operator choices,
-   4 needing their own call (`agents.user_defined` is the likeliest next graduate). Two follow-ups the
-   audit deliberately deferred: clearing the 6 redundant live-ledger overrides (mutates user state),
-   and the `INTENTIONALLY_OFF` disposition ratchet (needs every flag dispositioned first).
-
-3. **Wave E4 — per-run overrides / grid experiments.** `provider.set_run_model()` already exists as a
-   contextvar; the flag override does NOT and must wrap `build_graph_generic` for topology flags
-   (`graph.py:128/140/229`). Ceiling: no seed, no response cache, default temp 0.1, Anthropic drops
-   temperature — measure with replication, never claim deterministic replay. **E4 now has a concrete
-   customer:** the 5 flags above whose delta is unproven.
-
-4. **`ask.brief_context` + `ask.conversation_context` soak, then graduate.** Both read `off` in the
-   live ledger. Turn on (`PUT /system/flags/<name> {"value":true}` — no restart), ask follow-ups from
-   the Briefing, confirm the answers reference the brief and inherit prior grounding, then
-   `AUTO_ELIGIBLE`.
-
-5. **Re-measure LLM spend from our OWN log.** `obs.session_log` is now ON (it recorded 0 rows for
-   weeks because nobody turned it on). The API server must be RUNNING to collect. Open questions the
-   OpenRouter export raised but could not answer: **32 of 62 requests went to a model that is not a
-   role binding** — it comes from `recommended_models` per-agent pins in `kernel/agents.py`, so
-   per-agent bindings silently drive most token volume and deserve an audit of their own.
-   Also: `investigate.py:1930` still runs a `partitioned_reduce` LLM digest — the exact shape #197
-   deleted from the briefing (~5 model calls to compress a page for a 32k-window narrator). Worth
-   checking whether it too can be a deterministic listing. There are **80 `provider.complete` call
-   sites**; the digest fix suggests a real fraction need no model at all.
-
-6. **Sub-1 shares still read `0.275985`, not `27.6%`** (#189). 6dp is the tested contract and protects
-   small rates; 3-significant-digits was rejected because `0.0000123` renders in scientific notation.
-   Turning shares into percents is a semantic change (is `0.27` a share or a correlation?).
-7. **Retire the 7 remaining stale rejects in `data/exploration_workspace.json`** — the AVG-of-rate half
-   is done (`scripts/revalidate_findings.py --apply`); the 7 `SUM(signup_fy)` ones need live column
-   types, which fail open because the luxexperience tables are gone from the current workspace DB.
-8. Older queue: P7 frontier *tier* (same-tier bakeoff decided — keep `glm-5.2:cloud`) · Platform
+   4 needing their own call (`agents.user_defined` is the likeliest next graduate).
+5. **`ask.brief_context` + `ask.conversation_context` soak, then graduate.** Both read `off` in the
+   live ledger. Turn on (`PUT /system/flags/<name> {"state":"on"}` — no restart), ask follow-ups from
+   the Briefing, confirm the answers inherit the brief's grounding, then mark `AUTO_ELIGIBLE`.
+6. **Re-measure LLM spend from our OWN log.** `obs.session_log` is ON but `session_events` still has
+   **0 rows** — the API server must be RUNNING to collect. Every cost figure to date is
+   call-counts-from-code × token-size *arithmetic*, not measurement.
+   ⚠️ To make a live LLM call from a **bare script**, first
+   `export AUGHOR_SECRET_KEY=$(grep ^AUGHOR_SECRET_KEY= .env | cut -d= -f2-)` — provider keys are stored
+   encrypted (`enc:v1`), and without it the call 401s *silently* (the fail-open makes it look like the
+   model "abstained"). This cost real debugging time in the K4 live proof.
+7. **Sub-1 shares still read `0.275985`, not `27.6%`** (#189). 6dp is the tested contract and protects
+   small rates; turning shares into percents is a semantic change (is `0.27` a share or a correlation?).
+8. **Retire the 7 remaining stale rejects in `data/exploration_workspace.json`** — the `SUM(signup_fy)`
+   half needs live column types, which fail open because the luxexperience tables are gone from the
+   current workspace DB.
+9. Older queue: P7 frontier *tier* (same-tier bakeoff decided — keep `glm-5.2:cloud`) · Platform
    WP-5/8/9/12–16 (WP-1/2/3/4 shipped; 7/10/11 partial) · Direction B follow-ons.
+
+---
+
+### ✅ 2026-07-23 · Wave K — the kinetic plane, and five cost/correctness fixes
+
+**#201 `ba06f6d` + #202 `817e9ec` — both merged, all 4 CI jobs green on each.** The session started
+from a cost question ("how long does $10 last on OpenRouter / Gemini?") and ended with the kinetic
+loop shipped and five root-cause fixes landed. Full per-PR detail in §2.
+
+**Durable lessons earned:**
+- **A permission ceiling is not a balance, and a threshold is not a spend.** OpenRouter's $10 is a
+  one-time **threshold** that lifts the free cap 50 → 1,000 req/day permanently; the money is never
+  spent while every binding is `:free`. Gemini is the opposite — enabling billing DELETES its free tier.
+- **Syntactic vs SEMANTIC tautology.** `self_ratio_tautology` only sees same-expression-text. The
+  "100% return rate" was two *different* aggregates the join geometry forced equal — a `LEFT JOIN`
+  demoted by `GROUP BY` on its null side. A guard reasoning about expression text cannot see a defect
+  that lives in the join/grain geometry.
+- **A delete guarded only by a filesystem op succeeding is not durably deleted.** The tombstone
+  (intent) must be the authority, not the file's presence (state).
+- **Prove it on the REAL path — twice this session the unit tests were green and wrong.** K3's overlay
+  merge returned nothing through `execute_guarded` because the tests *mocked* the org id; K4's proposer
+  looked like it "abstained" when it was really a swallowed 401 (encrypted key, no `AUGHOR_SECRET_KEY`
+  in a bare script). Both were invisible to hermetic tests by construction.
+- **The guard battery is FRAGMENTED** — ~5 re-assembled sites split by path, no registry. Add a guard
+  only to `Verifier.scan` and the *explorer* silently skips it.
 
 ---
 
@@ -853,6 +875,23 @@ An **autonomous data-analysis platform** that replaces the dashboard-and-analyst
 ---
 
 ## 2 · What we've built ✅
+
+### Wave K — the kinetic plane: declared, governed actions (2026-07-23, #201, `ba06f6d`)
+Scope + per-PR decision gates: [`docs/WAVE_K_KINETIC_PLANE_ARC.md`](docs/WAVE_K_KINETIC_PLANE_ARC.md). Closes Palantir's data→decision→**write-back** loop **without surrendering read-only safety on source data** — a "kinetic action" is an annotation, a side effect, or a governed read, never an INSERT/UPDATE/DELETE (the `sql/readonly.py` AST gate stays in front). All behind default-off flags (`kinetic.actions` · `kinetic.overlay` · `kinetic.agent_actions`), so `main` is byte-identical until switched on.
+- **K1 — declare.** `KineticAction` (typed params, **submission criteria whose authored failure messages are shown verbatim to humans AND the model**, side effects, risk tier defaulting fail-safe HIGH) declared as a per-connection ontology override (`target_kind:"action"`) and overlaid onto the graph at read time — version-controllable, survives fingerprint rebuilds. Malformed specs rejected at parse, never at execute. Resolves the three-way "action" naming collision (`OntologyAction` read-templates vs ActionHub `ActionTrigger` webhooks vs the new `KineticAction`).
+- **K2 — execute.** ONE governed executor (`kinetic/executor.py`): coerce params → evaluate criteria → graduated-approval gate → dispatch → audit. Criteria run **before** approval (a criterion failure outranks "needs approval") and **no side effect fires on any rejection**. Criteria use a safe restricted-predicate evaluator (ast-walk; calls/attributes/comprehensions structurally impossible), fail-closed. Extended `govern.guard/audit` with a backward-compatible `risk` override so a *dynamic* action's declared tier is honoured (unregistered would otherwise classify HIGH, making a declared LOW action demand approval). `POST /kinetic-actions/{id}/execute` → 200 / 422+authored message / 428 / 404.
+- **K3 — overlay.** The edits-as-overlay ledger: human annotations/corrections merged onto query results **at read time**, never mutating source. Clones the ambiguity-ledger/verdicts store idiom (SQLite, org+connection scoped) with the same override-wins authority — a machine edit never clobbers a human one. Grain = cell / column / table; merged via `_attach_caveats` into a new additive `QueryResult.annotations` channel. Survives refreshes by construction (the store is independent of the connection cache).
+- **K4 + K4b — propose.** The agent returns **structured** proposals, each dry-run validated (params + criteria) and **staged — never executed**; a human accepts and runs them through K2. Auto-invoked after deep-investigation synthesis (`answer_report["proposals"]`, riding the existing SSE event). The proposer binds the **strong** reasoner, not `fast` — proposing a governed action is judgment. **Proven live on free models only** (`:free` bindings, guarded to abort otherwise): valid typed-param proposals 3/3, correct abstention on criterion-violating and non-actionable cases.
+- **K5 — the surface.** `PUT /ontology/kinetic-actions/{id}` authors a declared action (validated at author time → 422, not a silent drop); `POST/GET /kinetic-actions/annotate|annotations`; and `web/components/KineticPanel.tsx` — a three-tab panel (Actions · Propose · Annotations) wired into the Intelligence workspace as the "Actions" layer. Approve drives the existing app-wide ApprovalModal (428 → `/approvals/allow` → retry). Browser-verified against the real API.
+- ~100 hermetic tests; suite **3697** at merge. Deferred and noted: K2b `query`-kind dispatch · K5 polish (inline annotate-this-cell, persisted proposal queue) · wiring `govern.guard` into the 9 pre-existing unenforced `_RISK` actions (Wave G).
+
+### The cost/correctness batch — five root-cause fixes (2026-07-23, #202, `817e9ec`)
+Began as "how long does $10 of credit last?"; measuring where every LLM request goes surfaced five defects.
+- **Streamed output cap.** #200 bounded LLM output on the **blocking path only** — the three highest-volume calls (quick headline, post-answer insight, deep synthesis) all *stream* and were unbounded. Also fixed: `budget = 1 if rate_limited` was a *floor* not a ceiling (defeating `max_retries=0`, the health check's contract), and streamed calls logged `role=""`.
+- **Fast-tier pin.** The per-agent model pin is a scalar contextvar that short-circuited the *role*, forcing **every** role — including the deliberately-cheap `fast` — onto the 550B model on job-borne runs (~10× on the most frequent call in a run). The implicit pin now skips `fast`; heavy roles still take it.
+- **Null-side GROUP BY guard.** New deterministic `group_by_outer_null_side` — the *semantic* twin of `self_ratio_tautology` — wired into the explorer emission gate, the interactive verifier, and the eval registry. Closes the parked "100% return rate" (proven an artifact on the real CSVs; the true ranking was **inverted**).
+- **Upload-resurrection tombstone.** A deleted uploaded schema/table silently returned if any backing file survived the delete. Reload now honours the tombstone, every delete tombstones (uploads too), and ingest lifts it.
+- **Deterministic evidence condensation.** Dropped the `fast`-tier `partitioned_reduce` synthesis digest: this evidence feeds synthesis, which *grounds* on it, so a model paraphrasing it was a fabrication surface. Now **0 LLM calls** and structurally impossible to alter a number synthesis will cite. (Left `aughor/llm/reduce.py` orphaned — removed separately.)
 
 ### The briefing arc — six PRs off one screenshot (2026-07-21, #188–#193, `e716a00`…`ef887ef`)
 Full per-PR detail + the ops lessons in §0. Suite 3369 → **3444** (+75 tests).
