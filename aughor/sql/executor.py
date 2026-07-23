@@ -250,6 +250,11 @@ def execute_guarded(
     def _attach_caveats(res, extra: list[str]):
         if extra:
             res.caveats = list(dict.fromkeys([*res.caveats, *extra]))
+        # Wave K3: merge this connection's human overlay edits onto the result at read time
+        # (flag `kinetic.overlay`, default off ⇒ byte-identical). Best-effort inside apply_overlay.
+        if flag_enabled("kinetic.overlay"):
+            from aughor.kinetic.overlay import apply_overlay
+            apply_overlay(res, getattr(conn, "_connection_id", ""))
         return res
 
     # E1 function-semantics checks (flag `trust.e1_live`, default off): pure-AST

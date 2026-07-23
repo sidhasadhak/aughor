@@ -52,3 +52,8 @@ class QueryResult(BaseModel):
     # (WP-1a: previously `execute_guarded`'s deterministic-only mode swallowed the
     # findings entirely). Additive: default [] keeps every existing consumer intact.
     caveats: list[str] = Field(default_factory=list)
+    # Wave K3: human overlay edits (annotations / corrections) merged onto this result at read
+    # time — each `{target, kind, body, source, column, row_index?}`. Never mutates source; the
+    # store is independent of the connection cache, so an edit survives refreshes. Additive:
+    # default [] keeps every existing consumer intact.
+    annotations: list[dict] = Field(default_factory=list)

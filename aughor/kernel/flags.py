@@ -84,6 +84,7 @@ FLAG_ENV = {
     "ops.metered_monitors": "AUGHOR_METERED_MONITORS",
     "agui.endpoint": "AUGHOR_AGUI_ENDPOINT",
     "kinetic.actions": "AUGHOR_KINETIC_ACTIONS",  # Wave K: overlay human-declared actions onto the graph
+    "kinetic.overlay": "AUGHOR_KINETIC_OVERLAY",  # Wave K3: merge human overlay edits onto query results
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -149,6 +150,10 @@ FLAG_META = {
     "kinetic.actions": {
         "label": "Declared actions in the ontology (Wave K)",
         "description": "Overlay human-DECLARED KineticActions from the per-connection ontology overrides onto the graph at read time: typed-parameter operations with submission criteria (whose authored failure messages are shown verbatim to humans and the model) and side effects. Read-only substrate in K1 — the actions become visible in the ontology and the API but are not executed until the Wave-K executor (K2) lands. Additive: off = the graph's kinetic_actions stays empty (byte-identical), and a malformed declared action is rejected at overlay, never surfaced.",
+    },
+    "kinetic.overlay": {
+        "label": "Human overlay edits on query results (Wave K3)",
+        "description": "Merge human annotations and corrections ('this outlier is a known launch-day spike', 'order 8821 is a test order') onto query results at READ time, matched by the columns present in the result — never mutating the source data. Edits live in an independent org+connection-scoped store, so they survive schema refreshes and rebuilds, and a machine-sourced edit never overrides a human one on the same target. Off by default ⇒ results carry no annotations (byte-identical); best-effort so an overlay hiccup never takes down a real result.",
     },
     "ask.stream_text": {
         "label": "Token-stream the answer narrative",

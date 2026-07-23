@@ -38,7 +38,7 @@ def _action(**kw) -> KineticAction:
 def _recorder():
     calls: list = []
 
-    def d(action, params):
+    def d(action, params, scope=""):
         calls.append((action.id, dict(params)))
         return {"dispatched": True}
 
@@ -196,10 +196,11 @@ def test_default_webhook_ssrf_is_blocked(monkeypatch):
     assert r.status == "dispatch_error" and "SSRF" in r.message
 
 
-def test_annotate_kind_is_a_seam_to_k3():
+def test_annotate_without_target_params_errors_clearly():
+    # annotate now writes to the K3 overlay ledger; a spec that omits table/body is a clear error.
     a = _action(kind="annotate", side_effects=[], submission_criteria=[])
-    r = execute_kinetic_action(a, {"amount": 1})
-    assert r.status == "dispatch_error" and "K3" in r.message
+    r = execute_kinetic_action(a, {"amount": 1})   # no table/body params
+    assert r.status == "dispatch_error" and "table" in r.message
 
 
 def test_trigger_investigation_is_a_seam_to_k4():

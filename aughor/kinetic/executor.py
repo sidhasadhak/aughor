@@ -156,7 +156,7 @@ def coerce_params(action: KineticAction, raw: dict) -> dict:
 
 # ── dispatch (injectable; the default wires webhook/notify, seams the rest) ───────
 
-Dispatch = Callable[[KineticAction, dict], dict]
+Dispatch = Callable[[KineticAction, dict, str], dict]   # (action, coerced_params, scope/conn_id) -> outcome
 
 
 def _dispatch_webhook(se: SideEffect, action: KineticAction, params: dict) -> dict:
@@ -174,9 +174,23 @@ def _dispatch_webhook(se: SideEffect, action: KineticAction, params: dict) -> di
     return {"kind": se.kind, "http_status": resp.status_code, "ok": resp.is_success}
 
 
-def default_dispatch(action: KineticAction, params: dict) -> dict:
-    """The wired-in dispatcher. ``notify``/``webhook`` fire now; the rest are seams that raise
-    with the PR that will wire them, so a caller sees a clear signal rather than a silent no-op."""
+def _dispatch_annotate(action: KineticAction, params: dict, scope: str) -> dict:
+    """Write a human overlay edit to the K3 ledger — an annotation/correction merged onto reads,
+    never a source mutation. The action's parameters carry the target + body."""
+    from aughor.kinetic.overlay import OverlayEdit, save_edit
+    if not params.get("table") or not params.get("body"):
+        raise KineticDispatchError("annotate requires 'table' and 'body' parameters")
+    edit = save_edit(OverlayEdit(
+        connection_id=scope, table=str(params["table"]),
+        column=str(params.get("column", "")), row_key=str(params.get("row_key", "")),
+        key_column=str(params.get("key_column", "")),
+        kind=str(params.get("kind", "annotation")), body=str(params["body"]), source="user"))
+    return {"annotation": edit.target(), "id": edit.id}
+
+
+def default_dispatch(action: KineticAction, params: dict, scope: str = "") -> dict:
+    """The wired-in dispatcher. ``notify``/``webhook`` and ``annotate`` fire now; the rest are
+    seams that raise with the PR that will wire them, so a caller sees a clear signal not a no-op."""
     if action.kind == "side_effect":
         results = []
         for se in action.side_effects:
@@ -189,7 +203,7 @@ def default_dispatch(action: KineticAction, params: dict) -> dict:
                 raise KineticDispatchError(f"unknown side effect kind: {se.kind}")
         return {"side_effects": results}
     if action.kind == "annotate":
-        raise KineticDispatchError("annotate dispatch requires the K3 overlay ledger")
+        return _dispatch_annotate(action, params, scope)
     if action.kind == "query":
         raise KineticDispatchError("query dispatch requires read-query wiring (K2b)")
     raise KineticDispatchError(f"unknown action kind: {action.kind}")
@@ -256,7 +270,7 @@ def execute_kinetic_action(
 
     # 4 — dispatch (the ONLY step that can cause a side effect; reached only after every gate)
     try:
-        outcome = (dispatch or default_dispatch)(action, coerced)
+        outcome = (dispatch or default_dispatch)(action, coerced, scope)
     except KineticDispatchError as e:
         govern.audit(gov_action, scope, "dispatch_error", actor=actor, detail=str(e), risk=risk)
         return KineticResult("dispatch_error", False, action.id, message=str(e))

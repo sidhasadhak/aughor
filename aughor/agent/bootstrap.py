@@ -150,6 +150,7 @@ def _register_purge_hooks() -> None:
     ph.register_purge_hook("packs", _packs_conn)
     ph.register_purge_hook("evidence", _evidence_conn)
     ph.register_purge_hook("ambiguity_ledger", _ambiguity_conn)
+    ph.register_purge_hook("overlay_ledger", _overlay_conn)
     ph.register_purge_hook("qdrant", _qdrant_conn)
 
     # schema-keyed
@@ -227,6 +228,13 @@ def _ambiguity_conn(conn_id, org_id):
     # state is per-connection, so it dies with the connection).
     from aughor.semantic import ambiguity_ledger
     return {"ambiguity_resolutions": ambiguity_ledger.purge_connections([conn_id], org_id=org_id)}
+
+
+def _overlay_conn(conn_id, org_id):
+    # Wave K3: human overlay edits are per-connection annotations over that connection's data,
+    # so they die with the connection.
+    from aughor.kinetic import overlay
+    return {"overlay_edits": overlay.purge_connections([conn_id], org_id=org_id)}
 
 
 def _qdrant_conn(conn_id, org_id):
