@@ -355,11 +355,16 @@ class LocalUploadConnection(Connector):
             self._duckdb.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         except Exception:
             pass
-        # If this schema was seed-backed, tombstone it so the re-seed on the next construction
-        # skips it — otherwise a sample schema like `ecommerce` silently comes back.
-        if any(s == schema for s, _ in self._seeded):
-            self._removed_seed_schemas.add(schema)
-            self._save_tombstone()
+        # Tombstone EVERY dropped schema — seed-backed OR uploaded — not just seeds. The
+        # tombstone, not the `rmtree` above, is what keeps a schema gone: `ignore_errors=True`
+        # can leave files behind and a restore-from-backup can re-create them, and
+        # `_reload_existing_files` now honors the tombstone where a raw filesystem scan would
+        # resurrect them (this closes the upload-resurrection gap, not just the seed one).
+        self._removed_seed_schemas.add(schema)
+        # A schema tombstone subsumes any table tombstones under it — drop the now-redundant ones.
+        self._removed_seed_tables = {t for t in self._removed_seed_tables
+                                     if not t.startswith(f"{schema}.")}
+        self._save_tombstone()
 
     # ── Analyze (no persistence) ────────────────────────────────────────────────
 
@@ -488,6 +493,14 @@ class LocalUploadConnection(Connector):
                 "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             }, indent=2)
         )
+        # Ingesting is an explicit "bring it back" — lift any tombstone on this schema/table
+        # so `_reload_existing_files` (which now honors tombstones) re-materializes it on the
+        # next construction. Without this, a re-upload after a delete would vanish on restart.
+        key = f"{schema}.{table_name}"
+        if schema in self._removed_seed_schemas or key in self._removed_seed_tables:
+            self._removed_seed_schemas.discard(schema)
+            self._removed_seed_tables.discard(key)
+            self._save_tombstone()
         return table_name
 
     def _describe_contract(self, schema: str, table_name: str) -> dict:
@@ -577,11 +590,18 @@ class LocalUploadConnection(Connector):
         return f"SELECT {', '.join(parts)} FROM {src}"
 
     def _reload_existing_files(self) -> None:
-        """Re-register every file under every schema dir on startup."""
+        """Re-register every file under every schema dir on startup — EXCEPT anything the
+        user tombstoned. Without this skip a deleted schema/table whose backing file survived
+        the delete silently re-materializes here: `drop_schema` uses `rmtree(ignore_errors=
+        True)` (a lock / permission / disk-full leaves files behind), and a restore-from-backup
+        re-creates them outright. The tombstone — not the file's mere presence — is the
+        authority on what the user removed."""
         for sdir in sorted(self._upload_dir.iterdir()):
             if not sdir.is_dir():
                 continue
             schema = sdir.name
+            if schema in self._removed_seed_schemas:
+                continue  # user deleted this schema — do not resurrect surviving files
             try:
                 self._duckdb.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
             except Exception:
@@ -591,6 +611,8 @@ class LocalUploadConnection(Connector):
                     continue
                 cfg = self._read_sidecar(f)
                 table_name = cfg.get("table_name") or _safe_ident(f.stem)
+                if f"{schema}.{table_name}" in self._removed_seed_tables:
+                    continue  # user deleted this table — do not resurrect a surviving file
                 column_types = cfg.get("column_types") or {}
                 # Prefer the pinned full contract (deterministic reload); old
                 # sidecars without one fall back to overrides-only re-sniffing.
@@ -658,10 +680,10 @@ class LocalUploadConnection(Connector):
             self._duckdb.execute(f'DROP TABLE IF EXISTS "{schema}"."{tbl}"')
         except Exception:
             pass
-        # Tombstone a seed-backed table so the re-seed on the next construction skips it.
-        if (schema, tbl) in self._seeded:
-            self._removed_seed_tables.add(f"{schema}.{tbl}")
-            self._save_tombstone()
+        # Tombstone the table — seed-backed OR uploaded — so a surviving backing file (or a
+        # re-materialized seed) is not silently re-registered on the next construction.
+        self._removed_seed_tables.add(f"{schema}.{tbl}")
+        self._save_tombstone()
 
     def delete_file(self, filename: str, schema: str = DEFAULT_SCHEMA) -> None:
         schema = _safe_ident(schema, DEFAULT_SCHEMA)
@@ -678,6 +700,11 @@ class LocalUploadConnection(Connector):
             self._duckdb.execute(f'DROP TABLE IF EXISTS "{schema}"."{table_name}"')
         except Exception:
             pass
+        # Tombstone the table so a surviving copy of this file isn't re-registered on reload
+        # (delete_file previously wrote NO tombstone at all — its sole protection against
+        # resurrection was the unlink having succeeded).
+        self._removed_seed_tables.add(f"{schema}.{table_name}")
+        self._save_tombstone()
 
     # ── DatabaseConnection ABC ─────────────────────────────────────────────────
 
