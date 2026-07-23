@@ -614,6 +614,7 @@ from aughor.routers import (
     agui,
     dashboard,
     evals,
+    kinetic,
 )
 
 app.include_router(system.router)
@@ -624,6 +625,7 @@ app.include_router(connections.router)
 app.include_router(exploration.router)
 app.include_router(catalog.router)
 app.include_router(ontology.router)
+app.include_router(kinetic.router)
 app.include_router(knowledge.router)
 app.include_router(metrics.router)
 app.include_router(actions.router)
