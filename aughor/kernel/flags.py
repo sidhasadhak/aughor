@@ -86,6 +86,7 @@ FLAG_ENV = {
     "kinetic.actions": "AUGHOR_KINETIC_ACTIONS",  # Wave K: overlay human-declared actions onto the graph
     "kinetic.overlay": "AUGHOR_KINETIC_OVERLAY",  # Wave K3: merge human overlay edits onto query results
     "kinetic.agent_actions": "AUGHOR_KINETIC_AGENT_ACTIONS",  # Wave K4: the agent may PROPOSE declared actions
+    "automations.engine": "AUGHOR_AUTOMATIONS_ENGINE",  # Wave A2: the condition→effect heartbeat + API
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -159,6 +160,10 @@ FLAG_META = {
     "kinetic.agent_actions": {
         "label": "Agent proposes declared actions (Wave K4)",
         "description": "Let the agent PROPOSE declared KineticActions from an analysis — the model returns structured proposals which are dry-run validated (typed params + submission criteria) and STAGED for a human to accept and run through the governed executor. Nothing is executed here; nothing above LOW risk ever auto-fires. Off by default ⇒ the agent never proposes actions (byte-identical) and the proposer makes no LLM call.",
+    },
+    "automations.engine": {
+        "label": "Automations — declared condition → governed effect (Wave A)",
+        "description": "One engine binding combinable CONDITIONS (a cron schedule, or a metric condition delegated to an existing monitor) to ordered EFFECTS (run a deep investigation, deliver a brief, notify an Action Hub trigger, or execute a declared KineticAction), with muting, expiry, jittered retries, a fallback effect, and a per-tick history that records the ticks which deliberately did NOTHING — the question monitor_alerts cannot answer, since it stores only alerts that fired. A write effect runs through the one Wave-K executor, inheriting submission criteria, the graduated-approval gate and the audit trail, so nothing above LOW risk auto-fires from an automation either. Off by default ⇒ the heartbeat never starts and every /automations route 404s (byte-identical); the legacy monitor and brief schedulers are untouched either way.",
     },
     "ask.stream_text": {
         "label": "Token-stream the answer narrative",
