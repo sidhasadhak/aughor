@@ -30,6 +30,50 @@ def test_run_model_contextvar_is_honored_by_get_provider():
     assert provider.get_provider("coder")._model != "run-scoped-model"
 
 
+def test_run_model_pin_skips_the_fast_tier():
+    """A per-agent pin means 'run this agent's reasoning on a stronger model' — it must NOT
+    promote the deliberately-cheap `fast` calls (phase interpret, question classify, digest
+    reduce) to the pinned heavy model. That waste was the single biggest per-run cost driver
+    on a job-borne investigation (interpret fires once per phase). The heavy roles still take
+    the pin; only `fast` keeps its tier default."""
+    token = provider.set_run_model("nvidia/nemotron-3-ultra-550b-a55b:free")
+    try:
+        assert provider.get_provider("coder")._model == "nvidia/nemotron-3-ultra-550b-a55b:free"
+        assert provider.get_provider("narrator")._model == "nvidia/nemotron-3-ultra-550b-a55b:free"
+        fast = provider.get_provider("fast")._model
+        assert fast != "nvidia/nemotron-3-ultra-550b-a55b:free"
+        # and it is exactly the fast role's own tier default
+        assert fast == provider.get_provider("fast", model=None)._model
+    finally:
+        provider.reset_run_model(token)
+    # resolve_binding (the control-plane describer) must agree with get_provider, so a
+    # vended capability matches the model a real `fast` call uses.
+    token = provider.set_run_model("nvidia/nemotron-3-ultra-550b-a55b:free")
+    try:
+        _, fast_bound, _ = provider.resolve_binding("fast")
+        assert fast_bound != "nvidia/nemotron-3-ultra-550b-a55b:free"
+    finally:
+        provider.reset_run_model(token)
+
+
+def test_explicit_model_pins_fast_too():
+    """The exemption is only for the IMPLICIT agent pin. An explicit `model=` is a
+    deliberate direct pin (bakeoff arm, health probe) and wins for every role."""
+    p = provider.get_provider("fast", model="explicit-fast-pin")
+    assert p._model == "explicit-fast-pin"
+
+
+def test_pin_all_roles_escape_hatch_restores_total_pin(monkeypatch):
+    """AUGHOR_PIN_ALL_ROLES=1 is the opt-back-in for an operator who really wants every
+    call, cheap ones included, on the pinned model."""
+    monkeypatch.setenv("AUGHOR_PIN_ALL_ROLES", "1")
+    token = provider.set_run_model("nvidia/nemotron-3-ultra-550b-a55b:free")
+    try:
+        assert provider.get_provider("fast")._model == "nvidia/nemotron-3-ultra-550b-a55b:free"
+    finally:
+        provider.reset_run_model(token)
+
+
 def test_explicit_model_overrides_the_contextvar():
     token = provider.set_run_model("run-scoped-model")
     try:

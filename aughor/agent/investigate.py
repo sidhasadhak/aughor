@@ -1933,69 +1933,90 @@ def _attach_kinetic_proposals(answer_report: dict, connection_id: str) -> None:
 
 
 _EVIDENCE_BUDGET = 6000
-_EV_DIGEST_SYS = (
-    "You compress a single investigation phase's query evidence into 1-2 sentences, PRESERVING the key "
-    "numbers (values, deltas, percentages, counts). No preamble, no commentary — just the facts."
-)
+_CONDENSE_ROWS = 6            # rows kept per finding when an overflow phase must be condensed
+_CONDENSE_PHASE_CAP = 1200    # hard per-phase char backstop for a condensed block
+
+
+def _condense_phase_evidence(p: InvestigationPhaseResult) -> str:
+    """Deterministic, number-preserving condensation of ONE overflow phase — no LLM.
+
+    Drops the SQL TEXT (synthesis grounds on result VALUES, not the query string, and the
+    verbatim blocks that DID fit already carry their SQL) and caps each finding's table to the
+    top rows. Exact numbers survive with zero paraphrase surface — the reason this replaced a
+    ``fast``-tier LLM digest (0–3 calls per deep run) that was TOLD to 'preserve the numbers'
+    but, being a model, could silently reword them into evidence the synthesis then cited as
+    fact. Errors and suppressed-artifact findings are handled exactly as the verbatim path."""
+    if p.get("_hidden"):
+        return ""
+    lines = [f"\n=== {p['phase_name']} (condensed) ==="]
+    for f in p["findings"]:
+        if _is_suppressed_finding(f):
+            lines.append(f"[values suppressed — {(f.get('interpretation') or 'computation artifact').strip()}]")
+            continue
+        if f["error"]:
+            lines.append(f"ERROR: {f['error']}")
+            continue
+        if f["columns"] and f["rows"]:
+            label = (f.get("title") or "").strip()
+            lines.append((f"{label}: " if label else "") + " | ".join(str(c) for c in f["columns"]))
+            for row in f["rows"][:_CONDENSE_ROWS]:
+                lines.append(" | ".join(str(v) for v in row))
+            if f["row_count"] > _CONDENSE_ROWS:
+                lines.append(f"... ({f['row_count'] - _CONDENSE_ROWS} more rows)")
+    return "\n".join(lines)[:_CONDENSE_PHASE_CAP]
 
 
 def _phases_evidence_budgeted(phases: list[InvestigationPhaseResult], budget: int = _EVIDENCE_BUDGET) -> str:
-    """Per-phase evidence packed VERBATIM up to ``budget`` chars (exact numbers preserved for grounding);
-    phases that overflow are folded into a number-preserving digest (tree-reduce) rather than truncated
-    away. Replaces the old ``evidence_log[:6000]``; fails open to plain truncation. Small investigations
-    (under budget) are returned unchanged with no LLM call."""
-    blocks = [(p["phase_name"], _one_phase_evidence(p)) for p in phases]
-    full = "\n".join(b for _, b in blocks)
+    """Per-phase evidence packed VERBATIM up to ``budget`` chars (exact numbers preserved for
+    grounding); phases that overflow are DETERMINISTICALLY condensed (SQL dropped, rows capped —
+    numbers kept), never truncated away or paraphrased by a model. Replaces the old
+    ``evidence_log[:6000]`` and the ``fast``-tier tree-reduce digest that briefly stood between
+    them. Small investigations (under budget) are returned unchanged. **No LLM call on any path**;
+    fails open to plain truncation."""
+    blocks = [_one_phase_evidence(p) for p in phases]
+    full = "\n".join(blocks)
     if len(full) <= budget:
         return full
 
     try:
-        from pydantic import BaseModel
-
-        from aughor.llm.provider import get_provider
-        from aughor.llm.reduce import partitioned_reduce
-
-        class _EvidenceDigest(BaseModel):
-            text: str
-
-        provider = get_provider("fast")
-
         kept: list[str] = []
-        overflow: list[tuple[str, str]] = []
+        overflow: list[InvestigationPhaseResult] = []
         used = 0
-        for name, block in blocks:
+        for p, block in zip(phases, blocks):
+            if not block:
+                continue
             if used + len(block) <= budget:
                 kept.append(block)
                 used += len(block)
             else:
-                overflow.append((name, block))
+                overflow.append(p)
 
         if not overflow:                       # everything fit (the >budget was just join slack)
             return full
-        if not kept:                           # nothing fit verbatim — truncate rather than a
+        if not kept:                           # nothing fit verbatim — truncate rather than emit a
             return full[:budget]               # digest-only evidence log (no verbatim to ground on)
 
-        def _summ(name: str, blocks_: list[str]) -> str:
-            body = blocks_[0][:4000]
-            out = provider.complete(
-                system=_EV_DIGEST_SYS,
-                user=f"Phase evidence:\n{body}\n\nCompress to 1-2 sentences, keeping the key numbers.",
-                response_model=_EvidenceDigest, temperature=0.2,
-            )
-            return f"[{name}] {out.text.strip()}"
-
-        digest = partitioned_reduce(
-            {name: [block] for name, block in overflow},
-            summarize_group=_summ,
-            combine=lambda parts: "\n".join(parts),
-        )
+        condensed: list[str] = []
+        used_c = 0
+        for i, p in enumerate(overflow):
+            c = _condense_phase_evidence(p)
+            if not c:
+                continue
+            if used_c + len(c) > budget:       # a secondary budget bounds the condensed section
+                condensed.append(f"... (+{len(overflow) - i} more phase(s) omitted)")
+                break
+            condensed.append(c)
+            used_c += len(c)
+        if not condensed:
+            return "\n".join(kept)
         return (
             "\n".join(kept)
-            + f"\n\n=== ADDITIONAL EVIDENCE (summarized — {len(overflow)} phase(s) beyond the "
-            f"verbatim budget) ===\n{digest}"
+            + f"\n\n=== ADDITIONAL EVIDENCE (condensed — {len(overflow)} phase(s) beyond the "
+            f"verbatim budget, key numbers preserved) ===\n"
+            + "\n".join(condensed)
         )
     except Exception:
-        return full[:budget]                   # fail-open to today's behavior
+        return full[:budget]                   # fail-open to plain truncation
 
 
 # ── Phase nodes ───────────────────────────────────────────────────────────────

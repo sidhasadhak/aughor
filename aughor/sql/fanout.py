@@ -999,6 +999,167 @@ def self_ratio_tautology(sql: str, dialect: str = "duckdb") -> str | None:
     return None
 
 
+def group_by_outer_null_side(sql: str, table_cols: dict | None = None,
+                             dialect: str = "duckdb") -> str | None:
+    """An outer join silently demoted to an inner join by GROUP BY-ing on its
+    NULL-producing side.
+
+    ``FROM orders o LEFT JOIN returns r ON o.order_id = r.order_id GROUP BY r.category``:
+    ``category`` lives only on the joined (right) side, so every group holds only rows
+    where the join matched — the preserved side's unmatched rows all collapse into the
+    lone ``category IS NULL`` bucket and vanish from every real group. Any aggregate meant
+    to span the preserved side is then silently restricted to matched rows. The signature
+    case is a rate whose denominator is a preserved-side aggregate: it becomes identically
+    ~1.0 in every bucket regardless of the data — the luxexperience "Beauty and
+    jewelry_watches … 100% return rate" artifact (numerator ``COUNT(DISTINCT r.order_id)``,
+    denominator ``COUNT(DISTINCT o.order_id)``, grouped by ``returns.category``). This is
+    the SEMANTIC twin of :func:`self_ratio_tautology`: two DIFFERENT aggregate expressions
+    that the join geometry forces to be equal, so the syntactic check cannot see it.
+
+    Pure parse-tree analysis (no probe needed — the defect is structural). High precision,
+    because on the emission gate a hit DROPS the finding: it fires only when a bare
+    null-side column drives the grouping AND a preserved-side aggregate is present, and it
+    exempts (a) null-tolerant grouping — ``COALESCE``/``IFNULL``/``CASE`` over the column,
+    the deliberate "bucket the unmatched" idiom; (b) the join key itself; (c) any column
+    it cannot unambiguously place on the null side (unqualified with no ``table_cols``, or
+    owned by a preserved table too). Returns a reason or None; never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+    null_tolerant = (exp.Coalesce, exp.If, exp.Case)
+
+    def _owning_tables(colname: str, scope_tables: set) -> set:
+        if not table_cols:
+            return set()
+        cn = colname.lower()
+        out = set()
+        for t in scope_tables:
+            cols = table_cols.get(t) or table_cols.get(t.split(".")[-1]) or []
+            if cn in {c.lower() for c in cols}:
+                out.add(t)
+        return out
+
+    for select in tree.find_all(exp.Select):
+        frm = select.args.get("from") or select.args.get("from_") or select.find(exp.From)
+        joins = select.args.get("joins") or []
+        grp = select.args.get("group")
+        if frm is None or not joins or not grp:
+            continue
+
+        alias2tbl: dict[str, str] = {}
+        preserved_al: set[str] = set()
+        null_al: set[str] = set()
+        join_keys: set[str] = set()
+        for tb in frm.find_all(exp.Table):
+            a = (tb.alias or tb.name).lower()
+            alias2tbl[a] = tb.name.lower()
+            preserved_al.add(a)
+        for j in joins:
+            rt = j.this
+            if not isinstance(rt, exp.Table):
+                continue
+            a = (rt.alias or rt.name).lower()
+            alias2tbl[a] = rt.name.lower()
+            on = j.args.get("on")
+            if on is not None:
+                for c in on.find_all(exp.Column):
+                    join_keys.add(c.name.lower())
+            side = (j.args.get("side") or "").upper()
+            if side == "LEFT":
+                null_al.add(a)
+            elif side == "RIGHT":
+                null_al |= preserved_al
+                preserved_al = {a}
+            elif side == "FULL":
+                null_al |= (preserved_al | {a})
+                preserved_al = set()
+            else:
+                preserved_al.add(a)
+        preserved_al -= null_al
+        if not null_al:
+            continue
+        null_tbls = {alias2tbl[a] for a in null_al}
+        preserved_tbls = {alias2tbl[a] for a in preserved_al}
+        scope_tbls = set(alias2tbl.values())
+
+        def _side_of(col, _null=null_al, _pres=preserved_al, _nt=null_tbls,
+                     _pt=preserved_tbls, _st=scope_tbls) -> str | None:
+            if col.table:
+                a = col.table.lower()
+                return "null" if a in _null else "preserved" if a in _pres else None
+            owners = _owning_tables(col.name, _st)
+            if owners and owners <= _nt:
+                return "null"
+            if owners and owners <= _pt:
+                return "preserved"
+            return None
+
+        # (1) a GROUP BY key that is a bare null-side column — not a join key, not null-tolerant
+        null_group_col = None
+        for g in grp.expressions:
+            gexpr = g
+            if isinstance(g, exp.Literal) and g.is_int:
+                idx = int(g.name) - 1
+                if 0 <= idx < len(select.expressions):
+                    gexpr = select.expressions[idx]
+            if any(isinstance(n, null_tolerant) for n in gexpr.walk()):
+                continue
+            low = gexpr.sql(dialect=dialect).lower()
+            if "ifnull" in low or "nvl" in low:
+                continue
+            for c in gexpr.find_all(exp.Column):
+                if c.name.lower() in join_keys:
+                    continue
+                if _side_of(c) == "null":
+                    null_group_col = c
+                    break
+            if null_group_col is not None:
+                break
+        if null_group_col is None:
+            continue
+
+        # (2) an aggregate over a PRESERVED-side column — the one silently restricted
+        preserved_agg = None
+        for agg in select.find_all(exp.AggFunc):
+            if any(_side_of(c) == "preserved" for c in agg.find_all(exp.Column)):
+                preserved_agg = agg
+                break
+        if preserved_agg is None:
+            continue
+
+        # (3) sharpen the message when it is a num(null)/den(preserved) ratio → ~1.0
+        ratio_note = ""
+        for d in select.find_all(exp.Div):
+            num, den = d.this, d.expression
+            if isinstance(den, exp.Nullif):
+                den = den.this
+            num_sides = {_side_of(c) for c in num.find_all(exp.Column)} if num else set()
+            den_sides = {_side_of(c) for c in den.find_all(exp.Column)} if den else set()
+            if "null" in num_sides and "preserved" in den_sides:
+                ratio_note = (" The ratio draws its numerator from the null side and its "
+                              "denominator from the preserved side, so within every group it "
+                              "is identically ~1.0 (100%) regardless of the data.")
+                break
+
+        gcol = (null_group_col.table + "." if null_group_col.table else "") + null_group_col.name
+        from aughor.stats import bump
+        bump("guard.groupby_null_side.fired")
+        return (f"outer join demoted by GROUP BY on the null-producing side: grouping by "
+                f"'{gcol}' (from the join's null side) drops every unmatched row into the NULL "
+                f"bucket, so {preserved_agg.sql(dialect=dialect)} is silently restricted to "
+                f"matched rows in each group rather than spanning all of them.{ratio_note} "
+                f"Attribute the dimension from the preserved side, or pre-aggregate at its grain.")
+    return None
+
+
 def _cte_grain_and_outputs(cte_select) -> tuple[set, set, set]:
     """For a CTE's SELECT, return (grain, measures, all_outputs) as output-name sets:
       grain    = output names that come from GROUP BY keys (the CTE's row grain);

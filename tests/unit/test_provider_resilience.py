@@ -580,3 +580,22 @@ def test_gemini_is_bound_to_the_model_with_a_usable_daily_budget():
     """gemini-flash-latest → Gemini 3.6 Flash = 20 requests/DAY, measured on the live
     account. flash-lite gives 500. A briefing cannot run inside 20."""
     assert set(P._DEFAULT_MODELS["gemini"].values()) == {"gemini-3.1-flash-lite"}
+
+
+def test_max_retries_zero_is_honoured_even_for_a_rate_limit(monkeypatch):
+    """The one-retry rate-limit rule is a CEILING on the ladder, not a floor. Written as
+    `budget = 1 if rate_limited else max_retries` it silently RAISED an explicit
+    max_retries=0 to 1 — defeating the health check, which passes 0 precisely so it
+    reports what is true NOW instead of sleeping out the server's retry-after."""
+    slept: list = []
+    monkeypatch.setattr(P.time, "sleep", slept.append)
+    calls = {"n": 0}
+
+    def do():
+        calls["n"] += 1
+        raise _Transient()          # status_code 429
+
+    with pytest.raises(_Transient):
+        P._run_resilient(do, "u-rl-zero", max_retries=0)
+    assert calls["n"] == 1          # the one attempt asked for — no retry, no sleep
+    assert slept == []

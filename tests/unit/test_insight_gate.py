@@ -91,6 +91,21 @@ class TestVerifyInsightEndToEnd:
         ok, why = verify_insight([["1.0"]], "100% margin", "SELECT SUM(x)/NULLIF(SUM(x),0) FROM t")
         assert not ok and "self-referential" in why
 
+    def test_null_side_group_demotion_dropped(self):
+        # The luxexperience "Beauty and jewelry_watches … 100% return rate": a LEFT JOIN
+        # demoted by GROUP BY-ing on the null (returns) side, so the preserved-side
+        # denominator is silently restricted and the rate is 1.0 in every bucket. The
+        # syntactic self_ratio_tautology can't see it (two different expressions); the
+        # semantic guard does. Qualified `r.category` so no table_cols is needed.
+        ok, why = verify_insight(
+            [["Beauty", "1.0"], ["jewelry_watches", "1.0"]],
+            "Beauty and jewelry_watches both maintain a 100% return rate.",
+            "SELECT r.category, COUNT(DISTINCT r.order_id) * 1.0 "
+            "/ NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate "
+            "FROM orders o LEFT JOIN returns r ON o.order_id = r.order_id GROUP BY r.category")
+        assert not ok
+        assert "null-side" in why
+
     def test_clean_insight_passes(self):
         ok, why = verify_insight(
             [["Fragrance", "92.1"], ["Makeup", "73.7"]],

@@ -236,6 +236,36 @@ def current_run_model() -> Optional[str]:
     return _run_model.get()
 
 
+def _pinned_model(role: Role, model: Optional[str]) -> str:
+    """The model this call is pinned to, or ``""`` for the role's tier default.
+
+    Precedence: an explicit ``model=`` wins for **every** role — that is a deliberate
+    direct pin (bakeoff arm, health-check probe, a test). The implicit per-agent run pin
+    (:func:`set_run_model`, set by the kernel from the agent's governance) deliberately
+    does **not** reach the ``fast`` tier.
+
+    Why ``fast`` is exempt: it is Aughor's cheap-by-declaration role — the call site chose
+    it because the work is a throwaway (a phase interpret, a question classify, the
+    evidence digest). A per-agent pin means "run *this agent's* reasoning on a stronger
+    model" (Analyst → 550B for 1M-ctx root-causing; Briefer → 550B for user-visible
+    synthesis) — none of the charter recommendations were chosen for the interpret calls.
+    Letting the scalar pin clobber ``fast`` runs those throwaways on a 550B reasoning
+    model: the single biggest per-run cost driver on a job-borne investigation, where the
+    interpret call fires once per phase (up to ~7) plus the digest reduce. The heavy roles
+    (``coder``/``narrator``) still take the pin, so intended quality is untouched.
+
+    ``AUGHOR_PIN_ALL_ROLES=1`` restores the old total-pin behaviour for an operator who
+    genuinely wants every call, cheap ones included, on the pinned model.
+    """
+    explicit = (model or "").strip()
+    if explicit:
+        return explicit
+    run = (current_run_model() or "").strip()
+    if run and role == "fast" and not _flag("AUGHOR_PIN_ALL_ROLES"):
+        return ""
+    return run
+
+
 def _read_config() -> dict:
     try:
         if _CONFIG_PATH.exists():
@@ -363,9 +393,10 @@ def resolve_binding(role: Role = "coder", *, model: Optional[str] = None) -> tup
     :func:`aughor.platform.inference.vend_llm` (control-plane seam, describes the binding),
     so a vended :class:`InferenceCapability` always matches the binding a real call uses.
     Model precedence mirrors :func:`get_provider`: explicit pin → run/agent contextvar
-    (``set_run_model``) → role default — i.e. Org default → … → Agent override."""
+    (``set_run_model``) → role default — i.e. Org default → … → Agent override. The
+    run/agent pin skips the ``fast`` tier (see :func:`_pinned_model`)."""
     backend = _active_backend()
-    pinned = (model or current_run_model() or "").strip()
+    pinned = _pinned_model(role, model)
     eff_model = pinned or _active_model(backend, role)
     return backend, eff_model, _active_base_url(backend)
 
@@ -676,7 +707,7 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
                    max_retries: Optional[int] = None):
     """Run ``do()`` under the per-endpoint semaphore, retrying transient errors with exponential
     backoff + jitter, bounded by AUGHOR_LLM_MAX_RETRIES (default 3) and an overall deadline
-    AUGHOR_LLM_DEADLINE_S (default 600s). Non-transient errors raise immediately.
+    AUGHOR_LLM_DEADLINE_S (default 180s, see _DEADLINE_S). Non-transient errors raise immediately.
 
     ``stats`` (optional, mutated in place) reports ``retries`` — the count was
     previously local and discarded, so a model that only ever succeeds on its
@@ -699,13 +730,21 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
                 # how a throttle becomes a spiral — the live Gemini account peaked at 19 RPM
                 # against a 15 RPM cap with a 429-dominated error chart. One retry, at the delay
                 # the server itself asked for, is the most that can help.
-                budget = 1 if _is_rate_limited(e) else max_retries
+                # min(), not a bare 1: this is a CEILING on the ladder, and written as a
+                # plain assignment it became a FLOOR — a caller that explicitly asked for
+                # max_retries=0 got one retry anyway, plus a sleep honouring the server's
+                # retry-after (up to 120s). That silently defeats the health check, which
+                # passes 0 precisely so it reports what is true NOW; and the health check is
+                # the likeliest place to meet a 429 (12 of 62 requests in the 2026-07-22
+                # export were health probes, against a 50/day cap).
+                budget = min(1, max_retries) if _is_rate_limited(e) else max_retries
                 if not _is_transient(e) or attempt >= budget or time.monotonic() >= deadline:
                     raise
                 attempt += 1
                 if stats is not None:
                     stats["retries"] = attempt
                 err_name = type(e).__name__   # `e` is unbound after the except block
+                err_budget = budget           # ditto — report the ladder we actually ran
                 wait = min(30.0, 2.0 ** attempt) + random.uniform(0.0, 0.5 * attempt)
                 # The provider's own number wins when it is LONGER than our guess: a
                 # throttle that says "retry in 42s" is not survivable on a 15s ladder.
@@ -715,7 +754,7 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
         if time.monotonic() + wait >= deadline:
             wait = max(0.0, deadline - time.monotonic())
         logger.warning("llm: transient error (%s); retry %d/%d in %.1fs",
-                       err_name, attempt, max_retries, wait)
+                       err_name, attempt, err_budget, wait)
         time.sleep(wait)
 
 
@@ -840,7 +879,8 @@ class LLMProvider:
         try:
             return self._stream_on(self._client, self.backend, self._model,
                                    system, user, response_model, temperature,
-                                   text_field, on_text, base_url=self._base_url)
+                                   text_field, on_text, base_url=self._base_url,
+                                   role=self.role)
         except Exception as stream_exc:
             logger.warning("provider: partial streaming failed (%s); falling back to blocking complete()",
                            str(stream_exc)[:120])
@@ -872,7 +912,7 @@ class LLMProvider:
         from aughor.kernel import metering
         if backend == "anthropic":
             endpoint = client.messages
-            kwargs = dict(model=model, max_tokens=4096, system=system,
+            kwargs = dict(model=model, max_tokens=_max_output_tokens(), system=system,
                           messages=[{"role": "user", "content": user}],
                           response_model=response_model)
         else:
@@ -954,7 +994,7 @@ class LLMProvider:
             create_partial = getattr(client.messages, "create_partial", None)
             if create_partial is None:
                 raise RuntimeError("anthropic client has no create_partial — partial streaming unavailable")
-            kwargs = dict(model=model, max_tokens=4096, system=system,
+            kwargs = dict(model=model, max_tokens=_max_output_tokens(), system=system,
                           messages=[{"role": "user", "content": user}],
                           response_model=response_model)
 
@@ -1014,18 +1054,46 @@ class LLMProvider:
         if raw_client is None:
             raise RuntimeError(f"{backend} instructor wrapper exposes no raw client — streaming unavailable")
         sys_prompt = system + LLMProvider._json_stream_instruction(response_model)
+        # max_tokens rides here for the same reason it rides on _complete_on: without it the
+        # only brake on a reasoning model is the deadline. It was set on the blocking path only,
+        # so the three highest-volume calls in the app — the quick-path headline, the post-answer
+        # insight, and the deep synthesis — are all STREAMED and were all still unbounded.
+        # It is deliberately NOT part of the degrade ladder below: `max_tokens` is core OpenAI,
+        # every compat shim takes it, and a cap that can be silently dropped is not a cap.
         base_kwargs = dict(model=model, temperature=temperature, stream=True,
+                           max_tokens=_max_output_tokens(),
                            messages=[{"role": "system", "content": sys_prompt},
                                      {"role": "user", "content": user}])
+        extra = _reasoning_extra_body(backend)
+        if extra:
+            base_kwargs["extra_body"] = extra
+
+        # Degrade ladder, richest first. `stream_options` and `reasoning` are both shim-optional
+        # and an endpoint that has never heard of one rejects the whole request, so drop them one
+        # at a time rather than lose the call.
+        _ladder = [dict(stream_options={"include_usage": True}, **base_kwargs)]
+        if extra:
+            _ladder.append({k: v for k, v in _ladder[0].items() if k != "extra_body"})
+        _ladder.append({k: v for k, v in base_kwargs.items() if k != "extra_body"})
+
+        def _open_stream():
+            last = len(_ladder) - 1
+            for i, kw in enumerate(_ladder):
+                try:
+                    return raw_client.chat.completions.create(**kw)
+                except Exception as exc:
+                    # Only a 4xx-shaped "I don't know that field" earns a degrade. A transient
+                    # error or a quota block must propagate untouched: re-sending it here is
+                    # another request against the very limit that just refused us (#200), and it
+                    # would hide the failure from the retry ladder and the fallback chain.
+                    if i == last or _is_transient(exc) or _is_quota_exhausted(exc):
+                        raise
+                    logger.warning("llm: %s rejected a streaming extra (%s); degrading",
+                                   backend, str(exc)[:100])
 
         def _do():
             # Semaphore held for the stream's whole life (drained fully in here).
-            try:
-                stream = raw_client.chat.completions.create(
-                    stream_options={"include_usage": True}, **base_kwargs)
-            except Exception:
-                # Some OpenAI-compat shims reject stream_options — retry without.
-                stream = raw_client.chat.completions.create(**base_kwargs)
+            stream = _open_stream()
             buf, seen, usage = "", "", None
             for chunk in stream:
                 usage = getattr(chunk, "usage", None) or usage
@@ -1121,13 +1189,14 @@ def get_provider(role: Role = "coder", *, model: Optional[str] = None) -> LLMPro
     When a model is pinned — explicitly via ``model=`` or implicitly by the current run's
     ``set_run_model`` (the per-agent override) — returns a provider bound to that model,
     cached per ``(role, model)``. With no pin, the normal role-default provider is used, so
-    unpinned code is unaffected."""
+    unpinned code is unaffected. The implicit run pin skips the ``fast`` tier so an agent
+    pin never promotes cheap interpret calls to a heavy model (see :func:`_pinned_model`)."""
     global _cache_version
     if _cache_version != _config_version:
         _providers.clear()
         _pinned_providers.clear()
         _cache_version = _config_version
-    pinned = (model or current_run_model() or "").strip()
+    pinned = _pinned_model(role, model)
     if pinned:
         key = (role, pinned)
         if key not in _pinned_providers:

@@ -221,7 +221,7 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
             self_ratio_tautology, detect_fanout, sum_over_chasm_fanout,
             count_star_chasm_fanout, avg_over_chasm_fanout, measure_times_key_arithmetic,
             avg_of_row_ratios, dimension_ratio_chasm, group_by_continuous_measure,
-            join_key_fanout,
+            join_key_fanout, group_by_outer_null_side,
         )
     except Exception:
         return None
@@ -242,6 +242,14 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
     # guards reuse that schema parse (no second private import of parse_schema_tables).
     oracle = _uniqueness_oracle_for(conn)
     table_cols = getattr(conn, "_insight_table_cols", None) or {}
+
+    # SEMANTIC self-ratio: an outer join demoted by GROUP BY-ing on its null side, so a
+    # preserved-side denominator is silently restricted and the rate reads ~1.0. Needs
+    # table_cols to place an unqualified group key (this is the "100% return rate" that
+    # slipped past the syntactic self_ratio_tautology above).
+    nullside = group_by_outer_null_side(s, table_cols)
+    if nullside:
+        return f"null-side group: {nullside[:200]}"
 
     # Fan-out battery (one guarded block; fail-open via tolerate, never silent):
     #   • detect_fanout — high-precision multi-satellite/parent detector ("category GMV
