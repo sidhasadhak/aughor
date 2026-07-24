@@ -69,6 +69,8 @@ FLAG_ENV = {
     "obs.session_log": "AUGHOR_OBS_SESSION_LOG",
     "obs.prompt_capture": "AUGHOR_OBS_PROMPT_CAPTURE",
     "obs.popularity": "AUGHOR_OBS_POPULARITY",
+    "llm.structured_salvage": "AUGHOR_LLM_STRUCTURED_SALVAGE",
+    "llm.bounded_repair": "AUGHOR_LLM_BOUNDED_REPAIR",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
     "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
     "ask.overview": "AUGHOR_ASK_OVERVIEW",
@@ -139,6 +141,30 @@ FLAG_DEFAULT = {
     "report.argument_style": True,  # deterministic re-composition of the SAME report data
     "chart.exhibit_grammar": True,  # exhibit spec computed from rows already fetched
     "lens.decision_grade": True,    # opportunity-cost + named-outlier lenses (one bounded probe)
+    # Wave R1 — the structured-call reliability layer. Default-ON deliberately, and the
+    # reasoning is narrower than "it seemed safe": this code runs ONLY on a call that has
+    # already raised. Today that raise walks the fallback chain, spending a whole extra
+    # request against a SECOND provider to re-answer a prompt whose first answer was
+    # correct JSON wrapped in a markdown fence. Off, that waste is the default; on, it is
+    # deterministic text repair with zero additional requests. Its sibling
+    # `llm.bounded_repair` — which does spend a request — stays default-OFF below.
+    #
+    # The one risk of salvage is accepting a mangled object where a loud failure would
+    # have failed over to a better model, so the normalizer is built to be incapable of
+    # it: every transform is structural (fences, trailing commas, literal case), and the
+    # single judgement call — enum matching — folds case and separators only and refuses
+    # anything fuzzy (`reliability._fold`). "HIGH"→"high" is the same token; "hgih" still
+    # fails loudly.
+    "llm.structured_salvage": True,
+    # Default-ON for a reason that only became visible once the transport stack was
+    # measured end-to-end: instructor's own default is THREE attempts, and we had never
+    # overridden it, so a malformed response already cost 3 full-prompt requests. Wave R1
+    # sets that to 1 (`_structured_attempts`) and this flag is what replaces the two we
+    # removed — at a fraction of the size, because the repair carries the broken output
+    # and the specific error rather than a second copy of the original prompt and its
+    # evidence. Off, the ceiling is 1 request per failure and some salvageable answers
+    # are lost; on, it is 2 — still below the 3 this wave inherited.
+    "llm.bounded_repair": True,
 }
 
 # Human-facing copy for the Settings UI.
@@ -262,6 +288,14 @@ FLAG_META = {
     "report.argument_style": {
         "label": "Argument-style report composition",
         "description": "Compose exported deep-analysis reports the way a human analyst argues (the Genie report study): one exhibit per claim (chart OR a small table, never both), no degenerate exhibits (a 1-bar chart or single-point trend becomes a sentence), key numbers bold inline in the prose instead of stat-tile rows, the Question-Intake machinery out of the body (it stays in the Trust Receipt), and the R15 opportunity number promoted to its own Financial impact section. Deterministic re-composition of the SAME report data — no model. Off by default = byte-identical exports — see docs/REPORT_STYLE_STUDY_2026-07-16.md (R16 P1).",
+    },
+    "llm.structured_salvage": {
+        "label": "Deterministic salvage of structured LLM responses (Wave R1)",
+        "description": "When a structured call fails to parse or validate, recover it deterministically before spending another request: strip markdown fences and surrounding prose, repair trailing commas, Python literals and smart quotes, fold enum case, drop schema-forbidden extra keys — then re-validate. Also classifies the failure first, so a response TRUNCATED at the output ceiling fails immediately instead of failing over to a second provider that will hit the same ceiling. Zero additional requests, no model in the loop, and no guessing: enum matching folds case and separators only, so a genuine typo still fails loudly. On by default — off means a stray markdown fence keeps costing a whole extra provider request. Counters at GET /dev/stats (llm.salvage.*, llm.failure.*).",
+    },
+    "llm.bounded_repair": {
+        "label": "One bounded repair request for a salvageable structured response (Wave R1)",
+        "description": "After deterministic salvage fails, ask the model ONCE to fix its own output — carrying the specific validation error (the field and why) and the original text, at temperature 0 and capped in output tokens. At most one, on the same binding, and never for a truncated, empty or refused response (a second request cannot fix any of those). This REPLACES a larger cost rather than adding one: instructor's default of 3 attempts per structured call was never overridden, so a malformed response already re-sent the whole prompt three times; Wave R1 cuts that to one attempt and spends at most one small repair after it. Turn off for a hard ceiling of one request per structured call, at the cost of losing the answers only a repair recovers. Counters: llm.repair.calls / llm.repair.ok.",
     },
     "intake.loss_signals": {
         "label": "Loss-signal directive at question intake",

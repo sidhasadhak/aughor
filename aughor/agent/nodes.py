@@ -49,6 +49,21 @@ class _ConsistencyReport(_BaseModel):
 _CONSISTENCY_ENABLED = __import__("os").getenv("AUGHOR_CONSISTENCY_CHECK", "true").lower() != "false"
 
 
+def _gate(name: str, allow: bool, *, reason: str = "") -> bool:
+    """Record a deterministic decision about whether an OPTIONAL model call runs (Wave R1).
+
+    Returns ``allow`` unchanged and never raises, so a counting hiccup can never
+    change which calls fire. The point is the denominator: "how many requests did the
+    gates save today" becomes a query at ``GET /dev/stats`` (``llm.gate.skipped.*``)
+    instead of an estimate — the same standing complaint J8 names, that every cost
+    figure to date is arithmetic rather than measurement."""
+    try:
+        from aughor.llm.reliability import gate
+        return gate(name, allow, reason=reason)
+    except Exception:
+        return allow
+
+
 def _preflight_parallel_enabled() -> bool:
     """Flag `preflight.parallel` (env AUGHOR_PREFLIGHT_PARALLEL or ledger override) — run the
     independent plan-time retrievals concurrently. Off by default; fail-safe → 'off' on any error."""
@@ -1093,7 +1108,16 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
     # ── Consistency check (investigate mode only) ─────────────────────────────
     hypotheses = state.get("hypotheses", [])
     unresolved_tensions: list[str] = list(state.get("unresolved_tensions") or [])
-    if _CONSISTENCY_ENABLED and state.get("query_mode") == "investigate" and hypotheses:
+    # Wave R1: the gate in front of an optional call. This check reads "check every
+    # PAIR of findings for contradictions" and attributes each one back to a
+    # hypothesis by matching its `key_finding` text — so with fewer than two scored
+    # findings there is no pair to compare and nothing an answer could attach to.
+    # The old guard was `hypotheses` (truthy ⇒ one is enough), which spent a request
+    # on a single-hypothesis run to be told, correctly, that nothing contradicts.
+    _scored = [h for h in hypotheses if getattr(h, "key_finding", "")]
+    if (_CONSISTENCY_ENABLED and state.get("query_mode") == "investigate"
+            and _gate("ada.consistency_check", len(_scored) >= 2,
+                      reason="a contradiction needs two scored findings")):
         try:
             check: _ConsistencyReport = get_provider("coder").complete(
                 system="You are a senior analyst reviewing findings for logical contradictions.",
@@ -1368,8 +1392,12 @@ def replan(state: AgentState) -> dict[str, Any]:
     new_hyp_suggestion = (latest_score.new_hypothesis or "") if latest_score else ""
     should_cont = latest_score.should_continue if latest_score else False
 
-    # Fast-path: if there's nothing interesting, proceed linearly
-    if not new_hyp_suggestion and not should_cont:
+    # Fast-path: if there's nothing interesting, proceed linearly. Already deterministic —
+    # routed through the gate (Wave R1) purely so the saving is COUNTED. Without a
+    # denominator, "the fast path saves requests" is a claim; with one it is a number,
+    # and the ADA replan is the highest-frequency optional call in the app.
+    if not _gate("ada.replan", bool(new_hyp_suggestion) or bool(should_cont),
+                 reason="no new hypothesis and no continue signal"):
         return {"replan_decision": ReplanDecision(next_action="test_next", reasoning="No new signals — proceeding linearly.")}
 
     # Full LLM replan call
