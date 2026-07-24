@@ -106,6 +106,12 @@ def remove(automation_id: str):
     _require_flag()
     if not delete_automation(automation_id):
         raise HTTPException(status_code=404, detail="Automation not found")
+    # Owner cascade (A4): grants an automation minted, and proposals it staged, are its
+    # property — per-owner revocation, so deleting the automation takes them along. Kept at the
+    # router (application) layer so the automations store never imports the kinetic plane.
+    from aughor.kinetic import grants, inbox
+    grants.purge_owner("automation", automation_id)
+    inbox.purge_source(f"automation:{automation_id}")
     return {"deleted": automation_id}
 
 

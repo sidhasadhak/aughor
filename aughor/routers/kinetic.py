@@ -37,6 +37,15 @@ class AnnotateRequest(BaseModel):
     kind: str = "annotation"                # annotation | correction
 
 
+class AcceptRequest(BaseModel):
+    actor: str = ""
+    mint_grant: bool = False                # also mint a target-bound standing grant on accept
+
+
+class RejectRequest(BaseModel):
+    actor: str = ""
+
+
 def _resolve_graph(connection_id: str, schema_name: Optional[str]):
     from aughor.ontology.store import load_latest_ontology
     graph = load_latest_ontology(connection_id, schema_name or None)
@@ -72,7 +81,10 @@ def execute_action(
     # scope = the connection id — the grain the approval allowlist is keyed on.
     result = execute_kinetic_action(action, body.params, actor=body.actor, scope=connection_id)
     if result.ok:
-        return {"status": result.status, "action_id": result.action_id, "outcome": result.outcome}
+        # granted_by (A4) cites the standing grant that auto-allowed an unattended run ('' otherwise),
+        # so the citation reaches the caller/receipt, not only the audit ledger.
+        return {"status": result.status, "action_id": result.action_id,
+                "outcome": result.outcome, "granted_by": result.granted_by}
     # Every non-OK outcome maps to an HTTP status carrying the authored message VERBATIM.
     raise HTTPException(
         status_code=result.http_status(),
@@ -99,10 +111,93 @@ def propose_actions_route(
 
     from aughor.kinetic.propose import propose_actions
     proposals = propose_actions(graph, body.context, scope=connection_id)
+
+    # A4: when the inbox is on, persist each VALID proposal so a human can accept it later (durable,
+    # resolve-once). A single run_id groups this propose call; call_id = index makes a replay
+    # idempotent. Off ⇒ the response is byte-identical to K4 (live proposals, no inbox_id).
+    inbox_ids: dict[int, str] = {}
+    if flag_enabled("automations.proposals"):
+        import uuid as _uuid
+        from aughor.kinetic.inbox import StagedProposal, stage_proposal
+        run_id = _uuid.uuid4().hex
+        for i, p in enumerate(proposals):
+            if not p.ok:
+                continue
+            staged = stage_proposal(StagedProposal(
+                connection_id=connection_id, schema_name=schema_name or "",
+                action_id=p.action_id, params=p.params, reasoning=p.reasoning,
+                proposer=body.actor or "agent", source="agent",
+                run_id=run_id, call_id=str(i)))
+            inbox_ids[i] = staged.id
+
     return {"proposals": [
         {"action_id": p.action_id, "status": p.status, "ok": p.ok, "params": p.params,
-         "reasoning": p.reasoning, "message": p.message}
-        for p in proposals]}
+         "reasoning": p.reasoning, "message": p.message,
+         **({"inbox_id": inbox_ids[i]} if i in inbox_ids else {})}
+        for i, p in enumerate(proposals)]}
+
+
+# ── A4: the resolve-once proposal inbox + standing grants ─────────────────────────
+
+def _require_proposals() -> None:
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("automations.proposals"):
+        raise HTTPException(status_code=404, detail="Proposal inbox is not enabled")
+
+
+@router.get("/kinetic-actions/inbox")
+def list_inbox(connection_id: str = BUILTIN_ID, status: Optional[str] = Query(default=None)):
+    """The staged proposals for a connection (optionally filtered by status) — the review queue."""
+    _require_proposals()
+    from aughor.kinetic.inbox import list_proposals
+    return {"proposals": [p.model_dump() for p in list_proposals(connection_id, status)]}
+
+
+@router.post("/kinetic-actions/inbox/{proposal_id}/accept")
+def accept_inbox(proposal_id: str, body: AcceptRequest):
+    """Accept a staged proposal and execute it — exactly once. The accept is the approval, so the
+    executor bypasses the approval gate (never the criteria). A criterion failure returns 422 with
+    the authored message; a re-accept of an already-resolved proposal returns 409."""
+    _require_proposals()
+    from aughor.kinetic.inbox import accept_proposal
+    result, grant_id = accept_proposal(proposal_id, actor=body.actor, mint_grant=body.mint_grant)
+    if result.status == "not_found":
+        raise HTTPException(status_code=404, detail="No such proposal")
+    if result.status == "already_resolved":
+        raise HTTPException(status_code=409, detail={"status": result.status, "message": result.message})
+    if result.ok:
+        return {"status": result.status, "action_id": result.action_id,
+                "outcome": result.outcome, "granted_by": result.granted_by,
+                "minted_grant": grant_id}
+    raise HTTPException(status_code=result.http_status(),
+                        detail={"status": result.status, "action_id": result.action_id,
+                                "message": result.message, **result.detail})
+
+
+@router.post("/kinetic-actions/inbox/{proposal_id}/reject")
+def reject_inbox(proposal_id: str, body: RejectRequest):
+    """Reject a staged proposal — resolved with the actor, no side effect. A re-reject is a no-op."""
+    _require_proposals()
+    from aughor.kinetic.inbox import reject_proposal
+    return {"rejected": reject_proposal(proposal_id, actor=body.actor)}
+
+
+@router.get("/kinetic-actions/grants")
+def list_grants_route(connection_id: str = BUILTIN_ID):
+    """The target-bound standing grants on a connection — the pre-authorizations, for review/revoke."""
+    _require_proposals()
+    from aughor.kinetic.grants import list_grants
+    return {"grants": [g.model_dump() for g in list_grants(connection_id)]}
+
+
+@router.post("/kinetic-actions/grants/{grant_id}/revoke")
+def revoke_grant_route(grant_id: str):
+    """Revoke a standing grant — future unattended runs of that target hit the approval gate again."""
+    _require_proposals()
+    from aughor.kinetic.grants import revoke_grant
+    if not revoke_grant(grant_id):
+        raise HTTPException(status_code=404, detail="No such grant")
+    return {"revoked": grant_id}
 
 
 @router.post("/kinetic-actions/annotate")
