@@ -277,11 +277,34 @@ migration. If the anti-flap debounce changes behaviour, the gate fails.
 
 ## PR-A6 — Automations surface
 
-**Scope.** Author conditions/effects, see per-run history with the reason a tick did nothing, mute /
-pause / expire, and work the proposal queue. Frontend-heavy; pairs with Wave S.
+**Scope.** An **Automations** layer in the Operations workspace (mirroring the `MonitorsPanel`
+skeleton): author conditions/effects, see per-tick history with **the reason a tick did nothing**,
+enable/mute/run-now/delete, and **work the proposal queue** (accept/reject, mint a target-bound grant
+on accept, revoke grants). A hand-written `web/lib/api.ts` client for `/automations` and
+`/kinetic-actions/inbox`+`/grants`; a new `AutomationsPanel.tsx`; the layer wired into
+`OperationsWorkspace.tsx`. Frontend-heavy; pairs with Wave S. Backend is unchanged — this is UI over
+A1–A4, so no route/schema change and no `api.gen.ts` regen.
 
-**Flag** reuses `automations.*` · **Tests** ~10 · **Decision gate:** author → tick → history →
-proposal accept renders end-to-end against the local fixture with no console errors.
+**Flag** reuses `automations.*` (the panel renders against whatever the backend exposes; the inbox
+tab is empty when `automations.proposals` is off) · **Tests** — verified live in the browser rather
+than unit-tested (it is presentational; the logic it drives is covered by A1–A4's suites) ·
+**Decision gate:** author → tick → history → proposal accept renders end-to-end against the local
+fixture with no console errors.
+
+> ✅ **Gate met (2026-07-24), verified in the browser** against an isolated API (scratch stores, the
+> three flags on) + the auto-seeded fixture connection:
+>
+> | step | result |
+> |---|---|
+> | **author** | Created "Nightly refund sweep" (schedule daily → notify) via the form; it rendered in the list with its condition→effect summary and the stat row (1 / 1 enabled / 0 muted) |
+> | **tick** | The live heartbeat fired the first run; **Run now** produced a second |
+> | **history** | The Runs view showed **FIRED** — *"schedule(0 9 * * *): first run"* with the effect outcome *"dispatch_error · notify (oncall-webhook) — unknown Action Hub trigger"*, and **NOT FIRED** — *"schedule(0 9 * * *): next due 2026-07-24T09:00:00…"* (the "did nothing" reason) |
+> | **proposal accept** | Two seeded proposals rendered in the Inbox (badge "2"); Accept → **executed** (shown in "Recently resolved"), pending count → 1 |
+> | **grant eligibility, live** | Accepting with "also allow this target unattended" **correctly minted no grant** — `note_known_event` declares two params, so it is not single-target eligible (the J2 rule, demonstrated) |
+> | **console** | **no errors** (only a benign tolerated file-op warning from the isolated scratch dir) |
+>
+> `tsc` clean; the React-purity lint forced the `Date.now()`/`new Date()` calls out of the component
+> body into module-level helpers (`isFuture`, `muteUntilISO`).
 
 ---
 
