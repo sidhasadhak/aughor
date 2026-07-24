@@ -1265,6 +1265,7 @@ def plan_and_execute_wave(state: AgentState, conn: "DatabaseConnection") -> dict
     sub_questions chain-mutation (built single-threaded here) are returned, so nothing races."""
     from concurrent.futures import as_completed
     from aughor.kernel.concurrency import ContextThreadPoolExecutor
+    from aughor.kernel.parallel_safety import fanout_region as _fanout_region
     from aughor.kernel.metering import BudgetExceeded
 
     sub_questions = list(state.get("sub_questions", []))
@@ -1281,7 +1282,7 @@ def plan_and_execute_wave(state: AgentState, conn: "DatabaseConnection") -> dict
         branch_outs = [_run_subq_branch(state, ready[0], prior_answers, conn, use_reader=False)]
     else:
         try:
-            with ContextThreadPoolExecutor(max_workers=width) as pool:
+            with _fanout_region("explore.subq_wave"), ContextThreadPoolExecutor(max_workers=width) as pool:
                 futs = {pool.submit(_run_subq_branch, state, sq, prior_answers, conn): sq.id
                         for sq in ready}
                 for fut in as_completed(futs):

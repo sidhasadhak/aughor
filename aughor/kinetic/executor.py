@@ -287,6 +287,27 @@ def execute_kinetic_action(
             return KineticResult("approval_required", False, action.id,
                                  message=body.get("hint", "approval required"), detail=body)
 
+    # 3b — parallel safety (Wave R5). THE checkpoint, and it sits here rather than at each
+    #      fan-out on purpose: a helper every fan-out must remember to call is one the
+    #      fifth fan-out forgets. A concurrent region declares itself
+    #      (`parallel_safety.fanout`), and the dangerous operation asks. So a fan-out added
+    #      next year is covered without touching that module, and a new action defaults to
+    #      not-dispatchable. Outside a fan-out this is a no-op, so every existing path is
+    #      byte-identical.
+    #
+    #      Refused BEFORE step 4 — the only step that can cause a side effect — and after
+    #      the criteria and the approval gate, so a refusal can never be mistaken for
+    #      either of those verdicts.
+    try:
+        from aughor.kernel.parallel_safety import assert_dispatchable
+
+        assert_dispatchable(action, name=f"kinetic.{action.id}")
+    except ImportError:
+        pass
+    except Exception as e:
+        govern.audit(gov_action, scope, "parallel_refused", actor=actor, detail=str(e), risk=risk)
+        return KineticResult("parallel_refused", False, action.id, message=str(e))
+
     # 4 — dispatch (the ONLY step that can cause a side effect; reached only after every gate)
     try:
         outcome = (dispatch or default_dispatch)(action, coerced, scope)

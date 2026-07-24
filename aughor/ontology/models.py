@@ -277,6 +277,14 @@ class KineticAction(BaseModel):
     # Risk tier for the graduated-approval gate; K2 maps this to ``govern.ActionRisk``. Default
     # HIGH is fail-safe: an unclassified declared action requires approval, never auto-fires.
     risk: Literal["read_only", "low", "high"] = "high"
+    # Wave R5 — may two runs of this action proceed CONCURRENTLY? Default False, and
+    # fail-safe for the same reason `risk` defaults to high: an undeclared action is not
+    # dispatchable inside a fan-out. The failure this prevents is not a crash — it is two
+    # refunds, or a webhook delivered twice, with no error anywhere and no SQL for the
+    # read-only gate to inspect. Only a genuinely independent action (a pure query, an
+    # idempotent annotate) should declare True. Checked in exactly one place:
+    # `aughor.kernel.parallel_safety.assert_dispatchable`, called from the executor.
+    parallel_safe: bool = False
     origin: Literal["manual", "learned", "structural"] = "manual"
 
 

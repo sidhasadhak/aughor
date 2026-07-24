@@ -584,7 +584,8 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
 
     if _preflight_parallel_enabled():
         from aughor.kernel.concurrency import ContextThreadPoolExecutor
-        with ContextThreadPoolExecutor(max_workers=4) as _pool:
+        from aughor.kernel.parallel_safety import fanout_region as _fanout_region
+        with _fanout_region("ada.preflight"), ContextThreadPoolExecutor(max_workers=4) as _pool:
             _f_schema = _pool.submit(_get_schema)
             _f_kb = _pool.submit(_get_kb)
             _f_causal = _pool.submit(_get_causal)

@@ -1819,7 +1819,8 @@ def test_provider(backend: Optional[str] = None, model: Optional[str] = None, *,
         results.append({**_ping_cached(b, m, _role_for(used_by), force=force), "used_by": used_by})
     else:
         from aughor.kernel.concurrency import ContextThreadPoolExecutor
-        with ContextThreadPoolExecutor(max_workers=min(len(targets), 4)) as pool:
+        from aughor.kernel.parallel_safety import fanout_region as _fanout_region
+        with _fanout_region("llm.health_probes"), ContextThreadPoolExecutor(max_workers=min(len(targets), 4)) as pool:
             futures = {pool.submit(_ping_cached, b, m, _role_for(u), force=force): (m, u)
                        for m, u in targets.items()}
             for fut in futures:
