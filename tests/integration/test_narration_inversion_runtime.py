@@ -109,9 +109,19 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
 
     import aughor.llm.provider as prov
     import aughor.ontology.store as ostore
+    import aughor.profile.infer as pinfer
     import aughor.sql.writer as wmod
     from aughor.db.connection import open_connection_for
     from aughor.explorer.agent import SchemaExplorer
+
+    # Phase 8 makes more live LLM calls than the two modelled below — business-profile
+    # inference is one, and it degrades to None silently, so a leaked call would not error.
+    # Pin it to None (zero attempts) and make the fake RAISE on anything else, so the test is
+    # hermetic by construction. Before this the fake fell through to the real provider and the
+    # 120s wait_for raced network latency — the intermittent full-suite TimeoutError this file
+    # shared with test_explorer_grain_runtime.py. `_ENABLED` is import-time, so patch the attr.
+    monkeypatch.setattr(pinfer, "get_or_infer", lambda cid, schema_name=None: None)
+    monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", False)
 
     # SqlWriter reporting a schema where the forced SQL's columns are REAL, so the
     # schema-grounding pre-flight (invented-identifiers guard) doesn't drop the
@@ -163,7 +173,6 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
             return VARYING                                    # every query → a varying distribution
 
         monkeypatch.setattr(ex, "_run", fake_run)
-        real = prov.get_provider
 
         class FakeLLM:
             def complete(self, *a, response_model=None, **k):
@@ -173,7 +182,11 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
                                           angle="volume", why="t")
                 if "finding" in f:    # _Interpretation → the INVERTING claim
                     return response_model(finding="All orders have 3 items.", novelty=4, angle_covered="volume")
-                return real("coder").complete(*a, response_model=response_model, **k)
+                # Any other structured call is unmodelled — fail loudly rather than reach the
+                # network, so this test stays hermetic as Phase 8 grows.
+                raise AssertionError(
+                    f"unstubbed Phase-8 LLM call: {getattr(response_model, '__name__', response_model)}. "
+                    "Model it in FakeLLM, or neutralise its call site (see get_or_infer above).")
 
         monkeypatch.setattr(prov, "get_provider", lambda role="coder": FakeLLM())
         asyncio.run(asyncio.wait_for(ex._phase8_domain_intelligence(), timeout=120))

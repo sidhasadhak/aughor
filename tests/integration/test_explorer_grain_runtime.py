@@ -2,10 +2,20 @@
 
 Unit tests (test_explorer_grain_lint.py::TestCountStarChasm) prove the detector.
 This proves the WIRING: a COUNT(*)-over-a-chasm query actually reaches the explorer's
-Phase-8 _skip_result block and gets DROPPED on the real loop. Hermetic — a minimal
-injected ontology + a SqlWriter exposing a chasm schema + a fake interpreter, no live
-LLM. (Per the BUILT→WIRED→TESTED→LEVERAGED rule: the guard is observed firing on the
-real path, not inferred from the sibling grain-lints it sits beside.)
+Phase-8 _skip_result block and gets DROPPED on the real loop. (Per the
+BUILT→WIRED→TESTED→LEVERAGED rule: the guard is observed firing on the real path, not
+inferred from the sibling grain-lints it sits beside.)
+
+Hermetic — and hermetic BY CONSTRUCTION, not by hope. Phase 8 makes more structured LLM
+calls than the two the fake models (`_NextQuestion`, `_Interpretation`): business-profile
+inference (`get_or_infer`) is one, and each is wrapped in best-effort error handling, so a
+live call that leaked would DEGRADE silently rather than error. The old fake fell through
+to the real provider for any other response_model, so this "hermetic" test actually made
+~six live `openrouter` calls, and its 120s `wait_for` then raced network latency — the
+reason it failed intermittently under full-suite load (a real TimeoutError, on `main`, not
+introduced here). Two changes fix it: the fake now RAISES on any unmodelled call (a leak
+fails loudly instead of hitting the network), and profile inference is pinned to None so the
+loop makes zero attempts. The `wait_for` is now a deadlock guard, not a network race.
 """
 from __future__ import annotations
 
@@ -51,9 +61,18 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
     is forced — the question→execute→lint→drop path is the real one."""
     import aughor.llm.provider as prov
     import aughor.ontology.store as ostore
+    import aughor.profile.infer as pinfer
     import aughor.sql.writer as wmod
     from aughor.db.connection import open_connection_for
     from aughor.explorer.agent import SchemaExplorer
+
+    # Business-profile inference is a LIVE LLM call, degrade-to-None on failure. Pin it to None
+    # so the loop takes the generic (no-profile) path and makes zero attempts — the grain guard
+    # under test is orthogonal to profile steering. Belt-and-braces with the raising fake below:
+    # this removes the attempt, the fake catches anything else that tries to reach the network.
+    monkeypatch.setattr(pinfer, "get_or_infer", lambda cid, schema_name=None: None)
+    # `_ENABLED` is read at import, so setenv is a no-op here — patch the attribute (E4c).
+    monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", False)
 
     # SqlWriter that reports the chasm schema (the guard reads sql_writer.table_cols);
     # fix() is unused because the fake query "succeeds".
@@ -103,7 +122,6 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
             return [["A", 10], ["B", 20]]
 
         monkeypatch.setattr(ex, "_run", fake_run)
-        real = prov.get_provider
 
         class FakeLLM:
             def complete(self, *a, response_model=None, **k):
@@ -112,7 +130,12 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
                     return response_model(question="q", sql=forced_sql, angle="volume", why="t")
                 if "finding" in f:    # _Interpretation (only reached if the guard fails to drop)
                     return response_model(finding="Campaigns vary in volume.", novelty=4, angle_covered="volume")
-                return real("coder").complete(*a, response_model=response_model, **k)
+                # Any OTHER structured call is unmodelled — fail LOUDLY rather than reach the
+                # network. This is what keeps the test hermetic as Phase 8 grows: a new LLM call
+                # added to the loop trips this instead of silently spending a live request.
+                raise AssertionError(
+                    f"unstubbed Phase-8 LLM call: {getattr(response_model, '__name__', response_model)}. "
+                    "Model it in FakeLLM, or neutralise its call site (see get_or_infer above).")
 
         monkeypatch.setattr(prov, "get_provider", lambda role="coder": FakeLLM())
         asyncio.run(asyncio.wait_for(ex._phase8_domain_intelligence(), timeout=120))
