@@ -33,13 +33,24 @@ TICK_SECONDS = 60
 
 
 def _tick() -> None:
-    """Evaluate every enabled automation once. One automation's failure never stops the rest."""
+    """Evaluate every enabled automation once. One automation's failure never stops the rest.
+
+    When ``automations.adopt_legacy`` is on (A5), the same tick ALSO runs every enabled monitor and
+    brief subscription as a virtual automation — the legacy schedulers stand down (fire-time skip)
+    so each object fires through exactly one loop."""
     try:
         from aughor.automations.store import list_automations
         automations = list_automations(enabled_only=True)
     except Exception as exc:
         logger.warning("automation heartbeat could not load automations: %s", exc)
-        return
+        automations = []
+
+    from aughor.automations.adopt import adoption_active, list_adopted_automations
+    if adoption_active():
+        try:
+            automations = list(automations) + list_adopted_automations()
+        except Exception as exc:
+            logger.warning("automation heartbeat could not adopt legacy objects: %s", exc)
 
     for automation in automations:
         try:

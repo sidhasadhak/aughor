@@ -89,6 +89,7 @@ FLAG_ENV = {
     "automations.engine": "AUGHOR_AUTOMATIONS_ENGINE",  # Wave A2: the condition→effect heartbeat + API
     "automations.source_probes": "AUGHOR_AUTOMATIONS_SOURCE_PROBES",  # Wave A3: source-version change detection
     "automations.proposals": "AUGHOR_AUTOMATIONS_PROPOSALS",  # Wave A4: resolve-once proposal inbox + standing grants
+    "automations.adopt_legacy": "AUGHOR_AUTOMATIONS_ADOPT_LEGACY",  # Wave A5: run monitors+briefs through the engine
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -174,6 +175,10 @@ FLAG_META = {
     "automations.proposals": {
         "label": "Proposal inbox + standing grants (Wave A4)",
         "description": "Make a Wave-K agent proposal DURABLE and resolve-once instead of dying with the HTTP response: a proposed declared action is staged, survives a restart, and is accepted or rejected exactly once (a conditional UPDATE on a pending row — the first responder wins; a second accept is a no-op, never a second dispatch; idempotent by (run_id, call_id) so a replayed run cannot duplicate). Accepting IS the human approval act, so it executes bypassing the approval gate but NEVER the submission criteria. Accepting can also mint a TARGET-BOUND standing grant — 'allow this action → this exact target value', eligible only for a single-parameter action, owned by the automation that minted it (revoked with it), cited by id in the audit ledger on every auto-allowed run — so an UNATTENDED automation can run one pre-authorized target without a blanket allow, and still cannot pass a value the criteria reject. Off by default ⇒ no proposal is staged, no grant is consulted (the executor is byte-identical), and every /kinetic-actions/inbox and /grants route 404s.",
+    },
+    "automations.adopt_legacy": {
+        "label": "Adopt monitors + briefs onto the automation engine (Wave A5)",
+        "description": "Run every enabled Monitor and Brief subscription THROUGH the one automation engine instead of their own near-identical schedulers: each is read on the fly as a virtual automation (a cron `schedule` condition + a faithful effect — a `monitor` effect that replays run_monitor with its anti-flap debounce intact and appends the same alert, or the existing `brief` effect that calls deliver_subscription), so there is one loop, one run history, and one place a tick's reason is recorded. Only takes effect when automations.engine is ALSO on (the heartbeat has to be running to drive them), and while active the legacy monitor/brief schedulers stand down at FIRE time as well as at start — so a runtime flag flip can never double-fire an alert or, worse, double-DELIVER a brief (an outward send). Off by default ⇒ the legacy schedulers run exactly as before (byte-identical) and the heartbeat ignores monitors/briefs. No data migration either way; flipping it off restores the legacy path.",
     },
     "ask.stream_text": {
         "label": "Token-stream the answer narrative",

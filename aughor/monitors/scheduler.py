@@ -35,6 +35,14 @@ def _make_job_fn(monitor_id: str):
 
     def _job():
         try:
+            # A5: when this monitor is adopted onto the automation engine, the heartbeat drives it —
+            # stand down at FIRE time (not just at start) so a runtime flag flip can never double-fire
+            # (both loops running the same monitor). adoption_active() requires the engine on too, so
+            # this never silently stops a monitor with nothing to replace it.
+            from aughor.automations.adopt import adoption_active
+            if adoption_active():
+                return
+
             from aughor.monitors.store import get_monitor, append_alert
             from aughor.monitors.runner import run_monitor
             from aughor.db.connection import open_connection_for
@@ -111,6 +119,11 @@ def reload_monitor(monitor: Monitor) -> None:
         existing = _scheduler.get_job(job_id)
         if existing:
             _scheduler.remove_job(job_id)
+        # A5: don't schedule a legacy cron job the heartbeat would only skip. (The fire-time skip in
+        # _job is the safety net; this avoids the churn when adoption is on at reload time.)
+        from aughor.automations.adopt import adoption_active
+        if adoption_active():
+            return
         if monitor.enabled:
             _scheduler.add_job(
                 _make_job_fn(monitor.id),
