@@ -16,19 +16,24 @@
 
 ### ⏭️ NEXT SESSION — start here
 
-**Session 2026-07-23 completed Wave K and merged two PRs.** `main` (`817e9ec`) carries the kinetic
-plane plus five cost/correctness fixes. **No open PRs, no unpushed branches — a clean slate.**
+**📋 The forward plan of record is [`docs/PLATFORM_PROGRAM_2026-07-24.md`](docs/PLATFORM_PROGRAM_2026-07-24.md)**
+— the unified wave roadmap (**A → R → E → C → V → G → S**) integrating the Foundry study with the
+five-repo study ([`docs/FIVE_REPO_STUDY_2026-07-23.md`](docs/FIVE_REPO_STUDY_2026-07-23.md)). It
+supersedes the sequencing sections of both studies; this §0 stays the session-level status page.
+
+**Session 2026-07-24 merged three PRs and started Wave A.** `main` (`87ae8e8`):
 
 | PR | What |
 |---|---|
 | **#201** `ba06f6d` | **Wave K — the kinetic plane** (K1 declare · K2 execute · K3 overlay · K4 propose · K4b in-investigation · K5 UI) |
 | **#202** `817e9ec` | Streamed-output cap · fast-tier pin · null-side GROUP BY guard · upload-resurrection tombstone · deterministic evidence condensation |
+| **#203** `f66516a` | Retired the orphaned LLM tree-reduce primitive; this §0 rewritten |
+| **#204** `6ca2719` | **Wave A1+A2 — the automation plane** (model · store · one engine · heartbeat · API), behind `automations.engine`; live-proven, and the proof found 2 defects green tests missed |
+| **#205** `87ae8e8` | **The platform program** (plan of record) + the five-repo study |
 
-**Wave K is DONE and both parked findings are CLOSED.** Aughor's agents are now deterministically
-guarded on the read path and governed-by-declaration on the write path, with read-only safety on
-source data intact. It all sits behind default-off flags (`kinetic.actions` · `kinetic.overlay` ·
-`kinetic.agent_actions`), so `main` is byte-identical until they are switched on. Scope + the
-per-PR decision gates: [`docs/WAVE_K_KINETIC_PLANE_ARC.md`](docs/WAVE_K_KINETIC_PLANE_ARC.md).
+**Wave A is IN PROGRESS: A1+A2 merged, A3 (source version probes) under way.** Remaining after A3:
+A4 (resolve-once inbox + standing grants — redesigned per program J1/J2), A5 (adopt monitors/briefs),
+A6 (surface). Arc + decision gates: [`docs/WAVE_A_AUTOMATIONS_ARC.md`](docs/WAVE_A_AUTOMATIONS_ARC.md).
 
 ⚡ **Quota unblocked (2026-07-23).** $11 on OpenRouter crossed the credit **threshold** → the free-model
 cap went **50 → 1,000 requests/day, permanently**. Policy: **strictly `:free` models** — the credit is a
@@ -36,24 +41,13 @@ threshold-unlock reserve, never a spend budget, and the app's bindings are all `
 per-minute cap is UNCHANGED (bursty fan-out can still trip it). Do NOT enable Gemini billing — it
 deletes its free tier.
 
-### Pick the next arc
+### The arc order (from the program doc)
 
-1. **Wave A — Automations.** The natural successor: A depends on K ("effects execute declared
-   actions"). A condition→effect engine unifying monitors + briefs + explorer re-arm, with a
-   staged-proposal queue for autonomous writes. Alternatives: **V** (artifact lifecycle), **G**
-   (governance / tag plane), **S** (surface & composition) — all scoped in
-   [`docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md`](docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md) §5.
-2. **Wave E4–E6** — the other half-built flank (E1–E3 merged in #196): per-run overrides / grid
-   experiments, the Evals surface, and "add this run as a test case" + the flag-graduation gate.
-   `provider.set_run_model()` already exists; the *flag* override does NOT and must wrap
-   `build_graph_generic` (topology flags are read at COMPILE time).
-   Arc: [`docs/WAVE_E_SESSIONS_EVALS_ARC.md`](docs/WAVE_E_SESSIONS_EVALS_ARC.md).
-3. **Wave K follow-ons** (small, well-scoped, deliberately deferred):
-   - **K2b** — `query`-kind dispatch: run a governed read template through the read-only executor.
-   - **K5 polish** — an inline "annotate this cell" affordance on result tables; a persisted
-     proposal queue (proposals are live per-answer today).
-   - Wire `govern.guard` into the **9 pre-existing unenforced static `_RISK` actions** (Wave G work,
-     not the kinetic executor's).
+**A (finish) → R → E (finish) → C → V → G → S.** Rationale, joints (J1–J8), and per-item homes:
+[`docs/PLATFORM_PROGRAM_2026-07-24.md`](docs/PLATFORM_PROGRAM_2026-07-24.md) §2–§5. Wave K
+follow-ons are dispositioned there (§5): K2b rides A5/G · K5's "persisted proposal queue" is
+**superseded by A4** · the 9 unenforced `_RISK` actions → Wave G · the `trigger_investigation`
+seam and the ontology-overrides env override are filed task chips.
 
 ### Still open from earlier sessions
 
