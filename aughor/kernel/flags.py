@@ -71,6 +71,8 @@ FLAG_ENV = {
     "obs.popularity": "AUGHOR_OBS_POPULARITY",
     "llm.structured_salvage": "AUGHOR_LLM_STRUCTURED_SALVAGE",
     "llm.bounded_repair": "AUGHOR_LLM_BOUNDED_REPAIR",
+    "explore.wandering_detector": "AUGHOR_EXPLORE_WANDERING_DETECTOR",
+    "schema.two_tier_catalog": "AUGHOR_SCHEMA_TWO_TIER_CATALOG",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
     "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
     "ask.overview": "AUGHOR_ASK_OVERVIEW",
@@ -288,6 +290,14 @@ FLAG_META = {
     "report.argument_style": {
         "label": "Argument-style report composition",
         "description": "Compose exported deep-analysis reports the way a human analyst argues (the Genie report study): one exhibit per claim (chart OR a small table, never both), no degenerate exhibits (a 1-bar chart or single-point trend becomes a sentence), key numbers bold inline in the prose instead of stat-tile rows, the Question-Intake machinery out of the body (it stays in the Trust Receipt), and the R15 opportunity number promoted to its own Financial impact section. Deterministic re-composition of the SAME report data — no model. Off by default = byte-identical exports — see docs/REPORT_STYLE_STUDY_2026-07-16.md (R16 P1).",
+    },
+    "schema.two_tier_catalog": {
+        "label": "Two-tier schema catalog for SQL repair prompts (Wave R3)",
+        "description": "The SQL repair prompt sends the ENTIRE schema context on every failure, on both the investigate and explore paths — on a wide warehouse the largest prompt the app builds, and almost all of it irrelevant to the one query that broke. Instead: a one-line manifest of every table (so the model still knows what exists and can decide it must join somewhere new) plus full DDL only for the tables the failing SQL references AND any table the ERROR MESSAGE names. That last set is the error-path autoload, and it changes outcomes rather than just cost: a binder error ('no such column x on table y') is unfixable if y's columns are not in front of the model, and schema-linking structurally cannot supply them — it selects from the QUESTION, before the query has failed. Safe direction only: below 12k chars the full schema is returned untouched (byte-identical), and any ambiguity — unparseable schema, empty focus set, narrowing that saves nothing — falls back to sending everything. Off by default. Counters: schema.two_tier.focused / .chars_saved.",
+    },
+    "explore.wandering_detector": {
+        "label": "Wandering detector for exploration waves (Wave R3)",
+        "description": "A deterministic brake on an exploration that has stopped learning. Three signals nothing else catches: a REPEAT (the planner re-emits SQL this run already executed — vetoed before dispatch, the earlier result reused verbatim and marked, saving the scan AND the interpret call), NO PROGRESS (different queries, identical results, three steps running — a repeat counter cannot see this), and CHURN (many distinct queries collapsing onto a couple of distinct results — a streak counter cannot see this either). On repeated vetoes or either progress signal the wave ends GRACEFULLY: it routes to the same synthesis it would have reached at the iteration cap, having spent a planner and an interpret call per redundant step to get there. Reads only the run's own query_history, so no new state and no lock; fail-open everywhere — any error and the query runs exactly as it would have, because a detector that can suppress real evidence is worse than the redundancy it saves. Off by default. Counters: explore.wandering.*",
     },
     "llm.structured_salvage": {
         "label": "Deterministic salvage of structured LLM responses (Wave R1)",

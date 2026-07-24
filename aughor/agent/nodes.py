@@ -891,7 +891,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
                     sql=sql,
                     error=original_error,
                     error_diagnosis=error_diagnosis_block,
-                    schema=state["schema_context"],
+                    schema=_focus_schema_for_repair(state, sql, original_error),
                     kb_patterns_section=kb_fix_patterns,
                     metrics_section=_fix_metrics,
                 ),
@@ -928,7 +928,10 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
                         sql=sql,
                         error="A join is on value-disjoint columns — the result is unreliable.",
                         error_diagnosis=f"DIAGNOSIS:\n{warn_text}\n",
-                        schema=state["schema_context"],
+                        # The guard's warning IS the error text here (the query executed
+                        # cleanly), and it names the columns and tables at fault — exactly
+                        # what the error-path autoload needs to pull their DDL in.
+                        schema=_focus_schema_for_repair(state, sql, warn_text),
                         kb_patterns_section="",
                         metrics_section="",
                     ),
@@ -1479,6 +1482,18 @@ def _format_prior_context(history: list[QueryResult], current_hypothesis_id: str
         label = f"[{r.hypothesis_id}]" if r.hypothesis_id != current_hypothesis_id else f"[{r.hypothesis_id} — THIS hypothesis, prior iteration]"
         parts.append(f"{label} {r.sql[:120]}  → {status}")
     return "\n".join(parts)
+
+
+def _focus_schema_for_repair(state, sql: str, error: str) -> str:
+    """The schema block for a SQL repair prompt (Wave R3b).
+
+    Identity when `schema.two_tier_catalog` is off — which is the default — so the repair
+    prompt is byte-identical to before. On: a manifest of every table plus full DDL for
+    the ones this query and its error involve. Thin wrapper so both repair paths share one
+    definition and cannot drift apart.
+    """
+    from aughor.agent.schema_focus import for_repair_from_state
+    return for_repair_from_state(state, sql, error)
 
 
 def _format_hypothesis_summary(hypotheses: list[Hypothesis]) -> str:

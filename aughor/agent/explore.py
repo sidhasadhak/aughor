@@ -482,6 +482,61 @@ def _rescope_sql_to_schema(sql: str, allowed: str, conn: "DatabaseConnection") -
     return out if ok else None
 
 
+def _wandering_enabled() -> bool:
+    """Flag `explore.wandering_detector`. Fail-safe → off, so a flag-store hiccup can
+    never veto a query."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return flag_enabled("explore.wandering_detector")
+    except Exception:
+        return False
+
+
+def _wandering_veto(state: AgentState, subq: "SubQuestion", sql: str):
+    """A synthetic result when ``sql`` repeats a query this run already executed, else None.
+
+    Reads ``query_history`` — the run's own record — so nothing new has to be threaded
+    through the graph and a parallel wave branch can call it on its own thread without a
+    lock. Fail-open in the strongest sense: any error here returns None and the query runs
+    exactly as it would have, because a detector that can suppress real evidence is worse
+    than the redundancy it saves.
+    """
+    if not _wandering_enabled():
+        return None
+    try:
+        from aughor.agent import wandering
+        from aughor.stats import bump
+
+        history = state.get("query_history", []) or []
+        verdict = wandering.check_before_dispatch(sql, history)
+        if not verdict.wandering:
+            return None
+        prior = wandering.find_repeat(sql, history)
+        if prior is None:
+            return None
+        bump("explore.wandering.veto")
+        logger.info("[explore] %s repeats %s — reusing the earlier result, not re-running",
+                    subq.id, verdict.prior_step)
+        return wandering.veto_result(subq.id, sql, prior, verdict)
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "wandering detector best-effort; the query runs unchanged",
+                 counter="explore.wandering")
+        return None
+
+
+def _focus_schema_for_repair(state, sql: str, error: str) -> str:
+    """The schema block for a SQL repair prompt (Wave R3b).
+
+    Identity when `schema.two_tier_catalog` is off — which is the default — so the repair
+    prompt is byte-identical to before. On: a manifest of every table plus full DDL for
+    the ones this query and its error involve. Thin wrapper so both repair paths share one
+    definition and cannot drift apart.
+    """
+    from aughor.agent.schema_focus import for_repair_from_state
+    return for_repair_from_state(state, sql, error)
+
+
 def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict[str, Any]:
     """Plan SQL for the current sub-question, execute it, accumulate results."""
     sub_questions = state.get("sub_questions", [])
@@ -616,6 +671,17 @@ def _execute_one_subq(
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "explore pre-execute hardening best-effort; original SQL executes",
                      counter="explore.exec_harden")
+
+        # Wave R3: the pre-dispatch wandering veto. The planner has re-emitted SQL this
+        # run already executed — a weaker (free-tier) planner re-derives the obvious query
+        # from the same schema, and the chain then pays a DB scan plus an interpret call to
+        # be told what it already knows. Reuse the earlier result verbatim, marked, so the
+        # duplication is visible in the receipt rather than silently absorbed.
+        _veto = _wandering_veto(state, subq, sql)
+        if _veto is not None:
+            results.append(_veto)
+            continue
+
         result = conn.execute(subq.id, sql)
 
         # Attach predictions
@@ -672,7 +738,7 @@ def _execute_one_subq(
                     sql=sql,
                     error=original_error,
                     error_diagnosis=error_diagnosis_block,
-                    schema=state["schema_context"],
+                    schema=_focus_schema_for_repair(state, sql, original_error),
                     kb_patterns_section=kb_fix_patterns,
                     metrics_section="",
                 ),
@@ -705,7 +771,10 @@ def _execute_one_subq(
                         sql=sql,
                         error="A predicate references a value not in its column/key domain — the result is unreliable.",
                         error_diagnosis=f"DIAGNOSIS:\n{warn_text}\n",
-                        schema=state["schema_context"],
+                        # The guard's warning IS the error text here (the query executed
+                        # cleanly), and it names the columns and tables at fault — exactly
+                        # what the error-path autoload needs to pull their DDL in.
+                        schema=_focus_schema_for_repair(state, sql, warn_text),
                         kb_patterns_section="",
                         metrics_section="",
                     ),
@@ -885,6 +954,30 @@ def _scan_one_subq(subq: "SubQuestion", schema_context: str, conn: "DatabaseConn
 
 # ── Node: reason_over_result ──────────────────────────────────────────────────
 
+def _all_vetoed(subq_results: list) -> str:
+    """The step this sub-question duplicates when EVERY result is a wandering veto, else "".
+
+    All, not any: a step that ran one fresh query and one repeat still has new evidence to
+    interpret, and skipping its narration would lose that.
+    """
+    try:
+        from aughor.agent.wandering import is_veto
+        from aughor.llm.reliability import gate
+
+        if not subq_results or not all(is_veto(r) for r in subq_results):
+            return ""
+        gate("explore.reason_over_result", False, reason="every result repeats an earlier query")
+        for r in subq_results:
+            for c in (r.caveats or []):
+                marker = str(c)
+                if "already run for " in marker:
+                    return marker.split("already run for ", 1)[1].split(".")[0].strip()
+        return "an earlier step"
+    except Exception:
+        logger.debug("[explore] veto check skipped", exc_info=True)
+        return ""
+
+
 def _reason_one_subq(
     state: AgentState,
     subq: "SubQuestion",
@@ -895,11 +988,24 @@ def _reason_one_subq(
     Pure w.r.t. graph state (reads read-only fields + the explicit args, mutates nothing), so a
     parallel wave branch can call it. The caller owns the chain mutation (mark done / promote /
     inject refinement) since that depends on the wider chain, not this sub-question alone."""
+    _vetoed = _all_vetoed(subq_results)
     if not subq_results or all(r.error for r in subq_results):
         # Technical failure — record as inconclusive, don't block chain
         answer_obj = ReasoningOutput(
             answer=f"Could not retrieve data for {subq.id} due to SQL errors.",
             insight="No data available — this sub-question's findings are missing from the final answer.",
+            refinement=None,
+        )
+    elif _vetoed:
+        # Wave R3: every result here is an echo of a query already interpreted this run, so
+        # the interpret call would spend a request to re-narrate evidence the chain has
+        # already narrated. Answer deterministically and point at the step it duplicates —
+        # this is the request the veto actually saves (the DB scan is the cheap half).
+        _prior = _vetoed[0]
+        answer_obj = ReasoningOutput(
+            answer=(f"{subq.id} planned a query identical to {_prior}, so it was not re-run. "
+                    f"See {_prior} for this evidence and its interpretation."),
+            insight=f"No new evidence — this step duplicates {_prior}.",
             refinement=None,
         )
     else:
@@ -1032,6 +1138,8 @@ def route_after_reason(state: AgentState) -> str:
     if _should_early_stop(state):
         logger.info("[explore] converged early — metric uniform across ≥%d dimensions; "
                     "skipping remaining segment drills", _UNIFORM_CONVERGENCE)
+        return "synthesize_exploration"
+    if _wandering_stop(state):   # Wave R3 — same brake on the sequential path
         return "synthesize_exploration"
     return "plan_and_execute_subq"
 
@@ -1203,6 +1311,26 @@ def plan_and_execute_wave(state: AgentState, conn: "DatabaseConnection") -> dict
     }
 
 
+def _wandering_stop(state: AgentState) -> bool:
+    """Whether the wandering detector says to synthesize now. Fail-safe → False, so the
+    loop keeps its pre-R3 behaviour if anything here misbehaves."""
+    if not _wandering_enabled():
+        return False
+    try:
+        from aughor.agent import wandering
+        from aughor.stats import bump
+
+        verdict = wandering.should_terminate(state.get("query_history", []) or [])
+        if not verdict.wandering:
+            return False
+        bump(f"explore.wandering.stop.{verdict.kind}")
+        logger.info("[explore] ending the wave early (%s): %s", verdict.kind, verdict.detail)
+        return True
+    except Exception:
+        logger.debug("[explore] wandering stop check skipped", exc_info=True)
+        return False
+
+
 def route_after_wave(state: AgentState) -> str:
     """Loop to the next wave while ready sub-questions remain and we're under the iteration cap;
     otherwise synthesize. Same MAX_SUBQ budget and early-convergence stop as route_after_reason."""
@@ -1212,6 +1340,12 @@ def route_after_wave(state: AgentState) -> str:
         return "synthesize_exploration"
     ready = _ready_subqs(sub_questions, done_ids)
     if not ready:
+        return "synthesize_exploration"
+    # Wave R3: end gracefully when the run has stopped learning — repeated vetoes, an
+    # identical-result streak, or many queries collapsing onto a couple of answers. The
+    # alternative is not "keep exploring", it is running to the iteration cap and reaching
+    # THIS SAME synthesis having spent a planner and an interpret call per redundant step.
+    if _wandering_stop(state):
         return "synthesize_exploration"
     # Early convergence: metric proven uniform across ≥N dims AND every remaining ready step is
     # just another segment drill → stop (it would re-confirm the flat baseline, not reveal a
