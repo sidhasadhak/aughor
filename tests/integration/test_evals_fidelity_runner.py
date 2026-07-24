@@ -31,9 +31,11 @@ def _isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "_DB_PATH", tmp_path / "evals.db")
     monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
     monkeypatch.setenv("AUGHOR_EVALS_EXPERIMENTS", "1")
-    # Schema loads call `semantic.autoseed.seed_missing_tables`, which makes REAL LLM
-    # requests against the 1,000/day budget. Nothing here is measuring the seeder.
-    monkeypatch.setenv("AUGHOR_AUTOSEED", "false")
+    # Schema loads call `semantic.autoseed.seed_missing_tables`, which makes REAL LLM requests
+    # against the 1,000/day budget. Nothing here measures the seeder. Patch the ATTRIBUTE, not
+    # the env var: `_ENABLED` is resolved at module import, so a `setenv` here is a no-op —
+    # the same trap `test_program_planner.py` sidesteps.
+    monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", False)
     yield
     clear_flag(FLAG)
     clear_flag("evals.experiments")

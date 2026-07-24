@@ -99,14 +99,29 @@ os.environ.setdefault(
     "AUGHOR_DOCUMENTS_REGISTRY", os.path.join(_test_stores_dir, "documents.json")
 )
 
-# E4b — autoseed defaults ON, and `get_schema()` fires it, so ANY test that loads a schema
-# makes REAL LLM requests against the free 1,000/day budget. Measured: one 8-test file
-# logged 12 failed seed attempts, and a SUCCESSFUL seed logs nothing, so the true count is
-# higher. `test_program_planner.py` already patched `autoseed._ENABLED` per-file for exactly
-# this reason — one file remembering is the shape that leaves everything else spending.
-# Default it off for the whole suite; a test that means to exercise the seeder opts back in.
-# `_ENABLED` is read at module import, so this must stay above any app import.
-os.environ.setdefault("AUGHOR_AUTOSEED", "false")
+# ⚠️ MEASURED, NOT FIXED — the suite spends real LLM requests. `semantic.autoseed` defaults ON
+# and `get_schema()` fires it, so ANY test that loads a schema calls a live model against the
+# free 1,000/day budget. Measured: `tests/integration/test_evals_experiments.py` (8 tests)
+# logged **12** failed seed attempts, and a SUCCESSFUL seed logs nothing, so 12 is a floor.
+#
+# Defaulting it off here was tried in E4c and REVERTED — not because it breaks anything on its
+# own, but because it narrows the margin on a test that is ALREADY failing:
+# `test_explorer_grain_runtime.py::test_explorer_phase8_drops_count_star_chasm` drives phase 8
+# under `asyncio.wait_for(..., timeout=120)`, so its verdict depends on WALL CLOCK. Measured on
+# `main` at 31732a5 with no local changes: the full `pytest tests/integration/ tests/unit/`
+# (14 min) FAILS it with TimeoutError (agent.py:2115), while the lighter
+# `pytest tests/integration/test_explorer_grain_runtime.py tests/unit/` (5½ min) passes. It is a
+# LOAD-DEPENDENT PRE-EXISTING failure, and CI would be showing it (nobody blocks on CI here).
+# Turning autoseed off removes the glossary enrichment that helps the loop converge, which
+# pushed the lighter run over the line too — so this default cannot flip until that test is
+# fixed, even though it is not the cause of the failure.
+#
+# The real defect underneath: that module's docstring says "Hermetic ... no live LLM", and a
+# reproduction logged **six** `provider: openrouter failed` warnings. `FakeLLM.complete` falls
+# through to `real("coder").complete(...)` for any response_model without a `sql` or `finding`
+# field, so phase 8's other structured calls all go to the network. Make that test genuinely
+# hermetic first; then this default can flip and the whole suite stops paying.
+# `_ENABLED` is read at module import, so the eventual flip must stay above any app import.
 
 # The glossary + metrics catalog are file stores (YAML/JSON, not SQLite) with real content — and the
 # autoseed / knowledge-sync path WRITES them with no path, so the suite mutated the live

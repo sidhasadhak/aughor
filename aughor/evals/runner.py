@@ -77,6 +77,11 @@ class RunSummary:
     fired_counts: dict[str, int] = field(default_factory=dict)
     outcomes: list[CaseOutcome] = field(default_factory=list)
     config: dict = field(default_factory=dict)
+    #: Mean perturbation-robustness over the measurable cases, or None when the run did not
+    #: measure it. A first-class FIELD rather than a derived property so `fidelity.axis_of`
+    #: reads it like any other axis, and so None stays distinguishable from 0.0.
+    robustness: Optional[float] = None
+    brittleness_detail: list = field(default_factory=list)
 
     @property
     def pass_rate(self) -> float:
@@ -101,6 +106,7 @@ class RunSummary:
             "accuracy": None if self.accuracy is None else round(self.accuracy, 4),
             "errors": self.errors, "fired_counts": self.fired_counts,
             "config": self.config,
+            "robustness": None if self.robustness is None else round(self.robustness, 4),
         }
 
 
@@ -153,12 +159,18 @@ def run_suite(suite_id: str, target: Target, *, iterations: int = 1,
               evaluators: Optional[list[str]] = None,
               checker: Optional[Checker] = None,
               persist: bool = True,
-              config_extra: Optional[dict] = None) -> RunSummary:
+              config_extra: Optional[dict] = None,
+              perturbations: Optional[Any] = None) -> RunSummary:
     """Run every case in ``suite_id`` through ``target``, ``iterations`` times.
 
     ``persist`` writes the run and every per-case result to the store; pass
     False for a dry measurement that leaves no trace. ``config_extra`` merges into the
     recorded config — how :func:`run_experiment` stamps a cell's label onto its run.
+
+    ``perturbations`` (a sequence from :mod:`aughor.evals.perturb`, or None) additionally
+    measures the brittleness axis: each case is re-asked in meaning-preserving rewordings and
+    the result sets compared. It multiplies the run's cost by roughly the number of
+    perturbations, so it is opt-in rather than on by default.
     """
     cases = store.list_cases(suite_id)
     config = _run_config()
@@ -199,6 +211,14 @@ def run_suite(suite_id: str, target: Target, *, iterations: int = 1,
                 summary.errors += 1
             for name in outcome.fired:
                 summary.fired_counts[name] = summary.fired_counts.get(name, 0) + 1
+        if perturbations:
+            # Inside the try so a brittleness failure marks the run FAILED rather than
+            # reporting a run that measured less than it claims to have measured.
+            from aughor.evals.perturb import suite_robustness
+            cases_for_perturb = [_eval_case(row) for row in cases]
+            summary.robustness, detail = suite_robustness(
+                cases_for_perturb, target, perturbations=perturbations)
+            summary.brittleness_detail = [b.to_dict() for b in detail]
     except BaseException:
         if persist:
             store.finish_run(run_id, status=store.FAILED, summary=summary.to_dict())
@@ -245,7 +265,10 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
                    persist: bool = True,
                    fixture: Any = None, fixture_tables: Optional[list[str]] = None,
                    connection_id: str = "",
-                   allow_exploration: bool = False) -> list[CellResult]:
+                   allow_exploration: bool = False,
+                   perturbations: Optional[Any] = None,
+                   request_budget: int = 0,
+                   requests_per_case: int = 1) -> list[CellResult]:
     """Run ``suite_id`` once per cell, each under that cell's configuration.
 
     ``target_factory`` is a factory rather than a target on purpose. Graph-topology flags
@@ -273,7 +296,8 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
     applies the frozen-semantics guard before anything runs.
     """
     from aughor.evals.experiments import (
-        applied, assert_frozen_semantics, assert_measurable, data_version_of,
+        applied, assert_frozen_semantics, assert_measurable, assert_within_budget,
+        data_version_of, estimate_requests,
     )
     from aughor.kernel.errors import tolerate
     from aughor.kernel.flags import flag_enabled
@@ -295,6 +319,13 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
     assert_measurable()
     if connection_id:
         assert_frozen_semantics(connection_id, allow_exploration=allow_exploration)
+    if request_budget:
+        assert_within_budget(
+            estimate_requests(cells=len(cells), cases=len(store.list_cases(suite_id)),
+                              replicates=replicates, iterations=iterations,
+                              perturbations=len(perturbations or ()),
+                              requests_per_case=requests_per_case),
+            budget=request_budget)
 
     opening_version = data_version_of(fixture, fixture_tables) if fixture is not None else None
 
@@ -314,6 +345,7 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
                                       "cell_requested": resolved["requested"],
                                       "discrepancies": resolved["discrepancies"],
                                       "data_version": opening_version},
+                        perturbations=perturbations,
                     ))
         except Exception as exc:
             tolerate(exc, f"experiment cell {cell.label!r} failed; remaining cells still run",
@@ -332,18 +364,28 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
     return results
 
 
-def _run_case(run_id: str, case_row: dict, target: Target, *, iterations: int,
-              evaluators: Optional[list[str]], checker: Optional[Checker],
-              persist: bool) -> CaseOutcome:
+def _eval_case(case_row: dict) -> EvalCase:
+    """A stored row as the EvalCase a target consumes.
+
+    Extracted so the brittleness pass and `_run_case` cannot drift: two hand-built copies of
+    one construction is the shape where a field added to one is missed by the other, and the
+    brittleness pass would then measure a subtly different case than the run it annotates.
+    """
     from aughor.trust import Scope
 
-    case = EvalCase(
+    return EvalCase(
         id=case_row["id"], question=case_row.get("question", ""),
         artifact=case_row.get("artifact", ""),
         expected=case_row.get("expected") or {},
         tags=tuple(case_row.get("tags") or ()),
         scope=Scope(),      # the target owns connection/dialect binding
     )
+
+
+def _run_case(run_id: str, case_row: dict, target: Target, *, iterations: int,
+              evaluators: Optional[list[str]], checker: Optional[Checker],
+              persist: bool) -> CaseOutcome:
+    case = _eval_case(case_row)
     outcome = CaseOutcome(case_id=case.id, question=case.question,
                           iterations=iterations)
     fired_per_iteration: list[set[str]] = []

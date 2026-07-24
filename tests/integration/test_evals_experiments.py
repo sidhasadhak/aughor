@@ -29,6 +29,9 @@ def _isolated_store(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "_DB_PATH", tmp_path / "evals.db")
     monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
     monkeypatch.setenv("AUGHOR_EVALS_EXPERIMENTS", "1")
+    # The seeder's live LLM calls are not what this file measures. Patch the attribute:
+    # `_ENABLED` is resolved at module import, so a setenv here would be a no-op.
+    monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", False)
     yield
     clear_flag(FLAG)
     clear_flag("evals.experiments")

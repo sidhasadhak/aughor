@@ -140,6 +140,46 @@ def resolved_config(*, roles: tuple[str, ...] = _RECORDED_ROLES) -> dict:
     return cfg
 
 
+def estimate_requests(*, cells: int, cases: int, replicates: int = 1, iterations: int = 1,
+                      perturbations: int = 0, requests_per_case: int = 1) -> int:
+    """How many model requests a grid will spend, before it spends any of them.
+
+    A grid multiplies: cells × replicates × cases × iterations × (1 + perturbations) ×
+    requests-per-case. Every factor is innocuous alone, which is exactly why the product
+    surprises — a 3-cell × 3-replicate × 20-case grid with 5 perturbations and 4 requests per
+    case is 4,320 requests against a 1,000/day allowance, and nothing about the call that
+    launches it looks expensive.
+
+    ``requests_per_case`` has to come from the caller because only the caller knows its target:
+    a reference replay spends zero, a quick /ask about one, a deep investigation dozens. There
+    is deliberately no clever default — a guessed multiplier would produce a confident wrong
+    budget, which is worse than no budget at all.
+    """
+    per_case = max(0, requests_per_case)
+    return (max(0, cells) * max(1, replicates) * max(0, cases) * max(1, iterations)
+            * (1 + max(0, perturbations)) * per_case)
+
+
+def assert_within_budget(estimate: int, *, budget: int) -> None:
+    """Refuse a grid that would cost more than the caller allotted it.
+
+    This is the mechanism behind J3's "runs as a scheduled batch inside the free 1,000
+    req/day, never inline". The failure it prevents is not an error — it is a grid that runs
+    for an hour, exhausts the day's allowance halfway through, and returns a report whose
+    later cells are all quota failures while its earlier cells look fine. That artifact is
+    worse than no run: it is asymmetrically damaged in a way a reader cannot see.
+    """
+    if budget > 0 and estimate > budget:
+        raise MeasurementIntegrityError(
+            f"refusing to start a grid estimated at {estimate} model requests against a "
+            f"budget of {budget}. Partway through, the allowance would run out and the "
+            f"remaining cells would fail on quota while the earlier ones look fine — a "
+            f"report damaged asymmetrically, which is worse than one that never ran. Reduce "
+            f"cells/replicates/cases, drop the perturbation axis, or raise the budget "
+            f"deliberately."
+        )
+
+
 def volatile_semantic_state(connection_id: str) -> dict:
     """The run-to-run VOLATILE context injected for a connection.
 

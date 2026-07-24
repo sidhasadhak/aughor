@@ -333,11 +333,59 @@ Four design notes worth carrying into E4b:
   invalidates only the cells either side of the move ⇒ recorded as a warning on that cell,
   and the grid continues.
 
-**Still open for E4c:** the perturbation-brittleness axis (deterministic input perturbations
-compared with `user_agents.quality.results_match` — same result set ⇒ zero drift), the
-one-time proxy-inversion audit of existing metrics, running grids as a scheduled batch rather
-than inline, and subprocess isolation for N×K grids against the process-wide
-`AUGHOR_LLM_MAX_CONCURRENCY=4` semaphore.
+### E4c — brittleness + the request budget · ✅ BUILT 2026-07-24
+
+`aughor/evals/perturb.py` (`Perturbation` · `DEFAULT_PERTURBATIONS` · `brittleness` ·
+`suite_robustness`) + `RunSummary.robustness` as a first-class axis + `estimate_requests` /
+`assert_within_budget`. **30 tests (105 across E4).**
+
+- **Pass rate says whether a pipeline is right; it says nothing about whether it is right for
+  a *reason*.** A suite can sit at 65% because it understands 65% of the questions, or because
+  it pattern-matches phrasings — different products, same number. Brittleness separates them:
+  re-ask each case in meaning-preserving rewordings and compare RESULT SETS.
+- **We do not need REFRACT's LLM judge.** An eval answer is executed SQL, so agreement is
+  decided by `user_agents.quality.results_match` — deterministically, with no second opinion's
+  noise imported into the measurement.
+- 🔑 **The dangerous part is the perturbation SET, not the comparison.** A rewording that
+  changes meaning turns a correct answer into a recorded defect. So the set is tiny, touches
+  only capitalisation / whitespace / terminal punctuation / a courtesy wrapper, and every
+  entry carries the argument for why it preserves meaning. A test asserts no default
+  perturbation alters a meaningful token; another asserts the rationale is stated, not
+  labelled. **The tests caught a real defect in my own set** — `whitespace` doubled interior
+  spaces and then collapsed them, a literal no-op whose rationale described it as one.
+- **A no-op rewording is recorded as skipped, never as a survived perturbation**, or a
+  robustness score would depend on how the case happened to be capitalised.
+- **Unmeasured ≠ maximally brittle.** A case whose unperturbed run errored has no answer for
+  a rewording to differ from, so it is excluded rather than scored 0.0 — otherwise a broken
+  baseline masquerades as a fragile one. `robustness` is a FIELD on `RunSummary` (not a
+  derived property) precisely so None survives into `fidelity.axis_of`.
+- **The request budget is the honest reading of "never inline".** A grid multiplies —
+  3 cells × 3 replicates × 20 cases × 5 perturbations × 4 requests/case = **4,320** against a
+  1,000/day allowance, and nothing about the launching call looks expensive.
+  `requests_per_case` has no default guess: only the caller knows whether its target is a
+  reference replay (0) or a deep investigation (dozens), and a guessed multiplier is a
+  confident wrong budget. Checked before the first target is constructed.
+
+### ⛔ Subprocess isolation for N×K grids — deliberately NOT built
+
+The arc doc called for it, citing `model_bakeoff.py`. Both of its reasons have expired:
+
+1. **Its stated rationale was model pinning** — "the provider resolves `AUGHOR_CODER_MODEL` at
+   binding time and caches per process — env-per-subprocess is the only clean isolation".
+   E4a's `set_run_model` contextvar makes per-run model pinning work in-process, so the
+   isolation buys nothing that is not already had.
+2. **It would bypass a rate limiter, not a bottleneck.** `AUGHOR_LLM_MAX_CONCURRENCY=4` is a
+   per-endpoint semaphore protecting against the provider's cap, and the free tier is
+   **20 RPM**. N processes × 4 slots multiplies concurrency past that ceiling, so the "fix"
+   converts a slow grid into a 429-dominated one — the #200 spiral, re-created on purpose.
+
+The real constraint on an N×K grid is the request *budget*, not slot contention, which is what
+`assert_within_budget` addresses. Cells stay serial. Revisit only with a paid tier, and then
+measure the RPM ceiling first rather than assuming the semaphore is the limit.
+
+**Still open:** the one-time proxy-inversion audit of existing metrics, and running grids from
+a scheduler rather than a caller (the budget guard is the precondition for that, not a
+substitute).
 
 ### ⚠️ Found while building E4b: the test suite was spending the LLM budget
 
