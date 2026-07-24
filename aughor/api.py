@@ -76,6 +76,7 @@ async def _lifespan(app: "FastAPI"):
     await _seed_playbook()
     await _start_monitor_scheduler()
     await _start_brief_scheduler()
+    await _start_automation_heartbeat()
     yield
     # ── Shutdown ───────────────────────────────────────────────────────────────
     # Background loops (supervisor, ontology refresh) are cancelled by event-loop
@@ -578,6 +579,16 @@ async def _start_brief_scheduler() -> None:
         logger.warning("Brief scheduler startup failed (non-fatal): %s", exc)
 
 
+async def _start_automation_heartbeat() -> None:
+    """Start the Wave-A condition→effect heartbeat. Self-gates on `automations.engine`:
+    with the flag off it returns without scheduling anything."""
+    try:
+        from aughor.automations.scheduler import start as _start_automations
+        _start_automations()
+    except Exception as exc:
+        logger.warning("Automation heartbeat startup failed (non-fatal): %s", exc)
+
+
 # ── Router registration ───────────────────────────────────────────────────────
 
 from aughor.routers import (
@@ -615,6 +626,7 @@ from aughor.routers import (
     dashboard,
     evals,
     kinetic,
+    automations,
 )
 
 app.include_router(system.router)
@@ -652,3 +664,4 @@ app.include_router(receipt_router.router)
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
 app.include_router(evals.router)  # Wave E3 — eval suites/runs (gated on eval.suite)
+app.include_router(automations.router)  # Wave A — condition→effect (self-gates on automations.engine)

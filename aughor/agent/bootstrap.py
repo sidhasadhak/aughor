@@ -146,6 +146,7 @@ def _register_purge_hooks() -> None:
     ph.register_purge_hook("briefs", _briefs_conn)
     ph.register_purge_hook("knowledge_cache", _knowledge_cache_conn)
     ph.register_purge_hook("monitors", _monitors_conn)
+    ph.register_purge_hook("automations", _automations_conn)
     ph.register_purge_hook("connection_kb", _connection_kb_conn)
     ph.register_purge_hook("packs", _packs_conn)
     ph.register_purge_hook("evidence", _evidence_conn)
@@ -201,6 +202,13 @@ def _knowledge_cache_conn(conn_id, org_id):
 def _monitors_conn(conn_id, org_id):
     from aughor.monitors import store as monitor_store
     return {"monitors": monitor_store.purge_connection(conn_id)}
+
+
+def _automations_conn(conn_id, org_id):
+    # Wave A1: an automation and its tick history are bound to one connection — a condition
+    # probes it and every effect targets it — so both die with the connection.
+    from aughor.automations import store as automation_store
+    return {"automations": automation_store.purge_connection(conn_id)}
 
 
 def _connection_kb_conn(conn_id, org_id):

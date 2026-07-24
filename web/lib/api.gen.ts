@@ -634,6 +634,123 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List All */
+        get: operations["list_all_automations_get"];
+        put?: never;
+        /**
+         * Create
+         * @description Create an automation. A malformed condition or effect is rejected HERE, at construction —
+         *     it never reaches the store, so a broken automation cannot sit in the DB looking schedulable.
+         */
+        post: operations["create_automations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{automation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get One */
+        get: operations["get_one_automations__automation_id__get"];
+        /** Update */
+        put: operations["update_automations__automation_id__put"];
+        post?: never;
+        /** Remove */
+        delete: operations["remove_automations__automation_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{automation_id}/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Enabled */
+        post: operations["set_enabled_automations__automation_id__enabled_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{automation_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause
+         * @description Mute until a timestamp (or clear it). Distinct from disabling: a pause has an end, and the
+         *     run history keeps recording *why* nothing fired while it holds.
+         */
+        post: operations["pause_automations__automation_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{automation_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Now
+         * @description Run one automation immediately, through the same gates the heartbeat uses — so a gated
+         *     automation returns the REASON it is gated rather than silently doing nothing.
+         */
+        post: operations["run_now_automations__automation_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{automation_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Runs */
+        get: operations["runs_automations__automation_id__runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/briefs/subscriptions": {
         parameters: {
             query?: never;
@@ -6468,6 +6585,27 @@ export interface components {
             description: string;
         };
         /**
+         * Condition
+         * @description One precondition on an automation firing. Combinable via ``Automation.condition_logic``.
+         *
+         *     ``schedule`` is a cron expression — the *only* condition monitors and briefs have today.
+         *     ``metric`` delegates to an existing :class:`~aughor.monitors.models.Monitor` (by id) so the six
+         *     already-tested alert conditions become available to any effect, not just to an alert.
+         *     ``source_change`` fires when a table's cheap source version advanced (A3). ``entity_appears``
+         *     fires when a new key shows up in a table.
+         */
+        Condition: {
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "schedule" | "metric" | "source_change" | "entity_appears";
+        };
+        /**
          * Context
          * @description Additional context for the agent.
          */
@@ -6500,6 +6638,47 @@ export interface components {
             sql: string;
             /** Title */
             title: string;
+        };
+        /** CreateAutomationRequest */
+        CreateAutomationRequest: {
+            /**
+             * Condition Logic
+             * @default all
+             */
+            condition_logic: string;
+            /** Conditions */
+            conditions: components["schemas"]["Condition"][];
+            /** Conn Id */
+            conn_id: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Effects */
+            effects: components["schemas"]["Effect"][];
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Expires At */
+            expires_at?: string | null;
+            fallback_effect?: components["schemas"]["Effect"] | null;
+            /**
+             * Max Retries
+             * @default 1
+             */
+            max_retries: number;
+            /** Name */
+            name: string;
+            /** Paused Until */
+            paused_until?: string | null;
+            /**
+             * Retry Backoff Seconds
+             * @default 30
+             */
+            retry_backoff_seconds: number;
         };
         /** CreateCanvasRequest */
         CreateCanvasRequest: {
@@ -6751,6 +6930,26 @@ export interface components {
             type: "document";
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * Effect
+         * @description What to do when the conditions hold — a reference to an existing primitive.
+         *
+         *     ``kinetic_action`` is the governed write: it runs through
+         *     :func:`~aughor.kinetic.executor.execute_kinetic_action`, inheriting submission criteria,
+         *     the graduated-approval gate and the audit trail unchanged. Wave A never bypasses it, which is
+         *     why nothing above LOW risk can auto-fire from an automation either.
+         */
+        Effect: {
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "investigate" | "brief" | "notify" | "kinetic_action";
         };
         /** EvalIn */
         EvalIn: {
@@ -7235,6 +7434,14 @@ export interface components {
              * @default
              */
             table: string;
+        };
+        /** PauseRequest */
+        PauseRequest: {
+            /**
+             * Until
+             * @description ISO-8601 UTC to mute until, or null to clear the mute.
+             */
+            until?: string | null;
         };
         /**
          * PinInsightRequest
@@ -9579,6 +9786,300 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_all_automations_get: {
+        parameters: {
+            query?: {
+                conn_id?: string | null;
+                enabled_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_automations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAutomationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_one_automations__automation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_automations__automation_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAutomationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_automations__automation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_enabled_automations__automation_id__enabled_post: {
+        parameters: {
+            query?: {
+                enabled?: boolean;
+            };
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_automations__automation_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PauseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_now_automations__automation_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    runs_automations__automation_id__runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                automation_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

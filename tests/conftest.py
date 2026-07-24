@@ -63,6 +63,8 @@ for _env, _file in (
     ("AUGHOR_POPULARITY_DB", "popularity.db"),
     # Briefing-cockpit — user-authored dashboard cards (born hermetic).
     ("AUGHOR_DASHBOARD_DB", "dashboard_cards.db"),
+    # Wave A1 — automations + their run history (born hermetic).
+    ("AUGHOR_AUTOMATIONS_DB", "automations.db"),
 ):
     os.environ.setdefault(_env, os.path.join(_test_stores_dir, _file))
 
