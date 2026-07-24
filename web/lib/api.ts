@@ -4254,3 +4254,188 @@ export async function getGroundingContext(connectionId: string, question: string
   if (!res.ok) return null;
   return res.json();
 }
+
+// ── Evals (Wave E) ──────────────────────────────────────────────────────────
+// The consolidated eval store (E3) + evaluator library (E2) + fidelity harness
+// (E4). Every route is gated on the Enterprise `eval.suite` capability, so a
+// 402 here surfaces the upsell modal via the global interceptor. A run is a
+// *band* (replicates + noise floor), never a single-run point — see EvalRunSummary.
+
+export interface EvalSuite {
+  id: string;
+  org_id?: string;
+  name: string;
+  description: string;
+  /** "reference" replays each case's own SQL with no model (the only API-runnable target today). */
+  target: string;
+  connection_id: string;
+  config: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface EvalCase {
+  id: string;
+  suite_id: string;
+  org_id?: string;
+  question: string;
+  /** The artifact the case is grounded in — for a reference target, the SQL that gets replayed. */
+  artifact: string;
+  expected: Record<string, unknown>;
+  tags: string[];
+  created_at: string;
+}
+
+/** The summary a run reduces to — `pass_rate` counts STABLE passes only (a flaky
+ *  case is its own outcome, never rounded into a percentage). `accuracy` and
+ *  `robustness` are null when no case declared the expectation they measure —
+ *  absent, not zero. */
+export interface EvalRunSummary {
+  run_id: string;
+  suite_id: string;
+  iterations: number;
+  total: number;
+  stable_pass: number;
+  stable_fail: number;
+  flaky: number;
+  pass_rate: number;
+  correct: number;
+  correctness_known: number;
+  accuracy: number | null;
+  errors: number;
+  fired_counts: Record<string, number>;
+  config: Record<string, unknown>;
+  robustness: number | null;
+}
+
+export interface EvalRun {
+  id: string;
+  suite_id: string;
+  org_id?: string;
+  status: "running" | "succeeded" | "failed" | string;
+  iterations: number;
+  started_at: string;
+  finished_at: string | null;
+  trace_id: string;
+  config: Record<string, unknown>;
+  summary: Partial<EvalRunSummary>;
+}
+
+export interface EvalResult {
+  run_id: string;
+  case_id: string;
+  iteration: number;
+  passed: boolean | null;
+  correct: boolean | null;
+  duration_ms: number | null;
+  error: string;
+  /** Names of evaluators that FAILED on this case (not passed, not skipped). */
+  fired: string[];
+  scores: Array<{
+    evaluator?: string;
+    passed?: boolean;
+    value?: number;
+    skipped?: boolean;
+    rationale?: string;
+    checks?: Array<{ name?: string; ok?: boolean; severity?: string; reason?: string; detail?: string }>;
+    detail?: Record<string, unknown>;
+  }>;
+}
+
+export interface EvalEvaluator {
+  name: string;
+  severity: string;
+  requires: string[];
+  deterministic: boolean;
+}
+
+export async function getEvalSuites(): Promise<EvalSuite[]> {
+  const res = await fetch(`${BASE}/evals/suites`);
+  if (!res.ok) throw new Error("Failed to fetch eval suites");
+  return (await res.json()).suites;
+}
+
+export async function getEvalSuite(id: string): Promise<EvalSuite & { cases: EvalCase[] }> {
+  const res = await fetch(`${BASE}/evals/suites/${id}`);
+  if (!res.ok) throw new Error("Failed to fetch suite");
+  return res.json();
+}
+
+export async function createEvalSuite(body: {
+  name: string; description?: string; target?: string;
+  connection_id?: string; config?: Record<string, unknown>;
+}): Promise<EvalSuite> {
+  const res = await fetch(`${BASE}/evals/suites`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to create suite");
+  return res.json();
+}
+
+export async function deleteEvalSuite(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/evals/suites/${id}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to delete suite");
+}
+
+export async function addEvalCases(
+  suiteId: string,
+  cases: Array<{ question?: string; artifact?: string; expected?: Record<string, unknown>; tags?: string[] }>,
+): Promise<{ added: number }> {
+  const res = await fetch(`${BASE}/evals/suites/${suiteId}/cases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cases }),
+  });
+  if (!res.ok) throw new Error("Failed to add cases");
+  return res.json();
+}
+
+export async function deleteEvalCase(caseId: string): Promise<void> {
+  const res = await fetch(`${BASE}/evals/cases/${caseId}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to delete case");
+}
+
+export async function runEvalSuite(
+  suiteId: string,
+  opts: { iterations?: number; evaluators?: string[] | null; persist?: boolean } = {},
+): Promise<EvalRunSummary> {
+  const res = await fetch(`${BASE}/evals/suites/${suiteId}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      iterations: opts.iterations ?? 1,
+      evaluators: opts.evaluators ?? null,
+      persist: opts.persist ?? true,
+    }),
+  });
+  if (!res.ok) {
+    // The API returns a 400 with a specific detail for a non-'reference' target or a
+    // suite missing a connection — surface it rather than a generic message.
+    let detail = "Failed to run suite";
+    try { detail = (await res.json()).detail || detail; } catch { /* keep default */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function getEvalRuns(suiteId?: string, limit = 50): Promise<EvalRun[]> {
+  const qs = new URLSearchParams();
+  if (suiteId) qs.set("suite_id", suiteId);
+  qs.set("limit", String(limit));
+  const res = await fetch(`${BASE}/evals/runs?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch runs");
+  return (await res.json()).runs;
+}
+
+export async function getEvalRun(runId: string): Promise<EvalRun & { results: EvalResult[] }> {
+  const res = await fetch(`${BASE}/evals/runs/${runId}`);
+  if (!res.ok) throw new Error("Failed to fetch run");
+  return res.json();
+}
+
+export async function getEvaluators(): Promise<{ evaluators: EvalEvaluator[]; deterministic_count: number }> {
+  const res = await fetch(`${BASE}/evals/evaluators`);
+  if (!res.ok) throw new Error("Failed to fetch evaluators");
+  return res.json();
+}
