@@ -37,12 +37,55 @@ def _default_path() -> Path:
 
 # ── Load / Save ───────────────────────────────────────────────────────────────
 
-def _load_raw(path: Path | None = None) -> dict:
-    p = Path(path) if path else _default_path()
+def generated_path(authored: Path | None = None) -> Path:
+    """The sidecar file holding the ``auto_generated: true`` entries.
+
+    Derived from the authored path (``glossary.yaml`` → ``glossary_generated.yaml``) rather
+    than configured separately, so it follows ``AUGHOR_GLOSSARY_PATH`` automatically: the
+    suite's temp copy gets a temp sidecar, a caller passing an explicit path gets one beside
+    it, and there is no second env var to forget to isolate.
+    """
+    p = Path(authored) if authored else _default_path()
+    return p.with_name(f"{p.stem}_generated{p.suffix}")
+
+
+def _read_yaml(p: Path) -> dict:
     if not p.exists() or yaml is None:
         return {}
     with open(p) as f:
         return yaml.safe_load(f) or {}
+
+
+def _load_raw(path: Path | None = None) -> dict:
+    """The glossary as one dict, re-joined from its two files.
+
+    **Why two files.** 147 of this glossary's 151 entries are written by the ontology
+    autodoc — it appends an ``auto_generated: true`` entry per table whenever a connection
+    is explored — so merely RUNNING the app rewrote a tracked file (1,435 lines from one
+    session). The four hand-authored entries were buried in that churn, and the only ways
+    out were to keep committing machine output or to untrack the authored guidance with it.
+
+    Splitting by ``auto_generated`` costs nothing conceptually because that marker was
+    ALREADY the weakest layer in :func:`load_merged_glossary`'s precedence. This makes the
+    storage agree with the layering that existed: authored terms in a tracked file,
+    generated ones in a gitignored sidecar.
+
+    The re-join is per table key, authored winning — the same direction as the merge below,
+    so a key present in both reads exactly as it did when both lived in one file. Reading
+    is therefore unchanged for every caller, marker and all.
+    """
+    authored_p = Path(path) if path else _default_path()
+    authored = _read_yaml(authored_p)
+    generated = _read_yaml(generated_path(authored_p))
+    if not generated:
+        return authored          # nothing split out (yet, or ever) — byte-identical behaviour
+
+    out = dict(generated)
+    out.update({k: v for k, v in authored.items() if k != "tables"})
+    tables = dict(generated.get("tables") or {})
+    tables.update(authored.get("tables") or {})
+    out["tables"] = tables
+    return out
 
 
 def load_glossary(path: Path | None = None) -> dict:
@@ -162,13 +205,45 @@ def canonical_key(table: str, schema: str | None = None) -> str:
     return qualify(table, schema)
 
 
-def save_glossary(data: dict, path: Path | None = None) -> None:
-    if yaml is None:
-        raise RuntimeError("PyYAML is required: uv add pyyaml")
-    p = Path(path) if path else _default_path()
+def _write_yaml(p: Path, data: dict) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+
+def save_glossary(data: dict, path: Path | None = None) -> None:
+    """Persist the glossary, routing each table entry to the file that owns it.
+
+    ``auto_generated: true`` → the gitignored sidecar; everything else → the tracked
+    authored file. Every caller (``update_table``, ``update_column``, the autoseed writer)
+    is unchanged: they still hand over one dict, and the partition happens here, in the one
+    place that already knew how to write.
+
+    This also migrates in place. The tracked file currently holds both kinds; the first
+    save moves the generated ones out, so an app run cleans up after itself instead of
+    needing a script.
+
+    The sidecar is only created when there is something to put in it — a deployment that
+    never runs the autodoc keeps exactly one file, as before.
+    """
+    if yaml is None:
+        raise RuntimeError("PyYAML is required: uv add pyyaml")
+    authored_p = Path(path) if path else _default_path()
+    tables = (data or {}).get("tables") or {}
+
+    generated = {t: e for t, e in tables.items() if isinstance(e, dict) and e.get("auto_generated")}
+    authored = {t: e for t, e in tables.items() if t not in generated}
+
+    rest = {k: v for k, v in (data or {}).items() if k != "tables"}
+    _write_yaml(authored_p, {**rest, "tables": authored} if tables or rest else dict(data or {}))
+
+    gen_p = generated_path(authored_p)
+    if generated:
+        _write_yaml(gen_p, {"tables": generated})
+    elif gen_p.exists():
+        # The last generated entry was removed — leaving a stale sidecar would make it
+        # reappear on the next read.
+        _write_yaml(gen_p, {"tables": {}})
 
 
 def update_table(table: str, description: str | None = None, grain: str | None = None,
