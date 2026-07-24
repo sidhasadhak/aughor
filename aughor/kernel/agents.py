@@ -14,8 +14,11 @@ an admin manage the roster. Budgets are meaningful because runs are metered
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, dataclass, field
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 _GOV_STORE = "agent_governance"
 _APP_SCOPE = "__app__"
@@ -234,8 +237,38 @@ def set_governance(agent_id: str, *, scope: Optional[str] = None,
         cur["time_budget_s"] = int(time_budget_s)
     if model is not None:
         cur["model"] = str(model).strip()   # "" clears it (treated as 'inherit' on read)
+        _warn_if_unvouched(agent_id, cur["model"])
     _ledger().kv_put(_GOV_STORE, f"{sc}:{agent_id}", cur)
     return effective_governance(agent_id, None if sc == _APP_SCOPE else sc)
+
+
+def _warn_if_unvouched(agent_id: str, model: str) -> None:
+    """Log when a per-agent pin names a model the vouched matrix has never seen (Wave R2).
+
+    Warn, never block. A closed list would be the wrong trade here — new ids appear
+    weekly and the failure mode of an over-strict check is "you cannot use the model you
+    are paying for". But the *silent* acceptance is how a guessed id becomes a dead
+    binding nobody notices, so the pin at least announces itself. Our own shipped
+    defaults are held to the higher bar in tests/unit/test_model_matrix.py, where a
+    guess fails CI instead of a user's run.
+    """
+    if not model:
+        return
+    try:
+        from aughor.llm.matrix import is_known, is_vouched
+        from aughor.llm.provider import _active_backend
+
+        backend = _active_backend()
+        if is_vouched(backend, model):
+            return
+        logger.warning(
+            "agents: %s is pinned to %r, which is %s for backend %r — if the id is wrong "
+            "the binding will fail as a config error rather than falling back silently.",
+            agent_id, model,
+            "recorded but never verified against a live catalogue"
+            if is_known(backend, model) else "not in the vouched model matrix", backend)
+    except Exception:
+        logger.debug("agents: could not check the model matrix", exc_info=True)
 
 
 def is_enabled(agent_id: str, workspace_id: Optional[str] = None) -> bool:

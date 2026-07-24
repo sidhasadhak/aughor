@@ -286,12 +286,26 @@ def _pinned_model(role: Role, model: Optional[str]) -> str:
 
     ``AUGHOR_PIN_ALL_ROLES=1`` restores the old total-pin behaviour for an operator who
     genuinely wants every call, cheap ones included, on the pinned model.
+
+    Wave R2 makes the ``fast`` exemption precise instead of blanket. "May this model
+    serve the cheap tier" stops being a rule written in this ``if`` and becomes a
+    declared property of the model (:func:`aughor.llm.matrix.fast_eligible`), so a pin
+    onto a genuinely cheap model — a 9B nano, a haiku — is allowed through while the
+    550B that caused the original cost bug still is not. An unlisted model resolves to
+    not-eligible, which is byte-identical to the pre-R2 blanket rule.
     """
     explicit = (model or "").strip()
     if explicit:
         return explicit
     run = (current_run_model() or "").strip()
     if run and role == "fast" and not _flag("AUGHOR_PIN_ALL_ROLES"):
+        try:
+            from aughor.llm.matrix import fast_eligible
+            if fast_eligible(_active_backend(), run):
+                return run
+        except Exception:
+            logger.debug("llm: fast-eligibility lookup failed; keeping the blanket rule",
+                         exc_info=True)
         return ""
     return run
 
@@ -588,6 +602,131 @@ _QUOTA_EXHAUSTED_MSGS = (
     "perday",
     "insufficient_quota", "credit limit exceeded", "add credits", "payment required",
 )
+
+# ── Wave R2: the error body names the failure; read it (J7) ───────────────────
+# "Google's quotaId is the authority, its retry-in prose lies" generalised chain-wide.
+# A provider's error BODY distinguishes failures that a status code flattens into one
+# 4xx, and one of those distinctions is load-bearing: a model id the provider will
+# never serve is a CONFIG error, not a transport failure.
+#
+# Why it earns its own class: the failover chain answers the question anyway, so a
+# guessed or retired model id produces working answers from a DIFFERENT model while the
+# binding the operator actually chose is dead. That is not hypothetical — the first pass
+# at the OpenRouter defaults shipped two ids that do not exist, and the app kept
+# answering. Silence is the bug; the chain was hiding it.
+#
+# Deliberately narrow, and matched against the message only. Every phrase here names an
+# identifier the provider does not recognise. "not found" alone is absent on purpose —
+# it is ordinary prose in a tool result or a SQL error that could ride along in an
+# exception chain, and a false positive here fails a call that would have succeeded.
+_MODEL_NOT_FOUND_MSGS = (
+    "model_not_found",
+    "does not exist or you do not have access",
+    "no such model",
+    "model not found",
+    "unknown model",
+    "invalid model",
+    "is not a valid model",
+    "the model does not exist",
+)
+
+
+def _is_model_not_found(exc: BaseException) -> bool:
+    """True when the provider says it does not serve this model id.
+
+    Quota and rate limits are checked first and win: an exhausted free tier sometimes
+    phrases itself as "you do not have access", and mistaking that for a bad id would
+    turn a self-healing 15-minute cooldown into a permanent hard failure.
+    """
+    if _is_quota_exhausted(exc) or _is_rate_limited(exc):
+        return False
+    msg = str(exc).lower()
+    return any(k in msg for k in _MODEL_NOT_FOUND_MSGS)
+
+
+# Marker sets for the remaining classes a status code flattens together. A 401 and a
+# 404-on-the-path and a refused socket are three different jobs for whoever is reading
+# the health check, and "error: <240 chars of provider prose>" makes them one.
+_BAD_KEY_MSGS = (
+    "invalid api key", "invalid_api_key", "incorrect api key", "api key not valid",
+    "unauthorized", "authentication", "permission denied", "api_key_invalid",
+    "no api key", "missing api key",
+)
+_UNREACHABLE_MSGS = (
+    "connection refused", "connection error", "econnrefused", "name or service not known",
+    "nodename nor servname", "failed to establish", "temporary failure in name resolution",
+    "getaddrinfo", "max retries exceeded", "connection aborted", "ssl",
+)
+_WRONG_ENDPOINT_MSGS = (
+    "404 page not found", "not found for url", "invalid url", "no route matched",
+    "<!doctype html", "<html", "unexpected content type",
+)
+
+#: The health-check verdicts, ordered by how specific the evidence is. Each names what
+#: the operator must DO, which is the only thing a health check is for.
+PROVIDER_ERROR_CLASSES = (
+    "bad_key", "model_not_found", "quota_exhausted", "rate_limited",
+    "wrong_endpoint", "unreachable", "timeout", "config", "unknown",
+)
+
+_ERROR_HINTS = {
+    "bad_key": "The API key is missing, wrong, or lacks access — re-enter it in Settings → Inference.",
+    "model_not_found": "This backend does not serve that model id — pick one from the catalogue.",
+    "quota_exhausted": "The allowance is spent for now; it resets on the provider's own schedule.",
+    "rate_limited": "Throttled right now — the binding is fine; retry in a moment.",
+    "wrong_endpoint": "The base URL does not look like this provider's API root.",
+    "unreachable": "Nothing answered at that address — check the server is running and the URL.",
+    "timeout": "The endpoint accepted the request but did not answer in time.",
+    "config": "The client could not be built — usually a missing key or an unknown backend.",
+    "unknown": "Unrecognised failure — the provider's own message is in `error`.",
+}
+
+
+def classify_provider_error(exc: BaseException) -> str:
+    """One of :data:`PROVIDER_ERROR_CLASSES` for a failed provider call.
+
+    Ordered most-specific first, because the classes overlap in prose: a bad key often
+    says "permission", an exhausted quota often says "you do not have access", and a
+    404 says "not found" whether the *model* or the *URL* is wrong. The specific
+    evidence has to be consumed before the generic phrasing can claim it.
+    """
+    msg = str(exc).lower()
+    if any(k in msg for k in _BAD_KEY_MSGS) or getattr(exc, "status_code", None) in (401, 403):
+        return "bad_key"
+    if _is_quota_exhausted(exc):
+        return "quota_exhausted"
+    if _is_model_not_found(exc):
+        return "model_not_found"
+    if _is_rate_limited(exc):
+        return "rate_limited"
+    if any(k in msg for k in _WRONG_ENDPOINT_MSGS):
+        return "wrong_endpoint"
+    if any(k in msg for k in _UNREACHABLE_MSGS):
+        return "unreachable"
+    if "timeout" in msg or "timed out" in msg:
+        return "timeout"
+    if isinstance(exc, BindingConfigError):
+        return "model_not_found"
+    if isinstance(exc, (ValueError, RuntimeError)) and "api key" in msg:
+        return "config"
+    return "unknown"
+
+
+class BindingConfigError(RuntimeError):
+    """A binding names a model its backend will not serve — a configuration fault.
+
+    Raised instead of walking the fallback chain, so the operator learns that the model
+    they chose is unusable rather than receiving answers from a substitute they never
+    selected. Carries the backend, the model and the provider's own words.
+    """
+
+    def __init__(self, backend: str, model: str, cause: BaseException):
+        self.backend, self.model = backend, model
+        super().__init__(
+            f"{backend} does not serve the model {model!r} — check the binding in "
+            f"Settings → Inference (or the AUGHOR_*_MODEL env var). "
+            f"Provider said: {str(cause)[:240]}")
+        self.__cause__ = cause
 
 
 # Providers usually say how long to wait — Gemini as "Please retry in 42.3s", OpenAI-compatible
@@ -1019,6 +1158,14 @@ class LLMProvider:
         except Exception as primary_exc:
             if _is_quota_exhausted(primary_exc):
                 _mark_quota_exhausted(self.backend)
+            # Wave R2 (J7): a model id this backend does not serve is a CONFIGURATION
+            # fault, and the failover is what hides it — the chain answers from some
+            # other model while the binding the operator chose stays dead and silent.
+            # That is exactly how two non-existent OpenRouter ids shipped as defaults
+            # and kept answering. Fail loudly, naming the model and the provider's own
+            # words, so the fix is obvious instead of invisible.
+            if _is_model_not_found(primary_exc) and _flag("AUGHOR_MODEL_ID_STRICT", "1"):
+                raise BindingConfigError(self.backend, self._model, primary_exc) from primary_exc
             # Wave R1: some failures are provably identical on the next provider, so the
             # failover is a request spent to learn nothing. A truncation is the case that
             # matters — the ceiling that cut the response off is OURS, sent on every
@@ -1056,8 +1203,17 @@ class LLMProvider:
                 # chain exists precisely because any one backend can be down or spent.
                 if _is_quota_exhausted(fb_exc):
                     _mark_quota_exhausted(backend)
-                logger.warning("provider: fallback %s also failed (%s)",
-                               backend, str(fb_exc)[:120])
+                # A bad id on a FALLBACK link is our own default gone stale, not the
+                # operator's setting — so it is logged at error level (it needs fixing in
+                # this repo) but the chain continues, because the caller's real problem is
+                # whatever took the primary down. Only the PRIMARY's bad id is fatal.
+                if _is_model_not_found(fb_exc):
+                    logger.error("provider: fallback binding %s/%s is not a model this "
+                                 "backend serves — the built-in default needs updating (%s)",
+                                 backend, fb._model, str(fb_exc)[:160])
+                else:
+                    logger.warning("provider: fallback %s also failed (%s)",
+                                   backend, str(fb_exc)[:120])
                 # …unless the failure is one every link reproduces. A truncation walking
                 # the whole chain spends one request per backend to hit the same ceiling
                 # each time — the most expensive way there is to learn nothing.
@@ -1595,7 +1751,15 @@ def _ping(backend: str, model: str, role: Role = "coder") -> dict:
         return {"model": prov._model, "ok": True,
                 "ms": round((time.monotonic() - t0) * 1000, 1)}
     except Exception as e:
+        # Wave R2: say WHICH failure. A health check exists to tell an operator what to
+        # do next, and "error: <240 characters of provider prose>" made a wrong key, a
+        # wrong base URL, a dead server and a spent free tier indistinguishable — all
+        # four render as a red cross with a paragraph. `reason` is a stable enum, `hint`
+        # is the action; `error` keeps the provider's own words, which are still the
+        # authority when the classifier says "unknown".
+        reason = classify_provider_error(e)
         return {"model": model, "ok": False, "error": str(e)[:240],
+                "reason": reason, "hint": _ERROR_HINTS.get(reason, ""),
                 "ms": round((time.monotonic() - t0) * 1000, 1)}
 
 
@@ -1677,4 +1841,11 @@ def test_provider(backend: Optional[str] = None, model: Optional[str] = None, *,
     }
     if failed:
         out["error"] = f"{failed[0]['model']}: {failed[0].get('error', 'failed')}"
+        # The headline carries the classification too, so a caller that shows only the
+        # summary (the Settings banner) still says what to fix rather than just "failed".
+        out["reason"] = failed[0].get("reason", "unknown")
+        out["hint"] = failed[0].get("hint", "")
+        # Distinct reasons across bindings is itself the diagnosis: one model failing on
+        # `model_not_found` while its siblings pass is a bad id, not a dead provider.
+        out["reasons"] = sorted({r.get("reason", "unknown") for r in failed})
     return out
