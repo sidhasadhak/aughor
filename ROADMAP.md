@@ -115,9 +115,12 @@ the row policy filters inside the SQL, and the model-facing renderer reads neith
 added *"tell the model 3 rows were hidden"* is one refactor from being false, and the failure is
 silent (a visible suppression **count** lets a model binary-search the hidden set).
 
-⚠️ **Not verified in R4:** the error turn rendered visually in a browser. It needs a live connection
-plus an induced mid-stream failure; port 8000 held another session's API on pre-change code. The
-render is null-safe and type-checked but has not been seen on screen — **worth a look next session.**
+✅ **R4 verified in the browser** (`e29f291`): against a real backend with the LLM binding pointed at
+a dead endpoint and the fallback chain disabled, the failed turn renders its hint AND its Retry
+button, and Retry **appends a new turn** while the failed one keeps its error, hint and button —
+the no-orphan contract, seen rather than argued. Looking at it caught one thing every test and the
+ASGI-level check had missed: the most prominent line was instructor's raw `<failed_attempts>`
+transcript with the two-word cause buried inside. `legible()` now unwraps it.
 
 **R5's design decision — where the check lives.** Aughor's parallel-safety was real but
 *accidental*: all seven fan-outs happen to dispatch reads, and the SQL gate proves reads safe.
