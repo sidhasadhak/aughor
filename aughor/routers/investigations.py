@@ -68,6 +68,25 @@ def _sse(event_type: str, data: dict) -> str:
     return f"data: {json.dumps({'type': event_type, **data})}\n\n"
 
 
+def _error_event(exc: "BaseException | None" = None, *, message: str = "",
+                 reason: str = "") -> dict:
+    """The payload for an ``error`` SSE frame — the ONE place its shape is decided (Wave R4).
+
+    This was assembled independently at fifteen sites, each emitting a bare
+    ``{"message": str(e)}``, so a rate limit, a wrong API key, a retired model id and a
+    timed-out run all reached the user as the same red line of prose — and the whole
+    classification Waves R1 and R2 built stopped at the provider boundary instead of
+    reaching the person waiting.
+
+    ``message`` is unchanged from what each site already produced; the typed fields
+    (``reason``/``retryable``/``recovery``/``hint``) ride alongside, so every existing
+    consumer is byte-identical until it opts in.
+    """
+    from aughor.agent.answer_errors import error_event
+
+    return error_event(exc, message=message, reason=reason)
+
+
 def _explore_subq_event(a) -> dict:
     """The `subq_answer` progress-event payload for one completed sub-question (T3-3: per-subq
     evidence + progress, so the wave path isn't a multi-minute silent gap). Carries the sub-question's
@@ -1146,10 +1165,16 @@ async def _stream_chat(
     try:
         db = _es.open()
     except KeyError as e:
-        yield _sse("error", {"message": str(e)})
+        # A KeyError from the scope resolver means the connection id does not exist —
+        # a terminal state, not a hiccup. Classified explicitly because the generic
+        # fallback says "retrying is usually safe", and re-asking a question against a
+        # connection that is not there fails identically every time.
+        yield _sse("error", _error_event(e, reason="not_found"))
         return
     except Exception as e:
-        yield _sse("error", {"message": f"Could not connect: {e}"})
+        # The connection exists but would not open (server down, bad credentials in the
+        # DSN, network). That one IS worth retrying, so it keeps the classifier's verdict.
+        yield _sse("error", _error_event(e, message=f"Could not connect: {e}"))
         return
 
     # Effective currency symbol for prose: tables/charts already honour the org currency,
@@ -1929,7 +1954,7 @@ async def _stream_chat(
             _esc = assess_escalation(question, columns=result.columns, rows=result.rows, error=result.error)
             if _esc.should_offer:
                 yield _sse("escalate", _esc.to_event())
-            yield _sse("error", {"message": result.error})
+            yield _sse("error", _error_event(message=result.error, reason="query_failed"))
             return
 
         # Ground the headline in the ACTUAL rows — the coder's headline is a pre-execution
@@ -2294,7 +2319,7 @@ async def _stream_chat(
                          counter="chat.inspect")
 
     except Exception as e:
-        yield _sse("error", {"message": str(e)})
+        yield _sse("error", _error_event(e))
     finally:
         try:
             db.close()
@@ -2446,10 +2471,16 @@ async def _stream_investigation(
     try:
         db = _es.open()
     except KeyError as e:
-        yield _sse("error", {"message": str(e)})
+        # A KeyError from the scope resolver means the connection id does not exist —
+        # a terminal state, not a hiccup. Classified explicitly because the generic
+        # fallback says "retrying is usually safe", and re-asking a question against a
+        # connection that is not there fails identically every time.
+        yield _sse("error", _error_event(e, reason="not_found"))
         return
     except Exception as e:
-        yield _sse("error", {"message": f"Could not connect: {e}"})
+        # The connection exists but would not open (server down, bad credentials in the
+        # DSN, network). That one IS worth retrying, so it keeps the classifier's verdict.
+        yield _sse("error", _error_event(e, message=f"Could not connect: {e}"))
         return
 
     # ── Tier 0: the trace is a READ, not a re-run ──────────────────────────────
@@ -2899,7 +2930,8 @@ async def _stream_investigation(
             if salvaged:
                 yield salvaged
             else:
-                yield _sse("error", {"message": f"Investigation timed out after {_TIMEOUT}s."})
+                yield _sse("error", _error_event(
+                    message=f"Investigation timed out after {_TIMEOUT}s.", reason="run_timeout"))
                 fail_investigation(inv_id, status="timed_out")
         elif not report_emitted:
             # The graph terminated without reaching a synthesis node — e.g. every
@@ -2910,7 +2942,7 @@ async def _stream_investigation(
             if salvaged:
                 yield salvaged
             else:
-                yield _sse("error", {"message": _stall_summary(merged)})
+                yield _sse("error", _error_event(message=_stall_summary(merged), reason="stalled"))
                 fail_investigation(inv_id, status="failed")
 
     except Exception as e:
@@ -2921,7 +2953,7 @@ async def _stream_investigation(
             yield salvaged
         else:
             fail_investigation(inv_id, status="failed")
-            yield _sse("error", {"message": str(e)})
+            yield _sse("error", _error_event(e))
     finally:
         # Orphan reconcile. If we reach here with the row still 'running', no
         # terminal handler ran — the dominant cause is a client disconnect:
@@ -2996,11 +3028,12 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
                          clarify_choice: Optional[str] = None) -> AsyncGenerator[str, None]:
     inv = get_investigation(inv_id)
     if not inv:
-        yield _sse("error", {"message": "Investigation not found"})
+        yield _sse("error", _error_event(message="Investigation not found", reason="not_found"))
         yield _sse("done", {})
         return
     if inv.get("status") != "paused":
-        yield _sse("error", {"message": f"Investigation is not paused (status: {inv.get('status')})"})
+        yield _sse("error", _error_event(
+            message=f"Investigation is not paused (status: {inv.get('status')})", reason="invalid_state"))
         yield _sse("done", {})
         return
     # Resume with the canvas scope (declared schema + derived owning-schema pin) if applicable.
@@ -3008,7 +3041,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
     try:
         db = resolve_execution_scope(inv["connection_id"], inv.get("canvas_id")).open()
     except Exception as e:
-        yield _sse("error", {"message": str(e)})
+        yield _sse("error", _error_event(e))
         yield _sse("done", {})
         return
 
@@ -3044,7 +3077,8 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
             # Same K1 rule: the resumed job completes server-side despite a client disconnect (bounded by
             # the deadline; explicit stop still cancels). An early abort here wrote an empty receipt too.
             if time.monotonic() > deadline:
-                yield _sse("error", {"message": "Timed out waiting for synthesis."})
+                yield _sse("error", _error_event(
+                    message="Timed out waiting for synthesis.", reason="run_timeout"))
                 fail_investigation(inv_id, status="timed_out")
                 return
             if "__report_delta__" in event:            # R6 live synthesis prose (flag-gated via the sink)
@@ -3086,7 +3120,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
                 _record_memory(inv_id, inv.get("connection_id", ""), inv["question"], merged)
     except Exception as e:
         fail_investigation(inv_id, status="failed")
-        yield _sse("error", {"message": str(e)})
+        yield _sse("error", _error_event(e))
     finally:
         # Same orphan-reconcile as the main stream: a client disconnect raises
         # CancelledError (BaseException) past the except handlers, so fail any row
@@ -3119,8 +3153,10 @@ async def _metered_stream(gen: AsyncGenerator[str, None],
         async for chunk in gen:
             yield chunk
     except metering.BudgetExceeded as be:
-        yield _sse("error", {"message": f"Answer stopped — {be.reason} exceeded. "
-                                        f"Raise the Insight agent's budget in Fleet → Agents."})
+        yield _sse("error", _error_event(
+            be, message=f"Answer stopped — {be.reason} exceeded. "
+                        f"Raise the Insight agent's budget in Fleet → Agents.",
+            reason="budget_exceeded"))
     finally:
         if btoken is not None:
             metering.clear_budget(btoken)

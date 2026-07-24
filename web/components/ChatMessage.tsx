@@ -1258,6 +1258,7 @@ export function ChatMessage({
   onApprovePlan,
   onRejectPlan,
   onChooseClarify,
+  onRetry,
 }: {
   turn: ChatTurn;
   connectionId?: string;
@@ -1270,6 +1271,8 @@ export function ChatMessage({
   onApprovePlan?: (invId: string, keepIndices: number[]) => void;
   onRejectPlan?: (invId: string) => void;
   onChooseClarify?: (invId: string, option: string) => void;
+  /** Wave R4 — re-ask this turn's question after a retryable failure. */
+  onRetry?: (question: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const isInvestigate = turn.mode === "investigate";
@@ -1370,9 +1373,34 @@ export function ChatMessage({
         </div>
       )}
 
-      {/* ── Error state ── */}
+      {/* ── Error state (Wave R4: typed, with the ONE recovery that applies) ──
+           The partial the user watched stays rendered above this — a failed turn keeps
+           what it produced; only the tail changes. `errorDetail` is null for a backend
+           that predates the typed fields, which degrades to exactly the old red line. */}
       {turn.status === "error" && (
-        <p className="aug-fs-sm text-red-400 py-1">{turn.error}</p>
+        <div className="py-1">
+          <p className="aug-fs-sm text-red-400">{turn.error}</p>
+          {turn.errorDetail?.hint && (
+            <p className="aug-fs-xs text-zinc-400 mt-1">{turn.errorDetail.hint}</p>
+          )}
+          {turn.errorDetail && (turn.errorDetail.retryable || turn.errorDetail.recovery) && (
+            <div className="flex items-center gap-2 mt-2">
+              {turn.errorDetail.retryable && onRetry && (
+                <Button variant="minimal" size="xs" onClick={() => onRetry(turn.question)}>
+                  Retry
+                </Button>
+              )}
+              {turn.errorDetail.recovery === "switch_model" && (
+                <span className="aug-fs-xs text-zinc-500">
+                  or switch the model in Settings → Inference
+                </span>
+              )}
+              {turn.errorDetail.recovery === "fix_config" && (
+                <span className="aug-fs-xs text-zinc-500">Settings → Inference</span>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── Tables used + timing — Deep Analysis keeps these here for now; the
