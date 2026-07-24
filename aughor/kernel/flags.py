@@ -73,6 +73,8 @@ FLAG_ENV = {
     "llm.bounded_repair": "AUGHOR_LLM_BOUNDED_REPAIR",
     "explore.wandering_detector": "AUGHOR_EXPLORE_WANDERING_DETECTOR",
     "schema.two_tier_catalog": "AUGHOR_SCHEMA_TWO_TIER_CATALOG",
+    "ada.evidence_dedup": "AUGHOR_ADA_EVIDENCE_DEDUP",
+    "ada.evidence_stubs": "AUGHOR_ADA_EVIDENCE_STUBS",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
     "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
     "ask.overview": "AUGHOR_ASK_OVERVIEW",
@@ -290,6 +292,14 @@ FLAG_META = {
     "report.argument_style": {
         "label": "Argument-style report composition",
         "description": "Compose exported deep-analysis reports the way a human analyst argues (the Genie report study): one exhibit per claim (chart OR a small table, never both), no degenerate exhibits (a 1-bar chart or single-point trend becomes a sentence), key numbers bold inline in the prose instead of stat-tile rows, the Question-Intake machinery out of the body (it stays in the Trust Receipt), and the R15 opportunity number promoted to its own Financial impact section. Deterministic re-composition of the SAME report data — no model. Off by default = byte-identical exports — see docs/REPORT_STYLE_STUDY_2026-07-16.md (R16 P1).",
+    },
+    "ada.evidence_dedup": {
+        "label": "Collapse duplicate query results in the synthesis block (Wave R3)",
+        "description": "When two steps ran the identical query, the synthesis prompt renders the identical table twice. This replaces the second with a one-line pointer to the first. LOSSLESS by construction — the table is still in the block, once — so nothing the narrator could cite disappears. Sees the whole block, so a repeat spread across two hypothesis sections is still caught. No-op below a 24k-char evidence block. Off by default. Counter: ada.evidence.duplicates.",
+    },
+    "ada.evidence_stubs": {
+        "label": "Stale-stub already-scored evidence in the synthesis block (Wave R3)",
+        "description": "Every result reaching synthesis was already rendered in FULL once, for the score_evidence step that turned it into its hypothesis's key_finding — so the narrator re-reads up to thirty rows of a table whose conclusion is stated three lines above it, for every query the run made. This renders such a result as a stub instead: the SQL (provenance), the column names, the TRUE row count, every statistical finding, and the first four real rows, with the omitted count stated explicitly so the head can never be mistaken for the whole table. Only hypotheses that actually produced a key_finding are eligible; an unscored or unattributed result is always rendered full, because nothing else in the prompt carries its meaning yet. ⚠️ Unlike its dedup sibling this DOES drop rows, so the token saving is measured but the effect on ANSWER QUALITY is not — it should not graduate until Wave E4 can A/B it against the full-evidence baseline. Off by default. Counter: ada.evidence.stubbed.",
     },
     "schema.two_tier_catalog": {
         "label": "Two-tier schema catalog for SQL repair prompts (Wave R3)",

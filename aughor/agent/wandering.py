@@ -85,6 +85,12 @@ def args_fingerprint(sql: str) -> str:
     *conservative*: it collapses whitespace and case only. A fingerprint that is too
     eager would veto a genuinely new query, and suppressing real evidence is a much worse
     failure than paying for one redundant one.
+
+    Note that ``comments=False`` means two queries differing ONLY by a SQL comment are the
+    same query here. That is intended — a comment cannot change what a query computes, so
+    re-running it really is a repeat — but it is worth knowing when reading a measurement:
+    a benchmark whose "distinct" queries vary only in a trailing comment will report a
+    dedup rate that is entirely an artifact of its own fixture.
     """
     text = _TRAILING_SEMI.sub("", (sql or "").strip())
     if not text:

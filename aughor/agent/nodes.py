@@ -1509,7 +1509,15 @@ def _format_hypothesis_summary(hypotheses: list[Hypothesis]) -> str:
 
 
 def _format_full_evidence(history: list[QueryResult], hypotheses: list | None = None) -> str:
-    """Format query history partitioned by hypothesis so the narrator cannot cross-attribute evidence."""
+    """Format query history partitioned by hypothesis so the narrator cannot cross-attribute evidence.
+
+    Wave R3a: every result here has ALREADY been rendered in full once, for the
+    ``score_evidence`` step that turned it into its hypothesis's ``key_finding``. So a
+    result may be re-rendered *fresh-full* or as a *stale stub*, per
+    :mod:`aughor.agent.evidence_budget`. Both policies are no-ops unless their flag is on
+    and the assembled block is large enough to be worth trimming, so the default output is
+    byte-identical.
+    """
     if not history:
         return "No queries were executed."
     if not hypotheses:
@@ -1519,12 +1527,13 @@ def _format_full_evidence(history: list[QueryResult], hypotheses: list | None = 
     for r in history:
         by_hyp.setdefault(r.hypothesis_id, []).append(r)
 
+    render = _evidence_renderer(history, hypotheses)
     parts = []
     for h in hypotheses:
         section_header = f"=== {h.id} EVIDENCE (for hypothesis: {h.description[:100]}) ==="
         hyp_results = by_hyp.get(h.id, [])
         if hyp_results:
-            body = "\n\n".join(format_result_for_llm(r) for r in hyp_results)
+            body = "\n\n".join(render(hyp_results))
         else:
             body = "No queries were executed for this hypothesis. Findings must state 'could not be tested'."
         parts.append(f"{section_header}\n{body}")
@@ -1533,12 +1542,67 @@ def _format_full_evidence(history: list[QueryResult], hypotheses: list | None = 
     known_ids = {h.id for h in hypotheses}
     orphans = [r for r in history if r.hypothesis_id not in known_ids]
     if orphans:
-        parts.append(
-            "=== UNATTRIBUTED QUERIES ===\n"
-            + "\n\n".join(format_result_for_llm(r) for r in orphans)
-        )
+        parts.append("=== UNATTRIBUTED QUERIES ===\n" + "\n\n".join(render(orphans)))
 
     return "\n\n---\n\n".join(parts)
+
+
+def _evidence_renderer(history: list[QueryResult], hypotheses: list):
+    """A ``list[QueryResult] -> list[str]`` renderer carrying this run's freshness policy.
+
+    Built once per synthesis so the duplicate-collapse sees the WHOLE block: a repeat
+    spread across two hypothesis sections is still a repeat, and a per-section renderer
+    would miss exactly those.
+
+    Returns the plain full renderer unless a policy is both enabled and worth applying —
+    so with no flags set this is the pre-R3 function with an extra indirection.
+    """
+    plain = lambda results: [format_result_for_llm(r) for r in results]  # noqa: E731
+    try:
+        from aughor.agent import evidence_budget as EB
+
+        collapse = EB.enabled("ada.evidence_dedup")
+        stubbing = EB.enabled("ada.evidence_stubs")
+        if not (collapse or stubbing):
+            return plain
+        # Safe direction: a small block is not what strains a window, and trimming it
+        # could only lose ground. Measure the real thing, not an estimate.
+        if sum(len(format_result_for_llm(r)) for r in history) < EB.MIN_BLOCK_CHARS:
+            return plain
+        # Only a hypothesis that actually produced a finding may go stale — its
+        # `key_finding` is what carries the meaning the rows are being dropped from.
+        scored = {h.id for h in hypotheses if getattr(h, "key_finding", "")}
+
+        # One accumulator for the WHOLE block. The prompt is assembled one section per
+        # hypothesis, so a per-call `seen` resets between sections and would catch only
+        # same-section repeats — the rarest kind, and not the one worth collapsing.
+        seen: dict = {}
+
+        def _render(results):
+            try:
+                parts, info = EB.render_history(
+                    results, full_renderer=format_result_for_llm, scored_steps=scored,
+                    collapse_duplicates=collapse, stub_scored=stubbing, seen=seen)
+            except Exception:
+                # Synthesis is where the answer gets written. A trimming helper that can
+                # raise HERE loses a whole investigation to save some tokens, so the
+                # fallback has to wrap the render, not just the setup.
+                import logging as _logging
+                _logging.getLogger(__name__).debug(
+                    "evidence render failed; falling back to full", exc_info=True)
+                return plain(results)
+            if info["stubbed"] or info["duplicates"]:
+                from aughor.stats import bump
+                bump("ada.evidence.stubbed", info["stubbed"])
+                bump("ada.evidence.duplicates", info["duplicates"])
+            return parts
+
+        return _render
+    except Exception:
+        import logging as _logging
+        _logging.getLogger(__name__).debug(
+            "evidence freshness policy skipped; rendering everything full", exc_info=True)
+        return plain
 
 
 def _attach_stats(result: QueryResult) -> QueryResult:
