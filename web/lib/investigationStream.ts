@@ -159,6 +159,12 @@ export interface ChatTurn {
   followups: string[];
   analysis: { intent: string; steps: string[] } | null;
   error: string | null;
+  // Wave R4 — the typed error tail. A failed turn used to end in a sentence, so a rate
+  // limit, a wrong API key and a timed-out run all rendered as the same red line and the
+  // user had to already know which were worth retrying. `errorDetail` carries the backend's
+  // classification so the turn can offer the ONE recovery that applies. Null on success and
+  // on any turn from a backend that predates the typed fields.
+  errorDetail: ErrorDetail | null;
 
   // Timing — wall clock for the whole turn (all modes incl. Quick/ask)
   startedAt: number;          // Date.now() when the turn began streaming
@@ -236,7 +242,7 @@ export type ChatAction =
   | { type: "SCORE";            score: Record<string, unknown> }
   | { type: "INSPECT_WARNING";  issues: string[]; suggestedFix: string }
   | { type: "PLAYBOOK_REFS";    items: PlaybookRef[] }
-  | { type: "ERROR";            message: string }
+  | { type: "ERROR";            message: string; detail?: ErrorDetail | null }
   | { type: "INSIGHT";           narrative: string; anomalies: string[]; trend: string; confidence: string }
   | { type: "INSIGHT_DELTA";     narrative: string }
   | { type: "REPORT_DELTA";      text: string }
@@ -246,6 +252,35 @@ export type ChatAction =
   | { type: "RESTORE";          turns: ChatTurn[] };
 
 // ── Reducer ───────────────────────────────────────────────────────────────────
+
+// ── Wave R4: the typed error tail ────────────────────────────────────────────
+
+/** The one recovery a user can perform. A closed set on purpose — an error taxonomy is
+ *  only useful if the UI can branch on it, and a UI cannot branch on twelve. */
+export type ErrorRecovery = "retry" | "switch_model" | "fix_config" | "";
+
+export type ErrorDetail = {
+  reason: string;          // stable code (rate_limited, bad_key, truncated, …)
+  retryable: boolean;      // re-sending the SAME request could plausibly succeed
+  recovery: ErrorRecovery; // the one action worth offering
+  hint: string;            // that action, in a sentence
+};
+
+/** Read the typed fields off an `error` frame, or null when the backend predates them.
+ *  Null rather than a guessed default: "this backend does not classify errors" and
+ *  "this error is unclassifiable" must not render the same, or an older server would
+ *  start offering retries it never vouched for. */
+export function toErrorDetail(p: Record<string, unknown>): ErrorDetail | null {
+  const reason = typeof p.reason === "string" ? p.reason : "";
+  if (!reason) return null;
+  const recovery = typeof p.recovery === "string" ? p.recovery : "";
+  return {
+    reason,
+    retryable: p.retryable === true,
+    recovery: (["retry", "switch_model", "fix_config"].includes(recovery) ? recovery : "") as ErrorRecovery,
+    hint: typeof p.hint === "string" ? p.hint : "",
+  };
+}
 
 function updateLast(state: ChatState, fn: (t: ChatTurn) => ChatTurn): ChatState {
   const turns = [...state.turns];
@@ -266,7 +301,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   overviewReport: null,
   queriesExecuted: [], latestScore: null,
   hypotheses: [], investigationId: null, receiptId: null, publicReceiptId: null,
-  tablesUsed: [], contextManifest: null, planPending: null, clarifyPending: null, followups: [], analysis: null, error: null,
+  tablesUsed: [], contextManifest: null, planPending: null, clarifyPending: null, followups: [], analysis: null, error: null, errorDetail: null,
   startedAt: 0, elapsedMs: null,
   fromCache: false, cachedQuestion: null,
   inspectWarning: null,
@@ -375,7 +410,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "REPORT":
       return updateLast(state, t => ({ ...t, report: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId }));
     case "ERROR":
-      return { ...updateLast(state, t => finish({ ...t, status: "error", error: action.message })), streaming: false };
+      return { ...updateLast(state, t => finish({ ...t, status: "error", error: action.message, errorDetail: action.detail ?? null })), streaming: false };
     case "DONE":
       // The backend always emits `done` in its finally block — even right after an
       // `error`. Only promote a still-running turn; never overwrite a terminal
@@ -592,7 +627,7 @@ export async function consumeStream(
             case "insight_delta": dispatch({ type: "INSIGHT_DELTA", narrative: (p.narrative as string) ?? "" }); break;
             case "report_delta":  dispatch({ type: "REPORT_DELTA", text: (p.executive_summary as string) ?? "" }); break;
             case "clarifying_questions": dispatch({ type: "CLARIFYING_QUESTIONS", questions: (p.questions as string[]) ?? [], contextNote: (p.context_note as string) ?? "" }); break;
-            case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
+            case "error":        dispatch({ type: "ERROR", message: p.message as string, detail: toErrorDetail(p) }); break;
             case "done":         dispatch({ type: "DONE", receiptId: (p.has_receipt ? (p.inv_id as string) : null) }); break;
           }
         } catch { /* malformed chunk — skip */ }

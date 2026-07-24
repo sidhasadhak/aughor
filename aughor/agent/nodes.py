@@ -49,6 +49,21 @@ class _ConsistencyReport(_BaseModel):
 _CONSISTENCY_ENABLED = __import__("os").getenv("AUGHOR_CONSISTENCY_CHECK", "true").lower() != "false"
 
 
+def _gate(name: str, allow: bool, *, reason: str = "") -> bool:
+    """Record a deterministic decision about whether an OPTIONAL model call runs (Wave R1).
+
+    Returns ``allow`` unchanged and never raises, so a counting hiccup can never
+    change which calls fire. The point is the denominator: "how many requests did the
+    gates save today" becomes a query at ``GET /dev/stats`` (``llm.gate.skipped.*``)
+    instead of an estimate — the same standing complaint J8 names, that every cost
+    figure to date is arithmetic rather than measurement."""
+    try:
+        from aughor.llm.reliability import gate
+        return gate(name, allow, reason=reason)
+    except Exception:
+        return allow
+
+
 def _preflight_parallel_enabled() -> bool:
     """Flag `preflight.parallel` (env AUGHOR_PREFLIGHT_PARALLEL or ledger override) — run the
     independent plan-time retrievals concurrently. Off by default; fail-safe → 'off' on any error."""
@@ -569,7 +584,8 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
 
     if _preflight_parallel_enabled():
         from aughor.kernel.concurrency import ContextThreadPoolExecutor
-        with ContextThreadPoolExecutor(max_workers=4) as _pool:
+        from aughor.kernel.parallel_safety import fanout_region as _fanout_region
+        with _fanout_region("ada.preflight"), ContextThreadPoolExecutor(max_workers=4) as _pool:
             _f_schema = _pool.submit(_get_schema)
             _f_kb = _pool.submit(_get_kb)
             _f_causal = _pool.submit(_get_causal)
@@ -876,7 +892,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
                     sql=sql,
                     error=original_error,
                     error_diagnosis=error_diagnosis_block,
-                    schema=state["schema_context"],
+                    schema=_focus_schema_for_repair(state, sql, original_error),
                     kb_patterns_section=kb_fix_patterns,
                     metrics_section=_fix_metrics,
                 ),
@@ -913,7 +929,10 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
                         sql=sql,
                         error="A join is on value-disjoint columns — the result is unreliable.",
                         error_diagnosis=f"DIAGNOSIS:\n{warn_text}\n",
-                        schema=state["schema_context"],
+                        # The guard's warning IS the error text here (the query executed
+                        # cleanly), and it names the columns and tables at fault — exactly
+                        # what the error-path autoload needs to pull their DDL in.
+                        schema=_focus_schema_for_repair(state, sql, warn_text),
                         kb_patterns_section="",
                         metrics_section="",
                     ),
@@ -1093,7 +1112,16 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
     # ── Consistency check (investigate mode only) ─────────────────────────────
     hypotheses = state.get("hypotheses", [])
     unresolved_tensions: list[str] = list(state.get("unresolved_tensions") or [])
-    if _CONSISTENCY_ENABLED and state.get("query_mode") == "investigate" and hypotheses:
+    # Wave R1: the gate in front of an optional call. This check reads "check every
+    # PAIR of findings for contradictions" and attributes each one back to a
+    # hypothesis by matching its `key_finding` text — so with fewer than two scored
+    # findings there is no pair to compare and nothing an answer could attach to.
+    # The old guard was `hypotheses` (truthy ⇒ one is enough), which spent a request
+    # on a single-hypothesis run to be told, correctly, that nothing contradicts.
+    _scored = [h for h in hypotheses if getattr(h, "key_finding", "")]
+    if (_CONSISTENCY_ENABLED and state.get("query_mode") == "investigate"
+            and _gate("ada.consistency_check", len(_scored) >= 2,
+                      reason="a contradiction needs two scored findings")):
         try:
             check: _ConsistencyReport = get_provider("coder").complete(
                 system="You are a senior analyst reviewing findings for logical contradictions.",
@@ -1368,8 +1396,12 @@ def replan(state: AgentState) -> dict[str, Any]:
     new_hyp_suggestion = (latest_score.new_hypothesis or "") if latest_score else ""
     should_cont = latest_score.should_continue if latest_score else False
 
-    # Fast-path: if there's nothing interesting, proceed linearly
-    if not new_hyp_suggestion and not should_cont:
+    # Fast-path: if there's nothing interesting, proceed linearly. Already deterministic —
+    # routed through the gate (Wave R1) purely so the saving is COUNTED. Without a
+    # denominator, "the fast path saves requests" is a claim; with one it is a number,
+    # and the ADA replan is the highest-frequency optional call in the app.
+    if not _gate("ada.replan", bool(new_hyp_suggestion) or bool(should_cont),
+                 reason="no new hypothesis and no continue signal"):
         return {"replan_decision": ReplanDecision(next_action="test_next", reasoning="No new signals — proceeding linearly.")}
 
     # Full LLM replan call
@@ -1453,6 +1485,18 @@ def _format_prior_context(history: list[QueryResult], current_hypothesis_id: str
     return "\n".join(parts)
 
 
+def _focus_schema_for_repair(state, sql: str, error: str) -> str:
+    """The schema block for a SQL repair prompt (Wave R3b).
+
+    Identity when `schema.two_tier_catalog` is off — which is the default — so the repair
+    prompt is byte-identical to before. On: a manifest of every table plus full DDL for
+    the ones this query and its error involve. Thin wrapper so both repair paths share one
+    definition and cannot drift apart.
+    """
+    from aughor.agent.schema_focus import for_repair_from_state
+    return for_repair_from_state(state, sql, error)
+
+
 def _format_hypothesis_summary(hypotheses: list[Hypothesis]) -> str:
     lines = []
     for i, h in enumerate(hypotheses, 1):
@@ -1466,7 +1510,15 @@ def _format_hypothesis_summary(hypotheses: list[Hypothesis]) -> str:
 
 
 def _format_full_evidence(history: list[QueryResult], hypotheses: list | None = None) -> str:
-    """Format query history partitioned by hypothesis so the narrator cannot cross-attribute evidence."""
+    """Format query history partitioned by hypothesis so the narrator cannot cross-attribute evidence.
+
+    Wave R3a: every result here has ALREADY been rendered in full once, for the
+    ``score_evidence`` step that turned it into its hypothesis's ``key_finding``. So a
+    result may be re-rendered *fresh-full* or as a *stale stub*, per
+    :mod:`aughor.agent.evidence_budget`. Both policies are no-ops unless their flag is on
+    and the assembled block is large enough to be worth trimming, so the default output is
+    byte-identical.
+    """
     if not history:
         return "No queries were executed."
     if not hypotheses:
@@ -1476,12 +1528,13 @@ def _format_full_evidence(history: list[QueryResult], hypotheses: list | None = 
     for r in history:
         by_hyp.setdefault(r.hypothesis_id, []).append(r)
 
+    render = _evidence_renderer(history, hypotheses)
     parts = []
     for h in hypotheses:
         section_header = f"=== {h.id} EVIDENCE (for hypothesis: {h.description[:100]}) ==="
         hyp_results = by_hyp.get(h.id, [])
         if hyp_results:
-            body = "\n\n".join(format_result_for_llm(r) for r in hyp_results)
+            body = "\n\n".join(render(hyp_results))
         else:
             body = "No queries were executed for this hypothesis. Findings must state 'could not be tested'."
         parts.append(f"{section_header}\n{body}")
@@ -1490,12 +1543,67 @@ def _format_full_evidence(history: list[QueryResult], hypotheses: list | None = 
     known_ids = {h.id for h in hypotheses}
     orphans = [r for r in history if r.hypothesis_id not in known_ids]
     if orphans:
-        parts.append(
-            "=== UNATTRIBUTED QUERIES ===\n"
-            + "\n\n".join(format_result_for_llm(r) for r in orphans)
-        )
+        parts.append("=== UNATTRIBUTED QUERIES ===\n" + "\n\n".join(render(orphans)))
 
     return "\n\n---\n\n".join(parts)
+
+
+def _evidence_renderer(history: list[QueryResult], hypotheses: list):
+    """A ``list[QueryResult] -> list[str]`` renderer carrying this run's freshness policy.
+
+    Built once per synthesis so the duplicate-collapse sees the WHOLE block: a repeat
+    spread across two hypothesis sections is still a repeat, and a per-section renderer
+    would miss exactly those.
+
+    Returns the plain full renderer unless a policy is both enabled and worth applying —
+    so with no flags set this is the pre-R3 function with an extra indirection.
+    """
+    plain = lambda results: [format_result_for_llm(r) for r in results]  # noqa: E731
+    try:
+        from aughor.agent import evidence_budget as EB
+
+        collapse = EB.enabled("ada.evidence_dedup")
+        stubbing = EB.enabled("ada.evidence_stubs")
+        if not (collapse or stubbing):
+            return plain
+        # Safe direction: a small block is not what strains a window, and trimming it
+        # could only lose ground. Measure the real thing, not an estimate.
+        if sum(len(format_result_for_llm(r)) for r in history) < EB.MIN_BLOCK_CHARS:
+            return plain
+        # Only a hypothesis that actually produced a finding may go stale — its
+        # `key_finding` is what carries the meaning the rows are being dropped from.
+        scored = {h.id for h in hypotheses if getattr(h, "key_finding", "")}
+
+        # One accumulator for the WHOLE block. The prompt is assembled one section per
+        # hypothesis, so a per-call `seen` resets between sections and would catch only
+        # same-section repeats — the rarest kind, and not the one worth collapsing.
+        seen: dict = {}
+
+        def _render(results):
+            try:
+                parts, info = EB.render_history(
+                    results, full_renderer=format_result_for_llm, scored_steps=scored,
+                    collapse_duplicates=collapse, stub_scored=stubbing, seen=seen)
+            except Exception:
+                # Synthesis is where the answer gets written. A trimming helper that can
+                # raise HERE loses a whole investigation to save some tokens, so the
+                # fallback has to wrap the render, not just the setup.
+                import logging as _logging
+                _logging.getLogger(__name__).debug(
+                    "evidence render failed; falling back to full", exc_info=True)
+                return plain(results)
+            if info["stubbed"] or info["duplicates"]:
+                from aughor.stats import bump
+                bump("ada.evidence.stubbed", info["stubbed"])
+                bump("ada.evidence.duplicates", info["duplicates"])
+            return parts
+
+        return _render
+    except Exception:
+        import logging as _logging
+        _logging.getLogger(__name__).debug(
+            "evidence freshness policy skipped; rendering everything full", exc_info=True)
+        return plain
 
 
 def _attach_stats(result: QueryResult) -> QueryResult:

@@ -1,6 +1,8 @@
 """SQL validation and result formatting utilities."""
 from __future__ import annotations
 
+import logging
+
 import re
 
 import sqlglot
@@ -101,3 +103,43 @@ def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
             lines.append(f"  {sig_marker}{sigma_str} {s.interpretation}")
 
     return "\n".join(lines)
+
+
+# ── Wave R5: the SQL half of declared parallel-safety ─────────────────────────
+# The generic machinery (a fan-out declares itself; the dangerous operation asks) lives in
+# `aughor.kernel.parallel_safety`. These two live HERE because "is this statement a read"
+# is SQL-domain knowledge, and the kernel must not import the tools layer — the
+# platform→agent boundary test enforces that, and it caught the first attempt.
+
+def sql_is_parallel_safe(sql: str) -> bool:
+    """True when ``sql`` is a read the gate would allow.
+
+    Reuses :func:`validate_sql` rather than adding a second opinion — a divergence between
+    "the gate allows it" and "we call it parallel-safe" would be worse than having no check
+    at all. Unparseable ⇒ False: the gate refuses it anyway, and guessing on the permissive
+    side is the wrong direction for a concurrency question.
+    """
+    try:
+        ok, _ = validate_sql(sql)
+        return bool(ok)
+    except Exception:
+        logging.getLogger(__name__).debug("read-only check failed", exc_info=True)
+        return False
+
+
+def check_sql_fanout(sqls, *, where: str) -> list[str]:
+    """The statements in ``sqls`` that must NOT be fanned out, returned for the caller to log.
+
+    Advisory on purpose: the per-worker SQL gate is still the authority and refuses a write
+    regardless. What this adds is the decision being made and COUNTED *before* the dispatch,
+    so "a write reached a fan-out" is visible at ``GET /dev/stats`` rather than only as N
+    identical per-worker rejections.
+    """
+    bad = [s for s in sqls if s and s.strip() and not sql_is_parallel_safe(s)]
+    if bad:
+        from aughor.stats import bump
+        bump("parallel_safety.non_read_fanout", len(bad))
+        logging.getLogger(__name__).warning(
+            "parallel-safety: %d non-read statement(s) reached %s — the gate will refuse "
+            "them per worker", len(bad), where)
+    return bad

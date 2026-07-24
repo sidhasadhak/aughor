@@ -33,9 +33,9 @@ So two waves are added (**R** — Reliability, **C** — Context graph), three t
 | Wave | State | Evidence |
 |---|---|---|
 | **K — Kinetic plane** | ✅ **COMPLETE** ([#201](https://github.com/sidhasadhak/aughor/pull/201)) | K1–K5 merged; follow-ons dispositioned in §5 below |
-| **A — Automations** | 🔨 **IN FLIGHT** — A1+A2 in open PR [#204](https://github.com/sidhasadhak/aughor/pull/204); A3–A6 remain | Arc: [`WAVE_A_AUTOMATIONS_ARC.md`](WAVE_A_AUTOMATIONS_ARC.md) (on the #204 branch) |
+| **A — Automations** | ✅ **BUILT (A1–A6)** — A1+A2 [#204](https://github.com/sidhasadhak/aughor/pull/204), A3 [#206](https://github.com/sidhasadhak/aughor/pull/206), A4 [#207](https://github.com/sidhasadhak/aughor/pull/207) merged; **A5 [#208](https://github.com/sidhasadhak/aughor/pull/208) and A6 await merge authorization** | Arc: [`WAVE_A_AUTOMATIONS_ARC.md`](WAVE_A_AUTOMATIONS_ARC.md) |
 | **E — Sessions + Evals** | ◐ **HALF DONE** — E1–E3 merged (#196); E4–E6 remain | Arc: [`WAVE_E_SESSIONS_EVALS_ARC.md`](WAVE_E_SESSIONS_EVALS_ARC.md) |
-| **R — Reliability (transport)** | ⭕ not started — *new wave, from five-repo Tier 1* | Scope: five-repo study §3 T1.1–T1.3 (+T2.3/T2.4/T2.5) |
+| **R — Reliability (transport)** | ✅ **BUILT (R1–R5)** — local commits `ff76b08` · `18ebb52` · `79106dc` · `9fa2c4d` · `1d78cd6` · `ba524be` · `60b9fb0`, **none pushed** | Scope: five-repo study §3 T1.1–T1.3 (+T2.3/T2.4/T2.5); status in `ROADMAP.md` §0 |
 | **C — Context graph** | ⭕ not started — *new wave, from five-repo T3.1* | Needs its own scoping doc before code |
 | **V — Artifact lifecycle** | ⭕ not started | Foundry §5, now ⊕ UA's freshness/committed-artifact mechanics |
 | **G — Governance uplift** | ⭕ not started | Foundry §5, now ⊕ K's 9 unenforced `_RISK` actions ⊕ grant surfacing |
@@ -97,6 +97,21 @@ build** (fakes for every provider behaviour), directly attacks the request budge
 already-paid-for bug classes *structurally* (guessed model ids · fast-tier pin clobber · health
 check covering one model). Scope authority: five-repo study §3.
 
+> **Built 2026-07-24 (local, unpushed): R1 `ff76b08` · R2 `18ebb52`.** Building them measured the
+> transport stack end-to-end and found two leaks nobody had priced. **Instructor's default is three
+> attempts and we had never overridden it** — every structured failure re-sent the whole prompt three
+> times before our code saw the error, and the fallback chain then spent a fourth on another
+> provider. And **a validation error was buying a "the shim rejected the reasoning extras" retry**,
+> because that degrade's guard admitted anything neither transient nor quota-blocked. Both fixed;
+> measured before→after, five failure classes went from *3 requests, failed* to *1 request,
+> succeeded*. J8 is now satisfiable — `llm.salvage.*`, `llm.failure.*`, `llm.repair.*` and
+> `llm.gate.*` land in `GET /dev/stats`, so R's cost claims can cite measurement.
+>
+> One scoping note carried forward: **the vouched matrix cannot block an unvouched id.** The picker
+> is deliberately free text (a stale catalogue must never block a model someone is paying for), so
+> the matrix holds *our own shipped defaults* to the higher bar — absent from the matrix ⇒ CI fails —
+> and merely warns on a user's pin. That is the honest version of "bindings resolve through it".
+
 - **R1 (=T1.1) — shared reliability layer for structured LLM calls**: deterministic normalizer
   *before* any repair call (fence-strip, trailing-comma, enum nearest-match, extra-key drop) ·
   classify-before-retry with a canonical failure taxonomy (a retry cannot fix a truncation) · ONE
@@ -110,10 +125,28 @@ check covering one model). Scope authority: five-repo study §3.
   cheapest-call health check that distinguishes bad-key / wrong-endpoint / unreachable ·
   fix-what-the-server-named one-shot param retry · the Gemini schema-allowlist and Anthropic
   streamed-usage quirk encodings diffed against our paths.
+> **R3 built 2026-07-24 (local): `79106dc` + `9fa2c4d`.** All three items, six flags, all off by
+> default. Measured on real inputs: the two-tier catalog cut the repair prompt **65%** on the real
+> 57-table workspace schema; evidence stubbing cut a realistic synthesis block **57%**. Two scoping
+> notes worth carrying: the wandering detector's *churn* and *no-progress* signals each catch a
+> failure the other two counters structurally cannot, which is why all three exist rather than one;
+> and **`ada.evidence_stubs` is the one Wave-R flag with a measurement debt** — it drops rows a
+> narrator could cite, so it must not graduate until **E4** can A/B it. That is a concrete customer
+> for E4 on top of the five the flag-graduation audit already named.
+
 - **R3 (=T1.3) — context-budget discipline for ADA**: fresh-full/stale-stub evidence rendering
   (grounded numbers re-fetched by id, never re-generated — sibling of #202's condensation) ·
   two-tier schema catalog with error-path autoload · the wandering detector (args-hash repeat →
   notice → pre-dispatch veto → graceful termination; plus distinct-args churn detection).
+> **R4 built 2026-07-24 (local): `1d78cd6` + `ba524be`.** The finding that shaped it: the `error`
+> SSE frame was hand-assembled at **fifteen** sites, so the classification R1 and R2 built reached
+> nobody. One function owns the shape now, and a test forbids inline assembly — the T2.4
+> choke-point principle applied to the outbound error path. The anti-probing half needed **no fix**:
+> the rule already held everywhere, so it became a ratchet instead. Two boundaries are pinned with
+> it, because the rule is easy to over-read — the TRUE row count is still reported (honest coverage
+> prevents an over-claim; it is not a suppression signal), and a policy-blocked query still says so
+> (silently returning zero rows would make a permissions failure look like a finding of absence).
+
 - **R4 (=T2.3+T2.4) — answer-path hardening**: no-orphan interrupt/retry on streamed `/ask` (typed
   error tail; "switch model, then retry" is the blessed recovery) · `_display` sidecar with ONE
   tested outbound choke point; guard-suppressed data indistinguishable from absence in the model's
@@ -121,6 +154,15 @@ check covering one model). Scope authority: five-repo study §3.
 - **R5 (=T2.5) — declared parallel-safety** as a uniform metadata property on tools/actions, checked
   in one place (the SQL gate already enforces the read side; this names it as the action surface
   grows).
+
+> **R5 built 2026-07-24 (local): `60b9fb0` — Wave R is COMPLETE.** The design decision worth
+> carrying: the check sits on the **dangerous** side, not the fan-out side. A concurrent region
+> declares itself; the K-plane executor asks, once. A guard every fan-out must remember to call is
+> the shape that already failed twice here (the ~5-site guard battery; R4's 15 error frames), and it
+> fails silently — a fix lands in one copy while the rest diverge. Inverting it means a fan-out added
+> next year is covered without touching the safety module. The ratchet test that enforces "every
+> `ContextThreadPoolExecutor` declares its region" found a **seventh** fan-out during the build,
+> in a file the author's grep had never opened.
 
 ### Wave E — finish (E4–E6), with T3.2 as E4's methodology
 

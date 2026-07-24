@@ -593,10 +593,21 @@ def _parallel_execute_safe(
     """
     from concurrent.futures import as_completed
     from aughor.kernel.concurrency import ContextThreadPoolExecutor
+    from aughor.kernel.parallel_safety import fanout_region as _fanout_region
 
     valid = [(q, q.sql.strip()) for q in plan_queries[:cap] if q.sql and q.sql.strip()]
     if not valid:
         return []
+    # Wave R5 — the read side, decided BEFORE the dispatch. The per-worker SQL gate is
+    # still the authority and refuses a write regardless; what this adds is that "a
+    # non-read statement reached a fan-out" is counted at GET /dev/stats instead of being
+    # visible only as N identical per-worker rejections.
+    try:
+        from aughor.tools.executor import check_sql_fanout
+        check_sql_fanout([s for _, s in valid], where="ada.phase_queries")
+    except Exception:
+        import logging as _logging
+        _logging.getLogger(__name__).debug("parallel-safety pre-check skipped", exc_info=True)
     if len(valid) == 1:
         q, sql = valid[0]
         r = _execute_safe(conn, phase_id, sql, schema=schema)
@@ -614,7 +625,7 @@ def _parallel_execute_safe(
     # DURING the node (`ada.progress_events`); no-op when no SSE sink is bound (the default).
     total_n = len(valid)
     try:
-        with ContextThreadPoolExecutor(max_workers=len(valid)) as pool:
+        with _fanout_region("ada.phase_queries"), ContextThreadPoolExecutor(max_workers=len(valid)) as pool:
             futures = {pool.submit(_run, item): i for i, item in enumerate(valid)}
             ordered: list[tuple | None] = [None] * len(valid)
             done_n = 0
@@ -6356,6 +6367,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     investigation_phases (+ the primary's _cross_section_summary), assembled single-threaded here."""
     from concurrent.futures import as_completed
     from aughor.kernel.concurrency import ContextThreadPoolExecutor
+    from aughor.kernel.parallel_safety import fanout_region as _fanout_region
     from aughor.kernel.metering import BudgetExceeded
 
     intake_data = state.get("_ada_intake") or {}
@@ -6422,7 +6434,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     results: list = []
     width = min(len(specs), max(1, _ADA_LENS_WIDTH))
     try:
-        with ContextThreadPoolExecutor(max_workers=width) as pool:
+        with _fanout_region("ada.parallel_lenses"), ContextThreadPoolExecutor(max_workers=width) as pool:
             futs = [pool.submit(_run_spec, s) for s in specs]
             for fut in as_completed(futs):
                 results.append(fut.result())   # BudgetExceeded re-raises here → abort the run
@@ -6507,7 +6519,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
         # completion order), so the report is byte-identical to the serial chain, just faster.
         _fwd: dict = {}
         try:
-            with ContextThreadPoolExecutor(max_workers=len(forward_specs)) as pool:
+            with _fanout_region("ada.forward_specs"), ContextThreadPoolExecutor(max_workers=len(forward_specs)) as pool:
                 _futs = {pool.submit(_run_forward, label, fn, counter, conn.make_reader()): label
                          for (label, fn, counter) in forward_specs}
                 for fut in as_completed(_futs):

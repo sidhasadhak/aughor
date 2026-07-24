@@ -120,6 +120,36 @@ def _max_output_tokens() -> int:
     return max(256, _int_env("AUGHOR_MAX_OUTPUT_TOKENS", _MAX_OUTPUT_TOKENS))
 
 
+# How many attempts instructor may spend inside ONE logical structured call.
+#
+# Instructor's own default is 3, and we had never overridden it — so every structured
+# failure in Aughor silently cost THREE full-prompt requests before our code saw the
+# error, and a fourth against another provider when the fallback chain took over.
+# Measured on the real transport stack (a real socket, real openai client, real
+# instructor): a response with a trailing comma cost 3 requests. On an ADA synthesis
+# call each of those re-sends the entire evidence block.
+#
+# 1 = one attempt, and Wave R1 owns the retry budget from there: the deterministic
+# normalizer recovers the structural failures at ZERO requests, and `llm.bounded_repair`
+# spends at most one more — carrying only the broken output and the specific validation
+# error, not a second copy of the original prompt. Worst case is now 1 big request + 1
+# small one, against 3 big ones before.
+#
+# What this trades away is instructor's blind re-ask, which can occasionally succeed
+# where our normalizer cannot. That is a real loss and it is not measurable from here —
+# a stub returns the same body every time, so no local harness can price it. It is
+# accepted on two grounds: the bounded repair covers the same ground more cheaply and
+# with a better prompt, and for a TRUNCATION instructor's extra attempts are provably
+# useless (the ceiling is ours and rides on every request). Restore the old ladder with
+# AUGHOR_LLM_STRUCTURED_ATTEMPTS=3.
+_STRUCTURED_ATTEMPTS = 1
+
+
+def _structured_attempts() -> int:
+    """Attempts instructor may make per structured call (AUGHOR_LLM_STRUCTURED_ATTEMPTS)."""
+    return max(1, _int_env("AUGHOR_LLM_STRUCTURED_ATTEMPTS", _STRUCTURED_ATTEMPTS))
+
+
 def _reasoning_extra_body(backend: str) -> dict:
     """Provider-specific body extras that bound reasoning, or ``{}``.
 
@@ -256,12 +286,26 @@ def _pinned_model(role: Role, model: Optional[str]) -> str:
 
     ``AUGHOR_PIN_ALL_ROLES=1`` restores the old total-pin behaviour for an operator who
     genuinely wants every call, cheap ones included, on the pinned model.
+
+    Wave R2 makes the ``fast`` exemption precise instead of blanket. "May this model
+    serve the cheap tier" stops being a rule written in this ``if`` and becomes a
+    declared property of the model (:func:`aughor.llm.matrix.fast_eligible`), so a pin
+    onto a genuinely cheap model — a 9B nano, a haiku — is allowed through while the
+    550B that caused the original cost bug still is not. An unlisted model resolves to
+    not-eligible, which is byte-identical to the pre-R2 blanket rule.
     """
     explicit = (model or "").strip()
     if explicit:
         return explicit
     run = (current_run_model() or "").strip()
     if run and role == "fast" and not _flag("AUGHOR_PIN_ALL_ROLES"):
+        try:
+            from aughor.llm.matrix import fast_eligible
+            if fast_eligible(_active_backend(), run):
+                return run
+        except Exception:
+            logger.debug("llm: fast-eligibility lookup failed; keeping the blanket rule",
+                         exc_info=True)
         return ""
     return run
 
@@ -311,6 +355,15 @@ def write_config(cfg: dict) -> None:
     except Exception:
         logger.debug("could not chmod %s (non-fatal)", _CONFIG_PATH, exc_info=True)
     load_config()
+
+
+def active_backend() -> str:
+    """The backend this deployment is bound to. Public because callers outside the
+    inference plane legitimately need it — the vouched-matrix check in
+    ``kernel/agents.py`` was reaching for ``_active_backend`` and tripping the
+    private-cross-import ratchet, which is the ratchet doing its job: an internal that
+    two planes need is an interface that has not been declared yet."""
+    return _active_backend()
 
 
 def active_base_url(backend: str) -> str:
@@ -559,6 +612,131 @@ _QUOTA_EXHAUSTED_MSGS = (
     "insufficient_quota", "credit limit exceeded", "add credits", "payment required",
 )
 
+# ── Wave R2: the error body names the failure; read it (J7) ───────────────────
+# "Google's quotaId is the authority, its retry-in prose lies" generalised chain-wide.
+# A provider's error BODY distinguishes failures that a status code flattens into one
+# 4xx, and one of those distinctions is load-bearing: a model id the provider will
+# never serve is a CONFIG error, not a transport failure.
+#
+# Why it earns its own class: the failover chain answers the question anyway, so a
+# guessed or retired model id produces working answers from a DIFFERENT model while the
+# binding the operator actually chose is dead. That is not hypothetical — the first pass
+# at the OpenRouter defaults shipped two ids that do not exist, and the app kept
+# answering. Silence is the bug; the chain was hiding it.
+#
+# Deliberately narrow, and matched against the message only. Every phrase here names an
+# identifier the provider does not recognise. "not found" alone is absent on purpose —
+# it is ordinary prose in a tool result or a SQL error that could ride along in an
+# exception chain, and a false positive here fails a call that would have succeeded.
+_MODEL_NOT_FOUND_MSGS = (
+    "model_not_found",
+    "does not exist or you do not have access",
+    "no such model",
+    "model not found",
+    "unknown model",
+    "invalid model",
+    "is not a valid model",
+    "the model does not exist",
+)
+
+
+def _is_model_not_found(exc: BaseException) -> bool:
+    """True when the provider says it does not serve this model id.
+
+    Quota and rate limits are checked first and win: an exhausted free tier sometimes
+    phrases itself as "you do not have access", and mistaking that for a bad id would
+    turn a self-healing 15-minute cooldown into a permanent hard failure.
+    """
+    if _is_quota_exhausted(exc) or _is_rate_limited(exc):
+        return False
+    msg = str(exc).lower()
+    return any(k in msg for k in _MODEL_NOT_FOUND_MSGS)
+
+
+# Marker sets for the remaining classes a status code flattens together. A 401 and a
+# 404-on-the-path and a refused socket are three different jobs for whoever is reading
+# the health check, and "error: <240 chars of provider prose>" makes them one.
+_BAD_KEY_MSGS = (
+    "invalid api key", "invalid_api_key", "incorrect api key", "api key not valid",
+    "unauthorized", "authentication", "permission denied", "api_key_invalid",
+    "no api key", "missing api key",
+)
+_UNREACHABLE_MSGS = (
+    "connection refused", "connection error", "econnrefused", "name or service not known",
+    "nodename nor servname", "failed to establish", "temporary failure in name resolution",
+    "getaddrinfo", "max retries exceeded", "connection aborted", "ssl",
+)
+_WRONG_ENDPOINT_MSGS = (
+    "404 page not found", "not found for url", "invalid url", "no route matched",
+    "<!doctype html", "<html", "unexpected content type",
+)
+
+#: The health-check verdicts, ordered by how specific the evidence is. Each names what
+#: the operator must DO, which is the only thing a health check is for.
+PROVIDER_ERROR_CLASSES = (
+    "bad_key", "model_not_found", "quota_exhausted", "rate_limited",
+    "wrong_endpoint", "unreachable", "timeout", "config", "unknown",
+)
+
+_ERROR_HINTS = {
+    "bad_key": "The API key is missing, wrong, or lacks access — re-enter it in Settings → Inference.",
+    "model_not_found": "This backend does not serve that model id — pick one from the catalogue.",
+    "quota_exhausted": "The allowance is spent for now; it resets on the provider's own schedule.",
+    "rate_limited": "Throttled right now — the binding is fine; retry in a moment.",
+    "wrong_endpoint": "The base URL does not look like this provider's API root.",
+    "unreachable": "Nothing answered at that address — check the server is running and the URL.",
+    "timeout": "The endpoint accepted the request but did not answer in time.",
+    "config": "The client could not be built — usually a missing key or an unknown backend.",
+    "unknown": "Unrecognised failure — the provider's own message is in `error`.",
+}
+
+
+def classify_provider_error(exc: BaseException) -> str:
+    """One of :data:`PROVIDER_ERROR_CLASSES` for a failed provider call.
+
+    Ordered most-specific first, because the classes overlap in prose: a bad key often
+    says "permission", an exhausted quota often says "you do not have access", and a
+    404 says "not found" whether the *model* or the *URL* is wrong. The specific
+    evidence has to be consumed before the generic phrasing can claim it.
+    """
+    msg = str(exc).lower()
+    if any(k in msg for k in _BAD_KEY_MSGS) or getattr(exc, "status_code", None) in (401, 403):
+        return "bad_key"
+    if _is_quota_exhausted(exc):
+        return "quota_exhausted"
+    if _is_model_not_found(exc):
+        return "model_not_found"
+    if _is_rate_limited(exc):
+        return "rate_limited"
+    if any(k in msg for k in _WRONG_ENDPOINT_MSGS):
+        return "wrong_endpoint"
+    if any(k in msg for k in _UNREACHABLE_MSGS):
+        return "unreachable"
+    if "timeout" in msg or "timed out" in msg:
+        return "timeout"
+    if isinstance(exc, BindingConfigError):
+        return "model_not_found"
+    if isinstance(exc, (ValueError, RuntimeError)) and "api key" in msg:
+        return "config"
+    return "unknown"
+
+
+class BindingConfigError(RuntimeError):
+    """A binding names a model its backend will not serve — a configuration fault.
+
+    Raised instead of walking the fallback chain, so the operator learns that the model
+    they chose is unusable rather than receiving answers from a substitute they never
+    selected. Carries the backend, the model and the provider's own words.
+    """
+
+    def __init__(self, backend: str, model: str, cause: BaseException):
+        self.backend, self.model = backend, model
+        super().__init__(
+            f"{backend} does not serve the model {model!r} — check the binding in "
+            f"Settings → Inference (or the AUGHOR_*_MODEL env var). "
+            f"Provider said: {str(cause)[:240]}")
+        self.__cause__ = cause
+
 
 # Providers usually say how long to wait — Gemini as "Please retry in 42.3s", OpenAI-compatible
 # shims as a retryDelay field or a Retry-After header. Our ladder tops out around 15s, so a 42s
@@ -638,7 +816,7 @@ def _record_llm_call(*, backend: str, model: str, role: str,
                      retries: int = 0, temperature: Optional[float] = None,
                      fallback: bool = False, streamed: bool = False,
                      system: Optional[str] = None, user: Optional[str] = None,
-                     output: Any = None) -> None:
+                     output: Any = None, extra: Optional[dict] = None) -> None:
     """Mirror one model call into the session log (flag ``obs.session_log``).
 
     ``metering.record_llm`` sums the same numbers into a per-run aggregate, which
@@ -666,6 +844,7 @@ def _record_llm_call(*, backend: str, model: str, role: str,
         prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
         retries=retries or None,
         payload={"role": role, "fallback": fallback, "streamed": streamed,
+                 **(extra or {}),
                  **({"temperature": temperature} if temperature is not None else {}),
                  **({"usage_reported": False} if prompt_tokens is None
                     and completion_tokens is None else {}),
@@ -758,6 +937,173 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
         time.sleep(wait)
 
 
+# ── Wave R1: structured-output recovery, before any extra request ─────────────
+# A structured call that does not parse or validate is NOT a transport failure, but
+# `complete()` has always treated it like one — straight to the fallback chain, one
+# whole request against a second provider. On the free tier the scarce resource is
+# requests, so a markdown fence around correct JSON is one of the most expensive
+# characters a model can emit. These helpers put a deterministic recovery, and an
+# honest classification, in front of that spend. See aughor/llm/reliability.py.
+
+# Instructor's structured-output failures. Named by string so this module keeps its
+# single `import instructor` and does not depend on the exception module's layout
+# (which moved from instructor.exceptions to instructor.core in 1.15).
+_STRUCTURED_EXC_TYPES = (
+    "InstructorRetryException", "IncompleteOutputException",
+    "ResponseParsingError", "ValidationError", "ModeError",
+)
+
+
+def _is_structured_failure(exc: BaseException) -> bool:
+    """True when ``exc`` is 'the model's output was wrong', not 'the call did not happen'.
+
+    The transport tests run FIRST and win. Instructor wraps whatever ended the attempt,
+    so a rate-limited call can surface as an InstructorRetryException carrying a 429 in
+    its message — and misreading that as a formatting problem would strip the very
+    markers `_is_quota_exhausted` needs, silently disabling the cooldown. A transport
+    failure stays a transport failure all the way up.
+    """
+    if _is_transient(exc) or _is_quota_exhausted(exc):
+        return False
+    return type(exc).__name__ in _STRUCTURED_EXC_TYPES
+
+
+def _typed_structured_error(exc: BaseException, response_model) -> BaseException:
+    """``exc`` re-expressed as a :class:`StructuredOutputError` when it is a
+    structured-output failure, else ``exc`` untouched.
+
+    The diagnosis is what lets `complete()` decline a failover that cannot help; a
+    transport error is returned as-is so every existing classification still sees the
+    original message.
+    """
+    if not _is_structured_failure(exc):
+        return exc
+    try:
+        from aughor.llm import reliability
+
+        diagnosis = reliability.classify(exc)
+        from aughor.stats import bump
+        bump(f"llm.failure.{diagnosis.failure}")
+        return reliability.StructuredOutputError(diagnosis, exc)
+    except Exception:
+        logger.debug("llm: could not classify structured failure", exc_info=True)
+        return exc
+
+
+def _should_failover(exc: BaseException) -> bool:
+    """Whether walking the fallback chain can help with ``exc``.
+
+    True for everything except the classes the reliability layer can prove another
+    provider will reproduce. Fail-open: an unclassifiable error keeps the pre-R1
+    behaviour (try the chain), because a wrongly-suppressed failover breaks a working
+    install while a wrongly-attempted one only costs one request.
+    """
+    from aughor.llm.reliability import StructuredOutputError, should_failover
+
+    if isinstance(exc, StructuredOutputError):
+        return should_failover(exc.diagnosis)
+    return True
+
+
+def _repair_kwargs(kwargs: dict, system: str, user: str) -> dict:
+    """The original call's kwargs, re-pointed at the repair prompt.
+
+    Reuses the binding (same client, same model) on purpose: the repair asks the model
+    to re-format *its own* output, which is the one task it is guaranteed to have the
+    context for. `max_tokens` is left at the original ceiling rather than tightened —
+    a repair emits roughly what the first attempt emitted, so a smaller cap would
+    manufacture the single failure class a repair cannot fix.
+    """
+    kw = dict(kwargs)
+    kw.pop("extra_body", None)      # reasoning extras buy nothing on a re-format
+    if "system" in kw:              # Anthropic shape
+        kw["system"] = system
+        kw["messages"] = [{"role": "user", "content": user}]
+    else:
+        kw["messages"] = [{"role": "system", "content": system},
+                          {"role": "user", "content": user}]
+    if "temperature" in kw:
+        kw["temperature"] = 0.0
+    return kw
+
+
+def _recover_structured(exc: BaseException, response_model, *, endpoint, kwargs: dict,
+                        base_url: str, backend: str, model: str, role: str,
+                        fallback: bool, stats: dict):
+    """Recover a valid ``response_model`` from a failed structured call, or ``None``.
+
+    Two stages, in cost order:
+
+    1. **Deterministic salvage** (flag ``llm.structured_salvage``, default on) — zero
+       requests. Returns ``(value, completion)`` so the caller's normal success path
+       still meters the tokens the provider already charged us for.
+    2. **One bounded repair** (flag ``llm.bounded_repair``, default off) — exactly one
+       request, only when the diagnosis says another request could plausibly help.
+       Never for a truncation, an empty body or a refusal.
+
+    Never raises: a failure inside the recovery layer must leave the original error's
+    path intact, not replace one failure with a different one.
+    """
+    if not _is_structured_failure(exc):
+        return None
+    try:
+        from aughor.kernel.flags import flag_enabled
+        from aughor.llm import reliability
+    except Exception:
+        logger.debug("llm: reliability layer unavailable", exc_info=True)
+        return None
+
+    try:
+        if not flag_enabled("llm.structured_salvage"):
+            return None
+        result = reliability.salvage(exc, response_model)
+        if result.ok:
+            completion = (getattr(exc, "last_completion", None)
+                          or getattr(exc, "raw_response", None))
+            stats["salvaged"] = True
+            stats["repairs"] = list(result.repairs)
+            return result.value, completion
+
+        diagnosis = result.diagnosis
+        if diagnosis is None or not diagnosis.repairable:
+            return None
+        if not flag_enabled("llm.bounded_repair"):
+            logger.info("llm: %s response is %s and repairable, but llm.bounded_repair is off",
+                        response_model.__name__, diagnosis.failure)
+            return None
+    except Exception:
+        logger.debug("llm: deterministic salvage failed", exc_info=True)
+        return None
+
+    # ── the one repair request ────────────────────────────────────────────────
+    from aughor.stats import bump
+    sys_p, usr_p = reliability.repair_prompt(diagnosis, response_model)
+    bump("llm.repair.calls")
+    _t0 = time.monotonic()
+    try:
+        cwc = getattr(endpoint, "create_with_completion", None)
+        kw = _repair_kwargs(kwargs, sys_p, usr_p)
+        # max_retries=0: the repair budget is ONE request, and the retry ladder would
+        # quietly turn it into four against a limit we are trying to spend less of.
+        out, raw = _run_resilient(
+            (lambda: cwc(**kw)) if cwc is not None else (lambda: (endpoint.create(**kw), None)),
+            base_url, max_retries=0)
+    except Exception as repair_exc:
+        bump("llm.repair.failed")
+        logger.warning("llm: bounded repair failed (%s); surfacing the original failure",
+                       str(repair_exc)[:120])
+        return None
+    bump("llm.repair.ok")
+    _record_llm_call(backend=backend, model=model, role=role,
+                     prompt_tokens=_usage_or_none(raw)[0], completion_tokens=_usage_or_none(raw)[1],
+                     ms=(time.monotonic() - _t0) * 1000.0, fallback=fallback,
+                     extra={"repair_of": diagnosis.failure})
+    logger.info("llm: repaired a %s response in one request (%s)",
+                response_model.__name__, diagnosis.detail[:120])
+    stats["repaired"] = True
+    return out, raw
+
+
 class LLMProvider:
     """Call .complete() with a Pydantic response_model, get a typed object back."""
 
@@ -821,6 +1167,21 @@ class LLMProvider:
         except Exception as primary_exc:
             if _is_quota_exhausted(primary_exc):
                 _mark_quota_exhausted(self.backend)
+            # Wave R2 (J7): a model id this backend does not serve is a CONFIGURATION
+            # fault, and the failover is what hides it — the chain answers from some
+            # other model while the binding the operator chose stays dead and silent.
+            # That is exactly how two non-existent OpenRouter ids shipped as defaults
+            # and kept answering. Fail loudly, naming the model and the provider's own
+            # words, so the fix is obvious instead of invisible.
+            if _is_model_not_found(primary_exc) and _flag("AUGHOR_MODEL_ID_STRICT", "1"):
+                raise BindingConfigError(self.backend, self._model, primary_exc) from primary_exc
+            # Wave R1: some failures are provably identical on the next provider, so the
+            # failover is a request spent to learn nothing. A truncation is the case that
+            # matters — the ceiling that cut the response off is OURS, sent on every
+            # backend, so the next link generates against the same limit and stops in the
+            # same place. Classify first, then decide.
+            if not _should_failover(primary_exc):
+                raise
             # Resilience: if the primary backend is unreachable, erroring, or out of
             # allowance, transparently fall back to the next CONFIGURED backend. Enabled
             # by default; disable with AUGHOR_FALLBACK_DISABLED=1, pin the order with
@@ -851,8 +1212,22 @@ class LLMProvider:
                 # chain exists precisely because any one backend can be down or spent.
                 if _is_quota_exhausted(fb_exc):
                     _mark_quota_exhausted(backend)
-                logger.warning("provider: fallback %s also failed (%s)",
-                               backend, str(fb_exc)[:120])
+                # A bad id on a FALLBACK link is our own default gone stale, not the
+                # operator's setting — so it is logged at error level (it needs fixing in
+                # this repo) but the chain continues, because the caller's real problem is
+                # whatever took the primary down. Only the PRIMARY's bad id is fatal.
+                if _is_model_not_found(fb_exc):
+                    logger.error("provider: fallback binding %s/%s is not a model this "
+                                 "backend serves — the built-in default needs updating (%s)",
+                                 backend, fb._model, str(fb_exc)[:160])
+                else:
+                    logger.warning("provider: fallback %s also failed (%s)",
+                                   backend, str(fb_exc)[:120])
+                # …unless the failure is one every link reproduces. A truncation walking
+                # the whole chain spends one request per backend to hit the same ceiling
+                # each time — the most expensive way there is to learn nothing.
+                if not _should_failover(fb_exc):
+                    break
         raise primary_exc  # every link failed — surface the ORIGINAL cause, not the last
 
     def complete_streaming(
@@ -914,11 +1289,13 @@ class LLMProvider:
             endpoint = client.messages
             kwargs = dict(model=model, max_tokens=_max_output_tokens(), system=system,
                           messages=[{"role": "user", "content": user}],
-                          response_model=response_model)
+                          response_model=response_model,
+                          max_retries=_structured_attempts())
         else:
             endpoint = client.chat.completions
             kwargs = dict(model=model, temperature=temperature, response_model=response_model,
                           max_tokens=_max_output_tokens(),
+                          max_retries=_structured_attempts(),
                           messages=[{"role": "system", "content": system},
                                     {"role": "user", "content": user}])
             extra = _reasoning_extra_body(backend)
@@ -941,7 +1318,19 @@ class LLMProvider:
                 # rejects `reasoning` must not take the call down with it. Retry once without the
                 # extras, and only for a 4xx-shaped complaint — a rate limit or outage has to stay
                 # transient so the retry ladder and fallback chain still see it.
-                if "extra_body" not in kwargs or _is_transient(exc) or _is_quota_exhausted(exc):
+                #
+                # `_is_structured_failure` closes the hole that made that last clause a lie
+                # (Wave R1). The guard admitted anything that was neither transient nor a
+                # quota block — and a Pydantic validation error is neither. So on
+                # OpenRouter, the one backend that sends `extra_body` AND the app's
+                # primary, EVERY structured-output failure quietly re-sent the whole
+                # prompt to test a hypothesis that was already false: the shim had
+                # accepted `reasoning` fine, the model's JSON was simply wrong. Measured
+                # on this exact path: 2 requests spent per validation failure, against a
+                # 1,000/day cap. The response the model already gave us is the thing to
+                # look at, and that is what `_recover_structured` now does.
+                if ("extra_body" not in kwargs or _is_transient(exc)
+                        or _is_quota_exhausted(exc) or _is_structured_failure(exc)):
                     raise
                 logger.warning("llm: %s rejected the reasoning extras (%s); retrying without",
                                backend, str(exc)[:100])
@@ -953,16 +1342,29 @@ class LLMProvider:
             # concurrency cap + transient-error retry/backoff
             out, raw = _run_resilient(_do, base_url, stats=_stats, max_retries=max_retries)
         except Exception as exc:
-            # A call that fails past its retries must still leave a record —
-            # otherwise "which model fails" is unanswerable precisely when it
-            # matters, and the log flatters the provider it is meant to audit.
-            _record_llm_call(backend=backend, model=model, role=role,
-                             prompt_tokens=None, completion_tokens=None,
-                             ms=(time.monotonic() - _t0) * 1000.0, ok=False,
-                             error_class=type(exc).__name__,
-                             retries=_stats.get("retries", 0), temperature=temperature,
-                             fallback=fallback, system=system, user=user)
-            raise
+            # Wave R1: before this failure becomes a request against another provider,
+            # try to recover the answer we were already given. `_recover_structured`
+            # returns a valid object with ZERO extra requests when the response was
+            # merely fenced/comma-trailing/mis-cased, and re-raises a typed
+            # StructuredOutputError otherwise so `complete()` can decline a failover
+            # that provably cannot help.
+            recovered = _recover_structured(
+                exc, response_model, endpoint=endpoint, kwargs=kwargs,
+                base_url=base_url, backend=backend, model=model, role=role,
+                fallback=fallback, stats=_stats)
+            if recovered is not None:
+                out, raw = recovered
+            else:
+                # A call that fails past its retries must still leave a record —
+                # otherwise "which model fails" is unanswerable precisely when it
+                # matters, and the log flatters the provider it is meant to audit.
+                _record_llm_call(backend=backend, model=model, role=role,
+                                 prompt_tokens=None, completion_tokens=None,
+                                 ms=(time.monotonic() - _t0) * 1000.0, ok=False,
+                                 error_class=type(exc).__name__,
+                                 retries=_stats.get("retries", 0), temperature=temperature,
+                                 fallback=fallback, system=system, user=user)
+                raise _typed_structured_error(exc, response_model)
         pt, ct = _extract_usage(raw)
         _ms = (time.monotonic() - _t0) * 1000.0
         metering.record_llm(pt, ct, _ms)
@@ -970,7 +1372,12 @@ class LLMProvider:
         _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
                          completion_tokens=_ct, ms=_ms, retries=_stats.get("retries", 0),
                          temperature=temperature, fallback=fallback,
-                         system=system, user=user, output=out)
+                         system=system, user=user, output=out,
+                         # A call that only succeeded because the normalizer repaired it
+                         # must not read as clean in the log — "which binding needs
+                         # salvaging how often" is the signal that retires a bad model.
+                         extra=({"salvaged": True, "repairs": _stats.get("repairs", [])}
+                                if _stats.get("salvaged") else None))
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         return out
 
@@ -1353,7 +1760,15 @@ def _ping(backend: str, model: str, role: Role = "coder") -> dict:
         return {"model": prov._model, "ok": True,
                 "ms": round((time.monotonic() - t0) * 1000, 1)}
     except Exception as e:
+        # Wave R2: say WHICH failure. A health check exists to tell an operator what to
+        # do next, and "error: <240 characters of provider prose>" made a wrong key, a
+        # wrong base URL, a dead server and a spent free tier indistinguishable — all
+        # four render as a red cross with a paragraph. `reason` is a stable enum, `hint`
+        # is the action; `error` keeps the provider's own words, which are still the
+        # authority when the classifier says "unknown".
+        reason = classify_provider_error(e)
         return {"model": model, "ok": False, "error": str(e)[:240],
+                "reason": reason, "hint": _ERROR_HINTS.get(reason, ""),
                 "ms": round((time.monotonic() - t0) * 1000, 1)}
 
 
@@ -1413,7 +1828,8 @@ def test_provider(backend: Optional[str] = None, model: Optional[str] = None, *,
         results.append({**_ping_cached(b, m, _role_for(used_by), force=force), "used_by": used_by})
     else:
         from aughor.kernel.concurrency import ContextThreadPoolExecutor
-        with ContextThreadPoolExecutor(max_workers=min(len(targets), 4)) as pool:
+        from aughor.kernel.parallel_safety import fanout_region as _fanout_region
+        with _fanout_region("llm.health_probes"), ContextThreadPoolExecutor(max_workers=min(len(targets), 4)) as pool:
             futures = {pool.submit(_ping_cached, b, m, _role_for(u), force=force): (m, u)
                        for m, u in targets.items()}
             for fut in futures:
@@ -1435,4 +1851,11 @@ def test_provider(backend: Optional[str] = None, model: Optional[str] = None, *,
     }
     if failed:
         out["error"] = f"{failed[0]['model']}: {failed[0].get('error', 'failed')}"
+        # The headline carries the classification too, so a caller that shows only the
+        # summary (the Settings banner) still says what to fix rather than just "failed".
+        out["reason"] = failed[0].get("reason", "unknown")
+        out["hint"] = failed[0].get("hint", "")
+        # Distinct reasons across bindings is itself the diagnosis: one model failing on
+        # `model_not_found` while its siblings pass is a bad id, not a dead provider.
+        out["reasons"] = sorted({r.get("reason", "unknown") for r in failed})
     return out

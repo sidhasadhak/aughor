@@ -605,6 +605,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           analysis: (t.intent || t.approach?.length) ? { intent: t.intent || "", steps: t.approach || [] } : null,
           followups: [],
           error: null,
+          errorDetail: null,   // a restored turn completed; there is no live error to classify
           startedAt: 0,
           elapsedMs: null,
           fromCache: false,
@@ -860,6 +861,12 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         onApprovePlan={(invId, keep) => resumePlan(invId, keep)}
                         onRejectPlan={(invId) => rejectPlan(invId)}
                         onChooseClarify={(invId, opt) => resumeClarify(invId, opt)}
+                        // Wave R4 — the blessed recovery. Routed through the SAME handleSend
+                        // the composer uses, so a retry is an ordinary new turn: the failed
+                        // one keeps its partial and its error tail, and nothing is mutated in
+                        // place. That is what makes "never a dropped or duplicated turn" true
+                        // by construction rather than by care.
+                        onRetry={(q) => handleSend(q)}
                       />
                     </ErrorBoundary>
                     {turn.clarify && (

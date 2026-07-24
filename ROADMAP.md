@@ -21,19 +21,127 @@
 five-repo study ([`docs/FIVE_REPO_STUDY_2026-07-23.md`](docs/FIVE_REPO_STUDY_2026-07-23.md)). It
 supersedes the sequencing sections of both studies; this §0 stays the session-level status page.
 
-**Session 2026-07-24 merged three PRs and started Wave A.** `main` (`87ae8e8`):
+> ⛔ **PUSH DISCIPLINE (standing, non-negotiable): NEVER `git push`, open a PR, or merge without the
+> user saying so IN the current request — and even when authorized, do ONE push/PR/merge, then PAUSE
+> and report before the next.** Commit locally and stop. This is the load-bearing rule for this repo;
+> batching multiple pushes on one "push everything" instruction caused friction on 2026-07-24.
 
-| PR | What |
-|---|---|
-| **#201** `ba06f6d` | **Wave K — the kinetic plane** (K1 declare · K2 execute · K3 overlay · K4 propose · K4b in-investigation · K5 UI) |
-| **#202** `817e9ec` | Streamed-output cap · fast-tier pin · null-side GROUP BY guard · upload-resurrection tombstone · deterministic evidence condensation |
-| **#203** `f66516a` | Retired the orphaned LLM tree-reduce primitive; this §0 rewritten |
-| **#204** `6ca2719` | **Wave A1+A2 — the automation plane** (model · store · one engine · heartbeat · API), behind `automations.engine`; live-proven, and the proof found 2 defects green tests missed |
-| **#205** `87ae8e8` | **The platform program** (plan of record) + the five-repo study |
+**Wave A is COMPLETE (A1–A6). `main` = `1a9d063`.** But only A1–A4 are MERGED; **A5 and A6 are pushed
+with PRs/branches OPEN, awaiting the user's explicit go to merge.**
 
-**Wave A is IN PROGRESS: A1+A2 merged, A3 (source version probes) under way.** Remaining after A3:
-A4 (resolve-once inbox + standing grants — redesigned per program J1/J2), A5 (adopt monitors/briefs),
-A6 (surface). Arc + decision gates: [`docs/WAVE_A_AUTOMATIONS_ARC.md`](docs/WAVE_A_AUTOMATIONS_ARC.md).
+| PR | What | State |
+|---|---|---|
+| **#204** `6ca2719` | **Wave A1+A2** — the automation plane (model · store · one engine · heartbeat · API) | ✅ merged |
+| **#206** `0b86680` | **Wave A3** — source version probes (change detection that can't lose a change) | ✅ merged |
+| **#207** `1a9d063` | **Wave A4** — resolve-once proposal inbox + target-bound standing grants | ✅ merged |
+| **#208** | **Wave A5** — adopt monitors/briefs onto the engine (rebased on main, CI running) | ⏳ **OPEN, not merged** |
+| — | **Wave A6** — the Automations frontend surface (branch `2026-07-24-wave-a6-surface` pushed, **no PR yet**, rebased on main) | ⏳ **pushed, no PR, not merged** |
+
+**⏭️ FIRST NEXT-SESSION ACTIONS (only if the user authorizes each):** open the A6 PR; then, one at a
+time with a pause between, merge **#208 (A5)** and the **A6 PR** (both rebased on main, single-commit,
+clean). A5/A6 are byte-identical when their flags are off (`automations.adopt_legacy`,
+`automations.proposals`). Then Wave A is fully landed. Arc + met decision gates:
+[`docs/WAVE_A_AUTOMATIONS_ARC.md`](docs/WAVE_A_AUTOMATIONS_ARC.md).
+
+**Also still local/unpushed from earlier this session:** `2026-07-24-roadmap-next-session` (the
+first draft of this §0 — now **superseded**, its commit is cherry-picked onto the Wave R branch
+below; the branch can be dropped). Commit only, do not push unless asked.
+
+### ✅ Wave R is COMPLETE (R1–R5) — all committed LOCALLY, none pushed
+
+Branch `2026-07-24-wave-r2-provider-plane` (stacked on `2026-07-24-wave-r1-structured-reliability`,
+both off `main`). **Neither is pushed and no PR exists** — awaiting explicit authorization.
+
+| | What | State |
+|---|---|---|
+| **R1** `ff76b08` | **The structured-call reliability layer** — deterministic normalizer · classify-before-retry · ONE bounded repair · a gate on optional calls | 🔨 local commit |
+| **R2** `18ebb52` | **The provider plane** — error-body classification (a guessed model id fails loudly) · the vouched model matrix · a health check that names its failure | 🔨 local commit |
+| **R3** `79106dc` + `9fa2c4d` | **Context-budget discipline for ADA** — the wandering detector · the two-tier schema catalog with error-path autoload · fresh-full/stale-stub evidence | 🔨 local commits |
+| **R4** `1d78cd6` + `ba524be` | **Answer-path hardening** — the typed error tail through ONE choke point (15 hand-assembled sites) + a Retry the user can act on · the anti-probing rule pinned as a ratchet | 🔨 local commits |
+| **R5** `60b9fb0` | **Declared parallel-safety** — a fan-out declares itself, the K-plane executor asks; 7 regions wired, the ratchet found the 7th | 🔨 local commit |
+
+**Two pre-existing leaks were found by MEASURING the real transport stack, and both are fixed in R1:**
+
+1. **Instructor's default is THREE attempts and we had never overridden it.** Every structured
+   failure re-sent the entire prompt — evidence block and all — three times before our code saw the
+   error, then the fallback chain spent a fourth on another provider. Measured: a trailing comma
+   cost 3 requests. `AUGHOR_LLM_STRUCTURED_ATTEMPTS` now defaults to 1.
+2. **A validation error bought a "the shim rejected the reasoning extras" retry.** That degrade is
+   for a 4xx, but its guard admitted anything neither transient nor quota-blocked — and a Pydantic
+   error is neither. So on OpenRouter (the only backend sending `extra_body`, and the primary) every
+   structured failure re-sent the prompt to test a hypothesis that was already false. 2 → 1 request.
+
+**Measured before → after**, on a local stub returning genuine OpenAI-shaped bodies so every layer
+below our code is real: trailing comma · Python literals · smart quotes · Python repr · enum case
+all went from **3 requests, FAILED → 1 request, SUCCEEDED**; misspelled enum · uppercased key · no
+JSON stayed **FAILED** (as they must — the normalizer never guesses) at 2 requests instead of 3.
+
+New flags: `llm.structured_salvage` (on) · `llm.bounded_repair` (on — it *replaces* the two
+requests R1 removed). New counters at `GET /dev/stats`: `llm.salvage.*` · `llm.failure.*` ·
+`llm.repair.*` · `llm.gate.*` — **J8 is now satisfiable**, so the next cost claim can cite
+measurement instead of call-count arithmetic.
+
+**R2's matrix is vouched, not asserted.** 33 entries; 20 confirmed by fetching the provider's own
+live catalogue while writing it (openrouter 14/14, gemini 3/3, ollama 3/5 pulled locally).
+anthropic/groq/together have no key on this machine so they carry `verified_on=""` and are **not**
+vouched — a matrix that laundered a guess into a date would be worse than none. CI now fails if a
+shipped default or picker suggestion is absent from it. Live drift run: `gone=0` everywhere
+reachable; Gemini needed `models/` prefix normalization or **all three** of its bindings false-alarm
+on every startup.
+
+**R3 measured, on real inputs:** the two-tier schema catalog cut the repair prompt **12,200 → 4,229
+chars (65%)** on the real 57-table workspace schema, with the error-named table pulled in and all 57
+still listed in the manifest. Evidence stubbing cut a realistic synthesis block **34,848 → 14,746
+chars (57%)**; its lossless dedup sibling saved 4% (one repeat in nineteen — a first pass reported
+57%, which was a *fixture artifact*: its "distinct" queries differed only by a SQL comment, which the
+fingerprint strips by design).
+
+⚠️ **`ada.evidence_stubs` carries an explicit debt.** It drops rows a narrator could otherwise cite;
+the token saving is measured, the **answer-quality effect is not**, and no local harness can price
+it. It must not graduate until **Wave E4** can A/B it against the full-evidence baseline. The other
+five R3 flags carry no such debt (all deterministic and lossless or byte-identical when off).
+
+**R4's headline:** the `error` SSE frame was assembled by hand at **fifteen** sites as
+`{"message": str(e)}` — so a rate limit, a wrong API key, a retired model id and a timed-out run all
+reached the user as the same red line, and **every bit of the classification R1/R2 built stopped at
+the provider boundary**. One function now owns the shape (a test forbids inline assembly), carrying
+`reason` · `retryable` · `recovery` · `hint`, and the UI offers the one recovery that applies.
+Running it on the real route caught a genuine misclassification: a missing connection read as
+`unknown` → *"retrying is usually safe"*, which is false — it fails identically every time.
+
+R4b audited the anti-probing rule and **found nothing to fix** — PII counts go to the audit log,
+the row policy filters inside the SQL, and the model-facing renderer reads neither `caveats` nor
+`annotations`. It is now a 7-test ratchet, because a property that holds only because nobody has yet
+added *"tell the model 3 rows were hidden"* is one refactor from being false, and the failure is
+silent (a visible suppression **count** lets a model binary-search the hidden set).
+
+✅ **R4 verified in the browser** (`e29f291`): against a real backend with the LLM binding pointed at
+a dead endpoint and the fallback chain disabled, the failed turn renders its hint AND its Retry
+button, and Retry **appends a new turn** while the failed one keeps its error, hint and button —
+the no-orphan contract, seen rather than argued. Looking at it caught one thing every test and the
+ASGI-level check had missed: the most prominent line was instructor's raw `<failed_attempts>`
+transcript with the two-word cause buried inside. `legible()` now unwraps it.
+
+**R5's design decision — where the check lives.** Aughor's parallel-safety was real but
+*accidental*: all seven fan-outs happen to dispatch reads, and the SQL gate proves reads safe.
+Nothing declared it, so nothing could notice when something unsafe was fanned out — and the growing
+surface, the K-plane, is invisible to the SQL gate (no SQL involved). A guard every fan-out must
+remember to call is one the fifth fan-out forgets — this repo has that shape twice already (the
+~5-site guard battery; R4's 15 error frames). So the burden is inverted: **a concurrent region
+declares itself, and the dangerous operation asks**, in one place inside the K executor. Proven on
+real threads: an undeclared write action fanned out three ways → three `parallel_refused`, **zero
+side effects**; the same action declaring `parallel_safe=True` → three executions.
+The ratchet ("no `ContextThreadPoolExecutor` without a declared region") **found a seventh fan-out
+I had missed** — `ada.preflight`, in a file my grep never looked at.
+
+**⏭️ WAVE R IS DONE. The next arc is E (finish E4–E6)**, and E4 now has **six** concrete customers:
+the five the flag-graduation audit named, plus `ada.evidence_stubs` (below). Then **C** — the
+connection knowledge graph, which needs its **scoping doc first** — then V → G → S.
+
+**New flags from Wave R** (all off by default except the two R1 ones): `llm.structured_salvage` (on) ·
+`llm.bounded_repair` (on) · `explore.wandering_detector` · `schema.two_tier_catalog` ·
+`ada.evidence_dedup` · `ada.evidence_stubs`. Counters at `GET /dev/stats`: `llm.*`,
+`explore.wandering.*`, `schema.two_tier.*`, `ada.evidence.*`.
 
 ⚡ **Quota unblocked (2026-07-23).** $11 on OpenRouter crossed the credit **threshold** → the free-model
 cap went **50 → 1,000 requests/day, permanently**. Policy: **strictly `:free` models** — the credit is a

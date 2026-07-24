@@ -55,6 +55,7 @@ def ada_phase_wave(state, conn) -> dict:
         route_after_dimensional,
     )
     from aughor.kernel.concurrency import ContextThreadPoolExecutor
+    from aughor.kernel.parallel_safety import fanout_region as _fanout_region
     from aughor.kernel.metering import BudgetExceeded
     from aughor.stats import bump
 
@@ -64,7 +65,7 @@ def ada_phase_wave(state, conn) -> dict:
 
     results: dict[str, dict] = {}
     try:
-        with ContextThreadPoolExecutor(max_workers=len(_WAVE_ORDER)) as pool:
+        with _fanout_region("ada.phase_waves"), ContextThreadPoolExecutor(max_workers=len(_WAVE_ORDER)) as pool:
             futs = {pool.submit(_run_phase, fns[name], state, conn): name for name in _WAVE_ORDER}
             for fut in as_completed(futs):
                 name = futs[fut]
