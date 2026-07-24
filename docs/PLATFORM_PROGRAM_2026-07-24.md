@@ -35,7 +35,7 @@ So two waves are added (**R** — Reliability, **C** — Context graph), three t
 | **K — Kinetic plane** | ✅ **COMPLETE** ([#201](https://github.com/sidhasadhak/aughor/pull/201)) | K1–K5 merged; follow-ons dispositioned in §5 below |
 | **A — Automations** | ✅ **BUILT (A1–A6)** — A1+A2 [#204](https://github.com/sidhasadhak/aughor/pull/204), A3 [#206](https://github.com/sidhasadhak/aughor/pull/206), A4 [#207](https://github.com/sidhasadhak/aughor/pull/207) merged; **A5 [#208](https://github.com/sidhasadhak/aughor/pull/208) and A6 await merge authorization** | Arc: [`WAVE_A_AUTOMATIONS_ARC.md`](WAVE_A_AUTOMATIONS_ARC.md) |
 | **E — Sessions + Evals** | ◐ **HALF DONE** — E1–E3 merged (#196); E4–E6 remain | Arc: [`WAVE_E_SESSIONS_EVALS_ARC.md`](WAVE_E_SESSIONS_EVALS_ARC.md) |
-| **R — Reliability (transport)** | 🔨 **IN FLIGHT** — **R1 + R2 + R3 built** (local commits `ff76b08`, `18ebb52`, `79106dc`, `9fa2c4d`, not pushed); R4–R5 remain | Scope: five-repo study §3 T1.1–T1.3 (+T2.3/T2.4/T2.5); status in `ROADMAP.md` §0 |
+| **R — Reliability (transport)** | 🔨 **IN FLIGHT** — **R1–R4 built** (local commits `ff76b08`, `18ebb52`, `79106dc`, `9fa2c4d`, `1d78cd6`, `ba524be`, not pushed); **only R5 remains** | Scope: five-repo study §3 T1.1–T1.3 (+T2.3/T2.4/T2.5); status in `ROADMAP.md` §0 |
 | **C — Context graph** | ⭕ not started — *new wave, from five-repo T3.1* | Needs its own scoping doc before code |
 | **V — Artifact lifecycle** | ⭕ not started | Foundry §5, now ⊕ UA's freshness/committed-artifact mechanics |
 | **G — Governance uplift** | ⭕ not started | Foundry §5, now ⊕ K's 9 unenforced `_RISK` actions ⊕ grant surfacing |
@@ -138,6 +138,15 @@ check covering one model). Scope authority: five-repo study §3.
   (grounded numbers re-fetched by id, never re-generated — sibling of #202's condensation) ·
   two-tier schema catalog with error-path autoload · the wandering detector (args-hash repeat →
   notice → pre-dispatch veto → graceful termination; plus distinct-args churn detection).
+> **R4 built 2026-07-24 (local): `1d78cd6` + `ba524be`.** The finding that shaped it: the `error`
+> SSE frame was hand-assembled at **fifteen** sites, so the classification R1 and R2 built reached
+> nobody. One function owns the shape now, and a test forbids inline assembly — the T2.4
+> choke-point principle applied to the outbound error path. The anti-probing half needed **no fix**:
+> the rule already held everywhere, so it became a ratchet instead. Two boundaries are pinned with
+> it, because the rule is easy to over-read — the TRUE row count is still reported (honest coverage
+> prevents an over-claim; it is not a suppression signal), and a policy-blocked query still says so
+> (silently returning zero rows would make a permissions failure look like a finding of absence).
+
 - **R4 (=T2.3+T2.4) — answer-path hardening**: no-orphan interrupt/retry on streamed `/ask` (typed
   error tail; "switch model, then retry" is the blessed recovery) · `_display` sidecar with ONE
   tested outbound choke point; guard-suppressed data indistinguishable from absence in the model's

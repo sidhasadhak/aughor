@@ -57,6 +57,7 @@ both off `main`). **Neither is pushed and no PR exists** — awaiting explicit a
 | **R1** `ff76b08` | **The structured-call reliability layer** — deterministic normalizer · classify-before-retry · ONE bounded repair · a gate on optional calls | 🔨 local commit |
 | **R2** `18ebb52` | **The provider plane** — error-body classification (a guessed model id fails loudly) · the vouched model matrix · a health check that names its failure | 🔨 local commit |
 | **R3** `79106dc` + `9fa2c4d` | **Context-budget discipline for ADA** — the wandering detector · the two-tier schema catalog with error-path autoload · fresh-full/stale-stub evidence | 🔨 local commits |
+| **R4** `1d78cd6` + `ba524be` | **Answer-path hardening** — the typed error tail through ONE choke point (15 hand-assembled sites) + a Retry the user can act on · the anti-probing rule pinned as a ratchet | 🔨 local commits |
 
 **Two pre-existing leaks were found by MEASURING the real transport stack, and both are fixed in R1:**
 
@@ -99,11 +100,27 @@ the token saving is measured, the **answer-quality effect is not**, and no local
 it. It must not graduate until **Wave E4** can A/B it against the full-evidence baseline. The other
 five R3 flags carry no such debt (all deterministic and lossless or byte-identical when off).
 
-**⏭️ WAVE R REMAINS: R4 · R5.** R4 = answer-path hardening (no-orphan interrupt/retry on streamed
-`/ask` — a mid-stream failure must leave exactly a persisted partial plus a typed error tail, never a
-dropped or duplicated turn; plus the `_display` sidecar with ONE tested outbound choke point).
-R5 = declared parallel-safety as a uniform metadata property on tools/actions, checked in one place.
-Scope: five-repo Tier 2 (T2.3/T2.4/T2.5) in the program doc §2.
+**R4's headline:** the `error` SSE frame was assembled by hand at **fifteen** sites as
+`{"message": str(e)}` — so a rate limit, a wrong API key, a retired model id and a timed-out run all
+reached the user as the same red line, and **every bit of the classification R1/R2 built stopped at
+the provider boundary**. One function now owns the shape (a test forbids inline assembly), carrying
+`reason` · `retryable` · `recovery` · `hint`, and the UI offers the one recovery that applies.
+Running it on the real route caught a genuine misclassification: a missing connection read as
+`unknown` → *"retrying is usually safe"*, which is false — it fails identically every time.
+
+R4b audited the anti-probing rule and **found nothing to fix** — PII counts go to the audit log,
+the row policy filters inside the SQL, and the model-facing renderer reads neither `caveats` nor
+`annotations`. It is now a 7-test ratchet, because a property that holds only because nobody has yet
+added *"tell the model 3 rows were hidden"* is one refactor from being false, and the failure is
+silent (a visible suppression **count** lets a model binary-search the hidden set).
+
+⚠️ **Not verified in R4:** the error turn rendered visually in a browser. It needs a live connection
+plus an induced mid-stream failure; port 8000 held another session's API on pre-change code. The
+render is null-safe and type-checked but has not been seen on screen — **worth a look next session.**
+
+**⏭️ WAVE R REMAINS: R5 only.** Declared parallel-safety as a uniform metadata property on
+tools/actions, checked in one place. Aughor mostly has this via the SQL gate; the gap is making it a
+*declared* property as the action surface grows. Scope: five-repo T2.5 in the program doc §2.
 
 **New flags from Wave R** (all off by default except the two R1 ones): `llm.structured_salvage` (on) ·
 `llm.bounded_repair` (on) · `explore.wandering_detector` · `schema.two_tier_catalog` ·
