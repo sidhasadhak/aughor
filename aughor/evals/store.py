@@ -107,6 +107,22 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             scores      TEXT
         );
         CREATE INDEX IF NOT EXISTS ix_eval_results_run ON eval_run_results (run_id, case_id);
+
+        CREATE TABLE IF NOT EXISTS eval_graduations (
+            id                 TEXT PRIMARY KEY,
+            org_id             TEXT NOT NULL,
+            flag               TEXT NOT NULL,
+            suite_id           TEXT NOT NULL DEFAULT '',
+            run_id             TEXT NOT NULL DEFAULT '',
+            can_graduate       INTEGER NOT NULL DEFAULT 0,
+            pass_rate          REAL,
+            baseline_pass_rate REAL,
+            reasons            TEXT,
+            current_default    INTEGER NOT NULL DEFAULT 0,
+            decided_at         TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_eval_graduations_org ON eval_graduations (org_id, decided_at);
+        CREATE INDEX IF NOT EXISTS ix_eval_graduations_flag ON eval_graduations (org_id, flag, decided_at);
     """)
     run_migrations(c, _MIGRATIONS, store="evals")
     c.commit()
@@ -364,5 +380,54 @@ def run_results(run_id: str, limit: int = 5000) -> list[dict]:
         d["correct"] = None if d["correct"] is None else bool(d["correct"])
         d["fired"] = _loads(d.get("fired"), [])
         d["scores"] = _loads(d.get("scores"), [])
+        out.append(d)
+    return out
+
+
+# ── graduations (Wave E6) ───────────────────────────────────────────────────────
+# A graduation is a receipted DECISION that a flag's suite earned default-on — evidence
+# for a human to flip FLAG_DEFAULT in a reviewed change, NOT a runtime override. It is
+# append-only: a later re-evaluation records a new row rather than overwriting, so the
+# history of "when did this flag earn it, and against what bar" is itself auditable.
+
+def record_graduation(decision: dict) -> dict:
+    """Persist one graduation decision (``GraduationDecision.to_dict()``) and return the row."""
+    gid, org, now = _rid(), current_org_id(), _now()
+    c = _connect()
+    try:
+        c.execute(
+            "INSERT INTO eval_graduations (id, org_id, flag, suite_id, run_id, can_graduate, "
+            "pass_rate, baseline_pass_rate, reasons, current_default, decided_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (gid, org, decision.get("flag", ""), decision.get("suite_id", ""),
+             decision.get("run_id", ""), int(bool(decision.get("can_graduate"))),
+             decision.get("pass_rate"), decision.get("baseline_pass_rate"),
+             json.dumps(decision.get("reasons") or [], default=str),
+             int(bool(decision.get("current_default"))), now))
+        c.commit()
+    finally:
+        c.close()
+    return {"id": gid, "org_id": org, "decided_at": now, **decision}
+
+
+def list_graduations(flag: Optional[str] = None, limit: int = 50) -> list[dict]:
+    q = "SELECT * FROM eval_graduations WHERE org_id=?"
+    args: list[Any] = [current_org_id()]
+    if flag:
+        q += " AND flag=?"
+        args.append(flag)
+    q += " ORDER BY decided_at DESC LIMIT ?"
+    args.append(max(1, min(int(limit), 200)))
+    c = _connect()
+    try:
+        rows = c.execute(q, args).fetchall()
+    finally:
+        c.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["can_graduate"] = bool(d["can_graduate"])
+        d["current_default"] = bool(d["current_default"])
+        d["reasons"] = _loads(d.get("reasons"), [])
         out.append(d)
     return out

@@ -52,6 +52,15 @@ class RunIn(BaseModel):
     persist: bool = True
 
 
+class GraduateIn(BaseModel):
+    suite_id: str
+    #: Judge this run; when omitted, the suite's most recent run is used.
+    run_id: Optional[str] = None
+    #: The flag-OFF pass rate to beat. When omitted, the run must clear ``min_pass_rate``.
+    baseline_pass_rate: Optional[float] = None
+    min_pass_rate: float = 1.0
+
+
 def _suite_or_404(suite_id: str) -> dict:
     suite = store.get_suite(suite_id)
     if suite is None:
@@ -163,6 +172,62 @@ def get_run(run_id: str):
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return {**run, "results": store.run_results(run_id)}
+
+
+# ── graduations (Wave E6 — the promotion gate) ──────────────────────────────────
+
+@router.post("/evals/flags/{flag}/graduate", dependencies=[gate(Capability.EVAL_SUITE)])
+def graduate_flag(flag: str, body: GraduateIn):
+    """Decide whether ``flag`` has earned default-on, from an eval run, and RECEIPT it.
+
+    This records a decision — it does not flip the flag. A graduation is the evidence a
+    human uses to change ``FLAG_DEFAULT`` in a reviewed PR; setting a runtime override here
+    would re-create the ledger-on/code-off drift the 2026-07-22 audit removed. The decision
+    (and its blockers, if any) is persisted and emitted as an ``eval.graduation`` ledger
+    event — the receipt.
+    """
+    from aughor.evals import store
+    from aughor.evals.promotion import evaluate_graduation
+    from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
+    from aughor.kernel.ledger import Ledger
+
+    suite = _suite_or_404(body.suite_id)
+
+    run = store.get_run(body.run_id) if body.run_id else None
+    if run is None and not body.run_id:
+        recent = store.list_runs(body.suite_id, limit=1)
+        run = recent[0] if recent else None
+    if body.run_id and run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    run_summary = (run or {}).get("summary") or None
+
+    decision = evaluate_graduation(
+        flag, run_summary,
+        registered_flags=set(FLAG_ENV),
+        current_default=bool(FLAG_DEFAULT.get(flag, False)),
+        baseline_pass_rate=body.baseline_pass_rate,
+        min_pass_rate=body.min_pass_rate,
+    )
+    payload = decision.to_dict()
+    # A no-run decision carries no suite_id from the summary — pin the one the caller named.
+    payload["suite_id"] = payload.get("suite_id") or body.suite_id
+
+    record = store.record_graduation(payload)
+    try:
+        Ledger.default().emit("eval.graduation", record,
+                              conn_id=suite.get("connection_id") or None)
+    except Exception as exc:  # the decision is already persisted; the event is the audit copy
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "eval graduation: ledger emit failed; decision still recorded",
+                 counter="evals.graduation.emit")
+    return {**payload, "receipt_id": record["id"], "decided_at": record["decided_at"]}
+
+
+@router.get("/evals/graduations", dependencies=[gate(Capability.EVAL_SUITE)])
+def list_graduations(flag: Optional[str] = None, limit: int = 50):
+    from aughor.evals import store
+    return {"graduations": store.list_graduations(flag, limit=limit)}
 
 
 @router.get("/evals/evaluators", dependencies=[gate(Capability.EVAL_SUITE)])
