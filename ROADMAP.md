@@ -21,19 +21,34 @@
 five-repo study ([`docs/FIVE_REPO_STUDY_2026-07-23.md`](docs/FIVE_REPO_STUDY_2026-07-23.md)). It
 supersedes the sequencing sections of both studies; this §0 stays the session-level status page.
 
-**Session 2026-07-24 merged three PRs and started Wave A.** `main` (`87ae8e8`):
+> ⛔ **PUSH DISCIPLINE (standing, non-negotiable): NEVER `git push`, open a PR, or merge without the
+> user saying so IN the current request — and even when authorized, do ONE push/PR/merge, then PAUSE
+> and report before the next.** Commit locally and stop. This is the load-bearing rule for this repo;
+> batching multiple pushes on one "push everything" instruction caused friction on 2026-07-24.
 
-| PR | What |
-|---|---|
-| **#201** `ba06f6d` | **Wave K — the kinetic plane** (K1 declare · K2 execute · K3 overlay · K4 propose · K4b in-investigation · K5 UI) |
-| **#202** `817e9ec` | Streamed-output cap · fast-tier pin · null-side GROUP BY guard · upload-resurrection tombstone · deterministic evidence condensation |
-| **#203** `f66516a` | Retired the orphaned LLM tree-reduce primitive; this §0 rewritten |
-| **#204** `6ca2719` | **Wave A1+A2 — the automation plane** (model · store · one engine · heartbeat · API), behind `automations.engine`; live-proven, and the proof found 2 defects green tests missed |
-| **#205** `87ae8e8` | **The platform program** (plan of record) + the five-repo study |
+**Wave A is COMPLETE (A1–A6). `main` = `1a9d063`.** But only A1–A4 are MERGED; **A5 and A6 are pushed
+with PRs/branches OPEN, awaiting the user's explicit go to merge.**
 
-**Wave A is IN PROGRESS: A1+A2 merged, A3 (source version probes) under way.** Remaining after A3:
-A4 (resolve-once inbox + standing grants — redesigned per program J1/J2), A5 (adopt monitors/briefs),
-A6 (surface). Arc + decision gates: [`docs/WAVE_A_AUTOMATIONS_ARC.md`](docs/WAVE_A_AUTOMATIONS_ARC.md).
+| PR | What | State |
+|---|---|---|
+| **#204** `6ca2719` | **Wave A1+A2** — the automation plane (model · store · one engine · heartbeat · API) | ✅ merged |
+| **#206** `0b86680` | **Wave A3** — source version probes (change detection that can't lose a change) | ✅ merged |
+| **#207** `1a9d063` | **Wave A4** — resolve-once proposal inbox + target-bound standing grants | ✅ merged |
+| **#208** | **Wave A5** — adopt monitors/briefs onto the engine (rebased on main, CI running) | ⏳ **OPEN, not merged** |
+| — | **Wave A6** — the Automations frontend surface (branch `2026-07-24-wave-a6-surface` pushed, **no PR yet**, rebased on main) | ⏳ **pushed, no PR, not merged** |
+
+**⏭️ FIRST NEXT-SESSION ACTIONS (only if the user authorizes each):** open the A6 PR; then, one at a
+time with a pause between, merge **#208 (A5)** and the **A6 PR** (both rebased on main, single-commit,
+clean). A5/A6 are byte-identical when their flags are off (`automations.adopt_legacy`,
+`automations.proposals`). Then Wave A is fully landed. Arc + met decision gates:
+[`docs/WAVE_A_AUTOMATIONS_ARC.md`](docs/WAVE_A_AUTOMATIONS_ARC.md).
+
+**Also still local/unpushed from earlier this session:** `2026-07-24-roadmap-next-session` (this
+roadmap update) — commit only, do not push unless asked.
+
+**THEN — the next arc is Wave R (Reliability: the transport plane), the program's suggested next**
+(deterministic, zero-quota to build, de-risks every model-heavy wave), or the trust-first alternate
+E → C. Scope: five-repo Tier 1 in the program doc.
 
 ⚡ **Quota unblocked (2026-07-23).** $11 on OpenRouter crossed the credit **threshold** → the free-model
 cap went **50 → 1,000 requests/day, permanently**. Policy: **strictly `:free` models** — the credit is a
