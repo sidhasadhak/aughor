@@ -56,6 +56,7 @@ both off `main`). **Neither is pushed and no PR exists** — awaiting explicit a
 |---|---|---|
 | **R1** `ff76b08` | **The structured-call reliability layer** — deterministic normalizer · classify-before-retry · ONE bounded repair · a gate on optional calls | 🔨 local commit |
 | **R2** `18ebb52` | **The provider plane** — error-body classification (a guessed model id fails loudly) · the vouched model matrix · a health check that names its failure | 🔨 local commit |
+| **R3** `79106dc` + `9fa2c4d` | **Context-budget discipline for ADA** — the wandering detector · the two-tier schema catalog with error-path autoload · fresh-full/stale-stub evidence | 🔨 local commits |
 
 **Two pre-existing leaks were found by MEASURING the real transport stack, and both are fixed in R1:**
 
@@ -86,11 +87,28 @@ shipped default or picker suggestion is absent from it. Live drift run: `gone=0`
 reachable; Gemini needed `models/` prefix normalization or **all three** of its bindings false-alarm
 on every startup.
 
-**⏭️ WAVE R REMAINS: R3 · R4 · R5.** R3 = context-budget discipline for ADA (fresh-full/stale-stub
-evidence, two-tier schema catalog with error-path autoload, the wandering detector). R4 = answer-path
-hardening (no-orphan interrupt/retry on streamed `/ask`; the `_display` sidecar + one outbound choke
-point). R5 = declared parallel-safety as a uniform metadata property. Scope: five-repo Tier 1/2 in
-the program doc §2.
+**R3 measured, on real inputs:** the two-tier schema catalog cut the repair prompt **12,200 → 4,229
+chars (65%)** on the real 57-table workspace schema, with the error-named table pulled in and all 57
+still listed in the manifest. Evidence stubbing cut a realistic synthesis block **34,848 → 14,746
+chars (57%)**; its lossless dedup sibling saved 4% (one repeat in nineteen — a first pass reported
+57%, which was a *fixture artifact*: its "distinct" queries differed only by a SQL comment, which the
+fingerprint strips by design).
+
+⚠️ **`ada.evidence_stubs` carries an explicit debt.** It drops rows a narrator could otherwise cite;
+the token saving is measured, the **answer-quality effect is not**, and no local harness can price
+it. It must not graduate until **Wave E4** can A/B it against the full-evidence baseline. The other
+five R3 flags carry no such debt (all deterministic and lossless or byte-identical when off).
+
+**⏭️ WAVE R REMAINS: R4 · R5.** R4 = answer-path hardening (no-orphan interrupt/retry on streamed
+`/ask` — a mid-stream failure must leave exactly a persisted partial plus a typed error tail, never a
+dropped or duplicated turn; plus the `_display` sidecar with ONE tested outbound choke point).
+R5 = declared parallel-safety as a uniform metadata property on tools/actions, checked in one place.
+Scope: five-repo Tier 2 (T2.3/T2.4/T2.5) in the program doc §2.
+
+**New flags from Wave R** (all off by default except the two R1 ones): `llm.structured_salvage` (on) ·
+`llm.bounded_repair` (on) · `explore.wandering_detector` · `schema.two_tier_catalog` ·
+`ada.evidence_dedup` · `ada.evidence_stubs`. Counters at `GET /dev/stats`: `llm.*`,
+`explore.wandering.*`, `schema.two_tier.*`, `ada.evidence.*`.
 
 ⚡ **Quota unblocked (2026-07-23).** $11 on OpenRouter crossed the credit **threshold** → the free-model
 cap went **50 → 1,000 requests/day, permanently**. Policy: **strictly `:free` models** — the credit is a

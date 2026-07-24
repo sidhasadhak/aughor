@@ -35,7 +35,7 @@ So two waves are added (**R** — Reliability, **C** — Context graph), three t
 | **K — Kinetic plane** | ✅ **COMPLETE** ([#201](https://github.com/sidhasadhak/aughor/pull/201)) | K1–K5 merged; follow-ons dispositioned in §5 below |
 | **A — Automations** | ✅ **BUILT (A1–A6)** — A1+A2 [#204](https://github.com/sidhasadhak/aughor/pull/204), A3 [#206](https://github.com/sidhasadhak/aughor/pull/206), A4 [#207](https://github.com/sidhasadhak/aughor/pull/207) merged; **A5 [#208](https://github.com/sidhasadhak/aughor/pull/208) and A6 await merge authorization** | Arc: [`WAVE_A_AUTOMATIONS_ARC.md`](WAVE_A_AUTOMATIONS_ARC.md) |
 | **E — Sessions + Evals** | ◐ **HALF DONE** — E1–E3 merged (#196); E4–E6 remain | Arc: [`WAVE_E_SESSIONS_EVALS_ARC.md`](WAVE_E_SESSIONS_EVALS_ARC.md) |
-| **R — Reliability (transport)** | 🔨 **IN FLIGHT** — **R1 + R2 built** (local commits `ff76b08`, `18ebb52`, not pushed); R3–R5 remain | Scope: five-repo study §3 T1.1–T1.3 (+T2.3/T2.4/T2.5); status in `ROADMAP.md` §0 |
+| **R — Reliability (transport)** | 🔨 **IN FLIGHT** — **R1 + R2 + R3 built** (local commits `ff76b08`, `18ebb52`, `79106dc`, `9fa2c4d`, not pushed); R4–R5 remain | Scope: five-repo study §3 T1.1–T1.3 (+T2.3/T2.4/T2.5); status in `ROADMAP.md` §0 |
 | **C — Context graph** | ⭕ not started — *new wave, from five-repo T3.1* | Needs its own scoping doc before code |
 | **V — Artifact lifecycle** | ⭕ not started | Foundry §5, now ⊕ UA's freshness/committed-artifact mechanics |
 | **G — Governance uplift** | ⭕ not started | Foundry §5, now ⊕ K's 9 unenforced `_RISK` actions ⊕ grant surfacing |
@@ -125,6 +125,15 @@ check covering one model). Scope authority: five-repo study §3.
   cheapest-call health check that distinguishes bad-key / wrong-endpoint / unreachable ·
   fix-what-the-server-named one-shot param retry · the Gemini schema-allowlist and Anthropic
   streamed-usage quirk encodings diffed against our paths.
+> **R3 built 2026-07-24 (local): `79106dc` + `9fa2c4d`.** All three items, six flags, all off by
+> default. Measured on real inputs: the two-tier catalog cut the repair prompt **65%** on the real
+> 57-table workspace schema; evidence stubbing cut a realistic synthesis block **57%**. Two scoping
+> notes worth carrying: the wandering detector's *churn* and *no-progress* signals each catch a
+> failure the other two counters structurally cannot, which is why all three exist rather than one;
+> and **`ada.evidence_stubs` is the one Wave-R flag with a measurement debt** — it drops rows a
+> narrator could cite, so it must not graduate until **E4** can A/B it. That is a concrete customer
+> for E4 on top of the five the flag-graduation audit already named.
+
 - **R3 (=T1.3) — context-budget discipline for ADA**: fresh-full/stale-stub evidence rendering
   (grounded numbers re-fetched by id, never re-generated — sibling of #202's condensation) ·
   two-tier schema catalog with error-path autoload · the wandering detector (args-hash repeat →
