@@ -11,7 +11,10 @@ SQLite per call (one indexed kv read — negligible; these aren't ultra-hot path
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import os
+from typing import Optional
 
 from aughor.kernel.ledger import Ledger
 
@@ -75,6 +78,7 @@ FLAG_ENV = {
     "schema.two_tier_catalog": "AUGHOR_SCHEMA_TWO_TIER_CATALOG",
     "ada.evidence_dedup": "AUGHOR_ADA_EVIDENCE_DEDUP",
     "ada.evidence_stubs": "AUGHOR_ADA_EVIDENCE_STUBS",
+    "evals.experiments": "AUGHOR_EVALS_EXPERIMENTS",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
     "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
     "ask.overview": "AUGHOR_ASK_OVERVIEW",
@@ -300,6 +304,10 @@ FLAG_META = {
     "ada.evidence_stubs": {
         "label": "Stale-stub already-scored evidence in the synthesis block (Wave R3)",
         "description": "Every result reaching synthesis was already rendered in FULL once, for the score_evidence step that turned it into its hypothesis's key_finding — so the narrator re-reads up to thirty rows of a table whose conclusion is stated three lines above it, for every query the run made. This renders such a result as a stub instead: the SQL (provenance), the column names, the TRUE row count, every statistical finding, and the first four real rows, with the omitted count stated explicitly so the head can never be mistaken for the whole table. Only hypotheses that actually produced a key_finding are eligible; an unscored or unattributed result is always rendered full, because nothing else in the prompt carries its meaning yet. ⚠️ Unlike its dedup sibling this DOES drop rows, so the token saving is measured but the effect on ANSWER QUALITY is not — it should not graduate until Wave E4 can A/B it against the full-evidence baseline. Off by default. Counter: ada.evidence.stubbed.",
+    },
+    "evals.experiments": {
+        "label": "Grid experiments: run-scoped model / temperature / flag overrides (Wave E4)",
+        "description": "Lets an eval suite run the same cases under several configurations in ONE process, so a variant can be compared against its baseline instead of against a number recorded on a different day under an unrecorded config. Flags resolve through the ledger and the environment, both process-global, so before this two cells of a grid could not disagree; a contextvar consulted ahead of both can, and it reaches worker threads through ContextThreadPoolExecutor like the model pin and the metering hook. The plane is inert unless a run enters it (the contextvars default to unset, so ordinary traffic is byte-identical), and it refuses to measure at all while AUGHOR_FALLBACK_DISABLED is off, because the failover chain would silently finish a run on a different model and the report would attribute the number to the binding that started it. Every cell records the configuration read back through the product's own resolvers rather than the one requested — an override that silently no-ops is indistinguishable from a variant that did not help, and the second reading flatters the harness. First customers: the five flags the graduation audit could not measure, plus ada.evidence_stubs, which trades rows for tokens with the saving measured and the quality effect not. Off by default.",
     },
     "schema.two_tier_catalog": {
         "label": "Two-tier schema catalog for SQL repair prompts (Wave R3)",
@@ -548,8 +556,71 @@ def _override(name: str):
     return Ledger.default().kv_get(_STORE, name, None)
 
 
+# ── Run-scoped overrides (Wave E4) ────────────────────────────────────────────────────
+# Both layers above are process-global: the ledger override is persistent and the env var
+# needs a restart. Neither can express "run THIS cell of the grid with the flag on" while a
+# sibling cell runs it off in the same process. A contextvar can, and it propagates into
+# worker threads through `ContextThreadPoolExecutor` — the same mechanism `set_run_model`,
+# metering and the parallel-safety refusal already rely on.
+_run_overrides: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar(
+    "aughor_flag_overrides", default=None
+)
+
+
+class UnknownFlagError(KeyError):
+    """An override named a flag that is not registered.
+
+    Loud on purpose. An experiment whose override silently no-ops is indistinguishable
+    from an experiment whose variant did not help — the exact confusion
+    `verify-features-actually-ran` exists to prevent, and a typo in a dotted flag name
+    is the easiest way to produce it.
+    """
+
+
+def active_flag_overrides() -> dict:
+    """The run-scoped overrides in force right now (empty when there are none).
+
+    The runner records this so a report states what the run was actually configured with,
+    rather than what the caller asked for.
+    """
+    return dict(_run_overrides.get() or {})
+
+
+@contextlib.contextmanager
+def flag_overrides(mapping: Optional[dict] = None, **kw: bool):
+    """Force specific flags for the duration of the block, for this context only.
+
+    Dotted names (`ada.parallel_lenses`) cannot be keyword arguments, so the mapping form
+    is the primary one; kwargs are accepted for the handful of undotted flags. Nested use
+    merges, so an inner block can vary one axis of an outer configuration.
+
+    ⚠️ **Graph-topology flags are read at COMPILE time**, not at run time — see
+    `agent/graph.py` lines 128/140/229, which sit inside `_compile()`. For those the block
+    must wrap `build_graph_generic(...)`, not merely the graph's invocation. Wrapping only
+    the run leaves the topology at whatever the process-global layers said, and the
+    override looks like it did nothing. `tests/unit/test_flag_overrides.py` pins this.
+    """
+    requested = {**(mapping or {}), **kw}
+    unknown = sorted(n for n in requested if n not in FLAG_ENV)
+    if unknown:
+        raise UnknownFlagError(
+            f"unregistered flag(s) {unknown}; registered names live in FLAG_ENV "
+            f"(aughor/kernel/flags.py). An override on an unknown name would silently "
+            f"do nothing and read downstream as 'the variant did not help'."
+        )
+    merged = {**(_run_overrides.get() or {}), **{n: bool(v) for n, v in requested.items()}}
+    token = _run_overrides.set(merged)
+    try:
+        yield merged
+    finally:
+        _run_overrides.reset(token)
+
+
 def flag_enabled(name: str) -> bool:
-    """The effective value: a runtime override wins; otherwise the env var decides."""
+    """The effective value: a run-scoped override wins, then a runtime override, then env."""
+    run = _run_overrides.get()
+    if run is not None and name in run:
+        return bool(run[name])
     ov = _override(name)
     if ov is not None:
         return bool(ov)
@@ -562,6 +633,9 @@ def flag_state(name: str) -> str:
     ``"auto"`` means the capability is enabled ONLY because the master Auto-mode elevated this self-gating
     guard (its deterministic trigger decides per run) — an explicit operator On/Off always resolves to
     ``"on"``/``"off"``. A display refinement over ``flag_enabled`` (which is True for both on and auto)."""
+    run = _run_overrides.get()
+    if run is not None and name in run:
+        return "on" if run[name] else "off"
     ov = _override(name)
     if ov is not None:
         return "on" if ov else "off"
@@ -588,16 +662,21 @@ def clear_flag(name: str) -> None:
 def list_flags() -> dict:
     """All registered flags with their effective value + source, for the Settings UI."""
     out = {}
+    run = _run_overrides.get() or {}
     for name, var in FLAG_ENV.items():
         ov = _override(name)
         meta = FLAG_META.get(name, {})
+        # `value` must agree with `flag_enabled` — a receipt rendered inside an experiment
+        # cell that reported the operator's setting instead of the run's would attribute the
+        # measurement to the wrong configuration.
         out[name] = {
-            "value": bool(ov) if ov is not None else _env_resolved(name),
+            "value": bool(run[name]) if name in run
+                     else bool(ov) if ov is not None else _env_resolved(name),
             "state": flag_state(name),
             "override": ov,                       # None (no override) | True | False — the UI's tri-state setting
             "auto_eligible": name in AUTO_ELIGIBLE,
             **({"trigger": CAPABILITY_TRIGGER[name]} if name in CAPABILITY_TRIGGER else {}),
-            "source": "runtime" if ov is not None else "env",
+            "source": "run" if name in run else "runtime" if ov is not None else "env",
             "env_var": var,
             "label": meta.get("label", name),
             "description": meta.get("description", ""),

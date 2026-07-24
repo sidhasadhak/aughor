@@ -279,6 +279,40 @@ three times and confirm the flag/model overrides actually took effect *per run* 
 config in `session_events`, not on the outcome). Per `verify-features-actually-ran`, an override that
 silently no-ops looks exactly like "the variant didn't help."
 
+### E4a — the override plane · ✅ BUILT 2026-07-24
+
+`aughor/evals/experiments.py` (`Cell` · `applied()` · `assert_measurable()` · `resolved_config()` ·
+`grid()`) + `runner.run_experiment()` + the contextvar layers in `kernel/flags.py` and
+`llm/provider.py`. **44 tests.** Decision gate MET: a three-cell grid was run end-to-end through the
+real runner and each cell's overrides were observed *at target-build time* and read back off the
+stored run.
+
+Four design notes worth carrying into E4b:
+
+- **The compile-time trap is closed by the signature, not a comment.** `run_experiment` takes a
+  `target_factory`, not a target, so the graph can only be built inside the cell's context. Topology
+  flags are read inside `_compile()`, and a target built before the loop would bake in the
+  process-global topology while every other axis moved — a half-overridden cell reporting as fully
+  overridden. Same inversion as R5's parallel-safety declaration: put the obligation where it cannot
+  be forgotten.
+- **Read-back, not request, is what gets recorded.** Every run records `flag_overrides`,
+  `temperature` and `fallback_disabled` resolved through the product's own resolvers, and `applied()`
+  reports a `discrepancies` list. An override that no-ops must be able to say so.
+- **Three loud refusals** rather than three silent degradations: an unregistered flag name raises
+  (`UnknownFlagError`), a live failover chain refuses to measure (`MeasurementIntegrityError`, raised
+  *before* a request is spent), and `run_experiment` with the flag off refuses rather than running
+  every cell under one configuration — which would produce a grid of identical numbers that reads as
+  "the variant made no difference".
+- **Anthropic temperature is opt-in.** That branch has never carried `temperature` and there is no
+  Anthropic key in this environment to verify the addition against, so it is sent only under a
+  run-scoped pin; ordinary traffic stays byte-identical.
+
+**Still open for E4b:** the J3 fidelity harness (reference-vs-reference floor verification,
+repeatability stdev per axis, harmonic composite, perturbation axis), fixture pinning via
+`snapshot.data_version()` (the helper is wired, the runner does not stamp it yet), the ported
+`_assert_frozen_semantics` guard, and subprocess isolation for N×K grids against the
+process-wide `AUGHOR_LLM_MAX_CONCURRENCY=4` semaphore.
+
 ---
 
 ## PR-E5 — The Evals surface

@@ -133,22 +133,39 @@ def _run_config() -> dict:
     except Exception as exc:
         tolerate(exc, "eval run config: flag snapshot unavailable",
                  counter="evals.config.flags")
+    try:
+        # Wave E4: whatever a grid cell is forcing right now. Recorded for EVERY run, not
+        # just experiment runs — a run that happened to execute inside a cell and did not
+        # say so is the one whose number gets filed under the wrong configuration.
+        from aughor.evals.experiments import fallback_disabled
+        from aughor.kernel.flags import active_flag_overrides
+        from aughor.llm.provider import current_run_temperature
+        cfg["flag_overrides"] = active_flag_overrides()
+        cfg["temperature"] = current_run_temperature()
+        cfg["fallback_disabled"] = fallback_disabled()
+    except Exception as exc:
+        tolerate(exc, "eval run config: run-scoped overrides unavailable",
+                 counter="evals.config.overrides")
     return cfg
 
 
 def run_suite(suite_id: str, target: Target, *, iterations: int = 1,
               evaluators: Optional[list[str]] = None,
               checker: Optional[Checker] = None,
-              persist: bool = True) -> RunSummary:
+              persist: bool = True,
+              config_extra: Optional[dict] = None) -> RunSummary:
     """Run every case in ``suite_id`` through ``target``, ``iterations`` times.
 
     ``persist`` writes the run and every per-case result to the store; pass
-    False for a dry measurement that leaves no trace.
+    False for a dry measurement that leaves no trace. ``config_extra`` merges into the
+    recorded config — how :func:`run_experiment` stamps a cell's label onto its run.
     """
     cases = store.list_cases(suite_id)
     config = _run_config()
     config["iterations"] = iterations
     config["evaluators"] = evaluators or "all"
+    if config_extra:
+        config.update(config_extra)
 
     trace_id = ""
     try:
@@ -190,6 +207,79 @@ def run_suite(suite_id: str, target: Target, *, iterations: int = 1,
     if persist:
         store.finish_run(run_id, status=store.SUCCEEDED, summary=summary.to_dict())
     return summary
+
+
+@dataclass
+class CellResult:
+    """One cell's run, with the configuration it actually ran under."""
+
+    label: str
+    run: Optional[RunSummary]
+    config: dict
+    discrepancies: list = field(default_factory=list)
+    error: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "label": self.label,
+            "run": self.run.to_dict() if self.run is not None else None,
+            "config": self.config,
+            "discrepancies": self.discrepancies,
+            "error": self.error,
+        }
+
+
+def run_experiment(suite_id: str, target_factory: Callable[[], Target],
+                   cells: list, *, iterations: int = 1,
+                   evaluators: Optional[list[str]] = None,
+                   checker: Optional[Checker] = None,
+                   persist: bool = True) -> list[CellResult]:
+    """Run ``suite_id`` once per cell, each under that cell's configuration.
+
+    ``target_factory`` is a factory rather than a target on purpose. Graph-topology flags
+    are read at COMPILE time (``agent/graph.py`` 128/140/229, inside ``_compile()``), so a
+    target built before the loop would bake in the process-global topology while every
+    other axis moved — a half-overridden cell that reports as fully overridden. Taking a
+    factory means the target can only be constructed inside the cell's context; the trap is
+    closed by the signature instead of by a comment somebody has to read. Same inversion as
+    R5's parallel-safety declaration: put the obligation where it cannot be forgotten.
+
+    One cell's failure does not abandon the grid — it is recorded on that cell and the rest
+    still run, because a baseline plus three of four variants is a usable result and losing
+    all four to one bad cell is not.
+    """
+    from aughor.evals.experiments import applied
+    from aughor.kernel.flags import flag_enabled
+
+    if not flag_enabled("evals.experiments"):
+        raise RuntimeError(
+            "grid experiments are off — enable the `evals.experiments` flag "
+            "(AUGHOR_EVALS_EXPERIMENTS=1) before running one. Refusing rather than "
+            "silently running every cell under one configuration, which would produce a "
+            "grid of identical numbers that looks like 'the variant made no difference'."
+        )
+
+    results: list[CellResult] = []
+    for cell in cells:
+        try:
+            with applied(cell) as resolved:
+                summary = run_suite(
+                    suite_id, target_factory(), iterations=iterations,
+                    evaluators=evaluators, checker=checker, persist=persist,
+                    config_extra={"cell": cell.label,
+                                  "cell_requested": resolved["requested"],
+                                  "discrepancies": resolved["discrepancies"]},
+                )
+                results.append(CellResult(label=cell.label, run=summary,
+                                          config=resolved["effective"],
+                                          discrepancies=resolved["discrepancies"]))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, f"experiment cell {cell.label!r} failed; remaining cells still run",
+                     counter="evals.experiment.cell_failed")
+            results.append(CellResult(label=cell.label, run=None, config={},
+                                      error=f"{type(exc).__name__}: {exc}"))
+    return results
 
 
 def _run_case(run_id: str, case_row: dict, target: Target, *, iterations: int,
