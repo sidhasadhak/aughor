@@ -29,7 +29,7 @@ from __future__ import annotations
 import contextvars
 import logging
 from contextlib import contextmanager
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -135,39 +135,9 @@ def assert_dispatchable(unit: Any, *, name: str = "") -> None:
     )
 
 
-# ── the read side: SQL is parallel-safe when the gate proves it read-only ─────
-
-def sql_is_parallel_safe(sql: str) -> bool:
-    """True when ``sql`` is a read the gate would allow.
-
-    Reuses the platform's existing read-only AST check rather than adding a second
-    opinion — a divergence between "the gate allows it" and "we call it parallel-safe"
-    would be worse than having no check. Unparseable ⇒ False: the SQL gate refuses it
-    anyway, and guessing on the permissive side is the wrong direction here.
-    """
-    try:
-        from aughor.tools.executor import validate_sql
-
-        ok, _ = validate_sql(sql)
-        return bool(ok)
-    except Exception:
-        logger.debug("parallel_safety: read-only check unavailable", exc_info=True)
-        return False
-
-
-def check_sql_fanout(sqls: Iterable[str], *, where: str) -> list[str]:
-    """The statements in ``sqls`` that must NOT be fanned out, for logging by the caller.
-
-    Advisory on purpose: the SQL gate inside each worker is still the authority and will
-    refuse a write regardless. What this adds is the decision being made and COUNTED
-    *before* the dispatch, so "a write reached a fan-out" is visible at
-    ``GET /dev/stats`` instead of only as a per-worker rejection.
-    """
-    bad = [s for s in sqls if s and s.strip() and not sql_is_parallel_safe(s)]
-    if bad:
-        from aughor.stats import bump
-
-        bump("parallel_safety.non_read_fanout", len(bad))
-        logger.warning("parallel-safety: %d non-read statement(s) reached %s — the gate "
-                       "will refuse them per worker", len(bad), where)
-    return bad
+# The SQL half of this policy lives in `aughor.tools.executor`
+# (`sql_is_parallel_safe` / `check_sql_fanout`), NOT here. The kernel must not import the
+# agent/tools layer — the platform→agent boundary test caught this module reaching for
+# `tools.executor.validate_sql`, and it was right to: the generic machinery above belongs
+# in the kernel, while "is this statement a read" is SQL-domain knowledge that already has
+# a home next to the check it wraps.

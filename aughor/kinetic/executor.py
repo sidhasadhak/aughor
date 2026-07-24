@@ -298,13 +298,10 @@ def execute_kinetic_action(
     #      Refused BEFORE step 4 — the only step that can cause a side effect — and after
     #      the criteria and the approval gate, so a refusal can never be mistaken for
     #      either of those verdicts.
+    from aughor.kernel.parallel_safety import ParallelSafetyError, assert_dispatchable
     try:
-        from aughor.kernel.parallel_safety import assert_dispatchable
-
         assert_dispatchable(action, name=f"kinetic.{action.id}")
-    except ImportError:
-        pass
-    except Exception as e:
+    except ParallelSafetyError as e:
         govern.audit(gov_action, scope, "parallel_refused", actor=actor, detail=str(e), risk=risk)
         return KineticResult("parallel_refused", False, action.id, message=str(e))
 

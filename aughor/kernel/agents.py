@@ -256,9 +256,9 @@ def _warn_if_unvouched(agent_id: str, model: str) -> None:
         return
     try:
         from aughor.llm.matrix import is_known, is_vouched
-        from aughor.llm.provider import _active_backend
+        from aughor.llm.provider import active_backend
 
-        backend = _active_backend()
+        backend = active_backend()
         if is_vouched(backend, model):
             return
         logger.warning(

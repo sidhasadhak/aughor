@@ -205,14 +205,19 @@ def test_a_declared_safe_action_runs_inside_a_fanout():
 def test_sql_parallel_safety_follows_the_read_only_gate(sql, safe):
     """One opinion, not two: this reuses the platform's own read-only check. A divergence
     between 'the gate allows it' and 'we call it parallel-safe' would be worse than having
-    no check at all."""
-    assert PS.sql_is_parallel_safe(sql) is safe
+    no check at all. Lives in tools.executor, not the kernel — the kernel must not import
+    the tools layer, and the platform→agent boundary test enforces that."""
+    from aughor.tools.executor import sql_is_parallel_safe
+
+    assert sql_is_parallel_safe(sql) is safe
 
 
 def test_check_sql_fanout_reports_the_offenders():
-    bad = PS.check_sql_fanout(["SELECT 1", "DELETE FROM t", "SELECT 2"], where="test")
+    from aughor.tools.executor import check_sql_fanout
+
+    bad = check_sql_fanout(["SELECT 1", "DELETE FROM t", "SELECT 2"], where="test")
     assert bad == ["DELETE FROM t"]
-    assert PS.check_sql_fanout(["SELECT 1", "SELECT 2"], where="test") == []
+    assert check_sql_fanout(["SELECT 1", "SELECT 2"], where="test") == []
 
 
 # ── every fan-out declares itself ─────────────────────────────────────────────

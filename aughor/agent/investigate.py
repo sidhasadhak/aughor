@@ -603,7 +603,7 @@ def _parallel_execute_safe(
     # non-read statement reached a fan-out" is counted at GET /dev/stats instead of being
     # visible only as N identical per-worker rejections.
     try:
-        from aughor.kernel.parallel_safety import check_sql_fanout
+        from aughor.tools.executor import check_sql_fanout
         check_sql_fanout([s for _, s in valid], where="ada.phase_queries")
     except Exception:
         import logging as _logging

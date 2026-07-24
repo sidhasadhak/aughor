@@ -357,6 +357,15 @@ def write_config(cfg: dict) -> None:
     load_config()
 
 
+def active_backend() -> str:
+    """The backend this deployment is bound to. Public because callers outside the
+    inference plane legitimately need it — the vouched-matrix check in
+    ``kernel/agents.py`` was reaching for ``_active_backend`` and tripping the
+    private-cross-import ratchet, which is the ratchet doing its job: an internal that
+    two planes need is an interface that has not been declared yet."""
+    return _active_backend()
+
+
 def active_base_url(backend: str) -> str:
     return _active_base_url(backend)
 
