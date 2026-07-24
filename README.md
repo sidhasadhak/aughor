@@ -305,9 +305,10 @@ The defaults assume a trusted single-user machine:
 
 **Alpha.** No tagged release yet; `main` is the only supported branch.
 
-What is real today: the backend suite is **2,947 tests**, green on Python 3.11,
-3.12 and 3.13, and runs fully offline. `ruff` is at a zero baseline. The frontend
-typechecks under `strict` and builds.
+What is real today: the backend suite is **4,669 tests**, green on Python 3.11,
+3.12 and 3.13, and runs fully offline — the full run is **~3 minutes** since the
+suite stopped making accidental live-model calls. `ruff` is at a zero baseline. The
+frontend typechecks under `strict` and builds.
 
 What is not: there are **no frontend tests** — the frontend is guarded by
 `tsc --noEmit` plus three lint gates. There is **no container image**; the only

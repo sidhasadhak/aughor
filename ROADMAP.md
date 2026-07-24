@@ -26,31 +26,43 @@ supersedes the sequencing sections of both studies; this §0 stays the session-l
 > and report before the next.** Commit locally and stop. This is the load-bearing rule for this repo;
 > batching multiple pushes on one "push everything" instruction caused friction on 2026-07-24.
 
-**Wave A is COMPLETE (A1–A6). `main` = `1a9d063`.** But only A1–A4 are MERGED; **A5 and A6 are pushed
-with PRs/branches OPEN, awaiting the user's explicit go to merge.**
+**`main` is at Wave R (`31732a5`, PR #209). Waves A→R→E4 have all landed or are landing; A5/A6 remain
+the only Wave-A tail.** Status as of the Wave E4 merge (2026-07-24):
 
-| PR | What | State |
+| Wave | What | State |
 |---|---|---|
-| **#204** `6ca2719` | **Wave A1+A2** — the automation plane (model · store · one engine · heartbeat · API) | ✅ merged |
-| **#206** `0b86680` | **Wave A3** — source version probes (change detection that can't lose a change) | ✅ merged |
-| **#207** `1a9d063` | **Wave A4** — resolve-once proposal inbox + target-bound standing grants | ✅ merged |
-| **#208** | **Wave A5** — adopt monitors/briefs onto the engine (rebased on main, CI running) | ⏳ **OPEN, not merged** |
-| — | **Wave A6** — the Automations frontend surface (branch `2026-07-24-wave-a6-surface` pushed, **no PR yet**, rebased on main) | ⏳ **pushed, no PR, not merged** |
+| **A1–A4** | the automation plane · source-version probes · resolve-once inbox + standing grants | ✅ merged (#204/#206/#207) |
+| **A5** | adopt monitors/briefs onto the one engine | ⏳ **local, rebased on main** (`2026-07-24-wave-a5-adopt-legacy` → `4166f9a`) — awaiting explicit go |
+| **A6** | the Automations frontend surface (+ the css-var KIND gate & 18 pre-existing colour-token fixes) | ⏳ **local, rebased on main** (`2026-07-24-wave-a6-surface`) — awaiting explicit go |
+| **R (R1–R5)** | the transport plane made structural — reliability layer · provider plane · ADA context budget · answer-path hardening · declared parallel-safety | ✅ **merged (#209, `31732a5`)** |
+| **E4 (E4a/b/c)** | the run-scoped override plane · the J3 fidelity harness · the brittleness axis + request budget | ✅ **merged (this PR)** |
 
-**⏭️ FIRST NEXT-SESSION ACTIONS (only if the user authorizes each):** open the A6 PR; then, one at a
-time with a pause between, merge **#208 (A5)** and the **A6 PR** (both rebased on main, single-commit,
-clean). A5/A6 are byte-identical when their flags are off (`automations.adopt_legacy`,
-`automations.proposals`). Then Wave A is fully landed. Arc + met decision gates:
-[`docs/WAVE_A_AUTOMATIONS_ARC.md`](docs/WAVE_A_AUTOMATIONS_ARC.md).
+**A5/A6 are byte-identical when their flags are off** (`automations.adopt_legacy`,
+`automations.proposals`); arc + decision gates in [`docs/WAVE_A_AUTOMATIONS_ARC.md`](docs/WAVE_A_AUTOMATIONS_ARC.md).
+**⏭️ NEXT:** land A5 then A6 (one at a time, on the user's go) → **Wave E5** (the Evals surface) → **E6**
+(add-as-test-case + promotion gate) → **C** (the connection knowledge graph — scoping doc FIRST) → V → G → S.
 
-**Also still local/unpushed from earlier this session:** `2026-07-24-roadmap-next-session` (the
-first draft of this §0 — now **superseded**, its commit is cherry-picked onto the Wave R branch
-below; the branch can be dropped). Commit only, do not push unless asked.
+### ✅ Wave E4 is COMPLETE (E4a/b/c) — grid experiments you can trust
 
-### ✅ Wave R is COMPLETE (R1–R5) — all committed LOCALLY, none pushed
+**The measurement discipline the Spider work proved, made a product plane.** E4 lets an eval suite
+run the same cases under several configurations in ONE process, and refuses to report a delta it
+cannot stand behind.
 
-Branch `2026-07-24-wave-r2-provider-plane` (stacked on `2026-07-24-wave-r1-structured-reliability`,
-both off `main`). **Neither is pushed and no PR exists** — awaiting explicit authorization.
+| | What | The load-bearing idea |
+|---|---|---|
+| **E4a** `d1ffcf3` | **the run-scoped override plane** — `Cell` · `applied()` · run-scoped flag/temperature contextvars · `run_experiment` | The override is easy; **not lying about it** is the work. Three loud refusals (unknown flag · live failover chain · flag-off), and `run_experiment` takes a target *factory* so a compile-time topology flag can't bake in before the cell's context. |
+| **E4b** `f6d96c5` | **the J3 fidelity harness** — `noise_floor` · `compare` · harmonic composite · `assess` | **The floor comes before the delta.** A cell is compared against *itself* first; a `+0.053` delta is attributed against a quiet baseline (band 0.010) and REFUSED against a noisy one (band 0.140). One replicate = no floor, not a floor of zero. |
+| **E4c** `22312d6` | **the brittleness axis + request budget** — `perturb.py` · `RunSummary.robustness` · `estimate_requests` | Pass rate says *right*; robustness says *right for a reason* (an honest replay and a phrasing-dependent target both score 1.000 pass, 1.0 vs 0.75 robust). No LLM judge — result-set equality. The budget guard refuses a grid that would exhaust the day's allowance mid-run. |
+| **fix** `36372ba` | **test-suite hermeticity** | Two copied phase-8 tests fell through to the real provider under a 120s `wait_for` and failed intermittently under load (on plain `main`). Made hermetic (the fake now *raises*), then flipped the suite-wide `AUGHOR_AUTOSEED=false` E4b measured: **full suite 4521✓, ~14 min → ~3 min** — the missing 11 min was live-LLM latency no test intended to spend. |
+
+**Six customers still waiting on a real A/B** (E4 exists to serve them): the five flags the
+graduation audit named, plus `ada.evidence_stubs` — which trades rows for tokens with the saving
+measured and the answer-quality effect not. ⚡ ~105 new tests.
+
+<details><summary>Wave R (R1–R5) — ✅ merged #209, kept for reference</summary>
+
+Branch `2026-07-24-wave-r2-provider-plane` (stacked on `2026-07-24-wave-r1-structured-reliability`).
+**Merged as PR #209, squash `31732a5`.**
 
 | | What | State |
 |---|---|---|
@@ -134,14 +146,12 @@ side effects**; the same action declaring `parallel_safe=True` → three executi
 The ratchet ("no `ContextThreadPoolExecutor` without a declared region") **found a seventh fan-out
 I had missed** — `ada.preflight`, in a file my grep never looked at.
 
-**⏭️ WAVE R IS DONE. The next arc is E (finish E4–E6)**, and E4 now has **six** concrete customers:
-the five the flag-graduation audit named, plus `ada.evidence_stubs` (below). Then **C** — the
-connection knowledge graph, which needs its **scoping doc first** — then V → G → S.
-
 **New flags from Wave R** (all off by default except the two R1 ones): `llm.structured_salvage` (on) ·
 `llm.bounded_repair` (on) · `explore.wandering_detector` · `schema.two_tier_catalog` ·
 `ada.evidence_dedup` · `ada.evidence_stubs`. Counters at `GET /dev/stats`: `llm.*`,
 `explore.wandering.*`, `schema.two_tier.*`, `ada.evidence.*`.
+
+</details>
 
 ⚡ **Quota unblocked (2026-07-23).** $11 on OpenRouter crossed the credit **threshold** → the free-model
 cap went **50 → 1,000 requests/day, permanently**. Policy: **strictly `:free` models** — the credit is a
