@@ -143,11 +143,14 @@ def test_refuses_to_run_when_the_flag_is_off(db, suite, monkeypatch):
 
 
 def test_refuses_to_run_while_the_fallback_chain_is_live(db, suite, monkeypatch):
+    """Aborts the grid rather than recording one global fault as N cell failures — the same
+    blast radius as the frozen-semantics guard, because the condition is process-global."""
+    from aughor.evals.experiments import MeasurementIntegrityError
+
     monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
-    results = run_experiment(suite, lambda: reference_target(db), _cells(),
-                            checker=reference_checker(db))
-    assert all("MeasurementIntegrityError" in r.error for r in results)
-    assert all(r.run is None for r in results)
+    with pytest.raises(MeasurementIntegrityError):
+        run_experiment(suite, lambda: reference_target(db), _cells(),
+                       checker=reference_checker(db))
 
 
 def test_plain_run_suite_still_records_the_override_layer(db, suite):

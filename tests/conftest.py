@@ -99,6 +99,15 @@ os.environ.setdefault(
     "AUGHOR_DOCUMENTS_REGISTRY", os.path.join(_test_stores_dir, "documents.json")
 )
 
+# E4b — autoseed defaults ON, and `get_schema()` fires it, so ANY test that loads a schema
+# makes REAL LLM requests against the free 1,000/day budget. Measured: one 8-test file
+# logged 12 failed seed attempts, and a SUCCESSFUL seed logs nothing, so the true count is
+# higher. `test_program_planner.py` already patched `autoseed._ENABLED` per-file for exactly
+# this reason — one file remembering is the shape that leaves everything else spending.
+# Default it off for the whole suite; a test that means to exercise the seeder opts back in.
+# `_ENABLED` is read at module import, so this must stay above any app import.
+os.environ.setdefault("AUGHOR_AUTOSEED", "false")
+
 # The glossary + metrics catalog are file stores (YAML/JSON, not SQLite) with real content — and the
 # autoseed / knowledge-sync path WRITES them with no path, so the suite mutated the live
 # data/glossary.yaml (task_213affac: it leaked into two commits). Point each at a throwaway temp

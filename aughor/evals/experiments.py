@@ -140,6 +140,54 @@ def resolved_config(*, roles: tuple[str, ...] = _RECORDED_ROLES) -> dict:
     return cfg
 
 
+def volatile_semantic_state(connection_id: str) -> dict:
+    """The run-to-run VOLATILE context injected for a connection.
+
+    Exploration insights are rewritten every time the explorer runs and they steer the
+    model's choice of metric; the ontology is curated but connection-specific. Both are
+    invisible in a result and both move between runs, so a measurement taken on a polluted
+    connection is comparable to nothing — including to itself a day later.
+    """
+    state = {"exploration_bytes": 0, "ontology": "none"}
+    try:
+        from aughor.explorer.store import render_exploration_annotations
+        state["exploration_bytes"] = len(render_exploration_annotations(connection_id) or "")
+    except Exception as exc:
+        tolerate(exc, "frozen-state probe: exploration annotations unreadable",
+                 counter="evals.experiment.frozen.exploration")
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        state["ontology"] = "present" if load_latest_ontology(connection_id) else "none"
+    except Exception as exc:
+        tolerate(exc, "frozen-state probe: ontology unreadable",
+                 counter="evals.experiment.frozen.ontology")
+    return state
+
+
+def assert_frozen_semantics(connection_id: str, *, allow_exploration: bool = False) -> dict:
+    """Refuse to measure on a connection carrying volatile exploration insights.
+
+    Ported from ``evals/run_golden.py::_assert_frozen_semantics``, which was written after
+    the #13 confound — a run on a connection with ~25 drifting insights, where the insights
+    and not the change under test were choosing the metric. That guard has protected the
+    golden runner ever since and protected nothing else, because it lived in a script. It
+    belongs on the product runner, where every future experiment inherits it.
+
+    Returns the probed state so a report can quote it; raises rather than warning, because
+    a warning on a batch that runs unattended is a line in a log nobody reads.
+    """
+    state = volatile_semantic_state(connection_id)
+    if state["exploration_bytes"] > 0 and not allow_exploration:
+        raise MeasurementIntegrityError(
+            f"refusing to measure on connection {connection_id!r}: it carries "
+            f"{state['exploration_bytes']} bytes of exploration insights, which drift every "
+            f"time the explorer runs and steer the model's metric definition — so two cells "
+            f"would differ by something neither of them varied. Use a pinned, unexplored "
+            f"connection, or pass allow_exploration=True deliberately."
+        )
+    return state
+
+
 def data_version_of(conn: Any, tables: Optional[list[str]] = None) -> Optional[str]:
     """A token proving the fixture did not move between two runs, or ``None``.
 

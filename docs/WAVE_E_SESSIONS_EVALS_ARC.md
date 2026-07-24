@@ -307,11 +307,47 @@ Four design notes worth carrying into E4b:
   Anthropic key in this environment to verify the addition against, so it is sent only under a
   run-scoped pin; ordinary traffic stays byte-identical.
 
-**Still open for E4b:** the J3 fidelity harness (reference-vs-reference floor verification,
-repeatability stdev per axis, harmonic composite, perturbation axis), fixture pinning via
-`snapshot.data_version()` (the helper is wired, the runner does not stamp it yet), the ported
-`_assert_frozen_semantics` guard, and subprocess isolation for N×K grids against the
-process-wide `AUGHOR_LLM_MAX_CONCURRENCY=4` semaphore.
+### E4b — the fidelity harness (J3) · ✅ BUILT 2026-07-24
+
+`aughor/evals/fidelity.py` (`Axis` · `Floor` · `Delta` · `noise_floor` · `compare` ·
+`harmonic_composite` · `assess` → `FidelityReport`) + `replicates` and fixture provenance on
+`run_experiment` + `experiments.assert_frozen_semantics`. **31 more tests (75 in E4 so far).**
+
+- **The floor comes before the delta.** A cell is compared against *itself* first;
+  that band is the unit every delta is denominated in. Demonstrated with an identical
+  variant judged both ways: `+0.053` against a quiet baseline (band 0.010) is
+  **attributable**; `+0.063` against a noisy one (band 0.140) is **refused**. A delta inside
+  the floor is reported as "not a small effect — not an observation", never as a hedge.
+- **Two replicate axes, neither substituting for the other.** `iterations` repeats each CASE
+  inside a run (E3's stable/flaky verdict); `replicates` repeats the whole RUN, which is what
+  a noise floor requires. One replicate yields *no floor*, not a floor of zero — a floor of
+  zero would make every delta attributable.
+- **The composite is harmonic.** Arithmetic mean of `{0.98, 0.0}` is a respectable 0.49;
+  harmonic is 0.0. A composite exists to be read instead of the detail, so it must not be
+  able to hide the detail that matters most.
+- **An unmeasured axis is absent, not zero.** `accuracy` is None when no case declared an
+  expectation; folding it to 0.0 would report a suite that measured nothing as a suite that
+  got everything wrong.
+- **Two guards, two different blast radii.** A polluted connection invalidates the whole grid
+  ⇒ `assert_frozen_semantics` aborts before anything runs. A fixture that moves mid-grid
+  invalidates only the cells either side of the move ⇒ recorded as a warning on that cell,
+  and the grid continues.
+
+**Still open for E4c:** the perturbation-brittleness axis (deterministic input perturbations
+compared with `user_agents.quality.results_match` — same result set ⇒ zero drift), the
+one-time proxy-inversion audit of existing metrics, running grids as a scheduled batch rather
+than inline, and subprocess isolation for N×K grids against the process-wide
+`AUGHOR_LLM_MAX_CONCURRENCY=4` semaphore.
+
+### ⚠️ Found while building E4b: the test suite was spending the LLM budget
+
+`semantic.autoseed` defaults ON and `get_schema()` fires it, so **any** test that loads a
+schema made real LLM requests against the free 1,000/day cap. Measured: one 8-test file
+logged **12 failed seed attempts**, and a *successful* seed logs nothing, so the true count
+is higher. `tests/integration/test_program_planner.py` had already patched
+`autoseed._ENABLED` per-file for exactly this reason — one file remembering is the shape that
+leaves every other file spending. Now defaulted off in `tests/conftest.py`; a test that means
+to exercise the seeder opts back in.
 
 ---
 

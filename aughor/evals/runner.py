@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from aughor.evals import store
 from aughor.evals.evaluator import EvalCase, EvalObservation, EvalScore
@@ -211,29 +211,41 @@ def run_suite(suite_id: str, target: Target, *, iterations: int = 1,
 
 @dataclass
 class CellResult:
-    """One cell's run, with the configuration it actually ran under."""
+    """One cell's replicated runs, with the configuration they actually ran under."""
 
     label: str
-    run: Optional[RunSummary]
-    config: dict
+    runs: list = field(default_factory=list)          # list[RunSummary], one per replicate
+    config: dict = field(default_factory=dict)
     discrepancies: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+    fixture_version: Optional[str] = None
     error: str = ""
+
+    @property
+    def run(self) -> Optional[RunSummary]:
+        """The first replicate — the convenience view for a single-replicate grid."""
+        return self.runs[0] if self.runs else None
 
     def to_dict(self) -> dict:
         return {
             "label": self.label,
-            "run": self.run.to_dict() if self.run is not None else None,
+            "runs": [r.to_dict() for r in self.runs],
             "config": self.config,
             "discrepancies": self.discrepancies,
+            "warnings": self.warnings,
+            "fixture_version": self.fixture_version,
             "error": self.error,
         }
 
 
 def run_experiment(suite_id: str, target_factory: Callable[[], Target],
-                   cells: list, *, iterations: int = 1,
+                   cells: list, *, iterations: int = 1, replicates: int = 1,
                    evaluators: Optional[list[str]] = None,
                    checker: Optional[Checker] = None,
-                   persist: bool = True) -> list[CellResult]:
+                   persist: bool = True,
+                   fixture: Any = None, fixture_tables: Optional[list[str]] = None,
+                   connection_id: str = "",
+                   allow_exploration: bool = False) -> list[CellResult]:
     """Run ``suite_id`` once per cell, each under that cell's configuration.
 
     ``target_factory`` is a factory rather than a target on purpose. Graph-topology flags
@@ -247,8 +259,23 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
     One cell's failure does not abandon the grid — it is recorded on that cell and the rest
     still run, because a baseline plus three of four variants is a usable result and losing
     all four to one bad cell is not.
+
+    ``replicates`` runs each cell's whole suite that many times, which is a different noise
+    source from ``iterations`` and neither substitutes for the other: ``iterations`` repeats
+    each CASE inside one run and produces E3's stable/flaky verdict, while ``replicates``
+    repeats the entire RUN and is what :mod:`aughor.evals.fidelity` needs to establish a
+    noise floor. A configuration compared only against another configuration, never against
+    itself, cannot tell a four-point effect from four-point jitter.
+
+    ``fixture`` (a connection) stamps ``snapshot.data_version`` onto every cell and re-probes
+    it after each one, so "the data moved mid-grid" becomes a recorded warning instead of an
+    unexplained delta somebody attributes to the variant. ``connection_id`` additionally
+    applies the frozen-semantics guard before anything runs.
     """
-    from aughor.evals.experiments import applied
+    from aughor.evals.experiments import (
+        applied, assert_frozen_semantics, assert_measurable, data_version_of,
+    )
+    from aughor.kernel.errors import tolerate
     from aughor.kernel.flags import flag_enabled
 
     if not flag_enabled("evals.experiments"):
@@ -258,27 +285,50 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
             "silently running every cell under one configuration, which would produce a "
             "grid of identical numbers that looks like 'the variant made no difference'."
         )
+    # Both integrity guards sit OUTSIDE the per-cell try, because both describe conditions
+    # that invalidate the WHOLE grid rather than one cell of it: a live failover chain is
+    # process-global, and a connection's volatile semantics are shared by every cell. Letting
+    # either fall into the per-cell handler would report one global fault as N identical cell
+    # failures, which reads as "the grid ran and everything broke" instead of "the grid was
+    # never eligible to run". `applied()` re-checks measurability for callers that use a cell
+    # directly, where the per-cell blast radius IS the whole blast radius.
+    assert_measurable()
+    if connection_id:
+        assert_frozen_semantics(connection_id, allow_exploration=allow_exploration)
+
+    opening_version = data_version_of(fixture, fixture_tables) if fixture is not None else None
 
     results: list[CellResult] = []
     for cell in cells:
+        result = CellResult(label=cell.label, fixture_version=opening_version)
         try:
             with applied(cell) as resolved:
-                summary = run_suite(
-                    suite_id, target_factory(), iterations=iterations,
-                    evaluators=evaluators, checker=checker, persist=persist,
-                    config_extra={"cell": cell.label,
-                                  "cell_requested": resolved["requested"],
-                                  "discrepancies": resolved["discrepancies"]},
-                )
-                results.append(CellResult(label=cell.label, run=summary,
-                                          config=resolved["effective"],
-                                          discrepancies=resolved["discrepancies"]))
+                result.config = resolved["effective"]
+                result.discrepancies = resolved["discrepancies"]
+                for rep in range(max(1, replicates)):
+                    result.runs.append(run_suite(
+                        suite_id, target_factory(), iterations=iterations,
+                        evaluators=evaluators, checker=checker, persist=persist,
+                        config_extra={"cell": cell.label,
+                                      "replicate": rep,
+                                      "cell_requested": resolved["requested"],
+                                      "discrepancies": resolved["discrepancies"],
+                                      "data_version": opening_version},
+                    ))
         except Exception as exc:
-            from aughor.kernel.errors import tolerate
             tolerate(exc, f"experiment cell {cell.label!r} failed; remaining cells still run",
                      counter="evals.experiment.cell_failed")
-            results.append(CellResult(label=cell.label, run=None, config={},
-                                      error=f"{type(exc).__name__}: {exc}"))
+            result.error = f"{type(exc).__name__}: {exc}"
+        if fixture is not None:
+            now = data_version_of(fixture, fixture_tables)
+            if now != opening_version:
+                result.warnings.append(
+                    f"the fixture moved during cell {cell.label!r} "
+                    f"({opening_version} → {now}); this cell did not see the same data as "
+                    f"the ones before it, so its delta is not attributable to the variant.")
+                result.fixture_version = now
+                opening_version = now
+        results.append(result)
     return results
 
 
