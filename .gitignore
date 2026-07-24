@@ -35,6 +35,18 @@ data/sync_state_*.json
 data/api_sync/
 data/uploads/
 data/smoke_*.json
+# The glossary is 97% machine-written: the ontology autodoc appends an `auto_generated: true`
+# entry per table whenever a connection is explored, so simply RUNNING the app dirties it
+# (1,435 lines from one browser session on 2026-07-24). Tests never touch it — conftest points
+# AUGHOR_GLOSSARY_PATH at a throwaway temp copy — so this is purely about the live app.
+#
+# ⚠️ INERT UNTIL THE FILE IS UNTRACKED. .gitignore does not apply to tracked files, and this one
+# is tracked; making it take effect needs `git rm --cached data/glossary.yaml`, which is NOT done
+# here because it would drop 4 HAND-AUTHORED entries (customers · daily_revenue · events ·
+# kpi_daily — the fixture-DB analyst guidance, referenced by test_fixture_db and test_birth_job)
+# out of version control along with the generated noise. Splitting authored from generated is the
+# real fix; until then the line stands as the declared intent.
+data/glossary.yaml
 
 # Claude Code internal state
 .claude/
