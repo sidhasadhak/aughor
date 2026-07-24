@@ -7054,6 +7054,11 @@ export interface components {
          *     :func:`~aughor.kinetic.executor.execute_kinetic_action`, inheriting submission criteria,
          *     the graduated-approval gate and the audit trail unchanged. Wave A never bypasses it, which is
          *     why nothing above LOW risk can auto-fire from an automation either.
+         *
+         *     ``monitor`` (Wave A5) runs an existing :class:`~aughor.monitors.models.Monitor`'s check and
+         *     appends its alert — a faithful replay of the legacy monitor job, used when a monitor is *adopted*
+         *     onto this engine. It is not authored by hand; it exists so a monitor can execute through the one
+         *     engine instead of its own scheduler.
          */
         Effect: {
             /** Config */
@@ -7064,7 +7069,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigate" | "brief" | "notify" | "kinetic_action";
+            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor";
         };
         /** EvalIn */
         EvalIn: {

@@ -25,6 +25,14 @@ _started = False
 def _make_job_fn(sub_id: str):
     def _job():
         try:
+            # A5: when this subscription is adopted onto the automation engine, the heartbeat
+            # delivers it — stand down at FIRE time so a runtime flag flip can never double-DELIVER
+            # (a brief is an OUTWARD send; a duplicate is user-visible). adoption_active() requires
+            # the engine on, so this never silently stops deliveries with nothing to replace them.
+            from aughor.automations.adopt import adoption_active
+            if adoption_active():
+                return
+
             from aughor.briefs.store    import get_subscription
             from aughor.briefs.delivery import deliver_subscription
             from aughor.db.registry     import get_connection_org
@@ -66,6 +74,10 @@ def reload_subscription(sub: BriefSubscription) -> None:
     try:
         if _scheduler.get_job(job_id):
             _scheduler.remove_job(job_id)
+        # A5: don't schedule a legacy cron job the heartbeat would only skip.
+        from aughor.automations.adopt import adoption_active
+        if adoption_active():
+            return
         if sub.enabled:
             _scheduler.add_job(
                 _make_job_fn(sub.id),

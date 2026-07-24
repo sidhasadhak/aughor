@@ -275,6 +275,39 @@ def _dispatch_brief(effect: Effect, automation: Automation) -> EffectOutcome:
                          message=str(result.get("error") or result.get("status") or ""))
 
 
+def _dispatch_monitor(effect: Effect, automation: Automation) -> EffectOutcome:
+    """Wave A5 — run a Monitor's check and append its alert. A FAITHFUL replay of the legacy
+    monitor job (``monitors/scheduler.py::_make_job_fn``): ``run_monitor(m, db, suppress=True)`` —
+    keeping the anti-flap debounce — then ``append_alert`` when it fires. Same alert store, so the
+    debounce state and the emitted ``monitor.alert`` event are byte-identical to the legacy path;
+    the only thing that changed is which loop called it."""
+    from aughor.db.connection import open_connection_for
+    from aughor.monitors.runner import run_monitor
+    from aughor.monitors.store import append_alert, get_monitor
+
+    monitor_id = str(effect.config.get("monitor_id", ""))
+    monitor = get_monitor(monitor_id)
+    if monitor is None or not monitor.enabled:
+        return EffectOutcome(kind=effect.kind, target=monitor_id, status="skipped",
+                             message="monitor missing or disabled")
+    db = open_connection_for(monitor.conn_id)
+    try:
+        alert = run_monitor(monitor, db, suppress=True)   # suppress=True — preserve the debounce
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "closing the monitor-effect db handle is best-effort; the result is computed",
+                     counter="automations.effect.monitor.db_close")
+    if alert is None:
+        return EffectOutcome(kind=effect.kind, target=monitor_id, status="executed",
+                             message="no alert")
+    append_alert(alert)
+    return EffectOutcome(kind=effect.kind, target=monitor_id, status="executed",
+                         message=f"{alert.severity}: {alert.message[:120]}")
+
+
 def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutcome:
     """Run a deep investigation on the automation's connection.
 
@@ -335,6 +368,7 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "notify": _dispatch_notify,
     "brief": _dispatch_brief,
     "investigate": _dispatch_investigate,
+    "monitor": _dispatch_monitor,
 }
 
 

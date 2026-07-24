@@ -96,6 +96,7 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     "brief":          ("subscription_id",),
     "notify":         ("trigger_id",),
     "kinetic_action": ("action_id",),
+    "monitor":        ("monitor_id",),
 }
 
 
@@ -106,8 +107,13 @@ class Effect(BaseModel):
     :func:`~aughor.kinetic.executor.execute_kinetic_action`, inheriting submission criteria,
     the graduated-approval gate and the audit trail unchanged. Wave A never bypasses it, which is
     why nothing above LOW risk can auto-fire from an automation either.
+
+    ``monitor`` (Wave A5) runs an existing :class:`~aughor.monitors.models.Monitor`'s check and
+    appends its alert — a faithful replay of the legacy monitor job, used when a monitor is *adopted*
+    onto this engine. It is not authored by hand; it exists so a monitor can execute through the one
+    engine instead of its own scheduler.
     """
-    kind: Literal["investigate", "brief", "notify", "kinetic_action"]
+    kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor"]
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -130,7 +136,7 @@ class Effect(BaseModel):
 
     def target(self) -> str:
         """The referenced primitive, for run history and audit detail."""
-        for key in ("action_id", "subscription_id", "trigger_id", "question"):
+        for key in ("action_id", "subscription_id", "trigger_id", "monitor_id", "question"):
             if self.config.get(key):
                 return str(self.config[key])[:200]
         return ""
