@@ -35,7 +35,7 @@ So two waves are added (**R** — Reliability, **C** — Context graph), three t
 | **K — Kinetic plane** | ✅ **COMPLETE** ([#201](https://github.com/sidhasadhak/aughor/pull/201)) | K1–K5 merged; follow-ons dispositioned in §5 below |
 | **A — Automations** | ✅ **BUILT (A1–A6)** — A1+A2 [#204](https://github.com/sidhasadhak/aughor/pull/204), A3 [#206](https://github.com/sidhasadhak/aughor/pull/206), A4 [#207](https://github.com/sidhasadhak/aughor/pull/207) merged; **A5 [#208](https://github.com/sidhasadhak/aughor/pull/208) and A6 await merge authorization** | Arc: [`WAVE_A_AUTOMATIONS_ARC.md`](WAVE_A_AUTOMATIONS_ARC.md) |
 | **E — Sessions + Evals** | ◐ **HALF DONE** — E1–E3 merged (#196); E4–E6 remain | Arc: [`WAVE_E_SESSIONS_EVALS_ARC.md`](WAVE_E_SESSIONS_EVALS_ARC.md) |
-| **R — Reliability (transport)** | 🔨 **IN FLIGHT** — **R1–R4 built** (local commits `ff76b08`, `18ebb52`, `79106dc`, `9fa2c4d`, `1d78cd6`, `ba524be`, not pushed); **only R5 remains** | Scope: five-repo study §3 T1.1–T1.3 (+T2.3/T2.4/T2.5); status in `ROADMAP.md` §0 |
+| **R — Reliability (transport)** | ✅ **BUILT (R1–R5)** — local commits `ff76b08` · `18ebb52` · `79106dc` · `9fa2c4d` · `1d78cd6` · `ba524be` · `60b9fb0`, **none pushed** | Scope: five-repo study §3 T1.1–T1.3 (+T2.3/T2.4/T2.5); status in `ROADMAP.md` §0 |
 | **C — Context graph** | ⭕ not started — *new wave, from five-repo T3.1* | Needs its own scoping doc before code |
 | **V — Artifact lifecycle** | ⭕ not started | Foundry §5, now ⊕ UA's freshness/committed-artifact mechanics |
 | **G — Governance uplift** | ⭕ not started | Foundry §5, now ⊕ K's 9 unenforced `_RISK` actions ⊕ grant surfacing |
@@ -154,6 +154,15 @@ check covering one model). Scope authority: five-repo study §3.
 - **R5 (=T2.5) — declared parallel-safety** as a uniform metadata property on tools/actions, checked
   in one place (the SQL gate already enforces the read side; this names it as the action surface
   grows).
+
+> **R5 built 2026-07-24 (local): `60b9fb0` — Wave R is COMPLETE.** The design decision worth
+> carrying: the check sits on the **dangerous** side, not the fan-out side. A concurrent region
+> declares itself; the K-plane executor asks, once. A guard every fan-out must remember to call is
+> the shape that already failed twice here (the ~5-site guard battery; R4's 15 error frames), and it
+> fails silently — a fix lands in one copy while the rest diverge. Inverting it means a fan-out added
+> next year is covered without touching the safety module. The ratchet test that enforces "every
+> `ContextThreadPoolExecutor` declares its region" found a **seventh** fan-out during the build,
+> in a file the author's grep had never opened.
 
 ### Wave E — finish (E4–E6), with T3.2 as E4's methodology
 

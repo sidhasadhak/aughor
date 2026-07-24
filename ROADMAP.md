@@ -47,7 +47,7 @@ clean). A5/A6 are byte-identical when their flags are off (`automations.adopt_le
 first draft of this §0 — now **superseded**, its commit is cherry-picked onto the Wave R branch
 below; the branch can be dropped). Commit only, do not push unless asked.
 
-### 🔨 Wave R is IN FLIGHT — R1 + R2 built, committed LOCALLY, not pushed
+### ✅ Wave R is COMPLETE (R1–R5) — all committed LOCALLY, none pushed
 
 Branch `2026-07-24-wave-r2-provider-plane` (stacked on `2026-07-24-wave-r1-structured-reliability`,
 both off `main`). **Neither is pushed and no PR exists** — awaiting explicit authorization.
@@ -58,6 +58,7 @@ both off `main`). **Neither is pushed and no PR exists** — awaiting explicit a
 | **R2** `18ebb52` | **The provider plane** — error-body classification (a guessed model id fails loudly) · the vouched model matrix · a health check that names its failure | 🔨 local commit |
 | **R3** `79106dc` + `9fa2c4d` | **Context-budget discipline for ADA** — the wandering detector · the two-tier schema catalog with error-path autoload · fresh-full/stale-stub evidence | 🔨 local commits |
 | **R4** `1d78cd6` + `ba524be` | **Answer-path hardening** — the typed error tail through ONE choke point (15 hand-assembled sites) + a Retry the user can act on · the anti-probing rule pinned as a ratchet | 🔨 local commits |
+| **R5** `60b9fb0` | **Declared parallel-safety** — a fan-out declares itself, the K-plane executor asks; 7 regions wired, the ratchet found the 7th | 🔨 local commit |
 
 **Two pre-existing leaks were found by MEASURING the real transport stack, and both are fixed in R1:**
 
@@ -118,9 +119,21 @@ silent (a visible suppression **count** lets a model binary-search the hidden se
 plus an induced mid-stream failure; port 8000 held another session's API on pre-change code. The
 render is null-safe and type-checked but has not been seen on screen — **worth a look next session.**
 
-**⏭️ WAVE R REMAINS: R5 only.** Declared parallel-safety as a uniform metadata property on
-tools/actions, checked in one place. Aughor mostly has this via the SQL gate; the gap is making it a
-*declared* property as the action surface grows. Scope: five-repo T2.5 in the program doc §2.
+**R5's design decision — where the check lives.** Aughor's parallel-safety was real but
+*accidental*: all seven fan-outs happen to dispatch reads, and the SQL gate proves reads safe.
+Nothing declared it, so nothing could notice when something unsafe was fanned out — and the growing
+surface, the K-plane, is invisible to the SQL gate (no SQL involved). A guard every fan-out must
+remember to call is one the fifth fan-out forgets — this repo has that shape twice already (the
+~5-site guard battery; R4's 15 error frames). So the burden is inverted: **a concurrent region
+declares itself, and the dangerous operation asks**, in one place inside the K executor. Proven on
+real threads: an undeclared write action fanned out three ways → three `parallel_refused`, **zero
+side effects**; the same action declaring `parallel_safe=True` → three executions.
+The ratchet ("no `ContextThreadPoolExecutor` without a declared region") **found a seventh fan-out
+I had missed** — `ada.preflight`, in a file my grep never looked at.
+
+**⏭️ WAVE R IS DONE. The next arc is E (finish E4–E6)**, and E4 now has **six** concrete customers:
+the five the flag-graduation audit named, plus `ada.evidence_stubs` (below). Then **C** — the
+connection knowledge graph, which needs its **scoping doc first** — then V → G → S.
 
 **New flags from Wave R** (all off by default except the two R1 ones): `llm.structured_salvage` (on) ·
 `llm.bounded_repair` (on) · `explore.wandering_detector` · `schema.two_tier_catalog` ·
