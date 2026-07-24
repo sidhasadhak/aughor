@@ -182,6 +182,33 @@ row advances the probe and fires the condition exactly **once** (a second tick w
 not re-fire); a table with no usable id/timestamp column fails **open** to "changed" with the reason
 recorded, never silently never-fires. If a probe costs a full scan on a large table, the gate fails.
 
+> ✅ **Gate met (2026-07-24), proven on the live path** — the real app over HTTP, a real DuckDB
+> warehouse file, the engine's default probe path (25 tests + the proof):
+>
+> | tick | outcome | fingerprint |
+> |---|---|---|
+> | first observation | `fired` | `n=2\|updated_at=2026-07-21 09:30:00` (signal auto-chosen: count + `MAX(updated_at)`) |
+> | no change | `not_fired` | unchanged |
+> | 1 row inserted | `fired` **once** | `n=2\|…` → `n=3\|updated_at=2026-07-24 01:00:00` |
+> | again | `not_fired` | consumed |
+> | 1 row deleted | `fired` | `n=3\|…` → `n=2\|…` — **inequality catches what a watermark's `>` would miss** |
+> | ghost table | `fired` | fail-open with the full Catalog Error recorded on the run |
+>
+> The probe SQL is asserted in tests to be exactly one `SELECT COUNT(*), MAX(col)` — never a scan.
+>
+> **Two semantics sharpened during the build:**
+> 1. **Baselines commit only on a FIRED tick** (not at probe time, as this doc's original "since
+>    the last recorded run" wording loosely implied). Probe-time advancement silently consumes a
+>    change whenever the other condition of an `all`-logic automation is false — seen once, fired
+>    never. Commit-on-fire is the only reading under which no change can be lost; a failed commit
+>    re-fires (at-least-once), never loses. Locked by
+>    `test_a_change_seen_while_the_schedule_is_quiet_is_not_lost`.
+> 2. **A2 clock fix found while testing this:** the engine evaluated conditions against the
+>    injected tick clock but stamped run rows with the wall clock, so `_schedule_fired`'s
+>    since-last-run arithmetic mixed clocks the moment they diverged — the A2 schedule test had
+>    been passing by date-straddling accident. Run timestamps now derive from the tick clock
+>    (identical in production, where the tick clock IS the wall clock).
+
 ---
 
 ## PR-A4 — Staged-proposal queue + agent decision log

@@ -75,6 +75,19 @@ CREATE TABLE IF NOT EXISTS automation_runs (
     error            TEXT NOT NULL DEFAULT ''
 );
 
+-- A3: last-committed source-version fingerprints, keyed PER AUTOMATION so two automations
+-- watching the same table each keep their own "since last time" cursor (a shared cursor would
+-- let the first automation's tick consume the second's trigger). A new table rides the base DDL
+-- rather than a migration: executescript re-runs on every init and IF NOT EXISTS is idempotent,
+-- so both fresh and existing DBs converge — the migration framework is for non-idempotent ALTERs.
+CREATE TABLE IF NOT EXISTS probe_state (
+    automation_id TEXT NOT NULL,
+    target        TEXT NOT NULL,
+    version       TEXT NOT NULL,
+    updated_at    TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (automation_id, target)
+);
+
 CREATE INDEX IF NOT EXISTS idx_auto_conn      ON automations (conn_id);
 CREATE INDEX IF NOT EXISTS idx_runs_automation ON automation_runs (automation_id);
 CREATE INDEX IF NOT EXISTS idx_runs_conn       ON automation_runs (conn_id);
@@ -205,6 +218,7 @@ def delete_automation(automation_id: str) -> bool:
         try:
             cur = conn.execute("DELETE FROM automations WHERE id = ?", (automation_id,))
             conn.execute("DELETE FROM automation_runs WHERE automation_id = ?", (automation_id,))
+            conn.execute("DELETE FROM probe_state WHERE automation_id = ?", (automation_id,))
             conn.commit()
             return cur.rowcount > 0
         finally:
@@ -242,12 +256,16 @@ def pause_automation(automation_id: str, until_iso: Optional[str]) -> Optional[A
 
 
 def purge_connection(conn_id: str) -> int:
-    """Delete every automation and run for a connection (catalog-delete cascade).
-    Returns the total rows removed across both tables."""
+    """Delete every automation, run, and probe baseline for a connection (catalog-delete
+    cascade). Returns the total rows removed across the three tables. Probe state goes first —
+    it is keyed by automation_id, so it must be resolved while the automations rows still exist."""
     with _LOCK:
         conn = _connect()
         try:
-            n = conn.execute("DELETE FROM automations WHERE conn_id = ?", (conn_id,)).rowcount
+            n = conn.execute(
+                "DELETE FROM probe_state WHERE automation_id IN "
+                "(SELECT id FROM automations WHERE conn_id = ?)", (conn_id,)).rowcount
+            n += conn.execute("DELETE FROM automations WHERE conn_id = ?", (conn_id,)).rowcount
             n += conn.execute("DELETE FROM automation_runs WHERE conn_id = ?", (conn_id,)).rowcount
             conn.commit()
             return n
@@ -334,7 +352,42 @@ def get_runs(automation_id: Optional[str] = None, conn_id: Optional[str] = None,
 
 
 def last_run(automation_id: str) -> Optional[AutomationRun]:
-    """The most recent tick, or None. Used by ``source_change`` conditions to know what
-    'since last time' means (A3) and by the UI to explain the current state."""
+    """The most recent tick, or None. Used by ``schedule`` conditions to know what
+    'since last time' means and by the UI to explain the current state."""
     runs = get_runs(automation_id=automation_id, limit=1)
     return runs[0] if runs else None
+
+
+# ── Probe baselines (A3) ──────────────────────────────────────────────────────
+
+def get_probe_baseline(automation_id: str, target: str) -> Optional[str]:
+    """The last COMMITTED source-version fingerprint for (automation, table), or None when the
+    condition has never fired (first observation)."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT version FROM probe_state WHERE automation_id = ? AND target = ?",
+                (automation_id, target),
+            ).fetchone()
+            return row[0] if row else None
+        finally:
+            conn.close()
+
+
+def set_probe_baseline(automation_id: str, target: str, version: str) -> None:
+    """Record the fingerprint observed after a FIRED tick (see probes.commit_fired_baselines —
+    committing anywhere else silently consumes changes under ``all`` logic)."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.execute(
+                """INSERT INTO probe_state (automation_id, target, version, updated_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(automation_id, target) DO UPDATE SET
+                       version = excluded.version, updated_at = excluded.updated_at""",
+                (automation_id, target, version, now_iso_z()),
+            )
+            conn.commit()
+        finally:
+            conn.close()

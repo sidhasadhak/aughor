@@ -140,9 +140,17 @@ def default_probe(cond: Condition, automation: Automation) -> tuple[bool, str]:
             return False, f"metric({monitor.name}): no alert"
         return True, f"metric({monitor.name}): {alert.severity} — {alert.message[:120]}"
 
-    raise ProbeUnavailable(
-        f"condition kind '{cond.kind}' has no probe wired yet (source version probes land in A3)"
-    )
+    if cond.kind in ("source_change", "entity_appears"):
+        # A3 — gated separately from the engine so an operator can run schedule/metric
+        # automations without also enabling per-minute warehouse probes.
+        from aughor.kernel.flags import flag_enabled
+        if not flag_enabled("automations.source_probes"):
+            raise ProbeUnavailable(
+                f"condition kind '{cond.kind}' requires the automations.source_probes flag (off)")
+        from aughor.automations.probes import evaluate_source_condition
+        return evaluate_source_condition(cond, automation)
+
+    raise ProbeUnavailable(f"condition kind '{cond.kind}' has no probe wired")
 
 
 def evaluate_conditions(automation: Automation, *, now: datetime,
@@ -412,14 +420,21 @@ def run_automation(
     that is persisted rather than lost.
     """
     now = now or datetime.now(timezone.utc)
-    started = now_iso_z()
+    # Run timestamps derive from the TICK clock (``now``), not a second wall-clock read:
+    # `_schedule_fired` compares the cron against the previous run's `started_at`, so mixing an
+    # injected evaluation clock with wall-clock record stamps makes since-last-run arithmetic
+    # incoherent the moment the two diverge (a test, a replay, a paused VM). In production the
+    # default `now` IS the wall clock, so nothing changes there.
+    started = now.isoformat().replace("+00:00", "Z")
     t0 = _time.monotonic()
     dispatch_fn = dispatch or default_dispatch
 
     def _finish(run: AutomationRun) -> AutomationRun:
+        elapsed_ms = int((_time.monotonic() - t0) * 1000)
+        finished = (now + timedelta(milliseconds=elapsed_ms)).isoformat().replace("+00:00", "Z")
         run = run.model_copy(update={
-            "finished_at": now_iso_z(),
-            "duration_ms": int((_time.monotonic() - t0) * 1000),
+            "finished_at": finished,
+            "duration_ms": elapsed_ms,
         })
         return append_run(run) if persist else run
 
@@ -460,6 +475,18 @@ def run_automation(
         fallback_used = True
         outcomes.append(_run_effect(automation.fallback_effect, automation, dispatch_fn,
                                     sleeper=sleeper, rng=rng, sleep_budget=sleep_budget))
+
+    # 5 — the tick FIRED: commit source-version baselines now, and only now. Committing at
+    # probe time would consume a change whenever the other condition of an `all` automation
+    # was false — seen once, fired never (probes.py module docstring). Best-effort: an
+    # uncommitted baseline re-fires the change next tick (at-least-once, never lost).
+    try:
+        from aughor.automations.probes import commit_fired_baselines
+        commit_fired_baselines(automation)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "baseline commit is best-effort; the fired run is already recorded",
+                 counter="automations.engine.baseline_commit")
 
     return _finish(AutomationRun(**base, outcome="fired", reason=reason,
                                  conditions_fired=details, effects=outcomes,
