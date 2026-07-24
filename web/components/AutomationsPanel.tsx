@@ -53,16 +53,16 @@ const CRON_PRESETS = [
 ];
 
 const OUTCOME_COLOR: Record<string, string> = {
-  fired:     "var(--g2, #16a34a)",
+  fired:     "var(--grn3)",
   not_fired: "var(--t3)",
   gated:     "var(--chart-threshold-warn, #f59e0b)",
-  error:     "var(--r2)",
+  error:     "var(--red3)",
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  executed:          "var(--g2, #16a34a)",
-  failed:            "var(--r2)",
-  dispatch_error:    "var(--r2)",
+  executed:          "var(--grn3)",
+  failed:            "var(--red3)",
+  dispatch_error:    "var(--red3)",
   criterion_failed:  "var(--chart-threshold-warn, #f59e0b)",
   approval_required: "var(--chart-threshold-warn, #f59e0b)",
   skipped:           "var(--t3)",
@@ -188,7 +188,7 @@ export function AutomationsPanel({ connId }: Props) {
               }}>
               {v === "list" ? "Automations" :
                v === "runs" ? "Runs" :
-               v === "inbox" ? <>Inbox {pendingCount > 0 && <span style={{ marginLeft: 4, background: "var(--r2)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 10 }}>{pendingCount}</span>}</> :
+               v === "inbox" ? <>Inbox {pendingCount > 0 && <span style={{ marginLeft: 4, background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 10 }}>{pendingCount}</span>}</> :
                "Edit"}
             </Button>
           ))}
@@ -209,8 +209,8 @@ export function AutomationsPanel({ connId }: Props) {
       {banner && (
         <div style={{
           margin: "10px 20px 0", padding: "8px 12px", borderRadius: "var(--r3)", fontSize: 12,
-          background: banner.tone === "ok" ? "var(--g1, #dcfce7)" : "var(--r1, #fee2e2)",
-          color: banner.tone === "ok" ? "var(--g3, #166534)" : "var(--r3-text, #991b1b)",
+          background: banner.tone === "ok" ? "var(--grn1)" : "var(--red1)",
+          color: banner.tone === "ok" ? "var(--grn5)" : "var(--red5)",
           border: "1px solid var(--bg-3)",
         }}>{banner.text}</div>
       )}
@@ -225,7 +225,7 @@ export function AutomationsPanel({ connId }: Props) {
             : <>
                 <MiniStatRow>
                   <MiniStat value={stats.total} label="Automations" />
-                  <MiniStat value={stats.enabled} label="Enabled" tone="var(--g2, #16a34a)" />
+                  <MiniStat value={stats.enabled} label="Enabled" tone="var(--grn3)" />
                   <MiniStat value={stats.paused} label="Muted" tone="var(--chart-threshold-warn, #f59e0b)" />
                 </MiniStatRow>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -275,7 +275,7 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns 
       padding: "12px 16px", opacity: a.enabled ? 1 : 0.6,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={onToggle} title={a.enabled ? "Disable" : "Enable"} style={{
+        <Button variant="ghost" onClick={onToggle} title={a.enabled ? "Disable" : "Enable"} className="h-auto p-0" style={{
           width: 34, height: 18, borderRadius: 10, border: "none", cursor: "pointer", flexShrink: 0,
           background: a.enabled ? "var(--blue3)" : "var(--bg-3)", position: "relative",
         }}>
@@ -283,7 +283,7 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns 
             position: "absolute", top: 2, left: a.enabled ? 18 : 2, width: 14, height: 14,
             borderRadius: "50%", background: "#fff", transition: "left .12s",
           }} />
-        </button>
+        </Button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span>
@@ -301,7 +301,7 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns 
           <Button variant="ghost" onClick={onRuns} className="h-auto p-0 font-normal" style={ghostBtn}>History</Button>
           <Button variant="ghost" onClick={onPause} className="h-auto p-0 font-normal" style={ghostBtn}>{muted ? "Unmute" : "Mute"}</Button>
           <Button variant="ghost" onClick={onEdit} className="h-auto p-0 font-normal" style={ghostBtn}>Edit</Button>
-          <Button variant="ghost" onClick={onDelete} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--r2)" }}>Delete</Button>
+          <Button variant="ghost" onClick={onDelete} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--red3)" }}>Delete</Button>
         </div>
       </div>
     </div>
@@ -350,7 +350,7 @@ function RunsView({ automations, runsFor, runs, onPick }: {
                 ))}
               </div>
             )}
-            {r.error && <div style={{ marginTop: 4, fontSize: 11, color: "var(--r2)" }}>{r.error}</div>}
+            {r.error && <div style={{ marginTop: 4, fontSize: 11, color: "var(--red3)" }}>{r.error}</div>}
           </div>
         ))}
       </div>
@@ -412,7 +412,7 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
             <Button variant="ghost" className="h-auto" onClick={() => accept(p)} style={{ fontSize: 11, padding: "3px 12px", background: "var(--blue3)", color: "#fff" }}>Accept</Button>
-            <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => reject(p)} style={{ ...ghostBtn, color: "var(--r2)" }}>Reject</Button>
+            <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => reject(p)} style={{ ...ghostBtn, color: "var(--red3)" }}>Reject</Button>
             <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
               <input type="checkbox" checked={!!mintFor[p.id]} onChange={e => setMintFor(m => ({ ...m, [p.id]: e.target.checked }))} />
               also allow this target unattended
@@ -429,7 +429,7 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
               <span style={{ fontSize: 12 }}><b>{g.action_id}</b> → {g.target_arg}=<code>{g.target_value}</code></span>
               <span style={{ fontSize: 10, color: "var(--t3)" }}>used {g.use_count}× · by {g.created_by || g.owner_kind}</span>
               <div style={{ flex: 1 }} />
-              <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => revoke(g)} style={{ ...ghostBtn, color: "var(--r2)" }}>Revoke</Button>
+              <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => revoke(g)} style={{ ...ghostBtn, color: "var(--red3)" }}>Revoke</Button>
             </div>
           ))}
         </>
@@ -585,7 +585,7 @@ function ConditionRow({ c, onChange, onRemove }: { c: AutoCondition; onChange: (
           <input style={inputStyle} value={String(c.config.table ?? "")} onChange={e => set({ table: e.target.value })} placeholder="table (schema.table)" />
         )}
       </div>
-      {onRemove && <button onClick={onRemove} style={{ ...ghostBtn, color: "var(--r2)", padding: "6px 4px" }}>✕</button>}
+      {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
     </div>
   );
 }
@@ -615,7 +615,7 @@ function EffectRow({ e, onChange, onRemove }: { e: AutoEffect; onChange: (e: Aut
           </div>
         )}
       </div>
-      {onRemove && <button onClick={onRemove} style={{ ...ghostBtn, color: "var(--r2)", padding: "6px 4px" }}>✕</button>}
+      {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
     </div>
   );
 }
