@@ -15,9 +15,12 @@ from that, and both are the point of this module:
   carries a taxonomy. All of it stops at the provider boundary. This is the wire that
   carries it to the person waiting.
 
-:func:`error_event` is that one function. ``message`` is unchanged from what each site
-already produced, so every existing consumer keeps working byte-for-byte; the typed fields
-are additive.
+:func:`error_event` is that one function. ``message`` is never *replaced* — each site's own
+wording survives — and the typed fields ride alongside. The single transform applied to it
+is :func:`legible`, which unwraps a library's attempt-transcript dump to the cause inside
+it; that drops scaffolding, never information. It exists because the first live look at a
+failed turn showed the most prominent line reading
+``<failed_attempts> <generation number="1"> <exception> Connection error. </exception> …``.
 
 **The no-orphan contract.** A failed turn must leave *exactly* the partial the user
 watched plus one typed error tail — never a dropped turn (a spinner with no terminal
@@ -28,6 +31,7 @@ retry can be offered where it can actually work and withheld where it cannot.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -109,9 +113,8 @@ def error_event(exc: Optional[BaseException] = None, *, message: str = "",
                 reason: str = "") -> dict[str, Any]:
     """The one payload shape for an ``error`` SSE frame.
 
-    ``message`` is what the site already produced and is never rewritten — every existing
-    consumer keeps rendering exactly what it rendered before. The typed fields ride
-    alongside:
+    ``message`` is what the site already produced, never replaced — only unwrapped by
+    :func:`legible` when it is a library attempt-dump. The typed fields ride alongside:
 
     * ``reason`` — a stable code from :data:`REASONS`
     * ``retryable`` — whether re-sending the SAME request could plausibly succeed
@@ -126,7 +129,7 @@ def error_event(exc: Optional[BaseException] = None, *, message: str = "",
     try:
         code = reason or (classify(exc) if exc is not None else "unknown")
         retryable, recovery, hint = _POLICY.get(code, _POLICY["unknown"])
-        text = message or _safe_str(exc) or "Something went wrong."
+        text = legible(message) or _safe_str(exc) or "Something went wrong."
         return {"message": text, "reason": code, "retryable": retryable,
                 "recovery": recovery, "hint": hint}
     except Exception:
@@ -145,6 +148,36 @@ def _safe_str(exc: Optional[BaseException]) -> str:
     if exc is None:
         return ""
     try:
-        return str(exc)
+        return legible(str(exc))
     except Exception:
         return f"{type(exc).__name__} (unprintable)"
+
+
+# Instructor stringifies its wrapper as an XML-ish transcript of every attempt. Seeing it
+# rendered live is what prompted this: the most prominent line of a failed turn was
+# `<failed_attempts> <generation number="1"> <exception> Connection error. </exception> …`,
+# with the actual cause — two words — buried inside it.
+_ATTEMPT_DUMP_RE = re.compile(r"<(?:last_)?exception>\s*(.*?)\s*</(?:last_)?exception>",
+                              re.DOTALL | re.IGNORECASE)
+
+
+def legible(text: str) -> str:
+    """The human-readable cause inside a provider/library wrapper dump.
+
+    LOSSLESS in the sense that matters: it drops only scaffolding, never the message. If
+    no dump is recognised the text is returned untouched, so every other site's wording is
+    exactly what it was — this narrows "message is never rewritten" to "message is never
+    *replaced*", which is the property that mattered (no consumer loses information).
+
+    Sibling of :func:`aughor.llm.reliability._validation_detail`, which does the same dig
+    for the repair prompt. Same wrapper, same problem, two audiences.
+    """
+    raw = (text or "").strip()
+    if "<failed_attempts>" not in raw and "<last_exception>" not in raw:
+        return raw
+    seen: list[str] = []
+    for m in _ATTEMPT_DUMP_RE.finditer(raw):
+        part = " ".join(m.group(1).split())
+        if part and part.lower() != "none" and part not in seen:
+            seen.append(part)
+    return " · ".join(seen) if seen else raw

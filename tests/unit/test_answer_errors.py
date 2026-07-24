@@ -161,6 +161,53 @@ def test_every_error_frame_carries_the_typed_fields():
     assert _error_event(message="plain", reason="not_found")["message"] == "plain"
 
 
+# ── the message a human actually reads ────────────────────────────────────────
+
+_DUMP = ('<failed_attempts>\n\n<generation number="1">\n<exception>\n    Connection error.\n'
+         '</exception>\n<completion>\nNone\n</completion>\n</generation>\n</failed_attempts>\n'
+         '<last_exception>\nConnection error.\n</last_exception>')
+
+
+def test_a_library_attempt_dump_is_unwrapped_to_its_cause():
+    """Found by LOOKING at a failed turn in the browser: the most prominent line read
+    `<failed_attempts> <generation number="1"> <exception> Connection error. </exception> …`
+    with the actual cause — two words — buried inside it."""
+    assert AE.legible(_DUMP) == "Connection error."
+
+
+def test_the_dump_is_unwrapped_wherever_it_enters():
+    """Both doors: an exception the classifier stringifies, and an explicit `message=`
+    from a call site."""
+    assert AE.error_event(Exception(_DUMP))["message"] == "Connection error."
+    assert AE.error_event(message=_DUMP, reason="unreachable")["message"] == "Connection error."
+
+
+def test_distinct_causes_across_attempts_are_all_kept():
+    """Unwrapping must not silently pick one attempt — a chain that failed two DIFFERENT
+    ways is telling you something a single line would hide."""
+    two = ("<failed_attempts><exception>Connection error.</exception>"
+           "<exception>Read timed out.</exception></failed_attempts>")
+    assert AE.legible(two) == "Connection error. · Read timed out."
+
+
+def test_an_ordinary_message_is_returned_untouched():
+    """The narrowing is 'never replaced', not 'never touched' — every non-dump message
+    must come through exactly as its site wrote it."""
+    for msg in ("Investigation not found", "Could not connect: no such file",
+                "Answer stopped — token budget exceeded.", ""):
+        assert AE.legible(msg) == msg
+
+
+def test_an_unrecognised_dump_is_kept_whole_rather_than_emptied():
+    """If the shape is not understood, showing scaffolding beats showing nothing."""
+    odd = "<failed_attempts>something we do not parse</failed_attempts>"
+    assert AE.legible(odd) == odd
+
+
+def test_unwrapping_never_raises():
+    assert AE.legible(None) == "" and AE.legible("") == ""
+
+
 # ── the real route ────────────────────────────────────────────────────────────
 
 def test_a_failed_ask_ends_in_one_typed_error_frame():
