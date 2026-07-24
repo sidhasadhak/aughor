@@ -99,6 +99,25 @@ os.environ.setdefault(
     "AUGHOR_DOCUMENTS_REGISTRY", os.path.join(_test_stores_dir, "documents.json")
 )
 
+# The suite must not spend real LLM requests. `semantic.autoseed` defaults ON and `get_schema()`
+# fires it, so ANY test that loads a schema would call a live model against the free 1,000/day
+# budget. Measured before this line existed: `tests/integration/test_evals_experiments.py`
+# (8 tests) logged 12 failed seed attempts, and a SUCCESSFUL seed logs nothing, so 12 was a floor.
+# Default it OFF for the whole suite; a test that genuinely exercises the seeder opts back in with
+# `monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", True)`.
+#
+# ⚠️ `_ENABLED` is read at MODULE IMPORT, so `monkeypatch.setenv("AUGHOR_AUTOSEED", ...)` inside a
+# test is a NO-OP — patch the attribute, not the env var. This `setdefault` must stay above any
+# app import for the same reason.
+#
+# History worth keeping: flipping this default first EXPOSED two phase-8 explorer tests
+# (test_explorer_grain_runtime.py, test_narration_inversion_runtime.py) that were never hermetic —
+# their fake LLM fell through to the real provider, and their 120s `asyncio.wait_for` then raced
+# network latency, failing intermittently under full-suite load. Autoseed's glossary enrichment
+# had been masking it by helping the loop converge faster. Both were made hermetic (the fake now
+# raises on any unmodelled call; profile inference is pinned to None) before this default flipped.
+os.environ.setdefault("AUGHOR_AUTOSEED", "false")
+
 # The glossary + metrics catalog are file stores (YAML/JSON, not SQLite) with real content — and the
 # autoseed / knowledge-sync path WRITES them with no path, so the suite mutated the live
 # data/glossary.yaml (task_213affac: it leaked into two commits). Point each at a throwaway temp

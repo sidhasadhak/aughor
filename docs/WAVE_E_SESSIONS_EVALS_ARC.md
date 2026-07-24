@@ -279,6 +279,124 @@ three times and confirm the flag/model overrides actually took effect *per run* 
 config in `session_events`, not on the outcome). Per `verify-features-actually-ran`, an override that
 silently no-ops looks exactly like "the variant didn't help."
 
+### E4a — the override plane · ✅ BUILT 2026-07-24
+
+`aughor/evals/experiments.py` (`Cell` · `applied()` · `assert_measurable()` · `resolved_config()` ·
+`grid()`) + `runner.run_experiment()` + the contextvar layers in `kernel/flags.py` and
+`llm/provider.py`. **44 tests.** Decision gate MET: a three-cell grid was run end-to-end through the
+real runner and each cell's overrides were observed *at target-build time* and read back off the
+stored run.
+
+Four design notes worth carrying into E4b:
+
+- **The compile-time trap is closed by the signature, not a comment.** `run_experiment` takes a
+  `target_factory`, not a target, so the graph can only be built inside the cell's context. Topology
+  flags are read inside `_compile()`, and a target built before the loop would bake in the
+  process-global topology while every other axis moved — a half-overridden cell reporting as fully
+  overridden. Same inversion as R5's parallel-safety declaration: put the obligation where it cannot
+  be forgotten.
+- **Read-back, not request, is what gets recorded.** Every run records `flag_overrides`,
+  `temperature` and `fallback_disabled` resolved through the product's own resolvers, and `applied()`
+  reports a `discrepancies` list. An override that no-ops must be able to say so.
+- **Three loud refusals** rather than three silent degradations: an unregistered flag name raises
+  (`UnknownFlagError`), a live failover chain refuses to measure (`MeasurementIntegrityError`, raised
+  *before* a request is spent), and `run_experiment` with the flag off refuses rather than running
+  every cell under one configuration — which would produce a grid of identical numbers that reads as
+  "the variant made no difference".
+- **Anthropic temperature is opt-in.** That branch has never carried `temperature` and there is no
+  Anthropic key in this environment to verify the addition against, so it is sent only under a
+  run-scoped pin; ordinary traffic stays byte-identical.
+
+### E4b — the fidelity harness (J3) · ✅ BUILT 2026-07-24
+
+`aughor/evals/fidelity.py` (`Axis` · `Floor` · `Delta` · `noise_floor` · `compare` ·
+`harmonic_composite` · `assess` → `FidelityReport`) + `replicates` and fixture provenance on
+`run_experiment` + `experiments.assert_frozen_semantics`. **31 more tests (75 in E4 so far).**
+
+- **The floor comes before the delta.** A cell is compared against *itself* first;
+  that band is the unit every delta is denominated in. Demonstrated with an identical
+  variant judged both ways: `+0.053` against a quiet baseline (band 0.010) is
+  **attributable**; `+0.063` against a noisy one (band 0.140) is **refused**. A delta inside
+  the floor is reported as "not a small effect — not an observation", never as a hedge.
+- **Two replicate axes, neither substituting for the other.** `iterations` repeats each CASE
+  inside a run (E3's stable/flaky verdict); `replicates` repeats the whole RUN, which is what
+  a noise floor requires. One replicate yields *no floor*, not a floor of zero — a floor of
+  zero would make every delta attributable.
+- **The composite is harmonic.** Arithmetic mean of `{0.98, 0.0}` is a respectable 0.49;
+  harmonic is 0.0. A composite exists to be read instead of the detail, so it must not be
+  able to hide the detail that matters most.
+- **An unmeasured axis is absent, not zero.** `accuracy` is None when no case declared an
+  expectation; folding it to 0.0 would report a suite that measured nothing as a suite that
+  got everything wrong.
+- **Two guards, two different blast radii.** A polluted connection invalidates the whole grid
+  ⇒ `assert_frozen_semantics` aborts before anything runs. A fixture that moves mid-grid
+  invalidates only the cells either side of the move ⇒ recorded as a warning on that cell,
+  and the grid continues.
+
+### E4c — brittleness + the request budget · ✅ BUILT 2026-07-24
+
+`aughor/evals/perturb.py` (`Perturbation` · `DEFAULT_PERTURBATIONS` · `brittleness` ·
+`suite_robustness`) + `RunSummary.robustness` as a first-class axis + `estimate_requests` /
+`assert_within_budget`. **30 tests (105 across E4).**
+
+- **Pass rate says whether a pipeline is right; it says nothing about whether it is right for
+  a *reason*.** A suite can sit at 65% because it understands 65% of the questions, or because
+  it pattern-matches phrasings — different products, same number. Brittleness separates them:
+  re-ask each case in meaning-preserving rewordings and compare RESULT SETS.
+- **We do not need REFRACT's LLM judge.** An eval answer is executed SQL, so agreement is
+  decided by `user_agents.quality.results_match` — deterministically, with no second opinion's
+  noise imported into the measurement.
+- 🔑 **The dangerous part is the perturbation SET, not the comparison.** A rewording that
+  changes meaning turns a correct answer into a recorded defect. So the set is tiny, touches
+  only capitalisation / whitespace / terminal punctuation / a courtesy wrapper, and every
+  entry carries the argument for why it preserves meaning. A test asserts no default
+  perturbation alters a meaningful token; another asserts the rationale is stated, not
+  labelled. **The tests caught a real defect in my own set** — `whitespace` doubled interior
+  spaces and then collapsed them, a literal no-op whose rationale described it as one.
+- **A no-op rewording is recorded as skipped, never as a survived perturbation**, or a
+  robustness score would depend on how the case happened to be capitalised.
+- **Unmeasured ≠ maximally brittle.** A case whose unperturbed run errored has no answer for
+  a rewording to differ from, so it is excluded rather than scored 0.0 — otherwise a broken
+  baseline masquerades as a fragile one. `robustness` is a FIELD on `RunSummary` (not a
+  derived property) precisely so None survives into `fidelity.axis_of`.
+- **The request budget is the honest reading of "never inline".** A grid multiplies —
+  3 cells × 3 replicates × 20 cases × 5 perturbations × 4 requests/case = **4,320** against a
+  1,000/day allowance, and nothing about the launching call looks expensive.
+  `requests_per_case` has no default guess: only the caller knows whether its target is a
+  reference replay (0) or a deep investigation (dozens), and a guessed multiplier is a
+  confident wrong budget. Checked before the first target is constructed.
+
+### ⛔ Subprocess isolation for N×K grids — deliberately NOT built
+
+The arc doc called for it, citing `model_bakeoff.py`. Both of its reasons have expired:
+
+1. **Its stated rationale was model pinning** — "the provider resolves `AUGHOR_CODER_MODEL` at
+   binding time and caches per process — env-per-subprocess is the only clean isolation".
+   E4a's `set_run_model` contextvar makes per-run model pinning work in-process, so the
+   isolation buys nothing that is not already had.
+2. **It would bypass a rate limiter, not a bottleneck.** `AUGHOR_LLM_MAX_CONCURRENCY=4` is a
+   per-endpoint semaphore protecting against the provider's cap, and the free tier is
+   **20 RPM**. N processes × 4 slots multiplies concurrency past that ceiling, so the "fix"
+   converts a slow grid into a 429-dominated one — the #200 spiral, re-created on purpose.
+
+The real constraint on an N×K grid is the request *budget*, not slot contention, which is what
+`assert_within_budget` addresses. Cells stay serial. Revisit only with a paid tier, and then
+measure the RPM ceiling first rather than assuming the semaphore is the limit.
+
+**Still open:** the one-time proxy-inversion audit of existing metrics, and running grids from
+a scheduler rather than a caller (the budget guard is the precondition for that, not a
+substitute).
+
+### ⚠️ Found while building E4b: the test suite was spending the LLM budget
+
+`semantic.autoseed` defaults ON and `get_schema()` fires it, so **any** test that loads a
+schema made real LLM requests against the free 1,000/day cap. Measured: one 8-test file
+logged **12 failed seed attempts**, and a *successful* seed logs nothing, so the true count
+is higher. `tests/integration/test_program_planner.py` had already patched
+`autoseed._ENABLED` per-file for exactly this reason — one file remembering is the shape that
+leaves every other file spending. Now defaulted off in `tests/conftest.py`; a test that means
+to exercise the seeder opts back in.
+
 ---
 
 ## PR-E5 — The Evals surface

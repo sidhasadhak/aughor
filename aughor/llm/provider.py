@@ -266,6 +266,45 @@ def current_run_model() -> Optional[str]:
     return _run_model.get()
 
 
+# Per-run sampling temperature (Wave E4). The role defaults are 0.1 for structured calls and
+# 0.0 for a few others, and the deep path's spine calls pass none at all — so a measured run
+# cannot floor the sampling noise it is trying to measure. A contextvar lands the decision at
+# the last hop, like the model pin above, and reaches worker threads the same way.
+_run_temperature: contextvars.ContextVar[Optional[float]] = contextvars.ContextVar(
+    "aughor_run_temperature", default=None
+)
+
+
+def set_run_temperature(temperature: Optional[float]):
+    """Pin the sampling temperature for the current run/context (returns a reset token)."""
+    return _run_temperature.set(None if temperature is None else float(temperature))
+
+
+def reset_run_temperature(token) -> None:
+    try:
+        _run_temperature.reset(token)
+    except (ValueError, LookupError) as exc:
+        logger.debug("reset_run_temperature: stale token ignored (%s)", exc)  # foreign context
+
+
+def current_run_temperature() -> Optional[float]:
+    return _run_temperature.get()
+
+
+def _effective_temperature(temperature: float, backend: str) -> float:
+    """The temperature a call will actually use.
+
+    A run-scoped pin wins over the argument: the argument is a *role default* chosen by the
+    call site, the pin is a *measurement decision* about the whole run. Clamped to the
+    backend's accepted range — Anthropic rejects anything above 1.0 while the
+    OpenAI-compatible backends accept 2.0, so an unclamped grid axis would die on one
+    backend and quietly succeed on the other.
+    """
+    pinned = _run_temperature.get()
+    t = float(temperature if pinned is None else pinned)
+    return max(0.0, min(t, 1.0 if backend == "anthropic" else 2.0))
+
+
 def _pinned_model(role: Role, model: Optional[str]) -> str:
     """The model this call is pinned to, or ``""`` for the role's tier default.
 
@@ -1285,12 +1324,19 @@ class LLMProvider:
                      base_url: str = "", *, role: str = "", fallback: bool = False,
                      max_retries: Optional[int] = None):
         from aughor.kernel import metering
+        pinned_temp = current_run_temperature()
+        temperature = _effective_temperature(temperature, backend)
         if backend == "anthropic":
             endpoint = client.messages
             kwargs = dict(model=model, max_tokens=_max_output_tokens(), system=system,
                           messages=[{"role": "user", "content": user}],
                           response_model=response_model,
-                          max_retries=_structured_attempts())
+                          max_retries=_structured_attempts(),
+                          # This branch has never carried temperature. A measured run needs the
+                          # sampling floor, but there is no Anthropic key in this environment to
+                          # verify the addition against — so send it ONLY when a run pins one,
+                          # leaving ordinary traffic byte-identical.
+                          **({"temperature": temperature} if pinned_temp is not None else {}))
         else:
             endpoint = client.chat.completions
             kwargs = dict(model=model, temperature=temperature, response_model=response_model,
@@ -1396,6 +1442,8 @@ class LLMProvider:
     def _stream_on(client, backend, model, system, user, response_model, temperature,
                    text_field, on_text, base_url: str = "", *, role: str = ""):
         from aughor.kernel import metering
+        pinned_temp = current_run_temperature()
+        temperature = _effective_temperature(temperature, backend)
         if backend == "anthropic":
             # instructor's anthropic wrapper streams tool-mode JSON reliably.
             create_partial = getattr(client.messages, "create_partial", None)
@@ -1403,7 +1451,9 @@ class LLMProvider:
                 raise RuntimeError("anthropic client has no create_partial — partial streaming unavailable")
             kwargs = dict(model=model, max_tokens=_max_output_tokens(), system=system,
                           messages=[{"role": "user", "content": user}],
-                          response_model=response_model)
+                          response_model=response_model,
+                          # Sent only under a run-scoped pin — see _complete_on.
+                          **({"temperature": temperature} if pinned_temp is not None else {}))
 
             def _do():
                 # Drain the WHOLE stream inside the resilient closure: the per-endpoint

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from aughor.evals import store
 from aughor.evals.evaluator import EvalCase, EvalObservation, EvalScore
@@ -77,6 +77,11 @@ class RunSummary:
     fired_counts: dict[str, int] = field(default_factory=dict)
     outcomes: list[CaseOutcome] = field(default_factory=list)
     config: dict = field(default_factory=dict)
+    #: Mean perturbation-robustness over the measurable cases, or None when the run did not
+    #: measure it. A first-class FIELD rather than a derived property so `fidelity.axis_of`
+    #: reads it like any other axis, and so None stays distinguishable from 0.0.
+    robustness: Optional[float] = None
+    brittleness_detail: list = field(default_factory=list)
 
     @property
     def pass_rate(self) -> float:
@@ -101,6 +106,7 @@ class RunSummary:
             "accuracy": None if self.accuracy is None else round(self.accuracy, 4),
             "errors": self.errors, "fired_counts": self.fired_counts,
             "config": self.config,
+            "robustness": None if self.robustness is None else round(self.robustness, 4),
         }
 
 
@@ -133,22 +139,45 @@ def _run_config() -> dict:
     except Exception as exc:
         tolerate(exc, "eval run config: flag snapshot unavailable",
                  counter="evals.config.flags")
+    try:
+        # Wave E4: whatever a grid cell is forcing right now. Recorded for EVERY run, not
+        # just experiment runs — a run that happened to execute inside a cell and did not
+        # say so is the one whose number gets filed under the wrong configuration.
+        from aughor.evals.experiments import fallback_disabled
+        from aughor.kernel.flags import active_flag_overrides
+        from aughor.llm.provider import current_run_temperature
+        cfg["flag_overrides"] = active_flag_overrides()
+        cfg["temperature"] = current_run_temperature()
+        cfg["fallback_disabled"] = fallback_disabled()
+    except Exception as exc:
+        tolerate(exc, "eval run config: run-scoped overrides unavailable",
+                 counter="evals.config.overrides")
     return cfg
 
 
 def run_suite(suite_id: str, target: Target, *, iterations: int = 1,
               evaluators: Optional[list[str]] = None,
               checker: Optional[Checker] = None,
-              persist: bool = True) -> RunSummary:
+              persist: bool = True,
+              config_extra: Optional[dict] = None,
+              perturbations: Optional[Any] = None) -> RunSummary:
     """Run every case in ``suite_id`` through ``target``, ``iterations`` times.
 
     ``persist`` writes the run and every per-case result to the store; pass
-    False for a dry measurement that leaves no trace.
+    False for a dry measurement that leaves no trace. ``config_extra`` merges into the
+    recorded config — how :func:`run_experiment` stamps a cell's label onto its run.
+
+    ``perturbations`` (a sequence from :mod:`aughor.evals.perturb`, or None) additionally
+    measures the brittleness axis: each case is re-asked in meaning-preserving rewordings and
+    the result sets compared. It multiplies the run's cost by roughly the number of
+    perturbations, so it is opt-in rather than on by default.
     """
     cases = store.list_cases(suite_id)
     config = _run_config()
     config["iterations"] = iterations
     config["evaluators"] = evaluators or "all"
+    if config_extra:
+        config.update(config_extra)
 
     trace_id = ""
     try:
@@ -182,6 +211,14 @@ def run_suite(suite_id: str, target: Target, *, iterations: int = 1,
                 summary.errors += 1
             for name in outcome.fired:
                 summary.fired_counts[name] = summary.fired_counts.get(name, 0) + 1
+        if perturbations:
+            # Inside the try so a brittleness failure marks the run FAILED rather than
+            # reporting a run that measured less than it claims to have measured.
+            from aughor.evals.perturb import suite_robustness
+            cases_for_perturb = [_eval_case(row) for row in cases]
+            summary.robustness, detail = suite_robustness(
+                cases_for_perturb, target, perturbations=perturbations)
+            summary.brittleness_detail = [b.to_dict() for b in detail]
     except BaseException:
         if persist:
             store.finish_run(run_id, status=store.FAILED, summary=summary.to_dict())
@@ -192,18 +229,163 @@ def run_suite(suite_id: str, target: Target, *, iterations: int = 1,
     return summary
 
 
-def _run_case(run_id: str, case_row: dict, target: Target, *, iterations: int,
-              evaluators: Optional[list[str]], checker: Optional[Checker],
-              persist: bool) -> CaseOutcome:
+@dataclass
+class CellResult:
+    """One cell's replicated runs, with the configuration they actually ran under."""
+
+    label: str
+    runs: list = field(default_factory=list)          # list[RunSummary], one per replicate
+    config: dict = field(default_factory=dict)
+    discrepancies: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+    fixture_version: Optional[str] = None
+    error: str = ""
+
+    @property
+    def run(self) -> Optional[RunSummary]:
+        """The first replicate — the convenience view for a single-replicate grid."""
+        return self.runs[0] if self.runs else None
+
+    def to_dict(self) -> dict:
+        return {
+            "label": self.label,
+            "runs": [r.to_dict() for r in self.runs],
+            "config": self.config,
+            "discrepancies": self.discrepancies,
+            "warnings": self.warnings,
+            "fixture_version": self.fixture_version,
+            "error": self.error,
+        }
+
+
+def run_experiment(suite_id: str, target_factory: Callable[[], Target],
+                   cells: list, *, iterations: int = 1, replicates: int = 1,
+                   evaluators: Optional[list[str]] = None,
+                   checker: Optional[Checker] = None,
+                   persist: bool = True,
+                   fixture: Any = None, fixture_tables: Optional[list[str]] = None,
+                   connection_id: str = "",
+                   allow_exploration: bool = False,
+                   perturbations: Optional[Any] = None,
+                   request_budget: int = 0,
+                   requests_per_case: int = 1) -> list[CellResult]:
+    """Run ``suite_id`` once per cell, each under that cell's configuration.
+
+    ``target_factory`` is a factory rather than a target on purpose. Graph-topology flags
+    are read at COMPILE time (``agent/graph.py`` 128/140/229, inside ``_compile()``), so a
+    target built before the loop would bake in the process-global topology while every
+    other axis moved — a half-overridden cell that reports as fully overridden. Taking a
+    factory means the target can only be constructed inside the cell's context; the trap is
+    closed by the signature instead of by a comment somebody has to read. Same inversion as
+    R5's parallel-safety declaration: put the obligation where it cannot be forgotten.
+
+    One cell's failure does not abandon the grid — it is recorded on that cell and the rest
+    still run, because a baseline plus three of four variants is a usable result and losing
+    all four to one bad cell is not.
+
+    ``replicates`` runs each cell's whole suite that many times, which is a different noise
+    source from ``iterations`` and neither substitutes for the other: ``iterations`` repeats
+    each CASE inside one run and produces E3's stable/flaky verdict, while ``replicates``
+    repeats the entire RUN and is what :mod:`aughor.evals.fidelity` needs to establish a
+    noise floor. A configuration compared only against another configuration, never against
+    itself, cannot tell a four-point effect from four-point jitter.
+
+    ``fixture`` (a connection) stamps ``snapshot.data_version`` onto every cell and re-probes
+    it after each one, so "the data moved mid-grid" becomes a recorded warning instead of an
+    unexplained delta somebody attributes to the variant. ``connection_id`` additionally
+    applies the frozen-semantics guard before anything runs.
+    """
+    from aughor.evals.experiments import (
+        applied, assert_frozen_semantics, assert_measurable, assert_within_budget,
+        data_version_of, estimate_requests,
+    )
+    from aughor.kernel.errors import tolerate
+    from aughor.kernel.flags import flag_enabled
+
+    if not flag_enabled("evals.experiments"):
+        raise RuntimeError(
+            "grid experiments are off — enable the `evals.experiments` flag "
+            "(AUGHOR_EVALS_EXPERIMENTS=1) before running one. Refusing rather than "
+            "silently running every cell under one configuration, which would produce a "
+            "grid of identical numbers that looks like 'the variant made no difference'."
+        )
+    # Both integrity guards sit OUTSIDE the per-cell try, because both describe conditions
+    # that invalidate the WHOLE grid rather than one cell of it: a live failover chain is
+    # process-global, and a connection's volatile semantics are shared by every cell. Letting
+    # either fall into the per-cell handler would report one global fault as N identical cell
+    # failures, which reads as "the grid ran and everything broke" instead of "the grid was
+    # never eligible to run". `applied()` re-checks measurability for callers that use a cell
+    # directly, where the per-cell blast radius IS the whole blast radius.
+    assert_measurable()
+    if connection_id:
+        assert_frozen_semantics(connection_id, allow_exploration=allow_exploration)
+    if request_budget:
+        assert_within_budget(
+            estimate_requests(cells=len(cells), cases=len(store.list_cases(suite_id)),
+                              replicates=replicates, iterations=iterations,
+                              perturbations=len(perturbations or ()),
+                              requests_per_case=requests_per_case),
+            budget=request_budget)
+
+    opening_version = data_version_of(fixture, fixture_tables) if fixture is not None else None
+
+    results: list[CellResult] = []
+    for cell in cells:
+        result = CellResult(label=cell.label, fixture_version=opening_version)
+        try:
+            with applied(cell) as resolved:
+                result.config = resolved["effective"]
+                result.discrepancies = resolved["discrepancies"]
+                for rep in range(max(1, replicates)):
+                    result.runs.append(run_suite(
+                        suite_id, target_factory(), iterations=iterations,
+                        evaluators=evaluators, checker=checker, persist=persist,
+                        config_extra={"cell": cell.label,
+                                      "replicate": rep,
+                                      "cell_requested": resolved["requested"],
+                                      "discrepancies": resolved["discrepancies"],
+                                      "data_version": opening_version},
+                        perturbations=perturbations,
+                    ))
+        except Exception as exc:
+            tolerate(exc, f"experiment cell {cell.label!r} failed; remaining cells still run",
+                     counter="evals.experiment.cell_failed")
+            result.error = f"{type(exc).__name__}: {exc}"
+        if fixture is not None:
+            now = data_version_of(fixture, fixture_tables)
+            if now != opening_version:
+                result.warnings.append(
+                    f"the fixture moved during cell {cell.label!r} "
+                    f"({opening_version} → {now}); this cell did not see the same data as "
+                    f"the ones before it, so its delta is not attributable to the variant.")
+                result.fixture_version = now
+                opening_version = now
+        results.append(result)
+    return results
+
+
+def _eval_case(case_row: dict) -> EvalCase:
+    """A stored row as the EvalCase a target consumes.
+
+    Extracted so the brittleness pass and `_run_case` cannot drift: two hand-built copies of
+    one construction is the shape where a field added to one is missed by the other, and the
+    brittleness pass would then measure a subtly different case than the run it annotates.
+    """
     from aughor.trust import Scope
 
-    case = EvalCase(
+    return EvalCase(
         id=case_row["id"], question=case_row.get("question", ""),
         artifact=case_row.get("artifact", ""),
         expected=case_row.get("expected") or {},
         tags=tuple(case_row.get("tags") or ()),
         scope=Scope(),      # the target owns connection/dialect binding
     )
+
+
+def _run_case(run_id: str, case_row: dict, target: Target, *, iterations: int,
+              evaluators: Optional[list[str]], checker: Optional[Checker],
+              persist: bool) -> CaseOutcome:
+    case = _eval_case(case_row)
     outcome = CaseOutcome(case_id=case.id, question=case.question,
                           iterations=iterations)
     fired_per_iteration: list[set[str]] = []
