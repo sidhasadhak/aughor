@@ -33,9 +33,9 @@ So two waves are added (**R** — Reliability, **C** — Context graph), three t
 | Wave | State | Evidence |
 |---|---|---|
 | **K — Kinetic plane** | ✅ **COMPLETE** ([#201](https://github.com/sidhasadhak/aughor/pull/201)) | K1–K5 merged; follow-ons dispositioned in §5 below |
-| **A — Automations** | 🔨 **IN FLIGHT** — A1+A2 in open PR [#204](https://github.com/sidhasadhak/aughor/pull/204); A3–A6 remain | Arc: [`WAVE_A_AUTOMATIONS_ARC.md`](WAVE_A_AUTOMATIONS_ARC.md) (on the #204 branch) |
+| **A — Automations** | ✅ **BUILT (A1–A6)** — A1+A2 [#204](https://github.com/sidhasadhak/aughor/pull/204), A3 [#206](https://github.com/sidhasadhak/aughor/pull/206), A4 [#207](https://github.com/sidhasadhak/aughor/pull/207) merged; **A5 [#208](https://github.com/sidhasadhak/aughor/pull/208) and A6 await merge authorization** | Arc: [`WAVE_A_AUTOMATIONS_ARC.md`](WAVE_A_AUTOMATIONS_ARC.md) |
 | **E — Sessions + Evals** | ◐ **HALF DONE** — E1–E3 merged (#196); E4–E6 remain | Arc: [`WAVE_E_SESSIONS_EVALS_ARC.md`](WAVE_E_SESSIONS_EVALS_ARC.md) |
-| **R — Reliability (transport)** | ⭕ not started — *new wave, from five-repo Tier 1* | Scope: five-repo study §3 T1.1–T1.3 (+T2.3/T2.4/T2.5) |
+| **R — Reliability (transport)** | 🔨 **IN FLIGHT** — **R1 + R2 built** (local commits `ff76b08`, `18ebb52`, not pushed); R3–R5 remain | Scope: five-repo study §3 T1.1–T1.3 (+T2.3/T2.4/T2.5); status in `ROADMAP.md` §0 |
 | **C — Context graph** | ⭕ not started — *new wave, from five-repo T3.1* | Needs its own scoping doc before code |
 | **V — Artifact lifecycle** | ⭕ not started | Foundry §5, now ⊕ UA's freshness/committed-artifact mechanics |
 | **G — Governance uplift** | ⭕ not started | Foundry §5, now ⊕ K's 9 unenforced `_RISK` actions ⊕ grant surfacing |
@@ -96,6 +96,21 @@ The five-repo Tier 1, plus the three answer-path items that ride along. **Entire
 build** (fakes for every provider behaviour), directly attacks the request budget, and closes three
 already-paid-for bug classes *structurally* (guessed model ids · fast-tier pin clobber · health
 check covering one model). Scope authority: five-repo study §3.
+
+> **Built 2026-07-24 (local, unpushed): R1 `ff76b08` · R2 `18ebb52`.** Building them measured the
+> transport stack end-to-end and found two leaks nobody had priced. **Instructor's default is three
+> attempts and we had never overridden it** — every structured failure re-sent the whole prompt three
+> times before our code saw the error, and the fallback chain then spent a fourth on another
+> provider. And **a validation error was buying a "the shim rejected the reasoning extras" retry**,
+> because that degrade's guard admitted anything neither transient nor quota-blocked. Both fixed;
+> measured before→after, five failure classes went from *3 requests, failed* to *1 request,
+> succeeded*. J8 is now satisfiable — `llm.salvage.*`, `llm.failure.*`, `llm.repair.*` and
+> `llm.gate.*` land in `GET /dev/stats`, so R's cost claims can cite measurement.
+>
+> One scoping note carried forward: **the vouched matrix cannot block an unvouched id.** The picker
+> is deliberately free text (a stale catalogue must never block a model someone is paying for), so
+> the matrix holds *our own shipped defaults* to the higher bar — absent from the matrix ⇒ CI fails —
+> and merely warns on a user's pin. That is the honest version of "bindings resolve through it".
 
 - **R1 (=T1.1) — shared reliability layer for structured LLM calls**: deterministic normalizer
   *before* any repair call (fence-strip, trailing-comma, enum nearest-match, extra-key drop) ·

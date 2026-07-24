@@ -43,12 +43,54 @@ clean). A5/A6 are byte-identical when their flags are off (`automations.adopt_le
 `automations.proposals`). Then Wave A is fully landed. Arc + met decision gates:
 [`docs/WAVE_A_AUTOMATIONS_ARC.md`](docs/WAVE_A_AUTOMATIONS_ARC.md).
 
-**Also still local/unpushed from earlier this session:** `2026-07-24-roadmap-next-session` (this
-roadmap update) — commit only, do not push unless asked.
+**Also still local/unpushed from earlier this session:** `2026-07-24-roadmap-next-session` (the
+first draft of this §0 — now **superseded**, its commit is cherry-picked onto the Wave R branch
+below; the branch can be dropped). Commit only, do not push unless asked.
 
-**THEN — the next arc is Wave R (Reliability: the transport plane), the program's suggested next**
-(deterministic, zero-quota to build, de-risks every model-heavy wave), or the trust-first alternate
-E → C. Scope: five-repo Tier 1 in the program doc.
+### 🔨 Wave R is IN FLIGHT — R1 + R2 built, committed LOCALLY, not pushed
+
+Branch `2026-07-24-wave-r2-provider-plane` (stacked on `2026-07-24-wave-r1-structured-reliability`,
+both off `main`). **Neither is pushed and no PR exists** — awaiting explicit authorization.
+
+| | What | State |
+|---|---|---|
+| **R1** `ff76b08` | **The structured-call reliability layer** — deterministic normalizer · classify-before-retry · ONE bounded repair · a gate on optional calls | 🔨 local commit |
+| **R2** `18ebb52` | **The provider plane** — error-body classification (a guessed model id fails loudly) · the vouched model matrix · a health check that names its failure | 🔨 local commit |
+
+**Two pre-existing leaks were found by MEASURING the real transport stack, and both are fixed in R1:**
+
+1. **Instructor's default is THREE attempts and we had never overridden it.** Every structured
+   failure re-sent the entire prompt — evidence block and all — three times before our code saw the
+   error, then the fallback chain spent a fourth on another provider. Measured: a trailing comma
+   cost 3 requests. `AUGHOR_LLM_STRUCTURED_ATTEMPTS` now defaults to 1.
+2. **A validation error bought a "the shim rejected the reasoning extras" retry.** That degrade is
+   for a 4xx, but its guard admitted anything neither transient nor quota-blocked — and a Pydantic
+   error is neither. So on OpenRouter (the only backend sending `extra_body`, and the primary) every
+   structured failure re-sent the prompt to test a hypothesis that was already false. 2 → 1 request.
+
+**Measured before → after**, on a local stub returning genuine OpenAI-shaped bodies so every layer
+below our code is real: trailing comma · Python literals · smart quotes · Python repr · enum case
+all went from **3 requests, FAILED → 1 request, SUCCEEDED**; misspelled enum · uppercased key · no
+JSON stayed **FAILED** (as they must — the normalizer never guesses) at 2 requests instead of 3.
+
+New flags: `llm.structured_salvage` (on) · `llm.bounded_repair` (on — it *replaces* the two
+requests R1 removed). New counters at `GET /dev/stats`: `llm.salvage.*` · `llm.failure.*` ·
+`llm.repair.*` · `llm.gate.*` — **J8 is now satisfiable**, so the next cost claim can cite
+measurement instead of call-count arithmetic.
+
+**R2's matrix is vouched, not asserted.** 33 entries; 20 confirmed by fetching the provider's own
+live catalogue while writing it (openrouter 14/14, gemini 3/3, ollama 3/5 pulled locally).
+anthropic/groq/together have no key on this machine so they carry `verified_on=""` and are **not**
+vouched — a matrix that laundered a guess into a date would be worse than none. CI now fails if a
+shipped default or picker suggestion is absent from it. Live drift run: `gone=0` everywhere
+reachable; Gemini needed `models/` prefix normalization or **all three** of its bindings false-alarm
+on every startup.
+
+**⏭️ WAVE R REMAINS: R3 · R4 · R5.** R3 = context-budget discipline for ADA (fresh-full/stale-stub
+evidence, two-tier schema catalog with error-path autoload, the wandering detector). R4 = answer-path
+hardening (no-orphan interrupt/retry on streamed `/ask`; the `_display` sidecar + one outbound choke
+point). R5 = declared parallel-safety as a uniform metadata property. Scope: five-repo Tier 1/2 in
+the program doc §2.
 
 ⚡ **Quota unblocked (2026-07-23).** $11 on OpenRouter crossed the credit **threshold** → the free-model
 cap went **50 → 1,000 requests/day, permanently**. Policy: **strictly `:free` models** — the credit is a
