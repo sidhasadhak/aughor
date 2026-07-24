@@ -152,6 +152,8 @@ def _register_purge_hooks() -> None:
     ph.register_purge_hook("evidence", _evidence_conn)
     ph.register_purge_hook("ambiguity_ledger", _ambiguity_conn)
     ph.register_purge_hook("overlay_ledger", _overlay_conn)
+    ph.register_purge_hook("kinetic_inbox", _kinetic_inbox_conn)
+    ph.register_purge_hook("kinetic_grants", _kinetic_grants_conn)
     ph.register_purge_hook("qdrant", _qdrant_conn)
 
     # schema-keyed
@@ -243,6 +245,18 @@ def _overlay_conn(conn_id, org_id):
     # so they die with the connection.
     from aughor.kinetic import overlay
     return {"overlay_edits": overlay.purge_connections([conn_id], org_id=org_id)}
+
+
+def _kinetic_inbox_conn(conn_id, org_id):
+    # Wave A4: staged proposals name an action on this connection — they die with it.
+    from aughor.kinetic import inbox
+    return {"staged_proposals": inbox.purge_connection(conn_id)}
+
+
+def _kinetic_grants_conn(conn_id, org_id):
+    # Wave A4: a standing grant pre-authorizes a target on this connection — dies with it.
+    from aughor.kinetic import grants
+    return {"standing_grants": grants.purge_connection(conn_id)}
 
 
 def _qdrant_conn(conn_id, org_id):

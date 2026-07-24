@@ -211,19 +211,53 @@ recorded, never silently never-fires. If a probe costs a full scan on a large ta
 
 ---
 
-## PR-A4 — Staged-proposal queue + agent decision log
+## PR-A4 — Resolve-once proposal inbox + target-bound standing grants
 
-**Scope.** Persist K4's `Proposal` (today a live-only dataclass) as a queue: proposal + model
-reasoning + validation status + proposer identity → human accept/reject → on accept, run through
-`execute_kinetic_action` and receipt it. The decision log records **both** outcomes with the actor,
-so a rejected proposal is evidence, not a gap. Precedence follows the ambiguity ledger's
-`_SOURCE_RANK` discipline ([`semantic/ambiguity_ledger.py:47`](../aughor/semantic/ambiguity_ledger.py)) —
-machinery never clobbers a human decision.
+**Scope (redesigned per the program doc J1/J2 — this is no longer a plain proposal table).** Two
+new kinetic-plane stores behind `automations.proposals`:
 
-**Flag** `automations.proposals` (default off) · **Tests** ~22 · **Decision gate:** a proposal
-survives a process restart, accept executes it **exactly once** (double-accept is a no-op, not a
-second dispatch), and reject leaves an auditable row with no side effect. If accept can fire twice,
-the gate fails.
+- **The inbox** ([`kinetic/inbox.py`](../aughor/kinetic/inbox.py)) persists K4's `Proposal` (today a
+  live-only dataclass) as a **durable, resolve-once** record. Accept/reject is a single conditional
+  `UPDATE … WHERE status='pending'` — first-responder-wins; a second resolution updates zero rows and
+  is a no-op, never a second dispatch. Idempotent by `(org, run_id, call_id)`, so a replayed run
+  after a restart finds the existing item instead of duplicating or resurrecting it. **Accept IS the
+  approval act**, so it executes with `approved=True` — bypassing the approval gate but **never the
+  submission criteria** (those run at step 2, before approval at step 3). Both outcomes are audited
+  with the actor, so a rejected proposal is evidence, not a gap.
+- **Standing grants** ([`kinetic/grants.py`](../aughor/kinetic/grants.py)) — a human accepting can
+  mint a **target-bound** grant: "allow this action → this *exact* target value," eligible only for a
+  single-parameter action (no ambiguous target otherwise), **owned by the automation that minted it**
+  (revoked with it), consulted by the executor before `govern.guard`, and **cited by id in the audit
+  ledger and on every `KineticResult`**. The grant lets an *unattended* automation run one
+  pre-authorized target without a blanket allow — and still cannot pass a value the criteria reject.
+
+**Flag** `automations.proposals` (default off) · **Tests** 40 · **Decision gate:** a proposal
+survives a process restart, accept executes it **exactly once** (double-accept is a no-op), reject
+leaves an auditable row with no side effect; a grant is target-bound (a different value still gates)
+and never bypasses a criterion. If accept can fire twice, or a grant lets a criterion-failing value
+through, the gate fails.
+
+> ✅ **Gate met (2026-07-24), proven on the live path** — the real app over HTTP, the real
+> `refund_orders` overrides YAML (single-target `amount_eur`, `risk=high`, criterion
+> `amount_eur <= 10000`), the real executor + approval gate:
+>
+> | step | result |
+> |---|---|
+> | reject, then reject again | `rejected: true` → `rejected: false` (resolve-once) |
+> | accept `amount=25000` | **422** `criterion_failed` — *"Refunds over EUR 10,000 need finance sign-off."* verbatim (accept ≠ criteria bypass) |
+> | accept `amount=500` | **executed** — the accept is the approval, despite `risk=high` + approval ON |
+> | re-accept the same | **409** `already_resolved`, no second dispatch |
+> | direct execute `500`, no grant | **428** `approval_required` (unattended, no human, no grant) |
+> | accept with `mint_grant` → direct execute `500` | **executed**, cites `granted_by=<id>` |
+> | direct execute `999` | **428** — the grant is target-bound |
+>
+> **The live proof caught a defect 40 green tests missed** (every unit test used a `VARCHAR` param
+> where coercion is identity): a grant minted from the **raw** proposal params bound `amount_eur`
+> as `"500"`, but the executor matches against **coerced** params (`500.0` → `"500.0"`), so the
+> grant it had just minted never matched. Fixed by minting from coerced params;
+> `test_a_numeric_grant_minted_from_coerced_params_actually_matches` locks it. (Also: my proof
+> harness omitted `AUGHOR_AUTOMATIONS_DB`, leaking an empty `data/automations.db` — the store-drift
+> class already filed as a task; deleted, and the `dump_openapi.py` isolation was extended.)
 
 ---
 

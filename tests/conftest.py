@@ -65,6 +65,9 @@ for _env, _file in (
     ("AUGHOR_DASHBOARD_DB", "dashboard_cards.db"),
     # Wave A1 — automations + their run history (born hermetic).
     ("AUGHOR_AUTOMATIONS_DB", "automations.db"),
+    # Wave A4 — the resolve-once proposal inbox + target-bound standing grants (born hermetic).
+    ("AUGHOR_KINETIC_INBOX_DB", "kinetic_inbox.db"),
+    ("AUGHOR_KINETIC_GRANTS_DB", "kinetic_grants.db"),
 ):
     os.environ.setdefault(_env, os.path.join(_test_stores_dir, _file))
 

@@ -43,6 +43,7 @@ class KineticResult:
     message: str = ""                       # authored criterion message / approval hint / error
     outcome: dict = field(default_factory=dict)   # dispatch result, when executed
     detail: dict = field(default_factory=dict)    # structured extras (e.g. the 428 body)
+    granted_by: str = ""                    # A4: the standing-grant id that auto-allowed this run ('' otherwise)
 
     def http_status(self) -> int:
         return {
@@ -226,11 +227,18 @@ def execute_kinetic_action(
     actor: str = "",
     scope: str = "",
     dispatch: Optional[Dispatch] = None,
+    approved: bool = False,
 ) -> KineticResult:
     """Run one declared action through the full governed pipeline. ``scope`` is the connection
     id (the grain the approval allowlist is keyed on). Returns a :class:`KineticResult`; never
     raises for an expected outcome (criterion failure, approval required, bad params) — those are
-    statuses, so the agent (K4) can read the authored message and revise."""
+    statuses, so the agent (K4) can read the authored message and revise.
+
+    ``approved`` (A4) marks that a human accepted this run (``inbox.accept_proposal``) — the accept
+    IS the graduated-approval act, so the approval gate is skipped. It is BYPASS-APPROVAL-ONLY: the
+    submission criteria at step 2 have already run, so an accepted proposal can never push a value the
+    criteria reject. A standing grant (``kinetic/grants.py``) does the same for an UNATTENDED run —
+    consulted only when ``automations.proposals`` is on, so this path is byte-identical otherwise."""
     from aughor.govern import actions as govern
 
     gov_action = f"kinetic.{action.id}"
@@ -244,6 +252,8 @@ def execute_kinetic_action(
         return KineticResult("invalid_params", False, action.id, message=str(e))
 
     # 2 — submission criteria, BEFORE the approval gate. Authored message returned verbatim.
+    #     Neither a human accept nor a standing grant bypasses this: they pre-approve WHO may run,
+    #     never WHAT values pass.
     for crit in action.submission_criteria:
         try:
             passed = evaluate_predicate(crit.expr, coerced)
@@ -259,14 +269,23 @@ def execute_kinetic_action(
             return KineticResult("criterion_failed", False, action.id, message=crit.message,
                                  detail={"expr": crit.expr})
 
-    # 3 — graduated-approval gate (reuses govern; audits blocked/approved/auto internally)
+    # 3 — approval. A human accept (approved) or a matching standing grant satisfies it; otherwise
+    #     the graduated-approval gate decides (and may 428). Every path is audited with WHY it ran.
     from fastapi import HTTPException
-    try:
-        govern.guard(gov_action, scope, actor=actor, risk=risk)
-    except HTTPException as e:
-        body = e.detail if isinstance(e.detail, dict) else {"hint": str(e.detail)}
-        return KineticResult("approval_required", False, action.id,
-                             message=body.get("hint", "approval required"), detail=body)
+    from aughor.kinetic.grants import standing_grant_id
+    grant_id = ""
+    if approved:
+        govern.audit(gov_action, scope, "approved", actor=actor, detail="human accept", risk=risk)
+    elif (grant_id := standing_grant_id(action, coerced, scope)):
+        govern.audit(gov_action, scope, "auto", actor=actor,
+                     detail=f"standing grant {grant_id}", risk=risk)
+    else:
+        try:
+            govern.guard(gov_action, scope, actor=actor, risk=risk)
+        except HTTPException as e:
+            body = e.detail if isinstance(e.detail, dict) else {"hint": str(e.detail)}
+            return KineticResult("approval_required", False, action.id,
+                                 message=body.get("hint", "approval required"), detail=body)
 
     # 4 — dispatch (the ONLY step that can cause a side effect; reached only after every gate)
     try:
@@ -277,4 +296,4 @@ def execute_kinetic_action(
 
     # 5 — audit the completed run
     govern.audit(gov_action, scope, "executed", actor=actor, detail=action.kind, risk=risk)
-    return KineticResult("executed", True, action.id, outcome=outcome)
+    return KineticResult("executed", True, action.id, outcome=outcome, granted_by=grant_id)
