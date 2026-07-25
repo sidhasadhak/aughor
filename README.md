@@ -77,7 +77,8 @@ The built-in default models are Ollama *cloud-tier* (they need `ollama signin`);
 for a fully-local run, `ollama pull qwen2.5-coder:14b` and pin it (see below).
 Prefer a hosted API? Configure it in **Settings → Inference** in the web UI, or
 `cp .env.example .env` and set `AUGHOR_BACKEND` + key (Groq / Together /
-Anthropic blocks are inside). The boot summary printed by `aughor up` shows
+Anthropic / Gemini / OpenRouter blocks are inside — OpenRouter and Gemini both
+have a free tier that runs on a fresh key). The boot summary printed by `aughor up` shows
 whether your LLM is ready — the API serves without one, but questions fail
 until a backend is reachable.
 
@@ -275,7 +276,7 @@ aughor/
 ├── evals/            # run_tpch / run_tpcds / run_clickbench / run_golden / run_realdb
 ├── web/              # Next.js App Router — components, lib (api.ts), design tokens
 ├── docs/             # architecture, adaptive-temporal-scope, mode cross-pollination, audits
-└── tests/            # pytest suite (3,400+ unit + integration; failure-path / fault-injection / chaos)
+└── tests/            # pytest suite (4,700+ unit + integration; failure-path / fault-injection / chaos)
 ```
 
 ## Configuration
@@ -285,7 +286,7 @@ full reference; the essentials:
 
 | Variable | Default | What it does |
 |---|---|---|
-| `AUGHOR_BACKEND` | `ollama` | `ollama` \| `groq` \| `anthropic` \| `together` |
+| `AUGHOR_BACKEND` | `ollama` | `ollama` \| `lmstudio` \| `groq` \| `together` \| `anthropic` \| `gemini` \| `openrouter` |
 | `AUGHOR_CODER_MODEL` | per backend | Model used to generate SQL |
 | `AUGHOR_NARRATOR_MODEL` | per backend | Model used to write the report |
 | `AUGHOR_MAX_ITER` | `6` | Investigative iterations before synthesis is forced |
@@ -305,7 +306,7 @@ The defaults assume a trusted single-user machine:
 
 **Alpha.** No tagged release yet; `main` is the only supported branch.
 
-What is real today: the backend suite is **4,669 tests**, green on Python 3.11,
+What is real today: the backend suite is **4,700+ tests**, green on Python 3.11,
 3.12 and 3.13, and runs fully offline — the full run is **~3 minutes** since the
 suite stopped making accidental live-model calls. `ruff` is at a zero baseline. The
 frontend typechecks under `strict` and builds.
