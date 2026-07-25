@@ -363,6 +363,34 @@ identical) does **not** trigger a rebuild; and the injected graph slice respects
 
 ## PR-C4 — Anti-hairball rendering (the surface)
 
+> **Status: BUILT (first cut)** (branch `2026-07-25-wave-c1-context-graph`, stacked; unpushed; 3 backend
+> tests + all 7 web gates green + verified live in the browser). Backend: `GET /graph`
+> (`routers/ontology.py`) serving the graph JSON + a **level-1 domain aggregation** (cross-domain joins
+> collapsed to counts) + typed staleness; flag `graph.surface`. Frontend:
+> `web/components/ConnectionGraphPanel.tsx` — a three-level card/list/detail surface — wired as a
+> flag-gated **Graph layer** in `IntelligenceWorkspace` (next to Ontology, which it promotes), hidden
+> when `graph.surface` is off (byte-identical) via `getSystemFlags`.
+>
+> **Decision gate MET, proven live on the real `workspace` connection (18 tables):**
+> - **Level 1** collapses 18 tables + 7 edges to **5 domain cards** (Catalog·2, Commerce·7, Customer·3,
+>   Marketing·3, Operations·3) with **aggregated cross-domain join badges** (Commerce↔Marketing·1,
+>   Customer↔Marketing·1) — the hairball is structurally impossible, not styled away.
+> - **Level 2**: a domain expands to its tables with column + join counts.
+> - **Level 3** (the J6 entity page): "Order Line" detail shows **VERIFIED JOINS with the MEASURED
+>   value-domain overlap as a chip** (→ Payment/Return/Shipment/Marketing Attribution, overlap 100%),
+>   plus Past findings / Glossary terms / Columns. The J4 number is finally on screen.
+>
+> **The anti-hairball approach is aggregation, not a node-link layout** — UA's own level 1 is cluster
+> cards, so card→list→detail is faithful *and* cheapest to pass the web gates (no graph-layout lib).
+> Built from the shared primitives (`<Button>`, `<StatusChip>`, `<MiniStat>`), tokens-only, `<Button>`
+> not raw `<button>` (ratchet held at 73), all numbers through `@/lib/format`; `api.gen.ts` regenerated.
+>
+> **Honest deferrals** (a first cut): (a) no live `finding` shows because no connection in this env has
+> been explored (0 insights everywhere) — the detail renders "Past findings: None yet" and the finding
+> path is covered by the C1/C2 integration tests; (b) an optional **node-link diagram** (React Flow /
+> SVG, per `OntologyCanvas`) for level 2 is the natural fidelity upgrade; (c) the persona filter is not
+> yet wired. The surface is real and legible today; these are refinements.
+
 **Why.** A join graph over a real warehouse is a hairball at one zoom level; UA's 75k stars are
 substantially *this* — "the hairball is structurally impossible, not stylistically discouraged"
 (`FIVE_REPO_STUDY` §1.4). This is also where Wave S gets its entity pages nearly free (J6).

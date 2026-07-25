@@ -188,6 +188,70 @@ def get_ontology(
     return graph.model_dump()
 
 
+def _graph_domain_aggregation(cg) -> dict:
+    """Level-1 anti-hairball data: table nodes grouped by domain, and cross-domain
+    join edges COLLAPSED to one aggregated edge per domain pair with a count — so the
+    top level is a handful of cards, never a hairball."""
+    domains: dict[str, list[str]] = {}
+    for n in cg.nodes.values():
+        if n.kind == "table":
+            dom = (n.data or {}).get("domain") or "Ungrouped"
+            domains.setdefault(dom, []).append(n.id)
+    table_domain = {tid: dom for dom, ids in domains.items() for tid in ids}
+    pair_counts: dict[tuple, int] = {}
+    for e in cg.edges.values():
+        if e.kind == "joins_on":
+            a, b = table_domain.get(e.from_id), table_domain.get(e.to_id)
+            if a and b and a != b:
+                key = tuple(sorted((a, b)))
+                pair_counts[key] = pair_counts.get(key, 0) + 1
+    return {
+        "domains": [{"label": d, "tables": ids, "table_count": len(ids)}
+                    for d, ids in sorted(domains.items())],
+        "domain_edges": [{"from": a, "to": b, "count": c}
+                         for (a, b), c in sorted(pair_counts.items())],
+    }
+
+
+@router.get("/graph")
+def get_context_graph(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Wave C4 — the connection knowledge graph for the anti-hairball surface: the full
+    nodes + edges + provenance, PLUS a level-1 domain aggregation (cross-domain joins
+    collapsed to counts) and the typed staleness state. 404 when ``graph.surface`` is off
+    (byte-identical default). Builds on demand when a graph is not yet committed and
+    ``graph.build`` is on."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("graph.surface"):
+        raise HTTPException(status_code=404, detail="graph.surface disabled")
+    from aughor.org.context import current_org_id
+    from aughor.ontology.context_graph_search import merge_graphs
+    from aughor.ontology.context_graph_store import load_graphs_for_connection
+
+    org = current_org_id()
+    cg = merge_graphs(load_graphs_for_connection(org, connection_id))
+    if cg is None:
+        from aughor.ontology.context_graph_build import build_context_graph
+        cg = build_context_graph(connection_id, schema_name, org_id=org)
+    if cg is None:
+        raise HTTPException(status_code=404,
+                            detail="No knowledge graph for this connection (build it first)")
+
+    payload = cg.model_dump()
+    payload["counts"] = cg.counts()
+    payload.update(_graph_domain_aggregation(cg))
+    try:
+        from aughor.ontology.graph_freshness import staleness_of
+        # Compare against the ontology for the GRAPH's own schema (the committed graph may
+        # live under a different schema than the request's active-schema hint).
+        payload["staleness"] = staleness_of(connection_id, cg.schema_name or schema_name, org_id=org)
+    except Exception:
+        payload["staleness"] = "unknown"
+    return payload
+
+
 @router.get("/ontology/entities")
 def get_ontology_entities(
     connection_id: str = BUILTIN_ID,

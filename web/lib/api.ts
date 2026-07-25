@@ -1060,6 +1060,42 @@ export async function getOntology(connectionId: string, schemaName?: string): Pr
   return res.json();
 }
 
+// ── Connection knowledge graph (Wave C4 — GET /graph) ─────────────────────────
+
+export interface CGProvenance { source: string; measured: number | null; note: string }
+export interface CGNode {
+  id: string; kind: string; label: string; summary: string;
+  tags: string[]; provenance: CGProvenance; data: Record<string, unknown>;
+}
+export interface CGEdge {
+  id: string; kind: string; from_id: string; to_id: string;
+  provenance: CGProvenance; label: string;
+}
+export interface CGDomain { label: string; tables: string[]; table_count: number }
+export interface CGDomainEdge { from: string; to: string; count: number }
+export type CGStaleness = "fresh" | "dirty" | "stale" | "unknown";
+export interface ConnectionGraph {
+  org_id: string; connection_id: string; schema_name: string;
+  structural_fingerprint: string; version: number;
+  nodes: Record<string, CGNode>;
+  edges: Record<string, CGEdge>;
+  counts: Record<string, number>;
+  domains: CGDomain[];
+  domain_edges: CGDomainEdge[];
+  staleness: CGStaleness;
+}
+
+/** The connection knowledge graph for the anti-hairball surface (Wave C4). 404 when
+ *  `graph.surface` is off. */
+export async function getConnectionGraph(connectionId: string, schemaName?: string): Promise<ConnectionGraph> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${BASE}/graph?${q}`);
+  if (!res.ok) throw new Error("Knowledge graph not available for this connection");
+  return res.json();
+}
+
 // ── Duplicate-entity detection + merge (Borrow 5) ─────────────────────────────
 
 export interface DuplicateEntityRef { id: string; display_name: string; source_tables: string[] }

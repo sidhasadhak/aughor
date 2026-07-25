@@ -103,6 +103,7 @@ FLAG_ENV = {
     "graph.build": "AUGHOR_GRAPH_BUILD",  # Wave C1: project the ontology into the committed connection knowledge graph
     "graph.readback": "AUGHOR_GRAPH_READBACK",  # Wave C2: grep-the-graph-first — inject the graph slice as a plan-time prior
     "graph.freshness": "AUGHOR_GRAPH_FRESHNESS",  # Wave C3: change-classified, token-proportional graph refresh + staleness
+    "graph.surface": "AUGHOR_GRAPH_SURFACE",  # Wave C4: serve + render the connection knowledge graph (anti-hairball surface)
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -224,6 +225,10 @@ FLAG_META = {
     "graph.freshness": {
         "label": "Graph freshness — change-classified refresh + staleness (Wave C3)",
         "description": "Keep the connection knowledge graph fresh at cost proportional to the change, and surface how stale it is. Two fingerprints are split: STRUCTURAL (tables + columns + types) and DATA (row counts, from the ontology fingerprint). The classifier reads SKIP (structure and data unchanged, or a comment-only change → no work), a data-only reload (row counts moved, structure identical → the graph is marked DIRTY but NOT rebuilt — a nightly load is not a schema change), PARTIAL (columns changed on known tables → rebuild, naming the tables), or FULL (tables added/removed → rebuild). Typed staleness states fresh|dirty|stale|unknown drive a UI banner and can gate a briefing built on a stale graph. The read-back slice honours a token-proportional budget. This freshness vocabulary is written to be lifted by Wave V (one dialect for graph, briefs, profiles, caches). Deterministic; no LLM. Off by default ⇒ refresh_context_graph is a no-op (byte-identical). A rebuild still requires `graph.build`.",
+    },
+    "graph.surface": {
+        "label": "Connection knowledge graph surface (Wave C4)",
+        "description": "Serve and render the connection knowledge graph as a three-level, anti-hairball surface: domain cluster cards with aggregated cross-domain join counts (level 1) → the tables inside a domain, with their verified joins (level 2) → a table detail panel showing columns, the measured value-domain overlap on each join, the glossary terms, and the PAST FINDINGS that touch the table (level 3 — the dossier system makes those $0). Aggregation at every zoom level makes the hairball structurally impossible rather than stylistically discouraged. Exposes GET /graph (the graph JSON: nodes + edges + provenance) and a Knowledge Graph panel. Off by default ⇒ the route 404s and the panel is hidden (byte-identical). Requires a graph built by `graph.build`; the endpoint builds on demand when that flag is on. This is the J6 seam — an entity page is this surface's table-detail view.",
     },
     "automations.adopt_legacy": {
         "label": "Adopt monitors + briefs onto the automation engine (Wave A5)",

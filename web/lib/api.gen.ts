@@ -2142,6 +2142,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/evals/flags/{flag}/graduate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Graduate Flag
+         * @description Decide whether ``flag`` has earned default-on, from an eval run, and RECEIPT it.
+         *
+         *     This records a decision — it does not flip the flag. A graduation is the evidence a
+         *     human uses to change ``FLAG_DEFAULT`` in a reviewed PR; setting a runtime override here
+         *     would re-create the ledger-on/code-off drift the 2026-07-22 audit removed. The decision
+         *     (and its blockers, if any) is persisted and emitted as an ``eval.graduation`` ledger
+         *     event — the receipt.
+         */
+        post: operations["graduate_flag_evals_flags__flag__graduate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evals/graduations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Graduations */
+        get: operations["list_graduations_evals_graduations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/evals/runs": {
         parameters: {
             query?: never;
@@ -3028,6 +3071,30 @@ export interface paths {
         get?: never;
         /** Put Column Glossary */
         put: operations["put_column_glossary_glossary__table___column__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Context Graph
+         * @description Wave C4 — the connection knowledge graph for the anti-hairball surface: the full
+         *     nodes + edges + provenance, PLUS a level-1 domain aggregation (cross-domain joins
+         *     collapsed to counts) and the typed staleness state. 404 when ``graph.surface`` is off
+         *     (byte-identical default). Builds on demand when a graph is not yet committed and
+         *     ``graph.build`` is on.
+         */
+        get: operations["get_context_graph_graph_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -7190,6 +7257,20 @@ export interface components {
             threshold_direction: string;
             /** Warning Threshold */
             warning_threshold?: number | null;
+        };
+        /** GraduateIn */
+        GraduateIn: {
+            /** Baseline Pass Rate */
+            baseline_pass_rate?: number | null;
+            /**
+             * Min Pass Rate
+             * @default 1
+             */
+            min_pass_rate: number;
+            /** Run Id */
+            run_id?: string | null;
+            /** Suite Id */
+            suite_id: string;
         };
         /** GrantRequest */
         GrantRequest: {
@@ -13013,6 +13094,76 @@ export interface operations {
             };
         };
     };
+    graduate_flag_evals_flags__flag__graduate_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                flag: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GraduateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_graduations_evals_graduations_get: {
+        parameters: {
+            query?: {
+                flag?: string | null;
+                limit?: number;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_runs_evals_runs_get: {
         parameters: {
             query?: {
@@ -14591,6 +14742,38 @@ export interface operations {
                 "application/json": components["schemas"]["UpdateColumnRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_context_graph_graph_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
