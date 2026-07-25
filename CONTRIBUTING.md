@@ -31,8 +31,11 @@ cp .env.example .env          # then edit: pick an LLM backend and set its key
 
 `./start.sh` also accepts `--api-only`, `--web-only`, and `--stop`.
 
-> **Heads-up:** `start.sh` frees port 8000 before starting, which will kill any
-> unrelated process listening there.
+> **Note:** the `npm install` step above is optional — `./start.sh` (a thin alias
+> for `uv run aughor up`, the [README Quick Start](README.md#quick-start) path)
+> installs frontend deps on first run. It never kills a busy port's owner: if
+> `:8000`/`:3000` is already taken it reports who holds the port and exits, so
+> free it yourself or pick another with `--api-port` / `--web-port`.
 
 On first boot Aughor provisions a synthetic DuckDB fixture (`data/aughor.duckdb`)
 so you have something to query immediately. No real data required.
@@ -42,7 +45,7 @@ so you have something to query immediately. No real data required.
 CI runs exactly these four jobs. Run them locally before opening a PR:
 
 ```bash
-# 1. Backend tests — hermetic, no network, no LLM. ~90s.
+# 1. Backend tests — hermetic, no network, no LLM. ~3 min.
 uv run pytest -q -m "not e2e and not eval"
 
 # 2. Backend lint — the baseline is zero.

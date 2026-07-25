@@ -92,6 +92,9 @@ data/_*backup*/
 data/_stale_findings_backup_*/
 data/finding_dismissals.jsonl
 data/ontology_recommendations/
+# per-workspace ontology override plane + per-connection knowledge graph (runtime)
+data/ontology_overrides/
+data/context_graph/
 evals/spider2_out/
 evals/bakeoff_out/
 evals/spider2_afix/
