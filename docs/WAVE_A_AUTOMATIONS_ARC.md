@@ -268,10 +268,35 @@ through, the gate fails.
 present and authoritative until the flag flips. Equivalence tests assert the engine produces the
 **same alert/delivery** as the legacy path for the same input.
 
-**Flag** `automations.adopt_legacy` (default off) · **Tests** ~26 · **Decision gate:** for a corpus
+**Flag** `automations.adopt_legacy` (default off) · **Tests** 12 · **Decision gate:** for a corpus
 of existing monitors and subscriptions, engine output equals legacy output — same alert severity,
 message, and debounce behaviour — and flipping the flag off restores the legacy path with no data
 migration. If the anti-flap debounce changes behaviour, the gate fails.
+
+> ✅ **Gate met (2026-07-24), proven on the live path** — a real monitor (revenue floor: warn<5000,
+> crit<2000) against a real DuckDB warehouse (today=1200):
+>
+> | step | result |
+> |---|---|
+> | legacy `run_monitor` | `critical`: *"Revenue floor: 1200 below critical threshold 2000"* |
+> | **adopted → engine** | run `fired`, effect `executed`, **appended the same `critical` alert, byte-identical message** |
+> | adoption active → legacy job body | **stood down** (alerts 1 → 1, no double-fire) |
+> | adoption off → legacy job body | ran (debounce then suppressed the duplicate — the same anti-flap behaviour, preserved) |
+>
+> **Why equivalence is structural, not lucky:** the translation calls the *same two functions* from a
+> different loop — a `Monitor` → `schedule(check_cron)` + a `monitor` effect that replays
+> `run_monitor(…, suppress=True)` and appends its alert; a `BriefSubscription` →
+> `schedule(resolved_cron)` + the existing `brief` effect (`deliver_subscription`). The adopted
+> automations are **virtual** (computed from the monitor/brief stores, ids `monitor:<id>`/`brief:<id>`,
+> never written to the automations table); the engine's `schedule` condition reads their `last_run`
+> from the shared `automation_runs` table so each fires once per due window, exactly the legacy cadence.
+>
+> **No double-fire, by construction.** `adopt_legacy` only takes effect when `automations.engine` is
+> also on (so the heartbeat is actually there to drive the adopted objects — the flag can never stand
+> the legacy loops down with nothing to replace them). While active, the legacy monitor and brief
+> jobs stand down at **fire time** (not just at start), so a *runtime* flag flip cannot make both
+> loops run the same object — which for a brief would be a duplicate **outward send**. Flag off ⇒ the
+> legacy schedulers run exactly as before (byte-identical), no data migration.
 
 ---
 
