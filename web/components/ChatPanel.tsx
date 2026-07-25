@@ -887,7 +887,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         (investigationId). */}
                     {turn.status === "done" && turn.receiptId && (
                       <div className="flex items-center gap-1.5">
-                        <TrustReceipt connectionId={connectionId} receiptId={turn.receiptId} />
+                        <TrustReceipt connectionId={connectionId} receiptId={turn.receiptId} question={turn.question} />
                         {/* R10 — thumbs: helpful teaches the learned table prior */}
                         {thumbsDone.has(turn.receiptId) ? (
                           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
@@ -908,7 +908,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                       </div>
                     )}
                     {turn.status === "done" && turn.adaReport && turn.investigationId && (
-                      <TrustReceipt connectionId={connectionId} receiptId={turn.investigationId} kind="ada" />
+                      <TrustReceipt connectionId={connectionId} receiptId={turn.investigationId} kind="ada" question={turn.question} />
                     )}
                     {/* WP-10 — "Why this number": opens the unified signed receipt (GET /receipt/{id}). */}
                     {turn.status === "done" && turn.publicReceiptId && (

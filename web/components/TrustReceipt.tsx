@@ -21,6 +21,7 @@ import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
 import { getAnswerReceipt, type InsightReceipt, type LearningReceiptPayload } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
+import { AddToEvalSuite } from "@/components/AddToEvalSuite";
 import { costSummary } from "@/lib/cost";
 import { formatTimestamp } from "@/lib/format";
 
@@ -61,7 +62,7 @@ function Badge({ tone, title, icon, children }: { tone: keyof typeof TONE_HUE; t
   );
 }
 
-export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { connectionId: string; receiptId: string; kind?: "chat" | "ada" }) {
+export function TrustReceipt({ connectionId, receiptId, kind = "chat", question }: { connectionId: string; receiptId: string; kind?: "chat" | "ada"; question?: string }) {
   const [rec, setRec] = useState<InsightReceipt | null>(null);
   const [open, setOpen] = useState(false);
   const [tried, setTried] = useState(false);
@@ -186,6 +187,12 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
               border: "1px solid var(--b1)", fontSize: 11, fontFamily: "var(--font-code)",
               color: "var(--t2)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.5,
             }}>{sqlEdge.detail}</pre>
+          )}
+          {/* E6 — capture this exact question + executed SQL as an eval test case. */}
+          {sqlEdge?.detail && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <AddToEvalSuite connectionId={connectionId} sql={sqlEdge.detail} question={question} />
+            </div>
           )}
         </div>
         </div>
