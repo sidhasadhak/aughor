@@ -313,3 +313,98 @@ def test_dry_run_leaves_no_trace(db):
     summary = run_suite(sid, reference_target(db), persist=False)
     assert summary.run_id == "dry"
     assert store.list_runs(sid) == []
+
+
+# ── E6: the flag promotion gate ─────────────────────────────────────────────────
+
+_REG = {"demo.flag", "other.flag"}
+_CLEAN = {"run_id": "r1", "suite_id": "s1", "total": 3, "pass_rate": 1.0, "errors": 0, "flaky": 0}
+
+
+def test_graduation_unknown_flag_is_blocked():
+    from aughor.evals.promotion import evaluate_graduation
+    d = evaluate_graduation("nope.flag", _CLEAN, registered_flags=_REG)
+    assert not d.can_graduate
+    assert any("not in the flag registry" in r for r in d.reasons)
+
+
+def test_graduation_needs_a_run():
+    from aughor.evals.promotion import evaluate_graduation
+    d = evaluate_graduation("demo.flag", None, registered_flags=_REG)
+    assert not d.can_graduate
+    assert any("no run" in r for r in d.reasons)
+
+
+def test_graduation_blocked_by_errors_and_by_flaky():
+    """A graduation cannot rest on a run that errored or that was flaky — flaky is
+    E3's first-class verdict precisely so stability is not rounded away here."""
+    from aughor.evals.promotion import evaluate_graduation
+    err = evaluate_graduation("demo.flag", {**_CLEAN, "errors": 1}, registered_flags=_REG)
+    assert not err.can_graduate and any("errored" in r for r in err.reasons)
+    flaky = evaluate_graduation("demo.flag", {**_CLEAN, "flaky": 2}, registered_flags=_REG)
+    assert not flaky.can_graduate and any("flaky" in r for r in flaky.reasons)
+
+
+def test_graduation_is_judged_against_the_baseline():
+    from aughor.evals.promotion import evaluate_graduation
+    below = evaluate_graduation("demo.flag", {**_CLEAN, "pass_rate": 0.60},
+                                registered_flags=_REG, baseline_pass_rate=0.65)
+    assert not below.can_graduate and below.bar == 0.65
+    assert any("below the bar" in r for r in below.reasons)
+
+    earned = evaluate_graduation("demo.flag", {**_CLEAN, "pass_rate": 0.66},
+                                 registered_flags=_REG, baseline_pass_rate=0.65)
+    assert earned.can_graduate and earned.reasons == []
+    assert earned.pass_rate == 0.66 and earned.baseline_pass_rate == 0.65
+
+
+def test_graduation_without_a_baseline_demands_a_clean_run():
+    """With no baseline to beat, min_pass_rate (default 1.0) is the bar — a candidate
+    must be clean rather than merely non-regressive against nothing."""
+    from aughor.evals.promotion import evaluate_graduation
+    assert not evaluate_graduation("demo.flag", {**_CLEAN, "pass_rate": 0.99},
+                                   registered_flags=_REG).can_graduate
+    assert evaluate_graduation("demo.flag", _CLEAN, registered_flags=_REG).can_graduate
+
+
+def test_graduate_a_real_flag_over_http_and_receipt_it(client, db):
+    """The E6 decision gate: graduate exactly one REAL flag through the gate, and prove
+    the load-bearing property — graduation records receipted EVIDENCE and does NOT flip
+    the flag (a ledger-on/code-off override is the very drift the 2026-07-22 audit removed)."""
+    from aughor.db import registry
+    from aughor.kernel.flags import flag_state
+
+    conn_id = registry.add_connection("evals-grad", "duckdb", str(db._path))
+    sid = client.post("/evals/suites", json={
+        "name": "grad", "target": "reference", "connection_id": conn_id}).json()["id"]
+    client.post(f"/evals/suites/{sid}/cases", json={"cases": [
+        {"question": "rows", "artifact": "SELECT id, v FROM t ORDER BY id"}]})
+    client.post(f"/evals/suites/{sid}/run", json={"iterations": 3})
+
+    flag = "ada.evidence_stubs"          # a real, default-OFF flag (the E4 A/B candidate)
+    before = flag_state(flag)
+    assert before == "off"
+
+    r = client.post(f"/evals/flags/{flag}/graduate",
+                    json={"suite_id": sid, "baseline_pass_rate": 1.0})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["can_graduate"] is True and body["flag"] == flag
+    assert body["pass_rate"] == 1.0 and body["reasons"] == []
+    assert body["receipt_id"] and body["current_default"] is False
+
+    grads = client.get("/evals/graduations", params={"flag": flag}).json()["graduations"]
+    assert len(grads) == 1 and grads[0]["can_graduate"] is True
+
+    # THE anti-drift guarantee — the gate recorded evidence, it did not turn the flag on.
+    assert flag_state(flag) == before == "off"
+
+
+def test_graduate_without_a_run_reports_the_blocker_not_a_500(client):
+    sid = client.post("/evals/suites", json={"name": "empty"}).json()["id"]
+    r = client.post("/evals/flags/ada.evidence_stubs/graduate", json={"suite_id": sid})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["can_graduate"] is False
+    assert any("no run" in x for x in body["reasons"])
+    assert body["suite_id"] == sid          # pinned from the request even with no run
