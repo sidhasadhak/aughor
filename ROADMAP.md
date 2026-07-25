@@ -26,21 +26,26 @@ supersedes the sequencing sections of both studies; this §0 stays the session-l
 > and report before the next.** Commit locally and stop. This is the load-bearing rule for this repo;
 > batching multiple pushes on one "push everything" instruction caused friction on 2026-07-24.
 
-**`main` is at Wave R (`31732a5`, PR #209). Waves A→R→E4 have all landed or are landing; A5/A6 remain
-the only Wave-A tail.** Status as of the Wave E4 merge (2026-07-24):
+**`main` is at `31f697a`. Waves A, R and E are ALL COMPLETE and merged.** The 2026-07-25 session built
+A5/A6 + E5/E6 + the E4 loose ends, then landed all six PRs (#208, #211–#215). **The next build is
+Wave C** (the connection knowledge graph — scoping doc FIRST).
 
 | Wave | What | State |
 |---|---|---|
 | **A1–A4** | the automation plane · source-version probes · resolve-once inbox + standing grants | ✅ merged (#204/#206/#207) |
-| **A5** | adopt monitors/briefs onto the one engine | ⏳ **local, rebased on main** (`2026-07-24-wave-a5-adopt-legacy` → `4166f9a`) — awaiting explicit go |
-| **A6** | the Automations frontend surface (+ the css-var KIND gate & 18 pre-existing colour-token fixes) | ⏳ **local, rebased on main** (`2026-07-24-wave-a6-surface`) — awaiting explicit go |
-| **R (R1–R5)** | the transport plane made structural — reliability layer · provider plane · ADA context budget · answer-path hardening · declared parallel-safety | ✅ **merged (#209, `31732a5`)** |
-| **E4 (E4a/b/c)** | the run-scoped override plane · the J3 fidelity harness · the brittleness axis + request budget | ✅ **merged (this PR)** |
+| **A5** | adopt monitors/briefs onto the one engine (behind `automations.adopt_legacy`) | ✅ **merged (#208, `774098c`)** |
+| **A6** | the Automations frontend surface (+ a css-var KIND gate & 18 pre-existing colour-token fixes) | ✅ **merged (#211, `9f1649c`)** |
+| **R (R1–R5)** | the transport plane made structural — reliability · provider plane · ADA context budget · answer-path · declared parallel-safety | ✅ **merged (#209, `31732a5`)** |
+| **E1–E3** | session log · evaluator library · suites/runs consolidation | ✅ merged (#196 and earlier) |
+| **E4 (E4a/b/c)** | override plane · J3 fidelity harness · brittleness axis + request budget | ✅ merged (#210, `33070b4`) |
+| **E4 loose ends** | proxy-inversion audit · grids from a scheduler | ✅ **merged (#215, `31f697a`)** |
+| **E5** | the Evals surface (Suites / Runs workspace) | ✅ **merged (#212, `7f63766`)** |
+| **E6 (part 1)** | the flag promotion gate — graduate a flag on receipted evidence | ✅ **merged (#214, `8bdb8b8`)** |
+| **E6 (part 2)** | "add as test case" — a real answer → a regression case | ✅ **merged (#213, `25f096f`)** |
 
-**A5/A6 are byte-identical when their flags are off** (`automations.adopt_legacy`,
-`automations.proposals`); arc + decision gates in [`docs/WAVE_A_AUTOMATIONS_ARC.md`](docs/WAVE_A_AUTOMATIONS_ARC.md).
-**⏭️ NEXT:** land A5 then A6 (one at a time, on the user's go) → **Wave E5** (the Evals surface) → **E6**
-(add-as-test-case + promotion gate) → **C** (the connection knowledge graph — scoping doc FIRST) → V → G → S.
+**⏭️ NEXT: Wave C — the connection knowledge graph.** Write the scoping doc FIRST (the read-back
+artifact every question passes through; the open feedback-loop finding). Then V → G → S. See
+[`docs/PLATFORM_PROGRAM_2026-07-24.md`](docs/PLATFORM_PROGRAM_2026-07-24.md) for the C/V/G/S scope.
 
 ### ✅ Wave E4 is COMPLETE (E4a/b/c) — grid experiments you can trust
 
