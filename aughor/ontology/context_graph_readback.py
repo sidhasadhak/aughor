@@ -59,17 +59,19 @@ def _clip(text: str, cap: int = _TEXT_CAP) -> str:
 
 
 def build_graph_prior(
-    question: str, connection_id: str, *, org_id: str = "", top_k: int = 6
+    question: str, connection_id: str, *, org_id: str = "", top_k: int = 6,
+    max_chars: int = _SECTION_CAP,
 ) -> GraphPrior:
     """Assemble the CONNECTION GRAPH prior for a question. Empty (no section, no
     citations) when the flag is off, no graph is built for the connection, or nothing
-    matches — so a caller can inject it unconditionally at zero cost."""
+    matches — so a caller can inject it unconditionally at zero cost. ``max_chars`` is
+    the token-proportional budget the injected slice must respect (C3)."""
     _last_cited.set([])
     if not graph_readback_enabled():
         return GraphPrior()
 
     try:
-        return _build(question, connection_id, org_id or current_org_id(), top_k)
+        return _build(question, connection_id, org_id or current_org_id(), top_k, max_chars)
     except Exception as exc:
         tolerate(exc, "context-graph read-back is best-effort; the plan proceeds "
                       "without it rather than failing",
@@ -77,7 +79,8 @@ def build_graph_prior(
         return GraphPrior()
 
 
-def _build(question: str, connection_id: str, org_id: str, top_k: int) -> GraphPrior:
+def _build(question: str, connection_id: str, org_id: str, top_k: int,
+           max_chars: int = _SECTION_CAP) -> GraphPrior:
     from aughor.ontology.context_graph_search import merge_graphs, one_hop, search_graph
     from aughor.ontology.context_graph_store import load_graphs_for_connection
 
@@ -156,8 +159,8 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int) -> GraphP
         return GraphPrior()
 
     section = "\n".join(lines)
-    if len(section) > _SECTION_CAP:
-        section = section[:_SECTION_CAP].rstrip() + "\n  … (graph slice truncated to budget)"
+    if len(section) > max_chars:
+        section = section[:max_chars].rstrip() + "\n  … (graph slice truncated to budget)"
     section += "\n"
 
     # de-dup citations preserving order

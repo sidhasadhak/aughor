@@ -106,7 +106,16 @@ class ContextGraph(BaseModel):
     org_id: str
     connection_id: str
     schema_name: str = ""
+    # The DATA fingerprint — inherited from the ontology, which folds in row_count, so it
+    # moves on every reload. Kept for provenance/back-compat.
     schema_fingerprint: str = ""
+    # The STRUCTURAL fingerprint (tables + columns + types, NO row_count) — Wave C3. The
+    # split is load-bearing: a nightly data reload changes schema_fingerprint but not this,
+    # so freshness can tell "the data moved" (dirty) from "the schema changed" (stale/rebuild).
+    structural_fingerprint: str = ""
+    # Per-table structural fingerprints, so a change can be classified PARTIAL (only some
+    # tables' columns moved → re-profile those) vs FULL (tables added/removed → re-cluster).
+    table_fingerprints: dict[str, str] = Field(default_factory=dict)
     generated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -200,6 +209,13 @@ def project_graph(
         schema_name=schema_name or getattr(ontology, "schema_name", "") or "",
         schema_fingerprint=getattr(ontology, "schema_fingerprint", "") or "",
     )
+    try:  # C3: stamp the structural fingerprints so freshness can classify changes
+        from aughor.ontology.graph_freshness import structural_fingerprint, table_fingerprints
+        cg.structural_fingerprint = structural_fingerprint(ontology)
+        cg.table_fingerprints = table_fingerprints(ontology)
+    except Exception as exc:
+        tolerate(exc, "structural-fingerprint stamping is best-effort",
+                 counter="context_graph.structural_fp")
 
     _project_tables_and_domains(cg, ontology)
     _project_metrics(cg, ontology)

@@ -102,6 +102,7 @@ FLAG_ENV = {
     "automations.adopt_legacy": "AUGHOR_AUTOMATIONS_ADOPT_LEGACY",  # Wave A5: run monitors+briefs through the engine
     "graph.build": "AUGHOR_GRAPH_BUILD",  # Wave C1: project the ontology into the committed connection knowledge graph
     "graph.readback": "AUGHOR_GRAPH_READBACK",  # Wave C2: grep-the-graph-first — inject the graph slice as a plan-time prior
+    "graph.freshness": "AUGHOR_GRAPH_FRESHNESS",  # Wave C3: change-classified, token-proportional graph refresh + staleness
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -219,6 +220,10 @@ FLAG_META = {
     "graph.readback": {
         "label": "Grep-the-graph-first read-back (Wave C2)",
         "description": "Before generating SQL, match the committed connection knowledge graph against the question, pull the 1-hop subgraph, and inject it as a plan-time prior — the mechanic that finally closes the open feedback loop. The subgraph carries the two node types that were write-only before: `finding` (dossiers/exploration insights) and the `resolves` readings, so a question about a table Aughor already investigated inherits what it learned, with the join guard's measured value-domain overlap surfaced as a number (not the ✓ the prompt path otherwise collapses it to). Every injected line is cited by its node/edge id (the block the context receipt shows names exactly what grounded the plan). Ranked hybrid search: a deterministic lexical floor always runs; the Qdrant vector rank fuses in when reachable (RRF) and NEVER degrades to an unranked fallback. Appended at the one function both live answer paths inject (verify.priors.build_corrections_section), gated independently of `closed_loop`. Off by default = byte-identical (empty string, zero prompt cost). Requires a graph built by `graph.build`; no graph ⇒ no-op. Counter: context_graph.*",
+    },
+    "graph.freshness": {
+        "label": "Graph freshness — change-classified refresh + staleness (Wave C3)",
+        "description": "Keep the connection knowledge graph fresh at cost proportional to the change, and surface how stale it is. Two fingerprints are split: STRUCTURAL (tables + columns + types) and DATA (row counts, from the ontology fingerprint). The classifier reads SKIP (structure and data unchanged, or a comment-only change → no work), a data-only reload (row counts moved, structure identical → the graph is marked DIRTY but NOT rebuilt — a nightly load is not a schema change), PARTIAL (columns changed on known tables → rebuild, naming the tables), or FULL (tables added/removed → rebuild). Typed staleness states fresh|dirty|stale|unknown drive a UI banner and can gate a briefing built on a stale graph. The read-back slice honours a token-proportional budget. This freshness vocabulary is written to be lifted by Wave V (one dialect for graph, briefs, profiles, caches). Deterministic; no LLM. Off by default ⇒ refresh_context_graph is a no-op (byte-identical). A rebuild still requires `graph.build`.",
     },
     "automations.adopt_legacy": {
         "label": "Adopt monitors + briefs onto the automation engine (Wave A5)",

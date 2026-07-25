@@ -299,6 +299,33 @@ injected. An override that no-ops looks exactly like "the variant didn't help."
 
 ## PR-C3 — Freshness + token-proportional refresh
 
+> **Status: BUILT** (branch `2026-07-25-wave-c1-context-graph`, stacked on C1/C2, unpushed; 11 tests).
+> `aughor/ontology/graph_freshness.py` — the two-fingerprint split (`structural_fingerprint` /
+> `table_fingerprints` over tables+columns+types; the DATA fp is the ontology's own, which folds in
+> row_count), the `classify` change-classifier (SKIP / PARTIAL / FULL + `fresh|dirty|stale|unknown`),
+> `refresh_context_graph` (work proportional to change), and `staleness_of`. `ContextGraph` gains
+> `structural_fingerprint` + `table_fingerprints` (stamped in `project_graph`); the read-back slice
+> gained a `max_chars` token budget. Flag `graph.freshness` (default off).
+>
+> **Decision gate MET, proven live on `workspace` (18 entities) + `samples`:**
+> - a **nightly data reload** (row counts move, structure identical) → `skip / dirty`,
+>   `needs_rebuild=False` — the load-bearing case (a reload is not a schema change);
+> - a **dropped table** → `full / stale`; a **column add** → `partial` naming the table (unit);
+> - the injected slice **respects its budget** (825 chars at budget 4000; truncated to 439 at 400);
+> - `refresh` on `samples` rebuilt once (migrating the pre-C3 committed graph that had no structural
+>   fingerprint) then `skip`ped — refresh cost proportional to change.
+>
+> Two decisions carried forward:
+> - **The row_count-in-the-fingerprint trap is closed by the split, not a comment.** The ontology fp
+>   includes `row_count` by design (it invalidates its cache on reload); reusing it as *the* freshness
+>   signal would rebuild the graph every night. A separate structural fp (asserted identical across a
+>   simulated reload in the live proof) is what makes "dirty, don't rebuild" honest.
+> - **J5 seam is real, not aspirational:** the `fresh|dirty|stale|unknown` vocabulary and the
+>   SKIP/PARTIAL/FULL matrix live in one module with no graph-specific coupling, so Wave V lifts the
+>   shape rather than inventing a second dialect. Still open (honest): no live path calls
+>   `refresh_context_graph` yet — wiring it into connection birth / schema-load is the last C3 stitch
+>   (a one-line, gated call), deferred so the mechanism could be proven in isolation first.
+
 **Why.** A graph that silently lags the schema is worse than none — it grounds answers in a world that
 moved. And the read-back slice (C2) competes for the same context budget as everything else, with no
 trimmer to keep it honest.
