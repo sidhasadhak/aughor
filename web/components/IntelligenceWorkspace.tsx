@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { getCatalogTree } from "@/lib/api";
+import { getCatalogTree, getSystemFlags } from "@/lib/api";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
@@ -20,11 +20,13 @@ const IntelligenceHub  = dynamic(() => import("@/components/IntelligenceHub").th
 const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then(m => ({ default: m.OrgIntelPanel })),      { ssr: false, loading });
 const EvidencePanel    = dynamic(() => import("@/components/EvidencePanel").then(m => ({ default: m.EvidencePanel })),      { ssr: false, loading });
 const KineticPanel     = dynamic(() => import("@/components/KineticPanel").then(m => ({ default: m.KineticPanel })),       { ssr: false, loading });
+const ConnectionGraphPanel = dynamic(() => import("@/components/ConnectionGraphPanel").then(m => ({ default: m.ConnectionGraphPanel })), { ssr: false, loading });
 
 // Minimal inline icon set — mirrors NavIcon paths used elsewhere in the shell.
 const ICONS: Record<string, string> = {
   brief:   "M3 5h18M3 9h18M3 13h12M3 17h8",
   node:    "M12 4a2 2 0 100 4 2 2 0 000-4zM6 18a2 2 0 100 4 2 2 0 000-4zm12 0a2 2 0 100 4 2 2 0 000-4zM12 6v4m0 4v4M8 19h8M14 7l4 10M10 7L6 17",
+  kgraph:  "M6 5a2 2 0 100 4 2 2 0 000-4zm12 6a2 2 0 100 4 2 2 0 000-4zM6 16a2 2 0 100 4 2 2 0 000-4zM8 7l8 4M8 15l8-3",
   layers:  "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
   process: "M3 6h4v12H3V6zm7-3h4v18h-4V3zm7 6h4v9h-4V9z",
   spark:   "M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z",
@@ -40,7 +42,7 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type IntelLayer = "briefing" | "hub" | "ontology" | "evidence" | "kinetic" | "org";
+export type IntelLayer = "briefing" | "hub" | "ontology" | "graph" | "evidence" | "kinetic" | "org";
 
 const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "briefing", icon: "brief",   label: "Briefing", blurb: "Cross-domain synthesis" },
@@ -50,6 +52,11 @@ const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "kinetic",  icon: "spark",   label: "Actions",  blurb: "Declared actions & overlay edits" },
   { id: "org",      icon: "spark",   label: "Org",      blurb: "Organizational knowledge" },
 ];
+
+// Wave C4 — the connection knowledge graph layer, inserted after Ontology (which it
+// promotes). Shown only when `graph.surface` is on, so the workspace is byte-identical
+// with the flag off.
+const GRAPH_LAYER: WorkspaceLayer<IntelLayer> = { id: "graph", icon: "kgraph", label: "Graph", blurb: "Connection knowledge graph" };
 
 type Props = {
   connectionId: string;
@@ -114,6 +121,18 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
     return () => { alive = false; };
   }, [connectionId, canvasId]);
   const schema = selectedSchema ?? undefined;
+
+  // Wave C4 — reveal the Graph layer only when `graph.surface` is on (byte-identical off).
+  const [graphOn, setGraphOn] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getSystemFlags().then(f => { if (alive) setGraphOn(!!f["graph.surface"]?.value); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const layers = graphOn
+    ? LAYERS.flatMap(l => (l.id === "ontology" ? [l, GRAPH_LAYER] : [l]))
+    : LAYERS;
+
   const showConnPicker = !canvasId && !!onConnectionChange && (connections?.length ?? 0) > 1;
   const showSchema = !canvasId && schemas.length > 1;
 
@@ -163,7 +182,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
 
   return (
     <Workspace
-      layers={LAYERS}
+      layers={layers}
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Intelligence layers"
@@ -176,6 +195,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // another schema's verdict. Belt to the server-side scope_key guard's braces.
         if (id === "briefing") return <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />;
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
+        if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} />;
         if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
         if (id === "kinetic")  return <KineticPanel connectionId={connectionId} />;
