@@ -104,7 +104,7 @@ function InsightCard({ insight, onDelete }: { insight: OrgInsight; onDelete: () 
           style={{
             marginLeft: "auto",
             fontSize: 10,
-            color: deleting ? "var(--t3)" : "var(--r3)",
+            color: deleting ? "var(--t3)" : "var(--red3)",
             background: "none",
             border: "none",
             cursor: deleting ? "default" : "pointer",

@@ -39,7 +39,7 @@ const CRON_PRESETS = [
 ];
 
 const SEVERITY_COLOR: Record<string, string> = {
-  critical: "var(--r2)",
+  critical: "var(--red3)",
   warning:  "var(--chart-threshold-warn, #f59e0b)",
   info:     "var(--blue3)",
 };
@@ -243,7 +243,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
               }}
             >
               {v === "list"   ? "Monitors" :
-               v === "alerts" ? <>Alerts {unackedCount > 0 && <span style={{ marginLeft: 4, background: "var(--r2)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 10 }}>{unackedCount}</span>}</> :
+               v === "alerts" ? <>Alerts {unackedCount > 0 && <span style={{ marginLeft: 4, background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 10 }}>{unackedCount}</span>}</> :
                "Configure"}
             </Button>
           ))}
@@ -264,7 +264,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
       {/* Body */}
       <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
         {loading && <p style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</p>}
-        {error && <p style={{ color: "var(--r2)", fontSize: 13, marginBottom: 12 }}>{error}</p>}
+        {error && <p style={{ color: "var(--red3)", fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
         {/* ── Summary ── real counts across the workspace's monitors/alerts */}
         {view === "list" && !loading && monitors.length > 0 && (
@@ -379,7 +379,7 @@ function MonitorCard({
             <span style={{ fontWeight: 600, fontSize: 13, color: "var(--t1)" }}>{monitor.name}</span>
             <TypeBadge type={monitor.alert_on} />
             {unacked > 0 && (
-              <span style={{ background: "var(--r2)", color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 10 }}>
+              <span style={{ background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 10 }}>
                 {unacked} alert{unacked > 1 ? "s" : ""}
               </span>
             )}
@@ -400,7 +400,7 @@ function MonitorCard({
             Run now
           </Button>
           <Button variant="ghost" onClick={onEdit} className="h-auto p-0 font-normal" style={ghostBtn}>Edit</Button>
-          <Button variant="ghost" onClick={onDelete} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--r2)" }}>Delete</Button>
+          <Button variant="ghost" onClick={onDelete} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--red3)" }}>Delete</Button>
         </div>
       </div>
 
@@ -690,7 +690,7 @@ function MonitorForm({
       </Field>
 
       {/* Error */}
-      {error && <p style={{ color: "var(--r2)", fontSize: 12, margin: 0 }}>{error}</p>}
+      {error && <p style={{ color: "var(--red3)", fontSize: 12, margin: 0 }}>{error}</p>}
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
@@ -720,7 +720,7 @@ function TypeBadge({ type }: { type: AlertOn }) {
     anomaly:         "var(--vio3, #6366f1)",
     trend_reversal:  "var(--chart-threshold-warn, #f59e0b)",
     segment_drift:   "var(--blue2)",
-    data_freshness:  "var(--r2)",
+    data_freshness:  "var(--red3)",
     any_change:      "var(--t3)",
   };
   const labels: Record<AlertOn, string> = {

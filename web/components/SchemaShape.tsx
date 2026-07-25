@@ -66,7 +66,7 @@ function ShapeCell({ dist }: { dist: DistributionProfile | undefined }) {
 
 function NullBar({ rate }: { rate: number }) {
   const pct = Math.round(rate * 100);
-  const color = pct > 20 ? "var(--r3)" : pct > 5 ? "var(--amb3)" : "var(--grn3)";
+  const color = pct > 20 ? "var(--red3)" : pct > 5 ? "var(--amb3)" : "var(--grn3)";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <div style={{ width: 40, height: 4, background: "var(--bg-3)", borderRadius: 2 }}>

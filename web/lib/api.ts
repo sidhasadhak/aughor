@@ -2630,6 +2630,213 @@ export async function getDigest(connId: string, period: "week" | "day" = "week")
   return res.json();
 }
 
+// ── Automations (Wave A) ────────────────────────────────────────────────────────
+// The condition→effect engine (A2), its per-tick history (A1), and the resolve-once
+// proposal inbox + standing grants (A4). Every route self-gates on `automations.engine`
+// (and the inbox on `automations.proposals`) → a 404 means the plane is off.
+
+export type ConditionKind = "schedule" | "metric" | "source_change" | "entity_appears";
+export type EffectKind = "investigate" | "brief" | "notify" | "kinetic_action";
+
+export interface AutoCondition { kind: ConditionKind; config: Record<string, unknown>; }
+export interface AutoEffect { kind: EffectKind; config: Record<string, unknown>; }
+
+export interface Automation {
+  id: string;
+  conn_id: string;
+  name: string;
+  description: string;
+  conditions: AutoCondition[];
+  condition_logic: "all" | "any";
+  effects: AutoEffect[];
+  fallback_effect: AutoEffect | null;
+  enabled: boolean;
+  paused_until: string | null;
+  expires_at: string | null;
+  max_retries: number;
+  retry_backoff_seconds: number;
+  created_at: string;
+  updated_at: string;
+  last_run_at: string | null;
+  last_status: string | null;
+}
+
+export interface EffectOutcome {
+  kind: string;
+  target: string;
+  status: string;      // executed | failed | skipped | criterion_failed | approval_required | invalid_params | dispatch_error
+  message: string;
+  attempts: number;
+}
+
+export interface AutomationRun {
+  id: string;
+  automation_id: string;
+  automation_name: string;
+  conn_id: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number;
+  outcome: "fired" | "not_fired" | "gated" | "error";
+  reason: string;
+  conditions_fired: string[];
+  effects: EffectOutcome[];
+  fallback_used: boolean;
+  error: string;
+}
+
+export type NewAutomation = {
+  conn_id: string;
+  name: string;
+  description?: string;
+  conditions: AutoCondition[];
+  condition_logic?: "all" | "any";
+  effects: AutoEffect[];
+  fallback_effect?: AutoEffect | null;
+  enabled?: boolean;
+  paused_until?: string | null;
+  expires_at?: string | null;
+  max_retries?: number;
+  retry_backoff_seconds?: number;
+};
+
+/** List automations. Returns [] when the plane is off (404) so a caller can render the
+ *  "not enabled" empty state instead of throwing. */
+export async function getAutomations(connId?: string): Promise<Automation[]> {
+  const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
+  const res = await fetch(`${BASE}/automations${qs}`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error("Failed to fetch automations");
+  return (await res.json()).automations;
+}
+
+export async function createAutomation(data: NewAutomation): Promise<Automation> {
+  const res = await fetch(`${BASE}/automations`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ? "Invalid automation" : "Failed to create automation");
+  return res.json();
+}
+
+export async function updateAutomation(id: string, data: NewAutomation): Promise<Automation> {
+  const res = await fetch(`${BASE}/automations/${id}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update automation");
+  return res.json();
+}
+
+export async function deleteAutomation(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/automations/${id}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to delete automation");
+}
+
+export async function setAutomationEnabled(id: string, enabled: boolean): Promise<Automation> {
+  const res = await fetch(`${BASE}/automations/${id}/enabled?enabled=${enabled}`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to toggle automation");
+  return res.json();
+}
+
+export async function pauseAutomation(id: string, until: string | null): Promise<Automation> {
+  const res = await fetch(`${BASE}/automations/${id}/pause`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ until }),
+  });
+  if (!res.ok) throw new Error("Failed to pause automation");
+  return res.json();
+}
+
+/** Run an automation now — through the same gates the heartbeat uses, so a gated automation
+ *  returns the REASON it did nothing rather than silence. */
+export async function runAutomation(id: string): Promise<AutomationRun> {
+  const res = await fetch(`${BASE}/automations/${id}/run`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to run automation");
+  return res.json();
+}
+
+export async function getAutomationRuns(id: string, limit = 50): Promise<AutomationRun[]> {
+  const res = await fetch(`${BASE}/automations/${id}/runs?limit=${limit}`);
+  if (!res.ok) throw new Error("Failed to fetch runs");
+  return (await res.json()).runs;
+}
+
+// ── Proposal inbox + standing grants (Wave A4) ───────────────────────────────────
+
+export interface StagedProposal {
+  id: string;
+  connection_id: string;
+  schema_name: string;
+  action_id: string;
+  params: Record<string, unknown>;
+  reasoning: string;
+  proposer: string;
+  source: string;
+  status: "pending" | "accepted" | "rejected" | "executed" | "failed" | "approval_required";
+  status_message: string;
+  outcome: Record<string, unknown>;
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string;
+}
+
+export interface StandingGrant {
+  id: string;
+  connection_id: string;
+  action_id: string;
+  target_arg: string;
+  target_value: string;
+  owner_kind: string;
+  owner_id: string;
+  created_by: string;
+  created_at: string;
+  use_count: number;
+  last_used_at: string | null;
+}
+
+/** Staged proposals for a connection. [] when the inbox is off (404). */
+export async function getProposals(connId: string, status?: string): Promise<StagedProposal[]> {
+  const qs = new URLSearchParams({ connection_id: connId });
+  if (status) qs.set("status", status);
+  const res = await fetch(`${BASE}/kinetic-actions/inbox?${qs}`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error("Failed to fetch proposals");
+  return (await res.json()).proposals;
+}
+
+export type AcceptResult = { status: string; action_id: string; outcome: Record<string, unknown>; granted_by: string; minted_grant: string };
+
+/** Accept a proposal → executes it exactly once (the accept is the approval). `mintGrant`
+ *  also mints a target-bound standing grant for future unattended runs. Returns the outcome;
+ *  a 409 (already resolved) or 422 (criterion failed) surfaces as a thrown Error with the body. */
+export async function acceptProposal(id: string, actor: string, mintGrant = false): Promise<AcceptResult> {
+  const res = await fetch(`${BASE}/kinetic-actions/inbox/${id}/accept`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actor, mint_grant: mintGrant }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.detail?.message || body?.detail || `accept failed (${res.status})`);
+  return body;
+}
+
+export async function rejectProposal(id: string, actor: string): Promise<boolean> {
+  const res = await fetch(`${BASE}/kinetic-actions/inbox/${id}/reject`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actor }),
+  });
+  if (!res.ok) throw new Error("Failed to reject proposal");
+  return (await res.json()).rejected;
+}
+
+export async function getGrants(connId: string): Promise<StandingGrant[]> {
+  const res = await fetch(`${BASE}/kinetic-actions/grants?connection_id=${encodeURIComponent(connId)}`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error("Failed to fetch grants");
+  return (await res.json()).grants;
+}
+
+export async function revokeGrant(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/kinetic-actions/grants/${id}/revoke`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to revoke grant");
+}
+
 // ── Action Hub triggers + finding share ─────────────────────────────────────────
 
 export interface ActionTrigger {

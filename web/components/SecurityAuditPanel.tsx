@@ -171,11 +171,11 @@ function StatCard({
       flex: 1,
       minWidth: 100,
       background: "var(--bg-1)",
-      border: `1px solid ${warn ? "var(--r2, #f87171)" : "var(--bg-3)"}`,
+      border: `1px solid ${warn ? "var(--red3)" : "var(--bg-3)"}`,
       borderRadius: 6,
       padding: "10px 14px",
     }}>
-      <div style={{ fontSize: 20, fontWeight: 700, color: warn ? "var(--r2, #f87171)" : accent, lineHeight: 1 }}>
+      <div style={{ fontSize: 20, fontWeight: 700, color: warn ? "var(--red3)" : accent, lineHeight: 1 }}>
         {value}
       </div>
       <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>{label}</div>
@@ -320,7 +320,7 @@ function ErrorCell({ error }: { error: string }) {
         style={{
           background: "none",
           border: "none",
-          color: "var(--r2, #f87171)",
+          color: "var(--red3)",
           cursor: "pointer",
           fontSize: 11,
           textAlign: "left",
@@ -339,7 +339,7 @@ function ErrorCell({ error }: { error: string }) {
           borderRadius: 4,
           padding: "8px 10px",
           fontSize: 11,
-          color: "var(--r2, #f87171)",
+          color: "var(--red3)",
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
           maxHeight: 220,
@@ -455,7 +455,7 @@ function ActionApprovalsSection() {
       </div>
 
       {revokeError && (
-        <div style={{ fontSize: 11, color: "var(--r2, #f87171)", marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--red3)", marginBottom: 8 }}>
           Revoke failed: {revokeError}
         </div>
       )}
@@ -671,10 +671,10 @@ export function SecurityAuditPanel({
           <div style={{
             padding: "10px 14px",
             background: "rgba(248,113,113,0.08)",
-            border: "1px solid var(--r2, #f87171)",
+            border: "1px solid var(--red3)",
             borderRadius: 6,
             fontSize: 12,
-            color: "var(--r2, #f87171)",
+            color: "var(--red3)",
           }}>
             {error}
           </div>
@@ -684,9 +684,9 @@ export function SecurityAuditPanel({
         {stats && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <StatCard label="Total queries"   value={stats.total ?? 0}                                         accent="var(--blue3)" />
-            <StatCard label="Blocked"         value={stats.blocked ?? 0}     warn={(stats.blocked ?? 0) > 0}  accent="var(--r2, #f87171)" />
+            <StatCard label="Blocked"         value={stats.blocked ?? 0}     warn={(stats.blocked ?? 0) > 0}  accent="var(--red3)" />
             <StatCard label="Suspicious"      value={stats.suspicious ?? 0}                                    accent="var(--amb3, #f59e0b)" />
-            <StatCard label="Errors"          value={stats.errors ?? 0}                                        accent="var(--r2, #f87171)" />
+            <StatCard label="Errors"          value={stats.errors ?? 0}                                        accent="var(--red3)" />
             <StatCard label="PII redactions"  value={stats.pii_redacted ?? 0}                                  accent="var(--amb3, #f59e0b)" />
             <StatCard label="Avg duration"    value={stats.avg_duration_ms != null ? `${Math.round(stats.avg_duration_ms)}ms` : "—"} accent="var(--t2)" />
           </div>
@@ -832,7 +832,7 @@ export function SecurityAuditPanel({
                     <td style={{ padding: "8px 12px", color: rec.pii_redacted > 0 ? "var(--amb3, #f59e0b)" : "var(--t3)", textAlign: "center" }}>
                       {rec.pii_redacted > 0 ? rec.pii_redacted : "—"}
                     </td>
-                    <td style={{ padding: "8px 12px", color: "var(--r2, #f87171)", maxWidth: 260 }}>
+                    <td style={{ padding: "8px 12px", color: "var(--red3)", maxWidth: 260 }}>
                       {rec.error ? <ErrorCell error={rec.error} /> : "—"}
                     </td>
                   </tr>
