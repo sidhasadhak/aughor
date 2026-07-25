@@ -104,6 +104,7 @@ FLAG_ENV = {
     "graph.readback": "AUGHOR_GRAPH_READBACK",  # Wave C2: grep-the-graph-first — inject the graph slice as a plan-time prior
     "graph.freshness": "AUGHOR_GRAPH_FRESHNESS",  # Wave C3: change-classified, token-proportional graph refresh + staleness
     "graph.surface": "AUGHOR_GRAPH_SURFACE",  # Wave C4: serve + render the connection knowledge graph (anti-hairball surface)
+    "graph.tour": "AUGHOR_GRAPH_TOUR",  # Wave C5: the deterministic, LLM-narrated connection tour (a curriculum from topology)
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -229,6 +230,10 @@ FLAG_META = {
     "graph.surface": {
         "label": "Connection knowledge graph surface (Wave C4)",
         "description": "Serve and render the connection knowledge graph as a three-level, anti-hairball surface: domain cluster cards with aggregated cross-domain join counts (level 1) → the tables inside a domain, with their verified joins (level 2) → a table detail panel showing columns, the measured value-domain overlap on each join, the glossary terms, and the PAST FINDINGS that touch the table (level 3 — the dossier system makes those $0). Aggregation at every zoom level makes the hairball structurally impossible rather than stylistically discouraged. Exposes GET /graph (the graph JSON: nodes + edges + provenance) and a Knowledge Graph panel. Off by default ⇒ the route 404s and the panel is hidden (byte-identical). Requires a graph built by `graph.build`; the endpoint builds on demand when that flag is on. This is the J6 seam — an entity page is this surface's table-detail view.",
+    },
+    "graph.tour": {
+        "label": "Connection tour — a curriculum from graph topology (Wave C5)",
+        "description": "A guided tour of a connection, ordered by TOPOLOGY not notability, so it teaches rather than lists. The reading order is computed deterministically from the graph: the highest-join-degree table is the entry (the hub every other table reaches), a breadth-first walk introduces each table right after one it joins to, standalone tables follow the connected core, and the governed metrics come last as the capstone (each tied to the table it derives from). Every step after the first names the prior step it builds on. The LLM only narrates the connective tissue over that already-fixed sequence — a single narrow emission, never the ordering. Exposes GET /graph/tour. Off by default ⇒ the route 404s (byte-identical). Turns the ephemeral 7-lens interesting-facts listicle into an ordered curriculum.",
     },
     "automations.adopt_legacy": {
         "label": "Adopt monitors + briefs onto the automation engine (Wave A5)",

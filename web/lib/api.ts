@@ -1096,6 +1096,37 @@ export async function getConnectionGraph(connectionId: string, schemaName?: stri
   return res.json();
 }
 
+// ── The connection tour (Wave C5 — GET /graph/tour) ───────────────────────────
+
+export interface TourStep {
+  order: number;
+  node_id: string;
+  kind: string;                 // "table" | "metric"
+  label: string;
+  connects_to: string | null;
+  connects_to_label: string;
+  connection: string;           // deterministic reason ("joins Order Line", …)
+  why: string;                  // deterministic significance
+  narration: string;            // LLM connective narration (may be empty)
+}
+export interface ConnectionTour {
+  connection_id: string;
+  schema_name: string;
+  generated_at: string;
+  narrated: boolean;
+  steps: TourStep[];
+}
+
+/** The topology-ordered connection tour (Wave C5). 404 when `graph.tour` is off. */
+export async function getConnectionTour(connectionId: string, schemaName?: string): Promise<ConnectionTour> {
+  const base = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${BASE}/graph/tour?${base}`);
+  if (!res.ok) throw new Error("Connection tour not available");
+  return res.json();
+}
+
 // ── Duplicate-entity detection + merge (Borrow 5) ─────────────────────────────
 
 export interface DuplicateEntityRef { id: string; display_name: string; source_tables: string[] }

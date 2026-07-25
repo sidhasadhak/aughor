@@ -419,6 +419,31 @@ finding sourced from a dossier node. No screenshots of stubbed data.
 
 ## PR-C5 — The connection tour
 
+> **Status: BUILT** (branch `2026-07-25-wave-c1-context-graph`, stacked; unpushed; 9 backend tests +
+> all 7 web gates green). Backend: `aughor/ontology/graph_tour.py` — the deterministic reading order
+> (`build_tour`) + an optional single-emission LLM narration (`narrate_tour`); `GET /graph/tour`
+> (`narrate=false` default). Flag `graph.tour`. Frontend: an Explore/Tour toggle on the graph surface
+> rendering the numbered curriculum (`getConnectionTour` + a `TourView`).
+>
+> **Decision gate MET, proven live (backend) on the real `workspace` connection:** the order is a
+> curriculum, not a listicle — **Order Line** (the highest-join-degree hub) is the entry, its 4
+> join-neighbours (Marketing Attribution, Payment, Return, Shipment) follow by BFS, the standalone
+> tables form an appendix, and the **`aov` + `revenue` metrics are the capstone** (tied to the table
+> they derive from). Every step after the first names the prior step it builds on; the order is BFS
+> topology, never notability.
+>
+> **A real defect the live proof caught:** the 15-step cap truncated the metrics for a wide connection
+> (18 tables + 10 standalone crowded the capstone out), so "metrics = capstone" passed only vacuously.
+> Fixed by reserving room for the whole capstone BEFORE filling table slots — the low-value standalone
+> tables (no joins) truncate first.
+>
+> **Honest verification caveat:** the frontend Tour code compiles clean (`next build` ×3 with all
+> caches cleared, `tsc`, all 4 lints) and a fresh browser tab showed zero console errors, but a live
+> *screenshot* of the rendered Tour view wasn't captured this session — a Turbopack dev-cache /
+> stale-console-buffer gremlin plus an intermittently-hanging `/system/flags` (the SSE-contended
+> flag read that gates the layer's visibility) ate the browser verification. The C4 surface it sits on
+> was already verified live; the backend tour is fully live-proven above.
+
 **Why.** "Teach > impress." The 7-lens interesting-facts TOUR (`aughor/overview`, #154/#157) already
 generates the *content* — but it is ephemeral compute (built per ask, `investigations.py:3509`, never
 stored) and it is a **listicle**, not a curriculum. The graph turns it into an ordered reading path.

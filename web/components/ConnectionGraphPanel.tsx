@@ -2,9 +2,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ConnectionGraph,
+  ConnectionTour,
   CGNode,
   CGStaleness,
   getConnectionGraph,
+  getConnectionTour,
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
@@ -37,10 +39,17 @@ export function ConnectionGraphPanel({ connectionId, schema }: { connectionId: s
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>({ level: "domains" });
+  // Wave C5 — the topology-ordered tour, lazily fetched on first open.
+  const [tour, setTour] = useState<ConnectionTour | null>(null);
+  const [tourError, setTourError] = useState<string | null>(null);
+  const [showTour, setShowTour] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
+    setTour(null);
+    setTourError(null);
+    setShowTour(false);
     getConnectionGraph(connectionId, schema)
       .then((g) => { setGraph(g); setView({ level: "domains" }); })
       .catch((e) => setError(e?.message || "Failed to load the knowledge graph"))
@@ -48,6 +57,15 @@ export function ConnectionGraphPanel({ connectionId, schema }: { connectionId: s
   }, [connectionId, schema]);
 
   useEffect(() => { load(); }, [load]);
+
+  const openTour = useCallback(() => {
+    setShowTour(true);
+    if (!tour && !tourError) {
+      getConnectionTour(connectionId, schema)
+        .then(setTour)
+        .catch((e) => setTourError(e?.message || "Tour unavailable"));
+    }
+  }, [connectionId, schema, tour, tourError]);
 
   // ── derived accessors ──────────────────────────────────────────────────────
   const nodesArr = graph ? Object.values(graph.nodes) : [];
@@ -95,6 +113,10 @@ export function ConnectionGraphPanel({ connectionId, schema }: { connectionId: s
           </StatusChip>
         )}
         <div style={{ flex: 1 }} />
+        <Button variant="ghost" onClick={() => setShowTour(false)}
+                style={{ fontSize: 12, color: showTour ? "var(--t3)" : "var(--t1)" }}>Explore</Button>
+        <Button variant="ghost" onClick={openTour}
+                style={{ fontSize: 12, color: showTour ? "var(--t1)" : "var(--t3)" }}>Tour</Button>
         <Button variant="ghost" onClick={load} style={{ color: "var(--t3)", fontSize: 12 }}>↻ Refresh</Button>
       </div>
 
@@ -102,7 +124,9 @@ export function ConnectionGraphPanel({ connectionId, schema }: { connectionId: s
         {loading && <p style={{ color: "var(--t3)", fontSize: 13 }}>Loading the connection knowledge graph…</p>}
         {error && <p style={{ color: "var(--red3)", fontSize: 13 }}>{error}</p>}
 
-        {!loading && !error && graph && (
+        {!loading && !error && graph && (showTour ? (
+          <TourView tour={tour} error={tourError} />
+        ) : (
           <>
             <MiniStatRow>
               <MiniStat value={formatCount(graph.counts.table || 0)} label="Tables" />
@@ -233,8 +257,39 @@ export function ConnectionGraphPanel({ connectionId, schema }: { connectionId: s
               );
             })()}
           </>
-        )}
+        ))}
       </div>
+    </div>
+  );
+}
+
+// Wave C5 — the topology-ordered tour: a numbered curriculum where every step names the
+// prior step it builds on (the `connects_to_label`), with the deterministic significance
+// and the LLM narration when present.
+function TourView({ tour, error }: { tour: ConnectionTour | null; error: string | null }) {
+  if (error) return <p style={{ color: "var(--t3)", fontSize: 13 }}>{error}</p>;
+  if (!tour) return <p style={{ color: "var(--t3)", fontSize: 13 }}>Building the tour…</p>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 720 }}>
+      <p style={{ color: "var(--t3)", fontSize: 12, marginBottom: 4 }}>
+        A reading order computed from the graph — the hub first, then a breadth-first walk, then the
+        metrics as the capstone. Each step builds on the one before it.
+      </p>
+      {tour.steps.map((s) => (
+        <div key={s.node_id} style={{ display: "flex", gap: 12, background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "12px 16px" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--t3)", minWidth: 22, fontVariantNumeric: "tabular-nums" }}>{s.order + 1}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{s.label}</span>
+              <StatusChip hue={s.kind === "metric" ? "accent" : "info"} strength="soft">{s.kind}</StatusChip>
+              {s.connects_to_label && (
+                <span style={{ fontSize: 11, color: "var(--t3)" }}>↳ builds on {s.connects_to_label} · {s.connection}</span>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--t2)", marginTop: 4 }}>{s.narration || s.why}</div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

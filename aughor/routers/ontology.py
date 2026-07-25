@@ -252,6 +252,42 @@ def get_context_graph(
     return payload
 
 
+def _load_graph_or_404(connection_id: str, schema_name: Optional[str]):
+    from aughor.ontology.context_graph_search import merge_graphs
+    from aughor.ontology.context_graph_store import load_graphs_for_connection
+    from aughor.org.context import current_org_id
+    org = current_org_id()
+    cg = merge_graphs(load_graphs_for_connection(org, connection_id))
+    if cg is None:
+        from aughor.ontology.context_graph_build import build_context_graph
+        cg = build_context_graph(connection_id, schema_name, org_id=org)
+    if cg is None:
+        raise HTTPException(status_code=404,
+                            detail="No knowledge graph for this connection (build it first)")
+    return cg
+
+
+@router.get("/graph/tour")
+def get_context_graph_tour(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    narrate: bool = Query(default=False),
+):
+    """Wave C5 — the connection tour: a reading order computed from graph TOPOLOGY (hub entry →
+    BFS → metrics capstone), a curriculum rather than a listicle. Deterministic by default;
+    ``narrate=true`` adds a one-time LLM narration over the already-fixed order. 404 when
+    ``graph.tour`` is off (byte-identical)."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("graph.tour"):
+        raise HTTPException(status_code=404, detail="graph.tour disabled")
+    cg = _load_graph_or_404(connection_id, schema_name)
+    from aughor.ontology.graph_tour import build_tour, narrate_tour
+    tour = build_tour(cg)
+    if narrate:
+        tour = narrate_tour(tour)
+    return tour.model_dump()
+
+
 @router.get("/ontology/entities")
 def get_ontology_entities(
     connection_id: str = BUILTIN_ID,

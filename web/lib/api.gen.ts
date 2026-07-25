@@ -3102,6 +3102,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/graph/tour": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Context Graph Tour
+         * @description Wave C5 — the connection tour: a reading order computed from graph TOPOLOGY (hub entry →
+         *     BFS → metrics capstone), a curriculum rather than a listicle. Deterministic by default;
+         *     ``narrate=true`` adds a one-time LLM narration over the already-fixed order. 404 when
+         *     ``graph.tour`` is off (byte-identical).
+         */
+        get: operations["get_context_graph_tour_graph_tour_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -14768,6 +14791,39 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_context_graph_tour_graph_tour_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+                narrate?: boolean;
             };
             header?: never;
             path?: never;
