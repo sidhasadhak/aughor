@@ -241,6 +241,7 @@ class FidelityReport:
     composite: dict = field(default_factory=dict)    # label → float
     fixture: dict = field(default_factory=dict)      # provenance stamps
     warnings: list = field(default_factory=list)
+    demoted: list = field(default_factory=list)      # axes kept OUT of the composite (proxy-inversion audit)
 
     @property
     def attributable(self) -> bool:
@@ -252,6 +253,8 @@ class FidelityReport:
         lines = [f"fixture: {self.fixture or '(unstamped)'}"]
         for w in self.warnings:
             lines.append(f"⚠️  {w}")
+        if self.demoted:
+            lines.append(f"⤵ demoted from the composite (proxy-inversion audit): {', '.join(self.demoted)}")
         for axis, floor in self.floors.items():
             mark = "✓" if floor.verified else "✗"
             lines.append(f"{mark} floor[{axis}]: {floor.reason}")
@@ -271,21 +274,31 @@ class FidelityReport:
             "composite": {k: round(v, 4) for k, v in self.composite.items()},
             "fixture": self.fixture,
             "warnings": self.warnings,
+            "demoted": self.demoted,
             "attributable": self.attributable,
         }
 
 
 def assess(cells: dict, *, baseline: str, axes: Iterable[str] = DEFAULT_AXES,
            threshold: float = DEFAULT_FLOOR_THRESHOLD,
-           fixture: Optional[dict] = None) -> FidelityReport:
+           fixture: Optional[dict] = None,
+           demote: Iterable[str] = ()) -> FidelityReport:
     """Turn a grid's replicated runs into a report that knows what it may claim.
 
     ``cells`` maps a label to that cell's list of replicate summaries. ``baseline`` names
     the cell every other cell is compared against, and whose self-disagreement sets the
     floor for every axis.
+
+    ``demote`` names axes to keep OUT of the composite (default none → byte-identical). It is
+    the proxy-inversion audit's lever (:mod:`aughor.evals.proxy_audit`): an axis that can
+    improve while the end-task metric worsens must not inflate a single score, so a caller
+    passes ``audit_inversion(runs).demoted_axes()`` here. The demoted axes are still measured
+    and their deltas still reported — a reader sees the proxy — they just don't feed the
+    composite, which stays anchored on the end task.
     """
-    report = FidelityReport(fixture=dict(fixture or {}))
+    report = FidelityReport(fixture=dict(fixture or {}), demoted=[a for a in demote])
     axes = tuple(axes)
+    demote = set(demote)
 
     if baseline not in cells:
         report.warnings.append(
@@ -296,7 +309,7 @@ def assess(cells: dict, *, baseline: str, axes: Iterable[str] = DEFAULT_AXES,
     for label, runs in cells.items():
         report.axes[label] = {name: axis_of(runs, name) for name in axes}
         measured = {name: report.axes[label][name].mean
-                    for name in axes if report.axes[label][name].n}
+                    for name in axes if report.axes[label][name].n and name not in demote}
         report.composite[label] = harmonic_composite(measured)
 
     for name in axes:

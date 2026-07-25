@@ -364,6 +364,79 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
     return results
 
 
+async def schedule_experiment(
+    suite_id: str, target_factory: Callable[[], "Target"], cells: list, *,
+    iterations: int = 1, replicates: int = 1,
+    evaluators: Optional[list[str]] = None, checker: Optional["Checker"] = None,
+    persist: bool = True, fixture: Any = None, fixture_tables: Optional[list[str]] = None,
+    connection_id: str = "", allow_exploration: bool = False,
+    perturbations: Optional[Any] = None, request_budget: int = 0,
+    requests_per_case: int = 1, org_id: Optional[str] = None,
+) -> str:
+    """Run a grid as a SUPERVISED BACKGROUND JOB instead of inline in the caller.
+
+    ``run_experiment`` blocks its caller for the whole grid — fine from a script, wrong from a
+    request handler or a scheduler tick, where a multi-cell × multi-replicate run would hold the
+    call open for minutes. This submits the grid to the job kernel: it runs off the event loop
+    (the cells stay serial — the LLM concurrency semaphore is a rate limiter, not a bottleneck to
+    parallelise around, see the E4c note), emits ``job.state`` so its progress is followable, and
+    is heartbeat-supervised and cancellable like any other job.
+
+    **The budget guard is the precondition, checked HERE — before a job row exists.** A grid
+    estimated over its allowance is refused synchronously at schedule time, so the caller never
+    receives a job id for a run doomed to fail asymmetrically halfway through (``run_experiment``
+    re-checks it inside the job too; this is defence in depth, not a substitute). ``assert_measurable``
+    runs up front for the same reason: reject an unmeasurable grid before enqueue, not after.
+
+    Returns the job id. Grid results land in the eval store per cell (``persist``); assemble the
+    :class:`CellResult` view for the ``FidelityReport`` from those runs by suite/run id.
+    """
+    import asyncio
+
+    from aughor.evals.experiments import (
+        assert_measurable, assert_within_budget, estimate_requests,
+    )
+    from aughor.kernel.flags import flag_enabled
+    from aughor.kernel.jobs import kernel
+
+    if not flag_enabled("evals.experiments"):
+        raise RuntimeError(
+            "grid experiments are off — enable the `evals.experiments` flag "
+            "(AUGHOR_EVALS_EXPERIMENTS=1) before scheduling one.")
+
+    # Preconditions BEFORE the job is created: an ineligible grid must fail at the call that
+    # schedules it, not silently as a job that transitions straight to FAILED.
+    assert_measurable()
+    if request_budget:
+        assert_within_budget(
+            estimate_requests(cells=len(cells), cases=len(store.list_cases(suite_id)),
+                              replicates=replicates, iterations=iterations,
+                              perturbations=len(perturbations or ()),
+                              requests_per_case=requests_per_case),
+            budget=request_budget)
+
+    def _work() -> list:
+        # run_experiment re-runs the full guard battery (measurable · frozen semantics · budget)
+        # inside the job — the schedule-time checks above are the early, synchronous copy.
+        return run_experiment(
+            suite_id, target_factory, cells, iterations=iterations, replicates=replicates,
+            evaluators=evaluators, checker=checker, persist=persist, fixture=fixture,
+            fixture_tables=fixture_tables, connection_id=connection_id,
+            allow_exploration=allow_exploration, perturbations=perturbations,
+            request_budget=request_budget, requests_per_case=requests_per_case)
+
+    return await kernel().submit(
+        "eval_experiment",
+        lambda: asyncio.to_thread(_work),
+        conn_id=connection_id or None,
+        org_id=org_id,
+        idempotency_key=f"eval_experiment:{suite_id}:{len(cells)}x{max(1, replicates)}",
+        payload={"suite_id": suite_id, "cells": [getattr(c, "label", str(c)) for c in cells],
+                 "replicates": replicates, "iterations": iterations,
+                 "request_budget": request_budget},
+    )
+
+
 def _eval_case(case_row: dict) -> EvalCase:
     """A stored row as the EvalCase a target consumes.
 

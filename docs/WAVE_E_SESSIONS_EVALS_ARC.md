@@ -383,9 +383,12 @@ The real constraint on an N×K grid is the request *budget*, not slot contention
 `assert_within_budget` addresses. Cells stay serial. Revisit only with a paid tier, and then
 measure the RPM ceiling first rather than assuming the semaphore is the limit.
 
-**Still open:** the one-time proxy-inversion audit of existing metrics, and running grids from
-a scheduler rather than a caller (the budget guard is the precondition for that, not a
-substitute).
+**✅ DONE (2026-07-25):** the one-time **proxy-inversion audit** of existing metrics
+(`aughor/evals/proxy_audit.py` + `fidelity.assess(demote=…)` + `docs/EVALS_PROXY_INVERSION_AUDIT.md`
+— classify `accuracy` as ground truth, `pass_rate`/`robustness` as proxies; demote a proxy caught
+improving while `accuracy` worsens, so a proxy-only win cannot inflate the composite), and
+**running grids from a scheduler** (`runner.schedule_experiment` — submits the grid to the job
+kernel with `assert_within_budget` checked at schedule time, before a job row exists).
 
 ### ⚠️ Found while building E4b: the test suite was spending the LLM budget
 
