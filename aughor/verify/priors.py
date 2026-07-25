@@ -182,27 +182,49 @@ def build_priors_section(question: str, connection_id: str, **kwargs) -> str:
 
 def build_corrections_section(question: str, connection_id: str, max_corrections: int = 3,
                               *, org_id: str = "") -> str:
-    """Resolved-ambiguity + past-correction prompt text — the non-trusted priors. This is the
-    piece the LIVE answer paths inject (the chat/direct SQL path and the plan node), which ALREADY
-    inject verified query patterns separately, so this deliberately OMITS the trusted block to
-    avoid double-injecting it. The Ambiguity-Ledger resolution leads (an explicit settled reading
-    beats a past-mistake note); a verdict already crystallized into the ledger is deduped out of
-    the corrections block. Empty when the flag is off or nothing matches (zero-cost, no change)."""
-    if not closed_loop_enabled():
-        return ""
-    resolutions: list = []
-    corrections: list[dict] = []
-    try:
-        resolutions = _match_resolutions(question, connection_id, org_id, 2)
-    except Exception as exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "ambiguity-ledger retrieval is best-effort", counter="priors.resolutions")
-    try:
-        corrections = _match_corrections(question, connection_id, max_corrections)
-    except Exception as exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "verdict-correction retrieval is best-effort", counter="priors.corrections")
-    resolutions = _dedup_resolutions_covered_by_corrections(resolutions, corrections)
-    from aughor.semantic.ambiguity_ledger import build_resolution_block
-    parts = [p for p in (build_resolution_block(resolutions), _build_corrections_block(corrections)) if p]
+    """Resolved-ambiguity + past-correction prompt text — the non-trusted priors — PLUS the
+    Wave-C connection-graph read-back. This is the piece the LIVE answer paths inject (the
+    chat/direct SQL path and the plan node), which ALREADY inject verified query patterns
+    separately, so this deliberately OMITS the trusted block to avoid double-injecting it. The
+    Ambiguity-Ledger resolution leads (an explicit settled reading beats a past-mistake note); a
+    verdict already crystallized into the ledger is deduped out of the corrections block. The
+    connection-graph slice is appended last and is gated INDEPENDENTLY (``graph.readback``), so it
+    reads back even when ``closed_loop`` is off. Empty when both flags are off or nothing matches
+    (zero-cost, byte-identical)."""
+    parts: list[str] = []
+    if closed_loop_enabled():
+        resolutions: list = []
+        corrections: list[dict] = []
+        try:
+            resolutions = _match_resolutions(question, connection_id, org_id, 2)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "ambiguity-ledger retrieval is best-effort", counter="priors.resolutions")
+        try:
+            corrections = _match_corrections(question, connection_id, max_corrections)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "verdict-correction retrieval is best-effort", counter="priors.corrections")
+        resolutions = _dedup_resolutions_covered_by_corrections(resolutions, corrections)
+        from aughor.semantic.ambiguity_ledger import build_resolution_block
+        parts += [p for p in (build_resolution_block(resolutions),
+                              _build_corrections_block(corrections)) if p]
+
+    graph_section = _graph_prior_section(question, connection_id, org_id)
+    if graph_section:
+        parts.append(graph_section)
+
     return ("\n".join(parts) + "\n") if parts else ""
+
+
+def _graph_prior_section(question: str, connection_id: str, org_id: str) -> str:
+    """The Wave-C connection-graph read-back (grep-the-graph-first), gated by
+    ``graph.readback``. Lazily imported so ``verify.priors`` carries no ontology import
+    cost when the flag is off. Best-effort inside the readback itself."""
+    try:
+        from aughor.ontology.context_graph_readback import build_graph_prior_section
+        return build_graph_prior_section(question, connection_id, org_id=org_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "connection-graph read-back is best-effort", counter="priors.graph")
+        return ""

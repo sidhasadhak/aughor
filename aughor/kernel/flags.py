@@ -101,6 +101,7 @@ FLAG_ENV = {
     "automations.proposals": "AUGHOR_AUTOMATIONS_PROPOSALS",  # Wave A4: resolve-once proposal inbox + standing grants
     "automations.adopt_legacy": "AUGHOR_AUTOMATIONS_ADOPT_LEGACY",  # Wave A5: run monitors+briefs through the engine
     "graph.build": "AUGHOR_GRAPH_BUILD",  # Wave C1: project the ontology into the committed connection knowledge graph
+    "graph.readback": "AUGHOR_GRAPH_READBACK",  # Wave C2: grep-the-graph-first — inject the graph slice as a plan-time prior
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -214,6 +215,10 @@ FLAG_META = {
     "graph.build": {
         "label": "Build the connection knowledge graph (Wave C1)",
         "description": "Project the already-built structural ontology plus the narrative stores (glossary, governed metrics, crystallized ambiguity resolutions, discovered findings) into ONE typed, committed, provenance-complete graph per (org, connection, schema) — the read-back artifact every question will pass through in C2. Deterministic projection: no LLM, no SQL; node summaries/tags are a later narrow emission. Every edge carries real provenance or is not constructible (J4) — a `joins_on` edge carries the join guard's MEASURED value-domain overlap (already probed at ontology-build time; value-disjoint coincidences were dropped upstream), and the self-reported model confidences (EvidenceClaim.confidence, pack_deltas.confidence) are banned as edge evidence. The graph is a git-reviewable file under data/context_graph/, version-bumped on rebuild. Off by default = byte-identical: the projection is never invoked and nothing is written (C1 builds the artifact; nothing reads it back until C2).",
+    },
+    "graph.readback": {
+        "label": "Grep-the-graph-first read-back (Wave C2)",
+        "description": "Before generating SQL, match the committed connection knowledge graph against the question, pull the 1-hop subgraph, and inject it as a plan-time prior — the mechanic that finally closes the open feedback loop. The subgraph carries the two node types that were write-only before: `finding` (dossiers/exploration insights) and the `resolves` readings, so a question about a table Aughor already investigated inherits what it learned, with the join guard's measured value-domain overlap surfaced as a number (not the ✓ the prompt path otherwise collapses it to). Every injected line is cited by its node/edge id (the block the context receipt shows names exactly what grounded the plan). Ranked hybrid search: a deterministic lexical floor always runs; the Qdrant vector rank fuses in when reachable (RRF) and NEVER degrades to an unranked fallback. Appended at the one function both live answer paths inject (verify.priors.build_corrections_section), gated independently of `closed_loop`. Off by default = byte-identical (empty string, zero prompt cost). Requires a graph built by `graph.build`; no graph ⇒ no-op. Counter: context_graph.*",
     },
     "automations.adopt_legacy": {
         "label": "Adopt monitors + briefs onto the automation engine (Wave A5)",

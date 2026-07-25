@@ -223,6 +223,35 @@ edge lands without provenance, the projection is wrong — not the gate.
 
 ## PR-C2 — Grep-the-graph-first: read the graph back as one prior (closes the loop)
 
+> **Status: BUILT** (branch `2026-07-25-wave-c1-context-graph`, stacked on C1, unpushed; 12 tests).
+> `aughor/ontology/context_graph_search.py` (lexical floor + Qdrant vector, fused by RRF —
+> never degrades to unranked; `index_graph` on the live 768-dim substrate) ·
+> `context_graph_readback.py` (`build_graph_prior` → the `CONNECTION GRAPH` block + a
+> `cited_node_ids` contextvar for the receipt) · wired into **`verify/priors.py::build_corrections_section`**
+> — the one function both live paths inject — gated by `graph.readback`, **independent of
+> `closed_loop`**. Also fixed the dead `connection_kb` vector path found in the map (repointed at
+> `vector_store`, ranked lexical fallback instead of `entries[:k]`).
+>
+> **Both gates MET, live:**
+> - **(a) reads back what was unread.** On the real `samples` graph, `build_corrections_section`
+>   emits the block with all 5 measured joins (overlap 100%, each cited by edge id); flag off is
+>   byte-identical (length 0). The finding-surfacing is proven through the real Qdrant+Ollama vector
+>   path (integration): a paraphrased query — "why did sales drop last quarter" — surfaces a finding
+>   worded "revenue contracted in the third quarter", which lexical overlap alone would miss.
+> - **(b) it changes the SQL, measurably.** A live model A/B (fallback disabled, temp 0) on a
+>   `resolves` definition NOT in the schema: flag **off** → `WHERE status = 'active'` (the model
+>   *invented* a wrong filter); flag **on** → `WHERE order_date >= max_dt - INTERVAL '90 days'` (the
+>   graph's resolved reading). The read-back didn't just get injected — it **corrected a wrong
+>   guess**. This is the honest-ceiling gate (`verify-features-actually-ran`) met, not deferred.
+>
+> Two things carried forward:
+> - **The private-cross-import ratchet earned its keep.** I reused the schema retriever's
+>   `_scope_filter` (a `_private` cross-module import) — `test_kernel_contracts` failed at 23 vs
+>   baseline 22, exactly on time. Defined a public `graph_scope_filter` in the graph module instead.
+> - **"No silent degradation" is the connection_kb lesson applied.** A vector failure is counted
+>   through `tolerate` and falls to a *ranked* lexical floor; when Qdrant runs but nothing clears the
+>   threshold the block is empty (conservative), never a lexical dump of irrelevant definitions.
+
 **Why.** This is the product bet — "context finally read back" (`FIVE_REPO_STUDY` §T3.1). Today the
 read-back that exists is N disjoint blocks; the read-back that matters (findings, dossiers, tour) does
 not exist at all. And the ontology graph, the one artifact that *is* per-connection typed structure,

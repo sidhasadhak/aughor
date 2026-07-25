@@ -101,12 +101,10 @@ def purge_connection(connection_id: str) -> int:
     file was removed, else 0. The vector purge is best-effort."""
     try:
         from qdrant_client.models import FieldCondition, Filter, MatchValue
-        _qdrant().delete(
-            collection_name=_COLLECTION,
-            points_selector=Filter(must=[
-                FieldCondition(key="connection_id", match=MatchValue(value=connection_id)),
-            ]),
-        )
+        from aughor.semantic.vector_store import delete_by_filter
+        delete_by_filter(_COLLECTION, Filter(must=[
+            FieldCondition(key="connection_id", match=MatchValue(value=connection_id)),
+        ]))
     except Exception as e:
         # Vector index is best-effort; the JSON file is the source of truth.
         from aughor.kernel.errors import tolerate
@@ -171,62 +169,54 @@ def _invalidate_linker_hints(connection_id: str) -> None:
 
 
 # ── Vector index ──────────────────────────────────────────────────────────────
+# Repointed at aughor.semantic.vector_store (the working Qdrant wrapper). The old
+# path imported get_qdrant_client / VECTOR_SIZE from embedder.py — neither symbol
+# exists there — so every index and search raised ImportError, was swallowed by a
+# bare `except: pass`, and retrieval silently degraded to an UNRANKED entries[:k].
+# Wave C2 fix: use the public wrapper (same substrate the context graph uses), count
+# failures through tolerate, and make the fallback a RANKED lexical rank.
 
-def _qdrant():
-    from aughor.semantic.embedder import get_qdrant_client, VECTOR_SIZE
-    client = get_qdrant_client()
-    from qdrant_client.models import Distance, VectorParams
-    try:
-        client.get_collection(_COLLECTION)
-    except Exception:
-        client.create_collection(
-            _COLLECTION,
-            vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
-        )
-    return client
+def _entry_payload(entry: KnowledgeEntry) -> dict:
+    return {
+        "connection_id": entry.connection_id,
+        "entry_id":      entry.id,
+        "title":         entry.title,
+        "body":          entry.body,
+        "kind":          entry.kind,
+        "tags":          entry.tags,
+    }
 
 
 def _index_entry(entry: KnowledgeEntry) -> None:
     try:
-        from aughor.semantic.embedder import embed
-        from qdrant_client.models import PointStruct
-        client = _qdrant()
+        from aughor.semantic.embedder import embed_one
+        from aughor.semantic.vector_store import ensure_collection, upsert
+        ensure_collection(_COLLECTION)
         text = f"{entry.title}\n{entry.body}"
         if entry.tags:
             text += "\n" + " ".join(entry.tags)
-        vec = embed(text)
-        client.upsert(
-            collection_name=_COLLECTION,
-            points=[PointStruct(
-                id=entry._stable_id(),
-                vector=vec,
-                payload={
-                    "connection_id": entry.connection_id,
-                    "entry_id":      entry.id,
-                    "title":         entry.title,
-                    "body":          entry.body,
-                    "kind":          entry.kind,
-                    "tags":          entry.tags,
-                },
-            )],
-        )
-    except Exception:
-        pass   # vector index is best-effort; JSON file is the source of truth
+        upsert(_COLLECTION, [{
+            "id": f"{entry.connection_id}:{entry.id}",
+            "vector": embed_one(text),
+            "payload": _entry_payload(entry),
+        }])
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "connection-KB vector index is best-effort; the JSON file is the "
+                      "source of truth", counter="connection_kb.index")
 
 
 def _delete_from_index(connection_id: str, entry_id: str) -> None:
     try:
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
-        client = _qdrant()
-        client.delete(
-            collection_name=_COLLECTION,
-            points_selector=Filter(must=[
-                FieldCondition(key="connection_id", match=MatchValue(value=connection_id)),
-                FieldCondition(key="entry_id",      match=MatchValue(value=entry_id)),
-            ]),
-        )
-    except Exception:
-        pass
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+        from aughor.semantic.vector_store import delete_by_filter
+        delete_by_filter(_COLLECTION, Filter(must=[
+            FieldCondition(key="connection_id", match=MatchValue(value=connection_id)),
+            FieldCondition(key="entry_id",      match=MatchValue(value=entry_id)),
+        ]))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "connection-KB vector delete is best-effort", counter="connection_kb.delete")
 
 
 def rebuild_index(connection_id: str) -> int:
@@ -239,6 +229,31 @@ def rebuild_index(connection_id: str) -> int:
 
 # ── Retrieval ─────────────────────────────────────────────────────────────────
 
+def _lexical_rank(question: str, entries: list, top_k: int) -> list:
+    """Deterministic token-overlap rank — the floor when Qdrant is unreachable. The
+    old fallback returned entries[:top_k] (arbitrary order); this at least RANKS by
+    relevance, so an unavailable vector store degrades to worse recall, never to
+    unranked noise (the connection-KB analogue of the context-graph search floor)."""
+    import re
+    q = {t for t in re.findall(r"[a-z0-9_]+", (question or "").lower()) if len(t) > 2}
+    if not q:
+        return entries[:top_k]
+    scored = [(len({t for t in re.findall(r"[a-z0-9_]+", e.render().lower()) if len(t) > 2} & q), e)
+              for e in entries]
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [e for _s, e in scored[:top_k]]
+
+
+def _render_block(entries: list) -> str:
+    if not entries:
+        return ""
+    lines = ["DOMAIN KNOWLEDGE (use these definitions exactly when writing SQL):"]
+    for e in entries:
+        lines.append("")
+        lines.append(e.render())
+    return "\n".join(lines)
+
+
 def retrieve_for_question(question: str, connection_id: str, top_k: int = _TOP_K) -> str:
     """Return a formatted block of relevant knowledge entries for *question*.
 
@@ -248,48 +263,34 @@ def retrieve_for_question(question: str, connection_id: str, top_k: int = _TOP_K
     entries = load_entries(connection_id)
     if not entries:
         return ""
-
     try:
         from aughor.semantic.embedder import embed_one
         from aughor.semantic.lexical import hybrid_rerank
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
-        client = _qdrant()
-        # embed_one → a FLAT 768-vec. (embed() returns a nested [[…]] for a single string,
-        # which Qdrant rejects — the search was silently failing into the all-entries
-        # fallback below, so this path never actually ranked by relevance. R7 fix.)
+        from aughor.semantic.vector_store import collection_count, search
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+        if collection_count(_COLLECTION) == 0:
+            return _render_block(_lexical_rank(question, entries, top_k))
+        # embed_one → a FLAT 768-vec (embed() nests [[…]] for a single string, which
+        # Qdrant rejects — the original R7 note).
         vec = embed_one(question)
-        hits = client.search(
-            collection_name=_COLLECTION,
-            query_vector=vec,
-            query_filter=Filter(must=[
-                FieldCondition(key="connection_id", match=MatchValue(value=connection_id)),
-            ]),
-            limit=top_k * 3,        # over-fetch for the hybrid rerank
-            score_threshold=_MIN_SCORE,
-        )
-        if not hits:
-            return ""
+        hits = search(_COLLECTION, vec, top_k=top_k * 3, query_filter=Filter(must=[
+            FieldCondition(key="connection_id", match=MatchValue(value=connection_id)),
+        ]))
         by_id = {e.id: e for e in entries}
-        # HYBRID rerank (R7): blend vector score with BM25 over each entry's text, so an
-        # exact metric/column name surfaces — then take top_k, preserving the reranked order
-        # (the old code collected an unordered set, losing relevance order entirely).
-        cands = [{"score": h.score, "entry_id": h.payload.get("entry_id")}
-                 for h in hits if h.payload.get("entry_id") in by_id]
+        cands = [{"score": h.get("score", 0.0), "entry_id": (h.get("payload") or {}).get("entry_id")}
+                 for h in hits
+                 if h.get("score", 0.0) >= _MIN_SCORE and (h.get("payload") or {}).get("entry_id") in by_id]
+        # Vector search ran and nothing cleared the threshold ⇒ inject nothing (conservative,
+        # as before) — NOT the lexical fallback, which is only for when there is no vector
+        # signal at all (Qdrant down / never indexed).
+        if not cands:
+            return ""
+        # HYBRID rerank: blend vector score with BM25 over each entry's text so an exact
+        # metric/column name surfaces; preserve the reranked order, then take top_k.
         cands = hybrid_rerank(question, cands, text_of=lambda c: by_id[c["entry_id"]].render())
-        matched = [by_id[c["entry_id"]] for c in cands][:top_k]
-        if not matched:
-            return ""
-        lines = ["DOMAIN KNOWLEDGE (use these definitions exactly when writing SQL):"]
-        for e in matched:
-            lines.append("")
-            lines.append(e.render())
-        return "\n".join(lines)
-    except Exception:
-        # Qdrant unavailable — fall back to returning all entries (better than nothing)
-        if not entries:
-            return ""
-        lines = ["DOMAIN KNOWLEDGE (use these definitions exactly when writing SQL):"]
-        for e in entries[:top_k]:
-            lines.append("")
-            lines.append(e.render())
-        return "\n".join(lines)
+        return _render_block([by_id[c["entry_id"]] for c in cands][:top_k])
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "connection-KB vector retrieval is best-effort; ranked lexical "
+                      "fallback used (never unranked)", counter="connection_kb.retrieve")
+        return _render_block(_lexical_rank(question, entries, top_k))

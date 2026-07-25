@@ -53,6 +53,22 @@ def load_graph(
         return None
 
 
+def load_graphs_for_connection(org_id: str, connection_id: str) -> list[ContextGraph]:
+    """Every per-schema graph committed for a connection (read-back does not always
+    know the schema). Returns [] when none is built. Corrupt files are skipped, never
+    raised."""
+    conn_dir = _ROOT / _slug(org_id) / _slug(connection_id)
+    if not conn_dir.exists():
+        return []
+    out: list[ContextGraph] = []
+    for f in sorted(conn_dir.glob("*.json")):
+        try:
+            out.append(ContextGraph.model_validate_json(f.read_text()))
+        except Exception:
+            continue
+    return out
+
+
 def save_graph(graph: ContextGraph) -> Path:
     """Write the graph to its committed path, bumping ``version`` past any prior
     build (supersede-not-delete). Returns the path written. Raises on a genuine I/O
