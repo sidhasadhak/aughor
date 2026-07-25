@@ -33,6 +33,7 @@ const FEATURE_LABELS: Record<string, string> = {
   "briefs.scheduled": "Scheduled Briefs",
   "playbook": "Playbook",
   "federation": "Multi-Connection Federation",
+  "eval.suite": "Evaluation Suite",
 };
 
 // Which plan a capability belongs to (everything we gate today is Pro; the

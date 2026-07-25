@@ -19,6 +19,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 import type { OpsLayer } from "@/components/OperationsWorkspace";
+import type { EvalsLayer } from "@/components/EvalsWorkspace";
 import type { AgentLayer } from "@/components/AgentWorkspace";
 import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -41,6 +42,7 @@ const HistoryDetailPanel= dynamic(() => import("@/components/HistoryDetailPanel"
 // layers of one unified workspace.
 const IntelligenceWorkspace = dynamic(() => import("@/components/IntelligenceWorkspace").then(m => ({ default: m.IntelligenceWorkspace })), { ssr: false, loading });
 const OperationsWorkspace = dynamic(() => import("@/components/OperationsWorkspace").then(m => ({ default: m.OperationsWorkspace })), { ssr: false, loading });
+const EvalsWorkspace = dynamic(() => import("@/components/EvalsWorkspace").then(m => ({ default: m.EvalsWorkspace })), { ssr: false, loading });
 const SystemPanel       = dynamic(() => import("@/components/SystemPanel").then(m => ({ default: m.SystemPanel })),          { ssr: false, loading });
 const RolesPanel        = dynamic(() => import("@/components/RolesPanel").then(m => ({ default: m.RolesPanel })),            { ssr: false, loading });
 const ProcessHealthPanel= dynamic(() => import("@/components/ProcessHealthPanel").then(m => ({ default: m.ProcessHealthPanel })), { ssr: false, loading });
@@ -104,6 +106,7 @@ type NavTab =
   | "org-intel"         // legacy deep-link → intelligence/org layer
   | "ontology"          // legacy deep-link → intelligence/ontology layer
   | "operations"        // unified Operations workspace (Monitors / Action Hub / Security)
+  | "evals"             // unified Evals workspace (Suites / Runs) — Wave E
   | "data"              // unified Data workspace (Catalog / Query Builder / Semantic Layer)
   | "health"
   | "playbook"
@@ -490,6 +493,7 @@ const NAV_SECTIONS = [
       { id: "monitors", icon: "activity", label: "Monitors" },
       { id: "actions",  icon: "spark",    label: "Action Hub" },
       { id: "security", icon: "shield",   label: "Security & Audit" },
+      { id: "evals",    icon: "check",    label: "Evals" },
     ],
   },
 ] as const;
@@ -1742,6 +1746,7 @@ export default function Home() {
   const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
   const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
   const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
+  const [evalsLayer, setEvalsLayer] = useState<EvalsLayer>("suites");
   const [agentLayer, setAgentLayer] = useState<AgentLayer>("overview");
   const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
   const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
@@ -2251,6 +2256,18 @@ export default function Home() {
                   onLayerChange={setOpsLayer}
                   secLens={secLens}
                   onSecLensChange={setSecLens}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* ── EVALS ── unified Suites / Runs workspace (Wave E) */}
+            {tab === "evals" && (
+              <ErrorBoundary label="The Evals workspace hit an error.">
+                <EvalsWorkspace
+                  connId={selectedConn ?? undefined}
+                  workspaceId={selectedWorkspace}
+                  layer={evalsLayer}
+                  onLayerChange={setEvalsLayer}
                 />
               </ErrorBoundary>
             )}
