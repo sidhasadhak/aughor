@@ -122,8 +122,18 @@ def build_context_graph(
 
 
 def _load_glossary() -> dict:
+    """The merged glossary as the projection wants it: a ``{table: meta}`` mapping.
+
+    ``load_merged_glossary`` returns the *envelope* ``{"tables": {table: meta}}``, and
+    the projection iterates its argument as table→meta. Handing over the envelope made
+    the loop run exactly once, on the literal key ``"tables"``, which then failed the
+    connection-scope check — so every glossary term on every connection was silently
+    dropped and the ``defines`` edge kind was unreachable. Unwrap here, at the boundary
+    that knows the store's shape.
+    """
     from aughor.semantic.glossary import load_merged_glossary
-    return load_merged_glossary()
+    merged = load_merged_glossary() or {}
+    return merged.get("tables", merged)
 
 
 def _list_resolutions(connection_id: str, org_id: str) -> list:

@@ -180,6 +180,32 @@ def test_glossary_terms_are_scoped_to_the_connection():
                for e in g.edges.values())
 
 
+def test_glossary_source_is_unwrapped_from_the_store_envelope(monkeypatch):
+    """The projection takes ``{table: meta}``; the STORE returns the envelope
+    ``{"tables": {table: meta}}``. Handing the envelope straight through made the
+    projection loop once on the literal key ``"tables"``, fail the connection-scope
+    check, and drop every term on every connection — silently, with `defines`
+    unreachable. The tests missed it because they hand-built the unwrapped shape
+    while production called the real loader.
+
+    So this asserts the BOUNDARY against the producer's real shape: the fixture below
+    is the envelope `load_merged_glossary` actually returns.
+    """
+    from aughor.ontology import context_graph_build as build_mod
+
+    envelope = {"tables": {"orders": {"columns": {
+        "revenue": {"description": "gross booking value, pre-refund"}}}}}
+    monkeypatch.setattr("aughor.semantic.glossary.load_merged_glossary",
+                        lambda *a, **k: envelope)
+
+    unwrapped = build_mod._load_glossary()
+    assert "tables" not in unwrapped, "envelope leaked into the projection's input"
+    assert unwrapped == envelope["tables"]
+    # and it survives the projection it feeds
+    assert "revenue" in {n.label for n in _build(merged_glossary=unwrapped)
+                         .nodes_of("glossary_term")}
+
+
 def test_findings_become_nodes_with_grounded_in_edges():
     """The write-only half of the open loop, finally a node. Provenance is the
     derivation source — never the finding's self-reported confidence."""
