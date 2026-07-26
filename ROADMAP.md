@@ -48,10 +48,13 @@ generalizes C3's freshness vocabulary — J5).
 | **docs audit** | install-doc drift (the port warning was inverted; 2 backends undocumented) | ✅ **merged (#218, `f25432f`)** |
 | **C6** | distribution — the committed artifact + the offline skills pack (`graph.export`) | 🔨 **built, local** |
 
-**⏭️ NEXT: Wave V — versioning & staleness.** C3 owns the first `fresh/dirty/stale/unknown`
-vocabulary and the change-classifier matrix, written to be *lifted*; V generalizes that one shape to
-briefs, profiles and exploration caches, and makes C's graph its first-class versioned citizen (J5).
-Then G → S. See [`docs/PLATFORM_PROGRAM_2026-07-24.md`](docs/PLATFORM_PROGRAM_2026-07-24.md).
+**⏭️ IN PROGRESS: Wave V — artifact lifecycle (versions, publish, staleness).** Scoping doc written
+FIRST, as for Wave C: **[`docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md`](docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md)**
+— PR arc V1–V6, ≈110 tests. **The finding that set the scope: there are already _13 incompatible
+dialects_ of "this is out of date" in the tree** (only C3's is typed), so **V is CONSOLIDATION, not
+invention** — the shape Wave E took for evals. The schema fingerprint alone has **5 incomparable
+implementations**, two of which met the identical structure-vs-identity hazard and solved it by
+*different conventions*. Then G → S.
 
 > ⚠️ **Wave C caveat that outlived C1–C5:** the graph is built on demand by the C4 surface routes
 > (`routers/ontology.py:231`), but **no background/explore path builds it yet** — so read-back (C2)
