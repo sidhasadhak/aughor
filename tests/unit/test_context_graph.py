@@ -243,6 +243,135 @@ def test_counts_shape():
     assert c["table"] == 2 and c["metric"] == 1 and c["edges"] == len(g.edges)
 
 
+# ── Wave L1: the live-path incremental write ──────────────────────────────────
+
+_L1_FINDING = {"id": "rcpt1", "text": "Refund rate spiked 4.2pp in the EU region",
+               "sql": "SELECT * FROM orders", "tables": ["orders"],
+               "source": "evidence_ledger", "generated_at": ""}
+
+
+@pytest.fixture()
+def _graph_store(tmp_path, monkeypatch):
+    """Redirect the committed-artifact root and seed one built graph for `c1`."""
+    from aughor.ontology import context_graph_store as store
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    store.save_graph(_build())
+    return store
+
+
+def test_note_finding_is_a_noop_when_the_flag_is_off(_graph_store, monkeypatch):
+    """Byte-identical with `graph.build` off: nothing read, nothing written."""
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: False)
+
+    before = _graph_store.graph_path("org1", "c1", "main").read_bytes()
+    assert build_mod.note_finding("c1", _L1_FINDING, org_id="org1") is False
+    assert _graph_store.graph_path("org1", "c1", "main").read_bytes() == before
+
+
+def test_note_finding_lands_the_node_and_its_grounded_in_edge(_graph_store, monkeypatch):
+    """The L1 gate, at the unit: an answer becomes a `finding` node + `grounded_in`
+    edge on the COMMITTED artifact, with no full rebuild and no manual step."""
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
+
+    assert build_mod.note_finding("c1", _L1_FINDING, org_id="org1") is True
+
+    g = _graph_store.load_graph("org1", "c1", "main")
+    assert g.version == 2                      # supersede-not-delete
+    node = g.nodes["finding:rcpt1"]
+    assert node.kind == "finding"
+    assert node.provenance.source == "evidence_ledger"
+    assert any(e.kind == "grounded_in" and e.from_id == "finding:rcpt1"
+               for e in g.edges.values())
+
+
+def test_note_finding_matches_what_a_full_rebuild_would_project(_graph_store, monkeypatch):
+    """The incremental path and the rebuild path must not drift into two shapes —
+    which is why both go through `_project_findings` rather than each building a node.
+    """
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
+    build_mod.note_finding("c1", _L1_FINDING, org_id="org1")
+    incremental = _graph_store.load_graph("org1", "c1", "main").nodes["finding:rcpt1"]
+
+    rebuilt = _build(findings=[_L1_FINDING]).nodes["finding:rcpt1"]
+    assert incremental.model_dump() == rebuilt.model_dump()
+
+
+def test_note_finding_declines_rather_than_guessing_the_schema(tmp_path, monkeypatch):
+    """Two graphs and no schema named ⇒ decline. Writing the finding onto whichever
+    schema sorted first would attach it to data it never read."""
+    from aughor.ontology import context_graph_store as store
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
+    for schema in ("main", "other"):
+        g = _build()
+        g.schema_name = schema
+        store.save_graph(g)
+
+    assert build_mod.note_finding("c1", _L1_FINDING, org_id="org1") is False
+    assert build_mod.note_finding("c1", _L1_FINDING, org_id="org1",
+                                  schema_name="main") is True
+
+
+def test_note_finding_on_an_unbuilt_connection_is_not_an_error(tmp_path, monkeypatch):
+    """No graph yet ⇒ False, not a raise: the finding is still in the Ledger and the
+    next full build projects it from `load_investigation_findings`."""
+    from aughor.ontology import context_graph_store as store
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
+    assert build_mod.note_finding("never_built", _L1_FINDING, org_id="org1") is False
+
+
+def test_answer_receipts_become_findings_with_evidence_ledger_provenance(monkeypatch):
+    """Investigations were structurally invisible to the graph: `load_findings` reads
+    the EXPLORER store, while an answer writes an `ada_report`/`chat_answer` receipt.
+    This is the source that closes that gap."""
+    from aughor.ontology import context_graph_build as build_mod
+
+    class _FakeLedger:
+        def artifacts_of_kind(self, kinds, *, conn_id=None, org_id=None, limit=200):
+            assert set(kinds) == set(build_mod._RECEIPT_KINDS)
+            return [
+                {"id": "a1", "kind": "ada_report", "created_at": "2026-07-26",
+                 "payload": {"headline": "GMV fell in EU", "sql": "SELECT 1",
+                             "tables": ["orders"], "question": "why did GMV fall?"}},
+                {"id": "a2", "kind": "chat_answer", "created_at": "2026-07-26",
+                 "payload": {"question": "how many?", "tables": ["returns"]}},
+            ]
+    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+                        staticmethod(lambda: _FakeLedger()))
+
+    found = build_mod.load_investigation_findings("c1", "org1")
+    # a2 concluded nothing (no headline) — a question is not a discovery
+    assert [f["id"] for f in found] == ["a1"]
+    assert found[0]["source"] == "evidence_ledger"
+    assert found[0]["tables"] == ["orders"]
+
+
+def test_receipt_truncation_is_counted_never_silent(monkeypatch):
+    """A bounded projection must say how much it dropped (the no-silent-caps rule)."""
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(build_mod, "_MAX_RECEIPT_FINDINGS", 2)
+    over = [{"id": f"a{i}", "kind": "ada_report", "created_at": "2026-07-26",
+             "payload": {"headline": f"finding {i}", "tables": []}} for i in range(5)]
+
+    class _FakeLedger:
+        def artifacts_of_kind(self, kinds, *, conn_id=None, org_id=None, limit=200):
+            return over[:limit]
+    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+                        staticmethod(lambda: _FakeLedger()))
+    bumped: dict = {}
+    monkeypatch.setattr("aughor.stats.bump",
+                        lambda c, n=1: bumped.__setitem__(c, bumped.get(c, 0) + n))
+
+    assert len(build_mod.load_investigation_findings("c1", "org1")) == 2
+    assert bumped["context_graph.receipts_truncated"] == 1  # asked for cap+1, saw 3
+
+
 # ── the committed-artifact store ──────────────────────────────────────────────
 
 def test_store_roundtrip_and_version_bump(tmp_path, monkeypatch):

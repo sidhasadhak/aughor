@@ -482,6 +482,19 @@ def _project_resolutions(cg: ContextGraph, resolutions: list) -> None:
                      counter="context_graph.resolution_projection")
 
 
+def add_findings(cg: ContextGraph, findings: list) -> None:
+    """Project findings into an EXISTING graph — the public entry point for an
+    incremental write (Wave L1's live path), and the same projection a full build
+    runs.
+
+    It exists so the answer path never has to reach into ``_project_findings``: one
+    projector, so an incrementally-added node and the node a later rebuild emits from
+    the same receipt are byte-identical rather than two hand-kept-in-sync shapes.
+    ``add_node``/``add_edge`` are id-keyed, so re-adding a finding supersedes it.
+    """
+    _project_findings(cg, findings)
+
+
 def _project_findings(cg: ContextGraph, findings: list) -> None:
     """`finding` nodes (the write-only half of the open loop, finally a node) +
     `grounded_in` edges finding → the table nodes its SQL reads. ``findings`` are
