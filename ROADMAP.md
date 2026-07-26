@@ -47,8 +47,16 @@ generalizes C3's freshness vocabulary — J5).
 | **C (C1–C5)** | the connection knowledge graph — artifact · grep-the-graph-first read-back · freshness · anti-hairball surface · tour | ✅ **merged (#217, `50d387f`)** |
 | **docs audit** | install-doc drift (the port warning was inverted; 2 backends undocumented) | ✅ **merged (#218, `f25432f`)** |
 | **C6** | distribution — the committed artifact + the offline skills pack (`graph.export`) | 🔨 **built, local** |
+| **V (V1–V6)** | artifact lifecycle — freshness kernel · resolved rebuild · save≠publish · freeze · purge ratchet · serving surface | 🔨 **built, local** |
 
-**⏭️ IN PROGRESS: Wave V — artifact lifecycle (versions, publish, staleness).** Scoping doc written
+**⏭️ NEXT: Wave G — governance uplift.** Wave V is BUILT through V6 (local, unpushed); V3b (canvas /
+dashboard / eval-case wiring) and V6b (the React panel) are deliberately deferred. G absorbs the K
+follow-on (`govern.guard` into the 9 unenforced `_RISK` actions), the tag plane + clearances before
+roles, audit categories with the LLM call as a first-class event, and usage attribution — and its
+lineage-aware cascade invalidation lands on **V5's enforced purge cascade** rather than extending a
+hand-maintained list.
+
+**Wave V — artifact lifecycle (versions, publish, staleness).** Scoping doc written
 FIRST, as for Wave C: **[`docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md`](docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md)**
 — PR arc V1–V6, ≈110 tests. **The finding that set the scope: there are already _13 incompatible
 dialects_ of "this is out of date" in the tree** (only C3's is typed), so **V is CONSOLIDATION, not
