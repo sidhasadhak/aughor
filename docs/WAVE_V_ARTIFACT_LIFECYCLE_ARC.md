@@ -221,10 +221,36 @@ half-finished state. Meanwhile four incompatible draft state machines exist else
 5. Give `savedquery`, `canvas`, `dashboard`, and **eval suites/cases** a version — the eval one
    closes a real correctness hole (an edited case silently invalidating historical comparisons).
 
-**Flag** `lifecycle.publish` · **Tests** ~30 · **Decision gate:** with the flag on, an editor's
+**Flag** `lifecycle.publish` · **Tests** 33 · **Decision gate:** with the flag on, an editor's
 unpublished edit is invisible to a viewer; publish makes it visible; revert restores **byte-identical**
 prior content; and the changelog names a moved element as a move. With the flag off, every one of
 these stores behaves byte-identically to today.
+
+> ✅ **BUILT** (2026-07-26) — `aughor/kernel/lifecycle.py` + `Ledger.artifact_versions()`, wired into
+> `savedquery` (the store with no version at all, whose update was a destructive `UPDATE`). All four
+> gate parts proved live on a real saved query: after an edit **viewer=None while editor sees the
+> draft** → publish → **viewer sees v2 while the author's WIP stays invisible** → revert to v2 landed
+> as a **new v4 with byte-identical content** and history intact
+> (`[(4,published),(3,draft,WIP),(2,published),(1,draft)]`).
+>
+> **Deviation — convergence by projection, not by rewrite.** This PR was scoped to "converge the four
+> draft state machines onto `governance.py`'s". Building it showed that to be wrong: governance's
+> `draft → proposed → approved → deprecated` is a *review workflow*, so pushing a saved query or a
+> canvas through "proposed/approved" would invent review ceremony nobody asked for — and `playbook`'s
+> auto-promotion (draft→active on ≥2 uses at ≥50%) is a *policy* that would have to be rewritten to
+> fit. Shipped instead: a documented `PROJECTIONS` table mapping every existing vocabulary onto one
+> publication axis that answers the only question a reader has — *what does a viewer see?* Nothing was
+> forced to rename its states, and an unknown status projects to `draft` (the conservative direction —
+> `routers/metrics.py:347` still accepts an ungated free-form status, which is why the default must
+> not be `published`).
+>
+> Move detection needed a real list diff: an index-wise walk reports `[a,b,c] → [c,a,b]` as three
+> unrelated changes — the exact noise the feature exists to remove — so elements are matched on
+> content first, with an unmatched pair at the same index recursing so an in-place edit names the
+> changed *field* rather than replacing the whole object.
+>
+> **Deferred to V3b:** giving `canvas`, `dashboard` and eval suites/cases the same treatment
+> (`savedquery` is the wired proof; the others are the same three-line call site each).
 
 ## PR-V4 — Freeze: live-by-default, snapshot-by-choice, gone-data errors loudly
 
