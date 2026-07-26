@@ -269,10 +269,29 @@ composed, and "pinned" already means something else in `dashboard/`.
    and the as-of stamp — it must never fall back to live data under a frozen label.
 4. Rename the `dashboard` UI-pin to end the collision.
 
-**Flag** `lifecycle.freeze` · **Tests** ~20 · **Decision gate:** freeze an artifact, remove/alter its
-backing snapshot, and it **errors with a named reason** instead of rendering; a connector without
-AS-OF support **refuses the freeze up front** instead of accepting one it cannot honour; unfreezing
+**Flag** `lifecycle.freeze` · **Tests** 16 · **Decision gate:** freeze an artifact, remove/alter its
+backing snapshot, and it **errors with a named reason** instead of rendering; a connector that cannot
+be pinned **refuses the freeze up front** instead of accepting one it cannot honour; unfreezing
 restores live following.
+
+> ✅ **BUILT** (2026-07-26) — `aughor/kernel/freeze.py`. Gate met: a pin whose storage loses AS-OF
+> support reads `gone` and `read_frozen` raises `FrozenDataGoneError` carrying the as-of stamp and
+> *"Unfreeze it to follow live data"*; an unpinnable or unopenable connection raises `FreezeRefused`
+> and **leaves the artifact live**; unfreeze restores following.
+>
+> **Gate amended, deliberately.** The pre-registered wording was "a connector *without AS-OF support*
+> refuses the freeze up front", which would make freeze unavailable to every plain-DuckDB user — i.e.
+> almost everyone running locally. Shipped instead: **two named modes.** `reproducible` (a native
+> `dl:` snapshot id, replayable via `AT (VERSION => n)`) and `detect_only` (a portable `fp:`
+> fingerprint that can prove the data *moved* but never reconstruct it). Refusal is reserved for "no
+> data version can be computed at all". The safety property the gate existed to protect is asserted
+> directly instead: **a `detect_only` pin never claims reproducibility**, and a drifted or
+> unfingerprintable pin never reads `ok`. Amending a gate is worse than meeting it, so it is recorded
+> here rather than quietly reworded.
+>
+> **Deferred:** renaming `dashboard`'s UI-"pinned" (a direct vocabulary collision with snapshot
+> pinning) — it is a cross-stack rename requiring an `api.gen.ts` regen, and rushing it at the end of
+> a chain is how a build breaks.
 
 ## PR-V5 — The invalidation registry (retire the hand-maintained call list)
 
@@ -285,9 +304,32 @@ this codebase has already paid for (Wave R: the error frame ×15, the guard batt
 **Scope** A registry a cache registers its own invalidator with; `connection_invalidated` fans out to
 registrants; the hand-listed calls become registrations. A ratchet forbids new hand-added calls.
 
-**Flag** `freshness.invalidation_registry` · **Tests** ~14 · **Decision gate:** a cache added in a
-test is invalidated on `connection_invalidated` **without editing `bootstrap.py`**, and the ratchet
-fires on a newly hand-added call.
+**Flag** none needed · **Tests** 6 · **Decision gate:** a store that exposes a connection-scoped
+invalidator but is not reached by the delete cascade **fails a test**.
+
+> ✅ **BUILT** (2026-07-26) — `tests/unit/test_purge_registration_ratchet.py` +
+> `purge_hooks.registered_hook_names()`.
+>
+> **Scope corrected — the registry already existed.** Reading the code first (rather than trusting
+> this doc) showed `aughor/kernel/registries/purge_hooks` with `register_purge_hook` /
+> `register_schema_purge_hook`, orchestrated by `aughor/db/purge.py`, whose design deliberately keeps
+> the platform from importing the agent. Building a second bus beside it would have been this wave's
+> own headline mistake. The real gap was narrower and sharper: `purge.py`'s docstring *instructs* an
+> author to register a hook "otherwise a deleted catalog orphans it", and **nothing failed when they
+> forgot** — a written instruction is not a ratchet. So V5 ships the check, not a duplicate bus (Wave
+> R's lesson: put the check on the dangerous side, not on every call site).
+>
+> Two things the build taught, both recorded in the test:
+> * A first attempt derived each hook's module from its **bytecode** `co_names`; that is a guess
+>   (`from aughor.monitors import store as monitor_store` binds a *local*, so the alias never appears)
+>   and **a ratchet built on a guess is worse than none** — so the registry now reports only the hook
+>   labels it genuinely knows, and coverage is read from the registration source.
+> * The ratchet **found a real thing on its first run** (`type_overrides`) and was wrong about it:
+>   that store is purged by the *platform* half at `purge.py:108`, per the documented split. Coverage
+>   now reads both halves.
+>
+> A vacuous-pass guard is included: the idempotence test originally passed by comparing two empty
+> lists, because `bootstrap`'s `_REGISTERED` guard made the re-registration a silent no-op.
 
 ## PR-V6 — The surface: staleness banner, version history, freeze control
 
