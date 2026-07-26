@@ -616,6 +616,41 @@ def _semaphore_for(base_url: str) -> threading.Semaphore:
         return sem
 
 
+_PACE_LOCK = threading.Lock()
+_LAST_CALL_AT: dict[str, float] = {}
+
+
+def _pace(base_url: str) -> None:
+    """Space calls to one endpoint at least ``60/RPM`` apart, when an RPM is declared.
+
+    The concurrency semaphore caps how many calls are IN FLIGHT; it says nothing about
+    the RATE. Four concurrent calls that each take a second still put 240 requests a
+    minute at an endpoint whose free tier allows 20 — which is exactly how a measured
+    eval grid turns into a wall of 429s, recorded as case failures and read as "the
+    variant made things worse".
+
+    Off by default (``AUGHOR_LLM_RPM`` unset ⇒ 0 ⇒ no wait), because an interactive
+    answer should not be slowed for a limit it will never approach. A measured run sets
+    it, since a run that trips the limiter measures the limiter.
+    """
+    rpm = _int_env("AUGHOR_LLM_RPM", 0)
+    if rpm <= 0:
+        return
+    interval = 60.0 / float(rpm)
+    key = base_url or "default"
+    while True:
+        with _PACE_LOCK:
+            now = time.monotonic()
+            earliest = _LAST_CALL_AT.get(key, 0.0) + interval
+            if now >= earliest:
+                # Claim the slot INSIDE the lock: two threads that both read "clear" and
+                # then both called would be the burst this exists to prevent.
+                _LAST_CALL_AT[key] = now
+                return
+            wait = earliest - now
+        time.sleep(wait)
+
+
 _TRANSIENT_TYPES = (
     "RateLimitError", "APITimeoutError", "APIConnectionError", "InternalServerError",
     "ReadTimeout", "ConnectTimeout", "PoolTimeout", "WriteTimeout", "TimeoutException",
@@ -939,6 +974,8 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
     deadline = time.monotonic() + max(1.0, _float_env("AUGHOR_LLM_DEADLINE_S", _DEADLINE_S))
     attempt = 0
     while True:
+        _pace(base_url)  # rate gate BEFORE the concurrency gate: waiting for a slot we
+        # are not yet allowed to use would hold it from callers who are.
         with sem:  # hold a slot only during the call, never during backoff sleep
             try:
                 return do()
