@@ -132,10 +132,27 @@ caches, not four."* This PR cashes that in.
    the producer's logic changed?"*, including the `"v4-valsample"` string currently baked into a
    hash input (`profile_cache.py:53`).
 
-**Flag** `freshness.kernel` · **Tests** ~22 · **Decision gate:** every legacy fingerprint adapter
-reproduces its current hash **byte-for-byte** on a fixture corpus (no live cache is invalidated by
-this PR), and `graph_freshness` emits identical verdicts through the kernel on C3's existing test
-corpus — a differential test, not a rewrite that "looks equivalent".
+**Flag** ~~`freshness.kernel`~~ → **none, deliberately** · **Tests** 29 · **Decision gate:** every
+legacy fingerprint adapter reproduces its current hash **byte-for-byte** on a fixture corpus (no live
+cache is invalidated by this PR), and `graph_freshness` emits identical verdicts through the kernel on
+C3's existing test corpus — a differential test, not a rewrite that "looks equivalent".
+
+> ✅ **BUILT** (2026-07-26). Gate met: the six golden hashes are pinned as **literals captured before
+> the refactor** (a hash recomputed from the function under test would pass through the very change it
+> exists to catch), and C3's existing corpus is green unchanged. Live proof: all three real committed
+> connections still hit the ontology cache and return `skip / fresh` through the new path. Full unit
+> suite 4,266 green; `data/` byte-identical before and after.
+>
+> **Deviation — no flag.** This PR was pre-registered with a `freshness.kernel` flag. V1 turned out to
+> gate *nothing*: it is a pure consolidation whose behaviour is byte-identical by construction, so a
+> flag would switch nothing and become exactly the flag-drift this repo has already paid for once (19
+> features ON in one ledger while the code shipped them OFF). The first *gated* behaviour is V2's
+> resolved rebuild. Recorded here rather than quietly dropped.
+>
+> Also landed, because the inventory needed them nameable: `PROFILE_LOGIC_VERSION` extracted from an
+> inline `"v4-valsample"` hash-input literal, and `compute_ontology_fingerprint` lifted verbatim out
+> of `get_or_build_ontology`. Both pinned byte-for-byte. And `structural_fingerprint` now shares one
+> pass with the per-table map, which removes a double-hash the delegation would otherwise have added.
 
 ## PR-V2 — Staleness-resolved rebuild: inputs AND logic, not wall-clock
 

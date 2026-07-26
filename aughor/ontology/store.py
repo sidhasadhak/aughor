@@ -15,6 +15,7 @@ tell which fields were user-provided vs auto-extracted.
 """
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Optional
 
@@ -238,6 +239,24 @@ def patch_action(
     return graph
 
 
+def compute_ontology_fingerprint(table_profiles: dict) -> str:
+    """The ontology cache's fingerprint: sorted ``"{table}:{row_count}:{grain_col}"``.
+
+    Extracted verbatim from :func:`get_or_build_ontology` so the Wave-V inventory can name
+    it (registered as ``ontology_store`` in ``aughor/kernel/freshness.py``); the bytes are
+    unchanged, so every cached ontology still resolves.
+
+    Note what it folds in: ``row_count`` is part of the hash, so this fingerprint moves on
+    every data reload — which is precisely why Wave C3 had to add a separate *structural*
+    fingerprint rather than reuse this one.
+    """
+    parts = sorted(
+        f"{t}:{tp.row_count}:{tp.grain_column or ''}"
+        for t, tp in table_profiles.items()
+    )
+    return hashlib.md5("|".join(parts).encode()).hexdigest()[:16]
+
+
 def get_or_build_ontology(
     connection_id: str,
     schema_name: str,
@@ -259,14 +278,7 @@ def get_or_build_ontology(
     from aughor.ontology.builder import extract_structural_ontology
 
     try:
-        # Fingerprint: sorted "{table}:{row_count}:{grain_col}" — invalidates on
-        # schema changes (new table, grain column renamed) but not on data changes.
-        parts = sorted(
-            f"{t}:{tp.row_count}:{tp.grain_column or ''}"
-            for t, tp in table_profiles.items()
-        )
-        import hashlib
-        fingerprint = hashlib.md5("|".join(parts).encode()).hexdigest()[:16]
+        fingerprint = compute_ontology_fingerprint(table_profiles)
 
         cached = load_ontology(connection_id, schema_name, fingerprint)
         if cached is not None:
