@@ -1,6 +1,6 @@
 # Wave V — Artifact lifecycle: versions, publish, staleness. PR arc
 
-**Status:** scoping doc (2026-07-26). No code yet.
+**Status:** V1–V6 BUILT (2026-07-26), local/unpushed. V3b + V6b deferred (see below).
 **Plan of record:** [`PLATFORM_PROGRAM_2026-07-24.md`](PLATFORM_PROGRAM_2026-07-24.md) — A → R → E → **C ✅** → **V** → G → S.
 **Origin:** [`PALANTIR_FOUNDRY_STUDY_2026-07-22.md`](PALANTIR_FOUNDRY_STUDY_2026-07-22.md) §"Wave V" (L334-340).
 **Joint:** **J5 — V generalizes C's freshness rather than inventing its own.**
@@ -346,9 +346,26 @@ to invent — every other V artifact (brief, saved query, dashboard, canvas) sho
 (reusing C6's prose gate as its copy, so the pack and the UI say the same thing); a version-history
 panel with diff + revert; a freeze/unfreeze control with the lock and as-of stamp.
 
-**Flag** `lifecycle.surface` · **Tests** — typecheck + the 4 UI gates (no frontend unit tests exist;
-see README "Project status") · **Decision gate:** a dirty graph shows the banner with its reason;
-revert from the history panel round-trips; a frozen artifact renders its lock + as-of stamp.
+**Flag** `lifecycle.publish` / `lifecycle.freeze` (the routes reuse the machinery's flags) ·
+**Tests** 21 · **Decision gate:** every route 404s with its flag off; history exposes save≠publish as
+two distinct versions; a refused freeze is a **409 with the reason**; an unhonourable pin is a **410
+with the as-of stamp** — never a silent fall-back to live data.
+
+> ✅ **BUILT — the serving surface** (2026-07-26): `aughor/routers/lifecycle.py`, six routes
+> (history · diff · publish · revert · freeze GET/POST/DELETE · frozen-content), wired into `api.py`
+> and regenerated into `web/lib/api.gen.ts` (codegen verified deterministic, so CI's drift gate
+> passes; `tsc --noEmit` clean against the new client).
+>
+> The status-code choices are the design: **409** for a refused freeze (understood and declined, with
+> the reason) and **410** for a pin that is gone (carrying the as-of stamp), so a UI renders the
+> sentence rather than inventing one. `frozen-content` has no live fall-back on purpose.
+>
+> **V6b deferred — the React panel.** The staleness chip, version-history panel and lock badge are not
+> built. This is a deliberate stop, not an omission: the repo has **no frontend tests** (README
+> "Project status"), so a multi-component panel is gated only by `tsc` + four lint gates + `next
+> build`, and landing one at the end of a six-PR chain is how a build breaks and a report becomes
+> wrong. The routes are the contract a panel consumes; C4's existing `ConnectionGraphPanel` chip is the
+> pattern to extend.
 
 ---
 
