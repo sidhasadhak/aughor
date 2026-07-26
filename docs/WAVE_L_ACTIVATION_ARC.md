@@ -231,6 +231,33 @@ guard, or `freeze=True`.
 > endpoint). Fixed by `provider._pace()` (`e365435`): off by default, per endpoint,
 > slot claimed inside the lock, applied *before* the concurrency gate.
 
+#### ⚠️ OPEN: pacing is necessary but not yet sufficient
+
+The paced re-run **still drew 72 `free-models-per-min` refusals at `AUGHOR_LLM_RPM=16`**
+(the raw grep said 177 — traceback inflation; 72 is the distinct-event count). Notably
+they were all per-MINUTE, never per-day, so the daily allowance is intact.
+
+The gate itself is verified correct in isolation: `AUGHOR_LLM_RPM=60` → three calls
+take 2.02s. So **some requests on the `/ask` path are not passing through it**, and the
+root cause is NOT established. Candidates, unverified, cheapest first:
+
+1. **Sub-requests inside one `_do`.** `_run_resilient` paces per *attempt*, but a `_do`
+   can issue more than one HTTP request — the "retry without `extra_body`" path
+   (`return _call({...})`, provider.py ~1420) recurses inside the same attempt, and
+   instructor's own `max_retries` runs inside it too (R1 pinned that to 1, so it should
+   be rare).
+2. **Key fragmentation.** `_LAST_CALL_AT` is keyed by `base_url`; if some calls arrive
+   with `""` (→ `"default"`) and others with the real URL, each key gets its own
+   budget and the effective rate doubles.
+3. **A path that never reaches `_run_resilient`** (e.g. a streaming or embedding call).
+
+**A counter now makes this answerable instead of arguable:** `_pace` bumps
+`llm.paced.<base_url>`. Compare it against the provider's own request count over a
+short paced run — if the gate is passed fewer times than requests were made, candidate
+3 is confirmed; if the key distribution is split, candidate 2 is. **Do that
+measurement before the next grid attempt** — it is cheap, and another brute-force run
+against a per-minute cap is not.
+
 ### The methodological tension L2 must resolve first
 
 Refusal 3 is not a nuisance, it is a real design problem, and it applies to L3 and L4

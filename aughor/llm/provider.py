@@ -638,6 +638,16 @@ def _pace(base_url: str) -> None:
         return
     interval = 60.0 / float(rpm)
     key = base_url or "default"
+    # Counted so a paced run can be AUDITED rather than assumed: compare
+    # `llm.paced.<key>` against the provider's own request count. If the gate is passed
+    # fewer times than requests were made, some path is issuing calls around it — which
+    # is exactly the open question from L2's first paced grid, where 16 RPM still drew
+    # 72 `free-models-per-min` refusals.
+    try:
+        from aughor.stats import bump
+        bump(f"llm.paced.{key[:40]}")
+    except Exception:
+        pass
     while True:
         with _PACE_LOCK:
             now = time.monotonic()
