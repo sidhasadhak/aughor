@@ -196,7 +196,55 @@ gate holds, flip the default citing the E6 `GraduationDecision` receipt in the c
 (`automations.*`) follow the same recipe.
 
 ⚠️ Seeding writes to `data/evals.db`, a live store — snapshot it first, or seed under a
-scratch `AUGHOR_STATE_DIR` if the run is exploratory.
+scratch `AUGHOR_STATE_DIR` if the run is exploratory. **Suite `70efbc7c53d5` (22 cases,
+`workspace`) is seeded and committed to that store** (`data/evals.db` snapshotted to
+scratch before the write).
+
+### What running it actually taught — three refusals, zero requests spent
+
+The grid was attempted and **E4 refused it three times, each for a different reason,
+before spending a single LLM request.** That is the harness doing precisely its job,
+and each refusal is worth keeping:
+
+1. `evals.experiments` off → *"refusing rather than silently running every cell under
+   one configuration, which would produce a grid of identical numbers that looks like
+   'the variant made no difference'."*
+2. Provider fallback live → *"a quota or transport failure would silently finish the
+   run on a different model and the result would be attributed to the binding that
+   started it."* Fix: `AUGHOR_FALLBACK_DISABLED=1`.
+3. **The blocker.** `workspace` *"carries 6309 bytes of exploration insights, which
+   drift every time the explorer runs and steer the model's metric definition — so two
+   cells would differ by something neither of them varied."*
+
+**So the required env for any measured grid is:**
+`AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1` — plus a connection that
+passes the frozen-semantics guard.
+
+### The methodological tension L2 must resolve first
+
+Refusal 3 is not a nuisance, it is a real design problem, and it applies to L3 and L4
+too:
+
+> **Read-back's value depends on the connection having accumulated knowledge; E4's
+> integrity guard refuses to measure on a connection whose accumulated knowledge
+> drifts.** Measuring readback on a pinned, *unexplored* connection measures it where
+> it has nothing to read — a guaranteed null result. Measuring on `workspace` measures
+> it where the baseline moves under both cells.
+
+L1 sharpened this by design: the graph now accumulates a `finding` node per answer, so
+`workspace` drifts *faster* than before.
+
+Neither `allow_exploration=True` (overriding a guard to obtain a number is the move
+this repo's discipline exists to prevent) nor "pick an empty connection" is the answer.
+**The fix is a frozen measurement connection**: a rich connection whose semantic state
+is pinned for the duration of the grid — snapshot the exploration store, ambiguity
+ledger and graph, run both cells against that snapshot, restore. Wave V's freeze
+kernel (`kernel/freeze.py`, `lifecycle.freeze`) is the obvious substrate and may
+already be most of it.
+
+**⏭️ L2's next concrete step is that frozen-connection harness, not the grid.** Until
+it exists, a readback delta cannot be honestly attributed — which is exactly what J3
+says to do about it.
 
 ## Operating notes for whoever picks this up
 
