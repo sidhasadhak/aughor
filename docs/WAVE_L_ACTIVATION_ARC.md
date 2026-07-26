@@ -15,7 +15,7 @@
 | Item | State |
 |---|---|
 | **L1** — background build + live-path writers | ✅ **COMPLETE — gate met on a running server** |
-| **L2** — graduate `graph.readback` | ⭕ next |
+| **L2** — graduate `graph.readback` | ◐ **precondition built** (eval material); grid not yet run |
 | **L3** — graduate `closed_loop` | ⭕ |
 | **L4** — graduate `automations.source_probes` + `engine` | ⭕ |
 | **L5** — seed curation on the demo connection + export the C6 pack | ⭕ |
@@ -139,21 +139,64 @@ proof is the output above, not a mutated tree (`git status --short data/` unchan
 
 ---
 
-## Next: L2 — graduate `graph.readback`
+## L2 — graduate `graph.readback`
 
 **Customer:** the C2 read-back protocol is wired into the live answer path
 (`verify/priors.py:213`) and ships OFF. Now that L1 makes the graph actually contain
 findings, briefs and glossary terms, read-back finally has something to read.
 
-**Method (J9 — receipts-only graduation):**
-1. Build an E4 grid: `graph.readback` on vs off, same cases, same connection.
-2. Floor first (J3): reference-vs-reference before any delta is attributed.
-3. Report pass-rate delta, robustness, and request/token cost per answer.
-4. If the gate holds, flip the default and cite the E6 `GraduationDecision` receipt in
-   the commit. **A flip without a receipt is the bug.**
+### The blocker L2 hit first, and the fix
 
-Run as a scheduled batch inside the free 1,000 req/day. Then L3 (`closed_loop`) and
-L4 (`automations.*`) by the same recipe.
+**The suites in this tree held ONE and TWO cases.** A pass-rate delta over one case is
+a coin landing, not a measurement, and J3 forbids attributing what cannot be
+floor-verified. L2's real first task was eval material, not the grid.
+
+`aughor/evals/from_receipts.py` (commit `ff0b111`) seeds cases from answer receipts —
+deterministic, no LLM, reusing L1's `load_investigation_findings` so "what a receipt
+means" has one definition serving both the graph and the eval plane.
+
+> ⚠️ **These cases measure CONSISTENCY, not correctness.** A receipt records what
+> Aughor *produced*, not what was *true*. Valid for "did read-back change the
+> answers"; a lie if reported as an accuracy number. The suite description carries the
+> caveat and a test asserts it does.
+
+Selection is about exclusion: abstentions (they assert absence and pass for unrelated
+reasons), context-dependent questions ("Investigate this finding" — a replayed case
+has no conversation around it), recurring question text with different SQL,
+formatting-only SQL duplicates. An empty suite is refused.
+
+**Measured on `workspace`: 412 receipts → 60 raw → 39 after question-dedup → 22
+candidates.**
+
+### The grid, ready to run
+
+```python
+from aughor.evals.from_receipts import seed_suite
+from aughor.evals.runner import run_experiment
+from aughor.evals.experiments import Cell, estimate_requests
+from aughor.evals.targets import ask_target
+
+seeded = seed_suite("workspace", limit=25)          # → suite_id, ~22 cases
+cells = [Cell("readback_off", flags={"graph.readback": False}),
+         Cell("readback_on",  flags={"graph.readback": True, "graph.build": True})]
+# floor FIRST (J3): replicates>=2 so a delta is compared against the cell's own jitter
+run_experiment(seeded["suite_id"], lambda: ask_target(connection_id="workspace"),
+               cells, replicates=2, connection_id="workspace",
+               request_budget=400, requests_per_case=1)
+```
+
+**Budget:** 22 cases × 2 cells × 2 replicates ≈ **88 requests** (`estimate_requests`
+confirms before running; `assert_within_budget` refuses a grid that would exhaust the
+day's allowance mid-run). Well inside the free 1,000/day. Verify `Cell`'s exact
+keyword signature in `aughor/evals/experiments.py:60` before the first run.
+
+**Then:** floor via `fidelity.noise_floor`, delta via `fidelity.compare`, and if the
+gate holds, flip the default citing the E6 `GraduationDecision` receipt in the commit.
+**A flip without a receipt is the bug** (J9). L3 (`closed_loop`) and L4
+(`automations.*`) follow the same recipe.
+
+⚠️ Seeding writes to `data/evals.db`, a live store — snapshot it first, or seed under a
+scratch `AUGHOR_STATE_DIR` if the run is exploratory.
 
 ## Operating notes for whoever picks this up
 
