@@ -159,3 +159,28 @@ def test_refresh_builds_then_skips(monkeypatch):
 
     second = refresh_context_graph("c", "main", org_id="o", reindex=False)
     assert second is not None and second.verdict.change == "skip" and not second.rebuilt
+
+    # Wave L1: an exploration writes FINDINGS, which the schema classifier cannot see —
+    # so a run that discovered a dozen insights and changed no column classifies SKIP.
+    # `force` rebuilds anyway; without it those findings would never land.
+    forced = refresh_context_graph("c", "main", org_id="o", reindex=False, force=True)
+    assert forced is not None and forced.verdict.change == "skip" and forced.rebuilt
+
+
+def test_forced_refresh_bypasses_the_freshness_flag_but_not_the_build_flag(monkeypatch):
+    """`graph.freshness` gates change CLASSIFICATION, and a forced caller isn't asking
+    for one — but the WRITE is still gated by `graph.build`, so flag-off stays
+    byte-identical."""
+    from aughor.ontology.store import save_ontology
+    from aughor.ontology.graph_freshness import refresh_context_graph
+    monkeypatch.setenv("AUGHOR_GRAPH_FRESHNESS", "0")
+    save_ontology("cf", "main", "d1",
+                  _onto([_order({"id": "INTEGER"})], data_fp="d1"))
+
+    monkeypatch.setenv("AUGHOR_GRAPH_BUILD", "0")
+    off = refresh_context_graph("cf", "main", org_id="o", reindex=False, force=True)
+    assert off is not None and not off.rebuilt        # ran, but wrote nothing
+
+    monkeypatch.setenv("AUGHOR_GRAPH_BUILD", "1")
+    on = refresh_context_graph("cf", "main", org_id="o", reindex=False, force=True)
+    assert on is not None and on.rebuilt

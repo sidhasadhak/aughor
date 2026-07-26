@@ -132,6 +132,83 @@ def load_investigation_findings(
     return out
 
 
+def load_briefs(connection_id: str) -> list[dict]:
+    """The connection's synthesized brief, normalized to ``{id, text, theme,
+    citations, generated_at}``.
+
+    A brief has no persisted entity — it lives as an entry in the briefing cache,
+    keyed by ``scope_key`` (which defaults to the connection id). Only the entry keyed
+    by this connection is projected: canvas briefs are keyed ``canvas:<id>``, which
+    does not name the connection, and attributing one by guessing would ground a brief
+    in data it may never have read.
+    """
+    from aughor.knowledge.briefing import peek_briefing
+
+    entry = peek_briefing(connection_id)
+    if not isinstance(entry, dict):
+        return []
+    narrative = str(entry.get("narrative") or "").strip()
+    if not narrative:
+        return []
+    citations = [
+        str(c.get("insight_id") or "")
+        for c in (entry.get("citations") or [])
+        if isinstance(c, dict) and c.get("insight_id")
+    ]
+    return [{
+        "id": connection_id,
+        "text": narrative,
+        "theme": str(entry.get("headline_theme") or ""),
+        "citations": citations,
+        "generated_at": str(entry.get("generated_at") or ""),
+    }]
+
+
+def note_brief(
+    connection_id: str,
+    brief: dict,
+    *,
+    org_id: Optional[str] = None,
+    schema_name: Optional[str] = None,
+) -> bool:
+    """Add/refresh ONE brief on the connection's committed graph, in place.
+
+    The brief twin of :func:`note_finding` — same gating, same lock, same
+    decline-rather-than-guess rule, and the same projector the full build uses
+    (``context_graph.add_briefs``), so the incremental and rebuilt nodes agree.
+    """
+    if not flag_enabled("graph.build"):
+        return False
+    from aughor.ontology.context_graph import add_briefs
+    from aughor.ontology.context_graph_store import (
+        load_graph, load_graphs_for_connection, save_graph,
+    )
+
+    resolved_org = org_id or current_org_id()
+    try:
+        with _WRITE_LOCK:
+            cg = None
+            if schema_name is not None:
+                cg = load_graph(resolved_org, connection_id, schema_name)
+            if cg is None:
+                built = load_graphs_for_connection(resolved_org, connection_id)
+                if len(built) != 1:
+                    return False
+                cg = built[0]
+
+            # A regenerated brief reuses its node id, so a node COUNT cannot tell an
+            # update from a rejection — the emitted-ids list can.
+            if not add_briefs(cg, [brief]):
+                return False
+            save_graph(cg)
+            return True
+    except Exception as exc:
+        tolerate(exc, "incremental brief write is best-effort; the next full build "
+                      "projects the brief from the cache",
+                 counter="context_graph.note_brief")
+        return False
+
+
 def _has_dossier(connection_id: str, insight_id: str) -> bool:
     """True iff a captured dossier artifact exists for this finding (the derivation
     the CEO-'how was this derived?' path renders). Best-effort — a Ledger miss just
@@ -179,6 +256,8 @@ def build_context_graph(
         lambda: load_investigation_findings(connection_id, resolved_org),
         "investigation_findings", [])
 
+    briefs = _safe(lambda: load_briefs(connection_id), "briefs", [])
+
     cg = project_graph(
         ontology,
         org_id=resolved_org,
@@ -187,6 +266,7 @@ def build_context_graph(
         merged_glossary=merged_glossary,
         resolutions=resolutions,
         findings=findings,
+        briefs=briefs,
     )
 
     if persist:
@@ -253,9 +333,7 @@ def note_finding(
                     return False
                 cg = built[0]
 
-            before = len(cg.nodes)
-            add_findings(cg, [finding])
-            if len(cg.nodes) == before:
+            if not add_findings(cg, [finding]):
                 return False  # rejected by the projector (no id/text) — nothing to save
             save_graph(cg)
             return True
