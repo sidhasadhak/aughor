@@ -709,5 +709,50 @@ def ontology_docs(connection_id: str, schema: str, confirm: bool, full: bool, en
     console.print()
 
 
+@cli.command(name="graph-export")
+@click.argument("connection_id")
+@click.option("--out", "out_dir", required=True,
+              help="Directory to write the pack into (created if absent)")
+@click.option("--schema", default="",
+              help="Export one schema (default: every schema of the connection, merged)")
+def graph_export(connection_id: str, out_dir: str, schema: str):
+    """Export a connection's knowledge graph as a self-contained skills pack (C6).
+
+    The pack is consumed with NO LLM, no API key, and no Aughor running — graph.json plus
+    two markdown skills that run the read-back protocol offline. The graph's typed
+    freshness state travels with it, so a consumer is warned rather than misled when the
+    pack lags the warehouse.
+
+    Requires the `graph.export` flag and a graph already built by `graph.build`.
+    """
+    from aughor.ontology.context_graph_export import export_enabled, export_pack
+
+    if not export_enabled():
+        console.print("[yellow]graph.export is off.[/yellow] Enable it (Settings → System, "
+                      "or AUGHOR_GRAPH_EXPORT=1) and retry.")
+        sys.exit(1)
+
+    pack = export_pack(connection_id, out_dir, schema_name=schema or None)
+    if pack is None:
+        console.print(f"[red]No committed graph for[/red] {connection_id} "
+                      f"(schema={schema or 'any'}).")
+        console.print("Build it first (open/explore the connection with [bold]graph.build[/bold] "
+                      "on), then retry — an empty pack would answer from nothing.")
+        sys.exit(1)
+
+    shape = "  ".join(f"{k}: [bold]{v}[/bold]" for k, v in sorted(pack.counts.items()))
+    colour = "green" if pack.staleness == "fresh" else "yellow"
+    console.print()
+    console.print(Panel(
+        f"[bold]{connection_id}[/bold]  schema=[cyan]{schema or '(all, merged)'}[/cyan]\n"
+        f"{shape}\n"
+        f"freshness: [{colour}]{pack.staleness}[/{colour}]\n"
+        f"files: {len(pack.files)}  →  [bold]{pack.root}[/bold]",
+        title="[bold cyan]Graph pack exported[/bold cyan]", border_style="cyan", padding=(1, 2),
+    ))
+    console.print(f"[dim]Install the skills:[/dim] [bold]{pack.root}/install.sh[/bold]")
+    console.print("[dim]Or point any agent at the pack — it reads graph.json directly.[/dim]\n")
+
+
 if __name__ == "__main__":
     cli()

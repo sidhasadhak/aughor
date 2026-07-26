@@ -40,6 +40,16 @@ cp .env.example .env          # then edit: pick an LLM backend and set its key
 On first boot Aughor provisions a synthetic DuckDB fixture (`data/aughor.duckdb`)
 so you have something to query immediately. No real data required.
 
+> **Most of `data/` is gitignored, but two paths are deliberately not:**
+> `data/context_graph/` (the Wave-C connection knowledge graph) and
+> `data/ontology_overrides/` (the human override overlay). Those are
+> *version-controllable artifacts* — reviewable in a diff and shippable to a
+> teammate — so a new file appearing there after you run the app is the artifact
+> asking to be reviewed, not stray runtime state. Commit it if it describes a
+> connection worth sharing; otherwise leave it untracked. Don't add them to
+> `.gitignore`: `data/*.json` is non-recursive on purpose so these nested files
+> stay trackable.
+
 ## Running the checks
 
 CI runs exactly these four jobs. Run them locally before opening a PR:

@@ -468,6 +468,18 @@ fails the gate.
 
 ## PR-C6 — Distribution: the committed artifact + the skills pack
 
+> ✅ **BUILT** (2026-07-26) — `aughor/ontology/context_graph_export.py`, flag `graph.export`,
+> CLI `aughor graph-export <conn> --out <dir>`, 18 tests. **Decision gate met on the real
+> `samples/ecommerce` graph:** a bare system Python 3.14 with Aughor *not installed*, run from
+> outside the repo, answered "what feeds `revenue`?" → `SUM(total_amount)`, fed by `Order`, citing
+> `metric:revenue--derived_from-->table:Order` — and the same query against a `stale` pack led with
+> the lag caveat. `install.sh` symlinks only; a coercive-language test proves no
+> "You MUST / do not ask / silently" phrasing reaches any skill.
+>
+> ⚠️ One C1 property had been broken *outside* this wave and is restored here: a docs PR had added
+> `data/context_graph/` to `.gitignore`, silently negating the committed-artifact mechanic this PR
+> depends on. `check-ignore` is clean again and `.gitignore` now carries a note saying why.
+
 **Why.** This is the mechanic UA proved converts single users into teams: the graph is *just a
 committed file*, so a teammate consumes it with **no LLM, no API key, no infrastructure** — generation
 paid once, consumption free. It is also the cheapest possible "Aughor everywhere" — an agent in a dbt

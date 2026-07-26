@@ -105,6 +105,7 @@ FLAG_ENV = {
     "graph.freshness": "AUGHOR_GRAPH_FRESHNESS",  # Wave C3: change-classified, token-proportional graph refresh + staleness
     "graph.surface": "AUGHOR_GRAPH_SURFACE",  # Wave C4: serve + render the connection knowledge graph (anti-hairball surface)
     "graph.tour": "AUGHOR_GRAPH_TOUR",  # Wave C5: the deterministic, LLM-narrated connection tour (a curriculum from topology)
+    "graph.export": "AUGHOR_GRAPH_EXPORT",  # Wave C6: export the graph as a self-contained, offline-consumable skills pack
 }
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
@@ -234,6 +235,10 @@ FLAG_META = {
     "graph.tour": {
         "label": "Connection tour — a curriculum from graph topology (Wave C5)",
         "description": "A guided tour of a connection, ordered by TOPOLOGY not notability, so it teaches rather than lists. The reading order is computed deterministically from the graph: the highest-join-degree table is the entry (the hub every other table reaches), a breadth-first walk introduces each table right after one it joins to, standalone tables follow the connected core, and the governed metrics come last as the capstone (each tied to the table it derives from). Every step after the first names the prior step it builds on. The LLM only narrates the connective tissue over that already-fixed sequence — a single narrow emission, never the ordering. Exposes GET /graph/tour. Off by default ⇒ the route 404s (byte-identical). Turns the ephemeral 7-lens interesting-facts listicle into an ordered curriculum.",
+    },
+    "graph.export": {
+        "label": "Graph distribution — the committed artifact + skills pack (Wave C6)",
+        "description": "Export a connection's knowledge graph as a self-contained pack a teammate consumes with NO LLM, no API key and no Aughor running — generation paid once, consumption free. Writes graph.json (the C1 nodes/edges/provenance re-emitted as id-sorted, pretty-printed, greppable lists inside an envelope carrying the source spine, the graph version and C3's typed freshness state), two markdown skills that run the C2 read-back protocol offline (freshness-check → grep labels/summaries/tags → pull the 1-hop subgraph → answer only from that subgraph, citing tables), a README, and an install.sh that SYMLINKS the skills into agent platforms. The staleness state travels with the data because a consumer offline cannot re-derive it, and a freshness it cannot determine ships as `unknown`, never as a cheerful `fresh`. NO coercive hook injection (the forbidden anti-pattern): install.sh only links files — it registers no hook, no daemon, nothing that speaks for the user, and no skill instructs an agent to hide the freshness state or refuse the reader. Exporting a connection with no committed graph is refused rather than shipping an empty pack that answers confidently from nothing. Off by default ⇒ export_pack returns None and nothing is written (byte-identical). Requires a graph built by `graph.build`.",
     },
     "automations.adopt_legacy": {
         "label": "Adopt monitors + briefs onto the automation engine (Wave A5)",
