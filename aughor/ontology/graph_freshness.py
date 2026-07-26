@@ -20,13 +20,19 @@ nothing (no rebuild, no re-embed); PARTIAL/FULL rebuild the deterministic projec
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
-from typing import Literal, Optional
+from dataclasses import dataclass
+from typing import Optional
 
-# Refresh action a change implies.
-ChangeClass = Literal["skip", "partial", "full", "unknown"]
-# How trustworthy the committed graph is against the live schema+data right now.
-StalenessState = Literal["fresh", "dirty", "stale", "unknown"]
+# Wave V1: the vocabulary and the decision now live in the kernel so briefs, profiles and
+# caches share one dialect (J5 — this module was written to be lifted). Re-exported here,
+# so every existing importer of ChangeClass / StalenessState / FreshnessVerdict keeps
+# working and gets the *same* types, not look-alikes.
+from aughor.kernel.freshness import (  # noqa: F401  (re-export)
+    ChangeClass,
+    FreshnessVerdict,
+    StalenessState,
+    classify_fingerprints,
+)
 
 
 def _bare(t: str) -> str:
@@ -54,23 +60,20 @@ def table_fingerprints(ontology) -> dict[str, str]:
     return out
 
 
-def structural_fingerprint(ontology) -> str:
-    """One aggregate structural hash over the whole ontology (tables + columns + types)."""
+def _structural_and_per_table(ontology) -> tuple[str, dict[str, str]]:
+    """Both structural fingerprints in ONE pass over the entities.
+
+    ``classify`` needs the aggregate *and* the per-table map; computing them separately
+    hashed every entity twice. Same bytes, one pass.
+    """
     per = table_fingerprints(ontology)
     joined = "|".join(f"{k}={per[k]}" for k in sorted(per))
-    return hashlib.md5(joined.encode()).hexdigest()[:16]
+    return hashlib.md5(joined.encode()).hexdigest()[:16], per
 
 
-@dataclass
-class FreshnessVerdict:
-    change: ChangeClass          # what refresh should DO
-    staleness: StalenessState    # how the committed graph reads RIGHT NOW
-    changed_tables: list[str] = field(default_factory=list)
-    reason: str = ""
-
-    @property
-    def needs_rebuild(self) -> bool:
-        return self.change in ("partial", "full")
+def structural_fingerprint(ontology) -> str:
+    """One aggregate structural hash over the whole ontology (tables + columns + types)."""
+    return _structural_and_per_table(ontology)[0]
 
 
 def classify(prev_graph, cur_ontology) -> FreshnessVerdict:
@@ -83,38 +86,25 @@ def classify(prev_graph, cur_ontology) -> FreshnessVerdict:
     - structure identical, data moved     → skip / DIRTY  (nightly reload: no rebuild)
     - structure moved, same table set     → partial / stale  (+ changed tables)
     - structure moved, table set changed  → full / stale
+
+    Wave V1: the decision itself is :func:`aughor.kernel.freshness.classify_fingerprints`
+    — this function is now the *extraction* half (pulling the two fingerprints and the
+    per-table map out of a graph + ontology), which is the only ontology-specific part.
+    The two domain-worded reasons are passed through so the verdicts are unchanged.
     """
-    if cur_ontology is None:
-        return FreshnessVerdict("unknown", "unknown", reason="no current ontology to compare")
-    if prev_graph is None:
-        return FreshnessVerdict("full", "stale", reason="no committed graph yet (first build)")
-
-    cur_struct = structural_fingerprint(cur_ontology)
-    cur_data = getattr(cur_ontology, "schema_fingerprint", "") or ""
-    prev_struct = prev_graph.structural_fingerprint or ""
-    prev_data = prev_graph.schema_fingerprint or ""
-
-    if cur_struct == prev_struct:
-        if cur_data == prev_data:
-            return FreshnessVerdict("skip", "fresh", reason="structure and data unchanged")
-        # A reload / backfill: the structure the graph encodes is still correct, but the
-        # findings and profiles rest on data that moved. Surface it; do NOT rebuild.
-        return FreshnessVerdict("skip", "dirty",
-                                reason="data moved (row counts changed); structure unchanged")
-
-    # Structure changed — is it a column-level change to known tables (partial) or a
-    # table set change (full)?
-    cur_tables = table_fingerprints(cur_ontology)
-    prev_tables = dict(prev_graph.table_fingerprints or {})
-    added = set(cur_tables) - set(prev_tables)
-    removed = set(prev_tables) - set(cur_tables)
-    changed = [t for t in cur_tables if t in prev_tables and cur_tables[t] != prev_tables[t]]
-
-    if added or removed:
-        return FreshnessVerdict("full", "stale", changed_tables=sorted(changed),
-                                reason=f"tables added={sorted(added)} removed={sorted(removed)}")
-    return FreshnessVerdict("partial", "stale", changed_tables=sorted(changed),
-                            reason=f"columns changed on {sorted(changed)}")
+    cur_struct, cur_units = (
+        _structural_and_per_table(cur_ontology) if cur_ontology is not None else (None, None)
+    )
+    return classify_fingerprints(
+        prev_structural=(prev_graph.structural_fingerprint or "") if prev_graph is not None else None,
+        prev_data=(prev_graph.schema_fingerprint or "") if prev_graph is not None else None,
+        cur_structural=cur_struct,
+        cur_data=(getattr(cur_ontology, "schema_fingerprint", "") or "") if cur_ontology is not None else None,
+        prev_units=dict(prev_graph.table_fingerprints or {}) if prev_graph is not None else None,
+        cur_units=cur_units,
+        absent_current_reason="no current ontology to compare",
+        absent_prior_reason="no committed graph yet (first build)",
+    )
 
 
 @dataclass

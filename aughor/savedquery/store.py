@@ -123,7 +123,33 @@ def update_saved_query(
         (new_name, new_sql, json.dumps(new_spec or {}), now, query_id),
     )
     c.commit()
-    return get_saved_query(query_id)
+    updated = get_saved_query(query_id)
+    _record_revision(updated)
+    return updated
+
+
+def _record_revision(q: Optional[SavedQuery]) -> None:
+    """Wave V3: keep a version history for an otherwise destructive update.
+
+    ``UPDATE ... WHERE id=?`` overwrites the only copy, so before this a saved query had no
+    history and no way back. The row remains the live record (nothing about reads changes);
+    this adds a versioned draft alongside it. No-op when ``lifecycle.publish`` is off.
+    """
+    if q is None:
+        return
+    from aughor.kernel.errors import tolerate
+    from aughor.kernel.lifecycle import lifecycle_enabled, save_draft
+
+    if not lifecycle_enabled():
+        return
+    try:
+        save_draft("savedquery", f"savedquery:{q.id}",
+                   {"name": q.name, "sql": q.sql, "spec": q.spec},
+                   conn_id=q.connection_id)
+    except Exception as exc:
+        tolerate(exc, "recording a saved-query revision is best-effort; the query itself is "
+                      "already saved, only its history entry is lost",
+                 counter="savedquery.revision")
 
 
 def delete_saved_query(query_id: str) -> bool:

@@ -92,9 +92,11 @@ data/_*backup*/
 data/_stale_findings_backup_*/
 data/finding_dismissals.jsonl
 data/ontology_recommendations/
-# per-workspace ontology override plane + per-connection knowledge graph (runtime)
-data/ontology_overrides/
-data/context_graph/
+# NOTE: data/ontology_overrides/ and data/context_graph/ are deliberately NOT ignored.
+# They are the version-controllable artifacts (the ontology override overlay and the
+# Wave-C connection knowledge graph) — a nested json escapes the non-recursive
+# data/*.json rule on purpose, so a graph can be reviewed in a diff and shipped to a
+# teammate. See aughor/ontology/context_graph_store.py and overrides.py.
 evals/spider2_out/
 evals/bakeoff_out/
 evals/spider2_afix/

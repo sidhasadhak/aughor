@@ -26,9 +26,11 @@ supersedes the sequencing sections of both studies; this §0 stays the session-l
 > and report before the next.** Commit locally and stop. This is the load-bearing rule for this repo;
 > batching multiple pushes on one "push everything" instruction caused friction on 2026-07-24.
 
-**`main` is at `31f697a`. Waves A, R and E are ALL COMPLETE and merged.** The 2026-07-25 session built
-A5/A6 + E5/E6 + the E4 loose ends, then landed all six PRs (#208, #211–#215). **The next build is
-Wave C** (the connection knowledge graph — scoping doc FIRST).
+**`main` is at `f25432f`. Waves A, R, E are complete, and Wave C is complete through C6.** The
+2026-07-25 session built A5/A6 + E5/E6 + the E4 loose ends and landed six PRs (#208, #211–#215),
+then Wave C's scoping doc + C1–C5 (#217). The 2026-07-26 session landed the install-doc audit (#218)
+and built **C6 — distribution**. **The next build is Wave V** (versioning/staleness, which
+generalizes C3's freshness vocabulary — J5).
 
 | Wave | What | State |
 |---|---|---|
@@ -42,10 +44,29 @@ Wave C** (the connection knowledge graph — scoping doc FIRST).
 | **E5** | the Evals surface (Suites / Runs workspace) | ✅ **merged (#212, `7f63766`)** |
 | **E6 (part 1)** | the flag promotion gate — graduate a flag on receipted evidence | ✅ **merged (#214, `8bdb8b8`)** |
 | **E6 (part 2)** | "add as test case" — a real answer → a regression case | ✅ **merged (#213, `25f096f`)** |
+| **C (C1–C5)** | the connection knowledge graph — artifact · grep-the-graph-first read-back · freshness · anti-hairball surface · tour | ✅ **merged (#217, `50d387f`)** |
+| **docs audit** | install-doc drift (the port warning was inverted; 2 backends undocumented) | ✅ **merged (#218, `f25432f`)** |
+| **C6** | distribution — the committed artifact + the offline skills pack (`graph.export`) | 🔨 **built, local** |
+| **V (V1–V6)** | artifact lifecycle — freshness kernel · resolved rebuild · save≠publish · freeze · purge ratchet · serving surface | 🔨 **built, local** |
 
-**⏭️ NEXT: Wave C — the connection knowledge graph.** Write the scoping doc FIRST (the read-back
-artifact every question passes through; the open feedback-loop finding). Then V → G → S. See
-[`docs/PLATFORM_PROGRAM_2026-07-24.md`](docs/PLATFORM_PROGRAM_2026-07-24.md) for the C/V/G/S scope.
+**⏭️ NEXT: Wave G — governance uplift.** Wave V is BUILT through V6 (local, unpushed); V3b (canvas /
+dashboard / eval-case wiring) and V6b (the React panel) are deliberately deferred. G absorbs the K
+follow-on (`govern.guard` into the 9 unenforced `_RISK` actions), the tag plane + clearances before
+roles, audit categories with the LLM call as a first-class event, and usage attribution — and its
+lineage-aware cascade invalidation lands on **V5's enforced purge cascade** rather than extending a
+hand-maintained list.
+
+**Wave V — artifact lifecycle (versions, publish, staleness).** Scoping doc written
+FIRST, as for Wave C: **[`docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md`](docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md)**
+— PR arc V1–V6, ≈110 tests. **The finding that set the scope: there are already _13 incompatible
+dialects_ of "this is out of date" in the tree** (only C3's is typed), so **V is CONSOLIDATION, not
+invention** — the shape Wave E took for evals. The schema fingerprint alone has **5 incomparable
+implementations**, two of which met the identical structure-vs-identity hazard and solved it by
+*different conventions*. Then G → S.
+
+> ⚠️ **Wave C caveat that outlived C1–C5:** the graph is built on demand by the C4 surface routes
+> (`routers/ontology.py:231`), but **no background/explore path builds it yet** — so read-back (C2)
+> only fires for a connection whose graph someone has already materialized. Worth closing in V.
 
 ### ✅ Wave E4 is COMPLETE (E4a/b/c) — grid experiments you can trust
 

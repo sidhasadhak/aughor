@@ -52,6 +52,23 @@ def clear() -> None:
     _INV.clear()
 
 
+def registered_hook_names() -> dict[str, list[str]]:
+    """The registered hook labels, by bucket — Wave V5.
+
+    Deliberately reports only what the registry actually knows. An earlier attempt returned
+    the *module* each hook reaches, recovered from the function's bytecode names; that is a
+    guess (``from aughor.monitors import store as monitor_store`` binds a local, so the alias
+    never appears in ``co_names``) and a ratchet built on a guess is worse than none. The
+    registration-coverage check reads ``bootstrap.py``'s source instead, which is where a
+    forgotten registration actually is.
+    """
+    return {
+        "conn": [n for n, _ in _CONN],
+        "schema": [n for n, _ in _SCHEMA],
+        "inv": [n for n, _ in _INV],
+    }
+
+
 def _merge(counts: dict, name: str, fn, *args) -> None:
     try:
         out = fn(*args) or {}

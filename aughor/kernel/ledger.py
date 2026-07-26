@@ -431,6 +431,22 @@ class Ledger:
             )
             return self._artifact_row(cur, cur.fetchone())
 
+    def artifact_versions(self, natural_key: str, *, limit: int = 100) -> list[dict]:
+        """Every stored version of one artifact, newest first — the version HISTORY.
+
+        ``artifact_latest`` answers "what is current" and ``artifact_by_id`` answers "give
+        me exactly this one"; neither can show a user what changed over time. Wave V3's
+        history/diff/revert surface needs the series, and supersede-not-delete means it is
+        already all on disk (``artifacts_nk(natural_key, version)`` indexes it).
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT * FROM artifacts WHERE natural_key=? ORDER BY version DESC LIMIT ?",
+                (natural_key, int(limit)),
+            )
+            rows = cur.fetchall()
+            return [a for a in (self._artifact_row(cur, r) for r in rows) if a]
+
     def artifact_by_id(self, art_id: str) -> Optional[dict]:
         """One artifact by its stable id (the receipt id — WP-10), payload decoded.
         Unlike ``artifact_latest`` (keyed by natural_key → newest version) this resolves

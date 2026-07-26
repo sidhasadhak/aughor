@@ -3759,6 +3759,148 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/lifecycle/{kind}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Diff
+         * @description The changelog between two versions — moves reported as moves.
+         */
+        get: operations["get_diff_lifecycle__kind__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle/{kind}/freeze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Freeze
+         * @description The pin on an artifact and whether it can still be honoured.
+         *
+         *     A drifted detect-only pin is reported as ``drifted`` with its reason rather than as
+         *     ``ok`` — the badge has to be able to say "this lags".
+         */
+        get: operations["get_freeze_lifecycle__kind__freeze_get"];
+        put?: never;
+        /**
+         * Post Freeze
+         * @description Pin an artifact to a version and the data behind it.
+         *
+         *     **409 when the freeze is refused.** Accepting a pin that cannot be honoured would put a
+         *     lock icon on a guarantee that does not exist, so the refusal and its reason travel to the
+         *     caller instead.
+         */
+        post: operations["post_freeze_lifecycle__kind__freeze_post"];
+        /**
+         * Delete Freeze
+         * @description Unfreeze — return the artifact to following live data.
+         */
+        delete: operations["delete_freeze_lifecycle__kind__freeze_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle/{kind}/frozen-content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Frozen Content
+         * @description The pinned content itself.
+         *
+         *     **410 when the pin can no longer be honoured**, carrying the as-of stamp and the reason.
+         *     This route deliberately has no live fall-back: a frozen label over live numbers is worse
+         *     than an error, because the reader cannot tell the difference.
+         */
+        get: operations["get_frozen_content_lifecycle__kind__frozen_content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle/{kind}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get History
+         * @description Every stored version of an artifact, newest first, plus what each audience resolves to.
+         *
+         *     ``published_version`` vs ``editor_version`` is save≠publish made visible: when they
+         *     differ, an editor has unpublished work and a viewer is still on the older content.
+         */
+        get: operations["get_history_lifecycle__kind__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle/{kind}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Publish
+         * @description Publish a version (default: the latest draft), making it what viewers resolve.
+         */
+        post: operations["post_publish_lifecycle__kind__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle/{kind}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Revert
+         * @description Restore an earlier version's content as a NEW version (history is never rewound).
+         */
+        post: operations["post_revert_lifecycle__kind__revert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/llm/config": {
         parameters: {
             query?: never;
@@ -6743,6 +6885,20 @@ export interface components {
             /** Cases */
             cases: components["schemas"]["CaseIn"][];
         };
+        /** ChangeOut */
+        ChangeOut: {
+            /** Describe */
+            describe: string;
+            /** Kind */
+            kind: string;
+            /** Path */
+            path: string;
+            /**
+             * To Path
+             * @default
+             */
+            to_path: string;
+        };
         /** ChatHistoryTurn */
         ChatHistoryTurn: {
             /**
@@ -7111,6 +7267,25 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** DiffOut */
+        DiffOut: {
+            /**
+             * Changes
+             * @default []
+             */
+            changes: components["schemas"]["ChangeOut"][];
+            /** From Version */
+            from_version: number;
+            /**
+             * Summary
+             * @default {}
+             */
+            summary: {
+                [key: string]: number;
+            };
+            /** To Version */
+            to_version: number;
+        };
         /** DismissRequest */
         DismissRequest: {
             /**
@@ -7246,6 +7421,52 @@ export interface components {
              */
             think: string;
         };
+        /** FreezeIn */
+        FreezeIn: {
+            /** Connection Id */
+            connection_id: string;
+            /**
+             * Tables
+             * @default []
+             */
+            tables: string[];
+            /** Version */
+            version: number;
+        };
+        /** FreezeOut */
+        FreezeOut: {
+            /**
+             * As Of
+             * @default
+             */
+            as_of: string;
+            /**
+             * Data Version
+             * @default
+             */
+            data_version: string;
+            /**
+             * Describe
+             * @default
+             */
+            describe: string;
+            /** Frozen */
+            frozen: boolean;
+            /** Mode */
+            mode?: string | null;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Status
+             * @default ok
+             */
+            status: string;
+            /** Version */
+            version?: number | null;
+        };
         /**
          * FunctionCall
          * @description Name and arguments of a function call.
@@ -7332,6 +7553,20 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HistoryOut */
+        HistoryOut: {
+            /** Editor Version */
+            editor_version?: number | null;
+            /** Natural Key */
+            natural_key: string;
+            /** Published Version */
+            published_version?: number | null;
+            /**
+             * Revisions
+             * @default []
+             */
+            revisions: components["schemas"]["RevisionOut"][];
         };
         /**
          * ImageInputContent
@@ -7880,6 +8115,28 @@ export interface components {
             hint: string;
             /** Sql */
             sql: string;
+        };
+        /** RevisionOut */
+        RevisionOut: {
+            /**
+             * Artifact Id
+             * @default
+             */
+            artifact_id: string;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Published At
+             * @default
+             */
+            published_at: string;
+            /** State */
+            state: string;
+            /** Version */
+            version: number;
         };
         /**
          * RunAgentInput
@@ -15900,6 +16157,279 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_diff_lifecycle__kind__diff_get: {
+        parameters: {
+            query: {
+                natural_key: string;
+                from_version: number;
+                to_version: number;
+            };
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_freeze_lifecycle__kind__freeze_get: {
+        parameters: {
+            query: {
+                natural_key: string;
+            };
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreezeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_freeze_lifecycle__kind__freeze_post: {
+        parameters: {
+            query: {
+                natural_key: string;
+            };
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FreezeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreezeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_freeze_lifecycle__kind__freeze_delete: {
+        parameters: {
+            query: {
+                natural_key: string;
+            };
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreezeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_frozen_content_lifecycle__kind__frozen_content_get: {
+        parameters: {
+            query: {
+                natural_key: string;
+            };
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_history_lifecycle__kind__history_get: {
+        parameters: {
+            query: {
+                natural_key: string;
+            };
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_publish_lifecycle__kind__publish_post: {
+        parameters: {
+            query: {
+                natural_key: string;
+                version?: number | null;
+            };
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_revert_lifecycle__kind__revert_post: {
+        parameters: {
+            query: {
+                natural_key: string;
+                to_version: number;
+                publish_now?: boolean;
+            };
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionOut"];
                 };
             };
             /** @description Validation Error */

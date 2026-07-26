@@ -38,6 +38,18 @@ def cache_path():
 
 # ── Fingerprint helpers ───────────────────────────────────────────────────────
 
+# This module's producer-logic version — bump when the profile schema changes so stale
+# caches that lack new stats (distributions, period density) are rebuilt.
+# v4: adds high-cardinality entity value_sample (R5) — a rebuild populates it.
+#
+# Unlike the other five logic versions in this tree (plain ints compared with `<`), this
+# one is baked into the fingerprint's hash INPUT: bumping it changes every key, which is
+# the rebuild. Registered as `profile_cache` in `aughor/kernel/freshness.py:LOGIC_VERSIONS`
+# — extracted from an inline literal so the inventory can name it. The value is unchanged,
+# so every existing cache key still resolves.
+PROFILE_LOGIC_VERSION = "v4-valsample"
+
+
 def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:
     """
     Stable fingerprint of a schema.
@@ -47,10 +59,7 @@ def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:
     the next explicit re-profile). Adding/removing tables will invalidate.
     """
     parts = sorted(f"{t}:{n}" for t, n in table_col_counts.items())
-    # Version prefix — bump when the profile schema changes so stale caches that
-    # lack new stats (distributions, period density) are rebuilt.
-    # v4: adds high-cardinality entity value_sample (R5) — a rebuild populates it.
-    raw = "v4-valsample|" + "|".join(parts)
+    raw = f"{PROFILE_LOGIC_VERSION}|" + "|".join(parts)
     return hashlib.md5(raw.encode()).hexdigest()[:16]
 
 
