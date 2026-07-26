@@ -14,7 +14,7 @@
 
 | Item | State |
 |---|---|
-| **L1** — background build + live-path writers | ✅ **built, 3 commits, local** (live HTTP gate still owed) |
+| **L1** — background build + live-path writers | ✅ **COMPLETE — gate met on a running server** |
 | **L2** — graduate `graph.readback` | ⭕ next |
 | **L3** — graduate `closed_loop` | ⭕ |
 | **L4** — graduate `automations.source_probes` + `engine` | ⭕ |
@@ -108,14 +108,34 @@ explorer   plain refresh on unchanged schema → change=skip, rebuilt=False
 Gate: `uvx ruff@0.15.20 check .` clean · **518 passed**
 (`-k "graph or context or ledger or ratchet or boundary or swallow or private or brief or explor"`).
 
-## L1 remainder (owed)
+## L1 gate — MET on a running server
 
-**The live HTTP gate.** The program's L1 gate is: fresh clone + demo connection + one
-`/investigate` ⇒ graph has ≥1 finding node and its `grounded_in` edge, no manual build
-step. Proven so far through the helper the receipt path calls, plus flag-off
-byte-identity — **not yet through a running server**. Needs `aughor-api` up (no
-`--reload`), `AUGHOR_GRAPH_BUILD=1`, one real investigation, then inspect the
-committed artifact.
+`./start.sh --api-only` with `AUGHOR_GRAPH_BUILD=1 AUGHOR_GRAPH_FRESHNESS=1` (no
+`--reload`), then one real question over HTTP:
+
+```
+POST /chat  {"question":"How many returns are there in total?","connection_id":"samples"}
+  → receipt_id 6f9e51586d49
+
+data/context_graph/default/samples/ecommerce.json   v4 → v5
+  finding:6f9e51586d49  "Returns table not found in schema; cannot count returns"
+                         prov=evidence_ledger
+  grounded_in: finding:6f9e51586d49 → table:Order
+```
+
+**No manual build step**, and the artifact is the committed one on disk. Two things
+worth noting from the real run:
+
+- The finding is an honest **abstention** — the connection has no returns table. That
+  is exactly the negative knowledge worth holding: the next question about returns can
+  read back that Aughor already looked and there is nothing there.
+- `glossary_term` stayed at 1 on that artifact, because the live path writes
+  **incrementally** onto the existing v4 graph; the 199-table glossary fix only lands
+  on a full rebuild. Correct behaviour, and a good illustration of the two paths doing
+  different jobs.
+
+The graph artifacts were snapshotted before the run and **restored afterwards** — the
+proof is the output above, not a mutated tree (`git status --short data/` unchanged).
 
 ---
 
