@@ -16,21 +16,24 @@
 
 ### ⏭️ NEXT SESSION — start here
 
-**📋 The forward plan of record is [`docs/PLATFORM_PROGRAM_2026-07-24.md`](docs/PLATFORM_PROGRAM_2026-07-24.md)**
-— the unified wave roadmap (**A → R → E → C → V → G → S**) integrating the Foundry study with the
-five-repo study ([`docs/FIVE_REPO_STUDY_2026-07-23.md`](docs/FIVE_REPO_STUDY_2026-07-23.md)). It
-supersedes the sequencing sections of both studies; this §0 stays the session-level status page.
+**📋 The forward plan of record is [`docs/PLATFORM_PROGRAM_2026-07-26.md`](docs/PLATFORM_PROGRAM_2026-07-26.md)**
+— the v2 wave roadmap (**L → G → O → Q → S**), built from the Databricks
+ecosystem study ([`docs/DATABRICKS_STUDY_2026-07-26.md`](docs/DATABRICKS_STUDY_2026-07-26.md))
+and the Genie docs teardown ([`docs/GENIE_DOCS_TEARDOWN_2026-07-26.md`](docs/GENIE_DOCS_TEARDOWN_2026-07-26.md)).
+It supersedes the forward sections (§2–§4) of
+[`docs/PLATFORM_PROGRAM_2026-07-24.md`](docs/PLATFORM_PROGRAM_2026-07-24.md), which remains the
+authority on completed waves and J1–J8; this §0 stays the session-level status page.
 
 > ⛔ **PUSH DISCIPLINE (standing, non-negotiable): NEVER `git push`, open a PR, or merge without the
 > user saying so IN the current request — and even when authorized, do ONE push/PR/merge, then PAUSE
 > and report before the next.** Commit locally and stop. This is the load-bearing rule for this repo;
 > batching multiple pushes on one "push everything" instruction caused friction on 2026-07-24.
 
-**`main` is at `f25432f`. Waves A, R, E are complete, and Wave C is complete through C6.** The
-2026-07-25 session built A5/A6 + E5/E6 + the E4 loose ends and landed six PRs (#208, #211–#215),
-then Wave C's scoping doc + C1–C5 (#217). The 2026-07-26 session landed the install-doc audit (#218)
-and built **C6 — distribution**. **The next build is Wave V** (versioning/staleness, which
-generalizes C3's freshness vocabulary — J5).
+**`main` is at `9584931`. Waves A, R, E, C, and V are ALL complete.** The 2026-07-25 session
+built A5/A6 + E5/E6 + the E4 loose ends and landed six PRs (#208, #211–#215), then Wave C's
+scoping doc + C1–C5 (#217). The 2026-07-26 session landed the install-doc audit (#218), then
+**C6 + Wave V (V1–V6) together as #219** (the stacking lesson: PR the base arc before the
+stacked arc). **The next build is Wave L** per the v2 program above.
 
 | Wave | What | State |
 |---|---|---|
@@ -46,15 +49,15 @@ generalizes C3's freshness vocabulary — J5).
 | **E6 (part 2)** | "add as test case" — a real answer → a regression case | ✅ **merged (#213, `25f096f`)** |
 | **C (C1–C5)** | the connection knowledge graph — artifact · grep-the-graph-first read-back · freshness · anti-hairball surface · tour | ✅ **merged (#217, `50d387f`)** |
 | **docs audit** | install-doc drift (the port warning was inverted; 2 backends undocumented) | ✅ **merged (#218, `f25432f`)** |
-| **C6** | distribution — the committed artifact + the offline skills pack (`graph.export`) | 🔨 **built, local** |
-| **V (V1–V6)** | artifact lifecycle — freshness kernel · resolved rebuild · save≠publish · freeze · purge ratchet · serving surface | 🔨 **built, local** |
+| **C6** | distribution — the committed artifact + the offline skills pack (`graph.export`) | ✅ **merged (#219, `9584931`)** |
+| **V (V1–V6)** | artifact lifecycle — freshness kernel · resolved rebuild · save≠publish · freeze · purge ratchet · serving surface | ✅ **merged (#219, `9584931`)** — V3b/V6b deferred (→ L7/S5) |
 
-**⏭️ NEXT: Wave G — governance uplift.** Wave V is BUILT through V6 (local, unpushed); V3b (canvas /
-dashboard / eval-case wiring) and V6b (the React panel) are deliberately deferred. G absorbs the K
-follow-on (`govern.guard` into the 9 unenforced `_RISK` actions), the tag plane + clearances before
-roles, audit categories with the LLM call as a first-class event, and usage attribution — and its
-lineage-aware cascade invalidation lands on **V5's enforced purge cascade** rather than extending a
-hand-maintained list.
+**⏭️ NEXT: Wave L — Leverage/activation** per the v2 program: background graph build +
+live-path finding/brief writers (closes the caveat below), then graduate `graph.readback` →
+`closed_loop` → `automations.*` through E6 receipts (J9: a default flipped without a receipt
+reverts). Wave G follows L, unchanged in scope but enriched (budget algebra,
+permission-trimmed retrieval, sealed programs — see program §3). V3b and V6b stay deferred:
+V3b is L7 (optional) or S5; V6b lands in S5.
 
 **Wave V — artifact lifecycle (versions, publish, staleness).** Scoping doc written
 FIRST, as for Wave C: **[`docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md`](docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md)**
