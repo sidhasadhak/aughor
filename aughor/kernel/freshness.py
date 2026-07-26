@@ -301,6 +301,9 @@ LOGIC_VERSIONS: dict[str, LogicVersionSpec] = {
         LogicVersionSpec("profile_cache", "aughor.tools.profile_cache", "PROFILE_LOGIC_VERSION",
                          "the odd one out: baked into the hash INPUT as a literal prefix "
                          "rather than compared as a version."),
+        LogicVersionSpec("briefing", "aughor.knowledge.briefing", "BRIEFING_LOGIC_VERSION",
+                         "the narrative's shape; bumping it regenerates cached briefs whose "
+                         "source data never moved (Wave V2's logic half)."),
     )
 }
 

@@ -25,6 +25,12 @@ from aughor.db.paths import state_dir
 _CACHE_PATH = state_dir() / "briefing_cache.json"
 _CACHE_TTL_HOURS = 2
 
+# This module's producer-logic version — bump when the narrative's SHAPE changes, so cached
+# briefs are regenerated even though their source data never moved. Registered as
+# `briefing` in aughor/kernel/freshness.py:LOGIC_VERSIONS (Wave V1's inventory; a ratchet
+# test fails if a producer-logic constant is not listed there).
+BRIEFING_LOGIC_VERSION = 1
+
 
 # ── Pydantic schemas (structured LLM output) ──────────────────────────────────
 
@@ -566,6 +572,33 @@ def generate_narrative(
 
 # ── Cache layer ───────────────────────────────────────────────────────────────
 
+def _brief_rebuild_decision(key: str, connection_id: str, entry: dict):
+    """Should this cached brief be regenerated? Returns ``(needs_rebuild, decision|None)``.
+
+    The TTL answer is ``age >= 2h``, and it is wrong twice over: it pays for a rebuild when
+    nothing moved (an LLM call), and it serves a brief for up to two hours after the source
+    data changed. So the age becomes the *backstop* and the source probe becomes the
+    authority — but only when ``freshness.resolved_rebuild`` is on. With the flag off this
+    is exactly the original expression.
+
+    The decision is handed back so a rebuild can be stamped with the version measured
+    *before* generation: if the source moves during the (slow, LLM) generation, the next
+    check must still rebuild, and re-probing afterwards would let the brief claim inputs it
+    never actually saw.
+    """
+    ttl_expired = _age_hours(entry.get("generated_at", "")) >= _CACHE_TTL_HOURS
+
+    from aughor.kernel.rebuild import resolve, resolved_rebuild_enabled
+    if not resolved_rebuild_enabled():
+        return ttl_expired, None
+
+    decision = resolve(
+        f"brief:{key}", connection_id=connection_id, ttl_expired=ttl_expired,
+        logic=str(BRIEFING_LOGIC_VERSION),
+    )
+    return decision.should_rebuild, decision
+
+
 def peek_briefing(scope_key: str) -> dict[str, Any] | None:
     """The cached brief for a scope, or None — READ ONLY, never generates.
 
@@ -614,13 +647,16 @@ def get_briefing(
     no-ops. Only consulted on a cache miss (where generate_narrative runs).
     """
     key = scope_key or connection_id
+    pre_decision = None
     if not force_refresh:
         try:
             if _CACHE_PATH.exists():
                 cache = json.loads(_CACHE_PATH.read_text())
                 entry = cache.get(key)
-                if entry and _age_hours(entry.get("generated_at", "")) < _CACHE_TTL_HOURS:
-                    return entry
+                if entry:
+                    needs, pre_decision = _brief_rebuild_decision(key, connection_id, entry)
+                    if not needs:
+                        return entry
         except Exception:
             pass
 
@@ -650,7 +686,36 @@ def get_briefing(
     except Exception:
         pass
 
+    # Wave V2: remember what this brief was built ON, but only now — after the narrative
+    # exists and is cached. Recording earlier (or on a failure) would consume the change:
+    # the next check would compare against inputs whose output was never produced, so a
+    # genuinely stale brief would read fresh.
+    _record_brief_inputs(key, connection_id, pre_decision)
+
     return briefing
+
+
+def _record_brief_inputs(key: str, connection_id: str, pre_decision=None) -> None:
+    """Stamp the source view this brief was just computed on (no-op when V2 is off).
+
+    Reuses the decision taken before generation when there is one, so the stamp names the
+    inputs the narrative actually saw — and so the common path pays for one probe, not two.
+    """
+    from aughor.kernel.rebuild import record, resolve, resolved_rebuild_enabled
+
+    if not resolved_rebuild_enabled():
+        return
+    from aughor.kernel.errors import tolerate
+    try:
+        decision = pre_decision or resolve(
+            f"brief:{key}", connection_id=connection_id,
+            logic=str(BRIEFING_LOGIC_VERSION),
+        )
+        record(f"brief:{key}", decision)
+    except Exception as exc:
+        tolerate(exc, "stamping the brief's input version is best-effort; without it the "
+                      "next check falls back to the TTL rather than serving a stale brief",
+                 counter="briefing.record_inputs")
 
 
 def invalidate(connection_id: str, schema: str | None = None) -> int:
@@ -676,4 +741,21 @@ def invalidate(connection_id: str, schema: str | None = None) -> int:
     removed = len(cache) - len(kept)
     if removed:
         _CACHE_PATH.write_text(json.dumps(kept, indent=2))
+        # Wave V2: drop the remembered input versions too. Leaving them behind would mean a
+        # rebuilt brief inherits a "nothing moved" memory from the brief that was deleted —
+        # an explicit invalidation must not be undone by a stale freshness record.
+        _forget_brief_inputs(set(cache) - set(kept))
     return removed
+
+
+def _forget_brief_inputs(keys: set[str]) -> None:
+    from aughor.kernel.errors import tolerate
+    from aughor.kernel.rebuild import forget
+
+    for k in keys:
+        try:
+            forget(f"brief:{k}")
+        except Exception as exc:
+            tolerate(exc, "clearing a brief's remembered input version is best-effort; a "
+                          "leftover record only costs one extra rebuild",
+                     counter="briefing.forget_inputs")

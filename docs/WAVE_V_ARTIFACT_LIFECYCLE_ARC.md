@@ -176,10 +176,29 @@ shape of `explorer.watermark`"* — the precedent for this kind of lift.
 3. An explicit `force` path, and an "as-of" stamp recording which source view an output was computed
    on (Foundry L340).
 
-**Flag** `freshness.resolved_rebuild` · **Tests** ~24 · **Decision gate (both halves, on the live
+**Flag** `freshness.resolved_rebuild` · **Tests** 19 · **Decision gate (both halves, on the live
 path):** a brief whose source tables did **not** change is **not** rebuilt after its TTL lapses
 (cost saved, measured in requests + tokens); a brief whose source **did** change is rebuilt **before**
 its TTL lapses (correctness gained). A PR that shows only the cost half has not met the gate.
+
+> ✅ **BUILT** (2026-07-26) — `aughor/kernel/rebuild.py`, wired into `knowledge/briefing.py`'s cache
+> decision. Gate met on the live path against the real `samples` connection (**5 real tables probed**,
+> fingerprint `8dcad6c5…`, stable across re-probe):
+> **cost half** — TTL expired ⇒ `rebuild=False, staleness=fresh, saved_a_rebuild=True`
+> (*"TTL had lapsed but nothing moved"*); **correctness half** — source version differs, TTL still
+> valid ⇒ `rebuild=True, staleness=stale, caught_a_stale_read=True`. (The warehouse was **not**
+> mutated to stage the second half — that would be a user's real data; the prior version was seeded
+> instead, while the probe, the tables and the comparison are all real.)
+>
+> Three refusals shipped: unversionable inputs **fail open to the caller's TTL and say so**
+> (`resolved=False`, so a caller can never claim "nothing changed" on a probe that did not answer);
+> a bitten probe cap **names how many tables it skipped**; and state is recorded **only after** a
+> successful rebuild — recording on failure would consume the change and make a stale artifact read
+> fresh (A3's fired-tick rule). The stamp reuses the **pre-generation** probe, so a source that moves
+> during a slow LLM generation still triggers the next rebuild.
+>
+> V1's ratchet did its job unprompted: adding `BRIEFING_LOGIC_VERSION` failed the build until it was
+> registered in `LOGIC_VERSIONS`.
 
 ## PR-V3 — The artifact lifecycle: save≠publish, semantic version, changelog diff, revert
 
