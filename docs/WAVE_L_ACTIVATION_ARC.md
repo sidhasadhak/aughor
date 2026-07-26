@@ -242,9 +242,43 @@ ledger and graph, run both cells against that snapshot, restore. Wave V's freeze
 kernel (`kernel/freeze.py`, `lifecycle.freeze`) is the obvious substrate and may
 already be most of it.
 
-**⏭️ L2's next concrete step is that frozen-connection harness, not the grid.** Until
-it exists, a readback delta cannot be honestly attributed — which is exactly what J3
-says to do about it.
+### The frozen measurement connection — built
+
+`aughor/evals/frozen.py`. **The resolution is to prove invariance instead of requiring
+emptiness.** The guard's real concern is that volatile state *moves between cells*; a
+rich connection whose state is provably IDENTICAL for every cell carries no confound,
+because a constant cannot explain a difference. That guarantee is strictly stronger
+than the one the guard checks, which is why `run_experiment(freeze=True)` may stand
+down the emptiness check while the pin is in force.
+
+It is **not** `allow_exploration=True` by another name: that one stops mentioning the
+confound, this one proves it did not occur.
+
+```python
+with frozen_semantics("workspace") as state:   # fingerprint + suppress writers
+    ...                                        # run every cell
+# exit re-probes; drift raises SemanticDriftError naming exactly what moved
+```
+
+Two things it covers that the original guard does not:
+
+- **The context graph.** `volatile_semantic_state` never looked at it — but Wave L1
+  made it a live-mutating input (a `finding` node per answer), so a two-cell readback
+  grid would have cell 2 reading a graph cell 1 grew. That is precisely the confound
+  the guard exists to prevent, arriving through a door it does not watch. **L1
+  introduced this; the harness closes it.**
+- **Prevention, not just detection.** Restoring afterwards still leaves cell 2 having
+  read cell 1's writes, so `note_finding`/`note_brief` are suppressed for the duration
+  via a ContextVar (per-run, and it propagates through the repo's context-preserving
+  executor into fan-out threads). Suppression is narrow by design: those writes are
+  best-effort side effects that change no answer, the receipt still lands, and the next
+  full build projects the finding afterwards.
+
+Verified against the real connection: `{'exploration_bytes': 6309, 'ontology':
+'present', 'graph': {'default': {'version': 6, 'nodes': 28, 'edges': 7}}}` pinned,
+digest `27ffbdd0d4c34adf`, `verified=True`. **A 6,309-byte connection is now
+measurable** — which is the whole point, since that is where read-back has something
+to read.
 
 ## Operating notes for whoever picks this up
 

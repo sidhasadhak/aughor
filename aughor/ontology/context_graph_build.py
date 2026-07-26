@@ -177,7 +177,7 @@ def note_brief(
     decline-rather-than-guess rule, and the same projector the full build uses
     (``context_graph.add_briefs``), so the incremental and rebuilt nodes agree.
     """
-    if not flag_enabled("graph.build"):
+    if not flag_enabled("graph.build") or _suppressed_for_measurement():
         return False
     from aughor.ontology.context_graph import add_briefs
     from aughor.ontology.context_graph_store import (
@@ -287,6 +287,25 @@ def build_context_graph(
 _WRITE_LOCK = threading.Lock()
 
 
+def _suppressed_for_measurement() -> bool:
+    """True while a frozen eval grid is running.
+
+    An answer produced during a measured run must not grow the graph, because the next
+    cell would then read what the previous cell wrote and the two cells would differ by
+    something neither of them varied. Suppressing the write is safe: it is a
+    best-effort side effect that changes no answer, and the receipt still lands, so the
+    next full build projects the finding afterwards.
+
+    Imported lazily and tolerantly — the evals package must never become a hard
+    dependency of the answer path.
+    """
+    try:
+        from aughor.evals.frozen import measurement_frozen
+        return measurement_frozen()
+    except Exception:
+        return False
+
+
 def note_finding(
     connection_id: str,
     finding: dict,
@@ -310,7 +329,7 @@ def note_finding(
     The node is emitted by ``context_graph.add_findings`` — the SAME projector the full
     build uses — so the incremental and rebuilt graphs cannot drift into two shapes.
     """
-    if not flag_enabled("graph.build"):
+    if not flag_enabled("graph.build") or _suppressed_for_measurement():
         return False
     from aughor.ontology.context_graph import add_findings
     from aughor.ontology.context_graph_store import (
