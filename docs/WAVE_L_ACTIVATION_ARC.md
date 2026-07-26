@@ -318,6 +318,12 @@ digest `27ffbdd0d4c34adf`, `verified=True`. **A 6,309-byte connection is now
 measurable** — which is the whole point, since that is where read-back has something
 to read.
 
+**Suppression proven in production, incidentally.** The grid attempts ran hundreds of
+answers with `graph.build=1` — every one of which would normally have written a
+`finding` node. Afterwards all three committed artifacts were still at their
+pre-run versions (`aughor_ops` v1, `samples` v4, `workspace` v6). The pin held on the
+live path, not just under test.
+
 ## Operating notes for whoever picks this up
 
 - `.venv/bin/python -m pytest` — system python3.14 has no pytest.
