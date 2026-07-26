@@ -217,8 +217,19 @@ and each refusal is worth keeping:
    cells would differ by something neither of them varied."*
 
 **So the required env for any measured grid is:**
-`AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1` — plus a connection that
-passes the frozen-semantics guard.
+`AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1 AUGHOR_LLM_RPM=16
+AUGHOR_LLM_MAX_CONCURRENCY=2` — plus a connection that passes the frozen-semantics
+guard, or `freeze=True`.
+
+> **A fourth blocker, found only by running it: the rate limit.** With the harness in
+> place the grid finally started, and burst straight into OpenRouter's free-tier
+> **20 RPM** cap. With the fallback chain disabled — which measurement integrity
+> *requires* — a 429 has nowhere to go, so every one was recorded as a case failure.
+> That run would have reported the rate limiter as read-back's effect. E4 guarded the
+> daily *budget*; nothing guarded the *rate*, and the per-endpoint semaphore caps calls
+> in flight, not their rate (four concurrent one-second calls = 240/min at a 20/min
+> endpoint). Fixed by `provider._pace()` (`e365435`): off by default, per endpoint,
+> slot claimed inside the lock, applied *before* the concurrency gate.
 
 ### The methodological tension L2 must resolve first
 
