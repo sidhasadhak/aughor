@@ -515,7 +515,8 @@ def _build_ollama_client(model: str, base_url: str) -> instructor.Instructor:
     # connect=30s, read=300s (5 min) — enough for any realistic single inference call.
     import httpx
     _timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=10.0)
-    raw = OpenAI(base_url=base_url, api_key="ollama", timeout=_timeout)
+    raw = OpenAI(base_url=base_url, api_key="ollama", timeout=_timeout,
+                 max_retries=_SDK_RETRIES)
     # Reasoning models (qwen3, kimi, deepseek-r1, qwq) support native tool calling.
     # Use TOOLS mode so <think>…</think> tokens are isolated from structured output.
     # JSON mode causes reasoning tokens to pollute the output and trigger retries.
@@ -528,14 +529,27 @@ def _build_ollama_client(model: str, base_url: str) -> instructor.Instructor:
 def _build_lmstudio_client(base_url: str) -> instructor.Instructor:
     # LM Studio only accepts response_format.type = "json_schema" or "text",
     # not "json_object" — use JSON_SCHEMA mode which sends the full Pydantic schema.
-    raw = OpenAI(base_url=base_url, api_key="lm-studio")
+    raw = OpenAI(base_url=base_url, api_key="lm-studio", max_retries=_SDK_RETRIES)
     return instructor.from_openai(raw, mode=instructor.Mode.JSON_SCHEMA)
+
+
+#: The OpenAI SDK retries transient failures ITSELF, twice by default — below our retry
+#: ladder, below `_pace`, and below the failure classifier. Measured on one real ask
+#: case: 6 paced releases produced **14** HTTP requests to the provider, so more than
+#: half of all traffic was invisible to every guard we own. Worse, the amplification is
+#: worst exactly when it hurts: a 429 became three 429s, which is how a run that sends
+#: 7 requests a minute gets refused by a 20-per-minute cap.
+#:
+#: Retries belong to `_run_resilient`, which paces them, classifies them (R2's markers),
+#: counts them, and bounds them by deadline. Same lesson as R1's instructor default, one
+#: layer further down: a library's DEFAULT is part of your cost model.
+_SDK_RETRIES = 0
 
 
 def _build_openai_compat(base_url: str, api_key: str) -> instructor.Instructor:
     if not api_key:
         raise RuntimeError("missing API key for this backend — set it in Settings → Inference")
-    raw = OpenAI(base_url=base_url, api_key=api_key)
+    raw = OpenAI(base_url=base_url, api_key=api_key, max_retries=_SDK_RETRIES)
     return instructor.from_openai(raw, mode=instructor.Mode.JSON)
 
 
@@ -546,7 +560,7 @@ def _build_gemini_client(base_url: str, api_key: str) -> instructor.Instructor:
     <thinking> pollute the output. Tune with AUGHOR_GEMINI_INSTRUCTOR_MODE (TOOLS|JSON|JSON_SCHEMA)."""
     if not api_key:
         raise RuntimeError("missing Gemini API key — set it in Settings → Inference (or GEMINI_API_KEY)")
-    raw = OpenAI(base_url=base_url, api_key=api_key)
+    raw = OpenAI(base_url=base_url, api_key=api_key, max_retries=_SDK_RETRIES)
     mode = getattr(instructor.Mode, os.getenv("AUGHOR_GEMINI_INSTRUCTOR_MODE", "TOOLS").upper(),
                    instructor.Mode.TOOLS)
     return instructor.from_openai(raw, mode=mode)
@@ -556,7 +570,7 @@ def _build_anthropic_client(api_key: str) -> instructor.Instructor:
     if not api_key:
         raise RuntimeError("missing Anthropic API key — set it in Settings → Inference")
     import anthropic
-    raw = anthropic.Anthropic(api_key=api_key)
+    raw = anthropic.Anthropic(api_key=api_key, max_retries=_SDK_RETRIES)
     return instructor.from_anthropic(raw)
 
 
