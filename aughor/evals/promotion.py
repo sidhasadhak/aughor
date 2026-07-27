@@ -64,6 +64,7 @@ def evaluate_graduation(
     current_default: bool = False,
     baseline_pass_rate: Optional[float] = None,
     min_pass_rate: float = 1.0,
+    delta: Any = None,
 ) -> GraduationDecision:
     """Decide whether ``flag`` has EARNED graduation to default-on, from one eval run.
 
@@ -83,6 +84,13 @@ def evaluate_graduation(
     ``baseline_pass_rate`` is the honest bar: the flag-OFF run's pass rate, so graduation
     means "at least as good as without the flag". Producing that baseline is a flag-off /
     flag-on A/B — the E4 experiments plane's job; this gate scores the result.
+
+    ``delta`` is that A/B's :class:`aughor.evals.fidelity.Delta`. It is required whenever
+    a baseline is given, because **clearing the bar is not the same as beating it** —
+    the difference is the noise floor. Without it this gate once said `can_graduate=True`
+    about the exact +0.023 that ``fidelity.compare`` was simultaneously refusing to
+    attribute against a 0.182 band (7 blocker, below). J3 binds J9: a flag cannot
+    graduate on a delta the harness will not stand behind.
     """
     reasons: list[str] = []
     bar = baseline_pass_rate if baseline_pass_rate is not None else min_pass_rate
@@ -113,6 +121,24 @@ def evaluate_graduation(
     elif pass_rate < bar:
         detail = "baseline" if baseline_pass_rate is not None else f"min {min_pass_rate:g}"
         reasons.append(f"pass_rate {pass_rate:g} is below the bar {bar:g} ({detail})")
+
+    # Clearing the bar is not the same as BEATING it, and the difference is the noise
+    # floor. Found by running the first real grid: fidelity refused a +0.023 delta
+    # against a 0.182 band while this gate independently said `can_graduate=True` —
+    # the two halves of the same discipline, disagreeing, because only one of them had
+    # ever looked at the floor. A gate that graduates on a delta the harness refuses to
+    # attribute is a gate that graduates on noise.
+    if delta is not None and not getattr(delta, "attributable", True):
+        reasons.append(
+            "the delta is not attributable: " + str(getattr(delta, "verdict", "")
+                                                    or "the noise floor was not met"))
+    elif delta is None and baseline_pass_rate is not None:
+        # A baseline implies an A/B ran. An A/B without its floor is the shape that
+        # produced this bug, so it is named rather than silently allowed.
+        reasons.append(
+            "no floor evidence supplied for a baseline comparison — pass the "
+            "fidelity.compare() result as `delta` so the gate can see whether the "
+            "difference clears the noise band")
 
     return GraduationDecision(
         flag=flag,
