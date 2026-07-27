@@ -660,8 +660,10 @@ def _pace(base_url: str) -> None:
     try:
         from aughor.stats import bump
         bump(f"llm.paced.{key[:40]}")
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "pacing telemetry is best-effort; the rate gate itself still held",
+                 counter="llm.pace_counter")
     while True:
         with _PACE_LOCK:
             now = time.monotonic()

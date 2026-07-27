@@ -90,7 +90,11 @@ def _ab_evidence(suite_id: str, flag: str, *, limit: int = 24) -> tuple:
         if isinstance(cfg, str):
             try:
                 cfg = json.loads(cfg)
-            except Exception:
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "a run whose config JSON is unreadable cannot be attributed "
+                              "to a cell, so it is not counted as A/B evidence",
+                         counter="evals.graduate.bad_run_config")
                 continue
         requested = ((cfg or {}).get("cell_requested") or {}).get("flags") or {}
         if flag not in requested:
