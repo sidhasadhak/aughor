@@ -231,7 +231,38 @@ guard, or `freeze=True`.
 > endpoint). Fixed by `provider._pace()` (`e365435`): off by default, per endpoint,
 > slot claimed inside the lock, applied *before* the concurrency gate.
 
-#### ⚠️ OPEN: pacing is necessary but not yet sufficient
+#### ✅ RESOLVED: the SDK was making 2 of every 3 requests invisibly
+
+**The measurement found it; the earlier hypotheses were all wrong.** Instrumented at
+`httpx.Client.send` on one real ask case:
+
+```
+before:  6 pacer releases → 14 HTTP requests to the provider   (8 UNPACED)
+after :  6 pacer releases →  6 HTTP requests                   (0 unpaced)
+```
+
+`OpenAI(...)` was constructed with **no `max_retries`**, so the SDK's own default (2
+retries = up to 3 attempts) fired *below* our retry ladder — below `_pace`, below R2's
+classifier, below the request budget, below every counter. More than half of all
+provider traffic was invisible to every guard we own, and a measured run's request
+budget understated reality by **2.3×**.
+
+The amplification was worst exactly where it hurt: **a 429 became three 429s.** That is
+how a run sending a measured 7 requests/minute got refused ten times by a 20/minute cap.
+
+**The pacer was correct all along** — release gaps exactly 3.75s, worst 60s window 16
+against a cap of 20, verified under 8-way concurrency. It simply never saw two thirds
+of the traffic. Fixed by `max_retries=0` on all five clients (`881bfde`): retries belong
+to `_run_resilient`, which paces, classifies, counts and bounds them.
+
+> **The lesson, twice now:** a library's DEFAULT is part of your cost model. R1 found
+> this at the instructor layer and stopped there; nothing had ever measured the layer
+> beneath it. When a guard looks complete, count at the boundary — every call site being
+> wrapped proved nothing, because the wrapping was not where the requests were made.
+
+<details><summary>The three hypotheses this replaced (all wrong, kept as method)</summary>
+
+#### ⚠️ (superseded) pacing is necessary but not yet sufficient
 
 The paced re-run **still drew 72 `free-models-per-min` refusals at `AUGHOR_LLM_RPM=16`**
 (the raw grep said 177 — traceback inflation; 72 is the distinct-event count). Notably
@@ -257,6 +288,12 @@ short paced run — if the gate is passed fewer times than requests were made, c
 3 is confirmed; if the key distribution is split, candidate 2 is. **Do that
 measurement before the next grid attempt** — it is cheap, and another brute-force run
 against a per-minute cap is not.
+
+*(Outcome: the counter was the right instrument but none of these three candidates was
+the cause. Counting at the pacer could only ever compare the gate against itself; the
+answer needed a count at the HTTP boundary, one layer below the lowest thing we owned.)*
+
+</details>
 
 ### The methodological tension L2 must resolve first
 
