@@ -326,6 +326,65 @@ prevent. Fixed in `7d78c4c`: the gate now takes the `Delta`, refuses a non-attri
 one in the floor's own words, and refuses a baseline supplied *without* floor evidence
 (silence is not evidence). J3 binds J9.
 
+### The floor experiment — pinning temperature, and what it really proved
+
+Re-ran the identical grid with **`temperature=0`** on both cells.
+
+| cell | rep 0 | rep 1 | band |
+|---|---|---|---|
+| `off_t0` | 0.818 | 0.818 | **0.000** |
+| `on_t0`  | 0.773 | 0.773 | **0.000** |
+
+Floor **verified** (0.000 against a 0.050 threshold); delta **−0.045, attributable**:
+*"variant is worse on pass_rate by 0.045 (0.818 → 0.773), against a run-to-run floor of
+0.000."* Graduation refused on two independent grounds — one errored case, and below
+the baseline bar. **`graph.readback` stays OFF, now on positive evidence of harm rather
+than absence of evidence.**
+
+#### ⚠️ But the headline number is thinner than it looks
+
+Per case, the −0.045 is a **three-case shuffle, not a systematic effect**:
+
+| case | off | on |
+|---|---|---|
+| "what actions to improve return rate?" | **pass** 188s | fail 125s |
+| "how do orders and returns relate?" | **pass** 46s | fail 35s |
+| "how many brands + total order value?" | fail 135s | **pass** 88s |
+| "where are we losing money?" | fail 40s | fail **510s** ← the errored case |
+
+Two regressions, one improvement, net −1 case on n=22. And the errored case was
+**already failing without read-back** — read-back only made it breach the 300s budget
+(inflated further by the measurement's own 3.75s/request pacing), so the error blocker
+is about latency, not correctness.
+
+The clearest real cost is **wall time: 1318s → 1901s per replicate, +44%.** That is a
+defensible reason to keep the flag off on its own.
+
+#### 🔑 The methodological finding: a temp-0 floor is not a noise floor
+
+**At `temperature=0`, replicates measure DETERMINISM, not sampling variance.** Two
+identical runs of a deterministic pipeline producing identical scores is close to
+tautological — it says the pipeline is reproducible, not that the delta generalises.
+The floor machinery assumes replicates sample the noise distribution; pinned to zero,
+they no longer do, so `band=0.000` makes *any* difference ≥0.001 "attributable",
+including a one-case coin-flip.
+
+So the two regimes measure different things and both are needed:
+
+- **default temperature** → the honest sampling floor (here: 0.182 — wide, and the
+  reason nothing was attributable)
+- **temperature 0** → a reproducibility check and a clean per-case diff, but its floor
+  must **not** be read as a significance threshold
+
+Neither run alone licenses "read-back is worse by 0.045". What the pair licenses is:
+*read-back changes 3 of 22 answers (2 worse, 1 better), costs 44% more wall time, and
+shows no measurable benefit* — which is enough to keep it off, and not enough to call
+it harmful.
+
+⏭️ **The fix for real significance is case count, not replicate count.** A 3-case
+shuffle on 22 cases is noise at any temperature; resolving a few-point effect needs a
+suite several times wider (L5), not more repeats of a deterministic pipeline.
+
 #### What L2 actually needs next
 
 The blocker is no longer machinery — it is **statistical power**:
