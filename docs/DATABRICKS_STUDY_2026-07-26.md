@@ -125,6 +125,50 @@ Elementary's MCP server proves the plumbing; the last-mile UX is open.
 
 ---
 
+## 1b. Third-party verification of the Genie Ontology read (2026-07-27)
+
+Three independent write-ups were checked against §1 and the
+[teardown](GENIE_DOCS_TEARDOWN_2026-07-26.md):
+[Sinha (Medium)](https://medium.com/@sreedeepsinha/genie-ontology-databricks-new-context-layer-for-ai-agents-558d0e451d82) ·
+[datapao](https://datapao.com/genie-ontology-explained/) ·
+[typedef](https://www.typedef.ai/blog/what-is-genie-ontology-databricks-continuously-learned-context-layer-explained).
+
+**No contradictions.** Everything §1 records — auto-extraction from tables/queries/
+dashboards/pipelines/50+ apps, OntoRank's five signals, UC permission gating, metric
+views as a high-authority input, 84.5% vs 52.4% on 28 anonymized questions, preview
+status — is corroborated. The no-editor/no-versioning gap is corroborated *independently*
+by datapao asking "Can you export a snapshot of the ontology state?" and answering that
+"Databricks hasn't published clear documentation on this yet."
+
+They add five limitations the vendor docs do not state, four of which strengthen
+design decisions already made here:
+
+| Limitation (third-party) | What it means for Aughor |
+|---|---|
+| **Cold start** — with no usage history, OntoRank "degrades to creator authority and recency alone" | Aughor's graph is a *deterministic projection* (schema + profiler + measured joins), so it works on day one with zero usage. A real advantage this study had not articulated. |
+| **Stale instructions can outrank certified metrics** when their usage signals are higher | Override-wins makes this structurally impossible: a human YAML file is authoritative regardless of popularity. |
+| **Auditability undocumented** → risk of "a shadow semantic layer that's automatic, invisible, and hard to defend" | The graph is a git-tracked artifact and C6 exports a pack. This question has a literal answer here. |
+| **Ranking cannot resolve a real disagreement** — it picks a winner between finance and product rather than reconciling them | Confirms the ambiguity ledger's shape: record the *readings* and their source tier, don't silently elect one. |
+| **Context accuracy ≠ computational accuracy** | The whole argument for the guard battery, stated by someone else. |
+
+### The sharpest sentence in the three articles
+
+typedef's worked example: a **high-authority but mathematically invalid** monthly-
+active-users metric — one that **sums daily distinct counts** — would be served
+confidently, because *"ranking the most trusted definition is not the same as checking
+the number."*
+
+**That exact error is the `count_distinct_variant` / grain-guard class in
+[`sql/fanout.py`](../aughor/sql/fanout.py)**, which predates this study. It is the
+clearest one-sentence statement of the differentiator available: **their layer ranks
+meaning; ours also checks the arithmetic.** Use it in §7's positioning.
+
+> ⚠️ **The honest caveat on every row above: design versus deployment.** Genie Ontology
+> is running across enterprises; Aughor's graph was activated in Wave L this week. These
+> comparisons are of mechanisms, not of maturity, and should not be quoted as the latter.
+
+---
+
 ## 2. Scorecard — Aughor vs the settled checklist
 
 | Capability (industry checklist) | Genie One | Aughor today | Verdict |
@@ -213,6 +257,13 @@ Effort: S (<1 PR), M (1–2 PRs), L (an arc).
   popular-but-wrong definition must remain overridable by one human YAML file — that is
   the governance story Genie cannot tell, and typedef's critique of ontorank
   ("authority cannot verify correctness") is the marketing line for it.
+  **Two design constraints inherited from ontorank's documented failure modes (§1b):**
+  a *cold-start* rule — usage signals may only ever REORDER what deterministic
+  evidence already admitted, so a connection with no history ranks by provenance tier
+  and loses nothing; and a *staleness* rule — a signal's own freshness must decay its
+  weight, because Genie's stale Space instructions can outrank certified metrics purely
+  on volume. Neither is optional: they are the two ways a ranking layer goes wrong, and
+  both are already visible in someone else's shipped system.
 - **B-4 Verified-query generalization — Snowflake's loop, Aughor's guards (L).**
   Today trusted queries are retrieved by lexical overlap and injected whole. Add the
   *generalize* step: mine accepted verdicts + trusted queries for reusable fragments —
@@ -390,3 +441,14 @@ riding their named hosts.
 > provenance-required graph in git: every edge carries measured evidence, every override
 > is a reviewable file, every answer cites its sources, and data-quality caveats ride the
 > answer itself. Auto-learned where that is honest, human-governed where it matters.
+
+**The shortest form of it** (from §1b, and the one to lead with):
+
+> Ranking the most trusted definition is not the same as checking the number. Genie's
+> ontology can serve a popular monthly-active-users metric that sums daily distinct
+> counts, confidently and with citations. Aughor's guards refuse that query — **their
+> layer ranks meaning; ours also checks the arithmetic.**
+
+Both are claims about *mechanism*. Neither should be read as a claim about maturity:
+their context layer runs across enterprises, ours was activated in Wave L. Say the
+first honestly and the second is unnecessary.
