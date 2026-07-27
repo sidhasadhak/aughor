@@ -121,13 +121,22 @@ def freshness_enabled() -> bool:
 
 def refresh_context_graph(
     connection_id: str, schema_name: Optional[str] = None, *, org_id: str = "",
-    reindex: bool = True,
+    reindex: bool = True, force: bool = False,
 ) -> Optional[RefreshResult]:
     """Refresh a connection's graph at cost proportional to the change: SKIP does no
     work; PARTIAL/FULL rebuild the deterministic projection (and re-embed for search).
-    Returns None only when ``graph.freshness`` is off. Best-effort throughout — a
-    refresh never raises into a live path."""
-    if not freshness_enabled():
+    Returns None only when ``graph.freshness`` is off and ``force`` was not asked for.
+    Best-effort throughout — a refresh never raises into a live path.
+
+    ``force`` exists because the classifier compares *schema* fingerprints, and the
+    graph has narrative sources too: an exploration run can discover a dozen findings
+    without touching a single column, and would classify SKIP. A caller that KNOWS its
+    sources moved says so, and gets the rebuild plus the re-index. It bypasses the
+    ``graph.freshness`` gate as well — that flag governs change *classification*, and a
+    forced caller is not asking for a classification. The write itself stays gated by
+    ``graph.build`` inside the builder, so flag-off is still byte-identical.
+    """
+    if not freshness_enabled() and not force:
         return None
     from aughor.kernel.errors import tolerate
     from aughor.org.context import current_org_id
@@ -141,7 +150,7 @@ def refresh_context_graph(
         prev = merge_graphs(load_graphs_for_connection(org, connection_id))
         verdict = classify(prev, cur_ontology)
 
-        if not verdict.needs_rebuild:
+        if not verdict.needs_rebuild and not force:
             return RefreshResult(verdict=verdict, rebuilt=False)
 
         from aughor.ontology.context_graph_build import build_context_graph

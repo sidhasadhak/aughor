@@ -266,6 +266,7 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
                    fixture: Any = None, fixture_tables: Optional[list[str]] = None,
                    connection_id: str = "",
                    allow_exploration: bool = False,
+                   freeze: bool = False,
                    perturbations: Optional[Any] = None,
                    request_budget: int = 0,
                    requests_per_case: int = 1) -> list[CellResult]:
@@ -296,10 +297,9 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
     applies the frozen-semantics guard before anything runs.
     """
     from aughor.evals.experiments import (
-        applied, assert_frozen_semantics, assert_measurable, assert_within_budget,
+        assert_frozen_semantics, assert_measurable, assert_within_budget,
         data_version_of, estimate_requests,
     )
-    from aughor.kernel.errors import tolerate
     from aughor.kernel.flags import flag_enabled
 
     if not flag_enabled("evals.experiments"):
@@ -318,7 +318,16 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
     # directly, where the per-cell blast radius IS the whole blast radius.
     assert_measurable()
     if connection_id:
-        assert_frozen_semantics(connection_id, allow_exploration=allow_exploration)
+        # `freeze` supersedes the emptiness check with a stronger one. The guard refuses
+        # a connection carrying volatile state because it DRIFTS between cells; the
+        # frozen harness pins that state, suppresses the writers that would move it, and
+        # verifies afterwards that it did not. "Identical for every cell" is a strictly
+        # stronger guarantee than "empty", and it is the only way to measure a flag whose
+        # value depends on the connection having accumulated something to read.
+        # It is not `allow_exploration` by another name: that one stops mentioning the
+        # confound, this one proves it did not occur.
+        assert_frozen_semantics(connection_id,
+                                allow_exploration=allow_exploration or freeze)
     if request_budget:
         assert_within_budget(
             estimate_requests(cells=len(cells), cases=len(store.list_cases(suite_id)),
@@ -328,6 +337,32 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
             budget=request_budget)
 
     opening_version = data_version_of(fixture, fixture_tables) if fixture is not None else None
+
+    results: list[CellResult] = []
+    from contextlib import ExitStack
+    with ExitStack() as _pin:
+        # Entered around the WHOLE grid, not per cell: the point is that every cell saw
+        # the same state, which a per-cell pin could not establish. Its exit re-probes
+        # and raises if anything moved — voiding the grid rather than returning numbers
+        # nobody can attribute.
+        if freeze and connection_id:
+            from aughor.evals.frozen import frozen_semantics
+            _pin.enter_context(frozen_semantics(connection_id, strict=True))
+        results.extend(_run_cells(
+            cells, suite_id, target_factory, opening_version,
+            iterations=iterations, replicates=replicates, evaluators=evaluators,
+            checker=checker, persist=persist, fixture=fixture,
+            fixture_tables=fixture_tables, perturbations=perturbations))
+    return results
+
+
+def _run_cells(cells, suite_id, target_factory, opening_version, *,
+               iterations, replicates, evaluators, checker, persist,
+               fixture, fixture_tables, perturbations) -> list["CellResult"]:
+    """The grid's inner loop, lifted so the freeze pin can wrap it without indenting
+    (and re-indenting) the body every time the surrounding contract changes."""
+    from aughor.evals.experiments import applied, data_version_of
+    from aughor.kernel.errors import tolerate
 
     results: list[CellResult] = []
     for cell in cells:

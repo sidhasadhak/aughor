@@ -447,6 +447,43 @@ class Ledger:
             rows = cur.fetchall()
             return [a for a in (self._artifact_row(cur, r) for r in rows) if a]
 
+    def artifacts_of_kind(
+        self,
+        kinds: "str | list[str]",
+        *,
+        conn_id: Optional[str] = None,
+        org_id: Optional[str] = None,
+        limit: int = 200,
+    ) -> list[dict]:
+        """Current (non-superseded) artifacts of one or more kinds, newest first.
+
+        ``artifact_latest``/``artifact_versions``/``artifact_by_id`` all require the
+        caller to already know a natural_key — they answer "this artifact", never
+        "which artifacts exist". Wave L1 needs the enumeration: the context graph
+        projects a connection's answer receipts into `finding` nodes, and it cannot
+        guess the per-investigation keys (``ada:{conn}:{inv_id}``).
+
+        Scoped to the tenant (``org_id`` defaults to the current context) and, when
+        given, to one connection. Superseded versions are excluded, so a re-answered
+        question contributes one node, not one per revision.
+        """
+        ks = [kinds] if isinstance(kinds, str) else list(kinds)
+        if not ks:
+            return []
+        oid = org_id or current_org_id()
+        sql = ("SELECT * FROM artifacts WHERE superseded_by IS NULL AND org_id=? "
+               f"AND kind IN ({','.join('?' * len(ks))})")
+        params: list[Any] = [oid, *ks]
+        if conn_id:
+            sql += " AND conn_id=?"
+            params.append(conn_id)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(int(limit))
+        with self._lock:
+            cur = self._conn.execute(sql, tuple(params))
+            rows = cur.fetchall()
+            return [a for a in (self._artifact_row(cur, r) for r in rows) if a]
+
     def artifact_by_id(self, art_id: str) -> Optional[dict]:
         """One artifact by its stable id (the receipt id — WP-10), payload decoded.
         Unlike ``artifact_latest`` (keyed by natural_key → newest version) this resolves

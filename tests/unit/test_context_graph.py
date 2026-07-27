@@ -180,6 +180,32 @@ def test_glossary_terms_are_scoped_to_the_connection():
                for e in g.edges.values())
 
 
+def test_glossary_source_is_unwrapped_from_the_store_envelope(monkeypatch):
+    """The projection takes ``{table: meta}``; the STORE returns the envelope
+    ``{"tables": {table: meta}}``. Handing the envelope straight through made the
+    projection loop once on the literal key ``"tables"``, fail the connection-scope
+    check, and drop every term on every connection — silently, with `defines`
+    unreachable. The tests missed it because they hand-built the unwrapped shape
+    while production called the real loader.
+
+    So this asserts the BOUNDARY against the producer's real shape: the fixture below
+    is the envelope `load_merged_glossary` actually returns.
+    """
+    from aughor.ontology import context_graph_build as build_mod
+
+    envelope = {"tables": {"orders": {"columns": {
+        "revenue": {"description": "gross booking value, pre-refund"}}}}}
+    monkeypatch.setattr("aughor.semantic.glossary.load_merged_glossary",
+                        lambda *a, **k: envelope)
+
+    unwrapped = build_mod._load_glossary()
+    assert "tables" not in unwrapped, "envelope leaked into the projection's input"
+    assert unwrapped == envelope["tables"]
+    # and it survives the projection it feeds
+    assert "revenue" in {n.label for n in _build(merged_glossary=unwrapped)
+                         .nodes_of("glossary_term")}
+
+
 def test_findings_become_nodes_with_grounded_in_edges():
     """The write-only half of the open loop, finally a node. Provenance is the
     derivation source — never the finding's self-reported confidence."""
@@ -215,6 +241,246 @@ def test_counts_shape():
     g = _build()
     c = g.counts()
     assert c["table"] == 2 and c["metric"] == 1 and c["edges"] == len(g.edges)
+
+
+# ── Wave L1: the live-path incremental write ──────────────────────────────────
+
+_L1_FINDING = {"id": "rcpt1", "text": "Refund rate spiked 4.2pp in the EU region",
+               "sql": "SELECT * FROM orders", "tables": ["orders"],
+               "source": "evidence_ledger", "generated_at": ""}
+
+
+@pytest.fixture()
+def _graph_store(tmp_path, monkeypatch):
+    """Redirect the committed-artifact root and seed one built graph for `c1`."""
+    from aughor.ontology import context_graph_store as store
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    store.save_graph(_build())
+    return store
+
+
+def test_note_finding_is_a_noop_when_the_flag_is_off(_graph_store, monkeypatch):
+    """Byte-identical with `graph.build` off: nothing read, nothing written."""
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: False)
+
+    before = _graph_store.graph_path("org1", "c1", "main").read_bytes()
+    assert build_mod.note_finding("c1", _L1_FINDING, org_id="org1") is False
+    assert _graph_store.graph_path("org1", "c1", "main").read_bytes() == before
+
+
+def test_note_finding_lands_the_node_and_its_grounded_in_edge(_graph_store, monkeypatch):
+    """The L1 gate, at the unit: an answer becomes a `finding` node + `grounded_in`
+    edge on the COMMITTED artifact, with no full rebuild and no manual step."""
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
+
+    assert build_mod.note_finding("c1", _L1_FINDING, org_id="org1") is True
+
+    g = _graph_store.load_graph("org1", "c1", "main")
+    assert g.version == 2                      # supersede-not-delete
+    node = g.nodes["finding:rcpt1"]
+    assert node.kind == "finding"
+    assert node.provenance.source == "evidence_ledger"
+    assert any(e.kind == "grounded_in" and e.from_id == "finding:rcpt1"
+               for e in g.edges.values())
+
+
+def test_note_finding_matches_what_a_full_rebuild_would_project(_graph_store, monkeypatch):
+    """The incremental path and the rebuild path must not drift into two shapes —
+    which is why both go through `_project_findings` rather than each building a node.
+    """
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
+    build_mod.note_finding("c1", _L1_FINDING, org_id="org1")
+    incremental = _graph_store.load_graph("org1", "c1", "main").nodes["finding:rcpt1"]
+
+    rebuilt = _build(findings=[_L1_FINDING]).nodes["finding:rcpt1"]
+    assert incremental.model_dump() == rebuilt.model_dump()
+
+
+def test_note_finding_declines_rather_than_guessing_the_schema(tmp_path, monkeypatch):
+    """Two graphs and no schema named ⇒ decline. Writing the finding onto whichever
+    schema sorted first would attach it to data it never read."""
+    from aughor.ontology import context_graph_store as store
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
+    for schema in ("main", "other"):
+        g = _build()
+        g.schema_name = schema
+        store.save_graph(g)
+
+    assert build_mod.note_finding("c1", _L1_FINDING, org_id="org1") is False
+    assert build_mod.note_finding("c1", _L1_FINDING, org_id="org1",
+                                  schema_name="main") is True
+
+
+def test_note_finding_on_an_unbuilt_connection_is_not_an_error(tmp_path, monkeypatch):
+    """No graph yet ⇒ False, not a raise: the finding is still in the Ledger and the
+    next full build projects it from `load_investigation_findings`."""
+    from aughor.ontology import context_graph_store as store
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
+    assert build_mod.note_finding("never_built", _L1_FINDING, org_id="org1") is False
+
+
+def test_answer_receipts_become_findings_with_evidence_ledger_provenance(monkeypatch):
+    """Investigations were structurally invisible to the graph: `load_findings` reads
+    the EXPLORER store, while an answer writes an `ada_report`/`chat_answer` receipt.
+    This is the source that closes that gap."""
+    from aughor.ontology import context_graph_build as build_mod
+
+    class _FakeLedger:
+        def artifacts_of_kind(self, kinds, *, conn_id=None, org_id=None, limit=200):
+            assert set(kinds) == set(build_mod._RECEIPT_KINDS)
+            return [
+                {"id": "a1", "kind": "ada_report", "created_at": "2026-07-26",
+                 "payload": {"headline": "GMV fell in EU", "sql": "SELECT 1",
+                             "tables": ["orders"], "question": "why did GMV fall?"}},
+                {"id": "a2", "kind": "chat_answer", "created_at": "2026-07-26",
+                 "payload": {"question": "how many?", "tables": ["returns"]}},
+            ]
+    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+                        staticmethod(lambda: _FakeLedger()))
+
+    found = build_mod.load_investigation_findings("c1", "org1")
+    # a2 concluded nothing (no headline) — a question is not a discovery
+    assert [f["id"] for f in found] == ["a1"]
+    assert found[0]["source"] == "evidence_ledger"
+    assert found[0]["tables"] == ["orders"]
+
+
+def test_receipt_truncation_is_counted_never_silent(monkeypatch):
+    """A bounded projection must say how much it dropped (the no-silent-caps rule)."""
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(build_mod, "_MAX_RECEIPT_FINDINGS", 2)
+    over = [{"id": f"a{i}", "kind": "ada_report", "created_at": "2026-07-26",
+             "payload": {"headline": f"finding {i}", "tables": []}} for i in range(5)]
+
+    class _FakeLedger:
+        def artifacts_of_kind(self, kinds, *, conn_id=None, org_id=None, limit=200):
+            return over[:limit]
+    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+                        staticmethod(lambda: _FakeLedger()))
+    bumped: dict = {}
+    monkeypatch.setattr("aughor.stats.bump",
+                        lambda c, n=1: bumped.__setitem__(c, bumped.get(c, 0) + n))
+
+    assert len(build_mod.load_investigation_findings("c1", "org1")) == 2
+    assert bumped["context_graph.receipts_truncated"] == 1  # asked for cap+1, saw 3
+
+
+# ── Wave L1: briefs ───────────────────────────────────────────────────────────
+
+_L1_BRIEF = {"id": "c1", "text": "Refunds are the quarter's story.",
+             "theme": "Refund Pressure On Margin",
+             "citations": ["rcpt1", "not_in_this_graph"], "generated_at": ""}
+
+
+def test_briefs_become_nodes_with_derived_from_edges_to_cited_findings():
+    """`brief` was a declared node kind with NO projector — the type existed, the
+    header documented it, and nothing ever emitted one."""
+    g = _build(findings=[_L1_FINDING], briefs=[_L1_BRIEF])
+
+    node = g.nodes["brief:c1"]
+    assert node.kind == "brief"
+    assert node.label == "Refund Pressure On Margin"
+    assert node.provenance.source == "briefing"
+
+    cites = [e for e in g.edges.values()
+             if e.kind == "derived_from" and e.from_id == "brief:c1"]
+    assert [e.to_id for e in cites] == ["finding:rcpt1"]
+
+
+def test_a_citation_to_an_absent_finding_is_not_a_dangling_edge():
+    """A brief citing something this graph doesn't hold drops the edge, never emits
+    one pointing at a node that isn't there."""
+    g = _build(briefs=[_L1_BRIEF])          # no findings projected at all
+    assert "brief:c1" in g.nodes
+    assert not [e for e in g.edges.values() if e.kind == "derived_from"
+                and e.from_id == "brief:c1"]
+
+
+def test_regenerating_a_brief_supersedes_rather_than_accumulates():
+    """One node per brief SCOPE. A refresh must not leave a node per generation."""
+    g = _build(findings=[_L1_FINDING], briefs=[_L1_BRIEF])
+    from aughor.ontology.context_graph import add_briefs
+    add_briefs(g, [{**_L1_BRIEF, "text": "Rewritten.", "theme": "New Theme"}])
+
+    assert len([n for n in g.nodes.values() if n.kind == "brief"]) == 1
+    assert g.nodes["brief:c1"].summary == "Rewritten."
+
+
+def test_note_brief_lands_on_the_committed_artifact(_graph_store, monkeypatch):
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
+    build_mod.note_finding("c1", _L1_FINDING, org_id="org1")
+
+    assert build_mod.note_brief("c1", _L1_BRIEF, org_id="org1") is True
+    g = _graph_store.load_graph("org1", "c1", "main")
+    assert g.nodes["brief:c1"].kind == "brief"
+    assert any(e.kind == "derived_from" and e.to_id == "finding:rcpt1"
+               for e in g.edges.values())
+
+
+def test_note_brief_is_a_noop_when_the_flag_is_off(_graph_store, monkeypatch):
+    from aughor.ontology import context_graph_build as build_mod
+    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: False)
+    before = _graph_store.graph_path("org1", "c1", "main").read_bytes()
+    assert build_mod.note_brief("c1", _L1_BRIEF, org_id="org1") is False
+    assert _graph_store.graph_path("org1", "c1", "main").read_bytes() == before
+
+
+def test_only_the_connection_scoped_brief_is_projected(monkeypatch):
+    """A canvas brief is keyed `canvas:<id>`, which does not name a connection —
+    attributing it would ground a brief in data it may never have read."""
+    from aughor.ontology import context_graph_build as build_mod
+    seen: list[str] = []
+
+    def _peek(scope_key):
+        seen.append(scope_key)
+        return {"narrative": "n", "headline_theme": "t",
+                "citations": [{"insight_id": "rcpt1"}]}
+    monkeypatch.setattr("aughor.knowledge.briefing.peek_briefing", _peek)
+
+    out = build_mod.load_briefs("c1")
+    assert seen == ["c1"]                      # asked only for the connection scope
+    assert out[0]["id"] == "c1" and out[0]["citations"] == ["rcpt1"]
+
+
+# ── Wave L1: the exploration-completion trigger ───────────────────────────────
+
+def test_exploration_completion_forces_a_rebuild(monkeypatch):
+    """The graph had no structural trigger: only the C4 surface routes ever built it.
+    An exploration is the one event that moves both halves at once (new findings AND
+    possibly the schema), so completion rebuilds — and it must FORCE, because the
+    change classifier compares schema fingerprints and cannot see a new finding."""
+    from aughor.explorer.agent import SchemaExplorer
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "aughor.ontology.graph_freshness.refresh_context_graph",
+        lambda conn, *a, **kw: calls.append({"conn": conn, **kw}) or None)
+
+    ex = object.__new__(SchemaExplorer)
+    ex.connection_id = "c1"
+    ex._rebuild_context_graph()
+
+    assert calls == [{"conn": "c1", "force": True}]
+
+
+def test_a_failed_rebuild_never_fails_the_exploration(monkeypatch):
+    """An exploration that finished must not be reported as failed because a
+    projection didn't land."""
+    from aughor.explorer.agent import SchemaExplorer
+    monkeypatch.setattr(
+        "aughor.ontology.graph_freshness.refresh_context_graph",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("disk full")))
+
+    ex = object.__new__(SchemaExplorer)
+    ex.connection_id = "c1"
+    ex._rebuild_context_graph()  # must not raise
 
 
 # ── the committed-artifact store ──────────────────────────────────────────────

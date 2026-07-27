@@ -181,6 +181,12 @@ def _finding_node_id(finding_id: str) -> str:
     return f"finding:{finding_id}"
 
 
+def _brief_node_id(scope_key: str) -> str:
+    """One node per brief SCOPE, not per generation: a regenerated brief supersedes
+    the prior one (same id) rather than accumulating a node per refresh."""
+    return f"brief:{scope_key}"
+
+
 def _edge_id(from_id: str, kind: str, to_id: str) -> str:
     return f"{from_id}--{kind}-->{to_id}"
 
@@ -196,6 +202,7 @@ def project_graph(
     merged_glossary: Optional[dict] = None,
     resolutions: Optional[list] = None,
     findings: Optional[list] = None,
+    briefs: Optional[list] = None,
 ) -> ContextGraph:
     """Project an :class:`OntologyGraph` (+ narrative sources) into a typed
     :class:`ContextGraph`. Pure and deterministic; never raises on a missing/partial
@@ -223,6 +230,9 @@ def project_graph(
     _project_glossary_terms(cg, ontology, merged_glossary)
     _project_resolutions(cg, resolutions or [])
     _project_findings(cg, findings or [])
+    # Briefs last: their `derived_from` edges point at finding nodes, which must
+    # already exist or the citation is dropped as dangling.
+    _project_briefs(cg, briefs or [])
     return cg
 
 
@@ -482,14 +492,28 @@ def _project_resolutions(cg: ContextGraph, resolutions: list) -> None:
                      counter="context_graph.resolution_projection")
 
 
-def _project_findings(cg: ContextGraph, findings: list) -> None:
+def add_findings(cg: ContextGraph, findings: list) -> list[str]:
+    """Project findings into an EXISTING graph — the public entry point for an
+    incremental write (Wave L1's live path), and the same projection a full build
+    runs. Returns the node ids emitted (empty ⇒ every input was rejected).
+
+    It exists so the answer path never has to reach into ``_project_findings``: one
+    projector, so an incrementally-added node and the node a later rebuild emits from
+    the same receipt are byte-identical rather than two hand-kept-in-sync shapes.
+    ``add_node``/``add_edge`` are id-keyed, so re-adding a finding supersedes it.
+    """
+    return _project_findings(cg, findings)
+
+
+def _project_findings(cg: ContextGraph, findings: list) -> list[str]:
     """`finding` nodes (the write-only half of the open loop, finally a node) +
     `grounded_in` edges finding → the table nodes its SQL reads. ``findings`` are
     normalized dicts: ``{id, text, sql, tables, source, confidence?}``. Provenance is
     the derivation source (dossier/exploration/evidence_ledger) — never the finding's
-    self-reported confidence."""
+    self-reported confidence. Returns the node ids emitted."""
+    emitted: list[str] = []
     if not findings:
-        return
+        return emitted
     for f in findings:
         try:
             fid = str(f.get("id") or "")
@@ -511,6 +535,7 @@ def _project_findings(cg: ContextGraph, findings: list) -> None:
                       "generated_at": f.get("generated_at", "")},
             )
             cg.add_node(node)
+            emitted.append(node.id)
             for t in (f.get("tables") or []):
                 tnode_id = _table_node_id_for_table(cg, _bare(t))
                 if tnode_id:
@@ -528,3 +553,68 @@ def _project_findings(cg: ContextGraph, findings: list) -> None:
         except Exception as exc:
             tolerate(exc, "context-graph finding projection is per-finding best-effort",
                      counter="context_graph.finding_projection")
+    return emitted
+
+
+def add_briefs(cg: ContextGraph, briefs: list) -> list[str]:
+    """Project briefs into an EXISTING graph — the public incremental entry point,
+    and the same projection a full build runs (see :func:`add_findings`). Returns the
+    node ids emitted."""
+    return _project_briefs(cg, briefs)
+
+
+def _project_briefs(cg: ContextGraph, briefs: list) -> list[str]:
+    """`brief` nodes + `derived_from` edges brief → the findings it cited.
+
+    ``brief`` was a declared node kind with no projector: the type existed, the header
+    documented it, and nothing ever emitted one. A synthesized narrative is the most
+    read artifact Aughor produces and it was absent from the graph that is supposed to
+    hold what the connection knows.
+
+    Provenance is ``briefing`` — a synthesis of cited findings. The edge is
+    ``derived_from`` (the brief is derived FROM the finding), and it is only emitted
+    when the cited finding is actually a node here: a citation to something outside
+    this graph must not become a dangling edge.
+    """
+    emitted: list[str] = []
+    if not briefs:
+        return emitted
+    for b in briefs:
+        try:
+            bid = str(b.get("id") or "")
+            text = str(b.get("text") or "")
+            if not bid or not text:
+                continue
+            theme = str(b.get("theme") or "")
+            label = theme or ((text[:80] + "…") if len(text) > 80 else text)
+            node = GraphNode(
+                id=_brief_node_id(bid),
+                kind="brief",
+                label=label,
+                summary=text,
+                provenance=Provenance(
+                    source="briefing",
+                    note=f"synthesis of {len(b.get('citations') or [])} cited findings",
+                ),
+                data={"theme": theme, "scope": bid,
+                      "generated_at": b.get("generated_at", "")},
+            )
+            cg.add_node(node)
+            emitted.append(node.id)
+            for insight_id in (b.get("citations") or []):
+                target = _finding_node_id(str(insight_id))
+                if target not in cg.nodes:
+                    continue  # cited something this graph doesn't hold — no dangling edge
+                cg.add_edge(GraphEdge(
+                    id=_edge_id(node.id, "derived_from", target),
+                    kind="derived_from",
+                    from_id=node.id,
+                    to_id=target,
+                    provenance=Provenance(source="briefing",
+                                          note="brief cites finding"),
+                    label="cites",
+                ))
+        except Exception as exc:
+            tolerate(exc, "context-graph brief projection is per-brief best-effort",
+                     counter="context_graph.brief_projection")
+    return emitted

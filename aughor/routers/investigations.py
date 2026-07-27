@@ -136,6 +136,33 @@ def _ada_sqls(ada) -> list[str]:
     return uniq
 
 
+def _note_finding_on_graph(*, connection_id: str, receipt_id: str | None,
+                           headline: str, sql: str, tables: list[str]) -> None:
+    """Land this answer on the connection knowledge graph as a `finding` node.
+
+    Keyed by the receipt id, so the incremental node and the one a later full rebuild
+    projects from the same receipt are the SAME node — a rebuild supersedes, it never
+    duplicates. Never raises: an answer must not fail because a graph write did.
+
+    No schema is passed on purpose. The receipt path's ``schema`` is the schema *text*
+    handed to metric enforcement, not a schema *name*, and feeding it to the store
+    would address a graph file named after a DDL blob. ``note_finding`` resolves the
+    target itself and declines when a connection has several graphs rather than
+    guessing which schema the answer belongs to.
+    """
+    if not receipt_id or not headline:
+        return
+    try:
+        from aughor.ontology.context_graph_build import note_finding
+        note_finding(
+            connection_id,
+            {"id": receipt_id, "text": headline, "sql": sql, "tables": tables,
+             "source": "evidence_ledger", "generated_at": ""},
+        )
+    except Exception:
+        logger.debug("graph finding write failed", exc_info=True)
+
+
 def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
                           sqls: list[str], headline: str, schema: str,
                           connection_id: str, canvas_id: str = "",
@@ -260,6 +287,17 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         if enf is not None:
             Ledger.default().emit("metric.enforcement", enf,
                                   conn_id=connection_id, canvas_id=canvas_id or None)
+        # Wave L1: the answer becomes a `finding` node on the connection knowledge graph
+        # NOW, so the next question can read back what this one learned. This is the one
+        # place every user-facing answer (chat / ADA / monitor) is receipted, so wiring
+        # here covers all three callers by construction rather than by three edits.
+        # Gated by `graph.build`, best-effort, and the finding shape is exactly what
+        # `load_investigation_findings` would rebuild from the same receipt.
+        _note_finding_on_graph(
+            connection_id=connection_id, receipt_id=_receipt_id,
+            headline=headline or question, sql=sqls[0] if sqls else "",
+            tables=sorted(seen),
+        )
         # `receipt_id` is the stable artifact id → the unified GET /receipt/{id} (WP-10); a
         # streaming caller emits it so the UI's "Why this number" opens the public receipt.
         return {"learning": _learning, "activations": _activations, "receipt_id": _receipt_id}

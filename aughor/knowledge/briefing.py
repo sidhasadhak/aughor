@@ -692,7 +692,46 @@ def get_briefing(
     # genuinely stale brief would read fresh.
     _record_brief_inputs(key, connection_id, pre_decision)
 
+    # Wave L1: the brief joins the connection knowledge graph as a `brief` node with
+    # `derived_from` edges to every finding it cited — the same "landed, therefore
+    # readable back" rule the answer path follows. Same position and reasoning as the
+    # stamp above: only once the narrative exists and is cached.
+    _note_brief_on_graph(key, connection_id, briefing)
+
     return briefing
+
+
+def _note_brief_on_graph(key: str, connection_id: str, briefing: Any) -> None:
+    """Land a generated brief on the connection knowledge graph. Best-effort and
+    gated by `graph.build`; a brief must never fail because a graph write did.
+
+    Only the connection-scoped brief is projected — a canvas brief is keyed
+    ``canvas:<id>``, which does not name a connection, so attributing it here would
+    ground it in data it may never have read.
+    """
+    if key != connection_id:
+        return
+    try:
+        from aughor.ontology.context_graph_build import note_brief
+
+        entry = briefing if isinstance(briefing, dict) else {}
+        narrative = str(entry.get("narrative") or "").strip()
+        if not narrative:
+            return
+        note_brief(connection_id, {
+            "id": connection_id,
+            "text": narrative,
+            "theme": str(entry.get("headline_theme") or ""),
+            "citations": [str(c.get("insight_id") or "")
+                          for c in (entry.get("citations") or [])
+                          if isinstance(c, dict) and c.get("insight_id")],
+            "generated_at": str(entry.get("generated_at") or ""),
+        })
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "landing the brief on the context graph is best-effort; the next "
+                      "full build projects it from the cache",
+                 counter="context_graph.note_brief_hook")
 
 
 def _record_brief_inputs(key: str, connection_id: str, pre_decision=None) -> None:

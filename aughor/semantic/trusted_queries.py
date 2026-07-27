@@ -107,11 +107,26 @@ def retrieve_trusted(question: str, connection_id: str, top_k: int = 2,
 
 def build_trusted_block(matches: list[tuple[TrustedQuery, float]]) -> str:
     """Authoritative prompt section. Stronger than soft examples: the model is
-    told these are verified and to reuse the exact structure."""
+    told these are verified and to reuse the exact structure.
+
+    The header states the WEAKEST warrant present, not the strongest. Entries minted
+    from eval runs (Wave L5) are *consistency*-verified — they reproduce an answer this
+    connection already gave — which is real evidence and is not the same as a human
+    having checked the result is true. Claiming "KNOWN-CORRECT" over a set that
+    contains one of those would launder the weaker warrant into the stronger one, in a
+    prompt whose entire job is to be believed.
+    """
     if not matches:
         return ""
+    from aughor.evals.promote_trusted import SOURCE_TAG
+
+    any_eval_sourced = any(SOURCE_TAG in (tq.tags or []) for tq, _ in matches)
+    warrant = (
+        "reviewed or eval-verified; the per-pattern note says which"
+        if any_eval_sourced else "data-team reviewed, KNOWN-CORRECT for this database"
+    )
     lines = [
-        "VERIFIED QUERY PATTERNS (data-team reviewed, KNOWN-CORRECT for this database). "
+        f"VERIFIED QUERY PATTERNS ({warrant}). "
         "When the user's question matches one of these, REUSE its exact join and aggregation "
         "structure — adapt only the filters, columns, or grouping the question actually changes. "
         "These patterns avoid common errors (fan-out row multiplication, wrong grain):",

@@ -324,6 +324,38 @@ class SchemaExplorer:
 
     # ── State persistence helpers ─────────────────────────────────────────────
 
+    def _rebuild_context_graph(self) -> None:
+        """Wave L1: rebuild the connection knowledge graph once an exploration run
+        completes — the structural trigger the graph never had.
+
+        An exploration is the one event that moves BOTH halves of the graph at once:
+        it discovers insights (new `finding` nodes) and it can change what the
+        ontology knows about the schema. That is why this is a full rebuild rather
+        than the answer path's incremental write — and why it goes through C3's
+        ``refresh_context_graph``, whose change classifier does the proportional-cost
+        work (SKIP when nothing moved, PARTIAL/FULL otherwise) and re-indexes for
+        search, instead of calling the builder directly.
+
+        Runs after ``_save_state`` at COMPLETE, mirroring the mid-run ontology build
+        this method's caller already performs for a downstream phase. Never raises:
+        an exploration that finished must not be reported as failed because a
+        projection didn't land.
+        """
+        try:
+            from aughor.ontology.graph_freshness import refresh_context_graph
+            # force: the run just wrote findings, which the schema classifier cannot
+            # see — without it a run that discovered a dozen insights and changed no
+            # column would classify SKIP and land none of them.
+            result = refresh_context_graph(self.connection_id, force=True)
+            if result is not None and result.rebuilt:
+                logger.info("[explorer:%s] context graph rebuilt (%s)",
+                            self.connection_id, result.verdict.change)
+        except Exception as _cg_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_cg_exc, "context-graph rebuild after exploration is best-effort; the "
+                              "run is complete and the next refresh picks the change up",
+                     counter="explorer.context_graph_rebuild")
+
     def _save_state(self) -> None:
         # Mirror the LIVE phase into the persisted state on EVERY save. Mid-run phase
         # transitions only update self._status.phase (in-memory, served by /status);
@@ -912,6 +944,7 @@ class SchemaExplorer:
                                   "falls back to the staleness refresh for this connection",
                          counter="explorer.fingerprint_stamp")
             self._save_state()
+            self._rebuild_context_graph()
             logger.info(
                 f"[explorer:{self.connection_id}] Complete — "
                 f"{self._status.queries_executed}q, "
