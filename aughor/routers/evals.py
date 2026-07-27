@@ -16,6 +16,7 @@ untouched: they are load-bearing.
 """
 from __future__ import annotations
 
+import json
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -59,6 +60,53 @@ class GraduateIn(BaseModel):
     #: The flag-OFF pass rate to beat. When omitted, the run must clear ``min_pass_rate``.
     baseline_pass_rate: Optional[float] = None
     min_pass_rate: float = 1.0
+
+
+def _ab_evidence(suite_id: str, flag: str, *, limit: int = 24) -> tuple:
+    """Derive the A/B baseline and its noise floor from the suite's OWN run history.
+
+    A caller-supplied ``baseline_pass_rate`` is a scalar with no provenance: nothing
+    about it says which runs produced it, or whether those runs agree with themselves.
+    That is how a flag graduates on jitter, so the gate now demands floor evidence — and
+    demanding it from the caller only moves the burden. The runs are already on disk,
+    stamped by `run_experiment` with the cell that produced them, so the server can just
+    look.
+
+    Returns ``(baseline_pass_rate, delta)`` — both ``None`` when the history does not
+    contain a usable A/B for this flag, in which case the caller's own inputs stand.
+
+    Cells are classified by what the run RECORDED it was asked for
+    (``config.cell_requested.flags[flag]``), never by the label, so a cell named
+    "control" that actually ran with the flag on cannot be read as the baseline.
+    """
+    from aughor.evals import fidelity as _fidelity
+
+    off_runs: list[dict] = []
+    on_runs: list[dict] = []
+    for run in store.list_runs(suite_id, limit=limit):
+        if run.get("status") != "succeeded":
+            continue
+        cfg = run.get("config") or {}
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except Exception:
+                continue
+        requested = ((cfg or {}).get("cell_requested") or {}).get("flags") or {}
+        if flag not in requested:
+            continue
+        summary = run.get("summary") or {}
+        if summary.get("pass_rate") is None:
+            continue
+        (on_runs if requested[flag] else off_runs).append(summary)
+
+    # One replicate per side cannot establish a floor — a configuration compared only
+    # against another configuration, never against itself, tells you nothing about
+    # whether it agrees with itself.
+    if len(off_runs) < 2 or not on_runs:
+        return None, None
+    baseline = sum(r["pass_rate"] for r in off_runs) / len(off_runs)
+    return baseline, _fidelity.compare(off_runs, on_runs, axis="pass_rate")
 
 
 def _suite_or_404(suite_id: str) -> dict:
@@ -202,12 +250,20 @@ def graduate_flag(flag: str, body: GraduateIn):
 
     run_summary = (run or {}).get("summary") or None
 
+    # Prefer evidence the server can see over a number the caller asserts. When the
+    # suite's history holds a real A/B for this flag, its baseline AND its floor are
+    # derived here; a caller-supplied baseline is only used when there is no such
+    # history, and then it is refused for lacking a floor (which is the honest answer,
+    # not a regression).
+    derived_baseline, derived_delta = _ab_evidence(body.suite_id, flag)
     decision = evaluate_graduation(
         flag, run_summary,
         registered_flags=set(FLAG_ENV),
         current_default=bool(FLAG_DEFAULT.get(flag, False)),
-        baseline_pass_rate=body.baseline_pass_rate,
+        baseline_pass_rate=(derived_baseline if derived_baseline is not None
+                            else body.baseline_pass_rate),
         min_pass_rate=body.min_pass_rate,
+        delta=derived_delta,
     )
     payload = decision.to_dict()
     # A no-run decision carries no suite_id from the summary — pin the one the caller named.
