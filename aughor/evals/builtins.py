@@ -157,3 +157,11 @@ def register_builtins() -> None:
     register_evaluator(OkReasonEvaluator(
         "guard.insight_soundness", _explorer_verify.verify_insight,
         args=_insight_args, requires=("sql", "rows")))
+
+    # NOT registered here: `deterministic_equivalence` (L4, aughor/evals/equivalence.py). Every
+    # evaluator above answers "is there anything wrong with this statement?", so a case it cannot
+    # judge is a SKIP. That one answers "does observed equal the oracle?", where the only safe
+    # answer to "there is nothing to compare" is FAIL — and `run_all` with no name list runs the
+    # whole registry, so registering it globally made it fail every SQL case in every other suite.
+    # It is registered by `equivalence.run_suite`, which also names it explicitly, so the two
+    # opposite defaults never meet.

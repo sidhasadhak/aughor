@@ -68,6 +68,14 @@ for _env, _file in (
     # Wave A4 — the resolve-once proposal inbox + target-bound standing grants (born hermetic).
     ("AUGHOR_KINETIC_INBOX_DB", "kinetic_inbox.db"),
     ("AUGHOR_KINETIC_GRANTS_DB", "kinetic_grants.db"),
+    # Wave E/L — the eval plane's own store: suites, cases, RUN HISTORY and graduation
+    # receipts. It honoured AUGHOR_EVALS_DB from the start but was never listed here, so any
+    # test that created a suite wrote data/evals.db. Found when L4's first unit test to call
+    # `ensure_suite()` left a real suite in the live store. This one is worse than a nuisance:
+    # `/evals/flags/{flag}/graduate` derives a flag's BASELINE and its noise floor from this
+    # store's run history, so test-written rows are not just clutter — they are potential
+    # evidence in a graduation decision.
+    ("AUGHOR_EVALS_DB", "evals.db"),
 ):
     os.environ.setdefault(_env, os.path.join(_test_stores_dir, _file))
 

@@ -17,7 +17,7 @@
 | **L1** — background build + live-path writers | ✅ **COMPLETE — gate met on a running server** |
 | **L2** — graduate `graph.readback` | ✅ **grid RAN; flag NOT graduated — delta not attributable** (see below) |
 | **L3** — graduate `closed_loop` | ⭕ |
-| **L4** — graduate `automations.source_probes` + `engine` | ⭕ |
+| **L4** — graduate `automations.source_probes` + `engine` | ✅ **graduated on MEASURED equivalence; `automations.engine` is now default-ON** |
 | **L5** — seed curation + widen the corpus | ✅ **corpus 22→102, trusted queries 0→11**; C6 pack export still open |
 | **L6** — A/B `ada.evidence_stubs` (the Wave-R measurement debt) | ⭕ |
 | **L7** *(opt)* — V3b artifact wiring | ⭕ |
@@ -502,44 +502,131 @@ Two traps found in the building:
 
 ⏭️ **Still open in L5:** export the C6 pack from the now-curated connection.
 
+## L4 — the graduation that needed no grid, and the evidence that did not exist
+
+**The step as written was not executable.** The playbook said: run three pytest files, then
+graduate via `evaluate_graduation(..., min_pass_rate=1.0)`. But the only production caller of
+that gate is `POST /evals/flags/{flag}/graduate`, which derives its `run_summary` from a real
+run in the eval store — **a pytest result cannot reach it.** Hand-writing the summary would
+mint a receipt whose `run_id` names a run that never happened.
+
+Worse, the cited evidence was thinner than it read. `tests/unit/test_automations_adopt.py`
+**patches `run_monitor` and `append_alert`**, so those tests lock the *wiring* — "different
+loop, same two functions" — and are silent on whether the two loops compute the same alert
+from real rows. The only thing that ever covered that was a manual run on 2026-07-24, recorded
+as prose above. **Prose is not a receipt.**
+
+### What was built: `aughor/evals/equivalence.py`
+
+A deterministic suite on the existing eval plane. **The legacy path is the oracle**: each
+monitor scenario computes `expected` by calling `monitors.scheduler.run_monitor_job` — the
+actual legacy tick body — and `observed` by driving the same monitor through
+`run_automation`. Nothing is patched; both halves run against a real DuckDB warehouse on a
+real registered connection, purged in a `finally` through the app's own catalog-delete
+cascades.
+
+`run_monitor_job` is new only in the sense that it has a name: it was the closure inside
+`_make_job_fn`. Extracted because an equivalence harness that **re-implemented** the legacy
+body would compare the engine against a copy, and the copy is exactly where a drift hides.
+
+Nine scenarios: alert equivalence (severity · message · current value · previous value ·
+threshold, byte-for-byte), the silence case, the anti-flap debounce, no-double-fire under
+adoption, and five source-probe claims.
+
+**Result — suite `7b65587cb92c`, run `309b715b05c0`: 9/9 stable passes, 0 errors, 0 flaky.**
+Graduated through the live HTTP route on a running server, `bar=1.0`, `reasons: []`:
+
+| flag | receipt | default |
+|---|---|---|
+| `automations.engine` | `65364174a172` | **flipped ON** |
+| `automations.adopt_legacy` | `e6c39abad50a` | left off — deliberately |
+| `automations.source_probes` | `33fc34ddbd47` | left off — deliberately |
+
+Only `engine` flipped. The other two hold equally clean receipts, because **the receipt
+answers "does the equivalence hold?", which is not the question a default answers**:
+`adopt_legacy` changes the code path that DELIVERS briefs (an outward send) and
+`source_probes` adds recurring per-tick warehouse aggregates. Those are cost and
+outward-behaviour decisions, and the measurement has nothing to say about them.
+
+**Gate met on a running server:** restarted with no env override, `automations.engine`
+resolves `on` from the code default, `/automations` returns 200 (it 404s when off), and the
+log reads `Automation heartbeat started (every 60s)` — while `adoption_active()` stays False,
+so the legacy schedulers are untouched.
+
+### Three things the measurement found that the tests could not
+
+1. **`data/evals.db` was never test-isolated.** `tests/conftest.py` redirects ~30 stores;
+   `AUGHOR_EVALS_DB` was not among them, so any test creating a suite wrote the live store —
+   the one `/evals/flags/{flag}/graduate` reads **baselines and noise floors** from. Test rows
+   there are not clutter, they are potential evidence in a graduation. Found because L4's was
+   the first unit test to call `ensure_suite()`. Now isolated, and verified: a full run of the
+   eval-plane tests leaves `data/evals.db` byte-identical.
+
+2. **A fail-by-default evaluator cannot live in the global registry.** Every builtin evaluator
+   answers "is anything wrong with this statement?", so a case it cannot judge is a SKIP.
+   `deterministic_equivalence` answers "does observed equal the oracle?", where the only safe
+   response to "there is nothing to compare" is FAIL — and `run_all` with no name list runs the
+   whole registry. Registering it globally failed every SQL case in every other suite. It is
+   registered by `equivalence.run_suite`, which also names it explicitly, so the two opposite
+   defaults never meet. *(The same asymmetry is why it declares `requires=()`: `requires` is how
+   the runner decides to skip, and a skipped evaluator scores as a pass.)*
+
+3. **The `automations.source_probes` flag description overstates its fail-open.** It says "a
+   table with no usable version column fails OPEN to 'changed' … never silently never-firing."
+   The implementation returns `n=<count>` for such a table — a usable version — so the tick goes
+   **quiet** when the count is stable. Better behaviour (a count still catches inserts and
+   deletes), but not what the description promises, and the gap is not cosmetic: for a no-signal
+   table, an in-place UPDATE — or an insert and a delete in the same window — leaves the count
+   unchanged and the automation silently never fires. Pinned as the actual contract by
+   `no_signal_column_versions_by_count`, and **the `FLAG_META` description is corrected** to
+   separate the two cases: an unreadable table fails open, a signal-less table is versioned by
+   `COUNT(*)` alone and can stay quiet through an in-place update. Worth knowing *before*
+   pointing an automation at such a table, which is why it belongs in the operator-facing copy
+   rather than only in a scenario docstring.
+
+*(Two of the four probe scenarios also failed on first run for reasons that were mine, not the
+code's: fixture writes were routed through `open_connection_for`, whose handle refuses anything
+but SELECT, and the discarded `QueryResult.error` made four scenarios "pass the first tick and
+go quiet". The second was DuckDB refusing a read-write handle while the pool held the file
+read-only — fixed by evicting through `pool.evict_conn`.)*
+
 ---
 
-## ⏭️ Resume here (parked 2026-07-27)
+## ⏭️ Resume here (updated 2026-07-27)
 
-**Branch `2026-07-26-wave-l1-graph-live-path`, 22 commits, pushed. [PR #221](https://github.com/sidhasadhak/aughor/pull/221) OPEN, not merged.**
-Done: L1 ✅ · L2 ✅ (measured, refused) · L5 ◐ (corpus + trusted queries; C6 pack open).
-Open: L3 · L4 · L6 · L7.
+**`main` = `986ab67`, tree otherwise clean.** L1 ✅ · L2 ✅ (measured, refused) · **L4 ✅** ·
+L5 ◐ (corpus + trusted queries; C6 pack export open). Open: **L3 · L6 · L7**.
 
-1. **Merge #221** once `Backend · pytest` lands (the other three checks are green).
-2. **L4 — `automations.*`.** The cheapest remaining graduation and it needs **no grid**:
-   A5 already ships equivalence receipts (same alert severity/message/debounce), which
-   is a deterministic pass/fail with no noise floor involved.
-3. **L3 / L6 on the 102-case suite.** Now genuinely resolvable — a 3-case shuffle reads
+L4 shipped on branch `2026-07-27-wave-l4-automations-equivalence`.
+
+1. **L3 / L6 on the 102-case suite.** Now genuinely resolvable — a 3-case shuffle reads
    as noise, a 15-case shift as signal.
    ⚠️ **Budget it first:** a 2×2×2 grid over 102 cases is **~6–7 hours** at 16 RPM.
    Since temp-0 runs proved perfectly deterministic, **1 replicate per cell** halves
    that and loses only a reproducibility check — a deliberate trade, worth confirming
    before launching.
-4. **Then Wave G**, per the program.
+   ⚠️ **And settle the rate-limit root cause first** — `_pace()` is in, but 72
+   `free-models-per-min` refusals persisted at RPM=16 while the gate was correct in
+   isolation, so some `/ask` requests bypass it. Measure `llm.paced.<base_url>` against the
+   request count *before* committing 3–7 hours to a grid.
+2. **Then Wave G**, per the program.
 
 ### The run playbook (copy-pasteable, for a cold session)
 
-#### Step A — L4, the graduation that needs no grid
+#### ~~Step A — L4~~ ✅ DONE (2026-07-27) — see the L4 section above
 
-`automations.engine` / `automations.source_probes` / `automations.adopt_legacy` are
-**deterministic** graduations. A5 already ships equivalence receipts — same alert
-severity, same message, same debounce as the legacy schedulers — so the evidence is a
-pass/fail, with no sampling, no floor, and **no LLM budget at all**:
+Re-runnable at any time, no LLM budget, ~20s:
 
 ```bash
-.venv/bin/python -m pytest tests/unit/test_automations_adopt.py \
-  tests/unit/test_automations_engine.py tests/unit/test_automations_probes.py -q
+.venv/bin/python -c "from aughor.evals import equivalence; print(equivalence.run_suite().to_dict())"
 ```
 
-Graduate on that evidence via `evaluate_graduation(..., min_pass_rate=1.0)` — **no
-baseline, therefore no A/B, therefore no floor required** (the gate's own carve-out,
-pinned by `test_a_plain_threshold_run_still_needs_no_floor`). Record the receipt, and
-per **J9** do not flip a default without one.
+Then graduate through the route (start the API first — `preview_start aughor-api`), which is
+where the baseline and floor are derived from the run history rather than asserted:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/evals/flags/automations.engine/graduate -H 'Content-Type: application/json' -d '{"suite_id":"7b65587cb92c","min_pass_rate":1.0}'
+```
 
 #### Step B — L3 / L6 on the 102-case suite
 
@@ -591,7 +678,8 @@ idempotent, so running it after each grid is safe and additive.
 - Live scripts need `export AUGHOR_SECRET_KEY=$(grep ^AUGHOR_SECRET_KEY= .env | cut -d= -f2-)`
   or they 401 silently (fail-open looks like abstention).
 - Point proofs at a scratch `AUGHOR_STATE_DIR` so `data/` is never the test subject;
-  verify with `git status --short data/` afterwards.
+  verify with `git status --short data/` afterwards. ⚠️ `AUGHOR_STATE_DIR` alone is not
+  enough — the SQLite stores each have their own `AUGHOR_*_DB` var (see `tests/conftest.py`
+  for the full list, which is the one place it is maintained).
 - `data/context_graph/` and `data/ontology_overrides/` are deliberately **tracked**
-  (`.gitignore:95`) and currently untracked-in-tree — they want their own review PR,
-  not a ride on a code change.
+  (`.gitignore:95`) — committed in [#223](https://github.com/sidhasadhak/aughor/pull/223).

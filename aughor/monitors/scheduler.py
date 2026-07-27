@@ -30,67 +30,80 @@ _started = False
 
 # ── Job factory ───────────────────────────────────────────────────────────────
 
+def run_monitor_job(monitor_id: str) -> None:
+    """Run one monitor tick the way the legacy cron loop does, and persist any alert.
+
+    Public because it is the LEGACY BEHAVIOUR ITSELF, and A5's whole claim is that the
+    automation engine reproduces it. An equivalence harness that re-implemented this body
+    would be comparing the engine against a copy of the legacy path rather than against the
+    legacy path, and the copy is exactly where a drift would hide — so the oracle has to be
+    callable by name (`aughor.evals.equivalence`). Nothing else changed: `_make_job_fn` still
+    wraps it for APScheduler.
+    """
+    try:
+        # A5: when this monitor is adopted onto the automation engine, the heartbeat drives it —
+        # stand down at FIRE time (not just at start) so a runtime flag flip can never double-fire
+        # (both loops running the same monitor). adoption_active() requires the engine on too, so
+        # this never silently stops a monitor with nothing to replace it.
+        from aughor.automations.adopt import adoption_active
+        if adoption_active():
+            return
+
+        from aughor.monitors.store import get_monitor, append_alert
+        from aughor.monitors.runner import run_monitor
+        from aughor.db.connection import open_connection_for
+        from aughor.db.registry import get_connection_org
+        from aughor.org.context import using_org
+
+        monitor = get_monitor(monitor_id)
+        if monitor is None or not monitor.enabled:
+            return
+
+        # DATA-06: a background tick carries no request context, so current_org_id()
+        # would default to 'default' and mis-stamp the emitted monitor.alert event.
+        # Re-bind the monitor's tenant (its connection's org) for the run — the same
+        # re-bind the kernel does for a boot-recovered job (kernel/jobs.py).
+        org = get_connection_org(monitor.conn_id) or ""
+
+        def _work():
+            with using_org(org):
+                db = open_connection_for(monitor.conn_id)
+                try:
+                    alert = run_monitor(monitor, db)
+                finally:
+                    try:
+                        db.close()
+                    except Exception as exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(exc, "closing the per-tick db handle is best-effort; the monitor result is already computed",
+                                 counter="monitors.scheduler.tick.db_close")
+                if alert is not None:
+                    append_alert(alert)
+                    logger.info(
+                        "Monitor '%s' fired [%s]: %s",
+                        monitor.name, alert.severity, alert.message[:120],
+                    )
+
+        # WP-7: under `ops.metered_monitors`, run the tick as a supervised Watcher job so
+        # its warehouse SQL is metered + budget-enforced (else the direct in-thread path).
+        from aughor.kernel.flags import flag_enabled
+        if flag_enabled("ops.metered_monitors"):
+            from aughor.kernel.jobs import submit_background_tick
+            job_id = submit_background_tick(
+                "monitor", _work, conn_id=monitor.conn_id, org_id=org,
+                idempotency_key=f"monitor:{monitor_id}")
+            if job_id is not None:
+                return   # routed through the kernel
+        _work()          # legacy / no-loop fallback
+    except Exception as exc:
+        logger.error("Monitor job %s crashed: %s", monitor_id, exc)
+
+
 def _make_job_fn(monitor_id: str):
     """Return a zero-arg callable that runs the monitor and persists any alert."""
 
     def _job():
-        try:
-            # A5: when this monitor is adopted onto the automation engine, the heartbeat drives it —
-            # stand down at FIRE time (not just at start) so a runtime flag flip can never double-fire
-            # (both loops running the same monitor). adoption_active() requires the engine on too, so
-            # this never silently stops a monitor with nothing to replace it.
-            from aughor.automations.adopt import adoption_active
-            if adoption_active():
-                return
-
-            from aughor.monitors.store import get_monitor, append_alert
-            from aughor.monitors.runner import run_monitor
-            from aughor.db.connection import open_connection_for
-            from aughor.db.registry import get_connection_org
-            from aughor.org.context import using_org
-
-            monitor = get_monitor(monitor_id)
-            if monitor is None or not monitor.enabled:
-                return
-
-            # DATA-06: a background tick carries no request context, so current_org_id()
-            # would default to 'default' and mis-stamp the emitted monitor.alert event.
-            # Re-bind the monitor's tenant (its connection's org) for the run — the same
-            # re-bind the kernel does for a boot-recovered job (kernel/jobs.py).
-            org = get_connection_org(monitor.conn_id) or ""
-
-            def _work():
-                with using_org(org):
-                    db = open_connection_for(monitor.conn_id)
-                    try:
-                        alert = run_monitor(monitor, db)
-                    finally:
-                        try:
-                            db.close()
-                        except Exception as exc:
-                            from aughor.kernel.errors import tolerate
-                            tolerate(exc, "closing the per-tick db handle is best-effort; the monitor result is already computed",
-                                     counter="monitors.scheduler.tick.db_close")
-                    if alert is not None:
-                        append_alert(alert)
-                        logger.info(
-                            "Monitor '%s' fired [%s]: %s",
-                            monitor.name, alert.severity, alert.message[:120],
-                        )
-
-            # WP-7: under `ops.metered_monitors`, run the tick as a supervised Watcher job so
-            # its warehouse SQL is metered + budget-enforced (else the direct in-thread path).
-            from aughor.kernel.flags import flag_enabled
-            if flag_enabled("ops.metered_monitors"):
-                from aughor.kernel.jobs import submit_background_tick
-                job_id = submit_background_tick(
-                    "monitor", _work, conn_id=monitor.conn_id, org_id=org,
-                    idempotency_key=f"monitor:{monitor_id}")
-                if job_id is not None:
-                    return   # routed through the kernel
-            _work()          # legacy / no-loop fallback
-        except Exception as exc:
-            logger.error("Monitor job %s crashed: %s", monitor_id, exc)
+        run_monitor_job(monitor_id)
 
     _job.__name__ = f"monitor_job_{monitor_id}"
     return _job
