@@ -1,0 +1,377 @@
+{
+  "connection_id": "samples",
+  "edges": {
+    "metric:aov--derived_from-->table:Order": {
+      "from_id": "metric:aov",
+      "id": "metric:aov--derived_from-->table:Order",
+      "kind": "derived_from",
+      "label": "derived from",
+      "provenance": {
+        "measured": null,
+        "note": "metric formula reads table",
+        "source": "ontology.metric"
+      },
+      "to_id": "table:Order"
+    },
+    "metric:revenue--derived_from-->table:Order": {
+      "from_id": "metric:revenue",
+      "id": "metric:revenue--derived_from-->table:Order",
+      "kind": "derived_from",
+      "label": "derived from",
+      "provenance": {
+        "measured": null,
+        "note": "metric formula reads table",
+        "source": "ontology.metric"
+      },
+      "to_id": "table:Order"
+    },
+    "table:Customer--joins_on-->table:Order": {
+      "from_id": "table:Customer",
+      "id": "table:Customer--joins_on-->table:Order",
+      "kind": "joins_on",
+      "label": "places",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Order"
+    },
+    "table:Customer--joins_on-->table:Review": {
+      "from_id": "table:Customer",
+      "id": "table:Customer--joins_on-->table:Review",
+      "kind": "joins_on",
+      "label": "writes",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Review"
+    },
+    "table:OrderItem--joins_on-->table:Order": {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:Order",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Order"
+    },
+    "table:OrderItem--joins_on-->table:Product": {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:Product",
+      "kind": "joins_on",
+      "label": "is for",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Product"
+    },
+    "table:OrderItem--joins_on-->table:Review": {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:Review",
+      "kind": "joins_on",
+      "label": "associated with",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Review"
+    }
+  },
+  "generated_at": "2026-07-25T08:03:25.934400+00:00",
+  "nodes": {
+    "domain:catalog": {
+      "data": {
+        "members": [
+          "table:Product"
+        ]
+      },
+      "id": "domain:catalog",
+      "kind": "domain",
+      "label": "Catalog",
+      "provenance": {
+        "measured": null,
+        "note": "1 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "domain:commerce": {
+      "data": {
+        "members": [
+          "table:OrderItem",
+          "table:Order"
+        ]
+      },
+      "id": "domain:commerce",
+      "kind": "domain",
+      "label": "Commerce",
+      "provenance": {
+        "measured": null,
+        "note": "2 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "domain:customer": {
+      "data": {
+        "members": [
+          "table:Customer",
+          "table:Review"
+        ]
+      },
+      "id": "domain:customer",
+      "kind": "domain",
+      "label": "Customer",
+      "provenance": {
+        "measured": null,
+        "note": "2 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "metric:aov": {
+      "data": {
+        "formula_sql": "AVG(total_amount)",
+        "grain": "status, order_date, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": true
+      },
+      "id": "metric:aov",
+      "kind": "metric",
+      "label": "aov",
+      "provenance": {
+        "measured": null,
+        "note": "verified=True",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "metric:revenue": {
+      "data": {
+        "formula_sql": "SUM(total_amount)",
+        "grain": "status, order_date, customer_id, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": true
+      },
+      "id": "metric:revenue",
+      "kind": "metric",
+      "label": "revenue",
+      "provenance": {
+        "measured": null,
+        "note": "verified=True",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "resolution:1ceb3f568c9d2c98e483": {
+      "data": {
+        "evidence": "seeded for the Wave C live demo",
+        "resolution_source": "user",
+        "subject": "high-value customer"
+      },
+      "id": "resolution:1ceb3f568c9d2c98e483",
+      "kind": "glossary_term",
+      "label": "high-value customer",
+      "provenance": {
+        "measured": null,
+        "note": "resolution_source=user",
+        "source": "ambiguity_ledger"
+      },
+      "summary": "a customer whose lifetime_spend is at least 1000",
+      "tags": []
+    },
+    "table:Customer": {
+      "data": {
+        "column_count": 8,
+        "columns": [
+          "city",
+          "country",
+          "customer_id",
+          "email",
+          "full_name",
+          "lifetime_orders",
+          "lifetime_spend",
+          "signup_date"
+        ],
+        "domain": "Customer",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "customer_id",
+        "source_tables": [
+          "customers"
+        ]
+      },
+      "id": "table:Customer",
+      "kind": "table",
+      "label": "Customer",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Order": {
+      "data": {
+        "column_count": 9,
+        "columns": [
+          "customer_id",
+          "delivered_at",
+          "item_count",
+          "order_date",
+          "order_id",
+          "payment_method",
+          "shipped_at",
+          "status",
+          "total_amount"
+        ],
+        "domain": "Commerce",
+        "exploration_insights": [],
+        "has_lifecycle": true,
+        "identity_key": "order_id",
+        "source_tables": [
+          "orders"
+        ]
+      },
+      "id": "table:Order",
+      "kind": "table",
+      "label": "Order",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=business_object grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": [
+        "HasTimestamp",
+        "HasMonetaryValue",
+        "HasLifecycle"
+      ]
+    },
+    "table:OrderItem": {
+      "data": {
+        "column_count": 6,
+        "columns": [
+          "item_id",
+          "line_total",
+          "order_id",
+          "product_id",
+          "quantity",
+          "unit_price"
+        ],
+        "domain": "Commerce",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "item_id",
+        "source_tables": [
+          "order_items"
+        ]
+      },
+      "id": "table:OrderItem",
+      "kind": "table",
+      "label": "Order Line",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": [
+        "HasMonetaryValue"
+      ]
+    },
+    "table:Product": {
+      "data": {
+        "column_count": 6,
+        "columns": [
+          "category",
+          "is_out_of_stock",
+          "price",
+          "product_id",
+          "product_name",
+          "stock_quantity"
+        ],
+        "domain": "Catalog",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "product_id",
+        "source_tables": [
+          "products"
+        ]
+      },
+      "id": "table:Product",
+      "kind": "table",
+      "label": "Product",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Review": {
+      "data": {
+        "column_count": 6,
+        "columns": [
+          "customer_id",
+          "order_id",
+          "rating",
+          "review_date",
+          "review_id",
+          "review_text"
+        ],
+        "domain": "Customer",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "review_id",
+        "source_tables": [
+          "reviews"
+        ]
+      },
+      "id": "table:Review",
+      "kind": "table",
+      "label": "Review",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    }
+  },
+  "org_id": "default",
+  "schema_fingerprint": "dfcf4f93ea9f4925",
+  "schema_name": "ecommerce",
+  "structural_fingerprint": "87e1bb32a6eb540b",
+  "table_fingerprints": {
+    "Customer": "05b09ae9fce5ee1b",
+    "Order": "20b1b54572098a4f",
+    "OrderItem": "d02adc725d2968e6",
+    "Product": "5a30cbc238d3d5a7",
+    "Review": "3915905ee7645800"
+  },
+  "version": 4
+}

@@ -1,0 +1,18 @@
+target_kind: action
+target_id: refund_orders
+fields:
+  description: ''
+  kind: side_effect
+  params:
+  - name: amount_eur
+    data_type: NUMERIC
+    required: true
+  submission_criteria:
+  - expr: amount_eur <= 10000
+    message: Refunds over EUR 10,000 need finance sign-off.
+  risk: high
+source: human
+edited_by: ''
+edited_at: '2026-07-23T13:11:45.030479+00:00'
+note: ''
+binding: {}
