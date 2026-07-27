@@ -1,0 +1,904 @@
+{
+  "connection_id": "workspace",
+  "edges": {
+    "metric:aov--derived_from-->table:Order": {
+      "from_id": "metric:aov",
+      "id": "metric:aov--derived_from-->table:Order",
+      "kind": "derived_from",
+      "label": "derived from",
+      "provenance": {
+        "measured": null,
+        "note": "metric formula reads table",
+        "source": "ontology.metric"
+      },
+      "to_id": "table:Order"
+    },
+    "metric:revenue--derived_from-->table:Order": {
+      "from_id": "metric:revenue",
+      "id": "metric:revenue--derived_from-->table:Order",
+      "kind": "derived_from",
+      "label": "derived from",
+      "provenance": {
+        "measured": null,
+        "note": "metric formula reads table",
+        "source": "ontology.metric"
+      },
+      "to_id": "table:Order"
+    },
+    "table:EventAttendance--joins_on-->table:Event": {
+      "from_id": "table:EventAttendance",
+      "id": "table:EventAttendance--joins_on-->table:Event",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Event"
+    },
+    "table:OrderItem--joins_on-->table:MarketingAttribution": {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:MarketingAttribution",
+      "kind": "joins_on",
+      "label": "attributed to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:MarketingAttribution"
+    },
+    "table:OrderItem--joins_on-->table:Payment": {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:Payment",
+      "kind": "joins_on",
+      "label": "paid by",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Payment"
+    },
+    "table:OrderItem--joins_on-->table:Return": {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:Return",
+      "kind": "joins_on",
+      "label": "returned in",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Return"
+    },
+    "table:OrderItem--joins_on-->table:Shipment": {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:Shipment",
+      "kind": "joins_on",
+      "label": "shipped in",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Shipment"
+    }
+  },
+  "generated_at": "2026-07-25T09:33:58.522034+00:00",
+  "nodes": {
+    "domain:catalog": {
+      "data": {
+        "members": [
+          "table:InventorySnapshot",
+          "table:Product"
+        ]
+      },
+      "id": "domain:catalog",
+      "kind": "domain",
+      "label": "Catalog",
+      "provenance": {
+        "measured": null,
+        "note": "2 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "domain:commerce": {
+      "data": {
+        "members": [
+          "table:OrderItem",
+          "table:Order",
+          "table:Payment",
+          "table:Refund",
+          "table:Return",
+          "table:SalesTransaction",
+          "table:Shipment"
+        ]
+      },
+      "id": "domain:commerce",
+      "kind": "domain",
+      "label": "Commerce",
+      "provenance": {
+        "measured": null,
+        "note": "7 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "domain:customer": {
+      "data": {
+        "members": [
+          "table:Customer",
+          "table:EventAttendance",
+          "table:SalesCustomer"
+        ]
+      },
+      "id": "domain:customer",
+      "kind": "domain",
+      "label": "Customer",
+      "provenance": {
+        "measured": null,
+        "note": "3 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "domain:marketing": {
+      "data": {
+        "members": [
+          "table:Event",
+          "table:MarketingAttribution",
+          "table:MarketingCampaign"
+        ]
+      },
+      "id": "domain:marketing",
+      "kind": "domain",
+      "label": "Marketing",
+      "provenance": {
+        "measured": null,
+        "note": "3 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "domain:operations": {
+      "data": {
+        "members": [
+          "table:Flight",
+          "table:SalesFranchise",
+          "table:SalesSupplier"
+        ]
+      },
+      "id": "domain:operations",
+      "kind": "domain",
+      "label": "Operations",
+      "provenance": {
+        "measured": null,
+        "note": "3 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "metric:aov": {
+      "data": {
+        "formula_sql": "AVG(total_amount)",
+        "grain": "status, order_date, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": false
+      },
+      "id": "metric:aov",
+      "kind": "metric",
+      "label": "aov",
+      "provenance": {
+        "measured": null,
+        "note": "verified=False",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "metric:revenue": {
+      "data": {
+        "formula_sql": "SUM(total_amount)",
+        "grain": "status, order_date, customer_id, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": false
+      },
+      "id": "metric:revenue",
+      "kind": "metric",
+      "label": "revenue",
+      "provenance": {
+        "measured": null,
+        "note": "verified=False",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "resolution:271c6d5c588bf2156560": {
+      "data": {
+        "evidence": "the user chose this reading when asked to clarify",
+        "resolution_source": "user",
+        "subject": "total est_gmv_eur by brand"
+      },
+      "id": "resolution:271c6d5c588bf2156560",
+      "kind": "glossary_term",
+      "label": "total est_gmv_eur by brand",
+      "provenance": {
+        "measured": null,
+        "note": "resolution_source=user",
+        "source": "ambiguity_ledger"
+      },
+      "summary": "sum of est_gmv_eur grouped by brand_collaborations type",
+      "tags": []
+    },
+    "resolution:4bed9f46a7abbbad9c98": {
+      "data": {
+        "evidence": "seeded for the Wave C live demo",
+        "resolution_source": "user",
+        "subject": "material return"
+      },
+      "id": "resolution:4bed9f46a7abbbad9c98",
+      "kind": "glossary_term",
+      "label": "material return",
+      "provenance": {
+        "measured": null,
+        "note": "resolution_source=user",
+        "source": "ambiguity_ledger"
+      },
+      "summary": "a return whose refund_eur is at least 100 EUR",
+      "tags": []
+    },
+    "resolution:88bad7da371ac3918a73": {
+      "data": {
+        "evidence": "a reviewer corrected an earlier answer",
+        "resolution_source": "verdict",
+        "subject": "GMV by marketing channel"
+      },
+      "id": "resolution:88bad7da371ac3918a73",
+      "kind": "glossary_term",
+      "label": "GMV by marketing channel",
+      "provenance": {
+        "measured": null,
+        "note": "resolution_source=verdict",
+        "source": "ambiguity_ledger"
+      },
+      "summary": "reviewer-corrected reading",
+      "tags": []
+    },
+    "table:Customer": {
+      "data": {
+        "column_count": 7,
+        "columns": [
+          "country",
+          "customer_id",
+          "is_top_customer",
+          "platform",
+          "region",
+          "signup_fy",
+          "tier"
+        ],
+        "domain": "Customer",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "customer_id",
+        "source_tables": [
+          "customers"
+        ]
+      },
+      "id": "table:Customer",
+      "kind": "table",
+      "label": "Customer",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Event": {
+      "data": {
+        "column_count": 9,
+        "columns": [
+          "brand",
+          "est_cost_eur",
+          "event_date",
+          "event_id",
+          "event_name",
+          "fiscal_year",
+          "location",
+          "n_guests",
+          "platform"
+        ],
+        "domain": "Marketing",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "event_id",
+        "source_tables": [
+          "events"
+        ]
+      },
+      "id": "table:Event",
+      "kind": "table",
+      "label": "Event",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:EventAttendance": {
+      "data": {
+        "column_count": 4,
+        "columns": [
+          "customer_id",
+          "event_id",
+          "platform",
+          "post_event_spend_uplift_eur"
+        ],
+        "domain": "Customer",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "event_id",
+        "source_tables": [
+          "event_attendance"
+        ]
+      },
+      "id": "table:EventAttendance",
+      "kind": "table",
+      "label": "Event Attendance",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Flight": {
+      "data": {
+        "column_count": 17,
+        "columns": [
+          "actual_departure",
+          "aircraft_reg",
+          "aircraft_type",
+          "delay_minutes",
+          "destination",
+          "disruption_reason",
+          "distance_km",
+          "flight_date",
+          "flight_id",
+          "flight_number",
+          "haul",
+          "origin",
+          "route_id",
+          "scheduled_arrival",
+          "scheduled_departure",
+          "status",
+          "total_seats"
+        ],
+        "domain": "Operations",
+        "exploration_insights": [],
+        "has_lifecycle": true,
+        "identity_key": "flight_id",
+        "source_tables": [
+          "flights"
+        ]
+      },
+      "id": "table:Flight",
+      "kind": "table",
+      "label": "Flight",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=business_object grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": [
+        "HasLifecycle"
+      ]
+    },
+    "table:InventorySnapshot": {
+      "data": {
+        "column_count": 8,
+        "columns": [
+          "on_markdown",
+          "product_id",
+          "snapshot_date",
+          "snapshot_id",
+          "units_on_hand",
+          "units_reserved",
+          "warehouse",
+          "weeks_of_cover"
+        ],
+        "domain": "Catalog",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "snapshot_id",
+        "source_tables": [
+          "inventory_snapshots"
+        ]
+      },
+      "id": "table:InventorySnapshot",
+      "kind": "table",
+      "label": "Inventory Snapshot",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:MarketingAttribution": {
+      "data": {
+        "column_count": 6,
+        "columns": [
+          "days_to_conversion",
+          "first_touch_channel",
+          "last_touch_campaign_id",
+          "last_touch_channel",
+          "order_id",
+          "sessions_before_conversion"
+        ],
+        "domain": "Marketing",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "order_id",
+        "source_tables": [
+          "marketing_attribution"
+        ]
+      },
+      "id": "table:MarketingAttribution",
+      "kind": "table",
+      "label": "Marketing Attribution",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:MarketingCampaign": {
+      "data": {
+        "column_count": 9,
+        "columns": [
+          "attributed_gmv_eur",
+          "campaign_id",
+          "channel",
+          "clicks",
+          "fiscal_year",
+          "impressions",
+          "platform",
+          "roas",
+          "spend_eur"
+        ],
+        "domain": "Marketing",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "campaign_id",
+        "source_tables": [
+          "marketing_campaigns"
+        ]
+      },
+      "id": "table:MarketingCampaign",
+      "kind": "table",
+      "label": "Marketing Campaign",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Order": {
+      "data": {
+        "column_count": 2,
+        "columns": [
+          "amt",
+          "id"
+        ],
+        "domain": "Commerce",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "id",
+        "source_tables": [
+          "orders"
+        ]
+      },
+      "id": "table:Order",
+      "kind": "table",
+      "label": "Order",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=business_object grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:OrderItem": {
+      "data": {
+        "column_count": 11,
+        "columns": [
+          "brand",
+          "brand_tier",
+          "category",
+          "cost_eur",
+          "order_id",
+          "order_item_id",
+          "platform",
+          "product_id",
+          "quantity",
+          "returned",
+          "unit_price_eur"
+        ],
+        "domain": "Commerce",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "order_item_id",
+        "source_tables": [
+          "order_items"
+        ]
+      },
+      "id": "table:OrderItem",
+      "kind": "table",
+      "label": "Order Line",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Payment": {
+      "data": {
+        "column_count": 9,
+        "columns": [
+          "amount_eur",
+          "fraud_flag",
+          "fraud_score",
+          "installments",
+          "order_id",
+          "payment_id",
+          "payment_method",
+          "psp",
+          "status"
+        ],
+        "domain": "Commerce",
+        "exploration_insights": [],
+        "has_lifecycle": true,
+        "identity_key": "payment_id",
+        "source_tables": [
+          "payments"
+        ]
+      },
+      "id": "table:Payment",
+      "kind": "table",
+      "label": "Payment",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=business_object grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": [
+        "HasLifecycle",
+        "HasRating"
+      ]
+    },
+    "table:Product": {
+      "data": {
+        "column_count": 9,
+        "columns": [
+          "brand",
+          "brand_tier",
+          "category",
+          "cost_eur",
+          "in_season",
+          "platform",
+          "product_id",
+          "retail_price_eur",
+          "season"
+        ],
+        "domain": "Catalog",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "product_id",
+        "source_tables": [
+          "products"
+        ]
+      },
+      "id": "table:Product",
+      "kind": "table",
+      "label": "Product",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Refund": {
+      "data": {
+        "column_count": 6,
+        "columns": [
+          "booking_id",
+          "reason",
+          "refund_chf",
+          "refund_id",
+          "refund_type",
+          "ticket_id"
+        ],
+        "domain": "Commerce",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "refund_id",
+        "source_tables": [
+          "refunds"
+        ]
+      },
+      "id": "table:Refund",
+      "kind": "table",
+      "label": "Refund",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Return": {
+      "data": {
+        "column_count": 8,
+        "columns": [
+          "category",
+          "order_id",
+          "order_item_id",
+          "platform",
+          "reason",
+          "refund_eur",
+          "return_date",
+          "return_id"
+        ],
+        "domain": "Commerce",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "return_id",
+        "source_tables": [
+          "returns"
+        ]
+      },
+      "id": "table:Return",
+      "kind": "table",
+      "label": "Return",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:SalesCustomer": {
+      "data": {
+        "column_count": 12,
+        "columns": [
+          "address",
+          "city",
+          "continent",
+          "country",
+          "customerID",
+          "email_address",
+          "first_name",
+          "gender",
+          "last_name",
+          "phone_number",
+          "postal_zip_code",
+          "state"
+        ],
+        "domain": "Customer",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "phone_number",
+        "source_tables": [
+          "sales_customers"
+        ]
+      },
+      "id": "table:SalesCustomer",
+      "kind": "table",
+      "label": "Sales Customer",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:SalesFranchise": {
+      "data": {
+        "column_count": 10,
+        "columns": [
+          "city",
+          "country",
+          "district",
+          "franchiseID",
+          "latitude",
+          "longitude",
+          "name",
+          "size",
+          "supplierID",
+          "zipcode"
+        ],
+        "domain": "Operations",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "franchiseID",
+        "source_tables": [
+          "sales_franchises"
+        ]
+      },
+      "id": "table:SalesFranchise",
+      "kind": "table",
+      "label": "Sales Franchise",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=business_object grain_verified=True",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:SalesSupplier": {
+      "data": {
+        "column_count": 10,
+        "columns": [
+          "approved",
+          "city",
+          "continent",
+          "district",
+          "ingredient",
+          "latitude",
+          "longitude",
+          "name",
+          "size",
+          "supplierID"
+        ],
+        "domain": "Operations",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "supplierID",
+        "source_tables": [
+          "sales_suppliers"
+        ]
+      },
+      "id": "table:SalesSupplier",
+      "kind": "table",
+      "label": "Sales Supplier",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:SalesTransaction": {
+      "data": {
+        "column_count": 10,
+        "columns": [
+          "cardNumber",
+          "customerID",
+          "dateTime",
+          "franchiseID",
+          "paymentMethod",
+          "product",
+          "quantity",
+          "totalPrice",
+          "transactionID",
+          "unitPrice"
+        ],
+        "domain": "Commerce",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "transactionID",
+        "source_tables": [
+          "sales_transactions"
+        ]
+      },
+      "id": "table:SalesTransaction",
+      "kind": "table",
+      "label": "Sales Transaction",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Shipment": {
+      "data": {
+        "column_count": 12,
+        "columns": [
+          "carrier",
+          "delivery_days",
+          "destination_country",
+          "duty_eur",
+          "order_id",
+          "origin_country",
+          "platform",
+          "service_level",
+          "ship_date",
+          "shipment_id",
+          "shipping_cost_eur",
+          "warehouse"
+        ],
+        "domain": "Commerce",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "shipment_id",
+        "source_tables": [
+          "shipments"
+        ]
+      },
+      "id": "table:Shipment",
+      "kind": "table",
+      "label": "Shipment",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    }
+  },
+  "org_id": "default",
+  "schema_fingerprint": "13e43cb05785aed9",
+  "schema_name": "default",
+  "structural_fingerprint": "3cf003611df0fc47",
+  "table_fingerprints": {
+    "Customer": "9907a51d1821ab37",
+    "Event": "432a6282e437e52b",
+    "EventAttendance": "7cfe8acf0e6f7c4a",
+    "Flight": "8e54007a240a5143",
+    "InventorySnapshot": "ce75adad434238c7",
+    "MarketingAttribution": "26ce5b5a7a524cd4",
+    "MarketingCampaign": "db2c92856737ab82",
+    "Order": "667f60c7acaa5eee",
+    "OrderItem": "475645e84ed165b0",
+    "Payment": "8cf7749044ef87f9",
+    "Product": "cd8ffdecc5cb5fdc",
+    "Refund": "9be1f875bda70b93",
+    "Return": "82e40d5686f9740c",
+    "SalesCustomer": "11e49919f9434c03",
+    "SalesFranchise": "dde955cad2b671e1",
+    "SalesSupplier": "90e98a8eeff7c00a",
+    "SalesTransaction": "3cd8372beb230847",
+    "Shipment": "de6a8f34ad95acfa"
+  },
+  "version": 10
+}

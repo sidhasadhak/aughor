@@ -1,0 +1,417 @@
+{
+  "connection_id": "aughor_ops",
+  "edges": {
+    "table:Artifact--joins_on-->table:Event": {
+      "from_id": "table:Artifact",
+      "id": "table:Artifact--joins_on-->table:Event",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Event"
+    },
+    "table:Artifact--joins_on-->table:Job": {
+      "from_id": "table:Artifact",
+      "id": "table:Artifact--joins_on-->table:Job",
+      "kind": "joins_on",
+      "label": "produced by",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Job"
+    },
+    "table:Event--joins_on-->table:Job": {
+      "from_id": "table:Event",
+      "id": "table:Event--joins_on-->table:Job",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Job"
+    }
+  },
+  "generated_at": "2026-07-25T08:08:35.678436+00:00",
+  "nodes": {
+    "domain:platform_configuration": {
+      "data": {
+        "members": [
+          "table:Kv",
+          "table:Meta"
+        ]
+      },
+      "id": "domain:platform_configuration",
+      "kind": "domain",
+      "label": "Platform Configuration",
+      "provenance": {
+        "measured": null,
+        "note": "2 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "domain:platform_operations": {
+      "data": {
+        "members": [
+          "table:Event",
+          "table:Artifact",
+          "table:Job",
+          "table:Lineage",
+          "table:Task"
+        ]
+      },
+      "id": "domain:platform_operations",
+      "kind": "domain",
+      "label": "Platform Operations",
+      "provenance": {
+        "measured": null,
+        "note": "5 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "domain:system_administration": {
+      "data": {
+        "members": [
+          "table:SqliteSequence"
+        ]
+      },
+      "id": "domain:system_administration",
+      "kind": "domain",
+      "label": "System Administration",
+      "provenance": {
+        "measured": null,
+        "note": "1 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "metric:aov": {
+      "data": {
+        "formula_sql": "AVG(total_amount)",
+        "grain": "status, order_date, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": false
+      },
+      "id": "metric:aov",
+      "kind": "metric",
+      "label": "aov",
+      "provenance": {
+        "measured": null,
+        "note": "verified=False",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "metric:revenue": {
+      "data": {
+        "formula_sql": "SUM(total_amount)",
+        "grain": "status, order_date, customer_id, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": false
+      },
+      "id": "metric:revenue",
+      "kind": "metric",
+      "label": "revenue",
+      "provenance": {
+        "measured": null,
+        "note": "verified=False",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Artifact": {
+      "data": {
+        "column_count": 11,
+        "columns": [
+          "canvas_id",
+          "conn_id",
+          "created_at",
+          "created_by_job",
+          "id",
+          "kind",
+          "natural_key",
+          "org_id",
+          "payload",
+          "superseded_by",
+          "version"
+        ],
+        "domain": "Platform Operations",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "id",
+        "source_tables": [
+          "artifacts"
+        ]
+      },
+      "id": "table:Artifact",
+      "kind": "table",
+      "label": "Operational Artifact",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=business_object grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": [
+        "HasTimestamp"
+      ]
+    },
+    "table:Event": {
+      "data": {
+        "column_count": 7,
+        "columns": [
+          "at",
+          "canvas_id",
+          "conn_id",
+          "job_id",
+          "kind",
+          "payload",
+          "seq"
+        ],
+        "domain": "Platform Operations",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "conn_id",
+        "source_tables": [
+          "events"
+        ]
+      },
+      "id": "table:Event",
+      "kind": "table",
+      "label": "Operational Event",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Job": {
+      "data": {
+        "column_count": 15,
+        "columns": [
+          "attempt",
+          "canvas_id",
+          "conn_id",
+          "created_at",
+          "error",
+          "finished_at",
+          "heartbeat_at",
+          "id",
+          "idempotency_key",
+          "kind",
+          "metrics",
+          "org_id",
+          "payload",
+          "started_at",
+          "state"
+        ],
+        "domain": "Platform Operations",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "id",
+        "source_tables": [
+          "jobs"
+        ]
+      },
+      "id": "table:Job",
+      "kind": "table",
+      "label": "Background Job",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=business_object grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": [
+        "HasTimestamp"
+      ]
+    },
+    "table:Kv": {
+      "data": {
+        "column_count": 5,
+        "columns": [
+          "key",
+          "seq",
+          "store",
+          "updated_at",
+          "value"
+        ],
+        "domain": "Platform Configuration",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "store",
+        "source_tables": [
+          "kv"
+        ]
+      },
+      "id": "table:Kv",
+      "kind": "table",
+      "label": "Key-Value Store",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=standalone grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": [
+        "HasTimestamp"
+      ]
+    },
+    "table:Lineage": {
+      "data": {
+        "column_count": 5,
+        "columns": [
+          "artifact_id",
+          "detail",
+          "org_id",
+          "ref",
+          "relation"
+        ],
+        "domain": "Platform Operations",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "artifact_id",
+        "source_tables": [
+          "lineage"
+        ]
+      },
+      "id": "table:Lineage",
+      "kind": "table",
+      "label": "Artifact Lineage",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Meta": {
+      "data": {
+        "column_count": 2,
+        "columns": [
+          "k",
+          "v"
+        ],
+        "domain": "Platform Configuration",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "k",
+        "source_tables": [
+          "meta"
+        ]
+      },
+      "id": "table:Meta",
+      "kind": "table",
+      "label": "Metadata Entry",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=standalone grain_verified=True",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:SqliteSequence": {
+      "data": {
+        "column_count": 2,
+        "columns": [
+          "name",
+          "seq"
+        ],
+        "domain": "System Administration",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "name",
+        "source_tables": [
+          "sqlite_sequence"
+        ]
+      },
+      "id": "table:SqliteSequence",
+      "kind": "table",
+      "label": "Sequence Counter",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=standalone grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "table:Task": {
+      "data": {
+        "column_count": 12,
+        "columns": [
+          "captured_output",
+          "duration_ms",
+          "end_time",
+          "error_message",
+          "input",
+          "labels",
+          "org_id",
+          "parent_span_id",
+          "span_id",
+          "start_time",
+          "task",
+          "trace_id"
+        ],
+        "domain": "Platform Operations",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "span_id",
+        "source_tables": [
+          "task_history"
+        ]
+      },
+      "id": "table:Task",
+      "kind": "table",
+      "label": "Task History",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": [
+        "HasTimestamp",
+        "HasDuration"
+      ]
+    }
+  },
+  "org_id": "default",
+  "schema_fingerprint": "244c08b9b0811822",
+  "schema_name": "aughor_ops",
+  "structural_fingerprint": "567c3ffcf7358285",
+  "table_fingerprints": {
+    "Artifact": "ec714ba32aa534f8",
+    "Event": "3247170d5f192d93",
+    "Job": "16699bc9f9bb050a",
+    "Kv": "6c80d5611b7084bb",
+    "Lineage": "0e2f4cdf1cde5e0d",
+    "Meta": "7c557e7ff68b8bc6",
+    "SqliteSequence": "ce0a9d33d7499c40",
+    "Task": "1b4ab027dc79abbb"
+  },
+  "version": 1
+}
