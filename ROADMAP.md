@@ -52,12 +52,25 @@ stacked arc). **The next build is Wave L** per the v2 program above.
 | **C6** | distribution — the committed artifact + the offline skills pack (`graph.export`) | ✅ **merged (#219, `9584931`)** |
 | **V (V1–V6)** | artifact lifecycle — freshness kernel · resolved rebuild · save≠publish · freeze · purge ratchet · serving surface | ✅ **merged (#219, `9584931`)** — V3b/V6b deferred (→ L7/S5) |
 
-**⏭️ NEXT: Wave L — Leverage/activation** per the v2 program: background graph build +
-live-path finding/brief writers (closes the caveat below), then graduate `graph.readback` →
-`closed_loop` → `automations.*` through E6 receipts (J9: a default flipped without a receipt
-reverts). Wave G follows L, unchanged in scope but enriched (budget algebra,
-permission-trimmed retrieval, sealed programs — see program §3). V3b and V6b stay deferred:
-V3b is L7 (optional) or S5; V6b lands in S5.
+**⏭️ NEXT: finish Wave L — L4, then L3/L6.** L1, L2 and L5 are merged (#221, `cc9702e`);
+the arc doc's **"Resume here"** block is the authority:
+[`docs/WAVE_L_ACTIVATION_ARC.md`](docs/WAVE_L_ACTIVATION_ARC.md).
+
+- **L4 (`automations.*`) needs NO grid** — A5 already ships equivalence receipts (same
+  alert severity/message/debounce), a deterministic pass/fail with no noise floor. The
+  cheapest remaining graduation.
+- **L3 (`closed_loop`) / L6 (`ada.evidence_stubs`)** now run against the 102-case suite
+  `9c1e13e458ff`. ⚠️ Budget first: a 2×2×2 grid over 102 cases is **~6–7 h** at 16 RPM;
+  one replicate per cell halves it and costs only a reproducibility check, since temp-0
+  runs proved perfectly deterministic.
+- **`graph.readback` is measured and stays OFF** — +0.023 against a 0.182 sampling
+  floor, then a 3-case shuffle and +44% wall time at temp 0. Evidence, not absence of it.
+- Wave G follows L, unchanged in scope but enriched (budget algebra, permission-trimmed
+  retrieval, sealed programs — see program §3). V3b and V6b stay deferred: V3b is L7
+  (optional) or S5; V6b lands in S5.
+
+⚠️ **Any measured grid needs:** `AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1
+AUGHOR_LLM_RPM=16 AUGHOR_LLM_MAX_CONCURRENCY=2` + `freeze=True`.
 
 **Wave V — artifact lifecycle (versions, publish, staleness).** Scoping doc written
 FIRST, as for Wave C: **[`docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md`](docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md)**
