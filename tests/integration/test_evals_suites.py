@@ -352,8 +352,21 @@ def test_graduation_is_judged_against_the_baseline():
     assert not below.can_graduate and below.bar == 0.65
     assert any("below the bar" in r for r in below.reasons)
 
+    # Beating the bar is necessary but NOT sufficient: a baseline implies an A/B, and an
+    # A/B without its noise floor is how a flag graduates on jitter (Wave L2 found the
+    # gate saying yes to a +0.023 delta that fidelity was refusing against a 0.182 band).
+    unfloored = evaluate_graduation("demo.flag", {**_CLEAN, "pass_rate": 0.66},
+                                    registered_flags=_REG, baseline_pass_rate=0.65)
+    assert not unfloored.can_graduate
+    assert any("no floor evidence" in r for r in unfloored.reasons)
+
+    from aughor.evals import fidelity as _FI
+    quiet = _FI.compare([{"pass_rate": 0.650, "total": 100}, {"pass_rate": 0.651, "total": 100}],
+                        [{"pass_rate": 0.660, "total": 100}, {"pass_rate": 0.661, "total": 100}],
+                        axis="pass_rate")
     earned = evaluate_graduation("demo.flag", {**_CLEAN, "pass_rate": 0.66},
-                                 registered_flags=_REG, baseline_pass_rate=0.65)
+                                 registered_flags=_REG, baseline_pass_rate=0.65,
+                                 delta=quiet)
     assert earned.can_graduate and earned.reasons == []
     assert earned.pass_rate == 0.66 and earned.baseline_pass_rate == 0.65
 
@@ -385,16 +398,24 @@ def test_graduate_a_real_flag_over_http_and_receipt_it(client, db):
     before = flag_state(flag)
     assert before == "off"
 
+    # A caller-supplied baseline carries no provenance: nothing says the two numbers came
+    # from runs that agree with themselves. The route therefore REFUSES it, and says why,
+    # rather than graduating on a bar it cannot see the noise around.
     r = client.post(f"/evals/flags/{flag}/graduate",
                     json={"suite_id": sid, "baseline_pass_rate": 1.0})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["can_graduate"] is True and body["flag"] == flag
-    assert body["pass_rate"] == 1.0 and body["reasons"] == []
+    assert body["can_graduate"] is False and body["flag"] == flag
+    assert any("no floor evidence" in x for x in body["reasons"])
     assert body["receipt_id"] and body["current_default"] is False
 
+    # …and a clean run judged against min_pass_rate (no baseline ⇒ no A/B ⇒ nothing to
+    # floor-verify) still graduates, so the gate did not become unpassable.
+    r2 = client.post(f"/evals/flags/{flag}/graduate", json={"suite_id": sid})
+    assert r2.status_code == 200 and r2.json()["can_graduate"] is True
+
     grads = client.get("/evals/graduations", params={"flag": flag}).json()["graduations"]
-    assert len(grads) == 1 and grads[0]["can_graduate"] is True
+    assert len(grads) == 2                       # the refusal is receipted too
 
     # THE anti-drift guarantee — the gate recorded evidence, it did not turn the flag on.
     assert flag_state(flag) == before == "off"
