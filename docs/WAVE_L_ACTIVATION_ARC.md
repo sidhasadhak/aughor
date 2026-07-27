@@ -18,7 +18,7 @@
 | **L2** — graduate `graph.readback` | ✅ **grid RAN; flag NOT graduated — delta not attributable** (see below) |
 | **L3** — graduate `closed_loop` | ⭕ |
 | **L4** — graduate `automations.source_probes` + `engine` | ⭕ |
-| **L5** — seed curation on the demo connection + export the C6 pack | ⭕ |
+| **L5** — seed curation + widen the corpus | ✅ **corpus 22→102, trusted queries 0→11**; C6 pack export still open |
 | **L6** — A/B `ada.evidence_stubs` (the Wave-R measurement debt) | ⭕ |
 | **L7** *(opt)* — V3b artifact wiring | ⭕ |
 
@@ -465,6 +465,62 @@ answers with `graph.build=1` — every one of which would normally have written 
 `finding` node. Afterwards all three committed artifacts were still at their
 pre-run versions (`aughor_ops` v1, `samples` v4, `workspace` v6). The pin held on the
 live path, not just under test.
+
+## L5 — curation, and the corpus that was small for a borrowed reason
+
+**The suite was 22 cases because it inherited a limit that was never about evals.**
+`candidate_cases` reuses `load_investigation_findings` (right — one definition of what
+a receipt means), and with it inherited `_MAX_RECEIPT_FINDINGS = 100`, the *committed
+graph's* artifact-size budget. So a **628-receipt** connection was read through a
+100-receipt window — and because that window is newest-first, **every grid evicted its
+own corpus**: ~88 fresh receipts per run pushing older, more varied questions out of
+view. A measurement instrument narrowing itself each time it was used.
+
+Decoupled (`5f554f1`): **22 → 102 cases**, all distinct questions, suite
+`9c1e13e458ff`. Two tests hold the halves apart — the corpus must ask for *more* than
+the graph's budget, and the graph must still honour its own by default.
+
+**Trusted queries: 0 → 11** (`3d0ec08`). The store had zero entries on every
+connection — built, wired, retrieved by the planner, never adopted — while the eval
+plane had been accumulating exactly what it wants. `promote_trusted` captures cases
+that passed in **every run across every cell**; on `workspace` 11 had passed all 11
+runs, spanning both cells and both temperature regimes. Capture only — generalization
+is O4's job and needs a review queue, because a generalization can be wrong in ways a
+capture cannot.
+
+Two traps found in the building:
+
+- **The id is a trap in both directions.** `save_trusted` dedupes on `id`, so a blank
+  one makes 11 promotions leave 1, and a random one duplicates everything on re-run.
+  Content-addressing the question gives idempotence (verified: 11 promoted, then 0
+  promoted / 11 skipped).
+- **The prompt block was about to over-claim.** Its header asserts "data-team
+  reviewed, KNOWN-CORRECT"; these entries are *consistency*-verified. It now states
+  the **weakest warrant present**. Laundering a weak warrant into a strong one, in a
+  prompt whose entire job is to be believed, is the failure this codebase keeps
+  refusing.
+
+⏭️ **Still open in L5:** export the C6 pack from the now-curated connection.
+
+---
+
+## ⏭️ Resume here (parked 2026-07-27)
+
+**Branch `2026-07-26-wave-l1-graph-live-path`, 22 commits, pushed. [PR #221](https://github.com/sidhasadhak/aughor/pull/221) OPEN, not merged.**
+Done: L1 ✅ · L2 ✅ (measured, refused) · L5 ◐ (corpus + trusted queries; C6 pack open).
+Open: L3 · L4 · L6 · L7.
+
+1. **Merge #221** once `Backend · pytest` lands (the other three checks are green).
+2. **L4 — `automations.*`.** The cheapest remaining graduation and it needs **no grid**:
+   A5 already ships equivalence receipts (same alert severity/message/debounce), which
+   is a deterministic pass/fail with no noise floor involved.
+3. **L3 / L6 on the 102-case suite.** Now genuinely resolvable — a 3-case shuffle reads
+   as noise, a 15-case shift as signal.
+   ⚠️ **Budget it first:** a 2×2×2 grid over 102 cases is **~6–7 hours** at 16 RPM.
+   Since temp-0 runs proved perfectly deterministic, **1 replicate per cell** halves
+   that and loses only a reproducibility check — a deliberate trade, worth confirming
+   before launching.
+4. **Then Wave G**, per the program.
 
 ## Operating notes for whoever picks this up
 
