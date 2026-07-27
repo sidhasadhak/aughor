@@ -15,7 +15,7 @@
 | Item | State |
 |---|---|
 | **L1** — background build + live-path writers | ✅ **COMPLETE — gate met on a running server** |
-| **L2** — graduate `graph.readback` | ◐ **precondition built** (eval material); grid not yet run |
+| **L2** — graduate `graph.readback` | ✅ **grid RAN; flag NOT graduated — delta not attributable** (see below) |
 | **L3** — graduate `closed_loop` | ⭕ |
 | **L4** — graduate `automations.source_probes` + `engine` | ⭕ |
 | **L5** — seed curation on the demo connection + export the C6 pack | ⭕ |
@@ -294,6 +294,52 @@ the cause. Counting at the pacer could only ever compare the gate against itself
 answer needed a count at the HTTP boundary, one layer below the lowest thing we owned.)*
 
 </details>
+
+### ✅ THE GRID RAN — and `graph.readback` did NOT graduate
+
+Four runs, 22 cases each, 88 full answer-path invocations, ~95 minutes, **0 rate-limit
+events** (against 72 before the SDK fix), 0 errors, 0 flaky cases, no cell
+discrepancies.
+
+| cell | rep 0 | rep 1 | mean |
+|---|---|---|---|
+| `readback_off` | 0.864 | 0.682 | 0.773 |
+| `readback_on`  | 0.773 | 0.818 | **0.795** |
+
+**Delta +0.023. Noise floor 0.182 against a 0.050 threshold. Not attributable.**
+
+> *"the same configuration scored 0.682–0.864 on pass_rate across 2 runs, a band of
+> 0.182 … It disagrees with itself more than most variants will differ, so no delta
+> measured here can be attributed to a change."*
+
+**The flag stays OFF.** That is the correct outcome, not a failed one: J3 exists to
+refuse exactly this, and the baseline disagreeing with itself by 0.182 while the
+candidate moved 0.023 is the textbook case.
+
+#### The disagreement this exposed (the real finding)
+
+`evaluate_graduation` independently returned **`can_graduate=True`** on the same two
+numbers, because it compared 0.795 against the 0.773 bar and never looked at the floor.
+E4b built the floor, E6 built the gate, nothing connected them — so **a flag could have
+graduated on noise**, which is precisely what the flag-graduation audit existed to
+prevent. Fixed in `7d78c4c`: the gate now takes the `Delta`, refuses a non-attributable
+one in the floor's own words, and refuses a baseline supplied *without* floor evidence
+(silence is not evidence). J3 binds J9.
+
+#### What L2 actually needs next
+
+The blocker is no longer machinery — it is **statistical power**:
+
+- 2 replicates can *detect* a floor but cannot *narrow* one. A 0.182 band needs more
+  replicates, and at ~24 min/run that is a scheduled overnight batch, not an inline wait.
+- The binding is a free reasoning model at default temperature. **Pin a low temperature
+  for measured cells** (`Cell(temperature=...)` already exists) — most of that band is
+  almost certainly sampling variance, not read-back.
+- 22 consistency cases is a thin instrument for an effect this size. L5's curation and
+  a wider suite would raise the resolution.
+
+Until those land, the honest position is the one the harness reached on its own: **the
+data does not show read-back helping or hurting.**
 
 ### The methodological tension L2 must resolve first
 
