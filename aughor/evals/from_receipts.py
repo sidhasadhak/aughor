@@ -103,7 +103,15 @@ def candidate_cases(connection_id: str, *, limit: int = 60,
     out: list[dict] = []
     # Reuse L1's normalizer rather than re-reading the Ledger with a second shape:
     # one definition of "what a receipt means" for both the graph and the eval plane.
-    for rec in load_investigation_findings(connection_id, org_id):
+    #
+    # But NOT its limit. That cap is the committed graph's size budget; the eval corpus
+    # wants every receipt it can get, and inheriting the graph's window silently capped
+    # a 628-receipt connection at 100 — newest-first, so eval runs writing their own
+    # receipts evicted the older, more varied questions. Read wide here and let the
+    # selection rules below do the narrowing, since they narrow for reasons that are
+    # about eval quality rather than about JSON file size.
+    for rec in load_investigation_findings(connection_id, org_id,
+                                           limit=max(limit * 20, 1000)):
         question = str(rec.get("question") or "").strip()
         sql = str(rec.get("sql") or "").strip()
         headline = str(rec.get("text") or "").strip()

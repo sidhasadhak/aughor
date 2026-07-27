@@ -81,7 +81,7 @@ _MAX_RECEIPT_FINDINGS = 100
 
 
 def load_investigation_findings(
-    connection_id: str, org_id: Optional[str] = None
+    connection_id: str, org_id: Optional[str] = None, *, limit: Optional[int] = None
 ) -> list[dict]:
     """Answer receipts → the projection's finding shape.
 
@@ -95,18 +95,27 @@ def load_investigation_findings(
 
     Sourced ``evidence_ledger`` — the receipt's grounded claim, never a model's
     self-reported confidence (J4).
+
+    ``limit`` defaults to :data:`_MAX_RECEIPT_FINDINGS`, which is the **graph artifact's**
+    size budget — a constraint about keeping a committed JSON diff-readable, and nothing
+    to do with how many receipts are worth reading. A second consumer arrived (the eval
+    corpus in :mod:`aughor.evals.from_receipts`) whose only limit is how much material
+    exists, and it silently inherited the graph's budget: 628 receipts on this connection
+    became a 100-receipt window, and because the window is newest-first, eval runs
+    writing their own receipts pushed the older, more varied questions out of it.
+    Two consumers, two honest limits, one parameter.
     """
     from aughor.kernel.ledger import Ledger
 
+    cap = _MAX_RECEIPT_FINDINGS if limit is None else max(1, int(limit))
     out: list[dict] = []
     # Ask for one past the cap so truncation is DETECTED rather than assumed from a
     # full page (a page that happens to be exactly full is not evidence of more).
     arts = Ledger.default().artifacts_of_kind(
-        list(_RECEIPT_KINDS), conn_id=connection_id, org_id=org_id,
-        limit=_MAX_RECEIPT_FINDINGS + 1)
-    if len(arts) > _MAX_RECEIPT_FINDINGS:
-        dropped = len(arts) - _MAX_RECEIPT_FINDINGS
-        arts = arts[:_MAX_RECEIPT_FINDINGS]
+        list(_RECEIPT_KINDS), conn_id=connection_id, org_id=org_id, limit=cap + 1)
+    if len(arts) > cap:
+        dropped = len(arts) - cap
+        arts = arts[:cap]
         from aughor.stats import bump
         bump("context_graph.receipts_truncated", dropped)
     for art in arts:
