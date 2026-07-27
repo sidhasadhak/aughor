@@ -183,6 +183,22 @@ FLAG_DEFAULT = {
     # evidence. Off, the ceiling is 1 request per failure and some salvageable answers
     # are lost; on, it is 2 — still below the 3 this wave inherited.
     "llm.bounded_repair": True,
+    # Wave L4 (2026-07-27) — graduated on MEASURED equivalence, receipt `65364174a172`, from
+    # run `309b715b05c0` of the deterministic suite `aughor/evals/equivalence.py` (9/9 stable
+    # passes, 0 errors, 0 flaky, bar 1.0). The evidence is not "the tests are green": the suite
+    # runs the legacy monitor loop and the engine loop UNPATCHED against a real DuckDB warehouse
+    # and compares the alerts byte-for-byte — severity, message, current value, threshold — plus
+    # the anti-flap debounce and the no-double-fire property. A5's unit tests patch `run_monitor`,
+    # so they were only ever evidence about the wiring.
+    #
+    # What flipping this actually changes on a fresh clone: the condition→effect heartbeat starts
+    # and the /automations routes stop 404-ing. It does NOT start doing anything on its own — the
+    # engine drives only automations an operator explicitly created, so a clone with none behaves
+    # as before. Its two siblings stay OFF and hold their own receipts (`e6c39abad50a`,
+    # `33fc34ddbd47`): `adopt_legacy` changes the code path that DELIVERS briefs (an outward
+    # send), and `source_probes` adds recurring per-tick warehouse aggregates — both are default
+    # decisions about cost and outward behaviour, not about whether the equivalence holds.
+    "automations.engine": True,
 }
 
 # Human-facing copy for the Settings UI.
@@ -213,7 +229,7 @@ FLAG_META = {
     },
     "automations.source_probes": {
         "label": "Automation change detection — source version probes (Wave A3)",
-        "description": "Let `source_change` and `entity_appears` automation conditions fire on actual data arrival instead of staleness-days: one bounded aggregate per watched table (COUNT(*) plus MAX of its best change-signal column — never a data scan) computes a version fingerprint, compared by inequality so deletes and backfills register too; `entity_appears` restricts the signal to insertions, so an updated_at touch is not a new entity. Baselines commit only on a tick that actually FIRED, which is what makes a change impossible to consume silently when the other condition of an `all`-logic automation is false. A table with no usable version column fails OPEN to 'changed' with the reason recorded on the run — noisy and diagnosable, never silently never-firing. Gated separately from automations.engine so an operator can run schedule/metric automations without per-minute warehouse probes; off by default ⇒ source conditions error loudly as unwired (byte-identical otherwise).",
+        "description": "Let `source_change` and `entity_appears` automation conditions fire on actual data arrival instead of staleness-days: one bounded aggregate per watched table (COUNT(*) plus MAX of its best change-signal column — never a data scan) computes a version fingerprint, compared by inequality so deletes and backfills register too; `entity_appears` restricts the signal to insertions, so an updated_at touch is not a new entity. Baselines commit only on a tick that actually FIRED, which is what makes a change impossible to consume silently when the other condition of an `all`-logic automation is false. A table the probe cannot READ at all (missing, or not a plain identifier) fails OPEN to 'changed' with the reason recorded on the run — noisy and diagnosable, never silently never-firing. A table that merely lacks a change-signal column is a weaker case, and worth knowing before you point an automation at one: it is versioned by COUNT(*) alone, so inserts and deletes still register, but an in-place UPDATE — or an insert and a delete in the same window — leaves the count unchanged and the condition stays QUIET. Gated separately from automations.engine so an operator can run schedule/metric automations without per-minute warehouse probes; off by default ⇒ source conditions error loudly as unwired (byte-identical otherwise).",
     },
     "automations.proposals": {
         "label": "Proposal inbox + standing grants (Wave A4)",
