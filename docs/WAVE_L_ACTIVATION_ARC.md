@@ -590,6 +590,83 @@ but SELECT, and the discarded `QueryResult.error` made four scenarios "pass the 
 go quiet". The second was DuckDB refusing a read-write handle while the pool held the file
 read-only — fixed by evicting through `pool.evict_conn`.)*
 
+## L3 — sized from a pilot, and what the pilot overturned
+
+**Two prerequisites had to be cleared before spending hours, and one of them was this
+document.**
+
+**The rate-limit warning was stale.** `881bfde` closed the SDK-retry bypass and the grid after
+it ran 88 invocations with 0 refusals. Corrected above.
+
+**Flag drift had re-accumulated: 23 flags ON in the local ledger with a code default of OFF**
+(the 2026-07-22 audit cleared 19 of exactly this shape). `closed_loop` was one of them. The
+grid *cells* were never at risk — `flag_enabled` reads the run-scoped ContextVar before the
+ledger, and `applied()` reported no discrepancy for a cell requesting `False` against a ledger
+saying `True` (verified, not assumed). But the **ambient** configuration was: a graduation
+decides what a *fresh clone* does, so a delta measured with 22 unrelated local flags on is
+valid for one laptop. Cleared, snapshot kept. Post-clear baseline: **24 ON = 19 code defaults
++ 5 legitimately AUTO-elevated** (`capabilities.auto` is itself a default; don't read `auto` as
+drift).
+
+**Also worth knowing: L3 only became measurable when L5 landed.** `closed_loop` reads *trusted
+queries*, and that store held **zero** entries until L5 promoted 11. A grid run before that
+would have read an empty store — a guaranteed null, the same trap L2 hit measuring read-back
+on an unexplored connection.
+
+### The pilot (8 cases × 2 cells, 11.9 min)
+
+Counted at `httpx.Client.send`, one layer below the lowest thing we own:
+
+| | per case | 102-case grid, 1 rep | 2 reps |
+|---|---|---|---|
+| wall time | **44.5s** | 2.5 h | 5.0 h |
+| **openrouter requests** | **4.19** | **854** | **1,708** |
+| localhost (a LOCAL model — free, unmetered) | 10.62 | — | — |
+
+🔑 **Report the METERED host, not total HTTP.** Total traffic is 14.8/case; the constrained
+resource is 4.19/case. Conflating them overstates the budget by 3.5× and would have argued
+against a run that comfortably fits.
+
+### 🔑🔑 The "1 replicate halves it" advice above is WRONG at default temperature
+
+It halves the wall time and **destroys the evidence the gate requires.** With one run per cell
+there is no sampling floor, and since `7d78c4c` `evaluate_graduation` *refuses a baseline
+supplied without floor evidence*. A 2.5-hour single-replicate run at default temperature
+produces a delta the gate is built to reject — hours spent to learn nothing. The advice is
+sound only at temp 0, where replicates measure determinism rather than sampling, and where
+§"a temp-0 floor is not a noise floor" then applies.
+
+**The plan: split the replicates across two days.** 2 replicates × 2 cells × 102 cases needs
+~1,708 requests against a 1,000/day cap, so replicate 1 runs one day and replicate 2 the next.
+Scoring reads the suite's run history, so the two days compose into one A/B without either run
+knowing about the other. Full corpus, real floor, no budget overrun.
+
+```bash
+export AUGHOR_SECRET_KEY=$(grep ^AUGHOR_SECRET_KEY= .env | cut -d= -f2-)
+REPLICATE=1 AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1 \
+AUGHOR_LLM_RPM=16 AUGHOR_LLM_MAX_CONCURRENCY=2 \
+  .venv/bin/python -u scripts/l3_closed_loop_grid.py      # then the same with REPLICATE=2
+```
+
+Sizing any *other* grid first — the reusable half of the pilot, so no future wave has to guess
+at its request cost:
+
+```bash
+FLAG=ada.evidence_stubs PILOT_CASES=8 AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1 \
+  .venv/bin/python -u scripts/grid_sizing_pilot.py
+```
+
+### ⚠️ An unwatched confound, now counted
+
+The pilot log shows repeated upstream `429`s from the *secondary* enrichment model
+(`google/gemma-4-31b-it:free`) plus one Nvidia `Worker local total request limit reached
+(33/32)`. These are tolerated as best-effort — correct for an answer, **wrong to leave
+unmeasured in an experiment**: if enrichment degrades at different rates across cells, that is
+an uncontrolled variable sitting inside the delta. The grid script now records
+`chat.post_answer` per run. Counting does not fix it; it makes the run able to say so instead
+of averaging it away. ⏭️ **If the two cells differ materially, pin or disable the secondary
+model before trusting any L3 number.**
+
 ---
 
 ## ⏭️ Resume here (updated 2026-07-27)
@@ -599,17 +676,20 @@ L5 ◐ (corpus + trusted queries; C6 pack export open). Open: **L3 · L6 · L7**
 
 L4 shipped on branch `2026-07-27-wave-l4-automations-equivalence`.
 
-1. **L3 / L6 on the 102-case suite.** Now genuinely resolvable — a 3-case shuffle reads
-   as noise, a 15-case shift as signal.
-   ⚠️ **Budget it first:** a 2×2×2 grid over 102 cases is **~6–7 hours** at 16 RPM.
-   Since temp-0 runs proved perfectly deterministic, **1 replicate per cell** halves
-   that and loses only a reproducibility check — a deliberate trade, worth confirming
-   before launching.
-   ⚠️ **And settle the rate-limit root cause first** — `_pace()` is in, but 72
-   `free-models-per-min` refusals persisted at RPM=16 while the gate was correct in
-   isolation, so some `/ask` requests bypass it. Measure `llm.paced.<base_url>` against the
-   request count *before* committing 3–7 hours to a grid.
-2. **Then Wave G**, per the program.
+1. **L3 — finish the second replicate.** Replicate 1 (102 cases × 2 cells, ~854 openrouter
+   requests, ~2.5h) ran 2026-07-27. **Run `REPLICATE=2` on a later day**, then score — see
+   §"L3 — sized from a pilot" for why one replicate cannot be scored on its own.
+2. **L6 — `ada.evidence_stubs`.** Same shape and the same two-day budget. Note it already
+   carries a graduation receipt (`0040a4be16c2`, 2026-07-24, `pass_rate=1.0` on suite
+   `c8747b291c87`) minted **before** the floor gate existed — so it graduated with no floor
+   evidence, which is the very bug L2 found. L6 is redoing it honestly, and the old receipt
+   should be treated as void rather than as a baseline.
+3. **Then Wave G**, per the program.
+
+⚠️ **Budget reality, measured:** 4.19 openrouter requests and 44.5s per case. One replicate of
+one flag ≈ 854 requests against a **1,000/day** free cap. So **one flag-replicate per day** is
+the actual throughput — L3 and L6 together are four days of grid. Plan waves around that
+number rather than around wall-clock hours.
 
 ### The run playbook (copy-pasteable, for a cold session)
 
