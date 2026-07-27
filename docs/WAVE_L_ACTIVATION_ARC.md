@@ -522,6 +522,66 @@ Open: L3 · L4 · L6 · L7.
    before launching.
 4. **Then Wave G**, per the program.
 
+### The run playbook (copy-pasteable, for a cold session)
+
+#### Step A — L4, the graduation that needs no grid
+
+`automations.engine` / `automations.source_probes` / `automations.adopt_legacy` are
+**deterministic** graduations. A5 already ships equivalence receipts — same alert
+severity, same message, same debounce as the legacy schedulers — so the evidence is a
+pass/fail, with no sampling, no floor, and **no LLM budget at all**:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_automations_adopt.py \
+  tests/unit/test_automations_engine.py tests/unit/test_automations_probes.py -q
+```
+
+Graduate on that evidence via `evaluate_graduation(..., min_pass_rate=1.0)` — **no
+baseline, therefore no A/B, therefore no floor required** (the gate's own carve-out,
+pinned by `test_a_plain_threshold_run_still_needs_no_floor`). Record the receipt, and
+per **J9** do not flip a default without one.
+
+#### Step B — L3 / L6 on the 102-case suite
+
+```bash
+export AUGHOR_SECRET_KEY=$(grep ^AUGHOR_SECRET_KEY= .env | cut -d= -f2-)
+AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1 AUGHOR_GRAPH_BUILD=1 \
+AUGHOR_LLM_RPM=16 AUGHOR_LLM_MAX_CONCURRENCY=2 \
+  .venv/bin/python <your grid script>          # see the L2 grid above for the shape
+```
+
+Suite **`9c1e13e458ff`** (102 cases). Cells: `closed_loop` off/on for L3,
+`ada.evidence_stubs` off/on for L6. Always `freeze=True`, `connection_id="workspace"`.
+
+> ⚠️ **Decide the replicate count BEFORE launching.** 2 cells × 2 replicates × 102
+> cases ≈ **6–7 hours**. Temperature-0 runs proved *perfectly* reproducible
+> (0.818/0.818 and 0.773/0.773), so **1 replicate per cell halves the run** and gives
+> up only a reproducibility check — but then read §"a temp-0 floor is not a noise
+> floor" before interpreting anything: at temp 0 the floor measures determinism, so
+> the per-case diff is the evidence, not the band.
+>
+> **The honest design:** one pass at default temperature for the *sampling* floor, one
+> at temp 0 for the *per-case diff*. Two different questions, two different runs.
+
+**Scoring** — floor first, always:
+
+```python
+from aughor.evals import fidelity as FI
+from aughor.evals.promotion import evaluate_graduation
+delta = FI.compare(off_summaries, on_summaries, axis="pass_rate")
+evaluate_graduation(flag, on_summary, registered_flags=set(FLAG_ENV),
+                    baseline_pass_rate=<off mean>, delta=delta)   # delta is REQUIRED
+```
+
+Or just call `POST /evals/flags/{flag}/graduate` with `{"suite_id": "9c1e13e458ff"}`
+and let the route derive baseline *and* floor from the run history itself.
+
+#### After the run, whatever it says
+
+Promote whatever the grid verified — `promote_trusted.promote("9c1e13e458ff",
+"workspace")` captures cases that passed in every run across every cell, and it is
+idempotent, so running it after each grid is safe and additive.
+
 ## Operating notes for whoever picks this up
 
 - `.venv/bin/python -m pytest` — system python3.14 has no pytest.
