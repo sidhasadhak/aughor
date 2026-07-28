@@ -878,6 +878,12 @@ L4 shipped on branch `2026-07-27-wave-l4-automations-equivalence`.
    evidence, which is the very bug L2 found. L6 is redoing it honestly, and the old receipt
    should be treated as void rather than as a baseline.
 3. **Then Wave G**, per the program.
+4. **L2's open question has a successor.** The Neo4j context-graph study
+   ([`NEO4J_CONTEXT_GRAPH_STUDY_2026-07-28.md`](NEO4J_CONTEXT_GRAPH_STUDY_2026-07-28.md))
+   reframes it: read-back injected *conclusions*; the plausibly valuable memory is
+   *approaches* (reasoning-trace retrieval). Scoped there as **Wave N** (N1 trace read-back =
+   the L2 redesign · N2 graph visualization · N3 finding consolidation/expiry) — and N1's
+   verdict decides whether `graph.readback`'s injection path is kept or deleted.
 
 ⚠️ **Budget reality, measured:** 4.19 openrouter requests and 44.5s per case. One replicate of
 one flag ≈ 854 requests against a **1,000/day** free cap. So **one flag-replicate per day** is
