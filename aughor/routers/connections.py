@@ -1002,6 +1002,11 @@ def _purge_schema_artifacts(conn_id: str, schema: str) -> None:
 async def delete_connection_schema(conn_id: str, schema: str):
     """Remove a whole schema from a workspace connection — drops its DuckDB schema +
     every backing upload file, then purges the schema's derived profile/exploration."""
+    # G1: declared HIGH in govern.actions since P4, and never enforced — dropping a schema
+    # takes its tables, its uploads and its derived artifacts with it, so it is gated on the
+    # same approval the connection delete below it has always required.
+    from aughor import govern
+    govern.guard("connection.schema.delete", f"{conn_id}:{schema}")
     loop = asyncio.get_running_loop()
     def _work():
         db = _open_file_connector(conn_id, "drop_schema")
@@ -1022,6 +1027,9 @@ async def delete_connection_schema(conn_id: str, schema: str):
 async def delete_connection_table(conn_id: str, table: str, schema: str = "main"):
     """Remove a single table from a workspace connection — drops it from DuckDB and
     deletes its backing upload file(s)."""
+    # G1: see delete_connection_schema — same declared-but-unenforced gap, one grain down.
+    from aughor import govern
+    govern.guard("connection.table.delete", f"{conn_id}:{schema}.{table}")
     loop = asyncio.get_running_loop()
     def _work():
         db = _open_file_connector(conn_id, "delete_table")

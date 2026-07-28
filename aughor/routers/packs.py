@@ -141,6 +141,10 @@ def post_bind(pack_id: str, body: BindIn):
     """Pin a confirmed binding for (org, pack, connection). When `table_cols` is supplied the
     bound columns are checked to actually exist and `verified` reflects that (column-existence
     half of verification; recipe dry-run is the live step)."""
+    # G1: declared LOW — auto-allowed and AUDITED. A binding decides which columns a
+    # pack's recipes read, so who pinned it and when belongs in the governance trail.
+    from aughor import govern
+    govern.guard("pack.bind", pack_id)
     from aughor.packs import verify_binding_columns
     from aughor.packs.dryrun import dry_run_binding
     verified = body.verified
