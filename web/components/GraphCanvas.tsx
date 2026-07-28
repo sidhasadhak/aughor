@@ -47,6 +47,7 @@ import {
   type SimulationNodeDatum,
 } from "d3-force";
 import type { CGEdge, CGNode, ConnectionGraph } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 const KIND_COLOR: Record<string, { bg: string; border: string }> = {
   domain:        { bg: "rgba(100,116,139,0.18)", border: "#64748b" },
@@ -323,23 +324,18 @@ export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
   const counts = graph.counts || {};
 
   const chip = (active: boolean, onClick: () => void, label: string) => (
-    <button onClick={onClick}
+    <Button variant={active ? "secondary" : "ghost"} size="xs" onClick={onClick}
       style={{
-        fontSize: 11, padding: "3px 10px", borderRadius: 999, cursor: "pointer",
+        borderRadius: 999,
         border: `1px solid ${active ? "var(--t3, #64748b)" : "var(--bg-3, #1e293b)"}`,
-        background: active ? "var(--bg-3, #1e293b)" : "transparent",
         color: active ? "var(--t1, #e2e8f0)" : "var(--t3, #94a3b8)",
-      }}>{label}</button>
+      }}>{label}</Button>
   );
 
   const action = (label: string, onClick: () => void, primary = false) => (
-    <button onClick={onClick}
-      style={{
-        fontSize: 11, padding: "4px 12px", borderRadius: 6, cursor: "pointer",
-        border: `1px solid ${primary ? "#3b82f6" : "var(--bg-3, #1e293b)"}`,
-        background: primary ? "rgba(37,99,235,0.18)" : "var(--bg-2, #0f172a)",
-        color: "var(--t1, #e2e8f0)", fontWeight: primary ? 600 : 400,
-      }}>{label}</button>
+    <Button variant={primary ? "default" : "outline"} size="xs" onClick={onClick}>
+      {label}
+    </Button>
   );
 
   const cutoffLabel = cutoff ? cutoff.slice(0, 10) : "all time";
@@ -353,11 +349,10 @@ export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
           showTerms ? "Terms shown" : `Show ${counts.glossary_term || 0} terms`)}
         {showFindings && timeline.length > 1 && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <button onClick={() => setPlaying((p) => !p)} title="Replay how knowledge accumulated"
-              style={{ fontSize: 12, cursor: "pointer", background: "none", color: "var(--t1, #e2e8f0)",
-                       border: "1px solid var(--bg-3, #1e293b)", borderRadius: 6, padding: "2px 8px" }}>
+            <Button variant="outline" size="xs" onClick={() => setPlaying((p) => !p)}
+              title="Replay how knowledge accumulated">
               {playing ? "❚❚" : "▶"}
-            </button>
+            </Button>
             <input type="range" min={0} max={timeline.length - 1}
               value={timeIdx ?? timeline.length - 1}
               onChange={(e) => { setPlaying(false); setTimeIdx(Number(e.target.value)); }}
