@@ -19,7 +19,7 @@
 | **L3** — graduate `closed_loop` | ✅ **measured; NOT graduated — the flag is a no-op on 90% of the corpus, delta 0.0196 vs a floor of 0.1304** |
 | **L4** — graduate `automations.source_probes` + `engine` | ✅ **graduated on MEASURED equivalence; `automations.engine` is now default-ON** |
 | **L5** — seed curation + widen the corpus | ✅ **corpus 22→102, trusted queries 0→11**; C6 pack export still open |
-| **L6** — A/B `ada.evidence_stubs` (the Wave-R measurement debt) | ⭕ |
+| **L6** — A/B `ada.evidence_stubs` (the Wave-R measurement debt) | ⛔ **planned experiment INVALID — the flag is unreachable from the eval path; reachable surface is one branch of the deep graph** |
 | **L7** *(opt)* — V3b artifact wiring | ⭕ |
 
 Commits so far: `251ce6e` (glossary fix) · `b682f80` (investigations → graph) ·
@@ -746,6 +746,60 @@ retrying successfully and streaming falling back to `complete()`, neither of whi
 enrichment. Worth re-reading on replicate 2 rather than assuming it stays at zero — but this
 axis is currently clean, and it is clean *as a measurement*, not as an assumption.
 
+## L6 — the reachable surface is one branch of one path, not "the deep path"
+
+The planned L6 was an A/B of `ada.evidence_stubs` over the 102-case suite. It would have
+measured **nothing**, and the reason is structural rather than statistical.
+
+**The call graph is a chain of exactly one caller each.** `ada.evidence_stubs` gates
+`_evidence_renderer` → reached only from `_format_full_evidence` → whose **single caller** is
+`synthesize_report`. And `synthesize_report` is bound in the agent graph as the `synthesize`
+node, reachable only along `plan_queries → execute_planned_queries → score_evidence → replan →
+synthesize`. The deep graph has **three** terminal syntheses and the flag touches one:
+
+| path | terminal synthesis | consults the flag |
+|---|---|---|
+| quick (`_stream_chat`) | — never enters the graph | ✗ |
+| ADA phase (`exploratory_scan`) | `ada_synthesize` | ✗ |
+| explore (`exploratory_scan_explore`) | `synthesize_exploration` | ✗ |
+| **hypothesis (`plan_queries`)** | **`synthesize_report`** | **✓ only here** |
+
+So "off by default, A/B it on the suite" was never going to work: the eval target runs
+`depth="quick"`, which routes to `_stream_chat`. The inertness guard confirms it — **0/102**.
+
+**Two deep runs confirmed it is not merely a depth problem** (19 openrouter requests total).
+`DEEP_ANALYSIS` is licensed, so no silent degrade to quick; both runs routed deep and the
+second completed with an `answer_report`. Frame sequence:
+
+```
+route · start · playbook_refs · mode · clarifying_questions ·
+phase_complete · phase_complete · tables_used · answer_report · followups · receipt_id · done
+```
+
+`phase_complete` frames and no renderer construction ⇒ the question took the **ADA phase**
+branch, whose synthesis never consults the flag. `_evidence_renderer` was built **0 times**;
+`render_history` called **0 times**; 0 results stubbed, 0 chars saved.
+
+*(The first run also stopped short — 11 frames, no headline — because `ask_target` never sets
+`skip_clarify`. Worth knowing beyond L6: an ambiguous question can return clarify chips instead
+of an answer, and the eval harness scores that as the answer.)*
+
+**What a valid L6 needs**, and why it is a different experiment from the one planned:
+
+1. Questions that route to **`plan_queries`**, not ADA-phase or explore. Only **5 of the 102**
+   corpus cases are even investigation-shaped, and shape does not guarantee that branch.
+2. `depth="deep"` — so a handful of cases, not 102. A deep run is minutes, not seconds.
+3. An evidence block ≥ **12,000 chars** and at least one hypothesis carrying a `key_finding`,
+   or the policy returns the plain renderer untouched.
+4. Two axes, because the flag's claim is two-sided and its own description says the second was
+   never measured: **tokens saved** (measure at the render seam, as the probe does — far more
+   precise than end-to-end token counts) **and answer quality unchanged**.
+
+⏭️ **The prior question is whether that branch is worth optimising at all.** If most real deep
+questions route to ADA-phase or explore, the flag's reachable surface is small no matter what
+the A/B says — and *that* is measurable cheaply from the existing receipt history, before
+spending anything on a grid.
+
 ---
 
 ## ⏭️ Resume here (updated 2026-07-27)
@@ -761,18 +815,8 @@ L4 shipped on branch `2026-07-27-wave-l4-automations-equivalence`.
    ⏭️ The follow-on worth doing is the *wiring* question it exposed: trusted queries are
    injected **unflagged** on 44/102 cases, so nothing currently measures whether they help.
    An honest test toggles trusted injection itself, not `closed_loop`.
-2. ⛔ **L6 — the planned experiment is INVALID and must be redesigned.** `ada.evidence_stubs`
-   gates `_evidence_renderer`, reached only from `_format_full_evidence`, whose **single
-   caller** is `synthesize_report` — a node in the **ADA graph**. The eval target runs
-   `depth="quick"`, which routes to `_stream_chat` and never enters the graph, so the flag is
-   inert on **100%** of the corpus (verified: the guard reports 0/102). It also needs an
-   evidence block ≥ **12,000 chars** and at least one hypothesis carrying a `key_finding`, so
-   even on the deep path it is conditional.
-   ⏭️ A valid L6 needs `DEPTH=deep` and therefore a **much smaller corpus** — a deep
-   investigation costs many times a quick answer, so 102 × 2 cells is far beyond the daily
-   allowance. It is a token-cost-vs-answer-quality question on a handful of deep runs, which is
-   what the flag's own description asks for ("the token saving is measured but the effect on
-   ANSWER QUALITY is not"). Note it already
+2. ⛔ **L6 — the planned experiment is INVALID.** See §"L6 — the reachable surface" below.
+   Note it already
    carries a graduation receipt (`0040a4be16c2`, 2026-07-24, `pass_rate=1.0` on suite
    `c8747b291c87`) minted **before** the floor gate existed — so it graduated with no floor
    evidence, which is the very bug L2 found. L6 is redoing it honestly, and the old receipt
