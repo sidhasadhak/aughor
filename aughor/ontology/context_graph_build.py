@@ -234,6 +234,67 @@ def _has_dossier(connection_id: str, insight_id: str) -> bool:
         return False
 
 
+#: How many receipts to read per finding slot when consolidating (Wave N3). Consolidation
+#: only pays off if it can see the repeats it is folding, and the repeats live BEHIND the
+#: cap — reading exactly `cap` receipts and then consolidating just shrinks the corpus.
+#:
+#: Chosen by measurement on the 794-receipt reference connection (cap 100), counting how
+#: many LIVE distinct subjects survive into the capped slice:
+#:     1× → 59    3× → 68    5× → 89    8× → 100
+#:     2× → 63    4× → 73    6× → 100  10× → 100 (the ledger is exhausted at ~8×)
+#: 6× saturates here; 8× is taken for headroom on a longer history, and costs one bounded
+#: read of a local store — no warehouse query, no LLM.
+_CONSOLIDATION_OVERFETCH = 8
+
+
+def _consolidated_investigation_findings(
+    connection_id: str, org_id: Optional[str], schema_name: Optional[str],
+) -> list[dict]:
+    """Receipt-sourced findings for the projection — consolidated first when N3 is on.
+
+    Flag off: exactly the previous call, cap and all (byte-identical).
+
+    Flag on: over-fetch, fold repeated subjects together, age out findings whose grounding
+    has vanished, and only THEN apply the cap — so the artifact's node budget buys distinct
+    live knowledge rather than the 100 most recent receipts.
+    """
+    if not flag_enabled("graph.consolidate"):
+        return _safe(lambda: load_investigation_findings(connection_id, org_id),
+                     "investigation_findings", [])
+
+    from aughor.ontology.finding_consolidation import consolidate, live_tables_for
+
+    raw = _safe(
+        lambda: load_investigation_findings(
+            connection_id, org_id, limit=_MAX_RECEIPT_FINDINGS * _CONSOLIDATION_OVERFETCH),
+        "investigation_findings", [])
+    if not raw:
+        return []
+    live = _safe(lambda: live_tables_for(connection_id, schema_name),
+                 "consolidation_live_tables", None)
+    survivors, report = consolidate(raw, live_tables=live)
+
+    from aughor.stats import bump
+    bump("context_graph.consolidation_superseded", report.superseded)
+    bump("context_graph.consolidation_contested", report.contested_subjects)
+    bump("context_graph.consolidation_stale", report.stale)
+    if not report.balanced:
+        # Count-in ≠ count-out means a finding was lost in consolidation — the one outcome
+        # this module exists to make impossible. Say so loudly rather than shipping a
+        # quietly-thinner graph.
+        from aughor.kernel.errors import tolerate
+        tolerate(RuntimeError(f"consolidation lost findings: {report.to_dict()}"),
+                 "finding consolidation must be lossless",
+                 counter="context_graph.consolidation_unbalanced")
+        return _safe(lambda: load_investigation_findings(connection_id, org_id),
+                     "investigation_findings", [])
+
+    kept = survivors[:_MAX_RECEIPT_FINDINGS]
+    if len(survivors) > _MAX_RECEIPT_FINDINGS:
+        bump("context_graph.consolidation_capped", len(survivors) - _MAX_RECEIPT_FINDINGS)
+    return kept
+
+
 def build_context_graph(
     connection_id: str,
     schema_name: Optional[str] = None,
@@ -265,9 +326,8 @@ def build_context_graph(
     # Two independent sources, each best-effort: the explorer's insights and the
     # answer receipts. Ids cannot collide (insight id vs artifact id) and either
     # store being empty just thins that slice.
-    findings += _safe(
-        lambda: load_investigation_findings(connection_id, resolved_org),
-        "investigation_findings", [])
+    findings += _consolidated_investigation_findings(
+        connection_id, resolved_org, schema_name)
 
     briefs = _safe(lambda: load_briefs(connection_id), "briefs", [])
 
