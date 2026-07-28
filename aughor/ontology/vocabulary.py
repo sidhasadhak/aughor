@@ -118,6 +118,15 @@ def _path(connection_id: str) -> Path:
     return _ROOT / f"{safe}.yaml"
 
 
+def read_vocabulary(connection_id: str) -> dict:
+    """The whole stored vocabulary document for a connection.
+
+    Public because O7's interchange exports every section, and a bundle assembled from a
+    private reader is a bundle that breaks the next time the reader is refactored.
+    """
+    return _read(connection_id)
+
+
 def _read(connection_id: str) -> dict:
     p = _path(connection_id)
     if not p.exists():
