@@ -6,11 +6,14 @@ authorization axis, orthogonal to licensing:
   - **licensing capability** (``aughor/licensing``) = what the *org's plan* unlocks.
   - **RBAC permission** (this module)              = what *this user* may do.
 
-A request is authorized only when BOTH hold — the tier grants the capability AND
-the caller's roles grant the permission. This module defines just the permission
-vocabulary; ``roles.py`` groups permissions into roles and ``resolver.py`` resolves
-a principal → roles → permissions. Enforcement (route wiring) is deliberately NOT
-in P1 — it lands in P3 behind the already-reserved ``Capability.RBAC_SSO``.
+Wave G2 adds a third: a **clearance** (``aughor/govern/tags.py``) = what this *data*
+requires of whoever reads it. All three compose with AND.
+
+This module defines just the permission vocabulary; ``roles.py`` groups permissions
+into roles and ``resolver.py`` resolves a principal → roles → permissions.
+Enforcement is live and app-wide via ``policy.py`` + ``deps.enforce_rbac`` — this
+paragraph claimed it was "deliberately NOT in P1, lands in P3" until 2026-07-28, long
+after P3 and P4 had shipped.
 
 Adding a permission means adding a member here and placing it in the built-in roles
 that should grant it (``roles.py``). Keep the set small and coherent: these are

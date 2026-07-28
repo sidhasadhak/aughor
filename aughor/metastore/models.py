@@ -77,6 +77,45 @@ def securable_schema(securable: str) -> tuple[str, str] | None:
     return (cat, name) if name else None
 
 
+def table_securable(catalog_id: str, schema_name: str, table: str) -> str:
+    """The securable string for one table — the finest data grain.
+
+    Added by Wave G2 so the governed tag plane names objects in the vocabulary that
+    already exists here, instead of minting a second id scheme in ``aughor/govern``. The
+    repo has paid for parallel dialects before (Wave V found *thirteen* incompatible
+    spellings of "this is out of date", five of them for one fingerprint), and an access
+    decision that disagrees with a grant about which object it is talking about is the
+    worst possible place to discover the next one.
+    """
+    return f"table:{catalog_id}.{schema_name}.{table}"
+
+
+def securable_table(securable: str) -> tuple[str, str, str] | None:
+    """The ``(catalog_id, schema_name, table)`` in a table securable, or ``None``."""
+    prefix = "table:"
+    if not securable.startswith(prefix):
+        return None
+    parts = securable[len(prefix):].split(".")
+    return (parts[0], parts[1], ".".join(parts[2:])) if len(parts) >= 3 else None
+
+
+def artifact_securable(kind: str, artifact_id: str) -> str:
+    """The securable string for a governed artifact (a brief, canvas, saved query…).
+
+    Artifacts are not data objects, but they *carry* data — a published brief can quote
+    the rows a clearance exists to withhold — so they are securables too.
+    """
+    return f"artifact:{kind}:{artifact_id}"
+
+
+def securable_kind(securable: str) -> str:
+    """The leading kind of any securable string (``catalog`` / ``schema`` / ``table`` /
+    ``artifact``), or ``""`` when it is not one. Lets a caller branch without a chain of
+    prefix tests, and keeps the set of kinds readable in one place."""
+    head, sep, _ = str(securable or "").partition(":")
+    return head if sep and head in ("catalog", "schema", "table", "artifact") else ""
+
+
 # The coarse, foundation-level privilege: "may access this catalog at all" — the
 # UC USAGE privilege. Finer privileges (SELECT/MODIFY/...) extend this later.
 USAGE = "USAGE"
