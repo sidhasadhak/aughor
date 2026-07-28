@@ -35,7 +35,11 @@ function bare(t: string): string {
   return String(t).split(".").pop()!.trim().replace(/"/g, "").toLowerCase();
 }
 
-export function ConnectionGraphPanel({ connectionId, schema }: { connectionId: string; schema?: string }) {
+export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
+  connectionId: string; schema?: string;
+  /** The workspace Ask seam — a graph selection becomes a question on the full Ask surface. */
+  onInvestigate?: (q: string) => void;
+}) {
   const [graph, setGraph] = useState<ConnectionGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +146,7 @@ export function ConnectionGraphPanel({ connectionId, schema }: { connectionId: s
             <GraphCanvas
               graph={graph}
               onOpenTable={(tableId) => { setMode("cards"); setView({ level: "detail", tableId }); }}
+              onAsk={onInvestigate}
             />
           </>
         )}
