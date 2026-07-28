@@ -16,7 +16,7 @@
 |---|---|
 | **L1** — background build + live-path writers | ✅ **COMPLETE — gate met on a running server** |
 | **L2** — graduate `graph.readback` | ✅ **grid RAN; flag NOT graduated — delta not attributable** (see below) |
-| **L3** — graduate `closed_loop` | ⭕ |
+| **L3** — graduate `closed_loop` | ✅ **measured; NOT graduated — the flag is a no-op on 90% of the corpus, delta 0.0196 vs a floor of 0.1304** |
 | **L4** — graduate `automations.source_probes` + `engine` | ✅ **graduated on MEASURED equivalence; `automations.engine` is now default-ON** |
 | **L5** — seed curation + widen the corpus | ✅ **corpus 22→102, trusted queries 0→11**; C6 pack export still open |
 | **L6** — A/B `ada.evidence_stubs` (the Wave-R measurement debt) | ⭕ |
@@ -656,16 +656,87 @@ FLAG=ada.evidence_stubs PILOT_CASES=8 AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK
   .venv/bin/python -u scripts/grid_sizing_pilot.py
 ```
 
-### ⚠️ An unwatched confound, now counted
+### Replicate 1 of 2 — RAN 2026-07-27/28, and it cannot be scored yet
+
+154.1 min · 868 openrouter requests · both cells took (no discrepancies) · freeze pin held ·
+no fixture-drift warnings · `data/` untouched.
+
+| cell | pass_rate | errors | flaky |
+|---|---|---|---|
+| `closed_loop_off` (`b8e7b6c07ca7`) | **0.7549** | 1 | 0 |
+| `closed_loop_on` (`6677cdde6ea2`) | **0.7353** | 0 | 0 |
+
+**Delta −0.0196** — two cases of 102, with the flag ON slightly *worse*.
+
+**The projection was accurate to +1.6%** (854 predicted → 868 actual; 44.5s → 45.3s per case).
+The pilot method transfers; use it for every future grid.
+
+### 🔑🔑 L3 CONCLUDED without replicate 2 — the experiment was varying almost nothing
+
+Rather than buy precision with a second day's budget, the cheaper question got asked first:
+**does the flag change the prompt at all?** Answered deterministically, no LLM spend:
+
+| | of 102 cases |
+|---|---|
+| prompt **byte-identical** between `closed_loop` off and on | **92 (90%)** |
+| prompt differs (the only cases that *can* respond to the flag) | **10** |
+| got a **trusted-query block** — injected in BOTH cells | 44 |
+
+**`closed_loop` is a no-op on 90% of the corpus.** The 2.5-hour grid spent ~90% of its budget
+running the same prompt twice.
+
+**Root cause, and it inverts what this document claimed.** `retrieve_trusted`
+(`semantic/trusted_queries.py:88`) has **no `closed_loop` gate**, and `grounding.trusted_templates`
+calls it *directly*, bypassing `retrieve_priors` — which is the only place the flag is checked.
+So L5's 11 promoted trusted queries went live **the moment they were promoted**, in both cells.
+The claim above that "L3 only became measurable when L5 landed" is backwards: L5's work was
+already live and unflagged, and `closed_loop` never controlled it. The flag gates only
+verdict-corrections and ambiguity resolutions — which match **10/102** questions.
+
+### The noise floor, obtained for free from the wasted 90%
+
+Those 92 identical-prompt cases are 92 pairs of *the same input run twice* — which is exactly a
+within-configuration reproducibility measurement, and it needs no replicate 2:
+
+- **12 of 92 disagreed → a floor of 0.1304**
+- split **7 off→on-fail / 5 off→on-pass** — a symmetric coin flip, not a directional effect
+- temperature was **not pinned** (default sampling), so this is genuine sampling nondeterminism
+- of the **10 flag-sensitive cases, ZERO changed**
+
+**Observed delta 0.0196 vs a measured floor of 0.1304 — 6.6× smaller.** `closed_loop` does not
+graduate, and no second replicate would have changed that.
+
+⏭️ **Do not run `REPLICATE=2`.** It would spend a day's allowance adding precision to a
+comparison in which 90% of cases cannot move.
+
+### What this means beyond L3
+
+- **13% run-to-run nondeterminism at default temperature** is a platform-level fact, not an L3
+  one. Any A/B on this corpus must clear ~0.13 to be attributable — which is why L2's 22-case
+  suite showed a 0.1818 spread, and why default-temperature A/B on 102 cases is close to
+  hopeless. **Pin temperature, or accept that only very large effects are visible.**
+- **Ask "does the flag change the prompt?" BEFORE buying a grid.** It is deterministic, free,
+  and would have saved 2.5 hours and 868 requests here. It belongs in front of every future
+  A/B, alongside `scripts/grid_sizing_pilot.py`.
+- The open question about trusted queries is **not** "should `closed_loop` be on" — they are
+  already on, unflagged, on 44/102 cases. It is whether they *help*, which needs a different
+  experiment that toggles trusted injection itself.
+
+### ⚠️ An unwatched confound — measured, and it did NOT occur
 
 The pilot log shows repeated upstream `429`s from the *secondary* enrichment model
 (`google/gemma-4-31b-it:free`) plus one Nvidia `Worker local total request limit reached
 (33/32)`. These are tolerated as best-effort — correct for an answer, **wrong to leave
 unmeasured in an experiment**: if enrichment degrades at different rates across cells, that is
-an uncontrolled variable sitting inside the delta. The grid script now records
-`chat.post_answer` per run. Counting does not fix it; it makes the run able to say so instead
-of averaging it away. ⏭️ **If the two cells differ materially, pin or disable the secondary
-model before trusting any L3 number.**
+an uncontrolled variable sitting inside the delta. The grid script records `chat.post_answer`
+per run — counting does not fix it, it makes the run able to say so instead of averaging it
+away.
+
+✅ **Replicate 1 recorded `chat.post_answer` failures: 0.** The confound was real to worry
+about and did not materialise: the 429s that do appear in the log are the resilient layer
+retrying successfully and streaming falling back to `complete()`, neither of which drops
+enrichment. Worth re-reading on replicate 2 rather than assuming it stays at zero — but this
+axis is currently clean, and it is clean *as a measurement*, not as an assumption.
 
 ---
 
@@ -676,10 +747,14 @@ L5 ◐ (corpus + trusted queries; C6 pack export open). Open: **L3 · L6 · L7**
 
 L4 shipped on branch `2026-07-27-wave-l4-automations-equivalence`.
 
-1. **L3 — finish the second replicate.** Replicate 1 (102 cases × 2 cells, ~854 openrouter
-   requests, ~2.5h) ran 2026-07-27. **Run `REPLICATE=2` on a later day**, then score — see
-   §"L3 — sized from a pilot" for why one replicate cannot be scored on its own.
-2. **L6 — `ada.evidence_stubs`.** Same shape and the same two-day budget. Note it already
+1. ✅ **L3 CONCLUDED — `closed_loop` does not graduate, no replicate 2 needed.** Delta 0.0196
+   against a measured floor of 0.1304, and the flag is a no-op on 90% of the corpus. See
+   §"L3 CONCLUDED". **The flag stays OFF.**
+   ⏭️ The follow-on worth doing is the *wiring* question it exposed: trusted queries are
+   injected **unflagged** on 44/102 cases, so nothing currently measures whether they help.
+   An honest test toggles trusted injection itself, not `closed_loop`.
+2. **L6 — `ada.evidence_stubs`.** ⚠️ **Run the prompt-diff check FIRST** (§"L3 CONCLUDED") — if
+   it too is inert on most of the corpus, the grid is unnecessary. Note it already
    carries a graduation receipt (`0040a4be16c2`, 2026-07-24, `pass_rate=1.0` on suite
    `c8747b291c87`) minted **before** the floor gate existed — so it graduated with no floor
    evidence, which is the very bug L2 found. L6 is redoing it honestly, and the old receipt
