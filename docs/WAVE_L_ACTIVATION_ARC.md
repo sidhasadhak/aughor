@@ -636,20 +636,20 @@ produces a delta the gate is built to reject — hours spent to learn nothing. T
 sound only at temp 0, where replicates measure determinism rather than sampling, and where
 §"a temp-0 floor is not a noise floor" then applies.
 
-**The plan: split the replicates across two days.** 2 replicates × 2 cells × 102 cases needs
-~1,708 requests against a 1,000/day cap, so replicate 1 runs one day and replicate 2 the next.
-Scoring reads the suite's run history, so the two days compose into one A/B without either run
-knowing about the other. Full corpus, real floor, no budget overrun.
+**The plan at the time: split the replicates across two days.** 2 replicates × 2 cells × 102
+cases needs ~1,708 requests against a 1,000/day cap. *(Superseded — replicate 2 was cancelled;
+see §"L3 CONCLUDED". The two-day split remains the right shape for any grid that IS worth
+running.)*
 
 ```bash
 export AUGHOR_SECRET_KEY=$(grep ^AUGHOR_SECRET_KEY= .env | cut -d= -f2-)
-REPLICATE=1 AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1 \
+FLAG=<flag> SUITE=<suite> REPLICATE=1 AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1 \
 AUGHOR_LLM_RPM=16 AUGHOR_LLM_MAX_CONCURRENCY=2 \
-  .venv/bin/python -u scripts/l3_closed_loop_grid.py      # then the same with REPLICATE=2
+  .venv/bin/python -u scripts/flag_ab_grid.py       # refuses an inert flag; temp pinned to 0
 ```
 
-Sizing any *other* grid first — the reusable half of the pilot, so no future wave has to guess
-at its request cost:
+Sizing any grid first — the reusable half of the pilot, so no future wave has to guess at its
+request cost:
 
 ```bash
 FLAG=ada.evidence_stubs PILOT_CASES=8 AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1 \
@@ -715,9 +715,17 @@ comparison in which 90% of cases cannot move.
   one. Any A/B on this corpus must clear ~0.13 to be attributable — which is why L2's 22-case
   suite showed a 0.1818 spread, and why default-temperature A/B on 102 cases is close to
   hopeless. **Pin temperature, or accept that only very large effects are visible.**
-- **Ask "does the flag change the prompt?" BEFORE buying a grid.** It is deterministic, free,
-  and would have saved 2.5 hours and 868 requests here. It belongs in front of every future
-  A/B, alongside `scripts/grid_sizing_pilot.py`.
+- **Ask "does the flag change the prompt?" BEFORE buying a grid.** Deterministic, free, and it
+  would have saved 2.5 hours and 868 requests here. Now enforced rather than remembered:
+  **`scripts/flag_ab_grid.py` refuses to run** (exit 2) when a flag changes the prompt for
+  under 25% of the corpus. Verified on both known cases — `closed_loop` 10/102, refused;
+  `ada.evidence_stubs` 0/102, refused. Override with `ALLOW_INERT=1` only once you have
+  established by another route that the flag acts outside plan-time grounding.
+- **Temperature is now PINNED to 0 by default** in that script (`TEMPERATURE=` empty restores
+  provider sampling). Verified the pin reaches `current_run_temperature()` inside the cell,
+  lands on the recorded run config, and resets on exit. This buys back the 13% flip rate —
+  but read §"the noise floor" first: at temp 0 the band measures determinism, so the per-case
+  diff is the evidence, not the band.
 - The open question about trusted queries is **not** "should `closed_loop` be on" — they are
   already on, unflagged, on 44/102 cases. It is whether they *help*, which needs a different
   experiment that toggles trusted injection itself.
@@ -753,8 +761,18 @@ L4 shipped on branch `2026-07-27-wave-l4-automations-equivalence`.
    ⏭️ The follow-on worth doing is the *wiring* question it exposed: trusted queries are
    injected **unflagged** on 44/102 cases, so nothing currently measures whether they help.
    An honest test toggles trusted injection itself, not `closed_loop`.
-2. **L6 — `ada.evidence_stubs`.** ⚠️ **Run the prompt-diff check FIRST** (§"L3 CONCLUDED") — if
-   it too is inert on most of the corpus, the grid is unnecessary. Note it already
+2. ⛔ **L6 — the planned experiment is INVALID and must be redesigned.** `ada.evidence_stubs`
+   gates `_evidence_renderer`, reached only from `_format_full_evidence`, whose **single
+   caller** is `synthesize_report` — a node in the **ADA graph**. The eval target runs
+   `depth="quick"`, which routes to `_stream_chat` and never enters the graph, so the flag is
+   inert on **100%** of the corpus (verified: the guard reports 0/102). It also needs an
+   evidence block ≥ **12,000 chars** and at least one hypothesis carrying a `key_finding`, so
+   even on the deep path it is conditional.
+   ⏭️ A valid L6 needs `DEPTH=deep` and therefore a **much smaller corpus** — a deep
+   investigation costs many times a quick answer, so 102 × 2 cells is far beyond the daily
+   allowance. It is a token-cost-vs-answer-quality question on a handful of deep runs, which is
+   what the flag's own description asks for ("the token saving is measured but the effect on
+   ANSWER QUALITY is not"). Note it already
    carries a graduation receipt (`0040a4be16c2`, 2026-07-24, `pass_rate=1.0` on suite
    `c8747b291c87`) minted **before** the floor gate existed — so it graduated with no floor
    evidence, which is the very bug L2 found. L6 is redoing it honestly, and the old receipt

@@ -25,7 +25,10 @@ PILOT_CASES = int(os.environ.get("PILOT_CASES", "8"))
 WIDE_SUITE = os.environ.get("SUITE", "9c1e13e458ff")
 FLAG = os.environ.get("FLAG", "closed_loop")
 PILOT_SUITE_NAME = f"grid sizing pilot — {FLAG} ({PILOT_CASES} cases)"
-OUT = pathlib.Path(__file__).with_name("l3_pilot_result.json")
+#: CWD (or `GRID_OUT_DIR`), never beside the script — a run artifact written into `scripts/`
+#: shows up as untracked source and invites being committed.
+OUT = (pathlib.Path(os.environ.get("GRID_OUT_DIR") or ".")
+       / f"grid_pilot_{FLAG.replace('.', '_')}.json")
 
 # ── count real HTTP requests to the model provider ───────────────────────────────
 import httpx  # noqa: E402
