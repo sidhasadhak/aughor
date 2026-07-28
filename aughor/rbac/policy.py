@@ -41,6 +41,12 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("POST", "/metastore/workspaces/{workspace_id}/grants"): P.ADMIN_MANAGE_ORG,
     ("DELETE", "/metastore/workspaces/{workspace_id}/grants/{catalog_id}"): P.ADMIN_MANAGE_ORG,
     ("POST", "/llm/config"): P.ADMIN_MANAGE_BILLING,
+    # Wave G3 — the governance reporting surface. Usage names what the org SPENT and on
+    # which model, and the audit feed spans every governance sink, so both sit with the
+    # other org-administration reads rather than under the viewer-reads-everything floor.
+    ("GET", "/usage"): P.ADMIN_MANAGE_BILLING,
+    ("GET", "/usage/cost-sql"): P.ADMIN_MANAGE_BILLING,
+    ("GET", "/audit/feed"): P.ADMIN_MANAGE_ORG,
 
     # ── Connection lifecycle ──
     ("POST", "/connections"): P.CONNECTION_CREATE,
