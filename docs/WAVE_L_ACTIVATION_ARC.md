@@ -19,8 +19,8 @@
 | **L3** — graduate `closed_loop` | ✅ **measured; NOT graduated — the flag is a no-op on 90% of the corpus, delta 0.0196 vs a floor of 0.1304** |
 | **L4** — graduate `automations.source_probes` + `engine` | ✅ **graduated on MEASURED equivalence; `automations.engine` is now default-ON** |
 | **L5** — seed curation + widen the corpus | ✅ **corpus 22→102, trusted queries 0→11**; C6 pack export still open |
-| **L6** — A/B `ada.evidence_stubs` (the Wave-R measurement debt) | ⛔ **planned experiment INVALID — the flag is unreachable from the eval path; reachable surface is one branch of the deep graph** |
-| **L7** *(opt)* — V3b artifact wiring | ⭕ |
+| **L6** — A/B `ada.evidence_stubs` (the Wave-R measurement debt) | ✅ **CLOSED — the flag gates code no product surface can reach; the measurement debt is VOID** |
+| **L7** *(opt)* — V3b artifact wiring | ✅ **canvas + dashboard + eval-suite corpus on the V3 lifecycle, proven live** |
 
 Commits so far: `251ce6e` (glossary fix) · `b682f80` (investigations → graph) ·
 `c2cad8b` (brief projector + exploration trigger).
@@ -795,10 +795,66 @@ of an answer, and the eval harness scores that as the answer.)*
    never measured: **tokens saved** (measure at the render seam, as the probe does — far more
    precise than end-to-end token counts) **and answer quality unchanged**.
 
-⏭️ **The prior question is whether that branch is worth optimising at all.** If most real deep
-questions route to ADA-phase or explore, the flag's reachable surface is small no matter what
-the A/B says — and *that* is measurable cheaply from the existing receipt history, before
-spending anything on a grid.
+### ✅ L6 CLOSED — the flag gates code no product surface can reach
+
+The prior question got answered, and it ends L6 rather than redesigning it. The reachability
+chain, verified link by link:
+
+1. `ask_router` pairs `mode="direct"` **exclusively with `depth="quick"`** — and quick routes
+   to `_stream_chat`, which never enters the graph.
+2. Every deep API surface passes `requested_mode ∈ {investigate, explore}`
+   (`_run_agentic_investigation`'s default, `_investigation_job_streamed`'s default, and
+   `/ask` forwarding `route.mode`), and `route_question` **binds** an explicit mode — the
+   classifier is bypassed, deliberately: a live incident once let the classifier downgrade
+   "Where are we losing money?" to a flat `direct` lookup, so deep pins the mode.
+3. Therefore `query_mode="direct"` — the only route to `plan_queries → synthesize_report` —
+   is unreachable from the API. The remaining callers are the **CLI** (`run_investigation`,
+   which omits `requested_mode` and runs the classifier) and checkpoint-resume paths that
+   replay whatever mode the run already had.
+
+A second probe on a lookup-shaped question ("What is the total gmv_eur by platform?", the
+shape the classifier would call `direct`) confirmed it: routed deep, mode bound to
+investigate, `phase_complete` frames, renderer built 0 times.
+
+**Verdict: the Wave-R measurement debt is VOID, not unpaid.** `ada.evidence_stubs` gates the
+evidence renderer of a synthesis node only the CLI can reach. There is nothing to A/B on the
+product surface, and a default flip would be a no-op shipped as a feature — the exact
+"shipped-but-dead" class the flag audit hunts. The flag stays off; its description's own
+caution ("should not graduate until Wave E4 can A/B it") is permanently satisfiable only for
+the CLI, which is not worth a grid.
+
+⏭️ The idea itself — stub already-scored evidence at synthesis — may still have value on the
+path investigations actually take (`ada_synthesize`). That is a *new feature* on a
+quality-sensitive prompt, not a flag graduation: it needs its own wave, its own A/B design,
+and a deep-run corpus. Recorded here so it is a decision rather than a loose end.
+
+## L7 — V3b: canvas, dashboard and eval-suite artifacts on the V lifecycle
+
+The deliberate V3 deferral, landed. `savedquery` was the wired proof; these are the same
+shape — the store row stays the live record, reads untouched, and a **destructive** write
+additionally records a versioned draft (`save_draft`, flag `lifecycle.publish`, best-effort
+with a `tolerate` + counter). Three wirings:
+
+| artifact | hook | what was being destroyed |
+|---|---|---|
+| `canvas` | `update_canvas` | a scope edit silently redefines what every investigation on that canvas can see |
+| `dashboard` | `upsert_card` (update only — the create is the live row) | `ON CONFLICT DO UPDATE` overwrote SQL, thresholds and render spec on the artifact a cockpit shows daily |
+| `evalsuite` | `add_cases` / `delete_case` | the corpus IS the artifact; runs cite deleted case_ids and their pass rates were computed over them |
+
+The eval one is the L5 lesson made structural: a session was spent discovering the corpus had
+been silently shaped by an inherited limit. With corpus revisions, "what did the suite contain
+when that run scored 0.75?" is a lookup. Recording happens AFTER each mutation, so the
+pre-delete corpus is always the previous revision.
+
+**Proven live** (isolated stores, `lifecycle.publish=1`): canvas re-scope → v1/v2 with the
+scope on each; card edit → v1 carrying the new SQL and thresholds, no revision for the
+create; suite add-3/delete-1 → v1 holds the pre-delete corpus including the deleted question,
+and `diff_versions` names the change `deleted cases[1]` with the index shuffle folded as a
+move. Flag off ⇒ byte-identical, empty history (tested per store).
+
+Tests: `tests/unit/test_lifecycle_v3b_wiring.py` (6). Not wired: `delete_canvas` /
+`delete_suite` — deleting the artifact is out of V3b's shape (supersede-not-delete is V4/V5
+territory), and `savedquery` set the precedent by not hooking its delete either.
 
 ---
 
@@ -815,8 +871,8 @@ L4 shipped on branch `2026-07-27-wave-l4-automations-equivalence`.
    ⏭️ The follow-on worth doing is the *wiring* question it exposed: trusted queries are
    injected **unflagged** on 44/102 cases, so nothing currently measures whether they help.
    An honest test toggles trusted injection itself, not `closed_loop`.
-2. ⛔ **L6 — the planned experiment is INVALID.** See §"L6 — the reachable surface" below.
-   Note it already
+2. ✅ **L6 CLOSED** — see §"L6 CLOSED": the flag gates code no product surface can reach,
+   so the measurement debt is void. Note it already
    carries a graduation receipt (`0040a4be16c2`, 2026-07-24, `pass_rate=1.0` on suite
    `c8747b291c87`) minted **before** the floor gate existed — so it graduated with no floor
    evidence, which is the very bug L2 found. L6 is redoing it honestly, and the old receipt
