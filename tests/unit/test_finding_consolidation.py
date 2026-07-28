@@ -214,7 +214,7 @@ def test_flag_on_overfetches_and_consolidates(monkeypatch):
     calls: list = []
     build_mod = _wire(monkeypatch, on=True, calls=calls)
     out = build_mod._consolidated_investigation_findings("c1", "org1", None)
-    assert calls == [build_mod._MAX_RECEIPT_FINDINGS * build_mod._CONSOLIDATION_OVERFETCH]
+    assert calls == [build_mod.MAX_RECEIPT_FINDINGS * build_mod.CONSOLIDATION_OVERFETCH]
     assert len(out) == 3                         # 20 receipts over 3 distinct questions
     assert sum(f.get("supersedes", 0) for f in out) == 17
 
@@ -229,25 +229,25 @@ def test_flag_on_still_honours_the_cap(monkeypatch):
     monkeypatch.setattr(build_mod, "flag_enabled",
                         lambda name: name == "graph.consolidate")
     out = build_mod._consolidated_investigation_findings("c1", "org1", None)
-    assert len(out) == build_mod._MAX_RECEIPT_FINDINGS
+    assert len(out) == build_mod.MAX_RECEIPT_FINDINGS
 
 
 def test_projection_omits_consolidation_keys_when_absent():
     """A graph built with the flag off serializes exactly as it did before N3."""
-    from aughor.ontology.context_graph import _finding_data
+    from aughor.ontology.context_graph import finding_node_data
 
-    assert set(_finding_data(_f("a"))) == {"sql", "tables", "generated_at"}
+    assert set(finding_node_data(_f("a"))) == {"sql", "tables", "generated_at"}
 
 
 def test_projection_carries_contested_variants_into_the_node():
     """A node that survived a disagreement has to say so in the committed artifact."""
-    from aughor.ontology.context_graph import _finding_data
+    from aughor.ontology.context_graph import finding_node_data
 
     survivors, _ = consolidate([
         _f("new", text="45.4M", sql="SELECT sum(gmv) FROM orders"),
         _f("old", text="43.6M", sql="SELECT sum(gmv) FROM orders WHERE ok", at="2026-07-01"),
     ])
-    data = _finding_data(survivors[0])
+    data = finding_node_data(survivors[0])
     assert data["contested"] is True
     assert data["contested_variants"][0]["text"] == "43.6M"
 

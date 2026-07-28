@@ -75,7 +75,7 @@ def test_sql_duplicates_collapse_ignoring_formatting(_receipts):
 
 
 def test_the_eval_corpus_does_not_inherit_the_graphs_size_budget(monkeypatch):
-    """Two consumers, two honest limits. `_MAX_RECEIPT_FINDINGS` keeps the COMMITTED
+    """Two consumers, two honest limits. `MAX_RECEIPT_FINDINGS` keeps the COMMITTED
     GRAPH diff-readable; the eval corpus wants every receipt it can get. Sharing the
     cap silently held a 628-receipt connection to a 100-receipt window — and because
     the window is newest-first, eval runs writing their own receipts evicted the older,
@@ -91,9 +91,9 @@ def test_the_eval_corpus_does_not_inherit_the_graphs_size_budget(monkeypatch):
         "aughor.ontology.context_graph_build.load_investigation_findings", _spy)
 
     FR.candidate_cases("c1", limit=60)
-    from aughor.ontology.context_graph_build import _MAX_RECEIPT_FINDINGS
+    from aughor.ontology.context_graph_build import MAX_RECEIPT_FINDINGS
     assert asked["limit"] is not None
-    assert asked["limit"] > _MAX_RECEIPT_FINDINGS, (
+    assert asked["limit"] > MAX_RECEIPT_FINDINGS, (
         "the eval corpus must ask for more than the graph's artifact budget")
 
 
@@ -110,7 +110,7 @@ def test_the_graph_still_honours_its_own_budget_by_default(monkeypatch):
     monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
                         staticmethod(lambda: _Fake()))
     B.load_investigation_findings("c1")
-    assert seen["limit"] == B._MAX_RECEIPT_FINDINGS + 1   # cap+1 to DETECT truncation
+    assert seen["limit"] == B.MAX_RECEIPT_FINDINGS + 1   # cap+1 to DETECT truncation
 
 
 def test_seed_suite_refuses_to_create_an_empty_suite(_receipts):

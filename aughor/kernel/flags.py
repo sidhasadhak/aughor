@@ -201,6 +201,25 @@ FLAG_DEFAULT = {
     # send), and `source_probes` adds recurring per-tick warehouse aggregates — both are default
     # decisions about cost and outward behaviour, not about whether the equivalence holds.
     "automations.engine": True,
+    # Wave N3 (2026-07-28) — graduated on a DETERMINISTIC artifact claim, from run
+    # `3dec60f4a580` of the suite `aughor/evals/consolidation.py` (8/8 stable passes, 0
+    # errors, 0 flaky, bar 1.0, no baseline — a claim with no sampling has no A/B and so
+    # needs no noise floor, the same carve-out L4 used).
+    #
+    # The suite proves the INVARIANTS hermetically (lossless, never-picks-a-winner,
+    # budget respected, stale evicted before live, unknown-ontology expires nothing,
+    # flag-off payload identical). The MAGNITUDE was measured separately on the reference
+    # connection, because an invariant that holds over a fixture proves correctness, not
+    # usefulness — 100 findings before and after, but distinct conclusions 88 → 94 and
+    # findings grounded in tables that no longer exist 22 → 0, with 203 older readings
+    # folded into their survivors and 9 genuine disagreements LABELLED rather than settled.
+    #
+    # What flipping this changes on a fresh clone: the next graph build spends its 100-node
+    # budget on distinct, still-verifiable findings instead of the 100 most recent receipts.
+    # It adds no LLM call, no warehouse query and nothing on the answer path — the extra
+    # cost is one bounded read of a local store. It does NOT rewrite any committed artifact;
+    # an existing graph changes only when something rebuilds it.
+    "graph.consolidate": True,
 }
 
 # Human-facing copy for the Settings UI.
@@ -263,7 +282,7 @@ FLAG_META = {
     },
     "graph.consolidate": {
         "label": "Consolidate the finding corpus before the cap (Wave N3)",
-        "description": "Spend the graph's 100-finding budget on distinct LIVE knowledge instead of 100 newest receipts. The projection appends one finding per answered question and evicts newest-first, so on the reference connection the committed artifact carried 77 distinct subjects — 59 of them still reachable — out of 274 that exist across 794 receipts. With this on, repeated subjects (same question over the same tables) fold together BEFORE the cap applies, and findings grounded in tables that are no longer in the ontology sort last so the cap evicts what can no longer be verified before it evicts live knowledge. Measured on the reference connection: 100 live distinct subjects instead of 59, same node budget. The platform never picks a winner: a repeat whose SQL is unchanged is simply superseded by the newest reading (the data moved), but a repeat that reached a DIFFERENT conclusion by a DIFFERENT query is marked `contested` and carries the alternative conclusions inline — settling it is a human's decision through the answer-consistency review, not a matter of which run was most recent. Nothing is deleted: every input finding leaves as a survivor, a superseded id, or a contested variant, and the counts are asserted to balance. Deterministic, read-only, no LLM. Off by default = byte-identical (the projection reads and emits exactly what it did before).",
+        "description": "Spend the graph's 100-finding budget on distinct LIVE knowledge instead of 100 newest receipts. The projection appends one finding per answered question and evicts newest-first, so on the reference connection the committed artifact carried 77 distinct subjects — 59 of them still reachable — out of 274 that exist across 794 receipts. With this on, repeated subjects (same question over the same tables) fold together BEFORE the cap applies, and findings grounded in tables that are no longer in the ontology sort last so the cap evicts what can no longer be verified before it evicts live knowledge. Measured on the reference connection: 100 live distinct subjects instead of 59, same node budget. The platform never picks a winner: a repeat whose SQL is unchanged is simply superseded by the newest reading (the data moved), but a repeat that reached a DIFFERENT conclusion by a DIFFERENT query is marked `contested` and carries the alternative conclusions inline — settling it is a human's decision through the answer-consistency review, not a matter of which run was most recent. Nothing is deleted: every input finding leaves as a survivor, a superseded id, or a contested variant, and the counts are asserted to balance. Deterministic, read-only, no LLM: the added cost is one bounded read of a local store, and nothing runs on the answer path. Default-ON since Wave N3, graduated on run `3dec60f4a580` of the deterministic suite `aughor/evals/consolidation.py` (8/8, bar 1.0). Turning it OFF is byte-identical to the pre-N3 projection — the finding payload carries exactly {generated_at, sql, tables} and the loader is called exactly as before. Flipping this rewrites nothing on its own: a committed graph changes only when something rebuilds it.",
     },
     "freshness.resolved_rebuild": {
         "label": "Staleness-resolved rebuild — inputs + logic, not a timer (Wave V2)",

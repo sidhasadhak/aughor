@@ -505,7 +505,7 @@ def add_findings(cg: ContextGraph, findings: list) -> list[str]:
     return _project_findings(cg, findings)
 
 
-def _finding_data(f: dict) -> dict:
+def finding_node_data(f: dict) -> dict:
     """The finding node's payload — plus whatever N3 consolidation attached.
 
     The consolidation keys are emitted ONLY when present, so a graph built with
@@ -553,7 +553,7 @@ def _project_findings(cg: ContextGraph, findings: list) -> list[str]:
                         "dossier", "exploration", "evidence_ledger") else "exploration",
                     note=f"finding from {source}",
                 ),
-                data=_finding_data(f),
+                data=finding_node_data(f),
             )
             cg.add_node(node)
             emitted.append(node.id)

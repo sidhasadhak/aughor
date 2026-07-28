@@ -1,7 +1,7 @@
 """Wave N3 — consolidate the finding corpus before the cap, and never pick a winner.
 
 **The problem, measured.** The graph's finding projection appends one node per answered
-question and bounds itself at :data:`~aughor.ontology.context_graph_build._MAX_RECEIPT_FINDINGS`
+question and bounds itself at :data:`~aughor.ontology.context_graph_build.MAX_RECEIPT_FINDINGS`
 = 100, evicting **newest-first**. On the reference connection that window is doing almost all
 of the forgetting, and doing it arbitrarily:
 
@@ -71,13 +71,13 @@ from typing import Any, Optional
 from aughor.semantic.answer_divergence import question_key, semantic_key
 
 
-def _bare(table: str) -> str:
+def bare_table(table: str) -> str:
     """``luxexperience.orders`` → ``orders`` — the projection compares tables unqualified."""
     return str(table or "").split(".")[-1].strip().lower()
 
 
 def _tables_of(finding: dict) -> frozenset[str]:
-    return frozenset(_bare(t) for t in (finding.get("tables") or []) if _bare(t))
+    return frozenset(bare_table(t) for t in (finding.get("tables") or []) if bare_table(t))
 
 
 #: Numeric literals in a headline: 1,234.56 · -40.08 · 2.80 · 36.34
@@ -281,11 +281,11 @@ def live_tables_for(connection_id: str, schema_name: Optional[str] = None) -> Op
     if isinstance(mapping, dict):
         for tables in mapping.values():
             for t in tables or []:
-                if _bare(t):
-                    live.add(_bare(t))
+                if bare_table(t):
+                    live.add(bare_table(t))
     for ent in (getattr(onto, "entities", {}) or {}).values():
         for attr in ("physical_table", "table", "name"):
             v = getattr(ent, attr, None)
-            if isinstance(v, str) and _bare(v):
-                live.add(_bare(v))
+            if isinstance(v, str) and bare_table(v):
+                live.add(bare_table(v))
     return live or None

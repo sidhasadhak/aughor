@@ -81,7 +81,7 @@ RECEIPT_KINDS = ("ada_report", "chat_answer")
 #:     cap 100 → 0.32 MB /  9,356 lines      cap 400 → 0.76 MB / 20,023 lines
 #: 100 keeps the artifact reviewable (~9k lines, under 2× the baseline) while giving
 #: read-back a deep pool to match against; 400 made it a 20k-line file nobody diffs.
-_MAX_RECEIPT_FINDINGS = 100
+MAX_RECEIPT_FINDINGS = 100
 
 
 def load_investigation_findings(
@@ -100,7 +100,7 @@ def load_investigation_findings(
     Sourced ``evidence_ledger`` — the receipt's grounded claim, never a model's
     self-reported confidence (J4).
 
-    ``limit`` defaults to :data:`_MAX_RECEIPT_FINDINGS`, which is the **graph artifact's**
+    ``limit`` defaults to :data:`MAX_RECEIPT_FINDINGS`, which is the **graph artifact's**
     size budget — a constraint about keeping a committed JSON diff-readable, and nothing
     to do with how many receipts are worth reading. A second consumer arrived (the eval
     corpus in :mod:`aughor.evals.from_receipts`) whose only limit is how much material
@@ -111,7 +111,7 @@ def load_investigation_findings(
     """
     from aughor.kernel.ledger import Ledger
 
-    cap = _MAX_RECEIPT_FINDINGS if limit is None else max(1, int(limit))
+    cap = MAX_RECEIPT_FINDINGS if limit is None else max(1, int(limit))
     out: list[dict] = []
     # Ask for one past the cap so truncation is DETECTED rather than assumed from a
     # full page (a page that happens to be exactly full is not evidence of more).
@@ -244,7 +244,7 @@ def _has_dossier(connection_id: str, insight_id: str) -> bool:
 #:     2× → 63    4× → 73    6× → 100  10× → 100 (the ledger is exhausted at ~8×)
 #: 6× saturates here; 8× is taken for headroom on a longer history, and costs one bounded
 #: read of a local store — no warehouse query, no LLM.
-_CONSOLIDATION_OVERFETCH = 8
+CONSOLIDATION_OVERFETCH = 8
 
 
 def _consolidated_investigation_findings(
@@ -266,7 +266,7 @@ def _consolidated_investigation_findings(
 
     raw = _safe(
         lambda: load_investigation_findings(
-            connection_id, org_id, limit=_MAX_RECEIPT_FINDINGS * _CONSOLIDATION_OVERFETCH),
+            connection_id, org_id, limit=MAX_RECEIPT_FINDINGS * CONSOLIDATION_OVERFETCH),
         "investigation_findings", [])
     if not raw:
         return []
@@ -289,9 +289,9 @@ def _consolidated_investigation_findings(
         return _safe(lambda: load_investigation_findings(connection_id, org_id),
                      "investigation_findings", [])
 
-    kept = survivors[:_MAX_RECEIPT_FINDINGS]
-    if len(survivors) > _MAX_RECEIPT_FINDINGS:
-        bump("context_graph.consolidation_capped", len(survivors) - _MAX_RECEIPT_FINDINGS)
+    kept = survivors[:MAX_RECEIPT_FINDINGS]
+    if len(survivors) > MAX_RECEIPT_FINDINGS:
+        bump("context_graph.consolidation_capped", len(survivors) - MAX_RECEIPT_FINDINGS)
     return kept
 
 
