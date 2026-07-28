@@ -38,7 +38,7 @@
       "to_id": "table:Job"
     }
   },
-  "generated_at": "2026-07-25T08:08:35.678436+00:00",
+  "generated_at": "2026-07-28T12:06:09.423699+00:00",
   "nodes": {
     "domain:platform_configuration": {
       "data": {
@@ -94,6 +94,78 @@
         "source": "ontology.domain"
       },
       "summary": "",
+      "tags": []
+    },
+    "glossary_term:events.description": {
+      "data": {
+        "caveats": "",
+        "column": "description",
+        "table": "events",
+        "values": ""
+      },
+      "id": "glossary_term:events.description",
+      "kind": "glossary_term",
+      "label": "description",
+      "provenance": {
+        "measured": null,
+        "note": "defined on events",
+        "source": "glossary"
+      },
+      "summary": "Free-text human-readable description of the event",
+      "tags": []
+    },
+    "glossary_term:events.event_date": {
+      "data": {
+        "caveats": "",
+        "column": "event_date",
+        "table": "events",
+        "values": ""
+      },
+      "id": "glossary_term:events.event_date",
+      "kind": "glossary_term",
+      "label": "event_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on events",
+        "source": "glossary"
+      },
+      "summary": "Date the event occurred or started (UTC)",
+      "tags": []
+    },
+    "glossary_term:events.event_type": {
+      "data": {
+        "caveats": "",
+        "column": "event_type",
+        "table": "events",
+        "values": "outage, promotion, holiday, product_launch"
+      },
+      "id": "glossary_term:events.event_type",
+      "kind": "glossary_term",
+      "label": "event_type",
+      "provenance": {
+        "measured": null,
+        "note": "defined on events",
+        "source": "glossary"
+      },
+      "summary": "Category of the business event",
+      "tags": []
+    },
+    "glossary_term:events.impact": {
+      "data": {
+        "caveats": "",
+        "column": "impact",
+        "table": "events",
+        "values": ""
+      },
+      "id": "glossary_term:events.impact",
+      "kind": "glossary_term",
+      "label": "impact",
+      "provenance": {
+        "measured": null,
+        "note": "defined on events",
+        "source": "glossary"
+      },
+      "summary": "Expected directional impact on revenue. Values: positive (promotion/launch), negative (outage), neutral (holiday \u2014 varies by region)\n",
       "tags": []
     },
     "metric:aov": {
@@ -413,5 +485,5 @@
     "SqliteSequence": "ce0a9d33d7499c40",
     "Task": "1b4ab027dc79abbb"
   },
-  "version": 1
+  "version": 2
 }

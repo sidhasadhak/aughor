@@ -1,6 +1,18 @@
 {
   "connection_id": "samples",
   "edges": {
+    "finding:6f9e51586d49--grounded_in-->table:Order": {
+      "from_id": "finding:6f9e51586d49",
+      "id": "finding:6f9e51586d49--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Order"
+    },
     "metric:aov--derived_from-->table:Order": {
       "from_id": "metric:aov",
       "id": "metric:aov--derived_from-->table:Order",
@@ -86,7 +98,7 @@
       "to_id": "table:Review"
     }
   },
-  "generated_at": "2026-07-25T08:03:25.934400+00:00",
+  "generated_at": "2026-07-28T12:06:09.123390+00:00",
   "nodes": {
     "domain:catalog": {
       "data": {
@@ -139,6 +151,2005 @@
         "source": "ontology.domain"
       },
       "summary": "",
+      "tags": []
+    },
+    "finding:6f9e51586d49": {
+      "data": {
+        "generated_at": "2026-07-26T21:55:13.498745+00:00",
+        "sql": "SELECT 'No returns table exists in schema' AS note, COUNT(*) AS total_orders FROM ecommerce.orders",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:6f9e51586d49",
+      "kind": "finding",
+      "label": "Returns table not found in schema; cannot count returns",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Returns table not found in schema; cannot count returns",
+      "tags": []
+    },
+    "glossary_term:customers.age_group": {
+      "data": {
+        "caveats": "",
+        "column": "age_group",
+        "table": "customers",
+        "values": "18-24, 25-34, 35-44, 45+"
+      },
+      "id": "glossary_term:customers.age_group",
+      "kind": "glossary_term",
+      "label": "age_group",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Customer's age range category",
+      "tags": []
+    },
+    "glossary_term:customers.city": {
+      "data": {
+        "caveats": "",
+        "column": "city",
+        "table": "customers",
+        "values": "London, Paris, Berlin, Tokyo, Sao Paulo, Sydney, New York, Toronto, Mumbai, Lagos"
+      },
+      "id": "glossary_term:customers.city",
+      "kind": "glossary_term",
+      "label": "city",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "City where the customer resides",
+      "tags": []
+    },
+    "glossary_term:customers.country": {
+      "data": {
+        "caveats": "",
+        "column": "country",
+        "table": "customers",
+        "values": "BR, GB, JP, US, AU, CA, DE, FR, NG, IN"
+      },
+      "id": "glossary_term:customers.country",
+      "kind": "glossary_term",
+      "label": "country",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Country where the customer resides, represented as ISO 3166-1 alpha-2 code",
+      "tags": []
+    },
+    "glossary_term:customers.customer_id": {
+      "data": {
+        "caveats": "",
+        "column": "customer_id",
+        "table": "customers",
+        "values": ""
+      },
+      "id": "glossary_term:customers.customer_id",
+      "kind": "glossary_term",
+      "label": "customer_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each customer",
+      "tags": []
+    },
+    "glossary_term:customers.email": {
+      "data": {
+        "caveats": "",
+        "column": "email",
+        "table": "customers",
+        "values": ""
+      },
+      "id": "glossary_term:customers.email",
+      "kind": "glossary_term",
+      "label": "email",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Customer's email address used for account and order communications",
+      "tags": []
+    },
+    "glossary_term:customers.full_name": {
+      "data": {
+        "caveats": "",
+        "column": "full_name",
+        "table": "customers",
+        "values": ""
+      },
+      "id": "glossary_term:customers.full_name",
+      "kind": "glossary_term",
+      "label": "full_name",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Customer's full legal or preferred name",
+      "tags": []
+    },
+    "glossary_term:customers.lifetime_orders": {
+      "data": {
+        "caveats": "",
+        "column": "lifetime_orders",
+        "table": "customers",
+        "values": ""
+      },
+      "id": "glossary_term:customers.lifetime_orders",
+      "kind": "glossary_term",
+      "label": "lifetime_orders",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Total number of orders placed by the customer since signup",
+      "tags": []
+    },
+    "glossary_term:customers.lifetime_spend": {
+      "data": {
+        "caveats": "",
+        "column": "lifetime_spend",
+        "table": "customers",
+        "values": ""
+      },
+      "id": "glossary_term:customers.lifetime_spend",
+      "kind": "glossary_term",
+      "label": "lifetime_spend",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Total monetary value (in local currency) of all orders placed by the customer since signup",
+      "tags": []
+    },
+    "glossary_term:customers.loyalty_tier": {
+      "data": {
+        "caveats": "",
+        "column": "loyalty_tier",
+        "table": "customers",
+        "values": "Bronze, Silver, Gold, Platinum"
+      },
+      "id": "glossary_term:customers.loyalty_tier",
+      "kind": "glossary_term",
+      "label": "loyalty_tier",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Customer's current membership tier in the brand's loyalty program",
+      "tags": []
+    },
+    "glossary_term:customers.marketing_opt_in": {
+      "data": {
+        "caveats": "",
+        "column": "marketing_opt_in",
+        "table": "customers",
+        "values": "True, False"
+      },
+      "id": "glossary_term:customers.marketing_opt_in",
+      "kind": "glossary_term",
+      "label": "marketing_opt_in",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Whether the customer has opted in to receive marketing communications",
+      "tags": []
+    },
+    "glossary_term:customers.region": {
+      "data": {
+        "caveats": "",
+        "column": "region",
+        "table": "customers",
+        "values": "APAC, EMEA, NA"
+      },
+      "id": "glossary_term:customers.region",
+      "kind": "glossary_term",
+      "label": "region",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Geographic sales region",
+      "tags": []
+    },
+    "glossary_term:customers.segment": {
+      "data": {
+        "caveats": "Segment is assigned once and never changes \u2014 do not use as a proxy for ARR",
+        "column": "segment",
+        "table": "customers",
+        "values": "SMB, Enterprise"
+      },
+      "id": "glossary_term:customers.segment",
+      "kind": "glossary_term",
+      "label": "segment",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Customer size tier assigned at account creation",
+      "tags": []
+    },
+    "glossary_term:customers.signup_date": {
+      "data": {
+        "caveats": "",
+        "column": "signup_date",
+        "table": "customers",
+        "values": ""
+      },
+      "id": "glossary_term:customers.signup_date",
+      "kind": "glossary_term",
+      "label": "signup_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Date the customer created their account",
+      "tags": []
+    },
+    "glossary_term:customers.skin_type": {
+      "data": {
+        "caveats": "",
+        "column": "skin_type",
+        "table": "customers",
+        "values": "Oily, Dry, Sensitive, Combination, Normal"
+      },
+      "id": "glossary_term:customers.skin_type",
+      "kind": "glossary_term",
+      "label": "skin_type",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Customer's self-reported or assessed skin type",
+      "tags": []
+    },
+    "glossary_term:order_items.brand": {
+      "data": {
+        "caveats": "",
+        "column": "brand",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.brand",
+      "kind": "glossary_term",
+      "label": "brand",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Brand name of the product.",
+      "tags": []
+    },
+    "glossary_term:order_items.brand_tier": {
+      "data": {
+        "caveats": "",
+        "column": "brand_tier",
+        "table": "order_items",
+        "values": "luxury, ultra, contemporary"
+      },
+      "id": "glossary_term:order_items.brand_tier",
+      "kind": "glossary_term",
+      "label": "brand_tier",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Brand positioning tier.",
+      "tags": []
+    },
+    "glossary_term:order_items.category": {
+      "data": {
+        "caveats": "",
+        "column": "category",
+        "table": "order_items",
+        "values": "womenswear, menswear, shoes, bags, accessories, outerwear, jewelry_watches, beauty, kidswear, life"
+      },
+      "id": "glossary_term:order_items.category",
+      "kind": "glossary_term",
+      "label": "category",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Product category classification.",
+      "tags": []
+    },
+    "glossary_term:order_items.cogs_usd": {
+      "data": {
+        "caveats": "",
+        "column": "cogs_usd",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.cogs_usd",
+      "kind": "glossary_term",
+      "label": "cogs_usd",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Cost of goods sold per unit in USD",
+      "tags": []
+    },
+    "glossary_term:order_items.cost_eur": {
+      "data": {
+        "caveats": "Floating point type may introduce rounding errors; consider using decimal for financial calculations.",
+        "column": "cost_eur",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.cost_eur",
+      "kind": "glossary_term",
+      "label": "cost_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Cost per unit in euros.",
+      "tags": []
+    },
+    "glossary_term:order_items.currency": {
+      "data": {
+        "caveats": "",
+        "column": "currency",
+        "table": "order_items",
+        "values": "EUR, USD, CAD, GBP"
+      },
+      "id": "glossary_term:order_items.currency",
+      "kind": "glossary_term",
+      "label": "currency",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Currency used for the transaction",
+      "tags": []
+    },
+    "glossary_term:order_items.device_type": {
+      "data": {
+        "caveats": "",
+        "column": "device_type",
+        "table": "order_items",
+        "values": "Desktop, Tablet, Mobile"
+      },
+      "id": "glossary_term:order_items.device_type",
+      "kind": "glossary_term",
+      "label": "device_type",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Type of device used to place the order",
+      "tags": []
+    },
+    "glossary_term:order_items.discount_pct": {
+      "data": {
+        "caveats": "",
+        "column": "discount_pct",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.discount_pct",
+      "kind": "glossary_term",
+      "label": "discount_pct",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Percentage discount applied to the unit price",
+      "tags": []
+    },
+    "glossary_term:order_items.final_price_usd": {
+      "data": {
+        "caveats": "",
+        "column": "final_price_usd",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.final_price_usd",
+      "kind": "glossary_term",
+      "label": "final_price_usd",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Final price per unit in USD after discount",
+      "tags": []
+    },
+    "glossary_term:order_items.freight_value": {
+      "data": {
+        "caveats": "",
+        "column": "freight_value",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.freight_value",
+      "kind": "glossary_term",
+      "label": "freight_value",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Shipping cost allocated to this specific order item",
+      "tags": []
+    },
+    "glossary_term:order_items.gross_margin_usd": {
+      "data": {
+        "caveats": "",
+        "column": "gross_margin_usd",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.gross_margin_usd",
+      "kind": "glossary_term",
+      "label": "gross_margin_usd",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Gross profit per unit in USD (final_price_usd - cogs_usd)",
+      "tags": []
+    },
+    "glossary_term:order_items.item_added_ts": {
+      "data": {
+        "caveats": "",
+        "column": "item_added_ts",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.item_added_ts",
+      "kind": "glossary_term",
+      "label": "item_added_ts",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Timestamp when the item was added to the cart (nanosecond precision)",
+      "tags": []
+    },
+    "glossary_term:order_items.item_id": {
+      "data": {
+        "caveats": "",
+        "column": "item_id",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.item_id",
+      "kind": "glossary_term",
+      "label": "item_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each order item",
+      "tags": []
+    },
+    "glossary_term:order_items.line_total": {
+      "data": {
+        "caveats": "",
+        "column": "line_total",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.line_total",
+      "kind": "glossary_term",
+      "label": "line_total",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Total price for this line item (quantity \u00d7 unit_price)",
+      "tags": []
+    },
+    "glossary_term:order_items.order_id": {
+      "data": {
+        "caveats": "",
+        "column": "order_id",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Identifier linking the item to its parent order",
+      "tags": []
+    },
+    "glossary_term:order_items.order_item_id": {
+      "data": {
+        "caveats": "",
+        "column": "order_item_id",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.order_item_id",
+      "kind": "glossary_term",
+      "label": "order_item_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Sequential index of this item within its order (e.g., 1 for first item, 2 for second, etc.)",
+      "tags": []
+    },
+    "glossary_term:order_items.order_ts": {
+      "data": {
+        "caveats": "",
+        "column": "order_ts",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.order_ts",
+      "kind": "glossary_term",
+      "label": "order_ts",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Timestamp when the order was placed",
+      "tags": []
+    },
+    "glossary_term:order_items.platform": {
+      "data": {
+        "caveats": "",
+        "column": "platform",
+        "table": "order_items",
+        "values": "YOOX, THE OUTNET, NET-A-PORTER, Mytheresa, MR PORTER"
+      },
+      "id": "glossary_term:order_items.platform",
+      "kind": "glossary_term",
+      "label": "platform",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "E-commerce platform where the order was placed.",
+      "tags": []
+    },
+    "glossary_term:order_items.price": {
+      "data": {
+        "caveats": "",
+        "column": "price",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.price",
+      "kind": "glossary_term",
+      "label": "price",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Unit price of the product for this order item (excluding freight). This is the primary sales/revenue column \u2014 SUM(price) = total sales value.",
+      "tags": []
+    },
+    "glossary_term:order_items.product_id": {
+      "data": {
+        "caveats": "",
+        "column": "product_id",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.product_id",
+      "kind": "glossary_term",
+      "label": "product_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Identifier for the product being purchased",
+      "tags": []
+    },
+    "glossary_term:order_items.quantity": {
+      "data": {
+        "caveats": "",
+        "column": "quantity",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.quantity",
+      "kind": "glossary_term",
+      "label": "quantity",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Number of units of the product ordered",
+      "tags": []
+    },
+    "glossary_term:order_items.returned": {
+      "data": {
+        "caveats": "",
+        "column": "returned",
+        "table": "order_items",
+        "values": "False, True"
+      },
+      "id": "glossary_term:order_items.returned",
+      "kind": "glossary_term",
+      "label": "returned",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Indicates whether the item was returned.",
+      "tags": []
+    },
+    "glossary_term:order_items.seller_id": {
+      "data": {
+        "caveats": "",
+        "column": "seller_id",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.seller_id",
+      "kind": "glossary_term",
+      "label": "seller_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for the seller who fulfilled this order item",
+      "tags": []
+    },
+    "glossary_term:order_items.shipping_limit_date": {
+      "data": {
+        "caveats": "",
+        "column": "shipping_limit_date",
+        "table": "order_items",
+        "values": "e.g., '2017-09-15T10:00:00', '2017-10-02T12:30:00'"
+      },
+      "id": "glossary_term:order_items.shipping_limit_date",
+      "kind": "glossary_term",
+      "label": "shipping_limit_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Deadline by which the seller must ship this item (stored as ISO 8601 string)",
+      "tags": []
+    },
+    "glossary_term:order_items.sku_id": {
+      "data": {
+        "caveats": "",
+        "column": "sku_id",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.sku_id",
+      "kind": "glossary_term",
+      "label": "sku_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for the stock keeping unit",
+      "tags": []
+    },
+    "glossary_term:order_items.traffic_source": {
+      "data": {
+        "caveats": "",
+        "column": "traffic_source",
+        "table": "order_items",
+        "values": "Organic, Email, Influencer, TikTok, Google, Affiliate, Meta"
+      },
+      "id": "glossary_term:order_items.traffic_source",
+      "kind": "glossary_term",
+      "label": "traffic_source",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Marketing channel through which the customer arrived at the store",
+      "tags": []
+    },
+    "glossary_term:order_items.unit_price": {
+      "data": {
+        "caveats": "",
+        "column": "unit_price",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.unit_price",
+      "kind": "glossary_term",
+      "label": "unit_price",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Price per unit of the product at the time of order",
+      "tags": []
+    },
+    "glossary_term:order_items.unit_price_eur": {
+      "data": {
+        "caveats": "Floating point type may introduce rounding errors; consider using decimal for financial calculations.",
+        "column": "unit_price_eur",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.unit_price_eur",
+      "kind": "glossary_term",
+      "label": "unit_price_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Price per unit in euros.",
+      "tags": []
+    },
+    "glossary_term:order_items.unit_price_usd": {
+      "data": {
+        "caveats": "",
+        "column": "unit_price_usd",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.unit_price_usd",
+      "kind": "glossary_term",
+      "label": "unit_price_usd",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "List price per unit in USD at time of purchase",
+      "tags": []
+    },
+    "glossary_term:orders.amount": {
+      "data": {
+        "caveats": "",
+        "column": "amount",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.amount",
+      "kind": "glossary_term",
+      "label": "amount",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Monetary value of the order.",
+      "tags": []
+    },
+    "glossary_term:orders.amt": {
+      "data": {
+        "caveats": "No currency column present; assumes a single currency. No timestamp column exists for time-series analysis.",
+        "column": "amt",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.amt",
+      "kind": "glossary_term",
+      "label": "amt",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Order amount, likely stored in the smallest currency unit (e.g., cents).",
+      "tags": []
+    },
+    "glossary_term:orders.anon_id": {
+      "data": {
+        "caveats": "",
+        "column": "anon_id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.anon_id",
+      "kind": "glossary_term",
+      "label": "anon_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Anonymous user identifier for tracking behavior across sessions without PII",
+      "tags": []
+    },
+    "glossary_term:orders.campaign_id": {
+      "data": {
+        "caveats": "",
+        "column": "campaign_id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.campaign_id",
+      "kind": "glossary_term",
+      "label": "campaign_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Marketing campaign associated with the order (if any)",
+      "tags": []
+    },
+    "glossary_term:orders.cart_id": {
+      "data": {
+        "caveats": "",
+        "column": "cart_id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.cart_id",
+      "kind": "glossary_term",
+      "label": "cart_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Identifier linking the order to its originating shopping cart session",
+      "tags": []
+    },
+    "glossary_term:orders.channel": {
+      "data": {
+        "caveats": "",
+        "column": "channel",
+        "table": "orders",
+        "values": "web, app, store"
+      },
+      "id": "glossary_term:orders.channel",
+      "kind": "glossary_term",
+      "label": "channel",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Sales channel through which the order was placed",
+      "tags": []
+    },
+    "glossary_term:orders.coupon_abuse": {
+      "data": {
+        "caveats": "",
+        "column": "coupon_abuse",
+        "table": "orders",
+        "values": "False, True"
+      },
+      "id": "glossary_term:orders.coupon_abuse",
+      "kind": "glossary_term",
+      "label": "coupon_abuse",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Flag indicating whether the coupon code was flagged as potentially abused",
+      "tags": []
+    },
+    "glossary_term:orders.coupon_code": {
+      "data": {
+        "caveats": "",
+        "column": "coupon_code",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.coupon_code",
+      "kind": "glossary_term",
+      "label": "coupon_code",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Promotional code applied to the order (if any)",
+      "tags": []
+    },
+    "glossary_term:orders.currency": {
+      "data": {
+        "caveats": "",
+        "column": "currency",
+        "table": "orders",
+        "values": "EUR, USD, CAD, GBP"
+      },
+      "id": "glossary_term:orders.currency",
+      "kind": "glossary_term",
+      "label": "currency",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Three-letter ISO currency code for the order amount",
+      "tags": []
+    },
+    "glossary_term:orders.customer_id": {
+      "data": {
+        "caveats": "",
+        "column": "customer_id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.customer_id",
+      "kind": "glossary_term",
+      "label": "customer_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Identifier for the customer who placed the order",
+      "tags": []
+    },
+    "glossary_term:orders.delivered_at": {
+      "data": {
+        "caveats": "NULL for orders not yet delivered",
+        "column": "delivered_at",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.delivered_at",
+      "kind": "glossary_term",
+      "label": "delivered_at",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Date the order was delivered (NULL if not yet delivered)",
+      "tags": []
+    },
+    "glossary_term:orders.device_type": {
+      "data": {
+        "caveats": "",
+        "column": "device_type",
+        "table": "orders",
+        "values": "Tablet, Mobile, Desktop"
+      },
+      "id": "glossary_term:orders.device_type",
+      "kind": "glossary_term",
+      "label": "device_type",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Type of device used to place the order",
+      "tags": []
+    },
+    "glossary_term:orders.discount_amount": {
+      "data": {
+        "caveats": "",
+        "column": "discount_amount",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.discount_amount",
+      "kind": "glossary_term",
+      "label": "discount_amount",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Total discount applied to the order",
+      "tags": []
+    },
+    "glossary_term:orders.id": {
+      "data": {
+        "caveats": "",
+        "column": "id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.id",
+      "kind": "glossary_term",
+      "label": "id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for the order.",
+      "tags": []
+    },
+    "glossary_term:orders.item_count": {
+      "data": {
+        "caveats": "",
+        "column": "item_count",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.item_count",
+      "kind": "glossary_term",
+      "label": "item_count",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Total number of items in the order",
+      "tags": []
+    },
+    "glossary_term:orders.o_clerk": {
+      "data": {
+        "caveats": "",
+        "column": "o_clerk",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.o_clerk",
+      "kind": "glossary_term",
+      "label": "o_clerk",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Name or ID of the clerk who processed the order",
+      "tags": []
+    },
+    "glossary_term:orders.o_comment": {
+      "data": {
+        "caveats": "",
+        "column": "o_comment",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.o_comment",
+      "kind": "glossary_term",
+      "label": "o_comment",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Free-text comment associated with the order",
+      "tags": []
+    },
+    "glossary_term:orders.o_custkey": {
+      "data": {
+        "caveats": "",
+        "column": "o_custkey",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.o_custkey",
+      "kind": "glossary_term",
+      "label": "o_custkey",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Identifier for the customer who placed the order",
+      "tags": []
+    },
+    "glossary_term:orders.o_orderdate": {
+      "data": {
+        "caveats": "",
+        "column": "o_orderdate",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.o_orderdate",
+      "kind": "glossary_term",
+      "label": "o_orderdate",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Date the order was placed",
+      "tags": []
+    },
+    "glossary_term:orders.o_orderkey": {
+      "data": {
+        "caveats": "",
+        "column": "o_orderkey",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.o_orderkey",
+      "kind": "glossary_term",
+      "label": "o_orderkey",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each order",
+      "tags": []
+    },
+    "glossary_term:orders.o_orderpriority": {
+      "data": {
+        "caveats": "",
+        "column": "o_orderpriority",
+        "table": "orders",
+        "values": "5-LOW, 1-URGENT, 4-NOT SPECIFIED, 2-HIGH, 3-MEDIUM"
+      },
+      "id": "glossary_term:orders.o_orderpriority",
+      "kind": "glossary_term",
+      "label": "o_orderpriority",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Priority level assigned to the order",
+      "tags": []
+    },
+    "glossary_term:orders.o_orderstatus": {
+      "data": {
+        "caveats": "",
+        "column": "o_orderstatus",
+        "table": "orders",
+        "values": "O (open), F (fulfilled), P (pending)"
+      },
+      "id": "glossary_term:orders.o_orderstatus",
+      "kind": "glossary_term",
+      "label": "o_orderstatus",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Current status of the order",
+      "tags": []
+    },
+    "glossary_term:orders.o_shippriority": {
+      "data": {
+        "caveats": "",
+        "column": "o_shippriority",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.o_shippriority",
+      "kind": "glossary_term",
+      "label": "o_shippriority",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Priority level for shipping the order (higher = more urgent)",
+      "tags": []
+    },
+    "glossary_term:orders.o_totalprice": {
+      "data": {
+        "caveats": "",
+        "column": "o_totalprice",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.o_totalprice",
+      "kind": "glossary_term",
+      "label": "o_totalprice",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Total monetary value of the order",
+      "tags": []
+    },
+    "glossary_term:orders.order_date": {
+      "data": {
+        "caveats": "",
+        "column": "order_date",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.order_date",
+      "kind": "glossary_term",
+      "label": "order_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Date the order was placed",
+      "tags": []
+    },
+    "glossary_term:orders.order_id": {
+      "data": {
+        "caveats": "",
+        "column": "order_id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each order",
+      "tags": []
+    },
+    "glossary_term:orders.order_status": {
+      "data": {
+        "caveats": "",
+        "column": "order_status",
+        "table": "orders",
+        "values": "DELIVERED, RETURNED, FULFILLED, PAID, CANCELLED, PLACED"
+      },
+      "id": "glossary_term:orders.order_status",
+      "kind": "glossary_term",
+      "label": "order_status",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Current fulfillment status of the order",
+      "tags": []
+    },
+    "glossary_term:orders.order_ts": {
+      "data": {
+        "caveats": "",
+        "column": "order_ts",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.order_ts",
+      "kind": "glossary_term",
+      "label": "order_ts",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Timestamp when the order was placed",
+      "tags": []
+    },
+    "glossary_term:orders.payment_method": {
+      "data": {
+        "caveats": "",
+        "column": "payment_method",
+        "table": "orders",
+        "values": "Google Pay, PayPal, Apple Pay, Klarna, Credit Card"
+      },
+      "id": "glossary_term:orders.payment_method",
+      "kind": "glossary_term",
+      "label": "payment_method",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Method used to process the payment",
+      "tags": []
+    },
+    "glossary_term:orders.shipped_at": {
+      "data": {
+        "caveats": "NULL for orders not yet shipped",
+        "column": "shipped_at",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.shipped_at",
+      "kind": "glossary_term",
+      "label": "shipped_at",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Date the order was shipped (NULL if not yet shipped)",
+      "tags": []
+    },
+    "glossary_term:orders.status": {
+      "data": {
+        "caveats": "",
+        "column": "status",
+        "table": "orders",
+        "values": "delivered, shipped, cancelled, refunded, processing, pending"
+      },
+      "id": "glossary_term:orders.status",
+      "kind": "glossary_term",
+      "label": "status",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Current fulfillment status of the order",
+      "tags": []
+    },
+    "glossary_term:orders.subtotal": {
+      "data": {
+        "caveats": "",
+        "column": "subtotal",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.subtotal",
+      "kind": "glossary_term",
+      "label": "subtotal",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Sum of line item prices before discounts and taxes",
+      "tags": []
+    },
+    "glossary_term:orders.total_amount": {
+      "data": {
+        "caveats": "",
+        "column": "total_amount",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.total_amount",
+      "kind": "glossary_term",
+      "label": "total_amount",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Final amount paid by the customer after discounts",
+      "tags": []
+    },
+    "glossary_term:orders.traffic_source": {
+      "data": {
+        "caveats": "",
+        "column": "traffic_source",
+        "table": "orders",
+        "values": "Organic, Email, Influencer, Affiliate, Meta, Google, TikTok"
+      },
+      "id": "glossary_term:orders.traffic_source",
+      "kind": "glossary_term",
+      "label": "traffic_source",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Marketing channel through which the customer arrived at the store",
+      "tags": []
+    },
+    "glossary_term:products.brand": {
+      "data": {
+        "caveats": "",
+        "column": "brand",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.brand",
+      "kind": "glossary_term",
+      "label": "brand",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Brand name of the product.",
+      "tags": []
+    },
+    "glossary_term:products.brand_tier": {
+      "data": {
+        "caveats": "",
+        "column": "brand_tier",
+        "table": "products",
+        "values": "luxury, ultra, contemporary"
+      },
+      "id": "glossary_term:products.brand_tier",
+      "kind": "glossary_term",
+      "label": "brand_tier",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Tier classification of the brand (luxury, ultra, contemporary).",
+      "tags": []
+    },
+    "glossary_term:products.category": {
+      "data": {
+        "caveats": "",
+        "column": "category",
+        "table": "products",
+        "values": "womenswear, menswear, shoes, bags, accessories, outerwear, jewelry_watches, beauty, kidswear, life"
+      },
+      "id": "glossary_term:products.category",
+      "kind": "glossary_term",
+      "label": "category",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Product category (e.g., womenswear, shoes, bags).",
+      "tags": []
+    },
+    "glossary_term:products.cost_eur": {
+      "data": {
+        "caveats": "Stored as DOUBLE; may have floating-point precision issues.",
+        "column": "cost_eur",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.cost_eur",
+      "kind": "glossary_term",
+      "label": "cost_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Cost price in euros.",
+      "tags": []
+    },
+    "glossary_term:products.in_season": {
+      "data": {
+        "caveats": "",
+        "column": "in_season",
+        "table": "products",
+        "values": "True, False"
+      },
+      "id": "glossary_term:products.in_season",
+      "kind": "glossary_term",
+      "label": "in_season",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Boolean flag indicating if the product is currently in season.",
+      "tags": []
+    },
+    "glossary_term:products.is_organic": {
+      "data": {
+        "caveats": "",
+        "column": "is_organic",
+        "table": "products",
+        "values": "False, True"
+      },
+      "id": "glossary_term:products.is_organic",
+      "kind": "glossary_term",
+      "label": "is_organic",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Whether the product is certified organic",
+      "tags": []
+    },
+    "glossary_term:products.is_out_of_stock": {
+      "data": {
+        "caveats": "All current rows have is_out_of_stock = False; may not reflect real-time stock status",
+        "column": "is_out_of_stock",
+        "table": "products",
+        "values": "False"
+      },
+      "id": "glossary_term:products.is_out_of_stock",
+      "kind": "glossary_term",
+      "label": "is_out_of_stock",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Flag indicating whether the product is currently out of stock",
+      "tags": []
+    },
+    "glossary_term:products.launch_date": {
+      "data": {
+        "caveats": "",
+        "column": "launch_date",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.launch_date",
+      "kind": "glossary_term",
+      "label": "launch_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Date the product was first launched or released",
+      "tags": []
+    },
+    "glossary_term:products.platform": {
+      "data": {
+        "caveats": "",
+        "column": "platform",
+        "table": "products",
+        "values": "THE OUTNET, YOOX, Mytheresa, MR PORTER, NET-A-PORTER"
+      },
+      "id": "glossary_term:products.platform",
+      "kind": "glossary_term",
+      "label": "platform",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "The e-commerce platform selling the product.",
+      "tags": []
+    },
+    "glossary_term:products.price": {
+      "data": {
+        "caveats": "",
+        "column": "price",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.price",
+      "kind": "glossary_term",
+      "label": "price",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Current price of the product in USD",
+      "tags": []
+    },
+    "glossary_term:products.product_category_name": {
+      "data": {
+        "caveats": "",
+        "column": "product_category_name",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.product_category_name",
+      "kind": "glossary_term",
+      "label": "product_category_name",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Name of the product's main category",
+      "tags": []
+    },
+    "glossary_term:products.product_description_lenght": {
+      "data": {
+        "caveats": "",
+        "column": "product_description_lenght",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.product_description_lenght",
+      "kind": "glossary_term",
+      "label": "product_description_lenght",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Number of characters in the product description",
+      "tags": []
+    },
+    "glossary_term:products.product_height_cm": {
+      "data": {
+        "caveats": "",
+        "column": "product_height_cm",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.product_height_cm",
+      "kind": "glossary_term",
+      "label": "product_height_cm",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Product height in centimeters",
+      "tags": []
+    },
+    "glossary_term:products.product_id": {
+      "data": {
+        "caveats": "",
+        "column": "product_id",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.product_id",
+      "kind": "glossary_term",
+      "label": "product_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each product.",
+      "tags": []
+    },
+    "glossary_term:products.product_length_cm": {
+      "data": {
+        "caveats": "",
+        "column": "product_length_cm",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.product_length_cm",
+      "kind": "glossary_term",
+      "label": "product_length_cm",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Product length in centimeters",
+      "tags": []
+    },
+    "glossary_term:products.product_name": {
+      "data": {
+        "caveats": "",
+        "column": "product_name",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.product_name",
+      "kind": "glossary_term",
+      "label": "product_name",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Human-readable name of the product",
+      "tags": []
+    },
+    "glossary_term:products.product_name_lenght": {
+      "data": {
+        "caveats": "",
+        "column": "product_name_lenght",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.product_name_lenght",
+      "kind": "glossary_term",
+      "label": "product_name_lenght",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Number of characters in the product name",
+      "tags": []
+    },
+    "glossary_term:products.product_photos_qty": {
+      "data": {
+        "caveats": "",
+        "column": "product_photos_qty",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.product_photos_qty",
+      "kind": "glossary_term",
+      "label": "product_photos_qty",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Number of photos associated with the product",
+      "tags": []
+    },
+    "glossary_term:products.product_weight_g": {
+      "data": {
+        "caveats": "",
+        "column": "product_weight_g",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.product_weight_g",
+      "kind": "glossary_term",
+      "label": "product_weight_g",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Product weight in grams",
+      "tags": []
+    },
+    "glossary_term:products.product_width_cm": {
+      "data": {
+        "caveats": "",
+        "column": "product_width_cm",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.product_width_cm",
+      "kind": "glossary_term",
+      "label": "product_width_cm",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Product width in centimeters",
+      "tags": []
+    },
+    "glossary_term:products.retail_price_eur": {
+      "data": {
+        "caveats": "Stored as DOUBLE; may have floating-point precision issues.",
+        "column": "retail_price_eur",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.retail_price_eur",
+      "kind": "glossary_term",
+      "label": "retail_price_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Retail price in euros.",
+      "tags": []
+    },
+    "glossary_term:products.season": {
+      "data": {
+        "caveats": "Season codes are not dates; join a date table for temporal analysis.",
+        "column": "season",
+        "table": "products",
+        "values": "AW20, AW24, SS21, SS24, SS23, AW23, SS20, AW25, AW22, SS25, SS22, AW21"
+      },
+      "id": "glossary_term:products.season",
+      "kind": "glossary_term",
+      "label": "season",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Fashion season code (e.g., AW20 = Autumn/Winter 2020).",
+      "tags": []
+    },
+    "glossary_term:products.stock_quantity": {
+      "data": {
+        "caveats": "",
+        "column": "stock_quantity",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.stock_quantity",
+      "kind": "glossary_term",
+      "label": "stock_quantity",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Number of units currently in stock",
+      "tags": []
+    },
+    "glossary_term:products.unit_cost": {
+      "data": {
+        "caveats": "",
+        "column": "unit_cost",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.unit_cost",
+      "kind": "glossary_term",
+      "label": "unit_cost",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Cost to produce or acquire one unit of the product",
+      "tags": []
+    },
+    "glossary_term:reviews.customer_id": {
+      "data": {
+        "caveats": "",
+        "column": "customer_id",
+        "table": "reviews",
+        "values": ""
+      },
+      "id": "glossary_term:reviews.customer_id",
+      "kind": "glossary_term",
+      "label": "customer_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on reviews",
+        "source": "glossary"
+      },
+      "summary": "Identifier of the customer who wrote the review",
+      "tags": []
+    },
+    "glossary_term:reviews.helpful_votes": {
+      "data": {
+        "caveats": "",
+        "column": "helpful_votes",
+        "table": "reviews",
+        "values": ""
+      },
+      "id": "glossary_term:reviews.helpful_votes",
+      "kind": "glossary_term",
+      "label": "helpful_votes",
+      "provenance": {
+        "measured": null,
+        "note": "defined on reviews",
+        "source": "glossary"
+      },
+      "summary": "Number of times other users marked this review as helpful",
+      "tags": []
+    },
+    "glossary_term:reviews.order_id": {
+      "data": {
+        "caveats": "",
+        "column": "order_id",
+        "table": "reviews",
+        "values": ""
+      },
+      "id": "glossary_term:reviews.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on reviews",
+        "source": "glossary"
+      },
+      "summary": "Identifier of the order the review is associated with.",
+      "tags": []
+    },
+    "glossary_term:reviews.product_id": {
+      "data": {
+        "caveats": "",
+        "column": "product_id",
+        "table": "reviews",
+        "values": ""
+      },
+      "id": "glossary_term:reviews.product_id",
+      "kind": "glossary_term",
+      "label": "product_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on reviews",
+        "source": "glossary"
+      },
+      "summary": "Identifier of the product being reviewed",
+      "tags": []
+    },
+    "glossary_term:reviews.rating": {
+      "data": {
+        "caveats": "",
+        "column": "rating",
+        "table": "reviews",
+        "values": "1, 2, 3, 4, 5"
+      },
+      "id": "glossary_term:reviews.rating",
+      "kind": "glossary_term",
+      "label": "rating",
+      "provenance": {
+        "measured": null,
+        "note": "defined on reviews",
+        "source": "glossary"
+      },
+      "summary": "Numerical rating given by the customer (e.g., 1\u20135 stars)",
+      "tags": []
+    },
+    "glossary_term:reviews.review_date": {
+      "data": {
+        "caveats": "",
+        "column": "review_date",
+        "table": "reviews",
+        "values": ""
+      },
+      "id": "glossary_term:reviews.review_date",
+      "kind": "glossary_term",
+      "label": "review_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on reviews",
+        "source": "glossary"
+      },
+      "summary": "Date the review was submitted",
+      "tags": []
+    },
+    "glossary_term:reviews.review_id": {
+      "data": {
+        "caveats": "",
+        "column": "review_id",
+        "table": "reviews",
+        "values": ""
+      },
+      "id": "glossary_term:reviews.review_id",
+      "kind": "glossary_term",
+      "label": "review_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on reviews",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each review",
+      "tags": []
+    },
+    "glossary_term:reviews.review_text": {
+      "data": {
+        "caveats": "",
+        "column": "review_text",
+        "table": "reviews",
+        "values": ""
+      },
+      "id": "glossary_term:reviews.review_text",
+      "kind": "glossary_term",
+      "label": "review_text",
+      "provenance": {
+        "measured": null,
+        "note": "defined on reviews",
+        "source": "glossary"
+      },
+      "summary": "Free-text feedback provided by the customer",
+      "tags": []
+    },
+    "glossary_term:reviews.verified_purchase": {
+      "data": {
+        "caveats": "",
+        "column": "verified_purchase",
+        "table": "reviews",
+        "values": "True, False"
+      },
+      "id": "glossary_term:reviews.verified_purchase",
+      "kind": "glossary_term",
+      "label": "verified_purchase",
+      "provenance": {
+        "measured": null,
+        "note": "defined on reviews",
+        "source": "glossary"
+      },
+      "summary": "Whether the reviewer purchased the product (vs. being a non-purchaser or reviewer from another source)",
       "tags": []
     },
     "metric:aov": {
@@ -373,5 +2384,5 @@
     "Product": "5a30cbc238d3d5a7",
     "Review": "3915905ee7645800"
   },
-  "version": 4
+  "version": 5
 }
