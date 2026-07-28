@@ -25,7 +25,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from aughor.db.migrations import run_migrations
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path, tune
 from aughor.semantic.lexical import tokenize
 
@@ -34,7 +34,14 @@ _DB_PATH = resolve_db_path(
     "AUGHOR_TRUSTED_PROGRAMS_DB",
     Path(__file__).parent.parent.parent / "data" / "trusted_programs.db",
 )
-_MIGRATIONS: list = []  # forward-only; append Migration(2, ...) when the schema evolves
+_MIGRATIONS: list = [
+    # Wave G6 — sealed programs: executed, never displayed. Existing rows default to 0
+    # (unsealed), which is the only safe default: silently sealing programs an operator
+    # had been reading would look like the platform had started hiding its work.
+    Migration(2, "trusted_programs.sealed (G6)",
+              lambda c: add_column_if_missing(
+                  c, "trusted_programs", "sealed", "INTEGER NOT NULL DEFAULT 0")),
+]
 
 
 class TrustedProgram(BaseModel):
@@ -44,6 +51,7 @@ class TrustedProgram(BaseModel):
     question: str                                   # the question it answers (canonical)
     program: dict = Field(default_factory=dict)     # a serialized Program (steps + rationale)
     plan_source: str = "auto"                       # auto (LLM-planned + run clean) | user (hand-authored)
+    sealed: bool = False                            # G6: execute it, never display its steps
     question_fingerprint: str = ""                  # token signature (auto)
     id: str = ""                                    # deterministic natural-key hash (auto)
     verified_at: str = ""                           # when it first validated + ran clean
@@ -97,7 +105,28 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
 def _row_to_tp(row: sqlite3.Row) -> TrustedProgram:
     d = dict(row)
     d["program"] = json.loads(d.get("program") or "{}")
+    d["sealed"] = bool(d.get("sealed") or 0)
     return TrustedProgram(**d)
+
+
+def redacted_for_display(tp: TrustedProgram) -> TrustedProgram:
+    """Wave G6 — the display twin of a trusted program.
+
+    A SEALED program is executed in full and shown as a stated absence: the steps are
+    replaced with a marker that says the program is governed and withheld, rather than
+    with nothing. An empty `program` would read as "there was no plan", which is the
+    same confusion between *withheld* and *absent* that G5's trim notice exists to
+    prevent — one layer down.
+
+    Returns a COPY. Redacting in place would mean one caller's display pass silently
+    disarms the next caller's execution.
+    """
+    if not tp.sealed:
+        return tp
+    return tp.model_copy(update={
+        "program": {"sealed": True,
+                    "note": ("This program is governed and executed, and its steps are "
+                             "deliberately not displayed.")}})
 
 
 # ── write path ────────────────────────────────────────────────────────────────
@@ -119,10 +148,11 @@ def save_trusted_program(tp: TrustedProgram) -> TrustedProgram:
             c.execute(
                 """INSERT OR REPLACE INTO trusted_programs
                    (id, org_id, connection_id, question, question_fingerprint, program,
-                    plan_source, verified_at, last_used_at, use_count)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    plan_source, verified_at, last_used_at, use_count, sealed)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (tp.id, tp.org_id, tp.connection_id, tp.question, tp.question_fingerprint,
-                 json.dumps(tp.program), tp.plan_source, tp.verified_at, tp.last_used_at, tp.use_count),
+                 json.dumps(tp.program), tp.plan_source, tp.verified_at, tp.last_used_at,
+                 tp.use_count, 1 if tp.sealed else 0),
             )
             c.commit()
         finally:
