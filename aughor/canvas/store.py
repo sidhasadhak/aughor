@@ -130,7 +130,36 @@ def update_canvas(
         (new_name, new_desc, scopes_json, now, canvas_id),
     )
     c.commit()
-    return get_canvas(canvas_id)
+    updated = get_canvas(canvas_id)
+    _record_revision(updated)
+    return updated
+
+
+def _record_revision(cv: Optional[Canvas]) -> None:
+    """Wave V3b: keep a version history for an otherwise destructive update.
+
+    ``UPDATE ... WHERE id=?`` overwrites the only copy — before this a renamed or re-scoped
+    canvas had no history and no way back, and a scope change silently redefines what every
+    investigation on that canvas can see. The row remains the live record (reads unchanged);
+    this adds a versioned draft alongside it, the same wiring `savedquery` proved.
+    No-op when ``lifecycle.publish`` is off.
+    """
+    if cv is None:
+        return
+    from aughor.kernel.errors import tolerate
+    from aughor.kernel.lifecycle import lifecycle_enabled, save_draft
+
+    if not lifecycle_enabled():
+        return
+    try:
+        save_draft("canvas", f"canvas:{cv.id}",
+                   {"name": cv.name, "description": cv.description,
+                    "scopes": [s.model_dump() for s in cv.scopes]},
+                   conn_id=(cv.scopes[0].connection_id if cv.scopes else None))
+    except Exception as exc:
+        tolerate(exc, "recording a canvas revision is best-effort; the canvas itself is "
+                      "already saved, only its history entry is lost",
+                 counter="canvas.revision")
 
 
 def delete_canvas(canvas_id: str) -> bool:

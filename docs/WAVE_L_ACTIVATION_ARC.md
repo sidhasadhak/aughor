@@ -16,11 +16,11 @@
 |---|---|
 | **L1** — background build + live-path writers | ✅ **COMPLETE — gate met on a running server** |
 | **L2** — graduate `graph.readback` | ✅ **grid RAN; flag NOT graduated — delta not attributable** (see below) |
-| **L3** — graduate `closed_loop` | ⭕ |
+| **L3** — graduate `closed_loop` | ✅ **measured; NOT graduated — the flag is a no-op on 90% of the corpus, delta 0.0196 vs a floor of 0.1304** |
 | **L4** — graduate `automations.source_probes` + `engine` | ✅ **graduated on MEASURED equivalence; `automations.engine` is now default-ON** |
 | **L5** — seed curation + widen the corpus | ✅ **corpus 22→102, trusted queries 0→11**; C6 pack export still open |
-| **L6** — A/B `ada.evidence_stubs` (the Wave-R measurement debt) | ⭕ |
-| **L7** *(opt)* — V3b artifact wiring | ⭕ |
+| **L6** — A/B `ada.evidence_stubs` (the Wave-R measurement debt) | ✅ **CLOSED — the flag gates code no product surface can reach; the measurement debt is VOID** |
+| **L7** *(opt)* — V3b artifact wiring | ✅ **canvas + dashboard + eval-suite corpus on the V3 lifecycle, proven live** |
 
 Commits so far: `251ce6e` (glossary fix) · `b682f80` (investigations → graph) ·
 `c2cad8b` (brief projector + exploration trigger).
@@ -590,6 +590,272 @@ but SELECT, and the discarded `QueryResult.error` made four scenarios "pass the 
 go quiet". The second was DuckDB refusing a read-write handle while the pool held the file
 read-only — fixed by evicting through `pool.evict_conn`.)*
 
+## L3 — sized from a pilot, and what the pilot overturned
+
+**Two prerequisites had to be cleared before spending hours, and one of them was this
+document.**
+
+**The rate-limit warning was stale.** `881bfde` closed the SDK-retry bypass and the grid after
+it ran 88 invocations with 0 refusals. Corrected above.
+
+**Flag drift had re-accumulated: 23 flags ON in the local ledger with a code default of OFF**
+(the 2026-07-22 audit cleared 19 of exactly this shape). `closed_loop` was one of them. The
+grid *cells* were never at risk — `flag_enabled` reads the run-scoped ContextVar before the
+ledger, and `applied()` reported no discrepancy for a cell requesting `False` against a ledger
+saying `True` (verified, not assumed). But the **ambient** configuration was: a graduation
+decides what a *fresh clone* does, so a delta measured with 22 unrelated local flags on is
+valid for one laptop. Cleared, snapshot kept. Post-clear baseline: **24 ON = 19 code defaults
++ 5 legitimately AUTO-elevated** (`capabilities.auto` is itself a default; don't read `auto` as
+drift).
+
+**Also worth knowing: L3 only became measurable when L5 landed.** `closed_loop` reads *trusted
+queries*, and that store held **zero** entries until L5 promoted 11. A grid run before that
+would have read an empty store — a guaranteed null, the same trap L2 hit measuring read-back
+on an unexplored connection.
+
+### The pilot (8 cases × 2 cells, 11.9 min)
+
+Counted at `httpx.Client.send`, one layer below the lowest thing we own:
+
+| | per case | 102-case grid, 1 rep | 2 reps |
+|---|---|---|---|
+| wall time | **44.5s** | 2.5 h | 5.0 h |
+| **openrouter requests** | **4.19** | **854** | **1,708** |
+| localhost (a LOCAL model — free, unmetered) | 10.62 | — | — |
+
+🔑 **Report the METERED host, not total HTTP.** Total traffic is 14.8/case; the constrained
+resource is 4.19/case. Conflating them overstates the budget by 3.5× and would have argued
+against a run that comfortably fits.
+
+### 🔑🔑 The "1 replicate halves it" advice above is WRONG at default temperature
+
+It halves the wall time and **destroys the evidence the gate requires.** With one run per cell
+there is no sampling floor, and since `7d78c4c` `evaluate_graduation` *refuses a baseline
+supplied without floor evidence*. A 2.5-hour single-replicate run at default temperature
+produces a delta the gate is built to reject — hours spent to learn nothing. The advice is
+sound only at temp 0, where replicates measure determinism rather than sampling, and where
+§"a temp-0 floor is not a noise floor" then applies.
+
+**The plan at the time: split the replicates across two days.** 2 replicates × 2 cells × 102
+cases needs ~1,708 requests against a 1,000/day cap. *(Superseded — replicate 2 was cancelled;
+see §"L3 CONCLUDED". The two-day split remains the right shape for any grid that IS worth
+running.)*
+
+```bash
+export AUGHOR_SECRET_KEY=$(grep ^AUGHOR_SECRET_KEY= .env | cut -d= -f2-)
+FLAG=<flag> SUITE=<suite> REPLICATE=1 AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1 \
+AUGHOR_LLM_RPM=16 AUGHOR_LLM_MAX_CONCURRENCY=2 \
+  .venv/bin/python -u scripts/flag_ab_grid.py       # refuses an inert flag; temp pinned to 0
+```
+
+Sizing any grid first — the reusable half of the pilot, so no future wave has to guess at its
+request cost:
+
+```bash
+FLAG=ada.evidence_stubs PILOT_CASES=8 AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1 \
+  .venv/bin/python -u scripts/grid_sizing_pilot.py
+```
+
+### Replicate 1 of 2 — RAN 2026-07-27/28, and it cannot be scored yet
+
+154.1 min · 868 openrouter requests · both cells took (no discrepancies) · freeze pin held ·
+no fixture-drift warnings · `data/` untouched.
+
+| cell | pass_rate | errors | flaky |
+|---|---|---|---|
+| `closed_loop_off` (`b8e7b6c07ca7`) | **0.7549** | 1 | 0 |
+| `closed_loop_on` (`6677cdde6ea2`) | **0.7353** | 0 | 0 |
+
+**Delta −0.0196** — two cases of 102, with the flag ON slightly *worse*.
+
+**The projection was accurate to +1.6%** (854 predicted → 868 actual; 44.5s → 45.3s per case).
+The pilot method transfers; use it for every future grid.
+
+### 🔑🔑 L3 CONCLUDED without replicate 2 — the experiment was varying almost nothing
+
+Rather than buy precision with a second day's budget, the cheaper question got asked first:
+**does the flag change the prompt at all?** Answered deterministically, no LLM spend:
+
+| | of 102 cases |
+|---|---|
+| prompt **byte-identical** between `closed_loop` off and on | **92 (90%)** |
+| prompt differs (the only cases that *can* respond to the flag) | **10** |
+| got a **trusted-query block** — injected in BOTH cells | 44 |
+
+**`closed_loop` is a no-op on 90% of the corpus.** The 2.5-hour grid spent ~90% of its budget
+running the same prompt twice.
+
+**Root cause, and it inverts what this document claimed.** `retrieve_trusted`
+(`semantic/trusted_queries.py:88`) has **no `closed_loop` gate**, and `grounding.trusted_templates`
+calls it *directly*, bypassing `retrieve_priors` — which is the only place the flag is checked.
+So L5's 11 promoted trusted queries went live **the moment they were promoted**, in both cells.
+The claim above that "L3 only became measurable when L5 landed" is backwards: L5's work was
+already live and unflagged, and `closed_loop` never controlled it. The flag gates only
+verdict-corrections and ambiguity resolutions — which match **10/102** questions.
+
+### The noise floor, obtained for free from the wasted 90%
+
+Those 92 identical-prompt cases are 92 pairs of *the same input run twice* — which is exactly a
+within-configuration reproducibility measurement, and it needs no replicate 2:
+
+- **12 of 92 disagreed → a floor of 0.1304**
+- split **7 off→on-fail / 5 off→on-pass** — a symmetric coin flip, not a directional effect
+- temperature was **not pinned** (default sampling), so this is genuine sampling nondeterminism
+- of the **10 flag-sensitive cases, ZERO changed**
+
+**Observed delta 0.0196 vs a measured floor of 0.1304 — 6.6× smaller.** `closed_loop` does not
+graduate, and no second replicate would have changed that.
+
+⏭️ **Do not run `REPLICATE=2`.** It would spend a day's allowance adding precision to a
+comparison in which 90% of cases cannot move.
+
+### What this means beyond L3
+
+- **13% run-to-run nondeterminism at default temperature** is a platform-level fact, not an L3
+  one. Any A/B on this corpus must clear ~0.13 to be attributable — which is why L2's 22-case
+  suite showed a 0.1818 spread, and why default-temperature A/B on 102 cases is close to
+  hopeless. **Pin temperature, or accept that only very large effects are visible.**
+- **Ask "does the flag change the prompt?" BEFORE buying a grid.** Deterministic, free, and it
+  would have saved 2.5 hours and 868 requests here. Now enforced rather than remembered:
+  **`scripts/flag_ab_grid.py` refuses to run** (exit 2) when a flag changes the prompt for
+  under 25% of the corpus. Verified on both known cases — `closed_loop` 10/102, refused;
+  `ada.evidence_stubs` 0/102, refused. Override with `ALLOW_INERT=1` only once you have
+  established by another route that the flag acts outside plan-time grounding.
+- **Temperature is now PINNED to 0 by default** in that script (`TEMPERATURE=` empty restores
+  provider sampling). Verified the pin reaches `current_run_temperature()` inside the cell,
+  lands on the recorded run config, and resets on exit. This buys back the 13% flip rate —
+  but read §"the noise floor" first: at temp 0 the band measures determinism, so the per-case
+  diff is the evidence, not the band.
+- The open question about trusted queries is **not** "should `closed_loop` be on" — they are
+  already on, unflagged, on 44/102 cases. It is whether they *help*, which needs a different
+  experiment that toggles trusted injection itself.
+
+### ⚠️ An unwatched confound — measured, and it did NOT occur
+
+The pilot log shows repeated upstream `429`s from the *secondary* enrichment model
+(`google/gemma-4-31b-it:free`) plus one Nvidia `Worker local total request limit reached
+(33/32)`. These are tolerated as best-effort — correct for an answer, **wrong to leave
+unmeasured in an experiment**: if enrichment degrades at different rates across cells, that is
+an uncontrolled variable sitting inside the delta. The grid script records `chat.post_answer`
+per run — counting does not fix it, it makes the run able to say so instead of averaging it
+away.
+
+✅ **Replicate 1 recorded `chat.post_answer` failures: 0.** The confound was real to worry
+about and did not materialise: the 429s that do appear in the log are the resilient layer
+retrying successfully and streaming falling back to `complete()`, neither of which drops
+enrichment. Worth re-reading on replicate 2 rather than assuming it stays at zero — but this
+axis is currently clean, and it is clean *as a measurement*, not as an assumption.
+
+## L6 — the reachable surface is one branch of one path, not "the deep path"
+
+The planned L6 was an A/B of `ada.evidence_stubs` over the 102-case suite. It would have
+measured **nothing**, and the reason is structural rather than statistical.
+
+**The call graph is a chain of exactly one caller each.** `ada.evidence_stubs` gates
+`_evidence_renderer` → reached only from `_format_full_evidence` → whose **single caller** is
+`synthesize_report`. And `synthesize_report` is bound in the agent graph as the `synthesize`
+node, reachable only along `plan_queries → execute_planned_queries → score_evidence → replan →
+synthesize`. The deep graph has **three** terminal syntheses and the flag touches one:
+
+| path | terminal synthesis | consults the flag |
+|---|---|---|
+| quick (`_stream_chat`) | — never enters the graph | ✗ |
+| ADA phase (`exploratory_scan`) | `ada_synthesize` | ✗ |
+| explore (`exploratory_scan_explore`) | `synthesize_exploration` | ✗ |
+| **hypothesis (`plan_queries`)** | **`synthesize_report`** | **✓ only here** |
+
+So "off by default, A/B it on the suite" was never going to work: the eval target runs
+`depth="quick"`, which routes to `_stream_chat`. The inertness guard confirms it — **0/102**.
+
+**Two deep runs confirmed it is not merely a depth problem** (19 openrouter requests total).
+`DEEP_ANALYSIS` is licensed, so no silent degrade to quick; both runs routed deep and the
+second completed with an `answer_report`. Frame sequence:
+
+```
+route · start · playbook_refs · mode · clarifying_questions ·
+phase_complete · phase_complete · tables_used · answer_report · followups · receipt_id · done
+```
+
+`phase_complete` frames and no renderer construction ⇒ the question took the **ADA phase**
+branch, whose synthesis never consults the flag. `_evidence_renderer` was built **0 times**;
+`render_history` called **0 times**; 0 results stubbed, 0 chars saved.
+
+*(The first run also stopped short — 11 frames, no headline — because `ask_target` never sets
+`skip_clarify`. Worth knowing beyond L6: an ambiguous question can return clarify chips instead
+of an answer, and the eval harness scores that as the answer.)*
+
+**What a valid L6 needs**, and why it is a different experiment from the one planned:
+
+1. Questions that route to **`plan_queries`**, not ADA-phase or explore. Only **5 of the 102**
+   corpus cases are even investigation-shaped, and shape does not guarantee that branch.
+2. `depth="deep"` — so a handful of cases, not 102. A deep run is minutes, not seconds.
+3. An evidence block ≥ **12,000 chars** and at least one hypothesis carrying a `key_finding`,
+   or the policy returns the plain renderer untouched.
+4. Two axes, because the flag's claim is two-sided and its own description says the second was
+   never measured: **tokens saved** (measure at the render seam, as the probe does — far more
+   precise than end-to-end token counts) **and answer quality unchanged**.
+
+### ✅ L6 CLOSED — the flag gates code no product surface can reach
+
+The prior question got answered, and it ends L6 rather than redesigning it. The reachability
+chain, verified link by link:
+
+1. `ask_router` pairs `mode="direct"` **exclusively with `depth="quick"`** — and quick routes
+   to `_stream_chat`, which never enters the graph.
+2. Every deep API surface passes `requested_mode ∈ {investigate, explore}`
+   (`_run_agentic_investigation`'s default, `_investigation_job_streamed`'s default, and
+   `/ask` forwarding `route.mode`), and `route_question` **binds** an explicit mode — the
+   classifier is bypassed, deliberately: a live incident once let the classifier downgrade
+   "Where are we losing money?" to a flat `direct` lookup, so deep pins the mode.
+3. Therefore `query_mode="direct"` — the only route to `plan_queries → synthesize_report` —
+   is unreachable from the API. The remaining callers are the **CLI** (`run_investigation`,
+   which omits `requested_mode` and runs the classifier) and checkpoint-resume paths that
+   replay whatever mode the run already had.
+
+A second probe on a lookup-shaped question ("What is the total gmv_eur by platform?", the
+shape the classifier would call `direct`) confirmed it: routed deep, mode bound to
+investigate, `phase_complete` frames, renderer built 0 times.
+
+**Verdict: the Wave-R measurement debt is VOID, not unpaid.** `ada.evidence_stubs` gates the
+evidence renderer of a synthesis node only the CLI can reach. There is nothing to A/B on the
+product surface, and a default flip would be a no-op shipped as a feature — the exact
+"shipped-but-dead" class the flag audit hunts. The flag stays off; its description's own
+caution ("should not graduate until Wave E4 can A/B it") is permanently satisfiable only for
+the CLI, which is not worth a grid.
+
+⏭️ The idea itself — stub already-scored evidence at synthesis — may still have value on the
+path investigations actually take (`ada_synthesize`). That is a *new feature* on a
+quality-sensitive prompt, not a flag graduation: it needs its own wave, its own A/B design,
+and a deep-run corpus. Recorded here so it is a decision rather than a loose end.
+
+## L7 — V3b: canvas, dashboard and eval-suite artifacts on the V lifecycle
+
+The deliberate V3 deferral, landed. `savedquery` was the wired proof; these are the same
+shape — the store row stays the live record, reads untouched, and a **destructive** write
+additionally records a versioned draft (`save_draft`, flag `lifecycle.publish`, best-effort
+with a `tolerate` + counter). Three wirings:
+
+| artifact | hook | what was being destroyed |
+|---|---|---|
+| `canvas` | `update_canvas` | a scope edit silently redefines what every investigation on that canvas can see |
+| `dashboard` | `upsert_card` (update only — the create is the live row) | `ON CONFLICT DO UPDATE` overwrote SQL, thresholds and render spec on the artifact a cockpit shows daily |
+| `evalsuite` | `add_cases` / `delete_case` | the corpus IS the artifact; runs cite deleted case_ids and their pass rates were computed over them |
+
+The eval one is the L5 lesson made structural: a session was spent discovering the corpus had
+been silently shaped by an inherited limit. With corpus revisions, "what did the suite contain
+when that run scored 0.75?" is a lookup. Recording happens AFTER each mutation, so the
+pre-delete corpus is always the previous revision.
+
+**Proven live** (isolated stores, `lifecycle.publish=1`): canvas re-scope → v1/v2 with the
+scope on each; card edit → v1 carrying the new SQL and thresholds, no revision for the
+create; suite add-3/delete-1 → v1 holds the pre-delete corpus including the deleted question,
+and `diff_versions` names the change `deleted cases[1]` with the index shuffle folded as a
+move. Flag off ⇒ byte-identical, empty history (tested per store).
+
+Tests: `tests/unit/test_lifecycle_v3b_wiring.py` (6). Not wired: `delete_canvas` /
+`delete_suite` — deleting the artifact is out of V3b's shape (supersede-not-delete is V4/V5
+territory), and `savedquery` set the precedent by not hooking its delete either.
+
 ---
 
 ## ⏭️ Resume here (updated 2026-07-27)
@@ -599,17 +865,30 @@ L5 ◐ (corpus + trusted queries; C6 pack export open). Open: **L3 · L6 · L7**
 
 L4 shipped on branch `2026-07-27-wave-l4-automations-equivalence`.
 
-1. **L3 / L6 on the 102-case suite.** Now genuinely resolvable — a 3-case shuffle reads
-   as noise, a 15-case shift as signal.
-   ⚠️ **Budget it first:** a 2×2×2 grid over 102 cases is **~6–7 hours** at 16 RPM.
-   Since temp-0 runs proved perfectly deterministic, **1 replicate per cell** halves
-   that and loses only a reproducibility check — a deliberate trade, worth confirming
-   before launching.
-   ⚠️ **And settle the rate-limit root cause first** — `_pace()` is in, but 72
-   `free-models-per-min` refusals persisted at RPM=16 while the gate was correct in
-   isolation, so some `/ask` requests bypass it. Measure `llm.paced.<base_url>` against the
-   request count *before* committing 3–7 hours to a grid.
-2. **Then Wave G**, per the program.
+1. ✅ **L3 CONCLUDED — `closed_loop` does not graduate, no replicate 2 needed.** Delta 0.0196
+   against a measured floor of 0.1304, and the flag is a no-op on 90% of the corpus. See
+   §"L3 CONCLUDED". **The flag stays OFF.**
+   ⏭️ The follow-on worth doing is the *wiring* question it exposed: trusted queries are
+   injected **unflagged** on 44/102 cases, so nothing currently measures whether they help.
+   An honest test toggles trusted injection itself, not `closed_loop`.
+2. ✅ **L6 CLOSED** — see §"L6 CLOSED": the flag gates code no product surface can reach,
+   so the measurement debt is void. Note it already
+   carries a graduation receipt (`0040a4be16c2`, 2026-07-24, `pass_rate=1.0` on suite
+   `c8747b291c87`) minted **before** the floor gate existed — so it graduated with no floor
+   evidence, which is the very bug L2 found. L6 is redoing it honestly, and the old receipt
+   should be treated as void rather than as a baseline.
+3. **Then Wave G**, per the program.
+4. **L2's open question has a successor.** The Neo4j context-graph study
+   ([`NEO4J_CONTEXT_GRAPH_STUDY_2026-07-28.md`](NEO4J_CONTEXT_GRAPH_STUDY_2026-07-28.md))
+   reframes it: read-back injected *conclusions*; the plausibly valuable memory is
+   *approaches* (reasoning-trace retrieval). Scoped there as **Wave N** (N1 trace read-back =
+   the L2 redesign · N2 graph visualization · N3 finding consolidation/expiry) — and N1's
+   verdict decides whether `graph.readback`'s injection path is kept or deleted.
+
+⚠️ **Budget reality, measured:** 4.19 openrouter requests and 44.5s per case. One replicate of
+one flag ≈ 854 requests against a **1,000/day** free cap. So **one flag-replicate per day** is
+the actual throughput — L3 and L6 together are four days of grid. Plan waves around that
+number rather than around wall-clock hours.
 
 ### The run playbook (copy-pasteable, for a cold session)
 

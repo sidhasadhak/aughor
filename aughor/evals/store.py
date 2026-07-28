@@ -224,6 +224,7 @@ def add_case(suite_id: str, *, question: str = "", artifact: str = "",
         c.commit()
     finally:
         c.close()
+    _record_revision(suite_id)
     return {"id": case_id, "suite_id": suite_id, "question": question,
             "artifact": artifact, "expected": expected or {},
             "tags": tags or [], "created_at": now}
@@ -242,9 +243,11 @@ def add_cases(suite_id: str, cases: list[dict]) -> int:
               json.dumps(cs.get("expected") or {}, default=str),
               json.dumps(cs.get("tags") or [], default=str), now) for cs in cases])
         c.commit()
-        return len(cases)
     finally:
         c.close()
+    if cases:
+        _record_revision(suite_id)
+    return len(cases)
 
 
 def list_cases(suite_id: str, limit: int = 1000) -> list[dict]:
@@ -268,12 +271,51 @@ def list_cases(suite_id: str, limit: int = 1000) -> list[dict]:
 def delete_case(case_id: str) -> bool:
     c = _connect()
     try:
+        row = c.execute("SELECT suite_id FROM eval_cases WHERE id=? AND org_id=?",
+                        (case_id, current_org_id())).fetchone()
         cur = c.execute("DELETE FROM eval_cases WHERE id=? AND org_id=?",
                         (case_id, current_org_id()))
         c.commit()
-        return cur.rowcount > 0
     finally:
         c.close()
+    if cur.rowcount > 0 and row is not None:
+        _record_revision(row["suite_id"])
+    return cur.rowcount > 0
+
+
+def _record_revision(suite_id: str) -> None:
+    """Wave V3b: keep a version history of a suite's CORPUS across mutations.
+
+    A suite's meaning is its case list, and the list is edited destructively — a deleted
+    case is gone, while the suite's run history still cites its case_id and its pass rates
+    were computed over it. L5 spent a session discovering the corpus had been silently
+    shaped by an inherited limit; with this, "what did the suite contain when that run
+    scored 0.75?" is a lookup instead of an archaeology. Recorded AFTER each corpus
+    mutation (add_cases / delete_case), so the pre-delete corpus is always the previous
+    revision. No-op when ``lifecycle.publish`` is off.
+    """
+    from aughor.kernel.errors import tolerate
+    from aughor.kernel.lifecycle import lifecycle_enabled, save_draft
+
+    if not lifecycle_enabled():
+        return
+    try:
+        suite = get_suite(suite_id)
+        if suite is None:
+            return
+        cases = list_cases(suite_id, limit=5000)
+        save_draft("evalsuite", f"evalsuite:{suite_id}",
+                   {"name": suite.get("name", ""),
+                    "case_count": len(cases),
+                    "cases": [{"id": cs["id"], "question": cs.get("question", ""),
+                               "artifact": cs.get("artifact", ""),
+                               "expected": cs.get("expected") or {},
+                               "tags": cs.get("tags") or []} for cs in cases]},
+                   conn_id=suite.get("connection_id") or None)
+    except Exception as exc:
+        tolerate(exc, "recording an eval-suite corpus revision is best-effort; the corpus "
+                      "itself is already saved, only its history entry is lost",
+                 counter="evals.suite.revision")
 
 
 # ── runs ──────────────────────────────────────────────────────────────────────

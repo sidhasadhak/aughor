@@ -156,7 +156,37 @@ def upsert_card(card: DashboardCard) -> DashboardCard:
         ),
     )
     c.commit()
+    if existing:
+        _record_revision(card)
     return card
+
+
+def _record_revision(card: Optional[DashboardCard]) -> None:
+    """Wave V3b: keep a version history for an otherwise destructive upsert.
+
+    ``ON CONFLICT ... DO UPDATE`` overwrites the only copy — before this an edited card's
+    prior SQL, thresholds and render spec were simply gone, on the artifact whose numbers a
+    cockpit shows every day. Recorded only on a real update (the savedquery precedent: the
+    UPDATE is what creates the first revision — the create is still readable as the live
+    row). No-op when ``lifecycle.publish`` is off.
+    """
+    if card is None:
+        return
+    from aughor.kernel.errors import tolerate
+    from aughor.kernel.lifecycle import lifecycle_enabled, save_draft
+
+    if not lifecycle_enabled():
+        return
+    try:
+        save_draft("dashboard", f"dashboard:{card.id}",
+                   {"title": card.title, "kind": card.kind, "sql": card.sql,
+                    "body": card.body, "render": card.render or {},
+                    "thresholds": card.thresholds or {}, "links": card.links or []},
+                   conn_id=card.connection_id or None)
+    except Exception as exc:
+        tolerate(exc, "recording a dashboard-card revision is best-effort; the card itself "
+                      "is already saved, only its history entry is lost",
+                 counter="dashboard.revision")
 
 
 def get_card(card_id: str) -> Optional[DashboardCard]:
