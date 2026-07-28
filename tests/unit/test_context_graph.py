@@ -355,7 +355,7 @@ def test_answer_receipts_become_findings_with_evidence_ledger_provenance(monkeyp
 def test_receipt_truncation_is_counted_never_silent(monkeypatch):
     """A bounded projection must say how much it dropped (the no-silent-caps rule)."""
     from aughor.ontology import context_graph_build as build_mod
-    monkeypatch.setattr(build_mod, "_MAX_RECEIPT_FINDINGS", 2)
+    monkeypatch.setattr(build_mod, "MAX_RECEIPT_FINDINGS", 2)
     over = [{"id": f"a{i}", "kind": "ada_report", "created_at": "2026-07-26",
              "payload": {"headline": f"finding {i}", "tables": []}} for i in range(5)]
 

@@ -29,11 +29,17 @@ authority on completed waves and J1–J8; this §0 stays the session-level statu
 > and report before the next.** Commit locally and stop. This is the load-bearing rule for this repo;
 > batching multiple pushes on one "push everything" instruction caused friction on 2026-07-24.
 
-**`main` is at `9584931`. Waves A, R, E, C, and V are ALL complete.** The 2026-07-25 session
-built A5/A6 + E5/E6 + the E4 loose ends and landed six PRs (#208, #211–#215), then Wave C's
-scoping doc + C1–C5 (#217). The 2026-07-26 session landed the install-doc audit (#218), then
-**C6 + Wave V (V1–V6) together as #219** (the stacking lesson: PR the base arc before the
-stacked arc). **The next build is Wave L** per the v2 program above.
+**`main` is at `4195eef`. Waves A, R, E, C, V and L are ALL complete; Wave N is complete
+locally.** The 2026-07-25 session built A5/A6 + E5/E6 + the E4 loose ends and landed six PRs
+(#208, #211–#215), then Wave C's scoping doc + C1–C5 (#217). The 2026-07-26 session landed the
+install-doc audit (#218), then **C6 + Wave V (V1–V6) together as #219** (the stacking lesson:
+PR the base arc before the stacked arc). The 2026-07-27 session closed Wave L (#221/#224/#225),
+and 2026-07-28 landed **Wave N1+N2 (#226)** plus the two memory studies. **The next build is
+Wave G** per the v2 program above.
+
+> ⚠️ **This §0 had drifted by three merges** (it claimed `main = 9584931` and "next is Wave L"
+> while L, N1 and N2 were merged). Reconciled 2026-07-28 against `git log`, not against prose —
+> the standing rule for this file, which the drift proves is worth repeating.
 
 | Wave | What | State |
 |---|---|---|
@@ -51,23 +57,28 @@ stacked arc). **The next build is Wave L** per the v2 program above.
 | **docs audit** | install-doc drift (the port warning was inverted; 2 backends undocumented) | ✅ **merged (#218, `f25432f`)** |
 | **C6** | distribution — the committed artifact + the offline skills pack (`graph.export`) | ✅ **merged (#219, `9584931`)** |
 | **V (V1–V6)** | artifact lifecycle — freshness kernel · resolved rebuild · save≠publish · freeze · purge ratchet · serving surface | ✅ **merged (#219, `9584931`)** — V3b/V6b deferred (→ L7/S5) |
+| **L (L1–L7)** | activation — graph on the live path · a harness that refuses to lie · `automations.engine` graduated on MEASURED equivalence · L3 measured and REFUSED · L6 voided by reachability | ✅ **merged (#221, #224, #225)** |
+| **N1** | answer divergence — the same question answered two ways (`consistency.divergence`); €1.84M spread on one revenue question, and the platform never picks the winner | ✅ **merged (#226, `4195eef`)** |
+| **N2** | the panel already existed (a bad grep claimed otherwise) → built `content_drift` + `GET /graph/drift` instead, rebuilt the graphs (findings 0→100), and gave the Graph tab a `d3-force` Map view | ✅ **merged (#226, `4195eef`)** |
+| **N3** | finding consolidation + reachability ageing (`graph.consolidate`), graduated on a deterministic artifact claim and the graphs rebuilt | ⏳ **this PR** |
+| **G1–G2** | governance — `govern.guard` reaching every action it was declared for · governed tags + clearances as a third authorization axis | 🔨 **local**, stacked on this branch as `2026-07-28-wave-g-governance` |
 
-**⏭️ NEXT: finish Wave L — L4, then L3/L6.** L1, L2 and L5 are merged (#221, `cc9702e`);
-the arc doc's **"Resume here"** block is the authority:
-[`docs/WAVE_L_ACTIVATION_ARC.md`](docs/WAVE_L_ACTIVATION_ARC.md).
+**⏭️ NEXT: Wave G — start with G1.** Wave L is closed and Wave N is complete locally.
+The plan of record's §3 is the scope; nothing about it has changed, and it is enriched by
+the studies (budget algebra, permission-trimmed retrieval, sealed programs).
 
-- **L4 (`automations.*`) needs NO grid** — A5 already ships equivalence receipts (same
-  alert severity/message/debounce), a deterministic pass/fail with no noise floor. The
-  cheapest remaining graduation.
-- **L3 (`closed_loop`) / L6 (`ada.evidence_stubs`)** now run against the 102-case suite
-  `9c1e13e458ff`. ⚠️ Budget first: a 2×2×2 grid over 102 cases is **~6–7 h** at 16 RPM;
-  one replicate per cell halves it and costs only a reproducibility check, since temp-0
-  runs proved perfectly deterministic.
-- **`graph.readback` is measured and stays OFF** — +0.023 against a 0.182 sampling
-  floor, then a 3-case shuffle and +44% wall time at temp 0. Evidence, not absence of it.
-- Wave G follows L, unchanged in scope but enriched (budget algebra, permission-trimmed
-  retrieval, sealed programs — see program §3). V3b and V6b stay deferred: V3b is L7
-  (optional) or S5; V6b lands in S5.
+- **G1 is the cheapest start and costs zero model quota** — `govern.guard` reaches only ~4
+  call sites today (`connection.delete`, `ontology.override` ×2, `ontology.delete_override`)
+  while `_RISK` in [`aughor/govern/actions.py`](aughor/govern/actions.py) declares **11**
+  actions. The rest are declared and unenforced. Deterministic to build and to test.
+- **Wave N carried two lessons worth reusing in G:** measure whether the thing you are about
+  to build is a no-op *before* building it (N3's pre-check moved its design), and read the
+  detector's OUTPUT rather than its count (comparing headline prose called 45 of 100 findings
+  contested; comparing the numbers they assert called 9, and the 9 were real).
+- **Two flags are measured and stay OFF, which is evidence rather than absence of it:**
+  `graph.readback` (+0.023 against a 0.182 sampling floor, a 3-case shuffle, +44% wall time
+  at temp 0) and `closed_loop` (L3, a no-op on ~90% of the corpus).
+- V3b and V6b stay deferred: V3b is L7 (optional) or S5; V6b lands in S5.
 
 ⚠️ **Any measured grid needs:** `AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1
 AUGHOR_LLM_RPM=16 AUGHOR_LLM_MAX_CONCURRENCY=2` + `freeze=True`.

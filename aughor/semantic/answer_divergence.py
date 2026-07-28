@@ -49,9 +49,18 @@ MIN_RUNS = 2
 IMPACT_ROW_CAP = 500
 
 
-def _question_key(question: str) -> str:
-    """Questions match on lowercased alphanumerics — punctuation and casing are not intent."""
+def question_key(question: str) -> str:
+    """Questions match on lowercased alphanumerics — punctuation and casing are not intent.
+
+    Public because N3's finding consolidation groups by the SAME notion of "the same
+    question" this module detects divergence over. Two hand-kept copies of that rule is how
+    one surface calls two receipts the same question and the other does not.
+    """
     return re.sub(r"[^a-z0-9 ]", "", (question or "").lower()).strip()
+
+
+#: Back-compat alias for the pre-N3 private name.
+_question_key = question_key
 
 
 def semantic_key(sql: str) -> str:

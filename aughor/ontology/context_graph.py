@@ -505,6 +505,28 @@ def add_findings(cg: ContextGraph, findings: list) -> list[str]:
     return _project_findings(cg, findings)
 
 
+def finding_node_data(f: dict) -> dict:
+    """The finding node's payload — plus whatever N3 consolidation attached.
+
+    The consolidation keys are emitted ONLY when present, so a graph built with
+    ``graph.consolidate`` off serializes byte-identically to before N3. ``contested``
+    carries the alternative conclusions with it: a node that survived a disagreement has
+    to say so, or the artifact has resolved by timestamp what only a human may settle.
+    """
+    data = {"sql": f.get("sql", ""), "tables": list(f.get("tables") or []),
+            "generated_at": f.get("generated_at", "")}
+    if f.get("supersedes"):
+        data["supersedes"] = int(f["supersedes"])
+        data["superseded_ids"] = list(f.get("superseded_ids") or [])
+    if f.get("contested"):
+        data["contested"] = True
+        data["contested_variants"] = list(f.get("contested_variants") or [])
+    if f.get("stale"):
+        data["stale"] = True
+        data["stale_reason"] = str(f.get("stale_reason") or "")
+    return data
+
+
 def _project_findings(cg: ContextGraph, findings: list) -> list[str]:
     """`finding` nodes (the write-only half of the open loop, finally a node) +
     `grounded_in` edges finding → the table nodes its SQL reads. ``findings`` are
@@ -531,8 +553,7 @@ def _project_findings(cg: ContextGraph, findings: list) -> list[str]:
                         "dossier", "exploration", "evidence_ledger") else "exploration",
                     note=f"finding from {source}",
                 ),
-                data={"sql": f.get("sql", ""), "tables": list(f.get("tables") or []),
-                      "generated_at": f.get("generated_at", "")},
+                data=finding_node_data(f),
             )
             cg.add_node(node)
             emitted.append(node.id)

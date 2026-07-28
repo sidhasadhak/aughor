@@ -98,7 +98,7 @@
       "to_id": "table:Review"
     }
   },
-  "generated_at": "2026-07-28T12:06:09.123390+00:00",
+  "generated_at": "2026-07-28T18:20:39.943725+00:00",
   "nodes": {
     "domain:catalog": {
       "data": {
@@ -195,7 +195,7 @@
         "caveats": "",
         "column": "city",
         "table": "customers",
-        "values": "London, Paris, Berlin, Tokyo, Sao Paulo, Sydney, New York, Toronto, Mumbai, Lagos"
+        "values": ""
       },
       "id": "glossary_term:customers.city",
       "kind": "glossary_term",
@@ -213,7 +213,7 @@
         "caveats": "",
         "column": "country",
         "table": "customers",
-        "values": "BR, GB, JP, US, AU, CA, DE, FR, NG, IN"
+        "values": "AU, KR, GB, FR, IT, AE, US, SG, CA"
       },
       "id": "glossary_term:customers.country",
       "kind": "glossary_term",
@@ -223,7 +223,7 @@
         "note": "defined on customers",
         "source": "glossary"
       },
-      "summary": "Country where the customer resides, represented as ISO 3166-1 alpha-2 code",
+      "summary": "Country code (ISO 2-letter) where the customer resides",
       "tags": []
     },
     "glossary_term:customers.customer_id": {
@@ -259,7 +259,7 @@
         "note": "defined on customers",
         "source": "glossary"
       },
-      "summary": "Customer's email address used for account and order communications",
+      "summary": "Customer's email address used for account and communication",
       "tags": []
     },
     "glossary_term:customers.full_name": {
@@ -655,7 +655,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Unique identifier for each order item",
+      "summary": "Unique identifier for this specific line item",
       "tags": []
     },
     "glossary_term:order_items.line_total": {
@@ -709,7 +709,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Sequential index of this item within its order (e.g., 1 for first item, 2 for second, etc.)",
+      "summary": "Unique identifier for each order item",
       "tags": []
     },
     "glossary_term:order_items.order_ts": {
@@ -781,7 +781,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Identifier for the product being purchased",
+      "summary": "Identifier for the product (may map to multiple SKUs)",
       "tags": []
     },
     "glossary_term:order_items.quantity": {
@@ -799,7 +799,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Number of units of the product ordered",
+      "summary": "Number of units purchased in this order item",
       "tags": []
     },
     "glossary_term:order_items.returned": {
@@ -907,7 +907,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Price per unit of the product at the time of order",
+      "summary": "Price per unit of the product at the time of purchase",
       "tags": []
     },
     "glossary_term:order_items.unit_price_eur": {
@@ -1455,7 +1455,7 @@
         "caveats": "",
         "column": "payment_method",
         "table": "orders",
-        "values": "Google Pay, PayPal, Apple Pay, Klarna, Credit Card"
+        "values": "crypto, apple_pay, bank_transfer, paypal, card"
       },
       "id": "glossary_term:orders.payment_method",
       "kind": "glossary_term",
@@ -1465,7 +1465,7 @@
         "note": "defined on orders",
         "source": "glossary"
       },
-      "summary": "Method used to process the payment",
+      "summary": "Method used to pay for the order",
       "tags": []
     },
     "glossary_term:orders.shipped_at": {
@@ -1501,7 +1501,7 @@
         "note": "defined on orders",
         "source": "glossary"
       },
-      "summary": "Current fulfillment status of the order",
+      "summary": "Current status of the order",
       "tags": []
     },
     "glossary_term:orders.subtotal": {
@@ -1537,7 +1537,7 @@
         "note": "defined on orders",
         "source": "glossary"
       },
-      "summary": "Final amount paid by the customer after discounts",
+      "summary": "Total monetary value of the order in the local currency",
       "tags": []
     },
     "glossary_term:orders.traffic_source": {
@@ -1563,7 +1563,7 @@
         "caveats": "",
         "column": "brand",
         "table": "products",
-        "values": ""
+        "values": "Noir, Velvet, Botanica, Hydra, Pure Glow, \u00c9clat, AuraBeaut\u00e9, Lumi\u00e8re"
       },
       "id": "glossary_term:products.brand",
       "kind": "glossary_term",
@@ -1573,7 +1573,7 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Brand name of the product.",
+      "summary": "Brand name under which the product is sold",
       "tags": []
     },
     "glossary_term:products.brand_tier": {
@@ -1599,7 +1599,7 @@
         "caveats": "",
         "column": "category",
         "table": "products",
-        "values": "womenswear, menswear, shoes, bags, accessories, outerwear, jewelry_watches, beauty, kidswear, life"
+        "values": "Makeup, Fragrance, Tools, Skincare, Haircare"
       },
       "id": "glossary_term:products.category",
       "kind": "glossary_term",
@@ -1609,7 +1609,7 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Product category (e.g., womenswear, shoes, bags).",
+      "summary": "Product category",
       "tags": []
     },
     "glossary_term:products.cost_eur": {
@@ -1735,7 +1735,7 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Current price of the product in USD",
+      "summary": "Retail price of the product",
       "tags": []
     },
     "glossary_term:products.product_category_name": {
@@ -1807,7 +1807,7 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Unique identifier for each product.",
+      "summary": "Unique identifier for each product",
       "tags": []
     },
     "glossary_term:products.product_length_cm": {
@@ -1833,7 +1833,7 @@
         "caveats": "",
         "column": "product_name",
         "table": "products",
-        "values": ""
+        "values": "Eau de Parfum Limited, Serum Limited, Shampoo Sensitive, Serum Sensitive, Shampoo Limited, Serum Classic, Brush Set Sensitive, Shampoo Pro, Serum Pro, Shampoo Classic, Brush Set Pro, Eau de Parfum Classic, Brush Set Classic, Foundation Limited, Eau de Parfum Sensitive, Foundation Sensitive, Brush Set Limited, Eau de Parfum Pro, Foundation Classic, Foundation Pro"
       },
       "id": "glossary_term:products.product_name",
       "kind": "glossary_term",
@@ -1843,7 +1843,7 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Human-readable name of the product",
+      "summary": "Name of the product",
       "tags": []
     },
     "glossary_term:products.product_name_lenght": {
@@ -1969,7 +1969,7 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Number of units currently in stock",
+      "summary": "Current inventory count of the product",
       "tags": []
     },
     "glossary_term:products.unit_cost": {
@@ -2041,7 +2041,7 @@
         "note": "defined on reviews",
         "source": "glossary"
       },
-      "summary": "Identifier of the order the review is associated with.",
+      "summary": "Reference to the order associated with the review",
       "tags": []
     },
     "glossary_term:reviews.product_id": {
@@ -2384,5 +2384,5 @@
     "Product": "5a30cbc238d3d5a7",
     "Review": "3915905ee7645800"
   },
-  "version": 5
+  "version": 6
 }
