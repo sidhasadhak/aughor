@@ -59,6 +59,7 @@ FLAG_ENV = {
     "ask.conversation_context": "AUGHOR_ASK_CONVERSATION_CONTEXT",
     "ask.brief_context": "AUGHOR_ASK_BRIEF_CONTEXT",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
+    "consistency.divergence": "AUGHOR_CONSISTENCY_DIVERGENCE",  # Wave N1: same question, two answers
     "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
     "join.key_reconciliation": "AUGHOR_JOIN_KEY_RECONCILIATION",
     "semops.champion_validate": "AUGHOR_SEMOPS_CHAMPION_VALIDATE",
@@ -510,6 +511,10 @@ FLAG_META = {
     "closed_loop": {
         "label": "Closed-loop corrections",
         "description": "Read captured human corrections/verdicts and trusted queries back into the planner as priors, so a corrected mistake isn't repeated. Off by default until its delta is proven on your data.",
+    },
+    "consistency.divergence": {
+        "label": "Answer-consistency review (same question, two answers)",
+        "description": "Surface recurring questions this connection has answered more than one way, so a human can settle which query is correct — and then the existing verified-pattern machinery reuses it. Detection is deterministic and read-only over answer receipts the platform already stores: no LLM, no writes, and cosmetic differences (schema qualification, alias renames, ROUND) are normalised away so only a real difference in what the query COMPUTES is reported. Ranked by whether a variant RECURS, which separates a routine metric with an established answer and a challenger — a decision worth taking — from an open question being explored from new angles, where variety is the point. An optional second stage EXECUTES the variants read-only and reports whether the answers actually differ and by how much; on the reference connection that narrowed 34 textually-contested questions to 12 genuinely divergent ones, the largest pair differing by 1.84M on a revenue question because one variant counted cancelled and test orders and the other did not. The platform never picks the winner: whether a cancelled order is revenue is a business fact, and promoting the most-used variant would launder popularity into correctness — a person pins the answer and it is tagged as human-reviewed, a stronger warrant than the consistency one an eval-promoted entry carries. Off by default ⇒ the routes 404 and nothing is read (byte-identical).",
     },
     "semops.guarded_extract": {
         "label": "Guarded extraction (validate + re-extract)",

@@ -334,7 +334,7 @@ def test_answer_receipts_become_findings_with_evidence_ledger_provenance(monkeyp
 
     class _FakeLedger:
         def artifacts_of_kind(self, kinds, *, conn_id=None, org_id=None, limit=200):
-            assert set(kinds) == set(build_mod._RECEIPT_KINDS)
+            assert set(kinds) == set(build_mod.RECEIPT_KINDS)
             return [
                 {"id": "a1", "kind": "ada_report", "created_at": "2026-07-26",
                  "payload": {"headline": "GMV fell in EU", "sql": "SELECT 1",

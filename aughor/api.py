@@ -626,10 +626,12 @@ from aughor.routers import (
     agui,
     dashboard,
     evals,
+    consistency,
     kinetic,
     automations,
 )
 
+app.include_router(consistency.router)
 app.include_router(system.router)
 app.include_router(investigations.router)
 app.include_router(canvas.router)

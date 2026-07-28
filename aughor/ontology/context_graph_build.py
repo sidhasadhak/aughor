@@ -63,7 +63,11 @@ def load_findings(connection_id: str) -> list[dict]:
 #: Answer-receipt kinds `_write_answer_receipt` lands (investigations.py). An ADA run
 #: and a chat answer are both "Aughor looked and found something" — the graph treats
 #: them as one finding kind and keeps the receipt kind in the node's data.
-_RECEIPT_KINDS = ("ada_report", "chat_answer")
+#:
+#: Public because a second reader arrived (`semantic.answer_divergence`): two hand-kept
+#: copies of this tuple is exactly how a new receipt kind gets read by one consumer and
+#: not the other — the same drift shape the L1 glossary bug cost a session to find.
+RECEIPT_KINDS = ("ada_report", "chat_answer")
 
 #: How many answer receipts become finding nodes, newest first. The graph is a
 #: committed, diff-readable artifact, so this is bounded on purpose — but the bound is
@@ -112,7 +116,7 @@ def load_investigation_findings(
     # Ask for one past the cap so truncation is DETECTED rather than assumed from a
     # full page (a page that happens to be exactly full is not evidence of more).
     arts = Ledger.default().artifacts_of_kind(
-        list(_RECEIPT_KINDS), conn_id=connection_id, org_id=org_id, limit=cap + 1)
+        list(RECEIPT_KINDS), conn_id=connection_id, org_id=org_id, limit=cap + 1)
     if len(arts) > cap:
         dropped = len(arts) - cap
         arts = arts[:cap]
