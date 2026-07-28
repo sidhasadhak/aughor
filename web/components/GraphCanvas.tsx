@@ -130,7 +130,11 @@ function seedLayout(all: CGNode[], edges: CGEdge[]): Map<string, { x: number; y:
   const tableByBare = new Map(tables.map((t) => [bare(t.label), t.id]));
   const fanned = new Map<string, number>();
   const fan = (anchorId: string | undefined, ring: number, fallbackIdx: number) => {
-    const a0 = (anchorId && angleOfTable.get(anchorId)) ?? (TWO_PI * fallbackIdx) / 40;
+    // Explicit undefined check, not `anchorId && …`: an empty-string anchor makes that
+    // expression evaluate to "" (falsy but not nullish), so `??` never fires and the angle
+    // becomes a STRING — every downstream `a0 + …` would silently concatenate.
+    const anchorAngle = anchorId ? angleOfTable.get(anchorId) : undefined;
+    const a0 = anchorAngle ?? (TWO_PI * fallbackIdx) / 40;
     const k = `${anchorId ?? "?"}:${ring}`;
     const n = fanned.get(k) ?? 0;
     fanned.set(k, n + 1);
