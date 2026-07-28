@@ -634,6 +634,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/audit/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Audit Feed
+         * @description Governance events across every audit sink, newest first.
+         *
+         *     Five sinks record governance-relevant events and none knows about the others; this
+         *     reads them under one category vocabulary. An unknown category is a 400 rather than an
+         *     empty list — "no events" and "that category does not exist" are different answers.
+         */
+        get: operations["get_audit_feed_audit_feed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations": {
         parameters: {
             query?: never;
@@ -6429,6 +6453,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usage
+         * @description Model usage and cost, grouped by the requested axes.
+         *
+         *     The response carries ``unattributed`` and ``coverage`` per axis alongside the rows.
+         *     That is not padding: ``user_id`` is 0% populated in local mode, and a page that folded
+         *     those into one blank-named group would present it as a real cohort. Cost likewise
+         *     reports ``cost_is_complete`` — a model with no declared price contributes nothing to
+         *     the total rather than being counted as free.
+         */
+        get: operations["get_usage_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/usage/cost-sql": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Cost Sql
+         * @description The copy-pasteable cost query against our own session log.
+         *
+         *     Served rather than only documented so it stays the same string the module computes
+         *     from — `aughor_ops` reads that table directly, and an agent writing its own SQL needs
+         *     column names that are real today, not as of whenever a doc was last edited.
+         */
+        get: operations["get_cost_sql_usage_cost_sql_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/verify/verdict": {
         parameters: {
             query?: never;
@@ -10429,6 +10503,39 @@ export interface operations {
                 connection: string;
                 /** @description the question to ground */
                 question: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_audit_feed_audit_feed_get: {
+        parameters: {
+            query?: {
+                /** @description data_access | governance_change | action_decision | model_call */
+                category?: string | null;
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -21543,6 +21650,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_usage_usage_get: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated axes: provider, model, feature, org_id, user_id, conn_id */
+                by?: string;
+                scan?: number;
+                org_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_cost_sql_usage_cost_sql_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
