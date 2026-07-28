@@ -20,7 +20,7 @@ nothing (no rebuild, no re-embed); PARTIAL/FULL rebuild the deterministic projec
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 # Wave V1: the vocabulary and the decision now live in the kernel so briefs, profiles and
@@ -189,3 +189,101 @@ def staleness_of(connection_id: str, schema_name: Optional[str] = None, *, org_i
         return classify(prev, load_latest_ontology(connection_id, schema_name)).staleness
     except Exception:
         return "unknown"
+
+
+# ── Wave N2 — content drift: fresh by schema, empty of what was learned ──────────
+
+@dataclass
+class ContentDrift:
+    """What the committed graph is MISSING relative to the sources it is built from.
+
+    A separate axis from :data:`StalenessState` on purpose. `classify` answers "does the
+    schema/data still match", and it is right to keep answering only that — but on the
+    reference connection it reported **fresh** for a graph holding 0 findings and 3 glossary
+    terms while its sources held 100 and 255. Nothing had lied: no column had changed, so
+    "fresh" was true in the only sense the classifier claims. A user reading a **Fresh** badge
+    does not hear "the schema still matches"; they hear "this is up to date", and the graph
+    they were looking at contained none of what Aughor had learned from 793 answers.
+
+    The cause is structural rather than a bug: the live path writes INCREMENTALLY (L1's
+    `note_finding`), so fixes to the projection — and every source that grew since the last
+    full build — only land on a rebuild. Nothing was watching for that.
+
+    Counts come from a real `persist=False` projection rather than a re-implementation of the
+    projector's rules. Duplicating "how many glossary terms should this produce" is precisely
+    how the two copies drift apart, and a drift detector that itself drifts is worse than none.
+    """
+
+    committed: dict = field(default_factory=dict)
+    available: dict = field(default_factory=dict)
+    reason: str = ""
+
+    @property
+    def missing(self) -> dict:
+        """Per-kind shortfall — only kinds where the projection would produce MORE."""
+        out = {}
+        for kind, n in self.available.items():
+            gap = int(n) - int(self.committed.get(kind, 0))
+            if gap > 0:
+                out[kind] = gap
+        return out
+
+    @property
+    def drifted(self) -> bool:
+        return bool(self.missing)
+
+    def to_dict(self) -> dict:
+        return {"drifted": self.drifted, "missing": self.missing,
+                "committed": dict(self.committed), "available": dict(self.available),
+                "reason": self.reason}
+
+
+def content_drift(connection_id: str, schema_name: Optional[str] = None, *,
+                  org_id: str = "") -> ContentDrift:
+    """Compare the committed graph against what a rebuild would produce, right now.
+
+    Deterministic and read-only — an in-memory projection over stores already on disk (no
+    LLM, no warehouse). Costs a build, so it is deliberately NOT folded into every `/graph`
+    read; callers ask for it when they want to know whether a rebuild is owed.
+    """
+    from aughor.org.context import current_org_id
+    from aughor.ontology.context_graph_search import merge_graphs
+    from aughor.ontology.context_graph_store import load_graphs_for_connection
+
+    org = org_id or current_org_id()
+    try:
+        committed = merge_graphs(load_graphs_for_connection(org, connection_id))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "reading the committed graph for a drift check is best-effort",
+                 counter="context_graph.drift_read")
+        committed = None
+    if committed is None:
+        return ContentDrift(reason="no committed graph yet — a build would create one")
+
+    from aughor.kernel.flags import flag_overrides
+    from aughor.ontology.context_graph_build import build_context_graph
+
+    try:
+        # `graph.build` gates WRITING the artifact; a non-persisting projection to answer
+        # "is a rebuild owed?" must not require the operator to have already enabled it.
+        with flag_overrides({"graph.build": True}):
+            fresh = build_context_graph(connection_id, schema_name, org_id=org, persist=False)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the drift projection is best-effort; staleness is still reported",
+                 counter="context_graph.drift_build")
+        fresh = None
+    if fresh is None:
+        return ContentDrift(committed=committed.counts(),
+                            reason="could not project a comparison build")
+
+    drift = ContentDrift(committed=committed.counts(), available=fresh.counts())
+    if drift.drifted:
+        parts = ", ".join(f"{n} {kind}" for kind, n in sorted(drift.missing.items()))
+        drift.reason = (f"a rebuild would add {parts} — the committed graph predates them "
+                        f"(the live path writes incrementally, so projection fixes and grown "
+                        f"sources only land on a full rebuild)")
+    else:
+        drift.reason = "the committed graph carries everything its sources currently project"
+    return drift

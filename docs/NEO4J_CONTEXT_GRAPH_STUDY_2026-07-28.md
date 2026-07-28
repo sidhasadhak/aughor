@@ -76,9 +76,18 @@ information"* — which they also do not have.
    action → outcome per task and retrieve *similar past tasks*. We write receipts, the E1
    session log, and task history — and retrieve none of it at plan time. Conclusions are
    read back (that was L2); approaches never are.
-2. **A visualization surface.** Verified: **zero frontend components read our context
-   graph.** Users cannot see what the system knows about their data — the trust surface the
-   graph exists to provide is invisible. Their every demo leads with the graph panel.
+2. ~~**A visualization surface.**~~ **CORRECTED 2026-07-28 — we already have one.** The
+   original claim here ("zero frontend components read our context graph") was **wrong**, and
+   wrong in an embarrassing way: it came from grepping `web/src`, a directory that does not
+   exist (the tree is `web/`), for the term "context graph", which the frontend calls the
+   *connection* graph. `web/components/ConnectionGraphPanel.tsx` has rendered it since Wave
+   C5 — mounted in `IntelligenceWorkspace` under a Graph tab, hitting the same `GET /graph`
+   endpoint, as a three-level anti-hairball surface (domain cards → tables → table detail with
+   measured join overlap, glossary terms and past findings) with the C3 staleness state shown
+   as a chip. Screenshot-verified on the live app: "Knowledge Graph · Fresh", 18 tables,
+   7 edges, 2 metrics, 3 terms, 5 domain cards with cross-domain join counts.
+   **The lesson is the one this repo keeps re-learning: grep the tree you have, and search for
+   the name the code uses, not the name the study uses.**
 3. **Consolidation and expiry.** Named in their article as required, absent in both
    products. Ours is compounding: L1 made findings accumulate one per answer, bounded only
    by `_MAX_RECEIPT_FINDINGS=100` (newest-first eviction — the same window shape that
@@ -117,7 +126,23 @@ band).
 
 **Gate:** a receipted graduation decision either way; zero LLM-authored memory introduced.
 
-### N2 — Context-graph visualization panel · ~2 sessions
+### ~~N2 — Context-graph visualization panel~~ — ALREADY BUILT (Wave C5); see §2 correction
+
+**Do not build this.** `ConnectionGraphPanel.tsx` covers every item scoped below: the view API
+(`GET /graph`), kind-aware rendering, the join guard's measured overlap, the freshness state as
+a chip, and findings on the table detail. Verified live.
+
+**What the verification DID find — and it is worth more than the panel would have been.** The
+panel shows **0 Findings** on a connection with **793 answer receipts**, while
+`load_investigation_findings("workspace")` returns projectable findings from those same
+receipts. L1 built that projector and proved it on `samples`; it is not reaching the
+`workspace` graph (committed under `schema_name="default"`, version 10, zero finding nodes).
+So the graph a user actually looks at shows none of what Aughor has learned from 793 answers.
+⏭️ **That is the real N2: not a panel, a wiring fix** — and it was invisible until somebody
+looked at the picture, which is the study's underlying point about visualization, arriving by
+a route nobody intended.
+
+<details><summary>Original N2 scope (superseded)</summary>
 
 **Claim:** the graph is a trust surface; invisible memory earns no trust. Also directly
 requested: "visually present it as required."
@@ -137,6 +162,7 @@ requested: "visually present it as required."
 **Gate:** a screenshot-verified panel on a real connection's committed graph, rendering all
 six node kinds, with freshness honestly displayed. No LLM, no new flags beyond a UI route
 guard if convention requires one.
+</details>
 
 ### N3 — Finding consolidation & expiry · ~2 sessions
 

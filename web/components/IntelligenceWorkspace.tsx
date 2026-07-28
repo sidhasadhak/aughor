@@ -195,7 +195,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // another schema's verdict. Belt to the server-side scope_key guard's braces.
         if (id === "briefing") return <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />;
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
-        if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} />;
+        if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} onInvestigate={q => onInvestigate(q)} />;
         if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
         if (id === "kinetic")  return <KineticPanel connectionId={connectionId} />;

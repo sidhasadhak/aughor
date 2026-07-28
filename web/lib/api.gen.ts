@@ -1994,6 +1994,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/consistency/confirmed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Confirmed Divergences
+         * @description Detection plus execution in one call, ranked by the gap between the answers.
+         *
+         *     The expensive-but-honest view: only divergences whose variants genuinely return
+         *     different data, ordered by how much separates them.
+         */
+        get: operations["confirmed_divergences_consistency_confirmed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/consistency/divergences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Divergences
+         * @description Recurring questions answered more than one way, most-contested first.
+         *
+         *     ``include_exploratory`` adds questions where every run produced a unique query. They are
+         *     excluded by default: those are being explored rather than decided, and asking a reviewer
+         *     to pin one of fifteen one-off queries is asking the wrong question.
+         */
+        get: operations["list_divergences_consistency_divergences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/consistency/impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Divergence Impact
+         * @description Execute one divergence's variants read-only and report whether they actually disagree.
+         *
+         *     Separate from the listing on purpose: the listing is free, this costs one bounded query
+         *     per variant. Text over-reports disagreement — on the reference connection 34 textually
+         *     contested questions became 12 genuinely divergent ones — so this is the step that turns
+         *     "the SQL differs" into a number somebody can act on.
+         */
+        get: operations["divergence_impact_consistency_impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/consistency/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pin Answer
+         * @description Record which variant is correct. The warrant becomes "a person decided".
+         */
+        post: operations["pin_answer_consistency_pin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/consistency/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Consistency Summary
+         * @description Headline counts — whether inconsistent answers are a problem on this connection.
+         */
+        get: operations["consistency_summary_consistency_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dev/stats": {
         parameters: {
             query?: never;
@@ -3094,6 +3206,35 @@ export interface paths {
          *     ``graph.build`` is on.
          */
         get: operations["get_context_graph_graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/graph/drift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Graph Content Drift
+         * @description Is a rebuild owed? — the content axis `staleness` deliberately does not cover.
+         *
+         *     `staleness` answers "does the schema still match" and reported **fresh** for a graph
+         *     holding 0 findings and 3 glossary terms whose sources held 100 and 255: true in the only
+         *     sense it claims, and read by a human as "up to date". This reports the shortfall in the
+         *     projection's own numbers, so a Fresh badge can never stand alone over a graph that is
+         *     missing what the platform has already learned.
+         *
+         *     Costs an in-memory projection (no LLM, no warehouse), which is why it is a separate call
+         *     rather than part of every `/graph` read. 404 when ``graph.surface`` is off.
+         */
+        get: operations["get_graph_content_drift_graph_drift_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7901,6 +8042,22 @@ export interface components {
              * @description ISO-8601 UTC to mute until, or null to clear the mute.
              */
             until?: string | null;
+        };
+        /** PinIn */
+        PinIn: {
+            /** Connection Id */
+            connection_id: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Question */
+            question: string;
+            /** Sql */
+            sql: string;
+            /** Tables */
+            tables?: string[];
         };
         /**
          * PinInsightRequest
@@ -13151,6 +13308,171 @@ export interface operations {
             };
         };
     };
+    confirmed_divergences_consistency_confirmed_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                max_questions?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_divergences_consistency_divergences_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                limit?: number;
+                include_exploratory?: boolean;
+                include_settled?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    divergence_impact_consistency_impact_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                question_key: string;
+                max_variants?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_answer_consistency_pin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PinIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    consistency_summary_consistency_summary_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_dev_stats_dev_stats_get: {
         parameters: {
             query?: never;
@@ -15044,6 +15366,38 @@ export interface operations {
         };
     };
     get_context_graph_graph_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_graph_content_drift_graph_drift_get: {
         parameters: {
             query?: {
                 connection_id?: string;

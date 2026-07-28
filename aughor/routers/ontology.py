@@ -267,6 +267,32 @@ def _load_graph_or_404(connection_id: str, schema_name: Optional[str]):
     return cg
 
 
+@router.get("/graph/drift")
+def get_graph_content_drift(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Is a rebuild owed? — the content axis `staleness` deliberately does not cover.
+
+    `staleness` answers "does the schema still match" and reported **fresh** for a graph
+    holding 0 findings and 3 glossary terms whose sources held 100 and 255: true in the only
+    sense it claims, and read by a human as "up to date". This reports the shortfall in the
+    projection's own numbers, so a Fresh badge can never stand alone over a graph that is
+    missing what the platform has already learned.
+
+    Costs an in-memory projection (no LLM, no warehouse), which is why it is a separate call
+    rather than part of every `/graph` read. 404 when ``graph.surface`` is off.
+    """
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("graph.surface"):
+        raise HTTPException(status_code=404, detail="graph.surface disabled")
+    from aughor.ontology.graph_freshness import content_drift
+    from aughor.org.context import current_org_id
+
+    drift = content_drift(connection_id, schema_name, org_id=current_org_id())
+    return {"connection_id": connection_id, **drift.to_dict()}
+
+
 @router.get("/graph/tour")
 def get_context_graph_tour(
     connection_id: str = BUILTIN_ID,

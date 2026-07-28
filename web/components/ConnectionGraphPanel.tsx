@@ -12,6 +12,7 @@ import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { StatusChip, ChipHue } from "@/components/brief/StatusChip";
 import { formatCount, pct } from "@/lib/format";
+import { GraphCanvas } from "@/components/GraphCanvas";
 
 // The connection knowledge graph, rendered as a three-level ANTI-HAIRBALL surface:
 // domain cluster cards (cross-domain joins collapsed to counts) → the tables inside a
@@ -34,22 +35,28 @@ function bare(t: string): string {
   return String(t).split(".").pop()!.trim().replace(/"/g, "").toLowerCase();
 }
 
-export function ConnectionGraphPanel({ connectionId, schema }: { connectionId: string; schema?: string }) {
+export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
+  connectionId: string; schema?: string;
+  /** The workspace Ask seam — a graph selection becomes a question on the full Ask surface. */
+  onInvestigate?: (q: string) => void;
+}) {
   const [graph, setGraph] = useState<ConnectionGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>({ level: "domains" });
+  // Map = the node-link canvas (default — a knowledge graph should look like one);
+  // Explore = the C4 anti-hairball card drill-down; Tour = the C5 topology walk.
+  const [mode, setMode] = useState<"map" | "cards" | "tour">("map");
   // Wave C5 — the topology-ordered tour, lazily fetched on first open.
   const [tour, setTour] = useState<ConnectionTour | null>(null);
   const [tourError, setTourError] = useState<string | null>(null);
-  const [showTour, setShowTour] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
     setTour(null);
     setTourError(null);
-    setShowTour(false);
+    setMode("map");
     getConnectionGraph(connectionId, schema)
       .then((g) => { setGraph(g); setView({ level: "domains" }); })
       .catch((e) => setError(e?.message || "Failed to load the knowledge graph"))
@@ -59,7 +66,7 @@ export function ConnectionGraphPanel({ connectionId, schema }: { connectionId: s
   useEffect(() => { load(); }, [load]);
 
   const openTour = useCallback(() => {
-    setShowTour(true);
+    setMode("tour");
     if (!tour && !tourError) {
       getConnectionTour(connectionId, schema)
         .then(setTour)
@@ -113,18 +120,38 @@ export function ConnectionGraphPanel({ connectionId, schema }: { connectionId: s
           </StatusChip>
         )}
         <div style={{ flex: 1 }} />
-        <Button variant="ghost" onClick={() => setShowTour(false)}
-                style={{ fontSize: 12, color: showTour ? "var(--t3)" : "var(--t1)" }}>Explore</Button>
+        <Button variant="ghost" onClick={() => setMode("map")}
+                style={{ fontSize: 12, color: mode === "map" ? "var(--t1)" : "var(--t3)" }}>Map</Button>
+        <Button variant="ghost" onClick={() => setMode("cards")}
+                style={{ fontSize: 12, color: mode === "cards" ? "var(--t1)" : "var(--t3)" }}>Explore</Button>
         <Button variant="ghost" onClick={openTour}
-                style={{ fontSize: 12, color: showTour ? "var(--t1)" : "var(--t3)" }}>Tour</Button>
+                style={{ fontSize: 12, color: mode === "tour" ? "var(--t1)" : "var(--t3)" }}>Tour</Button>
         <Button variant="ghost" onClick={load} style={{ color: "var(--t3)", fontSize: 12 }}>↻ Refresh</Button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column" }}>
         {loading && <p style={{ color: "var(--t3)", fontSize: 13 }}>Loading the connection knowledge graph…</p>}
         {error && <p style={{ color: "var(--red3)", fontSize: 13 }}>{error}</p>}
 
-        {!loading && !error && graph && (showTour ? (
+        {!loading && !error && graph && mode === "map" && (
+          <>
+            <MiniStatRow>
+              <MiniStat value={formatCount(graph.counts.table || 0)} label="Tables" />
+              <MiniStat value={formatCount(graph.counts.edges || 0)} label="Edges" />
+              <MiniStat value={formatCount(graph.counts.finding || 0)} label="Findings"
+                        tone={(graph.counts.finding || 0) > 0 ? "var(--vio4)" : "var(--t1)"} />
+              <MiniStat value={formatCount(graph.counts.metric || 0)} label="Metrics" />
+              <MiniStat value={formatCount(graph.counts.glossary_term || 0)} label="Terms" />
+            </MiniStatRow>
+            <GraphCanvas
+              graph={graph}
+              onOpenTable={(tableId) => { setMode("cards"); setView({ level: "detail", tableId }); }}
+              onAsk={onInvestigate}
+            />
+          </>
+        )}
+
+        {!loading && !error && graph && mode !== "map" && (mode === "tour" ? (
           <TourView tour={tour} error={tourError} />
         ) : (
           <>
