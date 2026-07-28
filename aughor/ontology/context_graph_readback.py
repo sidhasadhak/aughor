@@ -93,6 +93,12 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
         return GraphPrior()
 
     nodes, edges = one_hop(cg, [n.id for n, _ in seeds])
+    # G5: trim by clearance HERE, at retrieval — a blocked fact must never reach the
+    # prompt. Once it is in the context window the model may repeat it, and a redaction
+    # applied to the output is a redaction applied after the leak.
+    nodes, edges, governance_notice = _trim_by_clearance(
+        nodes, edges, connection_id=connection_id,
+        schema_name=getattr(cg, "schema_name", "") or "")
     by_id = {n.id: n for n in nodes}
     cited: list[str] = []
 
@@ -154,9 +160,17 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
             cited.append(t.id)
 
     # A block with only the header (no tables/joins/findings/terms matched the seeds)
-    # is not worth injecting.
+    # is not worth injecting — UNLESS governance withheld everything, in which case the
+    # empty slice is exactly the thing that must not pass silently: an answer that comes
+    # back thin because it was trimmed reads identically to one that found nothing, and
+    # that is the anti-pattern this wave exists to refuse.
     if len(lines) <= 1:
+        if governance_notice:
+            return GraphPrior(section=governance_notice + "\n")
         return GraphPrior()
+
+    if governance_notice:
+        lines.append("\n" + governance_notice)
 
     section = "\n".join(lines)
     if len(section) > max_chars:
@@ -172,3 +186,50 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
 def build_graph_prior_section(question: str, connection_id: str, **kw) -> str:
     """Convenience: just the prompt text (empty when nothing applies)."""
     return build_graph_prior(question, connection_id, **kw).section
+
+
+def _trim_by_clearance(nodes, edges, *, connection_id: str, schema_name: str):
+    """Wave G5 — drop nodes the caller lacks clearance for, plus every edge touching them.
+
+    Returns ``(nodes, edges, notice)``. The notice is empty when nothing was withheld, and
+    is a one-line, out-of-band sentence otherwise — never a silent thinning.
+
+    Only `table` nodes carry a securable today; a finding or glossary term is withheld
+    transitively when the table it hangs off is, via the edge sweep. Governance-off (the
+    default) returns the inputs unchanged, so this is byte-identical when the flag is off.
+    """
+    from aughor.govern import tags as _tags
+
+    if not _tags.enabled():
+        return nodes, edges, ""
+
+    from aughor.govern.retrieval_trim import (
+        caller_clearances,
+        partition,
+        securable_for_table,
+        sweep_edges,
+    )
+
+    def _securables(node):
+        """A table node's PHYSICAL tables — not its label.
+
+        Found by probing: the node's `label` is the ontology entity's display name
+        ("Return"), while the securable names the physical table ("returns"), so
+        resolving from the label silently matched nothing and the trim never fired on a
+        real graph. The backing tables live in `data["source_tables"]`, and an entity can
+        have several — withholding on ANY of them is the correct reading, since showing
+        an entity whose backing table is restricted shows the restricted thing.
+        """
+        if getattr(node, "kind", "") != "table":
+            return None
+        sources = (getattr(node, "data", None) or {}).get("source_tables") or []
+        if not sources:
+            return None
+        return [securable_for_table(connection_id, schema_name, t) for t in sources]
+
+    result = partition(list(nodes), _securables, caller_clearances())
+    if not result.trimmed:
+        return nodes, edges, ""
+
+    kept_ids = {n.id for n in result.kept}
+    return result.kept, sweep_edges(list(edges), kept_ids), result.notice()
