@@ -88,9 +88,45 @@ def _load_raw(path: Path | None = None) -> dict:
     return out
 
 
-def load_glossary(path: Path | None = None) -> dict:
-    """Return the manual YAML glossary dict (no dbt or auto-seed merging)."""
-    return _load_raw(path)
+#: Top-level key holding per-connection overlays: ``connections: {<conn_id>: {tables: …}}``.
+#: Wave O2 — the glossary was keyed by TABLE NAME alone, so two connections could not hold
+#: different descriptions of `orders`.
+#:
+#: An OVERLAY rather than a re-key of every entry, which is the whole migration story: the
+#: existing tracked `data/glossary.yaml` is already the global default by construction, so
+#: it needed no rewrite. Rewriting 151 entries to stamp `connection: "*"` on each would
+#: have been pure churn carrying a data-loss risk, in a repo that has destroyed `data/`
+#: twice with non-hermetic writes — and a migration that silently narrowed the glossary to
+#: one connection would break every other connection's answers with no error anywhere.
+CONNECTIONS_KEY = "connections"
+
+
+def connection_overlay(data: dict, connection_id: str | None) -> dict:
+    """The overlay declared for one connection, or ``{}``."""
+    if not connection_id:
+        return {}
+    conns = (data or {}).get(CONNECTIONS_KEY) or {}
+    return conns.get(connection_id) or {}
+
+
+def load_glossary(path: Path | None = None,
+                  connection_id: str | None = None) -> dict:
+    """The manual YAML glossary (no dbt or auto-seed merging).
+
+    With ``connection_id``, the connection's overlay is deep-merged over the global
+    entries — override-wins, the same direction as every other layer here. Without it the
+    return is exactly what it always was, so every existing caller is unchanged.
+    """
+    data = _load_raw(path)
+    overlay = connection_overlay(data, connection_id)
+    if not overlay:
+        return data
+    merged = _deep_merge(data, overlay)
+    # The overlay section itself is scaffolding, not content: leaving it in the returned
+    # dict would let a caller iterating `tables` also walk every OTHER connection's
+    # entries, which is the leak this scoping exists to prevent.
+    merged.pop(CONNECTIONS_KEY, None)
+    return merged
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -133,7 +169,8 @@ def _align_keys(dbt_tables: dict, yaml_keys: set[str]) -> dict:
     return aligned
 
 
-def load_merged_glossary(path: Path | None = None) -> dict:
+def load_merged_glossary(path: Path | None = None,
+                         connection_id: str | None = None) -> dict:
     """
     Return the fully merged glossary with three-layer precedence:
 
@@ -146,7 +183,7 @@ def load_merged_glossary(path: Path | None = None) -> dict:
     from aughor.semantic.dbt import load_dbt_glossary
 
     dbt = load_dbt_glossary()
-    yaml_data = _load_raw(path)
+    yaml_data = load_glossary(path, connection_id)   # O2: connection overlay wins
     yaml_tables = yaml_data.get("tables", {})
 
     # Split YAML entries: auto-generated (weak) vs manually provided (strong)

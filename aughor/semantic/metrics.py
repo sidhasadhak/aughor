@@ -36,8 +36,23 @@ def _default_path() -> Path:
     return resolve_db_path("AUGHOR_METRICS_PATH", _DEFAULT_PATH)
 
 
+#: A metric that applies to every connection. Wave O2: the store was keyed by NAME
+#: alone, so two connections could not hold different definitions of `revenue` — the
+#: #198 shape (a store keyed without the dimension distinguishing its owners), for the
+#: third time in this codebase.
+#:
+#: An entry with no `connection` IS this value, so the existing tracked `data/metrics.json`
+#: needed no migration at all: every entry in it was already a global default, and
+#: rewriting the file to say so would have been churn with a data-loss risk attached, on a
+#: repo that has destroyed `data/` twice with non-hermetic writes.
+GLOBAL_CONNECTION = "*"
+
+
 class MetricDefinition(BaseModel):
     name: str = Field(description="Unique snake_case identifier, e.g. 'mrr'")
+    connection: str = Field(
+        default=GLOBAL_CONNECTION,
+        description="Connection this definition applies to; '*' is the default for all")
     label: str = Field(description="Human-readable display name, e.g. 'Monthly Recurring Revenue'")
     sql: str = Field(description="Approved SQL expression, e.g. \"SUM(amount) FILTER (WHERE status='active')\"")
     tables: list[str] = Field(default_factory=list, description="Tables this metric draws from")
@@ -114,22 +129,61 @@ def _save_raw(metrics: list[dict], path: Path | None = None) -> None:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def list_metrics(path: Path | None = None) -> list[MetricDefinition]:
-    return [MetricDefinition(**m) for m in _load_raw(path)]
+def _conn_of(raw: dict) -> str:
+    return str(raw.get("connection") or GLOBAL_CONNECTION)
 
 
-def get_metric(name: str, path: Path | None = None) -> MetricDefinition | None:
-    for m in _load_raw(path):
-        if m.get("name") == name:
+def list_metrics(path: Path | None = None,
+                 connection_id: str | None = None) -> list[MetricDefinition]:
+    """Every metric, or the ones that apply to ``connection_id`` with scoped shadowing.
+
+    Wave O2 resolution, and the ONLY rule here: a connection-scoped entry SHADOWS the
+    global entry of the same name. Override-wins, the same discipline
+    `data/ontology_overrides/` already practises — a specific answer beats a general one,
+    and never the reverse.
+
+    ``connection_id=None`` returns everything unfiltered, so every existing caller is
+    byte-identical. That is deliberate: the alternative — making the connection argument
+    required — turns a re-key into a caller migration across the whole tree, and each
+    unconverted site becomes a silent global read that looks correct.
+    """
+    rows = _load_raw(path)
+    if connection_id is None:
+        return [MetricDefinition(**m) for m in rows]
+
+    scoped_names = {m.get("name") for m in rows if _conn_of(m) == connection_id}
+    out = [m for m in rows if _conn_of(m) == connection_id]
+    out += [m for m in rows
+            if _conn_of(m) == GLOBAL_CONNECTION and m.get("name") not in scoped_names]
+    return [MetricDefinition(**m) for m in out]
+
+
+def get_metric(name: str, path: Path | None = None,
+               connection_id: str | None = None) -> MetricDefinition | None:
+    rows = _load_raw(path)
+    if connection_id is not None:
+        for m in rows:                       # scoped first — it shadows
+            if m.get("name") == name and _conn_of(m) == connection_id:
+                return MetricDefinition(**m)
+    for m in rows:
+        if m.get("name") != name:
+            continue
+        if connection_id is None or _conn_of(m) == GLOBAL_CONNECTION:
             return MetricDefinition(**m)
     return None
 
 
 def save_metric(metric: MetricDefinition, path: Path | None = None) -> None:
-    """Upsert a metric by name."""
+    """Upsert a metric by (connection, name).
+
+    The identity is the PAIR. Upserting by name alone would mean scoping `revenue` to one
+    connection silently overwrote the global definition every other connection reads —
+    which is the exact failure this wave exists to make impossible.
+    """
     raw = _load_raw(path)
+    conn = metric.connection or GLOBAL_CONNECTION
     for i, m in enumerate(raw):
-        if m.get("name") == metric.name:
+        if m.get("name") == metric.name and _conn_of(m) == conn:
             raw[i] = metric.model_dump()
             _save_raw(raw, path)
             return
@@ -137,7 +191,8 @@ def save_metric(metric: MetricDefinition, path: Path | None = None) -> None:
     _save_raw(raw, path)
 
 
-def delete_metric(name: str, sql: str | None = None, path: Path | None = None) -> bool:
+def delete_metric(name: str, sql: str | None = None, path: Path | None = None,
+                  connection_id: str | None = None) -> bool:
     """Remove a metric by name. Returns True if anything was deleted.
 
     Grain-aware: a name can carry several governed grains, each with a distinct
@@ -146,10 +201,18 @@ def delete_metric(name: str, sql: str | None = None, path: Path | None = None) -
     from the UI doesn't wipe the others. Without ``sql`` every entry sharing the
     name is removed (legacy behaviour, used by bulk cleanup paths)."""
     raw = _load_raw(path)
-    if sql is None:
-        new = [m for m in raw if m.get("name") != name]
-    else:
-        new = [m for m in raw if not (m.get("name") == name and (m.get("sql") or "") == sql)]
+
+    def _target(m: dict) -> bool:
+        if m.get("name") != name:
+            return False
+        # A connection-scoped delete must not reach the global entry other connections
+        # depend on; without the connection filter, un-scoping one connection's metric
+        # would delete it for everybody.
+        if connection_id is not None and _conn_of(m) != connection_id:
+            return False
+        return sql is None or (m.get("sql") or "") == sql
+
+    new = [m for m in raw if not _target(m)]
     if len(new) == len(raw):
         return False
     _save_raw(new, path)
