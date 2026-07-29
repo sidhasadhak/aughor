@@ -202,6 +202,10 @@ def build_public_receipt(raw: dict, *, connection: Optional[dict] = None,
         "confidence": confidence,
         "data_trust": data_trust,
         "model": model,
+        # Wave H2: the user-defined persona this answer ran as, or null when it ran unbound.
+        # Null is the honest answer for an anonymous ask — the alternative, an empty agent
+        # object, would render as a nameless agent on every receipt ever issued.
+        "agent": payload.get("agent") or None,
         "cost": raw.get("cost"),
     }
     if signed:
