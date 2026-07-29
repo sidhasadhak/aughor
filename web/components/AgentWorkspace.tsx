@@ -48,6 +48,8 @@ type Props = {
   /** The built-in Fleet screen — rendered by the page (it owns FleetScreen's
    *  workspace props + nav handler) and folded in here as the Fleet layer. */
   fleetSlot?: React.ReactNode;
+  /** CR1 drill-in: open a run's trace in the Control Room waterfall. */
+  onOpenTrace?: (investigationId: string) => void;
 };
 
 /**
@@ -58,7 +60,7 @@ type Props = {
  * backend-only), the existing **Manage** builder, and **Fleet** as the
  * operations layer.
  */
-export function AgentWorkspace({ layer, onLayerChange, fleetSlot }: Props) {
+export function AgentWorkspace({ layer, onLayerChange, fleetSlot, onOpenTrace }: Props) {
   return (
     <Workspace
       layers={LAYERS}
@@ -70,7 +72,7 @@ export function AgentWorkspace({ layer, onLayerChange, fleetSlot }: Props) {
         if (id === "manage") return <AgentsAdminPanel />;
         if (id === "fleet")  return <>{fleetSlot}</>;
         if (id === "memory") return <MemoryPanel />;
-        return <AgentOverviewPanel onManage={() => onLayerChange("manage")} />; // "overview"
+        return <AgentOverviewPanel onManage={() => onLayerChange("manage")} onOpenTrace={onOpenTrace} />; // "overview"
       }}
     />
   );

@@ -21,6 +21,7 @@ import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 import type { OpsLayer } from "@/components/OperationsWorkspace";
 import type { EvalsLayer } from "@/components/EvalsWorkspace";
 import type { AgentLayer } from "@/components/AgentWorkspace";
+import type { ControlRoomLayer } from "@/components/ControlRoomWorkspace";
 import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -58,6 +59,7 @@ const QueryBuilder      = dynamic(() => import("@/components/QueryBuilder").then
 const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
 const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
 const AgentWorkspace    = dynamic(() => import("@/components/AgentWorkspace").then(m => ({ default: m.AgentWorkspace })), { ssr: false, loading });
+const ControlRoomWorkspace = dynamic(() => import("@/components/ControlRoomWorkspace").then(m => ({ default: m.ControlRoomWorkspace })), { ssr: false, loading });
 import { API_BASE } from "@/lib/config";
 import {
   getConnections,
@@ -106,6 +108,7 @@ type NavTab =
   | "org-intel"         // legacy deep-link → intelligence/org layer
   | "ontology"          // legacy deep-link → intelligence/ontology layer
   | "operations"        // unified Operations workspace (Monitors / Action Hub / Security)
+  | "control-room"      // Wave CR — fleet · attention · activity · traces · run graphs
   | "evals"             // unified Evals workspace (Suites / Runs) — Wave E
   | "data"              // unified Data workspace (Catalog / Query Builder / Semantic Layer)
   | "health"
@@ -490,6 +493,7 @@ const NAV_SECTIONS = [
   {
     label: "Operations", // monitor, act, govern
     items: [
+      { id: "control-room", icon: "process", label: "Control Room" },
       { id: "monitors", icon: "activity", label: "Monitors" },
       { id: "actions",  icon: "spark",    label: "Action Hub" },
       { id: "security", icon: "shield",   label: "Security & Audit" },
@@ -1748,6 +1752,9 @@ export default function Home() {
   const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
   const [evalsLayer, setEvalsLayer] = useState<EvalsLayer>("suites");
   const [agentLayer, setAgentLayer] = useState<AgentLayer>("overview");
+  const [controlRoomLayer, setControlRoomLayer] = useState<ControlRoomLayer>("overview");
+  // The H3 drill-in: a run row on the per-agent page opens its trace here.
+  const [controlRoomFocusInv, setControlRoomFocusInv] = useState<string | null>(null);
   const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
   const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
   const [showHistory, setShowHistory] = useState(false);
@@ -2272,6 +2279,26 @@ export default function Home() {
               </ErrorBoundary>
             )}
 
+            {/* ── CONTROL ROOM (Wave CR) ── */}
+            {tab === "control-room" && (
+              <ErrorBoundary label="The Control Room hit an error.">
+                <ControlRoomWorkspace
+                  layer={controlRoomLayer}
+                  onLayerChange={setControlRoomLayer}
+                  focusInvestigationId={controlRoomFocusInv}
+                  onOpenInvestigation={invId => {
+                    setSelectedHistoryInvId(invId);
+                    handleNavigate("recents");
+                  }}
+                  onOpenAutomations={() => {
+                    setOpsLayer("automations");
+                    handleNavigate("operations");
+                  }}
+                  onOpenAgent={() => handleNavigate("agents")}
+                />
+              </ErrorBoundary>
+            )}
+
             {/* ── PLAYBOOK ── */}
             {tab === "playbook" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
@@ -2366,6 +2393,11 @@ export default function Home() {
                 <AgentWorkspace
                   layer={agentLayer}
                   onLayerChange={setAgentLayer}
+                  onOpenTrace={invId => {
+                    setControlRoomFocusInv(invId);
+                    setControlRoomLayer("traces");
+                    handleNavigate("control-room");
+                  }}
                   fleetSlot={
                     <FleetScreen
                       onNavigate={handleNavigate}

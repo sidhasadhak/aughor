@@ -31,7 +31,11 @@ const STATUS_HUE: Record<string, ChipHue> = {
   failed: "negative", timed_out: "negative",
 };
 
-export function AgentOverviewPanel({ onManage }: { onManage?: () => void }) {
+export function AgentOverviewPanel({ onManage, onOpenTrace }: {
+  onManage?: () => void;
+  /** CR1 drill-in: open this run's trace in the Control Room waterfall. */
+  onOpenTrace?: (investigationId: string) => void;
+}) {
   const [agents, setAgents] = useState<UserAgent[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [obs, setObs] = useState<AgentObservability | null>(null);
@@ -150,6 +154,10 @@ export function AgentOverviewPanel({ onManage }: { onManage?: () => void }) {
                     </StatusChip>
                     <StatusChip hue={STATUS_HUE[r.status] ?? "muted"} strength="soft">{r.status}</StatusChip>
                     <span style={{ fontSize: 11, color: "var(--t3)", flexShrink: 0, width: 110, textAlign: "right" }}>{formatTimestamp(r.started_at, "short")}</span>
+                    {onOpenTrace && r.kind !== "chat" && (
+                      <Button variant="ghost" size="xs" onClick={() => onOpenTrace(r.id)}
+                        title="Open this run's trace in the Control Room">trace</Button>
+                    )}
                   </div>
                 ))}
               </div>
