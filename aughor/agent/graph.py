@@ -71,6 +71,31 @@ def read_checkpoint_values(investigation_id: str) -> dict:
     return dict((cp or {}).get("channel_values") or {})
 
 
+def read_checkpoint_state(investigation_id: str) -> dict:
+    """State values PLUS what the checkpoint itself records about progress —
+    still without building the graph (Wave CR5b).
+
+    ``agent.get_state(config).next`` — the authoritative "which node runs
+    next" — needs a compiled graph over an open warehouse connection, which a
+    read-only phase view must not pay for (and cannot, once the connection is
+    gone). What the checkpoint DOES store is served instead: the step counter
+    and which nodes wrote last, honestly labelled so a consumer never mistakes
+    them for the interrupt point. Returns ``{"exists": False}`` when the run
+    has no checkpoint.
+    """
+    tup = _checkpointer().get_tuple({"configurable": {"thread_id": investigation_id}})
+    if tup is None:
+        return {"exists": False, "values": {}}
+    meta = dict(tup.metadata or {})
+    writes = meta.get("writes")
+    return {
+        "exists": True,
+        "values": dict((tup.checkpoint or {}).get("channel_values") or {}),
+        "step": meta.get("step"),
+        "last_writers": sorted(writes) if isinstance(writes, dict) else [],
+    }
+
+
 def _explore_parallel_enabled() -> bool:
     """The explore.parallel_subq flag, resolved fail-safe (env/ledger). A ledger read can fail in
     a bare CLI context, so any error means 'off' (the safe, byte-identical sequential path)."""

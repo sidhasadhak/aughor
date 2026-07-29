@@ -4141,6 +4141,96 @@ def get_investigation_detail(inv_id: str, principal=Depends(get_principal)):
     return inv
 
 
+@router.get("/investigations/{inv_id}/graph")
+def get_investigation_graph(inv_id: str, principal=Depends(get_principal)):
+    """The deep run's phase view (Wave CR5b): the FIXED topology it runs, the
+    phases the checkpoint recorded, and — for a paused run — which gate it is
+    waiting at, derived from state markers and labelled as such.
+
+    Deliberately not a DAG editor and deliberately not `agent.get_state().next`:
+    the authoritative next-node read needs a compiled graph over an open
+    warehouse connection, which a read-only view must not require. Resume goes
+    through the existing feedback endpoint.
+    """
+    from aughor.agent.graph import read_checkpoint_state
+    from aughor.security.authz import check_owner
+
+    check_owner("investigation", inv_id, principal)
+    inv = get_investigation(inv_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+
+    cp = read_checkpoint_state(inv_id)
+    values = cp.get("values") or {}
+    phases = list(values.get("investigation_phases") or [])
+    sub_questions = list(values.get("sub_questions") or [])
+    clarify_pending = values.get("_clarify_pending") or None
+
+    # Branch, from what the checkpoint actually holds. A run with no checkpoint
+    # reports unknown rather than a guessed picture. A run paused at the clarify
+    # gate has no phases yet — the pending clarify marker is the ADA tell.
+    if phases or clarify_pending:
+        branch = "ada"
+    elif sub_questions:
+        branch = "explore"
+    elif cp.get("exists"):
+        branch = "direct"
+    else:
+        branch = "unknown"
+
+    # The fixed topologies (aughor/agent/graph.py _compile) — flag-gated
+    # variants resolved at read time so the picture matches what would run.
+    from aughor.agent.graph import (
+        _ada_parallel_lenses_enabled,
+        _ada_parallel_phases_enabled,
+        _explore_parallel_enabled,
+    )
+    if branch == "ada":
+        middle = (["ada_phase_wave"] if _ada_parallel_phases_enabled()
+                  else ["ada_baseline", "ada_decompose", "ada_dimensional"])
+        xsec = ("ada_cross_section_multilens" if _ada_parallel_lenses_enabled()
+                else "ada_cross_section")
+        topology = ["route_question", "exploratory_scan", "ada_intake", "clarify_gate",
+                    xsec, *middle, "ada_behavioral", "ada_synthesize"]
+    elif branch == "explore":
+        executor = ("plan_and_execute_wave" if _explore_parallel_enabled()
+                    else "plan_and_execute_subq")
+        topology = ["route_question", "exploratory_scan_explore",
+                    "decompose_exploration", "plan_gate", executor,
+                    "synthesize_exploration"]
+    elif branch == "direct":
+        topology = ["route_question", "plan_queries", "execute_planned_queries",
+                    "score_evidence", "replan", "synthesize"]
+    else:
+        topology = []
+
+    paused = inv.get("status") == "paused"
+    gate = None
+    if paused:
+        if clarify_pending:
+            gate = "clarify_gate"
+        elif branch == "explore":
+            gate = "plan_gate"
+        elif branch == "ada":
+            gate = "ada_synthesize"
+
+    return {
+        "investigation_id": inv_id,
+        "status": inv.get("status"),
+        "question": inv.get("question"),
+        "branch": branch,
+        "topology": topology,
+        "phases": phases,
+        "sub_questions": sub_questions,
+        "interrupt": {"paused": paused, "gate": gate,
+                      "basis": "state_markers" if paused else None,
+                      "clarify_pending": clarify_pending},
+        "checkpoint": {"exists": cp.get("exists", False), "step": cp.get("step"),
+                       "last_writers": cp.get("last_writers", [])},
+        "resume": {"feedback": f"/investigations/{inv_id}/feedback"} if paused else None,
+    }
+
+
 @router.get("/investigations/{inv_id}/export")
 def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False,
                          principal=Depends(get_principal)):

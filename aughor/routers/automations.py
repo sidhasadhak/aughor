@@ -66,6 +66,17 @@ def list_all(conn_id: Optional[str] = None, enabled_only: bool = False):
     return {"automations": [a.model_dump() for a in list_automations(conn_id, enabled_only)]}
 
 
+@router.get("/automations/runs")
+def all_runs(conn_id: Optional[str] = None, limit: int = 100):
+    """Runs across EVERY automation, newest first (Wave CR5) — the store read
+    (`get_runs`) always supported this; only the per-automation route existed.
+    Declared before `/automations/{automation_id}` so "runs" is never read as
+    an id."""
+    _require_flag()
+    return {"runs": [r.model_dump()
+                     for r in get_runs(conn_id=conn_id, limit=min(int(limit), 500))]}
+
+
 @router.get("/automations/{automation_id}")
 def get_one(automation_id: str):
     _require_flag()

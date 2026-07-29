@@ -47,6 +47,13 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("GET", "/usage"): P.ADMIN_MANAGE_BILLING,
     ("GET", "/usage/cost-sql"): P.ADMIN_MANAGE_BILLING,
     ("GET", "/audit/feed"): P.ADMIN_MANAGE_ORG,
+    # Wave CR1/CR2 — raw session events carry SQL text and, when the capture flag is
+    # on, prompt content; they sit with the audit feed, not under the open-read floor.
+    # The control-room AGGREGATES (/control-room/*) stay at the floor like /jobs.
+    ("GET", "/traces"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/traces/{trace_id}"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/activity"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/activity/stream"): P.ADMIN_MANAGE_ORG,
 
     # ── Connection lifecycle ──
     ("POST", "/connections"): P.CONNECTION_CREATE,
