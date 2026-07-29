@@ -7539,6 +7539,11 @@ export interface components {
          *     appends its alert — a faithful replay of the legacy monitor job, used when a monitor is *adopted*
          *     onto this engine. It is not authored by hand; it exists so a monitor can execute through the one
          *     engine instead of its own scheduler.
+         *
+         *     ``investigate`` accepts an OPTIONAL ``agent_id`` (Wave H1) — the user-defined agent the
+         *     scheduled run answers *as*. It is a parameter on an existing effect kind, not a new kind:
+         *     the run still drains the one ask path, and the agent's instructions, document/pack scope
+         *     and connection binding are applied by that path, not re-implemented here.
          */
         Effect: {
             /** Config */
