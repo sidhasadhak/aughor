@@ -234,3 +234,28 @@ class TestCapStore:
 
 def test_the_vocabularies_are_small_and_stated():
     assert METRICS and SCOPES == ("org", "user") and ACTIONS == ("alert", "block")
+
+
+def test_observed_usage_window_reads_the_real_timestamp_column(monkeypatch):
+    """The session-events timestamp column is `at`. This filtered on a key that
+    does not exist (`created_at`), so every row fell outside the window and no
+    cap could ever trip — a gate that structurally always allowed. Pinned with a
+    row shaped exactly like `Ledger.session_events()` output."""
+    from datetime import datetime, timezone
+
+    from aughor.govern import usage_caps as UC
+
+    class _FakeLedger:
+        def session_events(self, **kw):
+            return [{"at": datetime.now(timezone.utc).isoformat(), "kind": "llm_call",
+                     "provider": "openrouter", "model": "m:free", "ok": True,
+                     "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
+                     "org_id": "default", "user_id": "", "duration_ms": 1.0,
+                     "payload": {}}]
+
+    import aughor.kernel.ledger as ledger_mod
+    monkeypatch.setattr(ledger_mod.Ledger, "default", classmethod(lambda cls: _FakeLedger()))
+
+    totals = UC.observed_usage(window_hours=24)
+    assert totals["calls"] == 1.0, "a row stamped now must land inside a 24h window"
+    assert totals["total_tokens"] == 15.0

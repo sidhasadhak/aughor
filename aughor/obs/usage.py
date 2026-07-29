@@ -262,7 +262,7 @@ SELECT provider,
        ROUND(AVG(duration_ms), 1)                        AS mean_ms
 FROM   session_events
 WHERE  kind = 'llm_call'
-  AND  created_at >= datetime('now', '-30 days')
+  AND  at >= datetime('now', '-30 days')
 GROUP  BY provider, model
 ORDER  BY calls DESC;
 """.strip()
