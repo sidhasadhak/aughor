@@ -112,6 +112,11 @@ class Effect(BaseModel):
     appends its alert — a faithful replay of the legacy monitor job, used when a monitor is *adopted*
     onto this engine. It is not authored by hand; it exists so a monitor can execute through the one
     engine instead of its own scheduler.
+
+    ``investigate`` accepts an OPTIONAL ``agent_id`` (Wave H1) — the user-defined agent the
+    scheduled run answers *as*. It is a parameter on an existing effect kind, not a new kind:
+    the run still drains the one ask path, and the agent's instructions, document/pack scope
+    and connection binding are applied by that path, not re-implemented here.
     """
     kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor"]
     config: dict = Field(default_factory=dict)
@@ -128,6 +133,15 @@ class Effect(BaseModel):
     @property
     def action_id(self) -> str:
         return str(self.config.get("action_id", ""))
+
+    @property
+    def agent_id(self) -> str:
+        """The user-defined agent an ``investigate`` effect runs as ("" = none).
+
+        Not in ``_EFFECT_REQUIRED``: an unbound investigation is still valid, so the
+        absence of this key is the pre-H1 behaviour byte-for-byte.
+        """
+        return str(self.config.get("agent_id", ""))
 
     @property
     def params(self) -> dict:

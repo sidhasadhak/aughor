@@ -3762,6 +3762,28 @@ def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGener
     return stream
 
 
+def ask_agent_refusal(req: "AskRequest") -> str:
+    """Why this ask cannot run as its ``agent_id``, or "" when it can (or none is set).
+
+    The public form of the persona resolution :func:`build_ask_stream` performs inline, for
+    callers that must decide BEFORE a run starts. ``build_ask_stream`` raises its refusals as
+    ``HTTPException`` — correct for an HTTP caller, lost for a scheduled one, whose tick has
+    already reported the effect as dispatched by the time a submitted job unwraps. Wave H1's
+    automation effect asks here first and puts the sentence in its run history instead.
+
+    Same authority, same sentences: this delegates to the very functions the stream uses, so a
+    rule can never hold on one path and not the other. Note it mutates ``req.schema_name`` the
+    way the stream does — callers pass the request they are about to run, or a probe copy.
+    """
+    try:
+        agent = _resolve_ask_agent(req)
+        if agent is not None:
+            _apply_agent_bindings(req, agent, _resolve_conn(req))
+    except HTTPException as exc:
+        return str(exc.detail)
+    return ""
+
+
 @router.post("/ask")
 async def ask_endpoint(req: AskRequest, request: Request):
     """One conversational entry — the router picks quick vs deep (auto+transparency).

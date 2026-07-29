@@ -308,23 +308,53 @@ def _dispatch_monitor(effect: Effect, automation: Automation) -> EffectOutcome:
                          message=f"{alert.severity}: {alert.message[:120]}")
 
 
+def _precheck_agent(effect: Effect, automation: Automation) -> Optional[str]:
+    """Validate the H1 persona binding BEFORE the job is submitted, or None if there is none.
+
+    Returns the authored refusal sentence — verbatim, never paraphrased — so a binding failure
+    lands in the run history instead of vanishing inside a background job that the tick has
+    already reported as ``executed``. The rules are not re-implemented: the ask path's own
+    :func:`~aughor.routers.investigations.ask_agent_refusal` is the authority for "is this agent
+    runnable" and "does its binding conflict". A second, identical resolution happens inside
+    ``build_ask_stream`` when the work runs — idempotent by construction, and the door stays one.
+    """
+    if not effect.agent_id:
+        return None
+    from aughor.routers.investigations import AskRequest, ask_agent_refusal
+
+    probe = AskRequest(question=str(effect.config.get("question", "")),
+                       connection_id=automation.conn_id, depth="deep",
+                       schema_name=effect.config.get("schema_name"), agent_id=effect.agent_id)
+    return ask_agent_refusal(probe) or None
+
+
 def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutcome:
-    """Run a deep investigation on the automation's connection.
+    """Run a deep investigation on the automation's connection, optionally AS a user-agent.
 
     Driven on the REAL answer path rather than a private copy: the work drains ``build_ask_stream``
     in-process at ``depth="deep"``, the same technique the evals ``ask_target`` uses, on the same
-    documented ``request=None`` seam.
+    documented ``request=None`` seam. When ``effect.agent_id`` is set (Wave H1) that path applies
+    the persona itself — pinned instructions lead the prompt, retrieval is scoped to the agent's
+    documents, its connection/schema bindings win — so scheduling an agent adds a *parameter*, not
+    a second way to answer. The binding is pre-checked here (:func:`_precheck_agent`) because the
+    ask path raises its refusals as HTTP errors, which a submitted job would swallow.
 
     Note what this does NOT do: K2's ``trigger_investigation`` side-effect branch still raises.
     Pointing it here would make :mod:`aughor.kinetic` depend on :mod:`aughor.automations`, inverting
     the wave dependency (A depends on K). Closing it means lifting this runner into a module neither
-    package owns — deliberately deferred rather than done backwards.
+    package owns — deliberately deferred rather than done backwards (Wave H5).
 
     Submitted through ``submit_background_tick`` so the run is a supervised, metered kernel job and
     counts against the agent's budget. With no running loop (a unit test, pre-startup) that helper
     declines and the work runs inline — the legacy path both schedulers already take.
     """
     question = str(effect.config.get("question", ""))
+    agent_id = effect.agent_id
+    refusal = _precheck_agent(effect, automation)
+    if refusal is not None:
+        return EffectOutcome(kind=effect.kind, target=question[:200], status="dispatch_error",
+                             message=refusal)
+    ran_as = f" as agent {agent_id}" if agent_id else ""
 
     def _work() -> None:
         import asyncio
@@ -333,7 +363,8 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
         from aughor.routers.investigations import AskRequest, build_ask_stream
 
         req = AskRequest(question=question, connection_id=automation.conn_id,
-                         depth="deep", schema_name=effect.config.get("schema_name"))
+                         depth="deep", schema_name=effect.config.get("schema_name"),
+                         agent_id=agent_id or None)
 
         async def _drain() -> str:
             err = ""
@@ -351,16 +382,20 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
         asyncio.run(_drain())
 
     from aughor.kernel.jobs import submit_background_tick
+    # The agent is part of the identity of the work: the same question asked as two different
+    # personas is two different investigations, and must not deduplicate onto one.
+    idem = f"automation:{automation.id}:investigate"
+    if agent_id:
+        idem = f"{idem}:{agent_id}"
     job_id = submit_background_tick(
-        "investigation", _work, conn_id=automation.conn_id,
-        idempotency_key=f"automation:{automation.id}:investigate",
+        "investigation", _work, conn_id=automation.conn_id, idempotency_key=idem,
     )
     if job_id is None:
         _work()   # no live loop — run inline, as the monitor/brief schedulers do
         return EffectOutcome(kind=effect.kind, target=question[:200], status="executed",
-                             message="ran inline (no kernel loop)")
+                             message=f"ran inline (no kernel loop){ran_as}")
     return EffectOutcome(kind=effect.kind, target=question[:200], status="executed",
-                         message=f"job {job_id}")
+                         message=f"job {job_id}{ran_as}")
 
 
 _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {

@@ -23,6 +23,8 @@ import {
   rejectProposal,
   getGrants,
   revokeGrant,
+  listUserAgents,
+  type UserAgent,
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
@@ -470,6 +472,11 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
     initial?.effects ?? [{ kind: "notify", config: { trigger_id: "" } }]);
   const [maxRetries, setMaxRetries] = useState(initial?.max_retries ?? 1);
   const [saving, setSaving] = useState(false);
+  // The personas an `investigate` effect may run as (Wave H1). Empty when the
+  // `agents.user_defined` flag is off — the picker then simply doesn't render, and
+  // an unbound investigation is still the default.
+  const [agents, setAgents] = useState<UserAgent[]>([]);
+  useEffect(() => { listUserAgents().then(setAgents).catch(() => setAgents([])); }, []);
 
   const setCond = (i: number, c: AutoCondition) => setConditions(cs => cs.map((x, j) => j === i ? c : x));
   const setEff = (i: number, e: AutoEffect) => setEffects(es => es.map((x, j) => j === i ? e : x));
@@ -535,7 +542,7 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
       <div style={{ marginBottom: 16 }}>
         <label style={labelStyle}>Then (in order)</label>
         {effects.map((e, i) => (
-          <EffectRow key={i} e={e} onChange={ee => setEff(i, ee)}
+          <EffectRow key={i} e={e} agents={agents} onChange={ee => setEff(i, ee)}
             onRemove={effects.length > 1 ? () => setEffects(es => es.filter((_, j) => j !== i)) : undefined} />
         ))}
         <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => setEffects(es => [...es, { kind: "notify", config: { trigger_id: "" } }])} style={{ ...ghostBtn, color: "var(--blue3)", marginTop: 2 }}>+ add effect</Button>
@@ -590,7 +597,7 @@ function ConditionRow({ c, onChange, onRemove }: { c: AutoCondition; onChange: (
   );
 }
 
-function EffectRow({ e, onChange, onRemove }: { e: AutoEffect; onChange: (e: AutoEffect) => void; onRemove?: () => void }) {
+function EffectRow({ e, agents, onChange, onRemove }: { e: AutoEffect; agents: UserAgent[]; onChange: (e: AutoEffect) => void; onRemove?: () => void }) {
   const set = (patch: Record<string, unknown>) => onChange({ ...e, config: { ...e.config, ...patch } });
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
@@ -603,7 +610,18 @@ function EffectRow({ e, onChange, onRemove }: { e: AutoEffect; onChange: (e: Aut
           <input style={inputStyle} value={String(e.config.trigger_id ?? "")} onChange={ev => set({ trigger_id: ev.target.value })} placeholder="Action Hub trigger id" />
         )}
         {e.kind === "investigate" && (
-          <input style={inputStyle} value={String(e.config.question ?? "")} onChange={ev => set({ question: ev.target.value })} placeholder="investigation question" />
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <input style={inputStyle} value={String(e.config.question ?? "")} onChange={ev => set({ question: ev.target.value })} placeholder="investigation question" />
+            {agents.length > 0 && (
+              <select style={inputStyle} value={String(e.config.agent_id ?? "")}
+                onChange={ev => set({ agent_id: ev.target.value })}>
+                <option value="">Run unbound (no agent)</option>
+                {agents.filter(a => a.enabled).map(a => (
+                  <option key={a.id} value={a.id}>Run as {a.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
         )}
         {e.kind === "brief" && (
           <input style={inputStyle} value={String(e.config.subscription_id ?? "")} onChange={ev => set({ subscription_id: ev.target.value })} placeholder="brief subscription id" />
