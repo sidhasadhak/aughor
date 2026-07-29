@@ -4245,7 +4245,21 @@ export interface AgentRunSummary {
   headline: string | null;
   query_count: number;
   agent_id: string;
+  /** "chat" (a quick conversation, rolled up per session) or "investigation" (a deep run). */
+  kind: string;
 }
+
+/** A user-defined PERSONA's model spend from the G3 usage store. Distinct from
+ *  `AgentSpend` above, which is a fleet CHARTER's (Scout/Analyst) run totals — same word,
+ *  different question: what kind of platform work ran, versus whose persona asked.
+ *  `measured: false` means the session log recorded nothing to attribute — NOT that the
+ *  agent spent nothing, which is why the numeric fields are absent rather than zero. */
+export type UserAgentSpend =
+  | { measured: false; reason: string; enable_flag: string }
+  | {
+      measured: true; calls: number; total_tokens: number;
+      cost_usd: number | null; cost_is_complete: boolean; failure_rate: number | null;
+    };
 
 export interface AgentTraceStats {
   trace_count: number;
@@ -4261,6 +4275,7 @@ export interface AgentObservability {
   run_count: number;
   runs: AgentRunSummary[];
   trace_stats: AgentTraceStats | null;
+  spend: UserAgentSpend;
 }
 
 export async function getAgentObservability(agentId: string): Promise<AgentObservability | null> {

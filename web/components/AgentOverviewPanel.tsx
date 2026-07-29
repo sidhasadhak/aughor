@@ -52,6 +52,13 @@ export function AgentOverviewPanel({ onManage }: { onManage?: () => void }) {
 
   const agent = agents.find(a => a.id === selected) ?? null;
   const stats = obs?.trace_stats ?? null;
+  const spend = obs?.spend ?? null;
+  // Name the mix rather than labelling every run "investigations": quick answers count
+  // here too now, and a tile that mislabels what it counted is the bug H3 fixed.
+  const deepRuns = (obs?.runs ?? []).filter(r => r.kind !== "chat").length;
+  const quickRuns = (obs?.runs ?? []).length - deepRuns;
+  const runMix = [deepRuns ? `${deepRuns} deep` : "", quickRuns ? `${quickRuns} quick` : ""]
+    .filter(Boolean).join(" · ") || "none yet";
 
   if (agents.length === 0) {
     return (
@@ -103,19 +110,26 @@ export function AgentOverviewPanel({ onManage }: { onManage?: () => void }) {
 
             {/* Stat tiles */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
-              <Tile label="Runs" value={loading ? "…" : String(obs?.run_count ?? 0)} sub="investigations" />
-              {stats ? (
+              <Tile label="Runs" value={loading ? "…" : String(obs?.run_count ?? 0)} sub={runMix} />
+              {/* Spend comes from the usage store, so it does not wait on MLflow. When the
+                  session log is off it says so rather than showing a zero that reads as fact. */}
+              {spend?.measured ? (
                 <>
-                  <Tile label="Traces" value={compactNumber(stats.trace_count)} sub={`${stats.error_count} errored`} />
-                  <Tile label="Tokens" value={compactNumber(stats.total_tokens)} />
-                  <Tile label="Cost" value={`$${stats.total_cost.toFixed(2)}`} />
-                  <Tile label="Latency p50" value={stats.latency_p50_ms != null ? `${(stats.latency_p50_ms / 1000).toFixed(1)}s` : "—"}
-                        sub={stats.latency_p90_ms != null ? `p90 ${(stats.latency_p90_ms / 1000).toFixed(1)}s` : undefined} />
+                  <Tile label="Model calls" value={compactNumber(spend.calls)}
+                        sub={spend.failure_rate ? `${Math.round(spend.failure_rate * 100)}% failed` : undefined} />
+                  <Tile label="Tokens" value={compactNumber(spend.total_tokens)} />
+                  <Tile label="Cost" value={spend.cost_usd != null ? `$${spend.cost_usd.toFixed(2)}` : "—"}
+                        sub={spend.cost_is_complete ? undefined : "some models unpriced"} />
                 </>
-              ) : (
+              ) : null}
+              {stats && (
+                <Tile label="Latency p50" value={stats.latency_p50_ms != null ? `${(stats.latency_p50_ms / 1000).toFixed(1)}s` : "—"}
+                      sub={stats.latency_p90_ms != null ? `p90 ${(stats.latency_p90_ms / 1000).toFixed(1)}s` : undefined} />
+              )}
+              {spend && !spend.measured && (
                 <div style={{ flex: "1 1 100%", fontSize: 12, color: "var(--t3)", padding: "8px 2px" }}>
-                  MLflow tracing is off — showing run history only. Enable{" "}
-                  <code style={{ fontSize: 11 }}>obs.mlflow</code> for token, cost & latency stats.
+                  Spend is not measured — {spend.reason}. Enable{" "}
+                  <code style={{ fontSize: 11 }}>{spend.enable_flag}</code> to attribute model calls per agent.
                 </div>
               )}
             </div>
@@ -131,6 +145,9 @@ export function AgentOverviewPanel({ onManage }: { onManage?: () => void }) {
                     <span style={{ flex: 1, fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {r.headline || r.question}
                     </span>
+                    <StatusChip hue="muted" strength="soft">
+                      {r.kind === "chat" ? `quick${r.query_count > 1 ? ` ·${r.query_count}` : ""}` : "deep"}
+                    </StatusChip>
                     <StatusChip hue={STATUS_HUE[r.status] ?? "muted"} strength="soft">{r.status}</StatusChip>
                     <span style={{ fontSize: 11, color: "var(--t3)", flexShrink: 0, width: 110, textAlign: "right" }}>{formatTimestamp(r.started_at, "short")}</span>
                   </div>

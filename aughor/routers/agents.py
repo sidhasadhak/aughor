@@ -320,7 +320,16 @@ def user_agent_observability(agent_id: str):
     history store, stamped with agent_id) enriched with MLflow trace stats when
     `obs.mlflow` is on. Degrades to history-only (`trace_stats: null`) when the
     tracking server is off — the workspace is useful without MLflow (B3: the
-    dependency is one-directional)."""
+    dependency is one-directional).
+
+    Wave H3 adds ``spend`` from the G3 usage store (H2's ``agent_id`` axis over the
+    session log), so calls, tokens and cost are answerable **without** MLflow — a
+    second, optional dependency should not be what stands between an operator and
+    "what did this agent cost". When the session log is off nothing has been
+    recorded to report, and ``spend`` says so with the flag to turn on rather than
+    returning zeros: a confident 0 tokens and an unmeasured 0 tokens look identical
+    on a tile, and only one of them is true.
+    """
     _require_user_agents()
     from aughor.user_agents import get_agent
     if get_agent(agent_id) is None:
@@ -333,7 +342,34 @@ def user_agent_observability(agent_id: str):
         "run_count": len(runs),
         "runs": runs,
         "trace_stats": telemetry.agent_trace_stats(agent_id),
+        "spend": _agent_spend(agent_id),
     }
+
+
+def _agent_spend(agent_id: str) -> dict:
+    """This agent's slice of the G3 usage rollup, or an honest unmeasured verdict.
+
+    ``measured`` is the field a caller must read first: False means the session log
+    recorded nothing to roll up (flag ``obs.session_log`` is off), not that the agent
+    spent nothing. ``cost_is_complete`` carries G3's own caveat forward — a model with
+    no declared price contributes nothing to the total rather than counting as free.
+    """
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("obs.session_log"):
+        return {"measured": False, "reason": "the session log is off; no model calls are "
+                                             "recorded to attribute",
+                "enable_flag": "obs.session_log"}
+    from aughor.obs.usage import usage_report
+    report = usage_report(axes=("agent_id",)).to_dict()
+    for row in report.get("rows") or []:
+        if row.get("agent_id") == agent_id:
+            return {"measured": True, "calls": row.get("calls", 0),
+                    "total_tokens": row.get("total_tokens", 0),
+                    "cost_usd": row.get("cost_usd"),
+                    "cost_is_complete": row.get("cost_is_complete", False),
+                    "failure_rate": row.get("failure_rate")}
+    return {"measured": True, "calls": 0, "total_tokens": 0, "cost_usd": 0.0,
+            "cost_is_complete": True, "failure_rate": 0.0}
 
 
 @router.post("/agents/custom/{agent_id}/evaluate")
