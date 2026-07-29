@@ -245,6 +245,26 @@ def build_connection_hints(
     except Exception:
         logger.debug("connection-KB hints unavailable for %s", connection_id, exc_info=True)
 
+    # 3. Wave O1a — the DECLARED synonym store. Added last so it wins: the two derivations
+    #    above are inferences (metric names, KB titles/tags), and a recorded synonym is a
+    #    statement. Before O1 there was no store at all and this function WAS the synonym
+    #    story, which is why it reads the store rather than the store paralleling it — two
+    #    synonym dialects is the Wave V lesson at smaller scale.
+    try:
+        from aughor.ontology.vocabulary import synonym_expansion
+        for term, subjects in synonym_expansion(connection_id).items():
+            if term in _STOP_WORDS or len(term) < 2:
+                continue
+            # A declared synonym also feeds the hint maps, so "takings" reaches the same
+            # table `revenue` does — a synonym nothing can match is a synonym that only
+            # looks like it works.
+            for subject in subjects:
+                _add_hint(table_hints, term, subject)
+                _add_hint(col_hints, term, subject)
+            synonyms.setdefault(term, set()).update(subjects)
+    except Exception:
+        logger.debug("declared synonyms unavailable for %s", connection_id, exc_info=True)
+
     result = (table_hints, col_hints, synonyms)
     _hint_cache[connection_id] = result
     return result

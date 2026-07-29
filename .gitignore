@@ -109,3 +109,8 @@ evals/spider2_*_run.log
 evals/lsb_out/
 evals/llm_exp/
 /agents.db*
+
+# Wave O1 — per-connection vocabulary (synonyms, formats, value dictionaries).
+# TRACKED deliberately: a synonym is governed curation a reviewer should see in a diff,
+# same as data/ontology_overrides/. Listed here only to document that it is NOT ignored.
+!data/vocabulary/
