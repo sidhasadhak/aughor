@@ -231,5 +231,21 @@ def results_for_run(run_id: str, *, org_id: Optional[str] = None) -> list[Result
     return [_row_to_result(r) for r in rows]
 
 
+def count_failing(connection_id: str, *, org_id: Optional[str] = None) -> int:
+    """How many recorded checks are currently failing on a connection.
+
+    A counting reader rather than the digest reaching into this module's connection: a
+    caller that wants a number should get a number, and the private-import ratchet is
+    right that a cross-module `_conn` is a coupling nobody meant to sign up for.
+    """
+    org = org_id or current_org_id()
+    with _conn() as c:
+        row = c.execute(
+            "SELECT COUNT(*) AS n FROM quality_results "
+            "WHERE org_id=? AND connection_id=? AND passed=0",
+            (org, connection_id)).fetchone()
+    return int(row["n"] if row else 0)
+
+
 def new_run_id() -> str:
     return uuid.uuid4().hex[:12]
