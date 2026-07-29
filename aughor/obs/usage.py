@@ -22,6 +22,15 @@ source. Conversely ``user_id``/``conn_id`` looked available (they are real colum
 every event) and are empty in practice, because identity comes from the ambient trace and
 there is no principal in local mode.
 
+**Wave H2 re-measured ``agent_id`` before adding it as an axis, and the 0% turned out to
+mean something different from the other two.** ``user_id``/``conn_id`` are 0% because
+nothing populates them; ``agent_id`` is 0% because on that corpus nobody had ever asked
+*as* an agent — the write path (persona contextvar → :func:`aughor.telemetry.trace_identity`
+→ every session event) was already complete. So H2 is a reporting change: the column was
+being written and simply could not be grouped by. The distinction matters for reading this
+table later — a 0% that means "never exercised" becomes populated by USE, and a 0% that
+means "never written" only ever changes by a code edit.
+
 So this module reports the axes that carry information and is **loud about the ones that
 do not**: every rollup returns an ``unattributed`` count per axis rather than folding
 blanks into a group that then reads as a real cohort. A usage page whose largest row is
@@ -45,6 +54,14 @@ from typing import Any, Iterable, Optional, Sequence
 from aughor.obs.session_log import LLM_CALL
 
 #: The axes a caller may group by. Each maps to how one session-log row yields its value.
+#:
+#: ``agent_id`` is the USER-DEFINED persona a call ran as (Wave H2), read from the same
+#: ambient contextvar :func:`aughor.telemetry.trace_identity` already stamps onto every
+#: session event — the write path predates this axis, which is why adding it is a reporting
+#: change and not a plumbing one. It is **not** the fleet charter id that
+#: ``kernel/jobs.py`` resolves per job kind (scout/analyst/watcher): those name what KIND of
+#: platform work ran, this names WHOSE persona asked, and grouping spend by one while
+#: labelling it the other would misattribute every number on the page.
 AXES: dict[str, Any] = {
     "provider": lambda e: e.get("provider") or "",
     "model": lambda e: e.get("model") or "",
@@ -52,6 +69,7 @@ AXES: dict[str, Any] = {
     "org_id": lambda e: e.get("org_id") or "",
     "user_id": lambda e: e.get("user_id") or "",
     "conn_id": lambda e: e.get("conn_id") or "",
+    "agent_id": lambda e: e.get("agent_id") or "",
 }
 
 DEFAULT_AXES: tuple[str, ...] = ("provider", "model")

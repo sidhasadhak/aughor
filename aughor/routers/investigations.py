@@ -272,12 +272,26 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             _model = {"role": "coder", "id": getattr(get_provider("coder"), "model", None)}
         except Exception:
             _model = None
+        # Wave H2: the persona this answer was produced AS, read from the ambient contextvar
+        # rather than threaded through — so a scheduled agent run (H1) and an interactive one
+        # stamp identically. This function is the ONE place every user-facing answer is
+        # receipted (chat / ADA / monitor), so stamping here attributes all three by
+        # construction. Absent when nobody asked as an agent — an unbound answer says so by
+        # omission rather than carrying an empty agent that reads like a real one.
+        _agent = None
+        try:
+            from aughor.user_agents.context import current_agent
+            _a = current_agent()
+            _agent = {"id": _a.id, "name": _a.name} if _a is not None else None
+        except Exception:
+            _agent = None
         _receipt_id = Ledger.default().artifact_write(
             kind, natural_key,
             {"question": question, "headline": headline or question,
              "sql": sqls[0] if sqls else "", "tables": sorted(seen),
              **({"cost": _cost} if _cost is not None else {}),
              **({"model": _model} if _model else {}),
+             **({"agent": _agent} if _agent else {}),
              **({"resolved_ambiguities": _resolved_ambig} if _resolved_ambig else {}),
              **({"learning": _learning} if _learning else {}),
              **({"activations": _activations} if _activations else {}),
