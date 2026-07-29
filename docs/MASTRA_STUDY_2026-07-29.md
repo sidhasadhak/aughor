@@ -78,7 +78,7 @@ change.
 | # | Take | Home |
 |---|---|---|
 | 1 | **Agents-as-product**: compose UserAgents + charters + the automations `investigate` effect + receipts into "create an analyst agent, schedule it, watch its runs" | **Wave H** — `WAVE_H_HIRED_AGENTS.md` (scoped) |
-| 2 | **Run-centric control room**: one Runs surface over existing stores (jobs, session_events, automation runs, receipts) | Wave S design pass (S1–S3); H3 ships the per-agent slice first |
+| 2 | **Run-centric control room**: one Runs surface over existing stores (jobs, session_events, automation runs, receipts) | **Wave CR** — `WAVE_CR_CONTROL_ROOM.md` (CR0–CR5, scoped 2026-07-29 from the Control Room mockup handoff); H3 shipped the per-agent slice it drills in from |
 | 3 | **One scheduler + kernel retry**: graduate `automations.adopt_legacy` (built, OFF); add a bounded retry policy to `kernel/jobs.py` (today `attempt: 1` forever) | Standalone graduation + a small kernel PR |
 | 4 | **Live sampled scorers**: attach registered evaluators (`evals/builtins.py`) to a sampling ratio of live traffic → existing evals store; feeds S3's accuracy-as-product-number | Rides S3 |
 | 5 | **Editor-tier versioning** for UserAgent instructions (draft→publish, restorable) | H6 (optional) |
