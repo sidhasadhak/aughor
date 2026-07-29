@@ -365,3 +365,105 @@ def test_rule_from_dict_round_trips():
     r = rule_from_dict({"name": "n", "table": "orders", "kind": "not_null",
                         "column": "id", "criticality": "error"})
     assert r.criticality == "error" and r.to_dict()["fingerprint"]
+
+
+# ── Q4 WIRED: the caveat reaches the live receipt ───────────────────────────────────
+
+class TestCaveatsReachTheReceipt:
+    """Q4 leveraged, not merely built. Proven end-to-end on a real receipt before these
+    were written: `caveats: []` became the failing-freshness caveat with its run id."""
+
+    def _raw(self, table="orders"):
+        return {"artifact": {"id": "r1", "conn_id": "c1", "kind": "chat_answer",
+                             "created_at": "2026-07-29T00:00:00+00:00",
+                             "payload": {"question": "q", "headline": "h",
+                                         "tables": [table], "sql": "SELECT 1"}},
+                "lineage": [{"relation": "input", "ref": f"table:{table}"}]}
+
+    def test_the_receipt_builder_stays_pure(self):
+        """Its docstring promises no I/O and other callers rely on that. Health caveats
+        arrive as DATA; the store read belongs to the caller.
+
+        Checks the BODY, not the source: the docstring deliberately names
+        `caveats_for_answer` to tell a reader where the store read lives, and a grep over
+        the whole source flagged that prose as if it were a call. A test that cannot tell a
+        mention from an invocation would push the docstring into being less helpful.
+        """
+        import ast
+        import inspect
+        import textwrap
+
+        from aughor.trust import receipt as R
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(R.build_public_receipt)))
+        fn = tree.body[0]
+        if ast.get_docstring(fn):
+            fn.body = fn.body[1:]                     # drop the docstring node
+        body = ast.dump(ast.Module(body=fn.body, type_ignores=[]))
+        for io_call in ("caveats_for_answer", "latest_for_tables", "record"):
+            assert io_call not in body, f"the pure projection must not call {io_call}"
+
+    def test_health_caveats_land_on_the_receipt(self):
+        from aughor.trust.receipt import build_public_receipt
+
+        out = build_public_receipt(self._raw(), signed=False,
+                                   health_caveats=["`orders` failed freshness"])
+        assert "`orders` failed freshness" in out["caveats"]
+
+    def test_no_health_caveats_is_byte_identical_to_before(self):
+        from aughor.trust.receipt import build_public_receipt
+
+        a = build_public_receipt(self._raw(), signed=False)
+        b = build_public_receipt(self._raw(), signed=False, health_caveats=[])
+        assert a == b
+
+    def test_there_is_one_dedup_not_two(self):
+        """Q4's rule is ONE caveat path. Two de-dup implementations would be the first
+        step back to a reader seeing the same concern twice in different words."""
+        import inspect
+
+        from aughor.trust import receipt as R
+
+        src = inspect.getsource(R.build_public_receipt)
+        assert "assemble(" in src
+        assert "dict.fromkeys" not in src        # the old local de-dup is gone
+
+    def test_a_duplicate_between_producers_renders_once(self):
+        from aughor.trust.receipt import build_public_receipt
+
+        raw = self._raw()
+        raw["artifact"]["payload"]["caveats"] = ["`orders` failed freshness"]
+        out = build_public_receipt(raw, signed=False,
+                                   health_caveats=["`orders` failed freshness"])
+        assert out["caveats"].count("`orders` failed freshness") == 1
+
+    def test_the_router_prefers_lineage_tables_over_the_payload_list(self):
+        """Lineage is what the answer actually READ; the payload list is what the planner
+        intended. A caveat about a table the query never touched is noise."""
+        import inspect
+
+        from aughor.routers import receipt as RR
+
+        src = inspect.getsource(RR._health_caveats)
+        assert 'relation") == "input"' in src
+
+    def test_an_unreadable_store_never_breaks_the_receipt(self, monkeypatch):
+        """A quality plane that can break a receipt is one operators disable."""
+        from aughor.routers import receipt as RR
+
+        def _boom(*a, **k):
+            raise RuntimeError("quality store down")
+
+        monkeypatch.setattr("aughor.quality.caveats.caveats_for_answer", _boom)
+        assert RR._health_caveats("c1", self._raw()) == []
+
+    def test_no_connection_means_no_lookup(self):
+        from aughor.routers import receipt as RR
+
+        assert RR._health_caveats(None, self._raw()) == []
+
+    def test_no_tables_means_no_lookup(self):
+        from aughor.routers import receipt as RR
+
+        raw = {"artifact": {"payload": {}}, "lineage": []}
+        assert RR._health_caveats("c1", raw) == []

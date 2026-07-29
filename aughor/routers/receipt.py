@@ -52,7 +52,45 @@ def get_receipt(receipt_id: str) -> dict:
     if visible is not None and (conn_id is None or conn_id not in visible):
         raise HTTPException(status_code=404, detail="No such receipt")
 
-    receipt = build_public_receipt(raw, connection=_connection_view(conn_id))
+    receipt = build_public_receipt(
+        raw, connection=_connection_view(conn_id),
+        health_caveats=_health_caveats(conn_id, raw))
     if receipt is None:
         raise HTTPException(status_code=404, detail="No such receipt")
     return receipt
+
+
+def _health_caveats(conn_id, raw: dict) -> list:
+    """Wave Q4 — the data-quality caveats for the tables this answer read.
+
+    Computed HERE rather than inside `build_public_receipt` because that projection is
+    documented pure and other callers rely on it; the store read belongs on the side that
+    already does I/O and holds the connection.
+
+    Best-effort by construction: a quality plane that can break a receipt is a quality
+    plane operators disable, so an unreadable store yields no caveats and the receipt
+    renders exactly as it did before Q existed.
+    """
+    if not conn_id:
+        return []
+    try:
+        from aughor.quality.caveats import caveats_for_answer
+
+        payload = (raw.get("artifact") or {}).get("payload") or {}
+        lineage = raw.get("lineage") or []
+        # Prefer the lineage's declared input tables — they are what the answer actually
+        # READ, where the payload's list is what the planner intended. A caveat about a
+        # table the query never touched is noise the reader has to learn to ignore.
+        tables = [(e.get("ref") or "").split("table:", 1)[1] for e in lineage
+                  if e.get("relation") == "input"
+                  and (e.get("ref") or "").startswith("table:")]
+        tables = tables or list(payload.get("tables") or [])
+        if not tables:
+            return []
+        return caveats_for_answer(str(conn_id), tables)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+
+        tolerate(exc, "health caveats are best-effort; the receipt renders without them",
+                 counter="quality.receipt_caveats")
+        return []
