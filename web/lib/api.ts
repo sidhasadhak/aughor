@@ -4161,6 +4161,38 @@ export async function createUserAgent(body: {
   return res.json();
 }
 
+/** A Domain Expertise Pack offered as an agent template (Wave H4). `suggested_goldens`
+ *  are SUGGESTIONS, not a seeded suite: a pack cannot supply a golden's reference SQL
+ *  (it does not know your schema), so each says what it still needs and the hired agent
+ *  starts with a stance rather than a pass chip it did not earn. */
+export interface AgentTemplate {
+  pack_id: string;
+  name: string;
+  persona: string;
+  domains: string[];
+  status: string;
+  instructions: string;
+  suggested_goldens: { question: string; needs: string }[];
+  metric_recipes: string[];
+}
+
+export async function listAgentTemplates(): Promise<AgentTemplate[]> {
+  const res = await fetch(`${BASE}/agents/templates`);
+  if (!res.ok) return [];
+  return (await res.json()).templates ?? [];
+}
+
+export async function createUserAgentFromTemplate(body: {
+  pack_id: string; name?: string; connection_id?: string; schema_scope?: string;
+}): Promise<{ agent: UserAgent; suggested_goldens: { question: string; needs: string }[] }> {
+  const res = await fetch(`${BASE}/agents/custom/from-template`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `hire from template failed (${res.status})`);
+  return res.json();
+}
+
 export async function patchUserAgent(agentId: string, body: {
   name?: string; instructions?: string; connection_id?: string; schema_scope?: string;
   doc_ids?: string[]; pack_ids?: string[]; enabled?: boolean;

@@ -8,11 +8,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import {
-  createAgentGolden, createUserAgent, deleteAgentGolden, deleteUserAgent,
-  evaluateUserAgent, getConnections, getPacks, listAgentGoldens, listDocuments,
-  listUserAgents, patchUserAgent,
-  type AgentEvalResult, type AgentGolden, type Connection, type DocumentEntry,
-  type PackSummary, type UserAgent,
+  createAgentGolden, createUserAgent, createUserAgentFromTemplate, deleteAgentGolden,
+  deleteUserAgent, evaluateUserAgent, getConnections, getPacks, listAgentGoldens,
+  listAgentTemplates, listDocuments, listUserAgents, patchUserAgent,
+  type AgentEvalResult, type AgentGolden, type AgentTemplate, type Connection,
+  type DocumentEntry, type PackSummary, type UserAgent,
 } from "@/lib/api";
 
 interface FormState {
@@ -41,6 +41,10 @@ export function AgentsAdminPanel() {
   const [error, setError] = useState<string | null>(null);
   const [goldens, setGoldens] = useState<AgentGolden[]>([]);
   const [goldenDraft, setGoldenDraft] = useState({ question: "", reference_sql: "" });
+  const [templates, setTemplates] = useState<AgentTemplate[]>([]);
+  // Carried from a hire so the creator is asked for reference SQL while the domain is
+  // still in mind. Cleared once used — they are prompts, not state the agent owns.
+  const [suggested, setSuggested] = useState<{ question: string; needs: string }[]>([]);
   const [evaluating, setEvaluating] = useState(false);
   const [evalResult, setEvalResult] = useState<AgentEvalResult | null>(null);
 
@@ -53,6 +57,7 @@ export function AgentsAdminPanel() {
     getConnections().then(setConnections).catch(() => {});
     listDocuments().then(setDocuments).catch(() => {});
     getPacks().then(r => setPacks((r.packs || []).filter(p => p.ok))).catch(() => {});
+    listAgentTemplates().then(setTemplates).catch(() => setTemplates([]));
   }, [reload]);
 
   function openCreate() {
@@ -60,6 +65,25 @@ export function AgentsAdminPanel() {
     setEditTarget(null);
     setError(null);
     setView("form");
+  }
+
+  /** Hire from a pack: the agent is created server-side so its stance comes from the pack
+   *  itself, then opened for editing with the domain's questions in hand. Those questions
+   *  are NOT goldens — a pack cannot know this connection's schema, so each still needs
+   *  reference SQL, and the agent starts with no pass chip rather than an unearned one. */
+  async function hireFromTemplate(tpl: AgentTemplate) {
+    setError(null);
+    setSaving(true);
+    try {
+      const made = await createUserAgentFromTemplate({ pack_id: tpl.pack_id });
+      setSuggested(made.suggested_goldens);
+      await reload();
+      openEdit(made.agent);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
   }
 
   function openEdit(a: UserAgent) {
@@ -181,6 +205,40 @@ export function AgentsAdminPanel() {
       )}
 
       <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
+        {view === "list" && templates.length > 0 && (
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)", marginBottom: 2 }}>
+              Hire from a domain pack
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--t3)", marginBottom: 10, maxWidth: 620, lineHeight: 1.5 }}>
+              Starts the agent with the pack&rsquo;s reasoning stance and keeps the pack bound,
+              so improving the pack improves every agent hired from it. Its questions come
+              along as suggestions — each still needs reference SQL for your connection
+              before it can be measured.
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              {templates.map(t => (
+                <div key={t.pack_id} style={{
+                  flex: "1 1 260px", maxWidth: 340, padding: 14, display: "flex",
+                  flexDirection: "column", gap: 8,
+                  background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{t.name}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--t3)", lineHeight: 1.45 }}>{t.persona}</div>
+                  <div style={{ fontSize: 11, color: "var(--t4)" }}>
+                    {t.domains.join(" · ")}
+                    {t.suggested_goldens.length > 0
+                      ? ` — ${t.suggested_goldens.length} suggested questions` : ""}
+                  </div>
+                  <Button size="sm" variant="outline" disabled={saving}
+                          onClick={() => hireFromTemplate(t)} className="self-start">
+                    Hire {t.name}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {view === "list" ? (
           agents.length === 0 ? (
             <div style={{ fontSize: 12.5, color: "var(--t3)", maxWidth: 520, lineHeight: 1.6 }}>
@@ -384,6 +442,28 @@ export function AgentsAdminPanel() {
                     <Button variant="ghost" size="xs" onClick={() => removeGolden(g)}>Remove</Button>
                   </div>
                 ))}
+                {/* Carried from a pack hire. Deliberately NOT written as goldens: the pack
+                    cannot know this connection's schema, and a suite with no executable
+                    ground truth would put a pass chip on nothing. Clicking one loads it
+                    into the draft so the creator supplies the SQL that makes it real. */}
+                {suggested.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: "var(--t3)" }}>
+                      From the pack — each needs reference SQL for this connection before it
+                      can be measured:
+                    </div>
+                    {suggested.map(s => (
+                      <Button key={s.question} variant="ghost" size="xs"
+                              className="justify-start h-auto py-1"
+                              onClick={() => {
+                                setGoldenDraft({ question: s.question, reference_sql: "" });
+                                setSuggested(list => list.filter(x => x.question !== s.question));
+                              }}>
+                        + {s.question}
+                      </Button>
+                    ))}
+                  </div>
+                )}
                 <input className="aug-input" placeholder="Golden question — e.g. How many active customers?"
                        value={goldenDraft.question}
                        onChange={e => setGoldenDraft(d => ({ ...d, question: e.target.value }))} />
