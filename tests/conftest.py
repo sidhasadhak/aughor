@@ -47,6 +47,7 @@ for _env, _file in (
     ("AUGHOR_PACK_BINDINGS_DB", "pack_bindings.db"),
     ("AUGHOR_GOVERN_TAGS_DB", "govern_tags.db"),
     ("AUGHOR_GOVERN_CAPS_DB", "govern_caps.db"),
+    ("AUGHOR_QUALITY_DB", "quality.db"),
     ("AUGHOR_CHECKPOINTS_DB", "checkpoints.db"),
     ("AUGHOR_IDEMPOTENCY_DB", "idempotency.db"),
     ("AUGHOR_RBAC_DB", "rbac.db"),

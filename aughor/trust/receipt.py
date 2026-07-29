@@ -129,10 +129,19 @@ def _metrics_from_lineage(lineage: list) -> dict:
 
 
 def build_public_receipt(raw: dict, *, connection: Optional[dict] = None,
-                         signed: bool = True) -> Optional[dict]:
+                         signed: bool = True,
+                         health_caveats: Optional[list] = None) -> Optional[dict]:
     """Project a raw ledger receipt (`{artifact, lineage, job, cost}`) into the public
     contract. Pure — no I/O. Absent fields are honestly null/empty, never fabricated. When
-    `signed`, an HMAC `signature` over the canonical body is attached."""
+    `signed`, an HMAC `signature` over the canonical body is attached.
+
+    ``health_caveats`` are Wave Q4's data-quality caveats for the tables this answer read.
+    They arrive as DATA rather than being fetched here, because this function's purity is
+    a contract other callers rely on — reading the quality store from inside it would make
+    a documented pure projection do I/O, and the caller already has the connection and the
+    permission to read. The caller computes them with
+    :func:`aughor.quality.caveats.caveats_for_answer`.
+    """
     if not raw or not raw.get("artifact"):
         return None
     art = raw["artifact"]
@@ -154,10 +163,21 @@ def build_public_receipt(raw: dict, *, connection: Optional[dict] = None,
     ] or list(payload.get("tables") or [])
 
     guards = _guards_from_lineage(lineage)
-    # Caveats: any explicit caveat stored on the answer + every FLAGGED guard's note.
-    caveats = list(payload.get("caveats") or [])
-    caveats += [g["caveat"] for g in guards if g["action"] == "flagged" and g["caveat"]]
-    caveats = list(dict.fromkeys(c for c in caveats if c))   # de-dup, keep order
+    # Caveats: any explicit caveat stored on the answer, every FLAGGED guard's note, and
+    # Wave Q4's data-quality caveats for the tables read.
+    #
+    # Assembled through `quality.caveats.assemble` rather than a local de-dup, because Q4's
+    # rule is ONE caveat path: O6's declaration violations, trust_checks' result critiques,
+    # the guard notes here and the health results all describe concerns to the same reader,
+    # and a concern rendered twice in different words is one people stop reading. Two
+    # de-dup implementations would be the first step back to that.
+    guard_caveats = [g["caveat"] for g in guards
+                     if g["action"] == "flagged" and g["caveat"]]
+    from aughor.quality.caveats import assemble
+
+    caveats = assemble(
+        declaration_caveats=list(payload.get("caveats") or []) + guard_caveats,
+        trust_caveats=list(health_caveats or []))
 
     conf = payload.get("confidence")
     confidence = {"level": (conf if isinstance(conf, str) else payload.get("confidence_level")),
