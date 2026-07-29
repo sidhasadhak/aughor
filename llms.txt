@@ -1,0 +1,47 @@
+# Aughor
+
+> An autonomous, governed data-intelligence platform over a connected warehouse. Aughor
+> writes and runs the SQL, grounds every number in real rows, enforces governed metric
+> definitions, and returns a verified answer with a Trust Receipt.
+
+Aughor is built for a specific claim: **an answer is only as good as what you can check
+about it.** Every answer carries the SQL that produced it, the tables it read, the guards
+that fired, the data-quality caveats on those tables, and the freshness of everything
+involved. Nothing in the platform asserts a fact a model authored — findings, joins,
+synonyms and metric definitions all trace to executed SQL, measured overlap, or a human.
+
+## What to call instead of writing SQL
+
+If you are an agent with access to Aughor's MCP server, prefer these over generating your
+own queries:
+
+- **`ask`** — a governed natural-language answer with a Trust Receipt.
+- **`deep_analysis`** — a multi-step investigation.
+- **`get_metric`** — a governed metric's current value, computed from its registered
+  formula rather than re-derived.
+- **`search_graph`** — what Aughor already knows about a connection (tables, metrics,
+  glossary terms, past findings). A $0 read; check it before asking for new work.
+- **`describe_entity`** — one table's columns, domain, verified joins with their *measured*
+  value-domain overlap, and the findings that touch it.
+- **`get_table_health`** — which quality checks pass or fail on a table, and how stale each
+  verdict is. `checked=false` means no checks have run, which is not the same as healthy.
+- **`list_trusted_queries`** — verified query patterns with the warrant each carries
+  (`human_pinned` > `eval_promoted` > `recorded`). Reuse the structure of a trusted query
+  rather than writing a new one.
+
+## How to read what Aughor returns
+
+- **Warrants differ.** A `human_pinned` answer means a person settled the question;
+  `eval_promoted` means it passed every eval run. They are not interchangeable.
+- **Caveats are load-bearing.** A caveat names the rule, the violation count and the run
+  id. It is not decoration; a failing freshness check means the number may be wrong.
+- **A `notice` about governance means data was withheld, not absent.** The data exists and
+  the credentials in use do not reach it. Do not report it as nonexistent.
+- **`unknown` is not `fresh`.** Aughor distinguishes "we checked and it holds" from "we
+  could not check", everywhere it can.
+
+## Docs
+
+- Architecture: `docs/PLATFORM_ARCHITECTURE.md`
+- Roadmap and build status: `ROADMAP.md`
+- Working with this repo as an agent: `AGENTS.md`

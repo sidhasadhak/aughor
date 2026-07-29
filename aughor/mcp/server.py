@@ -191,3 +191,75 @@ async def cancel_job(
 ) -> dict:
     """Cancel an in-flight fleet job (e.g. a long exploration or investigation)."""
     return await _client.cancel_job(job_id)
+
+
+# ── Wave S6 — knowledge tools over the stores this program built ────────────────────
+#
+# In-process reads rather than REST round-trips, deliberately and against the module's
+# general rule: these four read committed artifacts and local stores, so a hop through the
+# API would add latency and a second failure mode to answer a question the process can
+# already answer. The governed path still runs in the API for everything that EXECUTES —
+# `ask`, `deep_analysis`, `explore` are unchanged.
+#
+# Every tool that returns table-derived data goes through G5's clearance trim. MCP is an
+# EXTERNAL agent surface: skipping the trim here would be a bigger hole than skipping it
+# internally, because the consumer is not a person who might notice.
+
+@mcp.tool()
+async def search_graph(
+    connection: Annotated[str, Field(description="A connection id from list_connections.")],
+    query: Annotated[str, Field(description="What to look for — a table, metric, term or topic.")],
+    limit: Annotated[int, Field(description="Max nodes to return (default 10).", ge=1, le=50)] = 10,
+) -> dict:
+    """Search Aughor's connection knowledge graph — the tables, governed metrics, glossary
+    terms and past findings it has already established for a connection, with the measured
+    join overlap between tables. This is a $0 read of what Aughor already knows: prefer it
+    before asking Aughor to re-derive anything. `available=false` means no graph has been
+    built yet. A `notice` means some results were withheld by data governance — the data
+    exists, your credentials do not reach it."""
+    from aughor.mcp.knowledge_tools import search_graph as _search
+
+    return _search(connection, query, limit=limit)
+
+
+@mcp.tool()
+async def describe_entity(
+    connection: Annotated[str, Field(description="A connection id from list_connections.")],
+    entity: Annotated[str, Field(description="A table or entity name, e.g. 'orders'.")],
+) -> dict:
+    """Everything Aughor knows about one entity — its columns, domain, verified joins with
+    their MEASURED value-domain overlap, glossary terms and past findings. The same slice
+    Aughor's own entity page renders, so an agent and a human asking about `orders` get one
+    answer. `available=false` with a `notice` means the entity exists but is withheld by
+    data governance."""
+    from aughor.mcp.knowledge_tools import describe_entity as _describe
+
+    return _describe(connection, entity)
+
+
+@mcp.tool()
+async def get_table_health(
+    connection: Annotated[str, Field(description="A connection id from list_connections.")],
+    table: Annotated[str, Field(description="The table to report health for.")],
+) -> dict:
+    """Data-quality verdicts for a table — which declared checks passed, which failed, how
+    many violations, and how STALE each verdict is. Use it before trusting a number from a
+    table: a verdict computed against yesterday's data is not authoritative today.
+    `checked=false` means no checks have run — which is NOT the same as healthy."""
+    from aughor.mcp.knowledge_tools import get_table_health as _health
+
+    return _health(connection, table)
+
+
+@mcp.tool()
+async def list_trusted_queries(
+    connection: Annotated[str, Field(description="A connection id from list_connections.")],
+    limit: Annotated[int, Field(description="Max queries to return (default 25).", ge=1, le=100)] = 25,
+) -> dict:
+    """The verified query patterns for a connection, each with the WARRANT it carries:
+    `human_pinned` (a person settled this question), `eval_promoted` (it passed every eval
+    run), or `recorded`. Reuse the SQL structure of a trusted query rather than writing a
+    new one — and prefer a human-pinned pattern over a promoted one when both exist."""
+    from aughor.mcp.knowledge_tools import list_trusted_queries as _trusted
+
+    return _trusted(connection, limit=limit)
