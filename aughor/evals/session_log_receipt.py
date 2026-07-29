@@ -104,7 +104,7 @@ def _drive_door(*, flag_on: bool, frames: tuple = _FRAMES,
     returned.
     """
     from aughor.kernel.flags import flag_overrides
-    from aughor.routers.investigations import _stream_with_session_log
+    from aughor.routers.investigations import stream_with_session_log
 
     async def _run() -> list[str]:
         async def _source():
@@ -116,11 +116,14 @@ def _drive_door(*, flag_on: bool, frames: tuple = _FRAMES,
         out: list[str] = []
         with flag_overrides({FLAG: flag_on}):
             try:
-                async for event in _stream_with_session_log(
+                async for event in stream_with_session_log(
                         _source(), question="cr0 receipt probe", conn_id="cr0-conn"):
                     out.append(event)
-            except RuntimeError:
-                pass  # the synthetic crash — evidence is in the ledger, not the raise
+            except RuntimeError as exc:
+                # Only OUR synthetic crash may be absorbed — the evidence the
+                # scenario asserts on is in the ledger, not the raise.
+                if "synthetic mid-stream crash" not in str(exc):
+                    raise
         return out
 
     return asyncio.run(_run())

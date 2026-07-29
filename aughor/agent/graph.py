@@ -106,6 +106,16 @@ def _explore_parallel_enabled() -> bool:
         return False
 
 
+def topology_flags() -> dict:
+    """The flag-gated topology variants, resolved NOW — the public read for
+    surfaces that render the graph a run would take (Wave CR5b)."""
+    return {
+        "ada_parallel_lenses": _ada_parallel_lenses_enabled(),
+        "ada_parallel_phases": _ada_parallel_phases_enabled(),
+        "explore_parallel": _explore_parallel_enabled(),
+    }
+
+
 def _ada_parallel_lenses_enabled() -> bool:
     """The ada.parallel_lenses flag, resolved fail-safe (env/ledger) → 'off' on any error."""
     try:
