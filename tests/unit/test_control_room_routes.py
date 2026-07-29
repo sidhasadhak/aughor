@@ -203,3 +203,24 @@ def test_investigation_graph_view_is_honest_about_a_missing_checkpoint(
     assert body["topology"] == []
     assert body["resume"] is None
     assert body["interrupt"]["paused"] is False
+
+
+def test_deep_run_trace_resolves_its_investigation(client, ledger, monkeypatch, tmp_path):
+    """A deep run's trace IS its investigation id (telemetry.new_trace returns it
+    verbatim) and its span rows carry no investigation_id column — the door wrapper
+    only brackets /ask and /chat. The trace route must resolve the direct match, or
+    every deep run's feedback tab degrades to 'nothing to attach to' (found live)."""
+    from aughor.db import history
+
+    monkeypatch.setattr(history, "_DB_PATH", str(tmp_path / "history.db"))
+    inv_id = history.create_investigation("why did jobs fail", "conn-cr1")
+    ledger.session_event_insert({"trace_id": inv_id, "kind": "tool_call",
+                                 "name": "ada_intake", "span_id": "s1"})
+
+    body = client.get(f"/traces/{inv_id}").json()
+    assert body["investigation_id"] == inv_id
+    assert body["question"] == "why did jobs fail"
+
+    listing = client.get("/traces", params={"investigation_id": inv_id}).json()
+    assert any(t["trace_id"] == inv_id for t in listing["traces"]), (
+        "the H3 drill-in must find a deep run by its investigation id")

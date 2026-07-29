@@ -81,9 +81,17 @@ def list_traces(limit: int = 50, investigation_id: Optional[str] = None,
         rows = ledger.session_events(
             investigation_id=investigation_id, agent_id=agent_id,
             org_id=org_id, limit=2000)
-        if not rows and not recording:
+        trace_ids = list(dict.fromkeys(r["trace_id"] for r in rows))
+        # A deep run's trace IS its investigation id (telemetry.new_trace
+        # returns it verbatim), and its span rows carry a NULL
+        # investigation_id column — the door wrapper only brackets /ask and
+        # /chat. The direct match is the honest second half of this filter.
+        if investigation_id and investigation_id not in trace_ids:
+            if ledger.session_events(trace_id=investigation_id, limit=1):
+                trace_ids.append(investigation_id)
+        if not trace_ids and not recording:
             return {**_not_recorded(), "recording": False, "traces": []}
-        trace_ids = list(dict.fromkeys(r["trace_id"] for r in rows))[: max(1, int(limit))]
+        trace_ids = trace_ids[: max(1, int(limit))]
         summaries = [s for s in session_log.recent_sessions(org_id=org_id, limit=1000)
                      if s["trace_id"] in set(trace_ids)]
         return {"measured": True, "recording": recording, "traces": summaries}
@@ -142,14 +150,33 @@ def get_trace(trace_id: str):
 
     final = next((e for e in reversed(events) if e["kind"] == session_log.FINAL_RESPONSE), None)
     first = events[0]
+
+    # Deep runs mint their trace FROM the investigation id (telemetry.new_trace
+    # returns it verbatim) and their span rows carry no investigation_id column
+    # — only the /ask+/chat door wrapper stamps one. Resolve the direct match
+    # so a deep run's feedback tab attaches to the run it belongs to.
+    inv_id = next((e["investigation_id"] for e in events if e.get("investigation_id")), None)
+    question = ((first.get("payload") or {}).get("question", "")
+                if first["kind"] == session_log.USER_REQUEST else "")
+    if inv_id is None:
+        try:
+            from aughor.db.history import get_investigation
+            inv = get_investigation(trace_id)
+            if inv:
+                inv_id = trace_id
+                question = question or str(inv.get("question") or "")
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "trace→investigation resolve is best-effort; the "
+                          "waterfall renders without the feedback link",
+                     counter="obs.trace.inv_resolve")
+
     return {
         "measured": True,
         "recording": session_log.enabled(),
         "trace_id": trace_id,
-        "question": (first.get("payload") or {}).get("question", "")
-        if first["kind"] == session_log.USER_REQUEST else "",
-        "investigation_id": next((e["investigation_id"] for e in events
-                                  if e.get("investigation_id")), None),
+        "question": question,
+        "investigation_id": inv_id,
         "conn_id": next((e["conn_id"] for e in events if e.get("conn_id")), None),
         "agent_id": next((e["agent_id"] for e in events if e.get("agent_id")), None),
         "ok": final.get("ok") if final else None,

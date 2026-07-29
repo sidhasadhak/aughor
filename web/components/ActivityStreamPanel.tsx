@@ -69,7 +69,10 @@ export function ActivityStreamPanel({ onOpenTrace }: { onOpenTrace?: (traceId: s
         const ev = JSON.parse(msg.data);
         if (ev.kind === "stream.open") { setRecording(Boolean(ev.recording)); return; }
         lastSeq.current = Math.max(lastSeq.current, ev.seq || 0);
-        setEvents(prev => [ev, ...prev].slice(0, MAX_ROWS));
+        // An EventSource auto-reconnect replays from its ORIGINAL since_seq —
+        // dedupe by seq so a replayed row cannot appear twice.
+        setEvents(prev => (prev.some(p => p.seq === ev.seq)
+          ? prev : [ev, ...prev].slice(0, MAX_ROWS)));
       } catch { /* a malformed frame is dropped, not fatal */ }
     };
     const iv = setInterval(() => { if (!esRef.current || esRef.current.readyState === 2) load(); }, 15_000);
