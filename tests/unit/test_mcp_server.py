@@ -46,6 +46,10 @@ def test_server_registers_the_governed_tools():
     assert tools == {
         "list_connections", "ask", "deep_analysis", "get_investigation", "get_metric",
         "list_findings", "get_briefing", "explore", "list_jobs", "get_job", "cancel_job",
+        # Wave S6 — knowledge reads over the stores the L→G→O→Q program built. Added to
+        # this exact set deliberately: the assertion exists so growing the external agent
+        # surface is a decision somebody made, not a thing that happened.
+        "search_graph", "describe_entity", "get_table_health", "list_trusted_queries",
     }
     # No raw `query` tool — the whole point is governed tools, not a SQL runner.
     assert "query" not in tools
