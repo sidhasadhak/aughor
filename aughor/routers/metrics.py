@@ -21,6 +21,17 @@ from aughor.semantic.metrics import (
 
 router = APIRouter(tags=["metrics"])
 
+#: G1 — transition verbs that map onto a DECLARED governed action, and the action each one
+#: is. Module-level rather than a local dict so the enforcement ratchet can see it: an action
+#: guarded through a lookup is still enforced, but a check that only reads literal
+#: ``guard("…")`` arguments would call it a gap and push the code into whatever shape the
+#: check could parse. The ratchet reads this mapping instead.
+#:
+#: Verbs absent here (``deprecate``) are left to the existing transition validation rather
+#: than reclassified HIGH by ``classify``'s fail-safe — widening the gate is its own
+#: governance decision, and G1 is about closing declared gaps.
+GUARDED_TRANSITIONS = {"approve": "metric.approve", "propose": "metric.propose"}
+
 
 class MetricRequest(BaseModel):
     name: str
@@ -54,6 +65,10 @@ def get_metrics():
 
 @router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])
 def create_metric(req: MetricRequest):
+    # G1: declared LOW — auto-allowed and AUDITED, so defining a governed metric leaves a
+    # trail. The approval question belongs to the approve transition, not to authoring.
+    from aughor import govern
+    govern.guard("metric.define", req.name)
     if get_metric(req.name):
         raise HTTPException(status_code=409, detail=f"Metric '{req.name}' already exists. Use PUT to update.")
     m = MetricDefinition(**req.model_dump())
@@ -63,6 +78,8 @@ def create_metric(req: MetricRequest):
 
 @router.put("/metrics/{name}", dependencies=[gate(Capability.METRICS_DEFINE)])
 def update_metric(name: str, req: MetricRequest):
+    from aughor import govern
+    govern.guard("metric.define", name)   # G1: same declared action, the edit door
     existing = get_metric(name)
     data = {**req.model_dump(), "name": name}
     audit = None
@@ -106,6 +123,14 @@ def transition_metric(name: str, req: TransitionRequest):
     m = get_metric(name)
     if not m:
         raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
+    # G1: the two DECLARED transitions carry their declared risk — `metric.approve` is HIGH
+    # (it is what makes a formula authoritative for every later answer) and `metric.propose`
+    # is LOW. Verbs govern.actions does not declare are left to the existing transition
+    # validation rather than silently reclassified HIGH by `classify`'s fail-safe: widening
+    # the gate is a governance decision, and this change is about closing declared gaps.
+    if (_action := GUARDED_TRANSITIONS.get(str(req.action or "").strip().lower())):
+        from aughor import govern
+        govern.guard(_action, name)
     now = datetime.now(timezone.utc).isoformat()
     try:
         updated, audit = apply_transition(m.model_dump(), req.action, req.actor, now)

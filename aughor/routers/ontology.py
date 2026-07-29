@@ -719,6 +719,11 @@ def import_ontology_tree(
     Edits are diffed against the PRE-override auto-built graph, so re-importing an
     unedited export is a no-op and only changed fields become overrides.
     """
+    # G1: an import writes overrides in BULK — the same governed semantic edit the two
+    # single-field override endpoints above have always gated, arriving by the door that
+    # was never locked.
+    from aughor import govern
+    govern.guard("ontology.import", connection_id)
     from aughor.ontology.filetree import import_tree, export_root
     from aughor.ontology.overrides import bind_overrides, save_override
     from aughor.ontology.store import load_ontology
@@ -1038,6 +1043,10 @@ def save_learned_skill(
     schema_name: Optional[str] = Query(default=None),
 ):
     """Persist a confirmed learned skill, gated by a read-only dry-run (EXPLAIN)."""
+    # G1: declared LOW, so this is auto-allowed and AUDITED rather than blocked — the point
+    # is that saving a skill leaves a governance trail, not that it needs approval.
+    from aughor import govern
+    govern.guard("skill.save", connection_id)
     from aughor.memory.skills import save_skill
 
     effective = _skill_schema(connection_id, schema_name)

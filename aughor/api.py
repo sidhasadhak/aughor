@@ -629,6 +629,7 @@ from aughor.routers import (
     consistency,
     kinetic,
     automations,
+    governance,
 )
 
 app.include_router(consistency.router)
@@ -645,6 +646,7 @@ app.include_router(knowledge.router)
 app.include_router(metrics.router)
 app.include_router(actions.router)
 app.include_router(security.router)
+app.include_router(governance.router)
 app.include_router(query.router)
 app.include_router(monitors.router)
 app.include_router(semantic.router)
