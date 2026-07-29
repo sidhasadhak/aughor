@@ -202,12 +202,52 @@ class UserAgentPatch(BaseModel):
     enabled: Optional[bool] = None
 
 
+class UserAgentFromTemplate(BaseModel):
+    pack_id: str
+    name: str = ""
+    connection_id: str = ""
+    schema_scope: str = ""
+
+
 @router.get("/agents/custom")
 def list_user_agents():
     """All user-defined agents (the persona roster, newest first)."""
     _require_user_agents()
     from aughor.user_agents import list_agents
     return [a.model_dump() for a in list_agents()]
+
+
+@router.get("/agents/templates")
+def list_agent_templates():
+    """Domain Expertise Packs offered as agent templates (Wave H4).
+
+    Each carries the instructions a hire would start with and the domain's own questions as
+    ``suggested_goldens`` — suggestions, each stating what it still needs. A pack cannot
+    supply a golden's reference SQL (it does not know your schema, and its evals are
+    behavioural expectations rather than queries), so the template says so rather than
+    seeding a suite that would measure nothing. See :mod:`aughor.user_agents.templates`.
+    """
+    _require_user_agents()
+    from aughor.user_agents.templates import list_templates
+    return {"templates": list_templates()}
+
+
+@router.post("/agents/custom/from-template", status_code=201)
+def create_user_agent_from_template(body: UserAgentFromTemplate):
+    """Hire an agent from a pack: its stance becomes the instructions, the pack stays bound.
+
+    Returns the agent plus the suggested goldens, so the creator is asked for reference SQL
+    while they still have the domain in mind — the agent is born with a stance, and earns
+    its pass chip only once real ground truth exists.
+    """
+    _require_user_agents()
+    from aughor.user_agents.templates import create_from_template
+    made = create_from_template(body.pack_id, name=body.name,
+                                connection_id=body.connection_id,
+                                schema_scope=body.schema_scope)
+    if made is None:
+        raise HTTPException(status_code=404, detail=f"no pack {body.pack_id!r}")
+    return made
 
 
 @router.post("/agents/custom", status_code=201)

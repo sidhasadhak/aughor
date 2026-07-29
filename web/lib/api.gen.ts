@@ -193,6 +193,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/custom/from-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create User Agent From Template
+         * @description Hire an agent from a pack: its stance becomes the instructions, the pack stays bound.
+         *
+         *     Returns the agent plus the suggested goldens, so the creator is asked for reference SQL
+         *     while they still have the domain in mind — the agent is born with a stance, and earns
+         *     its pass chip only once real ground truth exists.
+         */
+        post: operations["create_user_agent_from_template_agents_custom_from_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/custom/{agent_id}": {
         parameters: {
             query?: never;
@@ -298,6 +322,32 @@ export interface paths {
          *     on a tile, and only one of them is true.
          */
         get: operations["user_agent_observability_agents_custom__agent_id__observability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Templates
+         * @description Domain Expertise Packs offered as agent templates (Wave H4).
+         *
+         *     Each carries the instructions a hire would start with and the domain's own questions as
+         *     ``suggested_goldens`` — suggestions, each stating what it still needs. A pack cannot
+         *     supply a golden's reference SQL (it does not know your schema, and its evals are
+         *     behavioural expectations rather than queries), so the template says so rather than
+         *     seeding a suite that would measure nothing. See :mod:`aughor.user_agents.templates`.
+         */
+        get: operations["list_agent_templates_agents_templates_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8671,6 +8721,26 @@ export interface components {
              */
             schema_scope: string;
         };
+        /** UserAgentFromTemplate */
+        UserAgentFromTemplate: {
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Pack Id */
+            pack_id: string;
+            /**
+             * Schema Scope
+             * @default
+             */
+            schema_scope: string;
+        };
         /** UserAgentPatch */
         UserAgentPatch: {
             /** Connection Id */
@@ -9745,6 +9815,39 @@ export interface operations {
             };
         };
     };
+    create_user_agent_from_template_agents_custom_from_template_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserAgentFromTemplate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_user_agent_agents_custom__agent_id__get: {
         parameters: {
             query?: never;
@@ -9998,6 +10101,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_agent_templates_agents_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
