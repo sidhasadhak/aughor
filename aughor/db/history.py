@@ -273,7 +273,25 @@ def save_chat_turn(
     """Persist a completed chat turn as a history row, linked to a session and
     (when run inside a Canvas) tagged with its canvas_id so Canvas history can
     scope to the specific Canvas rather than the whole connection.
-    ``purpose`` (R10) — the named starter's tag when this turn was one."""
+    ``purpose`` (R10) — the named starter's tag when this turn was one.
+
+    ``agent_id`` (Wave H3) is read from the ambient persona contextvar rather than
+    threaded through, for the reason ``_write_answer_receipt`` reads it there too:
+    this is the one place a quick answer becomes history, so reading it here
+    attributes all four call sites by construction, and a fifth by default. The
+    deep path stamps the same value explicitly via ``create_investigation``.
+    Before this the column was simply never written on a chat row, so an agent's
+    run history showed its deep runs and silently omitted every quick answer it
+    gave — a per-agent page that reads confidently and counts a fraction.
+    (``asyncio.to_thread``, which every caller uses, copies the context, so the
+    persona survives the hop to the worker thread.)
+    """
+    try:
+        from aughor.user_agents.context import current_agent
+        _a = current_agent()
+        agent_id = _a.id if _a is not None else ""
+    except Exception:
+        agent_id = ""
     inv_id = uuid.uuid4().hex[:8]
     sid = session_id or uuid.uuid4().hex[:12]
     now = _now()
@@ -295,12 +313,12 @@ def save_chat_turn(
         """INSERT INTO investigations
            (id, question, connection_id, canvas_id, started_at, completed_at,
             status, hypothesis_count, query_count, headline,
-            report_json, kind, session_id, org_id, purpose)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            report_json, kind, session_id, org_id, purpose, agent_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (inv_id, question, connection_id, canvas_id, now, now,
          "complete", 0, 1, headline,
          json.dumps(report),
-         "chat", sid, current_org_id(), purpose or ""),
+         "chat", sid, current_org_id(), purpose or "", agent_id),
     )
     c.commit()
     c.close()
@@ -657,28 +675,68 @@ def list_investigations(limit: int = 50) -> list[dict]:
 
 
 def list_investigations_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
-    """Run history for a single user-agent (deep runs stamped with ``agent_id``),
-    newest-first and org-scoped exactly like :func:`list_investigations`. Powers
-    the Agent Workspace overview; '' agent_id yields no rows (unbound runs are not
-    a persona's history)."""
+    """Every run a single user-agent produced — deep runs AND quick chat sessions —
+    newest-first and org-scoped exactly like :func:`list_investigations`, whose
+    three-part shape (investigations · chat grouped by session · legacy chat rows)
+    this mirrors so "a run" means the same thing on both pages.
+
+    Wave H3 widened it. It previously filtered ``kind = 'investigation'``, so an
+    agent asked twenty quick questions and answered them all reported one run, or
+    none — a page stating a small number confidently is worse than one stating it
+    cannot tell. Quick turns only became attributable at all once
+    :func:`save_chat_turn` started stamping the persona; both halves of that were
+    missing, and either alone would still undercount.
+
+    '' agent_id yields no rows: unbound runs are not a persona's history, and
+    folding them in would credit every anonymous answer to whoever was listed first.
+    """
     if not agent_id:
         return []
     c = _conn()
     _ensure_schema(c)
     from aughor.security.authz import require_identity_enabled
     _org, _op = (" AND org_id = ?", [current_org_id()]) if require_identity_enabled() else ("", [])
-    rows = c.execute(
+    inv_rows = c.execute(
         f"""SELECT id, question, connection_id, canvas_id, started_at, completed_at,
                   status, hypothesis_count, query_count, headline,
-                  COALESCE(kind, 'investigation') as kind, agent_id
+                  COALESCE(kind, 'investigation') as kind, NULL as session_id, agent_id
            FROM investigations
            WHERE agent_id = ? AND (kind IS NULL OR kind = 'investigation'){_org}
            ORDER BY started_at DESC
            LIMIT ?""",
         (agent_id, *_op, limit),
     ).fetchall()
+    # Chat turns roll up to their session, as they do on the main history page: a
+    # twenty-turn conversation is one run the user had, not twenty.
+    session_rows = c.execute(
+        f"""SELECT session_id as id, MIN(question) as question, connection_id,
+                  MAX(canvas_id) as canvas_id, MIN(started_at) as started_at,
+                  MAX(completed_at) as completed_at, 'complete' as status,
+                  0 as hypothesis_count, COUNT(*) as query_count,
+                  MAX(headline) as headline, 'chat' as kind, session_id, agent_id
+           FROM investigations
+           WHERE agent_id = ? AND kind = 'chat'
+                 AND session_id IS NOT NULL AND session_id != ''{_org}
+           GROUP BY session_id, connection_id
+           ORDER BY started_at DESC
+           LIMIT ?""",
+        (agent_id, *_op, limit),
+    ).fetchall()
+    legacy_rows = c.execute(
+        f"""SELECT id, question, connection_id, canvas_id, started_at, completed_at,
+                  'complete' as status, 0 as hypothesis_count, 1 as query_count,
+                  headline, 'chat' as kind, id as session_id, agent_id
+           FROM investigations
+           WHERE agent_id = ? AND kind = 'chat'
+                 AND (session_id IS NULL OR session_id = ''){_org}
+           ORDER BY started_at DESC
+           LIMIT ?""",
+        (agent_id, *_op, limit),
+    ).fetchall()
     c.close()
-    return [dict(r) for r in rows]
+    combined = [dict(r) for r in list(inv_rows) + list(session_rows) + list(legacy_rows)]
+    combined.sort(key=lambda r: r.get("started_at") or "", reverse=True)
+    return combined[:limit]
 
 
 def get_investigation(inv_id: str) -> Optional[dict]:

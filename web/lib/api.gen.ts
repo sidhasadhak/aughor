@@ -288,6 +288,14 @@ export interface paths {
          *     `obs.mlflow` is on. Degrades to history-only (`trace_stats: null`) when the
          *     tracking server is off — the workspace is useful without MLflow (B3: the
          *     dependency is one-directional).
+         *
+         *     Wave H3 adds ``spend`` from the G3 usage store (H2's ``agent_id`` axis over the
+         *     session log), so calls, tokens and cost are answerable **without** MLflow — a
+         *     second, optional dependency should not be what stands between an operator and
+         *     "what did this agent cost". When the session log is off nothing has been
+         *     recorded to report, and ``spend`` says so with the flag to turn on rather than
+         *     returning zeros: a confident 0 tokens and an unmeasured 0 tokens look identical
+         *     on a tile, and only one of them is true.
          */
         get: operations["user_agent_observability_agents_custom__agent_id__observability_get"];
         put?: never;
