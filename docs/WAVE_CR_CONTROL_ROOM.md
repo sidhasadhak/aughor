@@ -103,6 +103,12 @@ missing store. Measuring ours found **most of the surface is a rendering problem
 CR2** (one PR each: a read-only route + a component). **CR3** (1–2 PRs; the table and
 tiles). **CR4** (1 PR). **CR5** (1–2 PRs). Total ≈ 6–8 PRs, every one shippable alone.
 
+## 6. Receipts (filled as items land)
+
+| Item | Receipt | Evidence |
+|---|---|---|
+| **CR0** | ✅ graduation receipt `45dcc137f55b` (2026-07-29), run `43bf2bc7182d` of `aughor/evals/session_log_receipt.py` — 7/7 stable, 0 flaky, 0 errors, bar 1.0, minted through the live `POST /evals/flags/obs.session_log/graduate`. | Byte-identity proven against the real door wrapper (frames compared byte-for-byte, on vs off); store failure fail-open proven; content capture proven independent and still OFF; retention proven to delete by age and cap; write cost measured p95 **0.078 ms** vs E1's 5 ms bar. Magnitude on the real store: 267 rows/active-day, row cap ~748 days out, 14-day age prune binding. Bonus: the suite caught the door wrapper closing crashed runs as `ok=True` (fixed in the same change) and the pre-check caught two `created_at`→`at` column bugs (usage caps could never trip; the served COST_SQL errored). |
+
 Relation to the program: CR is **Wave S's control-room slice** with the H substrate
 underneath — H2/H3 built the attribution these views read, and H3's per-agent page becomes
 CR1's drill-in origin. CR does not block H5/H6 and shares no files with them; it can run

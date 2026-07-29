@@ -4024,7 +4024,10 @@ async def _stream_with_session_log(
         except BaseException as exc:
             # A cancelled or crashed stream must leave the same evidence as a
             # clean failure — otherwise the log's most interesting runs are
-            # exactly the ones missing from it.
+            # exactly the ones missing from it. `failed` must be set too, or the
+            # finally below closes the run as ok=True and the log calls the
+            # crash a success.
+            failed = str(exc)[:2000]
             session_log.emit(
                 session_log.EXECUTION_ERROR, name=door, trace_id=run_id,
                 investigation_id=inv_id, conn_id=conn_id, ok=False,
