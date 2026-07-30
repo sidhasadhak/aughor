@@ -12,9 +12,16 @@ Three properties carry the weight, and they are the three decisions Wave H defer
 **Risk tier.** Starting an investigation is a read-path analysis — it issues SELECTs and
 writes an investigation row, never a source mutation — but it SPENDS the LLM budget. So
 it is not ``read_only``, and the kinetic executor enforces that as a floor rather than
-trusting the declaration (:func:`aughor.kinetic.executor._risk_of`). Metering is not
-added here: ``submit_background_tick`` already makes the run a supervised kernel job, so
-the tokens land on the job's meter and count against the charter's budget.
+trusting the declaration (:func:`aughor.kinetic.executor._risk_of`).
+
+Metering is not added here, and the reason is worth stating precisely because the obvious
+reading is wrong. ``submit_background_tick`` makes THIS a supervised kernel job, but the
+deep path mints its OWN ``investigation`` job underneath it, and that inner job is where
+the tokens land — measured live, the outer job reports ``total_tokens: 0`` while its inner
+twin reports the real spend. Both carry ``kind="investigation"``, so both resolve to the
+same charter and the budget claim holds; what does not hold is "the tokens are on this
+job's meter". The nesting predates this module (the scheduled ``investigate`` effect
+produced the same pair), so it is recorded here rather than papered over.
 
 **Async submission.** Submitted, never awaited — the caller's tick or HTTP request must
 not block for the minutes a deep run takes. With no live loop (a unit test, pre-startup,
