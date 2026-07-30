@@ -217,9 +217,16 @@ def _dispatch_trigger_investigation(se: SideEffect, action: KineticAction, param
     if not question:
         raise KineticDispatchError(
             "trigger_investigation requires a 'question' in its side-effect config")
+    connection_id = str(cfg.get("connection_id") or scope or "")
+    if not connection_id:
+        # Fail here rather than let the ask path fail deep inside a background job on a
+        # connection id of "" — the caller would see a submitted job that quietly never answered.
+        raise KineticDispatchError(
+            "trigger_investigation has no connection: declare 'connection_id' in the side-effect "
+            "config, or execute the action against one")
     req = InvestigationRequest(
         question=question,
-        connection_id=str(cfg.get("connection_id") or scope),
+        connection_id=connection_id,
         schema_name=str(cfg.get("schema_name") or "") or None,
         agent_id=str(cfg.get("agent_id") or "") or None,
     )
@@ -232,7 +239,7 @@ def _dispatch_trigger_investigation(se: SideEffect, action: KineticAction, param
                             caller=f"kinetic:{action.id}")
     if not run.ok:
         raise KineticDispatchError(run.message)
-    return {"kind": se.kind, "question": question, "connection_id": req.connection_id,
+    return {"kind": se.kind, "question": question, "connection_id": connection_id,
             "basis": run.basis, "job_id": run.job_id,
             "investigation_id": run.investigation_id, "receipt_id": run.receipt_id,
             **({"agent_id": req.agent_id} if req.agent_id else {})}

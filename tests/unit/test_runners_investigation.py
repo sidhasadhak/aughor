@@ -238,6 +238,18 @@ def test_a_question_referencing_an_undeclared_parameter_fails_loudly(monkeypatch
     assert submitted == [], "a question that could not be built still ran"
 
 
+def test_an_action_with_no_connection_refuses_instead_of_submitting_a_doomed_job(monkeypatch):
+    """A job submitted against connection "" would 'succeed' at submit and then quietly never
+    answer — the failure lands minutes later, inside a background job, on nobody's screen."""
+    submitted = _capture_submit(monkeypatch)
+    _fake_ask(monkeypatch)
+
+    result = execute_kinetic_action(_ki_action({"question": "q"}), {"order_id": "A-9"}, scope="")
+
+    assert result.status == "dispatch_error" and "connection" in result.message
+    assert submitted == []
+
+
 def test_a_refused_persona_reaches_the_caller_verbatim(monkeypatch):
     """The K2 property: an action that could not do what it declared says so, in the
     authored words — it does not quietly investigate as nobody."""

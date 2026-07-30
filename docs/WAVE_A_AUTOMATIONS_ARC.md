@@ -60,7 +60,7 @@ agree**, plus one that is not a trigger at all.
 | Run history | Monitors persist only **fired alerts**. A tick that evaluated cleanly, or crashed, leaves **no row** — "did it run?" is unanswerable | [`monitors/store.py:285`](../aughor/monitors/store.py) |
 | "Explorer re-arm" | **Not a trigger.** `explore_watermark.json` is a per-(conn,table) max-activity timestamp used to *narrow a scan* (`delta_clause`), consumed only inside an already-running exploration | [`explorer/watermark.py:42`](../aughor/explorer/watermark.py) |
 | Staged proposals | `Proposal` is a **dataclass, never persisted** — proposals are live per-answer and die with the response (recorded as a K5 follow-on) | [`kinetic/propose.py:39`](../aughor/kinetic/propose.py) |
-| `trigger_investigation` | **Still an open seam** — K2 raises `KineticDispatchError` for it. The docstring says "wired in K4"; K4 shipped the *proposer*, not this dispatch | [`kinetic/executor.py:199`](../aughor/kinetic/executor.py) |
+| `trigger_investigation` | *(was an open seam at the time of this recon; **closed by Wave H5**)* — K2 raised `KineticDispatchError` for it, because the only working runner lived inside A. H5 lifted that runner to `aughor/runners/investigation.py`, which both packages call | [`runners/investigation.py`](../aughor/runners/investigation.py) |
 
 **Three findings that change the plan:**
 
@@ -137,11 +137,13 @@ answer path, via the same in-process technique the evals `ask_target` uses), `br
 kind raises rather than no-ops.
 
 > ⚠️ **Scope note, stated precisely.** This gives *automations* a working investigation dispatcher.
-> It does **not** by itself close K2's `trigger_investigation` branch
-> ([`kinetic/executor.py:199`](../aughor/kinetic/executor.py)), which still raises: wiring that
-> would make `kinetic` depend on `automations`, inverting the wave dependency. Closing it properly
-> means lifting the runner into a module neither package owns — a follow-on, not a claim A2 gets to
-> make.
+> It does **not** by itself close K2's `trigger_investigation` branch, which still raises: wiring
+> that would make `kinetic` depend on `automations`, inverting the wave dependency. Closing it
+> properly means lifting the runner into a module neither package owns — a follow-on, not a claim
+> A2 gets to make.
+>
+> *(Resolved: **Wave H5** did exactly that — [`aughor/runners/investigation.py`](../aughor/runners/investigation.py).
+> The follow-on the note predicted, in the shape it predicted.)*
 
 **Flag** `automations.engine` · **Tests** ~34 · **Decision gate:** a paused, expired, or
 condition-negative automation performs **zero** effect dispatches and still writes a run row saying

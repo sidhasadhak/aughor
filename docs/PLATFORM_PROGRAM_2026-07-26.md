@@ -227,7 +227,7 @@ the largest frontend wave — pair with a design pass.
 | V6b (lifecycle React panel) · K5 "annotate cell" | **S5** |
 | 9 unenforced `_RISK` actions | **G1** (unchanged) |
 | Sub-1 shares render `0.275985` not `27.6%` (#189) | **O1 (spec) + S2 (render)** — J11 |
-| `trigger_investigation` seam (task chip `task_401e3882`) | Ride **G1** (both executors call the neutral runner) |
+| `trigger_investigation` seam (task chip `task_401e3882`) | ✅ **Shipped as H5** — `aughor/runners/investigation.py`; both executors call the neutral runner, as planned here |
 | Ontology-overrides root env override (chip `task_275035a4`) | Ride **O2** (same hermeticity class) |
 | K2b — `query`-kind dispatch through the read-only executor | Ride **G1** |
 | Stale rejects in `exploration_workspace.json` | Standalone chore, any live-server session |
