@@ -560,7 +560,7 @@ function PersonaHistory({ persona, onChanged, onError }: {
         return (
           <div key={r.version} style={{
             display: "flex", alignItems: "center", gap: 8, fontSize: 11.5,
-            padding: "5px 0", borderTop: "1px solid var(--line)",
+            padding: "5px 0", borderTop: "1px solid var(--b1)",
           }}>
             <span style={{ color: "var(--t3)", minWidth: 28 }}>v{r.version}</span>
             <span style={{ color: "var(--t4)", minWidth: 118 }}>{formatTimestamp(r.at)}</span>
