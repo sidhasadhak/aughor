@@ -26,8 +26,11 @@ inventing one would be a lie. So :class:`InvestigationRun` carries ``basis``: ``
 means ``investigation_id``/``receipt_id`` are the real ids of a completed run;
 ``submitted`` means the job id is the handle and the ids are not knowable yet. They are
 not simply dropped — when the drain resolves them it appends an ``investigation.dispatched``
-ledger event carrying the join (job ↔ investigation ↔ receipt ↔ agent), so a run started
-by an automation or a declared action is inspectable in Activity like any other.
+ledger event carrying the join (job ↔ investigation ↔ receipt ↔ agent), readable at
+``GET /events/recent?kind=investigation.dispatched`` and on the live ``/events/stream``.
+Note that is the KERNEL event log, not ``/obs/activity`` — Activity tails the session log,
+which is a different store answering a different question (what a run did, not what started
+it).
 
 Nothing here re-implements a rule. The persona pre-check delegates to the ask path's own
 :func:`~aughor.routers.investigations.ask_agent_refusal`, so a binding rule can never hold
