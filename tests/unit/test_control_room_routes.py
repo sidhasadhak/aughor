@@ -224,3 +224,22 @@ def test_deep_run_trace_resolves_its_investigation(client, ledger, monkeypatch, 
     listing = client.get("/traces", params={"investigation_id": inv_id}).json()
     assert any(t["trace_id"] == inv_id for t in listing["traces"]), (
         "the H3 drill-in must find a deep run by its investigation id")
+
+
+def test_fleet_hides_personas_while_their_surface_is_off(client, monkeypatch):
+    """With `agents.user_defined` off the persona CRUD routes 404 — a fleet table
+    advertising persona rows nobody can open would be two views disagreeing about
+    what exists. Rows appear only when the flag is on."""
+    from aughor.user_agents.store import create_agent
+
+    create_agent(name="Ghost Persona", instructions="x")
+
+    off = client.get("/control-room/fleet").json()
+    assert all(r["kind"] != "persona" for r in off["rows"])
+
+    import aughor.kernel.flags as flags
+    monkeypatch.setattr(flags, "flag_enabled",
+                        lambda name: name == "agents.user_defined")
+    on = client.get("/control-room/fleet").json()
+    assert any(r["kind"] == "persona" and r["name"] == "Ghost Persona"
+               for r in on["rows"])

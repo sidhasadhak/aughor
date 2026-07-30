@@ -114,6 +114,30 @@ tiles). **CR4** (1 PR). **CR5** (1–2 PRs). Total ≈ 6–8 PRs, every one ship
 | **CR4** | ✅ built + live-proven (2026-07-30) | A REAL paused run (explore branch, `mode: "explore"` + `AUGHOR_PLAN_GATE=1`) appeared as "1 waiting on a human = 1 paused deep run" — count equals the sum of sources; waiting time from the `investigation.paused` ledger event with the basis labelled; `Open & resume` deep-links to the native surface. Gap fixed en route: no `paused_at` column exists — the ledger event is the honest source. |
 | **CR5** | ✅ built + live-proven (2026-07-30) | (a) The engine's own heartbeat rendered "evaluated — did not fire" every tick with the cron reason, plus a `fired` run whose effect reported `dispatch_error: unknown Action Hub trigger: cr-proof-trigger` VERBATIM. (b) The paused run's phase view: `branch explore · checkpoint step 3`, the fixed topology chain with `plan_gate ⏸` marked amber, "No phases recorded yet" stated rather than invented. Note: `source_change` conditions refuse to evaluate while `automations.source_probes` is OFF — its receipt stands; the proof used a `schedule` condition. |
 
+## 7. The Agentic Ops consolidation (2026-07-30, same branch)
+
+The day after CR shipped, the nav carried three overlapping destinations (Control
+Room · Agents · Fleet) with three fleet-ish tables and three pause controls. They
+merged into ONE **Agentic Ops** workspace (Operations rail) with five layers:
+
+| Layer | Absorbs | Notes |
+|---|---|---|
+| Fleet | CR3 + the old FleetScreen | pulse hero (minute buckets — Calm law), ONE jobs table with state filters (the kill control, once), per-charter live counts |
+| Agents | AgentOverviewPanel + AgentsAdminPanel + page.tsx AgentsPanel | ONE kind-labelled roster, master–detail; persona Overview/Configure + goldens + hire-from-pack; charter governance (enabled/budget/model pin — the REAL knobs, with the no-temperature/no-tool-toggle law stated in-UI) |
+| Attention | CR4 | + live count badge on the switcher |
+| Activity | CR2 + CR1 | one substrate, two zoom levels: [Stream \| Runs] segmented |
+| Run graphs | CR5 | unchanged |
+
+Removed: Fleet + Agents from Intelligence (legacy ids alias into layers),
+AgentWorkspace/AgentOverviewPanel/AgentsAdminPanel/ControlRoomWorkspace files,
+~300 lines of page.tsx (raw-button ratchet lowered 73 → 69). Memory relocated to
+the Intelligence workspace (it reads org-wide `/learning/*` — "what Aughor
+knows", not agent ops). Honesty fix found during the merge: the fleet endpoint
+listed personas while `agents.user_defined` was off — two views disagreeing
+about what exists; persona rows now follow the flag (pinned by test). Design
+reference: the Mastra Control Room mockups, adopted through our tokens and laws
+(no env switcher, no per-agent sampling knobs, no fabricated scorers).
+
 Relation to the program: CR is **Wave S's control-room slice** with the H substrate
 underneath — H2/H3 built the attribution these views read, and H3's per-agent page becomes
 CR1's drill-in origin. CR does not block H5/H6 and shares no files with them; it can run

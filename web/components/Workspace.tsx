@@ -26,6 +26,10 @@ type WorkspaceProps<L extends string> = {
   headerControls?: React.ReactNode;
   /** Render the body of a layer. Called only for visited layers (keep-alive). */
   renderLayer: (id: L) => React.ReactNode;
+  /** Optional live counts shown as a chip on a layer's switcher tab (e.g. the
+   *  Attention layer's "needs a human" count). Zero/undefined renders nothing —
+   *  a badge must mean something is actually waiting. */
+  badges?: Partial<Record<L, number>>;
 };
 
 /**
@@ -40,7 +44,7 @@ type WorkspaceProps<L extends string> = {
  * switches. Layers that have never been visited aren't mounted at all.
  */
 export function Workspace<L extends string>({
-  layers, layer, onLayerChange, ariaLabel, renderIcon, headerControls, renderLayer,
+  layers, layer, onLayerChange, ariaLabel, renderIcon, headerControls, renderLayer, badges,
 }: WorkspaceProps<L>) {
   // Mount a layer the first time it becomes active, then keep it mounted.
   const [visited, setVisited] = useState<Set<L>>(() => new Set([layer]));
@@ -96,6 +100,16 @@ export function Workspace<L extends string>({
               >
                 {renderIcon(l.icon, 13, on ? "var(--blue4)" : "currentColor")}
                 {l.label}
+                {(badges?.[l.id] ?? 0) > 0 && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 600, lineHeight: 1,
+                    padding: "2px 5px", borderRadius: "var(--r-pill)",
+                    background: "var(--amb1)", border: "1px solid var(--amb2)",
+                    color: "var(--amb5)", fontVariantNumeric: "tabular-nums",
+                  }}>
+                    {badges![l.id]}
+                  </span>
+                )}
               </Button>
             );
           })}

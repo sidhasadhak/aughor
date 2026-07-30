@@ -21,6 +21,10 @@ const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then
 const EvidencePanel    = dynamic(() => import("@/components/EvidencePanel").then(m => ({ default: m.EvidencePanel })),      { ssr: false, loading });
 const KineticPanel     = dynamic(() => import("@/components/KineticPanel").then(m => ({ default: m.KineticPanel })),       { ssr: false, loading });
 const ConnectionGraphPanel = dynamic(() => import("@/components/ConnectionGraphPanel").then(m => ({ default: m.ConnectionGraphPanel })), { ssr: false, loading });
+// Relocated from the former Agents workspace (Agentic Ops merge): the closed
+// loop's accumulation is org-wide learning — "what Aughor knows", which is this
+// section's job — not agent operations.
+const MemoryPanel      = dynamic(() => import("@/components/MemoryPanel").then(m => ({ default: m.MemoryPanel })), { ssr: false, loading });
 
 // Minimal inline icon set — mirrors NavIcon paths used elsewhere in the shell.
 const ICONS: Record<string, string> = {
@@ -31,6 +35,7 @@ const ICONS: Record<string, string> = {
   process: "M3 6h4v12H3V6zm7-3h4v18h-4V3zm7 6h4v9h-4V9z",
   spark:   "M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z",
   check:   "M9 12l2 2 4-4M12 3a9 9 0 100 18 9 9 0 000-18z",
+  memory:  "M12 3l9 5-9 5-9-5 9-5zM3 12l9 5 9-5M3 17l9 5 9-5",
 };
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -42,13 +47,14 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type IntelLayer = "briefing" | "hub" | "ontology" | "graph" | "evidence" | "kinetic" | "org";
+export type IntelLayer = "briefing" | "hub" | "ontology" | "graph" | "evidence" | "memory" | "kinetic" | "org";
 
 const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "briefing", icon: "brief",   label: "Briefing", blurb: "Cross-domain synthesis" },
   { id: "hub",      icon: "layers",  label: "Hub",      blurb: "Domain knowledge & data profile" },
   { id: "ontology", icon: "node",    label: "Ontology", blurb: "Object model & relationships" },
   { id: "evidence", icon: "check",   label: "Evidence", blurb: "Claim ledger & feedback" },
+  { id: "memory",   icon: "memory",  label: "Memory",   blurb: "What the closed loop has learned" },
   { id: "kinetic",  icon: "spark",   label: "Actions",  blurb: "Declared actions & overlay edits" },
   { id: "org",      icon: "spark",   label: "Org",      blurb: "Organizational knowledge" },
 ];
@@ -198,6 +204,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} onInvestigate={q => onInvestigate(q)} />;
         if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
+        if (id === "memory")   return <MemoryPanel />;
         if (id === "kinetic")  return <KineticPanel connectionId={connectionId} />;
         return <OrgIntelPanel />; // "org"
       }}

@@ -186,15 +186,20 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
         })
 
     # ── persona rows, from H2's agent axis over the session log ──────────────
+    # Personas exist as a surface only while `agents.user_defined` is on — with
+    # it off their CRUD routes 404, and a fleet table advertising rows nobody
+    # can open would be two views disagreeing about what exists.
+    from aughor.kernel.flags import flag_enabled
+    personas_on = flag_enabled("agents.user_defined")
     log_on = session_log.enabled()
     persona_usage: dict[str, Any] = {}
-    if log_on:
+    if personas_on and log_on:
         try:
             report = usage_report(axes=("agent_id",))
             persona_usage = {r.key.get("agent_id"): r for r in report.rows}
         except Exception:
             logger.warning("fleet: persona usage rollup failed", exc_info=True)
-    for persona in list_personas():
+    for persona in (list_personas() if personas_on else []):
         usage_row = persona_usage.get(persona.id)
         if not log_on:
             spend = {"measured": False,
