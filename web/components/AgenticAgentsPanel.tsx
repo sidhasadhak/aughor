@@ -25,12 +25,14 @@ import {
   applyRecommendedAgentModels, createAgentGolden, createUserAgent,
   createUserAgentFromTemplate, deleteAgentGolden, deleteUserAgent,
   evaluateUserAgent, getAgentObservability, getAgents, getConnections,
-  getLlmConfig, getLlmModels, getPacks, listAgentGoldens, listAgentTemplates,
-  listDocuments, listUserAgents, patchAgent, patchUserAgent,
+  getLlmConfig, getLlmModels, getPacks, listAgentGoldens, listAgentRevisions,
+  listAgentTemplates, listDocuments, listUserAgents, patchAgent, patchUserAgent,
+  restoreAgentRevision,
   type AgentEvalResult, type AgentGolden, type AgentObservability,
-  type AgentRosterEntry, type AgentTemplate, type Connection,
+  type AgentRevision, type AgentRosterEntry, type AgentTemplate, type Connection,
   type DocumentEntry, type PackSummary, type UserAgent,
 } from "@/lib/api";
+import { evalChip } from "@/lib/agentEval";
 import { compactNumber, formatTimestamp } from "@/lib/format";
 
 type Selection =
@@ -98,8 +100,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
         )}
         {personas.map(p => (
           <RosterRow key={p.id} name={p.name} kind="persona" enabled={p.enabled}
-            sub={p.last_eval && p.last_eval.total > 0
-              ? `goldens ${p.last_eval.passed}/${p.last_eval.total}` : undefined}
+            sub={evalChip(p.last_eval, p.eval_basis)?.label}
             active={selected?.kind === "persona" && selected.id === p.id}
             onClick={() => setSelected({ kind: "persona", id: p.id })} />
         ))}
@@ -191,6 +192,14 @@ function PersonaDetail({ persona, onChanged, onDeleted, onError, onOpenTrace }: 
             {persona.pack_ids.length > 0 ? ` · ${persona.pack_ids.length} pack${persona.pack_ids.length === 1 ? "" : "s"}` : ""}
           </div>
         </div>
+        {(() => {
+          const chip = evalChip(persona.last_eval, persona.eval_basis);
+          return chip && (
+            <span title={chip.detail}>
+              <StatusChip hue={chip.hue} strength="soft">{chip.label}</StatusChip>
+            </span>
+          );
+        })()}
         <StatusChip hue={persona.enabled ? "positive" : "caution"} strength="soft">
           {persona.enabled ? "active" : "paused"}
         </StatusChip>
@@ -323,6 +332,19 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
     getPacks().then(r => setPacks((r.packs || []).filter(p => p.ok))).catch(() => {});
     listAgentGoldens(persona.id).then(setGoldens).catch(() => {});
   }, [persona.id]);
+
+  // Re-seed the form when the SAVED configuration moves under it — which happens on a
+  // restore. Without this the fields keep showing the configuration that was just replaced,
+  // and the next "Save changes" quietly undoes the restore the user asked for. Keyed on
+  // config_rev, so typing is never interrupted: it only fires when what is stored changed.
+  useEffect(() => {
+    setForm({
+      name: persona.name, instructions: persona.instructions,
+      connection_id: persona.connection_id, schema_scope: persona.schema_scope,
+      doc_ids: persona.doc_ids, pack_ids: persona.pack_ids,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persona.config_rev]);
 
   const save = async () => {
     if (!form.name.trim()) { onError("Name is required."); return; }
@@ -482,10 +504,88 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
         </span>
       </div>
 
+      <PersonaHistory persona={persona} onChanged={onChanged} onError={onError} />
+
       <div style={{ display: "flex", gap: 8 }}>
         <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
         <Button variant="destructive" size="sm" onClick={remove}>Delete agent</Button>
       </div>
+    </div>
+  );
+}
+
+/** H6 — the configuration history, next to the fields that write it.
+ *
+ *  Only the settings that change how the agent answers are versioned, so a rename never
+ *  shows up here. Restoring writes the old configuration forward as a new revision rather
+ *  than rewinding: what was tried in between stays on the record. */
+function PersonaHistory({ persona, onChanged, onError }: {
+  persona: UserAgent; onChanged: () => void; onError: (e: string | null) => void;
+}) {
+  const [revisions, setRevisions] = useState<AgentRevision[]>([]);
+  const [busy, setBusy] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    listAgentRevisions(persona.id)
+      .then(r => { if (alive) setRevisions(r.revisions); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [persona.id, persona.config_rev]);
+
+  const restore = async (version: number) => {
+    setBusy(version);
+    onError(null);
+    try {
+      if (await restoreAgentRevision(persona.id, version)) onChanged();
+      else onError("Restore failed.");
+    } finally { setBusy(null); }
+  };
+
+  if (revisions.length <= 1) return null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <span className="aug-label">Configuration history</span>
+      <span style={{ fontSize: 11, color: "var(--t3)" }}>
+        Instructions, connection, schema scope and bindings. Restoring adds a new revision —
+        nothing in between is erased.
+      </span>
+      {revisions.map((r, i) => {
+        // Only the newest revision is "current". An older one can carry the SAME
+        // configuration (edit away, edit back) — saying "current" on both would claim two
+        // heads; saying "Restore" would offer a button that changes nothing.
+        const isHead = i === 0;
+        const sameAsHead = !isHead && r.config_rev === persona.config_rev;
+        return (
+          <div key={r.version} style={{
+            display: "flex", alignItems: "center", gap: 8, fontSize: 11.5,
+            padding: "5px 0", borderTop: "1px solid var(--line)",
+          }}>
+            <span style={{ color: "var(--t3)", minWidth: 28 }}>v{r.version}</span>
+            <span style={{ color: "var(--t4)", minWidth: 118 }}>{formatTimestamp(r.at)}</span>
+            <span style={{
+              flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
+              whiteSpace: "nowrap", color: "var(--t3)",
+            }}>
+              {String((r.config as { instructions?: string }).instructions || "").trim()
+                || "no instructions"}
+            </span>
+            {isHead && <StatusChip hue="info" strength="soft">current</StatusChip>}
+            {sameAsHead && (
+              <span title="This configuration is the one running now — restoring it would change nothing.">
+                <StatusChip hue="muted" strength="soft">same as current</StatusChip>
+              </span>
+            )}
+            {!isHead && !sameAsHead && (
+              <Button size="xs" variant="ghost" disabled={busy !== null}
+                onClick={() => restore(r.version)}>
+                {busy === r.version ? "Restoring…" : "Restore"}
+              </Button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

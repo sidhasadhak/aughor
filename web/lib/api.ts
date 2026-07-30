@@ -1,3 +1,4 @@
+import type { EvalBasis } from "./agentEval";
 import { API_BASE as BASE } from "./config";
 import { installUpsellInterceptor } from "./upsell";
 import { installApprovalInterceptor } from "./approval";
@@ -4141,8 +4142,41 @@ export interface UserAgent {
   owner: string;
   enabled: boolean;
   last_eval: { passed: number; total: number; at: string } | null;
+  /** Fingerprint of the fields that decide how this agent answers (Wave H6). */
+  config_rev: string;
+  /** Whether `last_eval` is about the agent as it is configured now. */
+  eval_basis: EvalBasis;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentRevision {
+  version: number;
+  at: string;
+  config_rev: string;
+  author: string;
+  name: string;
+  config: Record<string, unknown>;
+}
+
+export async function listAgentRevisions(
+  agentId: string,
+): Promise<{ current_rev: string; eval_basis: EvalBasis; revisions: AgentRevision[] }> {
+  const res = await fetch(`${BASE}/agents/custom/${agentId}/revisions`);
+  if (!res.ok) return { current_rev: "", eval_basis: "none", revisions: [] };
+  return res.json();
+}
+
+export async function restoreAgentRevision(
+  agentId: string,
+  version: number,
+): Promise<UserAgent | null> {
+  const res = await fetch(
+    `${BASE}/agents/custom/${agentId}/revisions/${version}/restore`,
+    { method: "POST" },
+  );
+  if (!res.ok) return null;
+  return (await res.json()).agent as UserAgent;
 }
 
 export async function listUserAgents(): Promise<UserAgent[]> {
@@ -4725,6 +4759,7 @@ export interface FleetPersonaRow {
   enabled: boolean;
   connection_id: string;
   last_eval: { passed: number; total: number; at?: string } | null;
+  eval_basis: EvalBasis;
   spend_source: "session_log";
   spend:
     | NotRecorded

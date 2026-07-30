@@ -28,6 +28,7 @@ import {
   cancelJob, getFleetOverview, getJobs, patchAgent, patchUserAgent,
   type FleetJob, type FleetOverview, type FleetRow,
 } from "@/lib/api";
+import { evalChip } from "@/lib/agentEval";
 import { costSummary, fmtMs } from "@/lib/cost";
 import { subscribeKernelEvents } from "@/lib/events";
 import { compactNumber, formatCount, pct, relTime } from "@/lib/format";
@@ -262,11 +263,14 @@ export function FleetOverviewPanel({ onOpenAgent }: {
             {personas.map(row => row.kind === "persona" && (
               <tr key={row.id}>
                 <td style={{ fontWeight: 500 }}>{row.name}
-                  {row.last_eval && (
-                    <span style={{ color: "var(--t4)", fontSize: 11, marginLeft: 6 }}>
-                      goldens {row.last_eval.passed}/{row.last_eval.total}
-                    </span>
-                  )}
+                  {(() => {
+                    const chip = evalChip(row.last_eval, row.eval_basis);
+                    return chip && (
+                      <span title={chip.detail} style={{ marginLeft: 6 }}>
+                        <StatusChip hue={chip.hue} strength="soft">{chip.label}</StatusChip>
+                      </span>
+                    );
+                  })()}
                 </td>
                 <td><StatusChip hue="accent" strength="soft">persona</StatusChip></td>
                 <td>

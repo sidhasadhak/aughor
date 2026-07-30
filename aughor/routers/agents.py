@@ -301,6 +301,51 @@ def patch_user_agent(agent_id: str, body: UserAgentPatch):
     return agent.model_dump()
 
 
+@router.get("/agents/custom/{agent_id}/revisions")
+def list_user_agent_revisions(agent_id: str, limit: int = 50):
+    """The agent's governing-configuration history, newest first (Wave H6).
+
+    ``current_rev`` is what the agent is configured as right now, so a caller can mark the
+    entry it matches without recomputing the digest. Only the fields that decide how the
+    agent answers are versioned — a rename does not appear here, because it changed nothing
+    about what the agent does.
+    """
+    _require_user_agents()
+    from aughor.user_agents import get_agent
+    from aughor.user_agents.revisions import list_revisions
+    agent = get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return {"agent_id": agent_id, "current_rev": agent.config_rev,
+            "eval_basis": agent.eval_basis,
+            "revisions": list_revisions(agent_id, limit=max(1, min(int(limit), 200)))}
+
+
+@router.post("/agents/custom/{agent_id}/revisions/{version}/restore")
+def restore_user_agent_revision(agent_id: str, version: int):
+    """Put an earlier configuration back — as a NEW revision, never a rewind.
+
+    History stays append-only: "I went back to how it was on Tuesday" is itself worth
+    keeping, and erasing the revisions in between would destroy the record of what was
+    tried. If the restored configuration is one the golden suite already measured, the pass
+    chip becomes ``current`` again on its own — the revision is a digest of the
+    configuration, not a counter, so returning to a measured state returns the measurement
+    with it.
+    """
+    _require_user_agents()
+    from aughor.user_agents import get_agent, update_agent
+    from aughor.user_agents.revisions import revision_config
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    config = revision_config(agent_id, version)
+    if config is None:
+        raise HTTPException(status_code=404, detail=f"No revision {version} for this agent")
+    agent = update_agent(agent_id, **config)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    return {"restored_from": version, "agent": agent.model_dump()}
+
+
 @router.delete("/agents/custom/{agent_id}")
 def delete_user_agent(agent_id: str):
     _require_user_agents()

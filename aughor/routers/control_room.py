@@ -217,7 +217,8 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
         rows.append({
             "kind": "persona", "id": persona.id, "name": persona.name,
             "enabled": persona.enabled, "connection_id": persona.connection_id,
-            "last_eval": persona.last_eval, "spend_source": "session_log",
+            "last_eval": persona.last_eval, "eval_basis": persona.eval_basis,
+            "spend_source": "session_log",
             "spend": spend,
         })
 

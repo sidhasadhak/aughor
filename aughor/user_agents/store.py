@@ -145,6 +145,8 @@ def create_agent(name: str, *, instructions: str = "", connection_id: str = "",
              agent.schema_scope, json.dumps(agent.doc_ids), json.dumps(agent.pack_ids),
              agent.owner, int(agent.enabled), agent.created_at, agent.updated_at),
         )
+    from aughor.user_agents.revisions import record_revision
+    record_revision(agent, author=owner)   # revision 1 — the configuration it was born with
     return agent
 
 
@@ -166,7 +168,14 @@ _PATCHABLE = ("name", "instructions", "connection_id", "schema_scope",
 
 def update_agent(agent_id: str, **fields) -> Optional[UserAgent]:
     """Patch the provided fields (subset of ``_PATCHABLE``); returns the updated
-    agent, or None when it doesn't exist."""
+    agent, or None when it doesn't exist.
+
+    Wave H6: when the edit changes the agent's GOVERNING configuration, the new
+    configuration is appended to its revision history. ``last_eval`` is deliberately left
+    alone — the chip is labelled stale by :attr:`UserAgent.eval_basis`, never deleted,
+    because a past measurement of a past configuration is real evidence and erasing it
+    would lose what the agent used to be able to do.
+    """
     updates = {k: v for k, v in fields.items() if k in _PATCHABLE and v is not None}
     if not updates:
         return get_agent(agent_id)
@@ -185,7 +194,11 @@ def update_agent(agent_id: str, **fields) -> Optional[UserAgent]:
         cur = conn.execute(f"UPDATE user_agents SET {', '.join(sets)} WHERE id = ?", params)
         if cur.rowcount == 0:
             return None
-    return get_agent(agent_id)
+    agent = get_agent(agent_id)
+    if agent is not None:
+        from aughor.user_agents.revisions import record_revision
+        record_revision(agent)   # a no-op when only the name or the enabled switch moved
+    return agent
 
 
 def delete_agent(agent_id: str) -> bool:
@@ -226,7 +239,18 @@ def delete_golden(golden_id: str) -> bool:
 
 
 def record_eval(agent_id: str, result: dict) -> None:
-    """Stamp the latest golden-suite result onto the agent (the pass chip)."""
+    """Stamp the latest golden-suite result onto the agent (the pass chip).
+
+    The result carries the ``config_rev`` it was measured against (Wave H6). Without it a
+    chip is a number with no subject: the suite graded the instructions, document scope and
+    pack bindings that were live when it ran, and any of those can change a minute later.
+    Stamping the revision is what lets :attr:`UserAgent.eval_basis` tell a current pass from
+    one earned by an agent that no longer exists.
+    """
+    agent = get_agent(agent_id)
+    if agent is None:
+        return
+    stamped = {**result, "config_rev": agent.config_rev}
     with _connect() as conn:
         conn.execute("UPDATE user_agents SET last_eval = ?, updated_at = ? WHERE id = ?",
-                     (json.dumps(result), _now(), agent_id))
+                     (json.dumps(stamped), _now(), agent_id))
