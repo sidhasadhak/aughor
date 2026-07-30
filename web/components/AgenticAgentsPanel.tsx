@@ -501,12 +501,13 @@ function CharterDetail({ charter, workspaceId, onChanged, onError }: {
   onChanged: () => void; onError: (e: string | null) => void;
 }) {
   const [models, setModels] = useState<string[]>([]);
+  const [catalogBackend, setCatalogBackend] = useState("");
   const [busy, setBusy] = useState(false);
   const [applyNote, setApplyNote] = useState("");
 
   useEffect(() => {
     getLlmModels()
-      .then(c => setModels(c.models.map(m => m.id)))
+      .then(c => { setModels(c.models.map(m => m.id)); setCatalogBackend(c.backend); })
       .catch(() => {
         getLlmConfig()
           .then(c => setModels([...new Set(Object.values(c.models || {}))].filter(Boolean) as string[]))
@@ -519,6 +520,18 @@ function CharterDetail({ charter, workspaceId, onChanged, onError }: {
     try { await patchAgent(charter.id, { ...body, workspace_id: workspaceId }); onChanged(); }
     catch (e) { onError(String((e as Error)?.message || e)); }
     finally { setBusy(false); }
+  };
+
+  // Free-by-default: pinning a paid OpenRouter model is a deliberate act — the
+  // server refuses it without allow_paid; this confirm is how the user grants it.
+  const pinModel = (model: string) => {
+    const paid = catalogBackend === "openrouter" && model && !model.endsWith(":free");
+    if (paid && !window.confirm(
+      `${model} is a PAID OpenRouter model — free (:free) models are the default, ` +
+      "and every call with this pin bills your OpenRouter credit. Pin it anyway?")) {
+      return;
+    }
+    patch(paid ? { model, allow_paid: true } : { model });
   };
 
   const gov = charter.governance;
@@ -571,7 +584,7 @@ function CharterDetail({ charter, workspaceId, onChanged, onError }: {
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
             <span style={{ width: 110, color: "var(--t3)" }}>Model pin</span>
             <select className="aug-input" value={gov.model ?? ""} disabled={busy}
-              onChange={e => patch({ model: e.target.value })}
+              onChange={e => pinModel(e.target.value)}
               style={{ fontSize: 11, padding: "3px 6px", maxWidth: 260 }}>
               <option value="">Role default</option>
               {models.map(m => <option key={m} value={m}>{m}</option>)}
@@ -581,7 +594,7 @@ function CharterDetail({ charter, workspaceId, onChanged, onError }: {
             </select>
             {charter.recommended_model && gov.model !== charter.recommended_model && (
               <Button variant="ghost" size="xs" disabled={busy}
-                onClick={() => patch({ model: charter.recommended_model! })}
+                onClick={() => pinModel(charter.recommended_model!)}
                 title={`Recommended for ${charter.name}: ${charter.recommended_model}`}>
                 use recommended
               </Button>

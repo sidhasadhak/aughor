@@ -6968,6 +6968,8 @@ export interface components {
         };
         /** AgentGovernancePatch */
         AgentGovernancePatch: {
+            /** Allow Paid */
+            allow_paid?: boolean | null;
             /** Enabled */
             enabled?: boolean | null;
             /** Model */
@@ -9140,6 +9142,8 @@ export interface components {
         };
         /** _ConfigPatch */
         _ConfigPatch: {
+            /** Allow Paid */
+            allow_paid?: boolean | null;
             /** Backend */
             backend?: string | null;
             /** Base Urls */

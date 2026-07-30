@@ -3249,6 +3249,8 @@ export interface LlmConfigPatch {
   models?: Record<string, string>;
   base_urls?: Record<string, string>;
   keys?: Record<string, string>;
+  /** Free-by-default: required to bind a non-`:free` OpenRouter model. */
+  allow_paid?: boolean;
 }
 
 export async function getLlmConfig(): Promise<LlmConfig> {
@@ -3622,7 +3624,7 @@ export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[
 
 export async function patchAgent(
   agentId: string,
-  body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; model?: string; workspace_id?: string },
+  body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; model?: string; workspace_id?: string; allow_paid?: boolean },
 ): Promise<{ agent_id: string; governance: AgentGovernance } | null> {
   const res = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),

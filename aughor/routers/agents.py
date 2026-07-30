@@ -117,6 +117,8 @@ class AgentGovernancePatch(BaseModel):
     time_budget_s: Optional[int] = None
     model: Optional[str] = None          # per-agent LLM model; "" clears back to the role default
     workspace_id: Optional[str] = None   # None → app scope (the Org default)
+    # Free-by-default: pinning a non-`:free` OpenRouter model needs explicit consent.
+    allow_paid: Optional[bool] = None
 
 
 @router.patch("/agents/{agent_id}")
@@ -124,6 +126,16 @@ def patch_agent(agent_id: str, body: AgentGovernancePatch):
     """Enable/disable, re-budget, or pin the model for an agent. Only the provided fields change."""
     if get_charter(agent_id) is None:
         raise HTTPException(status_code=404, detail="No such agent")
+    if body.model:
+        # The same free-by-default guard the central config enforces — a per-agent
+        # pin is just as much a binding as a role binding.
+        from aughor.llm import provider as _provider
+        try:
+            _provider.ensure_free_or_allowed(
+                _provider.active_backend(), body.model,
+                allow_paid=bool(body.allow_paid))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     gov = set_governance(
         agent_id,
         scope=body.workspace_id,

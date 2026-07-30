@@ -28,6 +28,9 @@ class _ConfigPatch(BaseModel):
     models: Optional[dict] = None       # {coder?, narrator?, fast?}  ("" clears)
     base_urls: Optional[dict] = None    # {ollama?, lmstudio?}        ("" clears)
     keys: Optional[dict] = None         # {groq?, together?, anthropic?}  ("" clears, masked = unchanged)
+    # Free-by-default: binding a non-`:free` OpenRouter model is refused unless
+    # this is set — paying must be a deliberate act, never a typo.
+    allow_paid: Optional[bool] = None
 
 
 @router.post("/llm/config", dependencies=[gate(Capability.SECURITY_SUITE)])
