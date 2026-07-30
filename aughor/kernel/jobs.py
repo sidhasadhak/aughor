@@ -93,6 +93,17 @@ def _max_concurrent_jobs() -> int:
         return 8
 
 
+def concurrency_policy() -> dict:
+    """The kernel's actual concurrency shape, for surfaces that render it.
+
+    Deliberately not "per-kind caps": there is ONE process-wide semaphore plus
+    an exemption set. A fleet view that invented per-agent knobs over this
+    would be describing a mechanism that does not exist (Wave CR §2).
+    """
+    return {"max_concurrent_jobs": _max_concurrent_jobs(),
+            "unbounded_kinds": sorted(_UNBOUNDED_KINDS)}
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

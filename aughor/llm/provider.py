@@ -1775,11 +1775,34 @@ def current_config() -> dict:
     }
 
 
+def ensure_free_or_allowed(backend: str, model: str, *, allow_paid: bool = False) -> None:
+    """Free-by-default binding guard (raises ValueError on a silent paid bind).
+
+    On the metered OpenRouter catalog the deployment's default posture is the
+    `:free` tier — the credit balance is a threshold reserve that keeps the
+    free-tier request cap unlocked, not a spend budget. A non-`:free` model
+    binds only when the caller says `allow_paid` explicitly, so paying becomes
+    a deliberate act rather than a typo. BYO-key backends (anthropic / groq /
+    together / gemini) are inherently paid by the operator's own choice of key
+    and pass through untouched.
+    """
+    if backend != "openrouter" or not model or model.endswith(":free"):
+        return
+    if not allow_paid:
+        raise ValueError(
+            f"{model!r} is a paid OpenRouter model — free (`:free`) models are the "
+            "default here, and paid calls bill your OpenRouter credit. Re-save with "
+            "allow_paid to bind it deliberately."
+        )
+
+
 def set_config(patch: dict) -> dict:
     """Merge `patch` into the on-disk config and reload. Returns current_config().
 
     - models / base_urls: a non-empty string sets it; "" clears it back to default.
     - keys: a new string is encrypted; "" clears it; a masked/None value is left as-is.
+    - a non-`:free` model on the openrouter backend requires `allow_paid: true`
+      (see :func:`ensure_free_or_allowed`).
     """
     from aughor.secretvault import encrypt_secret, is_masked
 
@@ -1791,11 +1814,15 @@ def set_config(patch: dict) -> dict:
         cfg["backend"] = patch["backend"]
 
     if isinstance(patch.get("models"), dict):
+        effective_backend = str(cfg.get("backend") or _active_backend())
+        allow_paid = bool(patch.get("allow_paid"))
         models = dict(cfg.get("models") or {})
         for r, m in patch["models"].items():
             if r not in ROLES:
                 continue
             if m and str(m).strip():
+                ensure_free_or_allowed(effective_backend, str(m).strip(),
+                                       allow_paid=allow_paid)
                 models[r] = str(m).strip()
             else:
                 models.pop(r, None)

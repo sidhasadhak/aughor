@@ -222,6 +222,26 @@ FLAG_DEFAULT = {
     # cost is one bounded read of a local store. It does NOT rewrite any committed artifact;
     # an existing graph changes only when something rebuilds it.
     "graph.consolidate": True,
+    # Wave CR0 (2026-07-29) — graduated on a DETERMINISTIC observationally-free claim,
+    # receipt `45dcc137f55b`, from run `43bf2bc7182d` of the suite
+    # `aughor/evals/session_log_receipt.py` (7/7 stable passes, 0 errors, 0 flaky, bar 1.0,
+    # no baseline — the claim has no sampling, the same carve-out L4 and N3 used).
+    #
+    # The suite proves the INVARIANTS hermetically against throwaway ledgers: the door
+    # wrapper yields byte-identical frames flag-on vs flag-off (the only diff is rows in
+    # data/system.db), a crashed stream still leaves request/error/final evidence, a
+    # broken store never surfaces to the answer path, `obs.prompt_capture` stays
+    # independently OFF (content is a separate opt-in with its own blast radius), and
+    # retention actually bounds the table by age AND row cap. The write cost was MEASURED:
+    # p95 0.078 ms per event against E1's pre-registered 5 ms bar (64x headroom). The
+    # magnitude on the real store: 267 rows/active-day observed, which reaches the 200k
+    # row cap in ~748 days — the 14-day age prune bounds the table long before that.
+    #
+    # What flipping this changes on a fresh clone: agent runs become reconstructible —
+    # each /ask, /chat and /agui turn mints a trace and appends metadata rows (model,
+    # tokens, latency, outcome; never prompt content) that the control room, /usage
+    # attribution and per-agent spend read. Answers are byte-identical by construction.
+    "obs.session_log": True,
 }
 
 # Human-facing copy for the Settings UI.
@@ -328,7 +348,7 @@ FLAG_META = {
     },
     "obs.session_log": {
         "label": "session_events — the agent-session log",
-        "description": "Record one append-only session_events row per agent-session event (user_request · tool_call · tool_call_result · llm_call · final_response · execution_error) with a stable trace id, a monotonic sequence, explicit success/duration/error-class, and the ambient session/user/agent identity. Fills the gap task_history cannot: it mints the trace at the /ask door, so the QUICK answer path — which today creates no trace id at all and whose SQL bypasses the span-emitting executor — becomes reconstructible; it writes tool_call on ENTRY, so a call that hangs or is cancelled still leaves evidence, where a span row only ever appears after the body returns; and it records each LLM call (model, role, tokens, latency, retries, whether the fallback swapped the model mid-run), which today is aggregated into counters and discarded. Queryable as SQL via the aughor_ops schema, and the substrate a later evals harness turns real sessions into test cases from. Retention is enforced on write (AUGHOR_SESSION_LOG_KEEP_DAYS / _MAX_ROWS). Off by default = byte-identical (no rows written). Wave E1.",
+        "description": "Record one append-only session_events row per agent-session event (user_request · tool_call · tool_call_result · llm_call · final_response · execution_error) with a stable trace id, a monotonic sequence, explicit success/duration/error-class, and the ambient session/user/agent identity. Fills the gap task_history cannot: it mints the trace at the /ask door, so the QUICK answer path — which today creates no trace id at all and whose SQL bypasses the span-emitting executor — becomes reconstructible; it writes tool_call on ENTRY, so a call that hangs or is cancelled still leaves evidence, where a span row only ever appears after the body returns; and it records each LLM call (model, role, tokens, latency, retries, whether the fallback swapped the model mid-run), which today is aggregated into counters and discarded. Queryable as SQL via the aughor_ops schema, and the substrate a later evals harness turns real sessions into test cases from. Retention is enforced on write (AUGHOR_SESSION_LOG_KEEP_DAYS / _MAX_ROWS). Default-ON since Wave CR0, graduated on receipt `45dcc137f55b` (run `43bf2bc7182d` of aughor/evals/session_log_receipt.py, 7/7): answer frames are byte-identical on vs off, a store failure never reaches the answer path, and the per-event write measured p95 0.078 ms against E1's 5 ms bar. Prompt CONTENT stays a separate opt-in (obs.prompt_capture, still off). Force off with AUGHOR_OBS_SESSION_LOG=0 or a runtime override. Wave E1.",
     },
     "obs.prompt_capture": {
         "label": "Capture prompts and completions on llm_call rows",

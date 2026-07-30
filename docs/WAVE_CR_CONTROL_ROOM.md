@@ -103,6 +103,41 @@ missing store. Measuring ours found **most of the surface is a rendering problem
 CR2** (one PR each: a read-only route + a component). **CR3** (1–2 PRs; the table and
 tiles). **CR4** (1 PR). **CR5** (1–2 PRs). Total ≈ 6–8 PRs, every one shippable alone.
 
+## 6. Receipts (filled as items land)
+
+| Item | Receipt | Evidence |
+|---|---|---|
+| **CR0** | ✅ graduation receipt `45dcc137f55b` (2026-07-29), run `43bf2bc7182d` of `aughor/evals/session_log_receipt.py` — 7/7 stable, 0 flaky, 0 errors, bar 1.0, minted through the live `POST /evals/flags/obs.session_log/graduate`. | Byte-identity proven against the real door wrapper (frames compared byte-for-byte, on vs off); store failure fail-open proven; content capture proven independent and still OFF; retention proven to delete by age and cap; write cost measured p95 **0.078 ms** vs E1's 5 ms bar. Magnitude on the real store: 267 rows/active-day, row cap ~748 days out, 14-day age prune binding. Bonus: the suite caught the door wrapper closing crashed runs as `ok=True` (fixed in the same change) and the pre-check caught two `created_at`→`at` column bugs (usage caps could never trip; the served COST_SQL errored). |
+| **CR1** | ✅ built + live-proven (2026-07-30) | The waterfall rendered a real crashed deep run (57 events) including `ada_cross_section` labelled "no result recorded — entry-side evidence of a hang or cancel" — the E1 claim on screen. Span detail showed model/tokens/temperature metadata with no prompt content. Feedback: a `reject` verdict recorded from the UI and READ BACK from `verify/verdicts` (`this run` chip), durable in `data/verdicts.db`. Live-proof fix: a deep run's trace IS its investigation id and its rows carry a NULL `investigation_id` column, so the route resolves the direct match (pinned by test). |
+| **CR2** | ✅ built + live-proven (2026-07-30) | The stream tailed a deep run executing on another process in real time (SSE `live` chip); filter chips folded from the store's actual kinds with counts; `errors only` composed; quiet renders as quiet. Live-proof fix: EventSource auto-reconnect replays from its original `since_seq` — rows now dedupe by seq (found via duplicate-React-key console errors). |
+| **CR3** | ✅ built + live-proven (2026-07-30) | Tiles: active jobs, runs/min, p95, error rate with orphaned restarts EXCLUDED and counted (453 on Scout alone), tokens/hr with metered coverage, the kernel's real concurrency (one global cap of 8, `exploration` exempt — the doc's "per-kind semaphores" claim was corrected by the pre-check). One table, kind-labelled: 6 charters with 24h sparklines + 2 personas with session-log spend. NOC added the spend columns with `unmetered` never rendered as 0. |
+| **CR4** | ✅ built + live-proven (2026-07-30) | A REAL paused run (explore branch, `mode: "explore"` + `AUGHOR_PLAN_GATE=1`) appeared as "1 waiting on a human = 1 paused deep run" — count equals the sum of sources; waiting time from the `investigation.paused` ledger event with the basis labelled; `Open & resume` deep-links to the native surface. Gap fixed en route: no `paused_at` column exists — the ledger event is the honest source. |
+| **CR5** | ✅ built + live-proven (2026-07-30) | (a) The engine's own heartbeat rendered "evaluated — did not fire" every tick with the cron reason, plus a `fired` run whose effect reported `dispatch_error: unknown Action Hub trigger: cr-proof-trigger` VERBATIM. (b) The paused run's phase view: `branch explore · checkpoint step 3`, the fixed topology chain with `plan_gate ⏸` marked amber, "No phases recorded yet" stated rather than invented. Note: `source_change` conditions refuse to evaluate while `automations.source_probes` is OFF — its receipt stands; the proof used a `schedule` condition. |
+
+## 7. The Agentic Ops consolidation (2026-07-30, same branch)
+
+The day after CR shipped, the nav carried three overlapping destinations (Control
+Room · Agents · Fleet) with three fleet-ish tables and three pause controls. They
+merged into ONE **Agentic Ops** workspace (Operations rail) with five layers:
+
+| Layer | Absorbs | Notes |
+|---|---|---|
+| Fleet | CR3 + the old FleetScreen | pulse hero (minute buckets — Calm law), ONE jobs table with state filters (the kill control, once), per-charter live counts |
+| Agents | AgentOverviewPanel + AgentsAdminPanel + page.tsx AgentsPanel | ONE kind-labelled roster, master–detail; persona Overview/Configure + goldens + hire-from-pack; charter governance (enabled/budget/model pin — the REAL knobs, with the no-temperature/no-tool-toggle law stated in-UI) |
+| Attention | CR4 | + live count badge on the switcher |
+| Activity | CR2 + CR1 | one substrate, two zoom levels: [Stream \| Runs] segmented |
+| Run graphs | CR5 | unchanged |
+
+Removed: Fleet + Agents from Intelligence (legacy ids alias into layers),
+AgentWorkspace/AgentOverviewPanel/AgentsAdminPanel/ControlRoomWorkspace files,
+~300 lines of page.tsx (raw-button ratchet lowered 73 → 69). Memory relocated to
+the Intelligence workspace (it reads org-wide `/learning/*` — "what Aughor
+knows", not agent ops). Honesty fix found during the merge: the fleet endpoint
+listed personas while `agents.user_defined` was off — two views disagreeing
+about what exists; persona rows now follow the flag (pinned by test). Design
+reference: the Mastra Control Room mockups, adopted through our tokens and laws
+(no env switcher, no per-agent sampling knobs, no fabricated scorers).
+
 Relation to the program: CR is **Wave S's control-room slice** with the H substrate
 underneath — H2/H3 built the attribution these views read, and H3's per-agent page becomes
 CR1's drill-in origin. CR does not block H5/H6 and shares no files with them; it can run

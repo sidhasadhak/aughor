@@ -791,6 +791,9 @@ class Ledger:
         kind: Optional[str] = None,
         session_id: Optional[str] = None,
         investigation_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        conn_id: Optional[str] = None,
+        errors_only: bool = False,
         org_id: Optional[str] = None,
         since_seq: Optional[int] = None,
         limit: int = 500,
@@ -798,7 +801,8 @@ class Ledger:
     ) -> list[dict]:
         """Read session events. Defaults to newest-first (the feed shape); pass
         ``ascending=True`` for replay order, which is what reconstructing a single
-        run wants."""
+        run wants. ``errors_only`` keeps rows that RECORDED a failure (``ok=0``) —
+        rows with no verdict yet (entry-side ``tool_call``) are not failures."""
         q = f"SELECT {', '.join(self._SESSION_EVENT_COLS)} FROM session_events WHERE 1=1"
         args: list[Any] = []
         if trace_id:
@@ -809,6 +813,12 @@ class Ledger:
             q += " AND session_id=?"; args.append(session_id)
         if investigation_id:
             q += " AND investigation_id=?"; args.append(investigation_id)
+        if agent_id:
+            q += " AND agent_id=?"; args.append(agent_id)
+        if conn_id:
+            q += " AND conn_id=?"; args.append(conn_id)
+        if errors_only:
+            q += " AND ok=0"
         if org_id:
             q += " AND org_id=?"; args.append(org_id)
         if since_seq is not None:

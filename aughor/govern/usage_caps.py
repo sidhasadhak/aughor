@@ -257,7 +257,9 @@ def observed_usage(
     rows = Ledger.default().session_events(kind=LLM_CALL, org_id=org_id, limit=scan) or []
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=max(1, int(window_hours)))
               ).isoformat()
-    in_window = [r for r in rows if str(r.get("created_at") or "") >= cutoff]
+    # The session-events timestamp column is `at` — reading a key that does not
+    # exist made every row fall outside the window, so no cap could ever trip.
+    in_window = [r for r in rows if str(r.get("at") or "") >= cutoff]
     if user_id:
         in_window = [r for r in in_window if str(r.get("user_id") or "") == user_id]
 

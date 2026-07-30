@@ -49,8 +49,9 @@ StructuredOutput = Literal["native", "instructor_emulated"]
 TokenAccounting = Literal["exact", "estimated"]
 # What context a provider may be *sent* — a governance routing constraint.
 PrivacyClass = Literal["local", "private_endpoint", "public_api"]
-# How spend is modelled for per-agent budgets.
-Cost = Literal["per_token", "flat", "unknown"]
+# How spend is modelled for per-agent budgets. "free" is OpenRouter's `:free`
+# catalog tier — zero marginal cost, and the deployment's default posture.
+Cost = Literal["per_token", "flat", "free", "unknown"]
 
 T = TypeVar("T", bound="BaseModel")
 
@@ -122,8 +123,9 @@ def _token_accounting(backend: str) -> TokenAccounting:
 
 
 def _privacy_class(backend: str, model: str, base_url: str) -> PrivacyClass:
-    if backend in ("anthropic", "groq", "together", "gemini"):
-        return "public_api"
+    if backend in ("anthropic", "groq", "together", "gemini", "openrouter"):
+        return "public_api"                      # openrouter IS a public API — the
+                                                 # private_endpoint fallback was a lie
     if backend == "ollama":
         if _is_cloud_ollama(model):
             return "public_api"                  # Ollama Cloud egress
@@ -134,6 +136,10 @@ def _privacy_class(backend: str, model: str, base_url: str) -> PrivacyClass:
 
 
 def _cost(backend: str, model: str, base_url: str) -> Cost:
+    if backend == "openrouter":
+        # The `:free` suffix is OpenRouter's own tier marker — deterministic,
+        # and the axis the free-by-default binding guard decides on.
+        return "free" if model.endswith(":free") else "per_token"
     if backend in ("anthropic", "groq", "together", "gemini"):
         return "per_token"
     if backend == "ollama" and _is_cloud_ollama(model):

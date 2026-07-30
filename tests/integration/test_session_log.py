@@ -154,8 +154,11 @@ def test_chat_door_is_also_covered(client: TestClient, builtin_conn_id: str, mon
 # ── the properties the gate depends on ────────────────────────────────────────
 
 def test_flag_off_writes_nothing(client: TestClient, builtin_conn_id: str, monkeypatch):
-    """Default path stays byte-identical: no flag, no rows, no minted id."""
-    monkeypatch.delenv("AUGHOR_OBS_SESSION_LOG", raising=False)
+    """OFF stays byte-identical: no rows, no minted id. Since the CR0 graduation
+    the DEFAULT is on, so off is now the operator's explicit force
+    (AUGHOR_OBS_SESSION_LOG=0) — the contract this pins is the off STATE, not
+    how it was reached."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "0")
     _stub_providers(monkeypatch)
 
     _ask(client, builtin_conn_id, "which group leads?")
@@ -216,8 +219,10 @@ def test_bind_trace_is_independent_of_obs_flags(monkeypatch):
     """The trace id is a correlation fact, not a sink. Publishing it used to
     happen only inside the task_table sink, so with that flag off nothing
     downstream could correlate — that coupling was the bug."""
-    monkeypatch.delenv("AUGHOR_OBS_SESSION_LOG", raising=False)
-    monkeypatch.delenv("AUGHOR_OBS_TASK_TABLE", raising=False)
+    # Forced OFF explicitly: since CR0 the session log defaults on, and this
+    # test's claim is precisely that binding works with the sinks off.
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "0")
+    monkeypatch.setenv("AUGHOR_OBS_TASK_TABLE", "0")
     from aughor import telemetry
 
     assert telemetry.current_trace_id() == ""
@@ -551,9 +556,9 @@ def test_prompt_capture_records_content_when_enabled(monkeypatch):
 
 
 def test_prompt_capture_needs_the_session_log_too(monkeypatch):
-    """Content capture is an add-on: with the session log off nothing is written
-    at all, so enabling it alone cannot leak anything."""
-    monkeypatch.delenv("AUGHOR_OBS_SESSION_LOG", raising=False)
+    """Content capture is an add-on: with the session log forced off nothing is
+    written at all, so enabling capture alone cannot leak anything."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "0")
     monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
 
     from types import SimpleNamespace

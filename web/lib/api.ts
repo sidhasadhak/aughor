@@ -3249,6 +3249,8 @@ export interface LlmConfigPatch {
   models?: Record<string, string>;
   base_urls?: Record<string, string>;
   keys?: Record<string, string>;
+  /** Free-by-default: required to bind a non-`:free` OpenRouter model. */
+  allow_paid?: boolean;
 }
 
 export async function getLlmConfig(): Promise<LlmConfig> {
@@ -3622,7 +3624,7 @@ export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[
 
 export async function patchAgent(
   agentId: string,
-  body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; model?: string; workspace_id?: string },
+  body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; model?: string; workspace_id?: string; allow_paid?: boolean },
 ): Promise<{ agent_id: string; governance: AgentGovernance } | null> {
   const res = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -4551,5 +4553,297 @@ export async function getEvalRun(runId: string): Promise<EvalRun & { results: Ev
 export async function getEvaluators(): Promise<{ evaluators: EvalEvaluator[]; deterministic_count: number }> {
   const res = await fetch(`${BASE}/evals/evaluators`);
   if (!res.ok) throw new Error("Failed to fetch evaluators");
+  return res.json();
+}
+
+// ── Control Room (Wave CR) ────────────────────────────────────────────────────
+// Views over stores that already exist. Responses carry the honest-empty union:
+// `measured: false` + `enable_flag` means "nothing recorded", which is a
+// different claim from an empty list under `measured: true`.
+
+export interface NotRecorded {
+  measured: false;
+  reason: string;
+  enable_flag: string;
+}
+
+/** One session event row (kernel ledger `session_events`). */
+export interface SessionEvent {
+  seq: number;
+  at: string;
+  trace_id: string;
+  kind: string;
+  name: string | null;
+  span_id: string | null;
+  parent_span_id: string | null;
+  ok: boolean | null;
+  duration_ms: number | null;
+  error_class: string | null;
+  investigation_id: string | null;
+  session_id: string | null;
+  user_id: string | null;
+  agent_id: string | null;
+  conn_id: string | null;
+  provider: string | null;
+  model: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  row_count: number | null;
+  retries: number | null;
+  payload: Record<string, unknown> | null;
+  /** Set only when the row carries prompt CONTENT (obs.prompt_capture was on). */
+  content_captured?: boolean;
+}
+
+export interface TraceSummary {
+  trace_id: string;
+  started: string;
+  question: string;
+  events: number;
+  tool_calls: number;
+  llm_calls: number;
+  errors: number;
+  investigation_id: string | null;
+  session_id: string | null;
+  agent_id: string | null;
+  conn_id: string | null;
+  ok: boolean | null;
+  duration_ms: number | null;
+}
+
+export interface TraceSpan {
+  span_id: string;
+  parent_span_id: string | null;
+  name: string | null;
+  seq: number;
+  at: string;
+  kind: string; // payload.span_kind: "node" | "tool"
+  ok: boolean | null;
+  duration_ms: number | null;
+  error_class: string | null;
+  row_count: number | null;
+  children: TraceSpan[];
+}
+
+export type TraceList =
+  | NotRecorded & { recording: boolean; traces: TraceSummary[] }
+  | { measured: true; recording: boolean; traces: TraceSummary[] };
+
+export type TraceDetail =
+  | NotRecorded & { recording: boolean; trace_id: string; events: SessionEvent[]; spans: TraceSpan[] }
+  | {
+      measured: true; recording: boolean; trace_id: string; question: string;
+      investigation_id: string | null; conn_id: string | null; agent_id: string | null;
+      ok: boolean | null; duration_ms: number | null;
+      events: SessionEvent[]; spans: TraceSpan[];
+    };
+
+export async function getTraces(params?: {
+  limit?: number; investigation_id?: string; agent_id?: string;
+}): Promise<TraceList> {
+  const qs = new URLSearchParams();
+  if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.investigation_id) qs.set("investigation_id", params.investigation_id);
+  if (params?.agent_id) qs.set("agent_id", params.agent_id);
+  const res = await fetch(`${BASE}/traces?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch traces (${res.status})`);
+  return res.json();
+}
+
+export async function getTrace(traceId: string): Promise<TraceDetail | null> {
+  const res = await fetch(`${BASE}/traces/${encodeURIComponent(traceId)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to fetch trace (${res.status})`);
+  return res.json();
+}
+
+export type ActivityResponse =
+  | NotRecorded & { recording: boolean; events: SessionEvent[]; kinds: Record<string, number> }
+  | { measured: true; recording: boolean; events: SessionEvent[]; kinds: Record<string, number> };
+
+export async function getActivity(params?: {
+  kind?: string; agent_id?: string; conn_id?: string; errors_only?: boolean;
+  since_seq?: number; limit?: number;
+}): Promise<ActivityResponse> {
+  const qs = new URLSearchParams();
+  if (params?.kind) qs.set("kind", params.kind);
+  if (params?.agent_id) qs.set("agent_id", params.agent_id);
+  if (params?.conn_id) qs.set("conn_id", params.conn_id);
+  if (params?.errors_only) qs.set("errors_only", "true");
+  if (params?.since_seq != null) qs.set("since_seq", String(params.since_seq));
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const res = await fetch(`${BASE}/activity?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch activity (${res.status})`);
+  return res.json();
+}
+
+export interface FleetTiles {
+  active_jobs: number;
+  window_minutes: number;
+  runs_started: number;
+  runs_per_min: number;
+  p95_duration_ms: number | null;
+  p50_duration_ms: number | null;
+  error_rate: number | null;
+  failed_runs: number;
+  orphaned_runs: number;
+  tokens: {
+    total: number; metered_runs: number; unmetered_runs: number;
+    per_hour: number | null;
+  };
+  concurrency: { max_concurrent_jobs: number; unbounded_kinds: string[] };
+}
+
+/** A charter row (job-metering spend) — `kind` is the label the table must show. */
+export interface FleetCharterRow {
+  kind: "charter";
+  id: string;
+  name: string;
+  role: string;
+  icon: string;
+  lane: string;
+  enabled: boolean;
+  job_kinds: string[];
+  spend_source: "job_metering";
+  runs: number;
+  failed: number;
+  orphaned: number;
+  tokens: number;
+  queries: number;
+  metered_runs: number;
+  unmetered_runs: number;
+  last_run_at: string | null;
+  spark: number[];
+}
+
+/** A persona row (H2 session-log spend). Same table, different kind and axis. */
+export interface FleetPersonaRow {
+  kind: "persona";
+  id: string;
+  name: string;
+  enabled: boolean;
+  connection_id: string;
+  last_eval: { passed: number; total: number; at?: string } | null;
+  spend_source: "session_log";
+  spend:
+    | NotRecorded
+    | { measured: true; calls: number; total_tokens: number; failure_rate: number | null };
+}
+
+export type FleetRow = FleetCharterRow | FleetPersonaRow;
+
+export interface FleetOverview {
+  tiles: FleetTiles;
+  rows: FleetRow[];
+  session_log_recording: boolean;
+}
+
+export async function getFleetOverview(params?: {
+  window_minutes?: number; spark_hours?: number;
+}): Promise<FleetOverview> {
+  const qs = new URLSearchParams();
+  if (params?.window_minutes) qs.set("window_minutes", String(params.window_minutes));
+  if (params?.spark_hours) qs.set("spark_hours", String(params.spark_hours));
+  const res = await fetch(`${BASE}/control-room/fleet?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch fleet overview (${res.status})`);
+  return res.json();
+}
+
+export interface NeedsHumanRow {
+  source: "kinetic_inbox" | "paused_run" | "automation_approval";
+  id: string;
+  title: string;
+  connection_id: string | null;
+  since: string | null;
+  since_basis?: "paused_event" | "started_at";
+  waiting_ms: number | null;
+  resolve: Record<string, string>;
+}
+
+export interface NeedsHuman {
+  count: number;
+  sources: { kinetic_inbox: number; paused_runs: number; automation_approvals: number };
+  rows: NeedsHumanRow[];
+}
+
+export async function getNeedsHuman(limit = 100): Promise<NeedsHuman> {
+  const res = await fetch(`${BASE}/control-room/needs-human?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch needs-human (${res.status})`);
+  return res.json();
+}
+
+export async function getAllAutomationRuns(params?: {
+  conn_id?: string; limit?: number;
+}): Promise<AutomationRun[]> {
+  const qs = new URLSearchParams();
+  if (params?.conn_id) qs.set("conn_id", params.conn_id);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const res = await fetch(`${BASE}/automations/runs?${qs.toString()}`);
+  if (res.status === 404) return []; // automations.engine off
+  if (!res.ok) throw new Error(`Failed to fetch automation runs (${res.status})`);
+  return (await res.json()).runs;
+}
+
+export interface InvestigationGraph {
+  investigation_id: string;
+  status: string;
+  question: string;
+  branch: "ada" | "explore" | "direct" | "unknown";
+  topology: string[];
+  phases: {
+    phase_id: string; phase_name: string; phase_icon?: string;
+    status: string; summary?: string; skipped_reason?: string;
+  }[];
+  sub_questions: unknown[];
+  interrupt: {
+    paused: boolean; gate: string | null; basis: string | null;
+    clarify_pending: unknown;
+  };
+  checkpoint: { exists: boolean; step: number | null; last_writers: string[] };
+  resume: { feedback: string } | null;
+}
+
+export async function getInvestigationGraph(invId: string): Promise<InvestigationGraph | null> {
+  const res = await fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/graph`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to fetch investigation graph (${res.status})`);
+  return res.json();
+}
+
+export interface FindingVerdict {
+  id: number;
+  connection_id: string;
+  investigation_id: string;
+  verdict: string;
+  note: string;
+  headline: string;
+  created_at: string;
+}
+
+export async function getVerdicts(connectionId?: string, limit = 50): Promise<FindingVerdict[]> {
+  const qs = new URLSearchParams();
+  if (connectionId) qs.set("connection_id", connectionId);
+  qs.set("limit", String(limit));
+  const res = await fetch(`${BASE}/verify/verdicts?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch verdicts (${res.status})`);
+  return res.json();
+}
+
+export interface InvestigationListRow {
+  id: string;
+  question: string;
+  connection_id: string;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  headline: string | null;
+  kind: string;
+  agent_id: string;
+}
+
+export async function getInvestigationsList(limit = 50): Promise<InvestigationListRow[]> {
+  const res = await fetch(`${BASE}/investigations?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch investigations (${res.status})`);
   return res.json();
 }

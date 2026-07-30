@@ -101,6 +101,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Activity
+         * @description A paged tail over the session log, newest first.
+         *
+         *     `kinds` reports what the store actually contains (unfiltered), so a filter
+         *     UI offers only vocabularies something emitted — a stream that pads its
+         *     kind list reads as coverage that doesn't exist.
+         */
+        get: operations["activity_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activity/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Activity Stream
+         * @description SSE tail of session events — the `/events/stream` idiom over the session
+         *     log. `since_seq` resumes a dropped connection without losing events.
+         */
+        get: operations["activity_stream_activity_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ada/{connection_id}/{inv_id}/receipt": {
         parameters: {
             query?: never;
@@ -732,6 +777,29 @@ export interface paths {
          *     it never reaches the store, so a broken automation cannot sit in the DB looking schedulable.
          */
         post: operations["create_automations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * All Runs
+         * @description Runs across EVERY automation, newest first (Wave CR5) — the store read
+         *     (`get_runs`) always supported this; only the per-automation route existed.
+         *     Declared before `/automations/{automation_id}` so "runs" is never read as
+         *     an id.
+         */
+        get: operations["all_runs_automations_runs_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2188,6 +2256,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/control-room/fleet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fleet Overview
+         * @description KPI tiles + one labelled fleet table (charters and personas).
+         *
+         *     Dollar cost is deliberately NOT here — it stays on `GET /usage`, which
+         *     carries its own RBAC (billing) and its own `cost_is_complete` caveat.
+         */
+        get: operations["fleet_overview_control_room_fleet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/control-room/needs-human": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Needs Human
+         * @description One derived list over the three real sources — a VIEW, never a queue.
+         *
+         *     Each row deep-links to its native resolve surface, so resolving anywhere
+         *     removes it everywhere by construction (one store per source, no copies).
+         *     `count` equals the sum of the per-source counts at read time — that
+         *     equality is the CR4 gate.
+         */
+        get: operations["needs_human_control_room_needs_human_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dev/stats": {
         parameters: {
             query?: never;
@@ -3610,6 +3726,33 @@ export interface paths {
         put?: never;
         /** Submit Feedback */
         post: operations["submit_feedback_investigations__inv_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/investigations/{inv_id}/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Investigation Graph
+         * @description The deep run's phase view (Wave CR5b): the FIXED topology it runs, the
+         *     phases the checkpoint recorded, and — for a paused run — which gate it is
+         *     waiting at, derived from state markers and labelled as such.
+         *
+         *     Deliberately not a DAG editor and deliberately not `agent.get_state().next`:
+         *     the authoritative next-node read needs a compiled graph over an open
+         *     warehouse connection, which a read-only view must not require. Resume goes
+         *     through the existing feedback endpoint.
+         */
+        get: operations["get_investigation_graph_investigations__inv_id__graph_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6511,6 +6654,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/traces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Traces
+         * @description Recent runs, one summary per trace, newest first — the waterfall's index.
+         *
+         *     ``investigation_id`` / ``agent_id`` narrow to the traces that touched them
+         *     (the H3 drill-in: a run row on the per-agent page opens its trace here).
+         */
+        get: operations["list_traces_traces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/traces/{trace_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Trace
+         * @description One run's full event log plus its span tree — the waterfall.
+         *
+         *     The tree is honest about what the data supports: tool spans pair their
+         *     entry (`tool_call`) and exit (`tool_call_result`) rows by `span_id` and
+         *     nest by `parent_span_id`; events with no span id (`llm_call`,
+         *     `user_request`, `final_response`, `execution_error`) are TRACE-LEVEL, kept
+         *     in `events` seq order and never given invented parents.
+         */
+        get: operations["get_trace_traces__trace_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/usage": {
         parameters: {
             query?: never;
@@ -6776,6 +6968,8 @@ export interface components {
         };
         /** AgentGovernancePatch */
         AgentGovernancePatch: {
+            /** Allow Paid */
+            allow_paid?: boolean | null;
             /** Enabled */
             enabled?: boolean | null;
             /** Model */
@@ -8948,6 +9142,8 @@ export interface components {
         };
         /** _ConfigPatch */
         _ConfigPatch: {
+            /** Allow Paid */
+            allow_paid?: boolean | null;
             /** Backend */
             backend?: string | null;
             /** Base Urls */
@@ -9642,6 +9838,77 @@ export interface operations {
             path: {
                 trigger_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activity_activity_get: {
+        parameters: {
+            query?: {
+                kind?: string | null;
+                agent_id?: string | null;
+                conn_id?: string | null;
+                errors_only?: boolean;
+                since_seq?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activity_stream_activity_stream_get: {
+        parameters: {
+            query?: {
+                kind?: string | null;
+                agent_id?: string | null;
+                conn_id?: string | null;
+                errors_only?: boolean;
+                since_seq?: number;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -10743,6 +11010,38 @@ export interface operations {
                 "application/json": components["schemas"]["CreateAutomationRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    all_runs_automations_runs_get: {
+        parameters: {
+            query?: {
+                conn_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -13716,6 +14015,69 @@ export interface operations {
             };
         };
     };
+    fleet_overview_control_room_fleet_get: {
+        parameters: {
+            query?: {
+                window_minutes?: number;
+                spark_hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    needs_human_control_room_needs_human_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_dev_stats_dev_stats_get: {
         parameters: {
             query?: never;
@@ -16146,6 +16508,37 @@ export interface operations {
                 "application/json": components["schemas"]["FeedbackRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_investigation_graph_investigations__inv_id__graph_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -21769,6 +22162,70 @@ export interface operations {
                 "application/json": components["schemas"]["_FlagPatch"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_traces_traces_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                investigation_id?: string | null;
+                agent_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trace_traces__trace_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

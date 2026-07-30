@@ -128,16 +128,21 @@ function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
   onRefresh: () => void;
   onRemove: (model: string) => void;
 }) {
+  // Free-by-default: the OpenRouter suggestion list starts at the `:free` tier;
+  // paid models stay one toggle away (and a typed id always works regardless).
+  const [showPaid, setShowPaid] = useState(false);
   if (!catalog) return null;
   const custom = catalog.custom ?? [];
+  const freeOnly = catalog.backend === "openrouter" && !showPaid;
+  const listed = freeOnly ? catalog.models.filter(m => m.free) : catalog.models;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <datalist id={`llm-models-${catalog.backend}`}>
-        {catalog.models.map((m) => (
+        {listed.map((m) => (
           <option key={m.id} value={m.id}>
             {[m.label ?? m.id,
               m.context ? `${Math.round(m.context / 1000)}k ctx` : "",
-              m.free ? "free" : ""].filter(Boolean).join(" · ")}
+              m.free ? "free" : "paid"].filter(Boolean).join(" · ")}
           </option>
         ))}
       </datalist>
@@ -149,6 +154,15 @@ function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
             : `${catalog.models.length} built-in suggestions`}
           {custom.length > 0 && ` · ${custom.length} custom`}
         </span>
+        {catalog.backend === "openrouter" && (
+          <Button variant="ghost" size="sm" onClick={() => setShowPaid(v => !v)}
+                  title={showPaid
+                    ? "Suggest only :free models (the default posture)"
+                    : "Also suggest paid models — binding one still needs an explicit ack"}
+                  style={{ fontSize: 10, height: "auto", padding: "1px 6px" }}>
+            {showPaid ? `all ${catalog.models.length} — hide paid` : `${listed.length} free — show paid`}
+          </Button>
+        )}
         <Button variant="ghost" size="sm" disabled={busy} onClick={onRefresh}
                 style={{ fontSize: 10, height: "auto", padding: "1px 6px" }}>
           {busy ? "…" : "Refresh"}
@@ -208,6 +222,9 @@ export function InferencePanel() {
   const [catalog, setCatalog] = useState<LlmModelCatalog | null>(null);
   const [catalogBusy, setCatalogBusy] = useState(false);
   const [catalogErr, setCatalogErr] = useState<string | null>(null);
+  // Free-by-default: binding a paid OpenRouter model requires this explicit ack —
+  // the server refuses without it, this checkbox is how the user grants it.
+  const [paidAck, setPaidAck] = useState(false);
 
   const load = () =>
     getLlmConfig()
@@ -280,6 +297,12 @@ export function InferencePanel() {
     setSaved(false);
   };
 
+  // Paid bindings among the typed role models (openrouter only — the `:free`
+  // suffix is that catalog's tier marker; BYO-key backends are paid by design).
+  const paidBindings = backend === "openrouter"
+    ? Object.values(models).filter(m => m && m.trim() && !m.trim().endsWith(":free"))
+    : [];
+
   const save = async () => {
     setSaving(true); setSaved(false); setResult(null);
     try {
@@ -288,6 +311,7 @@ export function InferencePanel() {
         models: { coder: models.coder || "", narrator: models.narrator || "", fast: models.fast || "" },
         base_urls: isLocal ? { [backend]: baseUrls[backend] || "" } : {},
         keys: Object.fromEntries(Object.entries(keys).filter(([, v]) => v && v.trim())),
+        ...(paidBindings.length > 0 ? { allow_paid: paidAck } : {}),
       });
       setCfg(next);
       setBackend(next.backend);
@@ -402,6 +426,26 @@ export function InferencePanel() {
           Leave a model blank to use the provider&apos;s default (shown as the placeholder).
           Any model id works — the list is a suggestion, not a restriction.
         </div>
+        {paidBindings.length > 0 && (
+          <div style={{
+            fontSize: 11, lineHeight: 1.5, padding: "8px 10px", borderRadius: "var(--r2)",
+            background: "var(--amb1)", color: "var(--amb5)", border: "1px solid var(--amb2)",
+            display: "flex", flexDirection: "column", gap: 6,
+          }}>
+            <span>
+              {paidBindings.length === 1
+                ? <><code style={{ fontSize: 10.5 }}>{paidBindings[0]}</code> is a paid model</>
+                : `${paidBindings.length} of these are paid models`}
+              {" "}— free (<code style={{ fontSize: 10.5 }}>:free</code>) models are the
+              default here, and every paid call bills your OpenRouter credit.
+            </span>
+            <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
+              <input type="checkbox" checked={paidAck}
+                onChange={e => setPaidAck(e.target.checked)} />
+              <span>Bind {paidBindings.length === 1 ? "it" : "them"} anyway — I accept the charges</span>
+            </label>
+          </div>
+        )}
         {(() => {
           // The bound models' privacy classes — a saved-config view (§5b.4 governance).
           const classes = new Set(Object.values(cfg.capabilities ?? {}).map((c) => c.privacy_class));
@@ -425,11 +469,15 @@ export function InferencePanel() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2 }}>
         <button
           onClick={save}
-          disabled={saving}
+          disabled={saving || (paidBindings.length > 0 && !paidAck)}
+          title={paidBindings.length > 0 && !paidAck
+            ? "A paid model is bound — tick the acknowledgment above to save"
+            : undefined}
           style={{
             padding: "7px 16px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
             background: "var(--blue4)", color: "#fff", border: "none",
-            cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1,
+            cursor: saving || (paidBindings.length > 0 && !paidAck) ? "default" : "pointer",
+            opacity: saving || (paidBindings.length > 0 && !paidAck) ? 0.6 : 1,
           }}
         >
           {saving ? "Saving…" : "Save"}
