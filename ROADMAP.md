@@ -218,7 +218,8 @@ deletes its free tier.
 [`docs/PLATFORM_PROGRAM_2026-07-24.md`](docs/PLATFORM_PROGRAM_2026-07-24.md) §2–§5. Wave K
 follow-ons are dispositioned there (§5): K2b rides A5/G · K5's "persisted proposal queue" is
 **superseded by A4** · the 9 unenforced `_RISK` actions → Wave G · the `trigger_investigation`
-seam and the ontology-overrides env override are filed task chips.
+seam is CLOSED (Wave H5 — `aughor/runners/investigation.py`, the runner automations and kinetic
+both call) · the ontology-overrides env override is a filed task chip.
 
 ### Still open from earlier sessions
 
