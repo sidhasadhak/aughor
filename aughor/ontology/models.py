@@ -258,7 +258,10 @@ class SubmissionCriterion(BaseModel):
 class SideEffect(BaseModel):
     """A declared consequence of a KineticAction, dispatched by the executor (K2) through an
     existing primitive: ``notify``/``webhook`` → ``actions.fire_action``, ``trigger_investigation``
-    → ``kernel().submit``. ``config`` is opaque here; the executor validates it per kind."""
+    → ``runners.investigation`` (H5), which submits it as a supervised kernel job. ``config`` is
+    opaque here; the executor validates it per kind — for ``trigger_investigation`` it carries the
+    ``question`` (``{param}`` placeholders filled from the action's declared parameters) and
+    optionally ``connection_id`` / ``schema_name`` / ``agent_id``."""
     kind: Literal["notify", "webhook", "trigger_investigation"]
     config: dict = Field(default_factory=dict)
 

@@ -13,9 +13,11 @@ every gate passed. Approval reuses the existing graduated dial (`govern.actions.
 action's DECLARED risk (a dynamic action isn't in the static `_RISK` registry).
 
 Dispatch is injectable. The default handler fully wires ``notify``/``webhook`` (a self-contained,
-SSRF-guarded POST); ``trigger_investigation`` (K4), ``annotate`` (the K3 overlay ledger) and
-``query`` (read-query wiring) are clean seams that raise until their PR lands. A caller (a test, the
-K4 agent) may inject its own dispatcher.
+SSRF-guarded POST), ``annotate`` (the K3 overlay ledger) and ``trigger_investigation`` (H5 — via
+:mod:`aughor.runners.investigation`, the runner an automation's scheduled ``investigate`` effect
+also uses, so neither package has to import the other); ``query`` (read-query wiring) is still a
+clean seam that raises until its PR lands. A caller (a test, the K4 agent) may inject its own
+dispatcher.
 
 RBAC is enforced at the HTTP boundary (the route's policy permission via ``enforce_rbac``), not here,
 so the executor stays callable headlessly by the agent inside an already-authorised request.
@@ -175,6 +177,74 @@ def _dispatch_webhook(se: SideEffect, action: KineticAction, params: dict) -> di
     return {"kind": se.kind, "http_status": resp.status_code, "ok": resp.is_success}
 
 
+def _fill_question(template: str, params: dict) -> str:
+    """Substitute the action's coerced parameters into the configured question.
+
+    Total and deterministic: only DECLARED parameters can appear, and an unknown placeholder is
+    an authored error rather than a literal brace left in the question for a model to interpret.
+    A declared action is a contract; a question it cannot actually build should fail at dispatch,
+    loudly, not become a subtly different investigation.
+    """
+    if not template:
+        return ""
+    try:
+        return template.format_map(params)
+    except (KeyError, IndexError, ValueError) as e:
+        raise KineticDispatchError(
+            f"trigger_investigation question references something the action does not declare: {e}"
+        ) from e
+
+
+def _dispatch_trigger_investigation(se: SideEffect, action: KineticAction, params: dict,
+                                    scope: str) -> dict:
+    """Wave H5 — start a governed investigation through the neutral runner.
+
+    The runner (:mod:`aughor.runners.investigation`) is the same one an automation's scheduled
+    ``investigate`` effect uses, and lives in a module neither package owns — pointing this branch
+    at ``automations`` instead would have inverted the dependency, since automations already routes
+    its ``kinetic_action`` effect through this executor.
+
+    A persona binding that cannot hold is a ``dispatch_error`` carrying the ask path's authored
+    sentence VERBATIM, not a quiet run as nobody: the K2 property that an action which could not do
+    what it declared says so. The investigation is submitted, never awaited — a deep run takes
+    minutes and this is called inside an HTTP request — so the outcome carries the job id plus
+    whichever ids are genuinely known (see ``basis``), never an invented receipt.
+    """
+    from aughor.runners import InvestigationRequest, run_investigation
+
+    cfg = se.config or {}
+    question = _fill_question(str(cfg.get("question", "")).strip(), params)
+    if not question:
+        raise KineticDispatchError(
+            "trigger_investigation requires a 'question' in its side-effect config")
+    connection_id = str(cfg.get("connection_id") or scope or "")
+    if not connection_id:
+        # Fail here rather than let the ask path fail deep inside a background job on a
+        # connection id of "" — the caller would see a submitted job that quietly never answered.
+        raise KineticDispatchError(
+            "trigger_investigation has no connection: declare 'connection_id' in the side-effect "
+            "config, or execute the action against one")
+    req = InvestigationRequest(
+        question=question,
+        connection_id=connection_id,
+        schema_name=str(cfg.get("schema_name") or "") or None,
+        agent_id=str(cfg.get("agent_id") or "") or None,
+    )
+    # Two runs of one action are the same work only when they ask the same question as the same
+    # persona — the parameters are already baked into `question`, so a refund investigation for
+    # order A must not deduplicate onto order B's.
+    import hashlib
+    digest = hashlib.sha256(f"{question}\x00{req.agent_id or ''}".encode()).hexdigest()[:12]
+    run = run_investigation(req, idempotency_key=f"kinetic:{action.id}:{digest}",
+                            caller=f"kinetic:{action.id}")
+    if not run.ok:
+        raise KineticDispatchError(run.message)
+    return {"kind": se.kind, "question": question, "connection_id": connection_id,
+            "basis": run.basis, "job_id": run.job_id,
+            "investigation_id": run.investigation_id, "receipt_id": run.receipt_id,
+            **({"agent_id": req.agent_id} if req.agent_id else {})}
+
+
 def _dispatch_annotate(action: KineticAction, params: dict, scope: str) -> dict:
     """Write a human overlay edit to the K3 ledger — an annotation/correction merged onto reads,
     never a source mutation. The action's parameters carry the target + body."""
@@ -198,8 +268,7 @@ def default_dispatch(action: KineticAction, params: dict, scope: str = "") -> di
             if se.kind in ("notify", "webhook"):
                 results.append(_dispatch_webhook(se, action, params))
             elif se.kind == "trigger_investigation":
-                raise KineticDispatchError(
-                    "trigger_investigation dispatch is wired in K4 — inject a dispatcher to use it now")
+                results.append(_dispatch_trigger_investigation(se, action, params, scope))
             else:
                 raise KineticDispatchError(f"unknown side effect kind: {se.kind}")
         return {"side_effects": results}
@@ -216,8 +285,19 @@ _RISK = {"read_only": "READ_ONLY", "low": "LOW", "high": "HIGH"}
 
 
 def _risk_of(action: KineticAction):
+    """The tier the approval gate runs at — the declared one, with a floor.
+
+    ``read_only`` is a claim about consequence, and Wave H5 introduced an action that can spend
+    real money without mutating a single row: ``trigger_investigation`` starts a deep run, which
+    issues LLM calls against the workspace budget. Trusting the declaration there would let an
+    author mark a spending action as free of consequence, so the floor is LOW (metered) whatever
+    the overlay says. Declaring HIGH still holds — a floor only ever raises.
+    """
     from aughor.govern.actions import ActionRisk
-    return getattr(ActionRisk, _RISK.get(action.risk, "HIGH"))
+    name = _RISK.get(action.risk, "HIGH")
+    if name == "READ_ONLY" and any(se.kind == "trigger_investigation" for se in action.side_effects):
+        name = "LOW"
+    return getattr(ActionRisk, name)
 
 
 def execute_kinetic_action(

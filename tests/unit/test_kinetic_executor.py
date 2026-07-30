@@ -203,10 +203,12 @@ def test_annotate_without_target_params_errors_clearly():
     assert r.status == "dispatch_error" and "table" in r.message
 
 
-def test_trigger_investigation_is_a_seam_to_k4():
+def test_trigger_investigation_without_a_question_is_a_dispatch_error():
+    """H5 wired this branch; a side effect that declares no question still cannot run.
+    The full behaviour lives in tests/unit/test_runners_investigation.py."""
     a = _action(side_effects=[SideEffect(kind="trigger_investigation")], submission_criteria=[])
     r = execute_kinetic_action(a, {"amount": 1})
-    assert r.status == "dispatch_error" and "K4" in r.message
+    assert r.status == "dispatch_error" and "question" in r.message
 
 
 # ── the HTTP surface ─────────────────────────────────────────────────────────────
