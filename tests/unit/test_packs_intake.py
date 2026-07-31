@@ -46,6 +46,22 @@ def test_steers_when_active_pack_matches_and_pinned(env):
     assert "customers.signup_date" in block        # recipe grain grounded to the pinned column
 
 
+def test_the_recipe_renders_its_anti_patterns(env):
+    """A metric's `anti_patterns` — the half of a recipe that says how to get it WRONG —
+    was authored in the pack YAML, carried through build_injection, and rendered NOWHERE.
+    Both ends of the feature existed while the feature did not: the one thing a pack
+    most wants to prevent never reached a prompt. Rendered in the metric-KB's `AVOID:`
+    idiom, so the shape is one the planner already sees elsewhere."""
+    with using_org("default"):
+        save_binding("customer-analytics", "workspace", BINDING, verified=True)
+        inj = intake.injection_for_question(Q, "workspace", packs=[_active_sample()])
+    authored = [ap for m in inj.metrics for ap in (m.get("anti_patterns") or [])]
+    assert authored, "the sample pack must carry anti_patterns for this test to mean anything"
+    block = intake.render_injection(inj)
+    assert "AVOID:" in block
+    assert authored[0][:40] in block
+
+
 def test_no_steer_without_pinned_binding(env):
     with using_org("default"):
         inj = intake.injection_for_question(Q, "workspace", packs=[_active_sample()])

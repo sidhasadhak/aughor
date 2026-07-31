@@ -1503,6 +1503,16 @@ async def _stream_chat(
         _agent_brief = _grounding_agent_brief()  # == agent_brief_block() (shared Rec 5 producer)
         if _agent_brief:
             prompt = _agent_brief + prompt
+        # Pack steering — the third and last consumer of the shared producer (explore and
+        # the deep-analysis intake are the others). Sits beside the agent brief on purpose:
+        # creating a custom agent can bind BOTH, and before this the brief arrived here
+        # while the pack's grounded recipes did not — so an agent built around a domain
+        # answered quick questions with none of that domain's definitions. Inert unless a
+        # pack is active AND deployed on this connection, so the prompt is byte-identical.
+        from aughor.agent.grounding import pack_brief as _grounding_pack
+        _pack_sec = _grounding_pack(question, connection_id, canvas_scope_eff_schema or "")
+        if _pack_sec:
+            prompt = _pack_sec + prompt
         # "Ask this briefing" — ground the answer in the brief the user is LOOKING AT, read
         # server-side from the same `conn:schema` cache entry the Briefing rendered (never
         # posted up by the client, so it can't drift from what's on screen or be spoofed).

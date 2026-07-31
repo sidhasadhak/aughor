@@ -3259,6 +3259,25 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         events_section=events_section,
         origin_finding_section=origin_finding_section,
     )
+    # Pack steering, at intake — the same producer explore and quick-/ask read
+    # (agent/grounding.py::pack_steering). The packs design doc has always
+    # described `agent/` as "receiving injected steering metadata at intake", but until now
+    # `injection_for_question` had exactly ONE engine caller (agent/explore.py): an analyst
+    # bound to a custom agent sharpened exploration runs and no deep analysis, with no error
+    # anywhere. Prepended above the intake body and BELOW the loss directive, which keeps
+    # its stated position as the topmost instruction.
+    #
+    # Data-gated three deep (flag · an active pack owning the question · a human-pinned
+    # deploy binding on this connection), and the producer degrades to '' on any failure,
+    # so a run with none of those is byte-identical.
+    from aughor.agent.grounding import pack_steering
+    _pack_block, _pack_id = pack_steering(
+        question, state.get("connection_id", "") or "", state.get("scope_schema", "") or "")
+    if _pack_block:
+        prompt = _pack_block + prompt
+        _logging.getLogger(__name__).info(
+            "[ada] pack '%s' is steering this deep analysis", _pack_id)
+
     # Loss-intent questions get a deterministic directive naming the loss signals THIS
     # schema carries (contra-revenue / capacity columns) — a revenue ranking cannot find
     # losses, and the live A/B showed it concluding "no losses" over 2.4M of refund

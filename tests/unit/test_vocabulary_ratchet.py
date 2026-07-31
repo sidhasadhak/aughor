@@ -161,7 +161,10 @@ BASELINE: dict[str, int] = {
     "persona": 321,
     "reforce": 1,
     "soma": 26,
-    "specialist": 88,
+    # 88 → 87: the explore log line that announced steering said "specialist pack";
+    # it now says "pack", which is what the glossary calls the thing. Lowered here so
+    # the gain is locked in rather than left as headroom for the next new occurrence.
+    "specialist": 87,
     "tableau": 0,
 }
 

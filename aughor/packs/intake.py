@@ -93,8 +93,15 @@ def render_injection(inj: PackInjection) -> str:
     if inj.metrics:
         lines.append("\nGROUNDED METRIC RECIPES (use these exact definitions):")
         for m in inj.metrics:
+            # anti_patterns are the half of a recipe that says how to get it WRONG, and
+            # they were dead payload: authored in the pack YAML, carried through
+            # build_injection, and rendered nowhere — so the one thing a pack most
+            # wants to prevent never reached a prompt. Rendered in the metric-KB's
+            # established `AVOID:` idiom, bounded the same way it bounds its own.
+            _aps = "; ".join((m.get("anti_patterns") or [])[:2])
             lines.append(f"- {m['name']}: {m.get('formula','').strip()}"
-                         + (f"\n    grain: {m['grain'].strip()}" if m.get('grain') else ""))
+                         + (f"\n    grain: {m['grain'].strip()}" if m.get('grain') else "")
+                         + (f"\n    AVOID: {_aps}" if _aps else ""))
     if inj.diagnostics:
         lines.append("\nDIAGNOSTIC QUESTIONS this expert always asks:\n"
                      + "\n".join(f"- {d}" for d in inj.diagnostics))
