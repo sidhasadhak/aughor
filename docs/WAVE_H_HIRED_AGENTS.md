@@ -49,7 +49,7 @@ The wave is **composition, not construction**. Measured premises:
 | **H3** | **The per-agent run view**: grow `AgentOverviewPanel.tsx` (145 L) into the operating slice — run list from **existing stores only** (receipts filtered by the H2 stamp, `automation_runs` targeting this agent, job rows), the pass-chip trend, spend. No new store (J10/J12). | H2, S-wave rendering rules |
 | **H4** | **Create-from-template — the customer analyst** *(shipped — the original scope was FALSIFIED by its pre-check)*: "seeded as goldens, born measured" is impossible and must not be faked — `reference_sql` is NOT NULL and graded by execution; a pack's evals are behavioural expectations with no SQL; its formulas carry `{{role.*}}` placeholders only resolvable per connection; the only fill would be the model writing the suite that grades itself. Shipped instead: `GET /agents/templates` + `POST /agents/custom/from-template` — the pack's stance becomes the instructions, the pack stays **bound by id, never absorbed**, and its questions return as `suggested_goldens` that each state what they still need (reference SQL). A hire is born with a stance and **no pass chip**; the UI carries the suggestions into the golden editor. `skills/*.md` seeding (§5.2) rides whenever a pack first ships skill docs. | packs, user_agents/templates |
 | **H5** | **The neutral runner** *(shipped — one deferred decision did not survive contact)*: the ask-drain now lives in `aughor/runners/investigation.py`, a module neither package owns, and both `_dispatch_investigate` and kinetic's `trigger_investigation` branch call it. **Risk tier**: LOW, and enforced as a *floor* rather than trusted — an action that starts a deep run spends the LLM budget, so `read_only` is not a truthful declaration for it however the overlay is authored (`_risk_of`). **Async submission**: `submit_background_tick`, as before. **Receipt**: the pre-registered gate asked for the investigation's receipt id in the result, and that is **not knowable at submit time** — the investigation does not exist yet, so returning one would mean either blocking an HTTP request for the length of a deep run or inventing an id. Shipped instead: `basis` says which world the caller is in (`submitted` ⇒ the job id is the handle, ids empty; `inline` ⇒ ids are real), and the runner appends an `investigation.dispatched` ledger event carrying the join (job ↔ investigation ↔ receipt ↔ agent ↔ caller) once the drain resolves it. Closes chip `task_401e3882`. | K4, A, kernel |
-| **H6** | *(optional)* **Instruction versioning**: revisions table **inside `agents.db`** (not a second store) — `{agent_id, rev, instructions, at, author}`; patch = new revision; restore endpoint. The Mastra-Editor lesson: non-technical iteration with every change versioned. | user_agents/store |
+| **H6** | **The pass chip names the agent it measured** *(shipped — the pre-check re-scoped this one too, and found a defect)*: measured on main, an agent whose instructions had been INVERTED and whose documents, packs and schema scope had all been cleared still displayed `passed 5/5`, because `update_agent` never touched `last_eval`. Versioning alone would have deepened that — a restore button over a chip that never goes stale lets someone roll back a configuration while the number describes a different one. So the revision is the **identity the chip cites**, not the feature: `UserAgent.config_rev` fingerprints the governing fields (instructions · connection · schema scope · doc/pack bindings — not `name`, not `enabled`), and `eval_basis` reports `current`/`stale`/`unknown`/`none`. A stale chip is **labelled, never deleted** (real evidence about a configuration that really existed); a pre-H6 chip carries no rev and reports `unknown` rather than being laundered as current. **No new table**: `Ledger.artifact_write`/`artifact_versions` already supersede-not-delete, so `user_agents/revisions.py` is glue over the store that exists (J10/J12). Restore writes forward as a new revision — history is append-only. Because the rev is a digest rather than a save counter, a rename is not a revision and editing *back* to a measured configuration makes the chip current again. | user_agents/store, kernel ledger |
 
 ## 2. Pre-registered gates
 
@@ -69,6 +69,9 @@ The wave is **composition, not construction**. Measured premises:
   carries the job id plus a `basis` that says the ids are not knowable, and the join is
   written to the ledger when the drain resolves it. A gate that cannot be met honestly is
   worth more as a recorded refusal than as a field filled with something plausible.
+- **H6**: editing an agent's governing configuration changes what the pass chip *claims*,
+  not just what the agent does — an edited agent can never render a bare green pass; a
+  restore is a new revision, never a rewind; and no second versioning store is introduced.
 - Live-path proof before "done" on every item (leverage-gate law): one real scheduled
   fire shown, not just green tests.
 
@@ -77,7 +80,9 @@ The wave is **composition, not construction**. Measured premises:
 - **J9** — any default flip (e.g. if H1's flag graduates) cites a `GraduationDecision`.
 - **J10/J12** — no second queue, no second results store; H3 is a *view*.
 - **J14** — measured-over-declared: templates are born with goldens; the pass chip is
-  the number, popularity is not evidence.
+  the number, popularity is not evidence. **H6 tightened this**: a number is only
+  measured-over-declared while it still describes the thing in front of you, so the chip
+  now carries the configuration it graded and says so when that configuration has moved.
 - **Effect law** (`automations/models.py:103`) — H1 adds a *parameter* to an existing
   effect kind, never a new action type.
 - **G5 trim** — agent doc/pack retrieval already flows the ask path; H1 introduces no

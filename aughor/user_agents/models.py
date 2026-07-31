@@ -3,10 +3,27 @@ built-in fleet charters in aughor/kernel/agents.py, which govern the PLATFORM's
 own agent kinds; a UserAgent is a user's persona OVER the platform)."""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import hashlib
+import json
+
+from pydantic import BaseModel, Field, computed_field
 
 NAME_MAX = 120
 INSTRUCTIONS_MAX = 8000
+
+# The fields that decide HOW the agent answers — its governing configuration (Wave H6).
+# `name` is a label and `enabled` is an on/off switch: neither changes a single token of
+# the prompt or a single document retrieved, so neither mints a revision. Everything here
+# does, which is exactly why the pass chip has to name which of these it measured.
+GOVERNING_FIELDS = ("instructions", "connection_id", "schema_scope", "doc_ids", "pack_ids")
+
+# What `eval_basis` can say. The four states exist because "no chip", "a chip from before
+# we tracked this" and "a chip earned by a configuration that no longer exists" are three
+# different things, and only one of them means "this agent is measured".
+EVAL_NONE = "none"          # never evaluated
+EVAL_CURRENT = "current"    # earned by the configuration running right now
+EVAL_STALE = "stale"        # earned by a configuration since edited — the number is about a different agent
+EVAL_UNKNOWN = "unknown"    # a chip predating revision tracking: cannot be shown current OR stale
 
 
 class UserAgent(BaseModel):
@@ -22,8 +39,49 @@ class UserAgent(BaseModel):
     pack_ids: list[str] = Field(default_factory=list)
     owner: str = ""                  # org/user identity when identity is enforced
     enabled: bool = True
-    # Latest golden-suite evaluation ({passed, total, at, per_question}); None =
+    # Latest golden-suite evaluation ({passed, total, at, per_question, config_rev}); None =
     # never evaluated. Written by quality.evaluate_agent, shown as the pass chip.
     last_eval: dict | None = None
     created_at: str = ""
     updated_at: str = ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def config_rev(self) -> str:
+        """A stable fingerprint of this agent's governing configuration.
+
+        Derived, never stored: two agents configured identically have the same rev, and an
+        agent edited and edited back returns to the rev it had. That is the point — the
+        question a pass chip has to answer is "is this the configuration I measured?", not
+        "how many times has someone pressed save?".
+
+        Lists are sorted before hashing, so reordering bound documents is not a new
+        configuration; it is the same agent with the same behaviour.
+        """
+        canonical = {
+            "instructions": self.instructions,
+            "connection_id": self.connection_id,
+            "schema_scope": self.schema_scope,
+            "doc_ids": sorted(self.doc_ids),
+            "pack_ids": sorted(self.pack_ids),
+        }
+        blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def eval_basis(self) -> str:
+        """Whether the pass chip is about the agent as it is configured NOW.
+
+        Before H6 the chip survived any edit: an agent whose instructions had been inverted
+        and whose document scope had been emptied still displayed its old `passed 5/5`. The
+        number was real once — it was simply about a different agent. So the chip is never
+        deleted on edit (that would destroy real evidence); it is LABELLED, and the label is
+        what the UI must render alongside the number.
+        """
+        if not self.last_eval:
+            return EVAL_NONE
+        measured = str((self.last_eval or {}).get("config_rev") or "")
+        if not measured:
+            return EVAL_UNKNOWN
+        return EVAL_CURRENT if measured == self.config_rev else EVAL_STALE

@@ -375,6 +375,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/custom/{agent_id}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List User Agent Revisions
+         * @description The agent's governing-configuration history, newest first (Wave H6).
+         *
+         *     ``current_rev`` is what the agent is configured as right now, so a caller can mark the
+         *     entry it matches without recomputing the digest. Only the fields that decide how the
+         *     agent answers are versioned — a rename does not appear here, because it changed nothing
+         *     about what the agent does.
+         */
+        get: operations["list_user_agent_revisions_agents_custom__agent_id__revisions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/custom/{agent_id}/revisions/{version}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore User Agent Revision
+         * @description Put an earlier configuration back — as a NEW revision, never a rewind.
+         *
+         *     History stays append-only: "I went back to how it was on Tuesday" is itself worth
+         *     keeping, and erasing the revisions in between would destroy the record of what was
+         *     tried. If the restored configuration is one the golden suite already measured, the pass
+         *     chip becomes ``current`` again on its own — the revision is a digest of the
+         *     configuration, not a counter, so returning to a measured state returns the measurement
+         *     with it.
+         */
+        post: operations["restore_user_agent_revision_agents_custom__agent_id__revisions__version__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/templates": {
         parameters: {
             query?: never;
@@ -10347,6 +10399,71 @@ export interface operations {
             header?: never;
             path: {
                 agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_user_agent_revisions_agents_custom__agent_id__revisions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_user_agent_revision_agents_custom__agent_id__revisions__version__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                version: number;
             };
             cookie?: never;
         };
