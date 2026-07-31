@@ -226,7 +226,12 @@ both call) · the ontology-overrides env override is a filed task chip.
 4. **Flag graduation Batches 2+.** Batch 1 merged in #199;
    [`docs/FLAG_GRADUATION_AUDIT_2026-07-22.md`](docs/FLAG_GRADUATION_AUDIT_2026-07-22.md) dispositions
    all 19 — 2 intentionally off, **5 that Wave E4 must measure**, 4 cost-vs-latency operator choices,
-   4 needing their own call (`agents.user_defined` is the likeliest next graduate).
+   4 needing their own call. ✅ **`agents.user_defined` graduated 2026-07-31** — receipt
+   `df89c044999a`, run `234be1fbb62b` of `aughor/evals/user_agents_receipt.py` (9/9 stable over 3
+   iterations, bar 1.0, no baseline). The claim is **data-gated**, not "better answers": with no
+   agent named on a request the prompt, retrieval scope and resume path are byte-identical, and the
+   flip's only fresh-clone effect is that `/agents/custom` returns an empty roster instead of 404.
+   No A/B grid was bought — "does the flag change the prompt?" was decidable by construction.
 5. **`ask.brief_context` + `ask.conversation_context` soak, then graduate.** Both read `off` in the
    live ledger. Turn on (`PUT /system/flags/<name> {"state":"on"}` — no restart), ask follow-ups from
    the Briefing, confirm the answers inherit the brief's grounding, then mark `AUTO_ELIGIBLE`.

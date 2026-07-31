@@ -242,6 +242,29 @@ FLAG_DEFAULT = {
     # tokens, latency, outcome; never prompt content) that the control room, /usage
     # attribution and per-agent spend read. Answers are byte-identical by construction.
     "obs.session_log": True,
+    # Wave H (2026-07-31) — graduated on a DETERMINISTIC data-gated claim, receipt
+    # `df89c044999a`, from run `234be1fbb62b` of the suite
+    # `aughor/evals/user_agents_receipt.py` (9/9 stable over 3 iterations, 0 errors,
+    # 0 flaky, bar 1.0, no baseline — the same carve-out L4, N3 and CR0 used: a claim
+    # with no sampling has no noise floor and so needs none).
+    #
+    # The claim is NOT "answers get better" — a persona is the user's own instruction
+    # text and nothing here can promise it helps. It is that the feature is DATA-GATED:
+    # every behaviour it adds needs an agent row the user created AND a request naming
+    # it. The suite proves that hermetically — with no agent named, the prompt block is
+    # empty, retrieval stays unrestricted, resume attaches no persona, and an agent that
+    # merely EXISTS changes nothing. `_resolve_ask_agent` returns before it ever reads
+    # this flag when there is no `agent_id`, which is why no A/B grid was bought: "does
+    # the flag change the prompt?" is decidable by construction, not by sampling.
+    #
+    # What flipping this changes on a fresh clone: exactly one thing — `/agents/custom`
+    # stops 404-ing and returns an empty roster. That is asserted as a DELTA rather than
+    # waved away, because it is the honest whole of the effect until somebody creates an
+    # agent. The rules that become load-bearing at default-on are pinned alongside: a
+    # conflicting connection binding, a disabled agent and an unknown agent are all
+    # refused with the authored sentence, and an active agent's retrieval is restricted
+    # to its own documents (with none bound it sees none — never a fall-back to all).
+    "agents.user_defined": True,
 }
 
 # Human-facing copy for the Settings UI.
@@ -600,7 +623,7 @@ FLAG_META = {
     },
     "agents.user_defined": {
         "label": "User-defined agents (domain personas)",
-        "description": "Create reusable agents that bind standing INSTRUCTIONS + a set of uploaded DOCUMENTS + a CONNECTION into a persona, then answer as that agent via /ask (agent_id). The agent's instructions lead the prompt, document retrieval is restricted to ITS documents (an agent with none sees none — fail-closed), and its connection binding wins (a conflicting explicit connection is rejected). CRUD under /agents/custom. Off by default — routes 404 and the answer path is byte-identical. Part B Phase 1 (slice 1) of docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md.",
+        "description": "Create reusable agents that bind standing INSTRUCTIONS + a set of uploaded DOCUMENTS + a CONNECTION into a persona, then answer as that agent via /ask (agent_id). The agent's instructions lead the prompt, document retrieval is restricted to ITS documents (an agent with none sees none — fail-closed), and its connection binding wins (a conflicting explicit connection is rejected). CRUD under /agents/custom. Default-ON since Wave H, graduated on receipt `df89c044999a` (run `234be1fbb62b` of aughor/evals/user_agents_receipt.py, 9/9 stable over 3 iterations) on a DATA-GATED claim: every behaviour it adds needs an agent you created AND a request naming it, so with none named the prompt block is empty, retrieval stays unrestricted and a resumed run attaches no persona — all byte-identical to off. Turning it on does exactly one thing by itself: /agents/custom stops 404-ing and returns an empty roster. Force off with AUGHOR_USER_AGENTS=0 or a runtime override. Part B Phase 1 (slice 1) of docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md.",
     },
     "obs.mlflow": {
         "label": "MLflow tracing (agent observability)",
@@ -801,7 +824,12 @@ def list_flags() -> dict:
             "override": ov,                       # None (no override) | True | False — the UI's tri-state setting
             "auto_eligible": name in AUTO_ELIGIBLE,
             **({"trigger": CAPABILITY_TRIGGER[name]} if name in CAPABILITY_TRIGGER else {}),
-            "source": "run" if name in run else "runtime" if ov is not None else "env",
+            # "env" used to be the catch-all tail, so a flag that was on purely because of
+            # its CODE default reported `source: "env"` and sent an operator hunting for a
+            # variable nobody had set. That gets more misleading with every graduation, so
+            # the two are distinguished: "env" means the variable is actually present.
+            "source": ("run" if name in run else "runtime" if ov is not None
+                       else "env" if os.getenv(var) is not None else "default"),
             "env_var": var,
             "label": meta.get("label", name),
             "description": meta.get("description", ""),

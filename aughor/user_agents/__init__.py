@@ -2,7 +2,9 @@
 a connection into a reusable persona ("Gems on governed data").
 
 Part B Phase 1 of docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md.
-Flag `agents.user_defined`, default off. Slice 1 wires: pinned INSTRUCTIONS
+Flag `agents.user_defined`, **default ON since Wave H** (receipt `df89c044999a` —
+the capability is data-gated: with no agent named on a request, nothing about the
+answer path changes). Slice 1 wires: pinned INSTRUCTIONS
 (lead the quick-path prompt, rules_block-style), DOCUMENT scope (retrieval
 restricted to the agent's bound documents — an agent with no documents sees
 none), and the CONNECTION binding (the agent always answers over its data;

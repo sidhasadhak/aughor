@@ -3899,7 +3899,7 @@ def _current_agent_id() -> str:
     return agent.id if agent is not None else ""
 
 
-def _persona_for_investigation(inv_id: str):
+def persona_for_investigation(inv_id: str):
     """The user-agent persona a checkpointed deep run was launched AS, or None.
 
     Resume (plan/clarify-gate feedback) never passes through /ask, so the
@@ -4092,7 +4092,7 @@ def build_resume_stream(inv_id: str, request: "Request | None", *, feedback: str
                             clarify_choice=clarify_choice)
     # agents.user_defined — a deep run launched AS an agent resumes AS it: the persona persists in
     # the run's checkpointed state (resume never passes through /ask). Fail-open: no persona → unchanged.
-    persona = _persona_for_investigation(inv_id)
+    persona = persona_for_investigation(inv_id)
     if persona is not None:
         stream = _stream_as_agent(persona, stream)
     return stream

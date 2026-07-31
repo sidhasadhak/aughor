@@ -81,7 +81,7 @@ wrong.
 
 | Flag | Note |
 |---|---|
-| `agents.user_defined` | Deterministic and fail-closed (an agent with no documents sees none). Plausible graduate — default-on only makes the capability available. |
+| `agents.user_defined` | ✅ **GRADUATED 2026-07-31** — receipt `df89c044999a`, run `234be1fbb62b` of `aughor/evals/user_agents_receipt.py` (9/9 stable ×3, bar 1.0, no baseline). This row's "default-on only makes the capability available" hunch was right and is now *measured*: the claim is **data-gated** — no agent named on a request ⇒ identical prompt, retrieval scope and resume path — with exactly one fresh-clone delta (`/agents/custom` 404 → empty roster), asserted rather than waved away. Fail-closed retrieval pinned alongside. |
 | `plan.program` | A whole alternate executor path (`/query/plan-run`). Needs its own soak. |
 | `capability.pipeline_live` | An AL-02 live-migration flag — graduating it is a migration decision. |
 | `specialist_packs` | "Off by default while the subsystem lands." Revisit when it has. |
