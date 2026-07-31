@@ -213,8 +213,15 @@ def _alerts_for(conn_id: str) -> list:
     return list(get_alerts(conn_id=conn_id))
 
 
-_LEGACY_FLAGS = {"automations.engine": False, "automations.adopt_legacy": False}
-_ADOPTED_FLAGS = {"automations.engine": True, "automations.adopt_legacy": True}
+# Both halves pin `ops.metered_monitors` OFF because the comparison is between the two
+# LOOPS, and the kernel bridge is a third thing: with it on (default since flag strategy
+# batch A) and a kernel loop captured by the process, run_monitor_job submits the tick as
+# an async background job — the legacy half then reads its alert store before the job has
+# run and reports zero alerts, which is an artifact of the bridge, not of either loop.
+_LEGACY_FLAGS = {"automations.engine": False, "automations.adopt_legacy": False,
+                 "ops.metered_monitors": False}
+_ADOPTED_FLAGS = {"automations.engine": True, "automations.adopt_legacy": True,
+                  "ops.metered_monitors": False}
 
 
 def _run_legacy(monitor) -> list:

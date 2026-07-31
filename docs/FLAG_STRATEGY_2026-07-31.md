@@ -90,6 +90,17 @@ MLflow on `AUGHOR_MLFLOW_TRACKING_URI` being set) and **deliberate opt-ins** (pr
 
 ### A. Graduate now — decidable by construction, zero grid budget (9)
 
+**✅ EXECUTED 2026-07-31** — all nine default-ON, one suite
+(`aughor/evals/flag_batch_a_receipt.py`, run `d006bec663a0`, 12/12 stable ×3, 0 errors,
+0 flaky), nine per-flag graduation receipts (ids in `FLAG_DEFAULT`). The flip simulation
+surfaced exactly the predicted test-debt class: two tests reaching "off" by never setting
+the flag (`test_flag_overrides` re-pointed to `ai_sql`; `test_starters` now forces `=0` —
+the operator escape hatch), and one subtler find — the L4 equivalence suite's *legacy
+oracle* inherited the kernel bridge once `ops.metered_monitors` defaulted on, reporting
+zero alerts in full-suite runs where another test had captured a kernel loop; both its
+flag sets now pin `ops.metered_monitors: False`, because that comparison is between the
+two loops, not the bridge.
+
 Each is deterministic and its off-state equivalence is provable hermetically (the L4/N3/CR0
 receipt kinds). Direct hits on the stated axes:
 
@@ -224,6 +235,7 @@ All stalled since ~2026-07-05 — a month of maintaining two code paths each:
 1. **`specialist_packs`** — fixes the dead H4 feature (§2). Data-gated receipt.
    ✅ Done 2026-07-31 (receipt `452a6fcebba4`, this branch).
 2. **Group A** (9 flags) — speed/accuracy/observability wins, all construction-decidable.
+   ✅ Done 2026-07-31 (run `d006bec663a0`, nine receipts, this branch).
 3. **Group B** (11 flags) — the data-gated batch; one receipt suite shape, applied 11 times.
 4. **Groups C + G + graph/birth bundles** — self-gating conversions and the one deletion.
 5. **Group F** — migrations: flip `semantic.contract_live` first (byte-identical today).

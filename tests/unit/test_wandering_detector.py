@@ -174,11 +174,12 @@ def test_an_empty_run_is_never_terminated():
 
 # ── the wiring ────────────────────────────────────────────────────────────────
 
-def test_the_veto_is_off_by_default(monkeypatch):
-    """Off by default — an operator opts into a brake that can skip a query."""
+def test_the_veto_honours_a_forced_off(monkeypatch):
+    """Default-ON since flag strategy batch A — what matters now is the operator
+    escape hatch: an explicit =0 must disarm a brake that can skip a query."""
     from aughor.agent import explore
 
-    monkeypatch.delenv("AUGHOR_EXPLORE_WANDERING_DETECTOR", raising=False)
+    monkeypatch.setenv("AUGHOR_EXPLORE_WANDERING_DETECTOR", "0")
     assert explore._wandering_enabled() is False
     state = {"query_history": [_result("Q1", "SELECT a FROM t")]}
     subq = type("S", (), {"id": "Q2"})()
@@ -230,10 +231,10 @@ def test_a_step_with_any_fresh_evidence_still_gets_interpreted():
     assert _all_vetoed([echo, fresh]) == ""
 
 
-def test_the_stop_is_off_by_default_and_fail_safe(monkeypatch):
+def test_the_stop_honours_a_forced_off_and_fires_when_on(monkeypatch):
     from aughor.agent import explore
 
-    monkeypatch.delenv("AUGHOR_EXPLORE_WANDERING_DETECTOR", raising=False)
+    monkeypatch.setenv("AUGHOR_EXPLORE_WANDERING_DETECTOR", "0")
     prior = _result("Q1", "SELECT a FROM t")
     v = W.Verdict("repeat", "already run for Q1.", "Q1")
     history = [prior] + [W.veto_result(f"Q{i}", "SELECT a FROM t", prior, v) for i in range(2, 6)]

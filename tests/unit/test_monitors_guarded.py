@@ -45,11 +45,13 @@ class _StubDB:
 
 # ── Runner: flag-gated caveat ─────────────────────────────────────────────────
 
-def test_guarded_off_is_byte_identical(monkeypatch):
-    monkeypatch.delenv("AUGHOR_MONITORS_GUARDED", raising=False)
+def test_guarded_forced_off_is_byte_identical(monkeypatch):
+    # Explicit =0 — the operator escape hatch; the flag is default-ON since flag
+    # strategy batch A, so an unset env now means the probes run.
+    monkeypatch.setenv("AUGHOR_MONITORS_GUARDED", "0")
     alert = run_monitor(_monitor(), _StubDB(), suppress=False)
     assert alert is not None and alert.severity == "warning"
-    assert alert.caveat is None  # default off — no probe, no field
+    assert alert.caveat is None  # forced off — no probe, no field
 
 
 def test_guarded_attaches_id_arithmetic_caveat(monkeypatch):

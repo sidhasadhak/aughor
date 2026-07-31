@@ -72,7 +72,9 @@ def _state():
 
 def test_preflight_parallel_prompt_is_byte_identical_to_serial(monkeypatch):
     llm = _install(monkeypatch)
-    monkeypatch.delenv("AUGHOR_PREFLIGHT_PARALLEL", raising=False)
+    # Explicit =0 — the flag is default-ON since flag strategy batch A, so the serial
+    # oracle has to be forced, not inherited from an unset env.
+    monkeypatch.setenv("AUGHOR_PREFLIGHT_PARALLEL", "0")
     out_off = N.plan_queries(_state())
     prompt_off = llm.user
 
@@ -97,9 +99,10 @@ def test_preflight_parallel_runs_concurrently(monkeypatch):
     assert dt < 0.5, f"expected concurrent (~0.2s), got {dt:.2f}s — retrievals serialized"
 
 
-def test_preflight_serial_when_flag_off(monkeypatch):
+def test_preflight_serial_when_forced_off(monkeypatch):
     _install(monkeypatch, sleep=0.2)
-    monkeypatch.delenv("AUGHOR_PREFLIGHT_PARALLEL", raising=False)
+    # The operator escape hatch: an explicit =0 must fall back to the serial path.
+    monkeypatch.setenv("AUGHOR_PREFLIGHT_PARALLEL", "0")
     t0 = time.time()
     N.plan_queries(_state())
     dt = time.time() - t0
