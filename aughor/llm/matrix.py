@@ -117,6 +117,14 @@ VOUCHED: tuple[VouchedModel, ...] = (
                  True, "PAID $0.14/M in · $0.28/M out — approved for coder/narrator/fast "
                        "as the reliability pick when the :free tier 429s or returns empty "
                        "structured output; binding it still requires allow_paid"),
+    # The dated pin of the same model. Both are live; this is the id to bind when you
+    # want the weights to stay put, since the undated slug rolls forward on release.
+    # Verified the same way on 2026-08-01 — and re-checked against the AUTHENTICATED
+    # catalogue (this account's own key), because per-account pricing was the one
+    # explanation that would have made "paid" wrong. It did not: same $0.14/$0.28.
+    VouchedModel("openrouter", "deepseek/deepseek-v4-flash-0731", _VERIFIED_2026_08_01,
+                 True, "PAID, same weights/pricing as the undated slug — 1M ctx "
+                       "(NOT the 33k the capability chip reports)"),
 
     # ── Gemini ── confirmed in the live catalogue on 2026-07-24, which lists them
     # PREFIXED as `models/<id>`. See `normalize_id`: comparing raw would report all

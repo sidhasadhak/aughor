@@ -3233,7 +3233,7 @@ export interface LlmCapability {
   token_accounting: "exact" | "estimated";
   max_context: number;
   privacy_class: "local" | "private_endpoint" | "public_api";  // governs what context may be sent
-  cost: "per_token" | "flat" | "unknown";
+  cost: "free" | "per_token" | "flat" | "unknown";   // "free" = the `:free` tier marker
 }
 
 export interface LlmConfig {

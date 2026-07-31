@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { addLlmModel, cacheProbe, getLlmConfig, getLlmModels, removeLlmModel, setLlmConfig, testLlmConfig, type CacheProbeResult, type LlmCapability, type LlmConfig, type LlmModelCatalog, type LlmTestReport } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { formatCount } from "@/lib/format";
 
 const BACKEND_LABEL: Record<string, string> = {
   ollama: "Ollama (local)",
@@ -48,19 +49,58 @@ function CapChip({ text, title }: { text: string; title?: string }) {
   );
 }
 
-function CapabilityRow({ cap }: { cap: LlmCapability }) {
+/** A context window, honestly formatted — 1M reads as "1M", not "1049k". */
+function fmtCtx(n: number): string {
+  if (n >= 1_000_000) return `${+(n / 1_048_576).toFixed(1)}M ctx`;
+  return n >= 1000 ? `${Math.round(n / 1000)}k ctx` : `${n} ctx`;
+}
+
+/** Chips describing the model in the FIELD — not the one last saved.
+ *
+ *  `cap` is the server's profile for the SAVED binding (`_active_model`), so typing a new
+ *  id left the *previous* model's chips sitting underneath it. That is how a paid,
+ *  1M-context model came to display "free · 33k ctx": `free` was the old `:free` binding's
+ *  tier and 33k is `_DEFAULT_CONTEXT`, the "model not recognised" fallback. A panel that
+ *  labels a metered model free is the one error this screen must never make.
+ *
+ *  Truth order: the live catalogue first (it carries the real `context_length` and the real
+ *  price, and we already fetch it for the datalist), then the server's declared profile for
+ *  the axes a catalogue cannot answer — privacy, prefix-cache, tooling. */
+function CapabilityRow({ cap, typed = "", saved = "", catalog = null }: {
+  cap: LlmCapability;
+  typed?: string;
+  saved?: string;
+  catalog?: LlmModelCatalog | null;
+}) {
   const p = PRIVACY_META[cap.privacy_class] ?? PRIVACY_META.private_endpoint;
-  const ctxK = cap.max_context >= 1000 ? `${Math.round(cap.max_context / 1000)}k ctx` : `${cap.max_context} ctx`;
+  const id = typed.trim();
+  const entry = id ? (catalog?.models ?? []).find((m) => m.id === id) : undefined;
+  const unsaved = !!id && id !== saved;
+
+  const ctx = entry?.context ?? cap.max_context;
+  const ctxK = fmtCtx(ctx);
+  // `free` means two different things upstream: the catalogue knows the real PRICE, the
+  // server marks the `:free` TIER. Prefer the price — that is what actually bills you.
+  const cost: string = entry?.free !== undefined
+    ? (entry.free ? "free" : "per_token")
+    : id
+      ? (id.endsWith(":free") ? "free" : "per_token")
+      : cap.cost;
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 4, alignItems: "center" }}>
       <span title={p.note} style={{
         fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
         background: p.bg, color: p.fg, fontWeight: 500,
       }}>{p.label}</span>
-      <CapChip text={ctxK} title="model context window (drives payload caps)" />
+      <CapChip text={ctxK} title={entry?.context
+        ? `${formatCount(ctx)} tokens — from the ${catalog?.backend} catalogue`
+        : "model context window (drives payload caps) — declared default, not measured"} />
       <CapChip text={CACHE_NOTE[cap.cache_mode] ?? cap.cache_mode} title={`cache_mode: ${cap.cache_mode}`} />
       {cap.tooling === "native_tools" && <CapChip text="tools" title="native tool calling" />}
-      <CapChip text={cap.cost === "per_token" ? "$/token" : cap.cost} title={`cost: ${cap.cost}`} />
+      <CapChip text={cost === "per_token" ? "$/token" : cost} title={entry?.free !== undefined
+        ? `cost: ${cost} — from the catalogue's own pricing`
+        : `cost: ${cost}`} />
+      {unsaved && <CapChip text="unsaved" title="these describe the id you typed — press Save to bind it" />}
       {cap.token_accounting === "estimated" && <CapChip text="est. tokens" title="usage estimated (provider omits a usage block)" />}
     </div>
   );
@@ -410,7 +450,14 @@ export function InferencePanel() {
               onKeep={keepModel}
               busy={catalogBusy}
             />
-            {cfg.capabilities?.[role] && <CapabilityRow cap={cfg.capabilities[role]} />}
+            {cfg.capabilities?.[role] && (
+              <CapabilityRow
+                cap={cfg.capabilities[role]}
+                typed={models[role] ?? ""}
+                saved={cfg.models[role] ?? ""}
+                catalog={catalog}
+              />
+            )}
           </div>
         ))}
 
