@@ -71,6 +71,17 @@ _CONTEXT_WINDOWS: dict[str, int] = {
     "qwen2.5-coder": 131_072,
     "kimi": 131_072,
     "llama-3.3": 131_072,
+    # BEFORE the generic "deepseek" key — first substring match wins, so the specific
+    # family must lead. V4 is a 1M-context model (verified against OpenRouter's live
+    # catalogue 2026-08-01: deepseek-v4-flash / -flash-0731 / -pro all report
+    # 1,048,576). Without this it inherits the generic 131k and `overflow_tokens`
+    # warns "bind a larger-context model" at ~108k tokens on a model with ~888k of
+    # usable budget — a false alarm on the one binding that has the most room.
+    "deepseek-v4": 1_048_576,
+    # Deliberately left under-stated: the V3 family actually reports 163,840, but this
+    # key also catches deepseek-r1-distill-llama-70b, whose real window is 8,192. An
+    # under-estimate only costs payload headroom; an over-estimate silences the guard
+    # on the model that most needs it.
     "deepseek": 131_072,
 }
 _DEFAULT_CONTEXT = 32_768
