@@ -7,7 +7,6 @@ file-per-node persistence roundtrip.
 """
 from __future__ import annotations
 
-import aughor.ontology.doctree as dt
 from aughor.ontology.doctree import (build_doc_tree, estimate_doc_build, load_doc_tree,
                                      save_doc_tree)
 from aughor.ontology.models import (EntityProperty, OntologyEntity, OntologyGraph,
