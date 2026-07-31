@@ -76,8 +76,10 @@ def test_unpolicied_table_untouched(monkeypatch, tmp_path):
         reset_user_id(ut); reset_org_id(ot)
 
 
-def test_off_by_default_byte_identical(monkeypatch, tmp_path):
-    monkeypatch.delenv("AUGHOR_RBAC_ROW_POLICY", raising=False)   # flag off
+def test_forced_off_is_byte_identical(monkeypatch, tmp_path):
+    # Explicit =0 — rbac.row_policy graduated default-ON in flag strategy batch B; "off"
+    # is the operator escape hatch. An unset env now applies the policy (filters rows).
+    monkeypatch.setenv("AUGHOR_RBAC_ROW_POLICY", "0")   # escape hatch: no filtering
     monkeypatch.setattr(_authz, "require_identity_enabled", lambda: True)
     monkeypatch.setattr(_lic, "has_capability", lambda *a, **k: True)
     monkeypatch.setattr(_resolver, "resolve_roles", lambda p: ["viewer"])

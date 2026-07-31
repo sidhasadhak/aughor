@@ -93,10 +93,20 @@ def _make_stub(active: bool = True) -> types.ModuleType:
 @pytest.fixture(autouse=True)
 def _fresh_mlflow_state(monkeypatch):
     """Reset the module-level lazy-init state so each test starts cold, and keep
-    the init's os.environ.setdefault writes from leaking across tests."""
+    the init's os.environ.setdefault writes from leaking across tests.
+
+    Also clears any tracking-URI env LEAKED from an upstream test (test_model_bakeoff
+    drives real mlflow and mlflow.set_tracking_uri writes MLFLOW_TRACKING_URI). Since
+    the 2026-07-31 flag strategy made `_mlflow()` self-gate on that env var (the
+    `obs.mlflow` flag was deleted), a leaked URI would let real mlflow init cache
+    itself into `tel._mlf` — so `_mlflow()` returns the real module instead of this
+    file's stub, whose `get_current_active_span()` is None ⇒ no span. Each test here
+    sets exactly the URI it wants, so clearing both is safe and makes the file
+    hermetic against upstream leakage."""
     monkeypatch.setattr(tel, "_mlf", None)
     monkeypatch.setattr(tel, "_mlf_retry_at", 0.0)
-    for k in ("MLFLOW_HTTP_REQUEST_TIMEOUT", "MLFLOW_HTTP_REQUEST_MAX_RETRIES"):
+    for k in ("MLFLOW_HTTP_REQUEST_TIMEOUT", "MLFLOW_HTTP_REQUEST_MAX_RETRIES",
+              "AUGHOR_MLFLOW_TRACKING_URI", "MLFLOW_TRACKING_URI"):
         monkeypatch.delenv(k, raising=False)
     yield
     tel._mlf = None
