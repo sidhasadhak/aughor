@@ -72,7 +72,10 @@ FLAG_ENV = {
     "plan.program": "AUGHOR_PLAN_PROGRAM",
     "capability.contract": "AUGHOR_CAPABILITY_CONTRACT",
     "rbac.row_policy": "AUGHOR_RBAC_ROW_POLICY",
-    "obs.mlflow": "AUGHOR_OBS_MLFLOW",
+    # "obs.mlflow" (AUGHOR_OBS_MLFLOW) was DELETED 2026-07-31 (flag strategy §4C):
+    # MLflow tracing now self-gates on AUGHOR_MLFLOW_TRACKING_URI being set, like the
+    # other env-configured observability backends — a flag that is a no-op without an
+    # external server and inert with one configured was two ways to be confused.
     "obs.task_table": "AUGHOR_OBS_TASK_TABLE",
     "obs.session_log": "AUGHOR_OBS_SESSION_LOG",
     "obs.prompt_capture": "AUGHOR_OBS_PROMPT_CAPTURE",
@@ -316,6 +319,38 @@ FLAG_DEFAULT = {
     "ops.metered_monitors": True,      # receipt b167bb891764 — same _work closure, now metered; declines cleanly with no loop
     "evals.experiments": True,         # receipt 1bc0e4690955 — inert until a run enters; off was a loud refusal either way
     "starters.library": True,          # receipt 3155c4d9de61 — deterministic starter templates, additive on /suggestions
+    # Flag strategy batch B (2026-07-31) — the data-gated and invocation-gated queue,
+    # graduated together on STRUCTURAL claims: every behaviour needs data a user created
+    # (tags, caps, policies, declared actions, overlay edits, publications, freezes,
+    # source-condition automations, grants, a cached brief) or an explicit call to a
+    # route that 404s off. One suite carries the evidence —
+    # `aughor/evals/flag_batch_b_receipt.py`, run `cbb2e91c7f26` (15/15 stable over 3
+    # iterations, 0 errors, 0 flaky, bar 1.0, no baseline) — scenario names prefixed by
+    # the flag they back; each flag minted its own graduation decision.
+    #
+    # Premise checks moved scope twice: `federation.planner` was queued as
+    # invocation-gated but ALSO auto-federates fresh /ask turns, so it moved to
+    # EXPERIMENT instead of graduating; `lifecycle.publish`'s viewer precondition
+    # dissolved on reading the wired stores (they journal ALONGSIDE the live row —
+    # reads never route through resolve(), so nothing legacy can be hidden).
+    "govern.clearances": True,          # receipt 94d8869fa9ca — untagged ⇒ allowed; a refusal names the tag
+    "govern.usage_caps": True,          # receipt 0e5bf079d953 — no caps declared ⇒ every decision allows
+    "rbac.row_policy": True,            # receipt 37fa12f2e54a — no principal/policies ⇒ passthrough; fails closed
+    "kinetic.actions": True,            # receipt e1514203d474 — only human-DECLARED actions exist to run
+    "kinetic.overlay": True,            # receipt af2f7e4dd9c6 — no edits ⇒ the merge is a no-op
+    "lifecycle.publish": True,          # receipt 339e77dc3cea — additive journal; the live row stays the record
+    "lifecycle.freeze": True,           # receipt 41f41f9d1273 — nothing frozen until a user freezes
+    "automations.source_probes": True,  # receipt f526cbf2ac45 — probes only user-created source conditions
+    "automations.proposals": True,      # receipt f6c0b3a73690 — executor byte-identical without a minted grant
+    "ask.brief_context": True,          # receipt 1277dd3f3f70 — empty until a Briefing rendered for the scope
+    "freshness.resolved_rebuild": True, # receipt 442adc34dee9 — never less correct than the TTL it replaces
+    "agui.endpoint": True,              # receipt b395745f7771 — the route is the whole surface; calling is consent
+    "federation.remote_join": True,     # receipt 41ec864723fb — ditto; unlike .planner it has no /ask hook
+    # MIGRATION flip, not a graduation: the REC-U10 byte-equality was proven over this
+    # box's real metric stores (canonical_metrics_block AND unified_metric_grounding
+    # byte-identical on vs off — receipt e801ff3a4448). The flag's remaining obligation
+    # is DELETION: soak default-on, then remove the legacy CanonicalMetric path.
+    "semantic.contract_live": True,
 }
 
 # Human-facing copy for the Settings UI.
@@ -326,15 +361,15 @@ FLAG_META = {
     },
     "agui.endpoint": {
         "label": "AG-UI protocol endpoint (POST /agui/run)",
-        "description": "Expose an additive AG-UI-compatible translator at POST /agui/run that re-frames the existing /ask event stream (via the shared build_ask_stream factory) into standard AG-UI protocol events (RunStarted / TextMessage* / ToolCall* / Custom / RunError / RunFinished) using the ag-ui-protocol SDK. Purely additive — the legacy /ask, /chat and /investigate emission is byte-identical and the frontend's default transport is unchanged; this is the backend half of the CopilotKit/AG-UI adoption plan's CK-1 seam, letting any AG-UI client (CopilotKit, the @ag-ui/client transport) drive Aughor. Off by default ⇒ the route 404s.",
+        "description": "Expose an additive AG-UI-compatible translator at POST /agui/run that re-frames the existing /ask event stream (via the shared build_ask_stream factory) into standard AG-UI protocol events (RunStarted / TextMessage* / ToolCall* / Custom / RunError / RunFinished) using the ag-ui-protocol SDK. Purely additive — the legacy /ask, /chat and /investigate emission is byte-identical and the frontend's default transport is unchanged; this is the backend half of the CopilotKit/AG-UI adoption plan's CK-1 seam, letting any AG-UI client (CopilotKit, the @ag-ui/client transport) drive Aughor. Forced off ⇒ the route 404s. Default-ON since flag strategy batch B (2026-07-31, receipt `b395745f7771`); force off with AUGHOR_AGUI_ENDPOINT=0 or a runtime override.",
     },
     "kinetic.actions": {
         "label": "Declared actions in the ontology (Wave K)",
-        "description": "Overlay human-DECLARED KineticActions from the per-connection ontology overrides onto the graph at read time: typed-parameter operations with submission criteria (whose authored failure messages are shown verbatim to humans and the model) and side effects. Read-only substrate in K1 — the actions become visible in the ontology and the API but are not executed until the Wave-K executor (K2) lands. Additive: off = the graph's kinetic_actions stays empty (byte-identical), and a malformed declared action is rejected at overlay, never surfaced.",
+        "description": "Overlay human-DECLARED KineticActions from the per-connection ontology overrides onto the graph at read time: typed-parameter operations with submission criteria (whose authored failure messages are shown verbatim to humans and the model) and side effects. Read-only substrate in K1 — the actions become visible in the ontology and the API but are not executed until the Wave-K executor (K2) lands. Additive: off = the graph's kinetic_actions stays empty (byte-identical), and a malformed declared action is rejected at overlay, never surfaced. Default-ON since flag strategy batch B (2026-07-31, receipt `e1514203d474`); force off with AUGHOR_KINETIC_ACTIONS=0 or a runtime override.",
     },
     "kinetic.overlay": {
         "label": "Human overlay edits on query results (Wave K3)",
-        "description": "Merge human annotations and corrections ('this outlier is a known launch-day spike', 'order 8821 is a test order') onto query results at READ time, matched by the columns present in the result — never mutating the source data. Edits live in an independent org+connection-scoped store, so they survive schema refreshes and rebuilds, and a machine-sourced edit never overrides a human one on the same target. Off by default ⇒ results carry no annotations (byte-identical); best-effort so an overlay hiccup never takes down a real result.",
+        "description": "Merge human annotations and corrections ('this outlier is a known launch-day spike', 'order 8821 is a test order') onto query results at READ time, matched by the columns present in the result — never mutating the source data. Edits live in an independent org+connection-scoped store, so they survive schema refreshes and rebuilds, and a machine-sourced edit never overrides a human one on the same target. Forced off ⇒ results carry no annotations (byte-identical); best-effort so an overlay hiccup never takes down a real result. Default-ON since flag strategy batch B (2026-07-31, receipt `af2f7e4dd9c6`); force off with AUGHOR_KINETIC_OVERLAY=0 or a runtime override.",
     },
     "kinetic.agent_actions": {
         "label": "Agent proposes declared actions (Wave K4)",
@@ -346,11 +381,11 @@ FLAG_META = {
     },
     "automations.source_probes": {
         "label": "Automation change detection — source version probes (Wave A3)",
-        "description": "Let `source_change` and `entity_appears` automation conditions fire on actual data arrival instead of staleness-days: one bounded aggregate per watched table (COUNT(*) plus MAX of its best change-signal column — never a data scan) computes a version fingerprint, compared by inequality so deletes and backfills register too; `entity_appears` restricts the signal to insertions, so an updated_at touch is not a new entity. Baselines commit only on a tick that actually FIRED, which is what makes a change impossible to consume silently when the other condition of an `all`-logic automation is false. A table the probe cannot READ at all (missing, or not a plain identifier) fails OPEN to 'changed' with the reason recorded on the run — noisy and diagnosable, never silently never-firing. A table that merely lacks a change-signal column is a weaker case, and worth knowing before you point an automation at one: it is versioned by COUNT(*) alone, so inserts and deletes still register, but an in-place UPDATE — or an insert and a delete in the same window — leaves the count unchanged and the condition stays QUIET. Gated separately from automations.engine so an operator can run schedule/metric automations without per-minute warehouse probes; off by default ⇒ source conditions error loudly as unwired (byte-identical otherwise).",
+        "description": "Let `source_change` and `entity_appears` automation conditions fire on actual data arrival instead of staleness-days: one bounded aggregate per watched table (COUNT(*) plus MAX of its best change-signal column — never a data scan) computes a version fingerprint, compared by inequality so deletes and backfills register too; `entity_appears` restricts the signal to insertions, so an updated_at touch is not a new entity. Baselines commit only on a tick that actually FIRED, which is what makes a change impossible to consume silently when the other condition of an `all`-logic automation is false. A table the probe cannot READ at all (missing, or not a plain identifier) fails OPEN to 'changed' with the reason recorded on the run — noisy and diagnosable, never silently never-firing. A table that merely lacks a change-signal column is a weaker case, and worth knowing before you point an automation at one: it is versioned by COUNT(*) alone, so inserts and deletes still register, but an in-place UPDATE — or an insert and a delete in the same window — leaves the count unchanged and the condition stays QUIET. Gated separately from automations.engine so an operator can run schedule/metric automations without per-minute warehouse probes; off by default ⇒ source conditions error loudly as unwired (byte-identical otherwise). Default-ON since flag strategy batch B (2026-07-31, receipt `f526cbf2ac45`); force off with AUGHOR_AUTOMATIONS_SOURCE_PROBES=0 or a runtime override.",
     },
     "automations.proposals": {
         "label": "Proposal inbox + standing grants (Wave A4)",
-        "description": "Make a Wave-K agent proposal DURABLE and resolve-once instead of dying with the HTTP response: a proposed declared action is staged, survives a restart, and is accepted or rejected exactly once (a conditional UPDATE on a pending row — the first responder wins; a second accept is a no-op, never a second dispatch; idempotent by (run_id, call_id) so a replayed run cannot duplicate). Accepting IS the human approval act, so it executes bypassing the approval gate but NEVER the submission criteria. Accepting can also mint a TARGET-BOUND standing grant — 'allow this action → this exact target value', eligible only for a single-parameter action, owned by the automation that minted it (revoked with it), cited by id in the audit ledger on every auto-allowed run — so an UNATTENDED automation can run one pre-authorized target without a blanket allow, and still cannot pass a value the criteria reject. Off by default ⇒ no proposal is staged, no grant is consulted (the executor is byte-identical), and every /kinetic-actions/inbox and /grants route 404s.",
+        "description": "Make a Wave-K agent proposal DURABLE and resolve-once instead of dying with the HTTP response: a proposed declared action is staged, survives a restart, and is accepted or rejected exactly once (a conditional UPDATE on a pending row — the first responder wins; a second accept is a no-op, never a second dispatch; idempotent by (run_id, call_id) so a replayed run cannot duplicate). Accepting IS the human approval act, so it executes bypassing the approval gate but NEVER the submission criteria. Accepting can also mint a TARGET-BOUND standing grant — 'allow this action → this exact target value', eligible only for a single-parameter action, owned by the automation that minted it (revoked with it), cited by id in the audit ledger on every auto-allowed run — so an UNATTENDED automation can run one pre-authorized target without a blanket allow, and still cannot pass a value the criteria reject. Forced off ⇒ no proposal is staged, no grant is consulted (the executor is byte-identical), and every /kinetic-actions/inbox and /grants route 404s. Default-ON since flag strategy batch B (2026-07-31, receipt `f6c0b3a73690`); force off with AUGHOR_AUTOMATIONS_PROPOSALS=0 or a runtime override.",
     },
     "graph.build": {
         "label": "Build the connection knowledge graph (Wave C1)",
@@ -378,11 +413,11 @@ FLAG_META = {
     },
     "govern.usage_caps": {
         "label": "Org and per-user usage caps (Wave G4)",
-        "description": "Refuse to START new model work once an org or a user has exceeded a declared allowance, measured on the same rollup the usage page shows so a cap and a dashboard can never disagree about whether a limit was hit. Caps are declared per (scope, subject, metric, window) over calls, tokens or cost, with an action of `alert` (record and proceed) or `block` (refuse the next start). The algebra is deliberately two rules rather than one clever comparator, because getting either backwards is a real outage or a real overspend: MOST-PERMISSIVE WITHIN a scope, since two rows about one subject and metric are two statements about one allowance and the larger is the operator's latest intent — otherwise raising a limit does nothing until somebody deletes the old row; and MOST-RESTRICTIVE ACROSS scopes, since an org cap and a user cap describe the pool and one person's share of it, both hold at once, and the permissive reading would let one user drain the org. A `block` anywhere in a merged group survives the merge, so raising a limit never silently downgrades the gate to `alert`. Enforcement is PRE-FLIGHT ONLY and there is no abort path: work already running is never killed, because clawing back an in-flight investigation destroys work the user already paid for and leaves a partial artifact whose provenance claims it completed. A breach is a typed `budget_exceeded` refusal naming the metric, the limit, the observed value and the window — withhold the work, never the reason. Off by default => every decision allows and the check costs one boolean.",
+        "description": "Refuse to START new model work once an org or a user has exceeded a declared allowance, measured on the same rollup the usage page shows so a cap and a dashboard can never disagree about whether a limit was hit. Caps are declared per (scope, subject, metric, window) over calls, tokens or cost, with an action of `alert` (record and proceed) or `block` (refuse the next start). The algebra is deliberately two rules rather than one clever comparator, because getting either backwards is a real outage or a real overspend: MOST-PERMISSIVE WITHIN a scope, since two rows about one subject and metric are two statements about one allowance and the larger is the operator's latest intent — otherwise raising a limit does nothing until somebody deletes the old row; and MOST-RESTRICTIVE ACROSS scopes, since an org cap and a user cap describe the pool and one person's share of it, both hold at once, and the permissive reading would let one user drain the org. A `block` anywhere in a merged group survives the merge, so raising a limit never silently downgrades the gate to `alert`. Enforcement is PRE-FLIGHT ONLY and there is no abort path: work already running is never killed, because clawing back an in-flight investigation destroys work the user already paid for and leaves a partial artifact whose provenance claims it completed. A breach is a typed `budget_exceeded` refusal naming the metric, the limit, the observed value and the window — withhold the work, never the reason. Forced off => every decision allows and the check costs one boolean. Default-ON since flag strategy batch B (2026-07-31, receipt `0e5bf079d953`); force off with AUGHOR_GOVERN_USAGE_CAPS=0 or a runtime override.",
     },
     "govern.clearances": {
         "label": "Clearance enforcement on governed tags (Wave G2)",
-        "description": "Let governed tags on catalogs, schemas, tables and artifacts gate who may read them. A tag is a namespaced key-value fact recorded with WHO set it and when — `pii=true`, `tier=restricted` — and a small, explicit set of keys is access-controlling while every other tag stays purely descriptive, so adding a `domain=finance` label never silently becomes a lock. A principal holds clearances; a securable whose tags demand one the principal lacks is withheld. This is a THIRD authorization axis composing with AND alongside the licensing capability (what the org's PLAN unlocks) and the RBAC permission (what this USER may do): a role says analysts may run analyses, a clearance says not over the salary table, and neither expresses the other. An untagged securable is always allowed — governance is opt-in per object, because defaulting to deny would make enabling this a platform-wide outage rather than a policy. A refusal NAMES the tag that blocked it and the clearance that would unblock it, and is never an empty result: that is the pinned anti-pattern from the Genie teardown, where a silently trimmed answer teaches its reader the data does not exist. Nothing infers a tag, and a write with no author is refused outright — J4's provenance discipline reaching past the context graph. Off by default ⇒ every decision is ALLOW with no requirements, so the check can be wired in unconditionally and the off state is byte-identical to not calling it.",
+        "description": "Let governed tags on catalogs, schemas, tables and artifacts gate who may read them. A tag is a namespaced key-value fact recorded with WHO set it and when — `pii=true`, `tier=restricted` — and a small, explicit set of keys is access-controlling while every other tag stays purely descriptive, so adding a `domain=finance` label never silently becomes a lock. A principal holds clearances; a securable whose tags demand one the principal lacks is withheld. This is a THIRD authorization axis composing with AND alongside the licensing capability (what the org's PLAN unlocks) and the RBAC permission (what this USER may do): a role says analysts may run analyses, a clearance says not over the salary table, and neither expresses the other. An untagged securable is always allowed — governance is opt-in per object, because defaulting to deny would make enabling this a platform-wide outage rather than a policy. A refusal NAMES the tag that blocked it and the clearance that would unblock it, and is never an empty result: that is the pinned anti-pattern from the Genie teardown, where a silently trimmed answer teaches its reader the data does not exist. Nothing infers a tag, and a write with no author is refused outright — J4's provenance discipline reaching past the context graph. Forced off ⇒ every decision is ALLOW with no requirements, so the check can be wired in unconditionally and the off state is byte-identical to not calling it. Default-ON since flag strategy batch B (2026-07-31, receipt `94d8869fa9ca`); force off with AUGHOR_GOVERN_CLEARANCES=0 or a runtime override.",
     },
     "graph.consolidate": {
         "label": "Consolidate the finding corpus before the cap (Wave N3)",
@@ -390,15 +425,15 @@ FLAG_META = {
     },
     "freshness.resolved_rebuild": {
         "label": "Staleness-resolved rebuild — inputs + logic, not a timer (Wave V2)",
-        "description": "Rebuild a cached artifact only when its SOURCE DATA or its PRODUCER LOGIC actually changed, instead of when a wall-clock TTL lapsed. A timer is wrong in both directions at once: the briefing's 2-hour TTL rebuilds a brief whose inputs never moved (pure cost — and each rebuild is an LLM call, not just CPU) AND serves a brief for up to two hours after its source table changed (a wrong number, the expensive failure). The input signal is Wave A3's source probe — one bounded aggregate per table (COUNT(*), MAX(signal)), never a scan — making this its second consumer and turning it from an automations feature into a platform primitive; the logic signal is Wave V1's LOGIC_VERSIONS inventory. Three refusals keep it from becoming a worse timer: a table that cannot be versioned FAILS OPEN to the caller's existing TTL decision and says so in the reason (counted, never silently read as 'unchanged' — A3's rule that noisy beats silent); probing is capped and a bitten cap names how many tables were skipped rather than implying full coverage; and state is recorded only AFTER a successful rebuild, because recording on failure would consume a change and make a genuinely stale artifact read fresh. Every decision carries a `resolved` bit so a caller can never claim 'nothing changed' on a probe that did not answer, plus the as-of source view the output was computed on (what Wave V4's freeze will pin against). Off by default ⇒ resolve() returns the caller's own TTL decision unchanged (byte-identical).",
+        "description": "Rebuild a cached artifact only when its SOURCE DATA or its PRODUCER LOGIC actually changed, instead of when a wall-clock TTL lapsed. A timer is wrong in both directions at once: the briefing's 2-hour TTL rebuilds a brief whose inputs never moved (pure cost — and each rebuild is an LLM call, not just CPU) AND serves a brief for up to two hours after its source table changed (a wrong number, the expensive failure). The input signal is Wave A3's source probe — one bounded aggregate per table (COUNT(*), MAX(signal)), never a scan — making this its second consumer and turning it from an automations feature into a platform primitive; the logic signal is Wave V1's LOGIC_VERSIONS inventory. Three refusals keep it from becoming a worse timer: a table that cannot be versioned FAILS OPEN to the caller's existing TTL decision and says so in the reason (counted, never silently read as 'unchanged' — A3's rule that noisy beats silent); probing is capped and a bitten cap names how many tables were skipped rather than implying full coverage; and state is recorded only AFTER a successful rebuild, because recording on failure would consume a change and make a genuinely stale artifact read fresh. Every decision carries a `resolved` bit so a caller can never claim 'nothing changed' on a probe that did not answer, plus the as-of source view the output was computed on (what Wave V4's freeze will pin against). Forced off ⇒ resolve() returns the caller's own TTL decision unchanged (byte-identical). Default-ON since flag strategy batch B (2026-07-31, receipt `442adc34dee9`); force off with AUGHOR_FRESHNESS_RESOLVED_REBUILD=0 or a runtime override.",
     },
     "lifecycle.publish": {
         "label": "Artifact lifecycle — save≠publish, versions, changelog, revert (Wave V3)",
-        "description": "Give user-authored artifacts a version and a publication state, so an editor's half-finished edit is no longer what every viewer sees. Saved queries, canvases, dashboard cards and eval cases had NO version at all — update was destructive and 'what did this look like last week' had no answer. Built ON the kernel Ledger rather than beside it: artifact_write already implements supersede-not-delete and artifact_by_id already resolves an exact version (its docstring calls that 'so a receipt link is immutable', which is precisely a pin), so this layer stores nothing of its own. resolve(audience='viewer') returns the newest PUBLISHED version and never a draft; audience='editor' returns the working copy — that one function is save≠publish. Revert restores an earlier version's content as a NEW version, never by rewinding the counter, because a rewind would erase the evidence that the reverted state ever shipped. The changelog reports MOVES as moves: reordering a dashboard's cards is the most common edit there is, and a differ without move detection reports every element from the move point onward as deleted-and-re-added — pages of noise for a four-word change. Convergence of the four pre-existing draft state machines is by PROJECTION (a documented table mapping governance/playbook/packs statuses onto one publication axis), not by forced rewrite: governance's draft→proposed→approved is a review workflow, and pushing a saved query through 'proposed' would invent ceremony nobody wants, while playbook's auto-promotion is a policy that would have to be rewritten to fit. An unknown status projects to `draft`, the conservative direction — a viewer sees nothing rather than something whose state cannot be read. Off by default ⇒ nothing is written and every wired store behaves exactly as before.",
+        "description": "Give user-authored artifacts a version and a publication state, so an editor's half-finished edit is no longer what every viewer sees. Saved queries, canvases, dashboard cards and eval cases had NO version at all — update was destructive and 'what did this look like last week' had no answer. Built ON the kernel Ledger rather than beside it: artifact_write already implements supersede-not-delete and artifact_by_id already resolves an exact version (its docstring calls that 'so a receipt link is immutable', which is precisely a pin), so this layer stores nothing of its own. resolve(audience='viewer') returns the newest PUBLISHED version and never a draft; audience='editor' returns the working copy — that one function is save≠publish. Revert restores an earlier version's content as a NEW version, never by rewinding the counter, because a rewind would erase the evidence that the reverted state ever shipped. The changelog reports MOVES as moves: reordering a dashboard's cards is the most common edit there is, and a differ without move detection reports every element from the move point onward as deleted-and-re-added — pages of noise for a four-word change. Convergence of the four pre-existing draft state machines is by PROJECTION (a documented table mapping governance/playbook/packs statuses onto one publication axis), not by forced rewrite: governance's draft→proposed→approved is a review workflow, and pushing a saved query through 'proposed' would invent ceremony nobody wants, while playbook's auto-promotion is a policy that would have to be rewritten to fit. An unknown status projects to `draft`, the conservative direction — a viewer sees nothing rather than something whose state cannot be read. Forced off ⇒ nothing is written and every wired store behaves exactly as before. Default-ON since flag strategy batch B (2026-07-31, receipt `339e77dc3cea`); force off with AUGHOR_LIFECYCLE_PUBLISH=0 or a runtime override.",
     },
     "lifecycle.freeze": {
         "label": "Freeze — live by default, snapshot by choice (Wave V4)",
-        "description": "Let a user pin an artifact to an exact version AND the data version behind it, with an as-of stamp, and return it to following live on demand. Composes three pins that already existed unconnected: ledger.artifact_by_id (an immutable receipt link), playbook.get_version (frozen past content), and db/snapshot.data_version + execute_as_of (a replayable data version). TWO MODES, named rather than assumed, because a freeze promises 'you will see exactly what I saw' and that is not always deliverable: on version-aware storage (DuckLake) the pinned snapshot id is replayable via AT (VERSION => n) — mode `reproducible`; on a plain DuckDB file the portable fingerprint can only detect that data CHANGED, never reconstruct it — mode `detect_only`. Conflating them would be exactly the safety-by-coincidence this codebase has paid for before, so a detect-only pin never claims reproducibility, and when nothing can be pinned at all the freeze is REFUSED up front (with the reason) instead of accepted and quietly not honoured — a lock icon that guarantees nothing is worse than no lock. Reading a frozen artifact whose pin can no longer be honoured raises FrozenDataGoneError carrying the as-of stamp and the reason; it NEVER falls back to live data, because a frozen label over live numbers is the one outcome worse than an error. Off by default ⇒ nothing can be frozen and every read is live (byte-identical).",
+        "description": "Let a user pin an artifact to an exact version AND the data version behind it, with an as-of stamp, and return it to following live on demand. Composes three pins that already existed unconnected: ledger.artifact_by_id (an immutable receipt link), playbook.get_version (frozen past content), and db/snapshot.data_version + execute_as_of (a replayable data version). TWO MODES, named rather than assumed, because a freeze promises 'you will see exactly what I saw' and that is not always deliverable: on version-aware storage (DuckLake) the pinned snapshot id is replayable via AT (VERSION => n) — mode `reproducible`; on a plain DuckDB file the portable fingerprint can only detect that data CHANGED, never reconstruct it — mode `detect_only`. Conflating them would be exactly the safety-by-coincidence this codebase has paid for before, so a detect-only pin never claims reproducibility, and when nothing can be pinned at all the freeze is REFUSED up front (with the reason) instead of accepted and quietly not honoured — a lock icon that guarantees nothing is worse than no lock. Reading a frozen artifact whose pin can no longer be honoured raises FrozenDataGoneError carrying the as-of stamp and the reason; it NEVER falls back to live data, because a frozen label over live numbers is the one outcome worse than an error. Forced off ⇒ nothing can be frozen and every read is live (byte-identical). Default-ON since flag strategy batch B (2026-07-31, receipt `41f41f9d1273`); force off with AUGHOR_LIFECYCLE_FREEZE=0 or a runtime override.",
     },
     "automations.adopt_legacy": {
         "label": "Adopt monitors + briefs onto the automation engine (Wave A5)",
@@ -586,7 +621,7 @@ FLAG_META = {
     },
     "semantic.contract_live": {
         "label": "Unified metric contract (planning)",
-        "description": "Render the governed-metric grounding block from the one SemanticContract type (catalog ∪ profile north-star ∪ ontology, deduped by precedence) instead of the parallel CanonicalMetric shape. Byte-identical output today — this repoints the planning path at the single metric contract, the 20-year ontology bet's type unification (REC-U10). Off by default while the migration lands.",
+        "description": "Render the governed-metric grounding block from the one SemanticContract type (catalog ∪ profile north-star ∪ ontology, deduped by precedence) instead of the parallel CanonicalMetric shape. Byte-identical output today — this repoints the planning path at the single metric contract, the 20-year ontology bet's type unification (REC-U10). Forced off while the migration lands. Default-ON since flag strategy batch B (2026-07-31, receipt `e801ff3a4448` — the metric blocks proved byte-identical over real stores); the remaining obligation is deleting the legacy CanonicalMetric path. Force off with AUGHOR_SEMANTIC_CONTRACT_LIVE=0 or a runtime override.",
     },
     "capability.pipeline_live": {
         "label": "Capability plane answer path",
@@ -626,11 +661,11 @@ FLAG_META = {
     },
     "ask.conversation_context": {
         "label": "Conversation-aware resolution (follow-ups inherit context)",
-        "description": "Make the ground-first resolver (ask.resolve_first) conversation-aware so a follow-up doesn't lose the prior turn's grounding — including across a mode switch. When THIS turn is a follow-up (is_followup) it inherits the previous turn's entity/filter (so 'break that down by platform' keeps the earlier 'womenswear' filter), and the resolver never DEAD-ENDS a follow-up with a terminal 'not present in this data' — an entity implicit from the conversation is left to the already history-aware generator instead of a hard abstention. Only affects follow-ups; a fresh question resolves exactly as before. Requires ask.resolve_first. Off by default = byte-identical.",
+        "description": "Make the ground-first resolver (ask.resolve_first) conversation-aware so a follow-up doesn't lose the prior turn's grounding — including across a mode switch. When THIS turn is a follow-up (is_followup) it inherits the previous turn's entity/filter (so 'break that down by platform' keeps the earlier 'womenswear' filter), and the resolver never DEAD-ENDS a follow-up with a terminal 'not present in this data' — an entity implicit from the conversation is left to the already history-aware generator instead of a hard abstention. Only affects follow-ups; a fresh question resolves exactly as before. Requires ask.resolve_first. AUTO-ELIGIBLE since flag strategy batch B (2026-07-31): both call sites are guarded by the deterministic is_followup detector, so under Auto-mode the trigger decides per turn; an explicit On/Off always wins.",
     },
     "ask.brief_context": {
         "label": "Ask this briefing — ground the answer in the brief on screen",
-        "description": "When a question is asked from the Briefing, prepend the brief the user is LOOKING AT (its verdict, synthesis and cited findings) to the quick-answer prompt, so 'why is that?' and 'break that down' have a referent instead of arriving cold. Read SERVER-SIDE from the same conn:schema cache entry the Briefing rendered — never posted up by the client, so it cannot drift from what is on screen or be spoofed into the prompt. CONTEXT ONLY: it resolves references and pins the entities/time window; every number in the answer still comes from the query that runs. Bounded (verdict + up to 8 cited findings + a capped synthesis) and empty when no brief is cached — no context beats invented context. Off by default = byte-identical.",
+        "description": "When a question is asked from the Briefing, prepend the brief the user is LOOKING AT (its verdict, synthesis and cited findings) to the quick-answer prompt, so 'why is that?' and 'break that down' have a referent instead of arriving cold. Read SERVER-SIDE from the same conn:schema cache entry the Briefing rendered — never posted up by the client, so it cannot drift from what is on screen or be spoofed into the prompt. CONTEXT ONLY: it resolves references and pins the entities/time window; every number in the answer still comes from the query that runs. Bounded (verdict + up to 8 cited findings + a capped synthesis) and empty when no brief is cached — no context beats invented context. Forced off = byte-identical. Default-ON since flag strategy batch B (2026-07-31, receipt `1277dd3f3f70`); force off with AUGHOR_ASK_BRIEF_CONTEXT=0 or a runtime override.",
     },
     "closed_loop": {
         "label": "Closed-loop corrections",
@@ -654,11 +689,11 @@ FLAG_META = {
     },
     "federation.remote_join": {
         "label": "Cross-source batched-foreach join",
-        "description": "Enable POST /query/cross-source-join — join a result from one connection to a table on another, N+1-free (dedup the join keys, one keyed batch query per key-chunk to the right source, hash-join in memory). The correct-by-construction path for true cross-engine joins (Snowflake↔BigQuery↔Postgres) that DuckDB ATTACH can't reach. Off by default → the route 404s. Stage 1 of the cross-source federated planner.",
+        "description": "Enable POST /query/cross-source-join — join a result from one connection to a table on another, N+1-free (dedup the join keys, one keyed batch query per key-chunk to the right source, hash-join in memory). The correct-by-construction path for true cross-engine joins (Snowflake↔BigQuery↔Postgres) that DuckDB ATTACH can't reach. Forced off → the route 404s. Stage 1 of the cross-source federated planner. Default-ON since flag strategy batch B (2026-07-31, receipt `41ec864723fb`); force off with AUGHOR_FEDERATION_REMOTE_JOIN=0 or a runtime override.",
     },
     "federation.planner": {
         "label": "Cross-source federated planner",
-        "description": "Enable POST /query/federated-answer — answer a natural-language question that spans TWO connections. One LLM call grounds both schemas and emits a structured plan (a grounded sub-query per source + the join keys); the plan is validated deterministically (each sub-query executes and outputs its key) and executed through the batched-foreach engine. Plan-then-execute, guarded, inspectable (the plan is returned). Off by default → the route 404s. Stage 3 of cross-source federation.",
+        "description": "Enable POST /query/federated-answer — answer a natural-language question that spans TWO connections. One LLM call grounds both schemas and emits a structured plan (a grounded sub-query per source + the join keys); the plan is validated deterministically (each sub-query executes and outputs its key) and executed through the batched-foreach engine. Plan-then-execute, guarded, inspectable (the plan is returned). Off by default → the route 404s. Stage 3 of cross-source federation. ⚠️ NOT purely invocation-gated: with the flag on, a fresh /ask turn at auto depth may AUTO-FEDERATE (see _federation_eligible) — an LLM-bearing routing change, which is why this stays an EXPERIMENT (flag strategy batch B premise check) until that delta is measured.",
     },
     "capability.contract": {
         "label": "Connector-capability contract",
@@ -666,15 +701,11 @@ FLAG_META = {
     },
     "rbac.row_policy": {
         "label": "RBAC row-level policy (row filters in the WHERE)",
-        "description": "Compile per-role, per-table row-filters into executed SQL (a deterministic AST rewrite wrapping each policied table as a filtered subquery) so a role physically cannot read rows outside its filter. Double-gated like the rest of RBAC (no-op unless identity AND the org's RBAC_SSO capability are on) AND this flag; fails CLOSED (a policy that can't be applied blocks the query). Enforced at every connector's execution gate (DuckDB/Postgres/warehouse/file/API). Off by default. Rec 7 of the external-sources study.",
+        "description": "Compile per-role, per-table row-filters into executed SQL (a deterministic AST rewrite wrapping each policied table as a filtered subquery) so a role physically cannot read rows outside its filter. Double-gated like the rest of RBAC (no-op unless identity AND the org's RBAC_SSO capability are on) AND this flag; fails CLOSED (a policy that can't be applied blocks the query). Enforced at every connector's execution gate (DuckDB/Postgres/warehouse/file/API). Forced off. Rec 7 of the external-sources study. Default-ON since flag strategy batch B (2026-07-31, receipt `37fa12f2e54a`); force off with AUGHOR_RBAC_ROW_POLICY=0 or a runtime override.",
     },
     "agents.user_defined": {
         "label": "User-defined agents (domain personas)",
         "description": "Create reusable agents that bind standing INSTRUCTIONS + a set of uploaded DOCUMENTS + a CONNECTION into a persona, then answer as that agent via /ask (agent_id). The agent's instructions lead the prompt, document retrieval is restricted to ITS documents (an agent with none sees none — fail-closed), and its connection binding wins (a conflicting explicit connection is rejected). CRUD under /agents/custom. Default-ON since Wave H, graduated on receipt `df89c044999a` (run `234be1fbb62b` of aughor/evals/user_agents_receipt.py, 9/9 stable over 3 iterations) on a DATA-GATED claim: every behaviour it adds needs an agent you created AND a request naming it, so with none named the prompt block is empty, retrieval stays unrestricted and a resumed run attaches no persona — all byte-identical to off. Turning it on does exactly one thing by itself: /agents/custom stops 404-ing and returns an empty roster. Force off with AUGHOR_USER_AGENTS=0 or a runtime override. Part B Phase 1 (slice 1) of docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md.",
-    },
-    "obs.mlflow": {
-        "label": "MLflow tracing (agent observability)",
-        "description": "Send every investigation to a self-hosted MLflow server as one inspectable trace tree — graph nodes as spans, LLM calls via LangChain/OpenAI autolog (with token counts), and each guarded SQL execution as a TOOL span — searchable by tags.investigation_id. Point AUGHOR_MLFLOW_TRACKING_URI at the server (`docker compose --profile obs up -d mlflow` starts one on http://localhost:5001) and install the extra (`uv sync --extra observability`). Engineer-facing observability only — answers, receipts and ledgers are unchanged. Off by default = byte-identical.",
     },
     "plan.program": {
         "label": "Plan-as-program executor",
@@ -700,6 +731,11 @@ AUTO_ELIGIBLE: frozenset = frozenset({
     # deterministic (no LLM), bounded, and fires ONLY on a metric/entity/time-free
     # overview-phrased question — the great default first-look, on by default.
     "ask.overview",
+    # Converted 2026-07-31 (flag strategy batch B): both call sites are guarded by
+    # `is_followup(question)` — a deterministic detector — so a fresh question is
+    # byte-identical by construction and only a follow-up turn can differ. Requires
+    # ask.resolve_first, which is already auto.
+    "ask.conversation_context",
 })
 # Human description of each capability's deterministic trigger — surfaced in the flags API and (later) as
 # the "why" on an activation receipt.
@@ -713,6 +749,7 @@ CAPABILITY_TRIGGER: dict = {
     "ask.resolve_first": "the question names an entity or time grain the schema resolves deterministically",
     "ada.pin_canonical_metric": "a governed metric matches the question and its canonical SQL dry-runs clean",
     "ask.overview": "the question asks for a broad overview with no metric, entity, or time window",
+    "ask.conversation_context": "the turn is a follow-up to an earlier question",
 }
 
 
@@ -741,6 +778,11 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # Moved here from the graduation queue by batch B's premise check: queued as
+    # "invocation-gated route", but `_federation_eligible` ALSO auto-federates fresh
+    # /ask auto-depth turns — an LLM-bearing routing change nothing has measured.
+    "federation.planner": "does auto-federating fresh /ask turns improve cross-source "
+                          "answers enough to pay its planning call?",
     "closed_loop": "does reading captured corrections back into the planner improve "
                    "answers on your data? (its own description names this exit)",
     "graph.readback": "does the injected graph slice improve plans enough to pay its "
@@ -775,40 +817,25 @@ COST_LATENCY_PROFILE: frozenset = frozenset({
 #: date is a permanent fork.
 MIGRATION: dict = {
     "semantic.resolve_live": "AL-05 — complete the resolved-Semantic-plane migration",
-    "semantic.contract_live": "REC-U10 — 'byte-identical output today' per its own "
-                              "description; flip, soak, delete",
+    # semantic.contract_live flipped default-ON in batch B on a proven byte-equality
+    # (receipt e801ff3a4448) and now lives in FLAG_DEFAULT; its remaining obligation —
+    # deleting the legacy CanonicalMetric path — is noted at its FLAG_DEFAULT entry.
     "capability.pipeline_live": "AL-02 — adopt the capability pipeline answer path or "
                                 "remove it",
     "plan.program": "a whole alternate executor path — adopt or kill",
 }
 
-#: Groups B/C + bundles — dispositioned to graduate, receipts pending. Each entry
-#: names the receipt shape (or conversion) that is its exit.
+#: The two remaining BUNDLES — dispositioned to graduate as one decision each, receipts
+#: pending. Batch B (2026-07-31) graduated the data-gated/invocation-gated queue and
+#: executed the group-C conversions (ask.conversation_context → AUTO, obs.mlflow →
+#: deleted/self-gating, federation.planner → EXPERIMENT after its /ask hook surfaced).
+#: The bundles stay queued deliberately: `graph.build` writes COMMITTED files under
+#: data/context_graph/ on rebuild (a visible repo side-effect that deserves its own
+#: reviewed flip), and the birth chain changes when connection intelligence is built.
 GRADUATION_QUEUE: dict = {
-    # the data-gated batch (the #241 receipt shape: user-created data + explicit request)
-    "govern.clearances": "data-gated: untagged securables are always allowed",
-    "govern.usage_caps": "data-gated: with no caps declared every decision allows",
-    "rbac.row_policy": "data-gated: triple-gated already; no policies ⇒ no-op; fails closed",
-    "kinetic.actions": "data-gated: no declared actions ⇒ empty overlay, byte-identical",
-    "kinetic.overlay": "data-gated: no human edits ⇒ byte-identical results",
-    "lifecycle.freeze": "data-gated: nothing is frozen until a user freezes",
-    "lifecycle.publish": "data-gated once verified that pre-existing unversioned "
-                         "artifacts stay visible to viewers (else backfill first)",
-    "automations.source_probes": "data-gated: probes only tables a user-created "
-                                 "automation watches — creating one is the consent",
-    "automations.proposals": "data-gated: nothing staged unless the proposer runs",
-    "ask.brief_context": "data-gated: empty when no brief is cached",
-    "freshness.resolved_rebuild": "graduate after measuring probe overhead on real "
-                                  "brief ticks (no LLM grid needed — one cost number)",
-    # conversions (group C)
-    "ask.conversation_context": "convert to AUTO_ELIGIBLE — trigger: the turn is a "
-                                "follow-up (ask.resolve_first is already auto)",
-    "obs.mlflow": "self-gate on AUGHOR_MLFLOW_TRACKING_URI being set, then delete the flag",
-    "agui.endpoint": "invocation-gated additive route — calling it is the consent",
-    "federation.remote_join": "invocation-gated route — calling it is the consent",
-    "federation.planner": "invocation-gated route (one LLM call per explicit invocation)",
     # the Knowledge Graph bundle (one decision; graph.readback stays in EXPERIMENT)
-    "graph.build": "Knowledge Graph bundle — graduate with freshness/surface/tour/export",
+    "graph.build": "Knowledge Graph bundle — graduate with freshness/surface/tour/export; "
+                   "writes tracked artifacts, so the flip is its own reviewed decision",
     "graph.freshness": "Knowledge Graph bundle",
     "graph.surface": "Knowledge Graph bundle",
     "graph.tour": "Knowledge Graph bundle (invocation-gated narration)",

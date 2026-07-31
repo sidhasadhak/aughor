@@ -60,7 +60,11 @@ def _storage(monkeypatch, *, token, as_of=False):
     ("delete", f"/lifecycle/{KIND}/freeze"),
     ("get", f"/lifecycle/{KIND}/frozen-content"),
 ])
-def test_every_route_404s_when_its_flag_is_off(client, method, path):
+def test_every_route_404s_when_its_flag_is_off(client, method, path, monkeypatch):
+    # Explicit =0 — both flags are default-ON since flag strategy batch B; "off" is
+    # the operator escape hatch, not the ambient state.
+    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")
+    monkeypatch.setenv("AUGHOR_LIFECYCLE_FREEZE", "0")
     r = getattr(client, method)(
         path, params={"natural_key": NK, "from_version": 1, "to_version": 2, "to_version_": 1},
     )

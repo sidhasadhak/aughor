@@ -106,11 +106,13 @@ def _fresh_mlflow_state(monkeypatch):
 
 
 def _set_flag(monkeypatch, value: bool):
-    import aughor.kernel.flags as flags
-    monkeypatch.setattr(
-        flags, "flag_enabled",
-        lambda name: value if name == "obs.mlflow" else False,
-    )
+    # Self-gating on the tracking URI since the 2026-07-31 flag strategy deleted the
+    # `obs.mlflow` flag (§4C): a set URI IS the operator's intent, an unset one is off.
+    if value:
+        monkeypatch.setenv("AUGHOR_MLFLOW_TRACKING_URI", "http://localhost:5001")
+    else:
+        monkeypatch.delenv("AUGHOR_MLFLOW_TRACKING_URI", raising=False)
+        monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
 
 
 # ── Flag OFF: byte-identical default path ────────────────────────────────────
@@ -346,25 +348,21 @@ def test_broken_mlflow_api_never_breaks_caller(monkeypatch):
 
 
 def test_runtime_toggle_off_unpatches_autolog(monkeypatch):
-    """Flag flipped off at runtime → spans stop AND autolog is disabled, so
-    trace export does not silently continue after the operator opted out."""
-    import aughor.kernel.flags as flags
+    """Tracking URI unset at runtime → spans stop AND autolog is disabled, so trace
+    export does not silently continue after the operator opted out. (The gate is the
+    URI itself since the 2026-07-31 flag strategy deleted `obs.mlflow`.)"""
     stub = _make_stub()
     monkeypatch.setitem(sys.modules, "mlflow", stub)
-    state = {"on": True}
-    monkeypatch.setattr(
-        flags, "flag_enabled",
-        lambda name: state["on"] if name == "obs.mlflow" else False,
-    )
+    _set_flag(monkeypatch, True)
     with tel.mlflow_tool_span("sql.execute") as s:
         assert s is not None
-    state["on"] = False
+    _set_flag(monkeypatch, False)
     with tel.mlflow_tool_span("sql.execute") as s2:
         assert s2 is None
     assert len(stub.calls["spans"]) == 1
     assert len(stub.calls["autolog_disable"]) == 2  # both flavors unpatched
     # Re-enabling re-initializes cleanly.
-    state["on"] = True
+    _set_flag(monkeypatch, True)
     with tel.mlflow_tool_span("sql.execute") as s3:
         assert s3 is not None
     assert len(stub.calls["autolog"]) == 4  # re-patched

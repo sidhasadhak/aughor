@@ -118,6 +118,20 @@ receipt kinds). Direct hits on the stated axes:
 
 ### B. Graduate on the data-gated receipt — the #241 playbook (11)
 
+**✅ EXECUTED 2026-07-31 (with §C)** — one suite (`aughor/evals/flag_batch_b_receipt.py`,
+run `cbb2e91c7f26`, 15/15 stable ×3), fourteen receipts. Two premise checks moved scope:
+`federation.planner` was queued as invocation-gated but ALSO auto-federates fresh `/ask`
+auto-depth turns (`_federation_eligible`) — an LLM-bearing routing change, moved to
+EXPERIMENT; and `lifecycle.publish`'s viewer precondition dissolved on reading the wired
+stores — they journal ALONGSIDE the live row, reads never route through `resolve()`, so
+default-on cannot hide anything. Conversions in the same commit: `ask.conversation_context`
+→ AUTO (trigger: the turn is a follow-up), `obs.mlflow` → DELETED, MLflow self-gates on
+`AUGHOR_MLFLOW_TRACKING_URI` (registry 90 → 89); `agui.endpoint` + `federation.remote_join`
+graduated invocation-gated; and `semantic.contract_live` flipped as a MIGRATION on a proven
+byte-equality over real metric stores (its remaining obligation is deleting the legacy
+CanonicalMetric path). The graph and birth BUNDLES stay queued deliberately — `graph.build`
+writes committed files, which deserves its own reviewed flip.
+
 Every behaviour requires user-created data AND an explicit request; a fresh clone is
 byte-identical except a route stops 404-ing. No A/B grid — the claim is structural.
 
@@ -244,8 +258,11 @@ All stalled since ~2026-07-05 — a month of maintaining two code paths each:
 2. **Group A** (9 flags) — speed/accuracy/observability wins, all construction-decidable.
    ✅ Done 2026-07-31 (run `d006bec663a0`, nine receipts, this branch).
 3. **Group B** (11 flags) — the data-gated batch; one receipt suite shape, applied 11 times.
+   ✅ Done 2026-07-31 (run `cbb2e91c7f26`, fourteen receipts, this branch).
 4. **Groups C + G + graph/birth bundles** — self-gating conversions and the one deletion.
+   ✅ C done 2026-07-31 (same commit as B); G done earlier; bundles stay queued (see §4B note).
 5. **Group F** — migrations: flip `semantic.contract_live` first (byte-identical today).
+   ✅ contract_live flipped 2026-07-31 (receipt `e801ff3a4448`); three migrations remain.
 6. **The ratchet + UI restructure** — after dispositions are code, not prose.
 7. **Group D** — the E4 queue, run as grid budget allows; each result either graduates the flag
    or moves it to INTENTIONALLY_OFF with the measured reason.

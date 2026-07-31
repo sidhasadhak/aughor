@@ -41,6 +41,7 @@ def _probe(monkeypatch, version, how="1 table(s) probed"):
 @pytest.mark.parametrize("ttl_expired", [True, False])
 def test_flag_off_returns_the_callers_ttl_decision_unchanged(monkeypatch, ttl_expired):
     """Byte-identical when off: a caller can consult resolve() unconditionally."""
+    monkeypatch.setenv("AUGHOR_FRESHNESS_RESOLVED_REBUILD", "0")   # escape hatch; default-ON
     called = []
     monkeypatch.setattr(rb, "inputs_version",
                         lambda *a, **k: called.append(1) or ("v", "probed"))
@@ -214,8 +215,9 @@ def test_no_tables_known_is_unresolvable(_on, monkeypatch):
 
 # ── The briefing integration ──────────────────────────────────────────────────
 
-def test_briefing_ttl_path_is_unchanged_when_the_flag_is_off():
+def test_briefing_ttl_path_is_unchanged_when_the_flag_is_off(monkeypatch):
     """The flag-off decision must be exactly the original `age < TTL` expression."""
+    monkeypatch.setenv("AUGHOR_FRESHNESS_RESOLVED_REBUILD", "0")   # escape hatch; default-ON
     from aughor.knowledge import briefing
 
     fresh = {"generated_at": briefing._now_iso()}
