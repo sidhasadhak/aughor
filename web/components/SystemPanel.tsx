@@ -248,20 +248,60 @@ function FeatureFlags() {
   const entries = Object.entries(flags).filter(([name, f]) => !f.auto_eligible && name !== "capabilities.auto");
   if (entries.length === 0) return null;
 
+  // The disposition ratchet (flag strategy §5.1): group by declared KIND instead of one
+  // flat list of ~80 toggles. Order runs decision-first: the deliberate opt-ins an
+  // operator might actually change, then queued/experimental work, then what is simply on.
+  const GROUPS: Array<{ key: string; title: string; hint: string }> = [
+    { key: "intentionally_off", title: "Deliberate opt-ins",
+      hint: "Off for a stated reason (cost, privacy, outward sends). The only toggles meant to be flipped by hand." },
+    { key: "performance_profile", title: "Performance",
+      hint: "Wall-clock vs concurrent LLM requests — flip together, matched to your provider's rate limits." },
+    { key: "experiment", title: "Experiments",
+      hint: "Each adds model calls for a claimed gain; the note names the measurement that settles it." },
+    { key: "graduation_queue", title: "Queued to graduate",
+      hint: "Dispositioned default-on pending their receipt — safe to try, expected to become default." },
+    { key: "migration", title: "Migrations",
+      hint: "Temporary forks of old vs new code paths — these flags are scheduled to be deleted, not tuned." },
+    { key: "default_on", title: "Graduated (on by default)",
+      hint: "Receipted defaults. The toggle is the operator escape hatch, not a decision you owe." },
+  ];
+  const byGroup = new Map<string, Array<[string, SystemFlag]>>();
+  for (const [name, f] of entries) {
+    const key = f.disposition && GROUPS.some(g => g.key === f.disposition) ? f.disposition : "default_on";
+    if (!byGroup.has(key)) byGroup.set(key, []);
+    byGroup.get(key)!.push([name, f]);
+  }
+  byGroup.forEach(list => list.sort((a, b) => a[1].label.localeCompare(b[1].label)));
+
+  const sourceChip = (f: SystemFlag) =>
+    f.source === "runtime" ? "override" : f.source === "default" ? "default" : `env: ${f.env_var}`;
+
   return (
     <Section title="Feature flags">
-      {entries.map(([name, f]) => (
-        <div key={name} className="flex items-start justify-between gap-4 py-2 border-b border-white/5 last:border-0">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-zinc-200">{f.label}</span>
-              <span className="text-[9.5px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t4)" }}>
-                {f.source === "runtime" ? "override" : `env: ${f.env_var}`}
-              </span>
-            </div>
-            <p className="aug-fs-xs text-zinc-500 mt-0.5 leading-snug">{f.description}</p>
+      {GROUPS.filter(g => byGroup.has(g.key)).map(g => (
+        <div key={g.key} className="mb-3 last:mb-0">
+          <div className="flex items-baseline gap-2 pt-1 pb-1.5">
+            <span className="text-[10.5px] font-medium uppercase tracking-wide" style={{ color: "var(--t3)" }}>{g.title}</span>
+            <span className="text-[9.5px]" style={{ color: "var(--t4)" }}>{byGroup.get(g.key)!.length}</span>
           </div>
-          <Toggle checked={f.value} disabled={busy === name} onChange={v => toggle(name, v)} />
+          <p className="aug-fs-xs mb-1 leading-snug" style={{ color: "var(--t4)" }}>{g.hint}</p>
+          {byGroup.get(g.key)!.map(([name, f]) => (
+            <div key={name} className="flex items-start justify-between gap-4 py-2 border-b border-white/5 last:border-0">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-200">{f.label}</span>
+                  <span className="text-[9.5px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t4)" }}>
+                    {sourceChip(f)}
+                  </span>
+                </div>
+                <p className="aug-fs-xs text-zinc-500 mt-0.5 leading-snug">{f.description}</p>
+                {f.disposition_note && (
+                  <p className="aug-fs-xs mt-0.5 leading-snug italic" style={{ color: "var(--t4)" }}>{f.disposition_note}</p>
+                )}
+              </div>
+              <Toggle checked={f.value} disabled={busy === name} onChange={v => toggle(name, v)} />
+            </div>
+          ))}
         </div>
       ))}
     </Section>
