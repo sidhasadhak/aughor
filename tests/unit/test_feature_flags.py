@@ -90,6 +90,10 @@ def test_list_flags_reflects_default_on(monkeypatch):
     monkeypatch.delenv("AUGHOR_ASK_CLARIFY", raising=False)
     flags = list_flags()
     assert flags["ask.clarify"]["value"] is True
-    assert flags["ask.clarify"]["source"] == "env"
+    # With the variable unset, this flag is on because of FLAG_DEFAULT — so the source is
+    # "default". It used to report "env" (the old catch-all tail), which pointed an operator
+    # at a variable nobody had set; the distinction matters more with every graduation.
+    assert flags["ask.clarify"]["source"] == "default"
+    assert flags["ask.clarify"]["env_var"] == "AUGHOR_ASK_CLARIFY"
     for name in WS4B_FLAGS:
         assert name in flags

@@ -254,28 +254,28 @@ def test_read_checkpoint_values_missing_run_is_empty():
 
 def test_persona_for_investigation_rules(monkeypatch):
     import aughor.agent.graph as graph
-    from aughor.routers.investigations import _persona_for_investigation
+    from aughor.routers.investigations import persona_for_investigation
 
     a = create_agent("Deep Persona", instructions="deep focus")
     monkeypatch.setattr(graph, "read_checkpoint_values", lambda inv: {"agent_id": a.id})
 
     _flag(monkeypatch, False)
-    assert _persona_for_investigation("inv-1") is None  # flag off → never
+    assert persona_for_investigation("inv-1") is None  # flag off → never
 
     _flag(monkeypatch, True)
-    resolved = _persona_for_investigation("inv-1")
+    resolved = persona_for_investigation("inv-1")
     assert resolved is not None and resolved.id == a.id
 
     update_agent(a.id, enabled=False)
-    assert _persona_for_investigation("inv-1") is None  # disabled → resume without persona
+    assert persona_for_investigation("inv-1") is None  # disabled → resume without persona
 
     monkeypatch.setattr(graph, "read_checkpoint_values", lambda inv: {})
-    assert _persona_for_investigation("inv-1") is None  # pre-upgrade checkpoint → None
+    assert persona_for_investigation("inv-1") is None  # pre-upgrade checkpoint → None
 
     def _boom(inv):
         raise RuntimeError("checkpoint store unavailable")
     monkeypatch.setattr(graph, "read_checkpoint_values", _boom)
-    assert _persona_for_investigation("inv-1") is None  # fail-open, never blocks resume
+    assert persona_for_investigation("inv-1") is None  # fail-open, never blocks resume
 
 
 # ── Slice 4: schema scoping + pack bindings ───────────────────────────────────
