@@ -3,11 +3,10 @@
 ReFoRCE-style tiering: an expensive skeptic pass should fire ONLY on decision-changing verdicts
 (a premise rejection — "X is not the problem" — or an abstention — "within normal variance"), not
 on every finding. `is_decision_changing_verdict` is the deterministic gate; the refuter itself
-(`run_refutation`) is flag-gated (`ada.adversarial_verify`, default off) so the default path stays
-deterministic. See aughor/agent/orchestrator.py + investigate.py.
+(`run_refutation`) is gated by the materiality tier (`ada.adversarial_high_stakes`, auto-eligible)
+so the default path stays deterministic. See aughor/agent/orchestrator.py + investigate.py.
 """
 from aughor.agent.orchestrator import is_decision_changing_verdict
-from aughor.kernel.flags import flag_enabled
 
 
 def test_premise_rejection_is_decision_changing():
@@ -28,9 +27,15 @@ def test_ordinary_driver_verdict_is_not_decision_changing():
     assert is_decision_changing_verdict("Fragrance refunds are driven by scent intensity (66%)", "") is False
 
 
-def test_flag_is_off_by_default():
-    """The adversarial pass must not change the default deterministic path."""
-    assert flag_enabled("ada.adversarial_verify") is False
+def test_the_full_tier_stays_deleted_and_the_auto_tier_remains():
+    """`ada.adversarial_verify` (challenge EVERY decision-changing verdict) was deleted
+    2026-07-31 (flag strategy §4G) — superseded by the materiality-gated auto tier. A
+    re-registration would silently resurrect an LLM call per decision-changing verdict."""
+    from aughor.kernel.flags import AUTO_ELIGIBLE, FLAG_ENV
+
+    assert "ada.adversarial_verify" not in FLAG_ENV
+    assert "ada.adversarial_high_stakes" in FLAG_ENV
+    assert "ada.adversarial_high_stakes" in AUTO_ELIGIBLE
 
 
 def test_refuter_alias_is_public_and_callable():

@@ -3959,7 +3959,9 @@ export async function applyPostproc(
 export type CapabilityState = "on" | "off" | "auto";
 export interface SystemFlag {
   value: boolean;
-  source: "runtime" | "env";
+  // "default" = the code default decided (no env var, no override) — distinguished from
+  // "env" so a default-on flag never sends an operator hunting for a variable nobody set.
+  source: "run" | "runtime" | "env" | "default";
   env_var: string;
   label: string;
   description: string;
@@ -3968,6 +3970,10 @@ export interface SystemFlag {
   override?: boolean | null;        // the runtime override, or null when following env/Auto-mode
   auto_eligible?: boolean;          // a self-gating guard the master Auto-mode can run
   trigger?: string;                 // (auto-eligible only) the deterministic trigger, in words
+  // The disposition ratchet (flag strategy §5.1) — every flag declares its kind, so the
+  // Settings UI can group by it instead of rendering one flat toggle list:
+  disposition?: string;             // default_on | auto | intentionally_off | experiment | …
+  disposition_note?: string;        // the declared reason / exit for non-graduated kinds
 }
 
 export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {

@@ -234,6 +234,7 @@ export function SystemPanel() {
 function FeatureFlags() {
   const [flags, setFlags] = useState<Record<string, SystemFlag>>({});
   const [busy, setBusy] = useState("");
+  const [query, setQuery] = useState("");
 
   useEffect(() => { getSystemFlags().then(setFlags).catch(() => setFlags({})); }, []);
 
@@ -248,23 +249,157 @@ function FeatureFlags() {
   const entries = Object.entries(flags).filter(([name, f]) => !f.auto_eligible && name !== "capabilities.auto");
   if (entries.length === 0) return null;
 
+  // The disposition ratchet (flag strategy §5.1): group by declared KIND instead of one
+  // flat list of ~80 toggles. Order runs decision-first: the deliberate opt-ins an
+  // operator might actually change, then queued/experimental work, then what is simply on.
+  // The two biggest groups collapse by default — receipted defaults are not decisions the
+  // operator owes — and a search query reopens everything it matches.
+  const GROUPS: Array<{ key: string; title: string; hint: string; open?: boolean }> = [
+    { key: "intentionally_off", title: "Deliberate opt-ins", open: true,
+      hint: "Off for a stated reason (cost, privacy, outward sends). The only toggles meant to be flipped by hand." },
+    { key: "performance_profile", title: "Performance", open: true,
+      hint: "Wall-clock vs concurrent LLM requests. Pick a profile matched to your provider's rate limits — it sets these four together." },
+    { key: "experiment", title: "Experiments", open: true,
+      hint: "Each adds model calls for a claimed gain; the note names the measurement that settles it." },
+    { key: "migration", title: "Migrations", open: true,
+      hint: "Temporary forks of old vs new code paths — these flags are scheduled to be deleted, not tuned." },
+    { key: "graduation_queue", title: "Queued to graduate",
+      hint: "Dispositioned default-on pending their receipt — safe to try, expected to become default." },
+    { key: "default_on", title: "Graduated (on by default)",
+      hint: "Receipted defaults. The toggle is the operator escape hatch, not a decision you owe." },
+  ];
+  const q = query.trim().toLowerCase();
+  const matches = ([name, f]: [string, SystemFlag]) =>
+    !q || name.includes(q) || f.label.toLowerCase().includes(q)
+    || f.description.toLowerCase().includes(q) || (f.disposition_note || "").toLowerCase().includes(q);
+  const byGroup = new Map<string, Array<[string, SystemFlag]>>();
+  for (const [name, f] of entries) {
+    if (!matches([name, f])) continue;
+    const key = f.disposition && GROUPS.some(g => g.key === f.disposition) ? f.disposition : "default_on";
+    if (!byGroup.has(key)) byGroup.set(key, []);
+    byGroup.get(key)!.push([name, f]);
+  }
+  byGroup.forEach(list => list.sort((a, b) => a[1].label.localeCompare(b[1].label)));
+
+  const sourceChip = (f: SystemFlag) =>
+    f.source === "runtime" ? "override" : f.source === "default" ? "default" : `env: ${f.env_var}`;
+
   return (
     <Section title="Feature flags">
-      {entries.map(([name, f]) => (
-        <div key={name} className="flex items-start justify-between gap-4 py-2 border-b border-white/5 last:border-0">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-zinc-200">{f.label}</span>
-              <span className="text-[9.5px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t4)" }}>
-                {f.source === "runtime" ? "override" : `env: ${f.env_var}`}
-              </span>
-            </div>
-            <p className="aug-fs-xs text-zinc-500 mt-0.5 leading-snug">{f.description}</p>
-          </div>
-          <Toggle checked={f.value} disabled={busy === name} onChange={v => toggle(name, v)} />
-        </div>
+      <div className="flex items-center gap-2 pb-2">
+        <input
+          value={query} onChange={e => setQuery(e.target.value)}
+          placeholder={`Search ${entries.length} flags — name, description, exit note…`}
+          className="w-full text-xs px-2 py-1.5 rounded-[var(--r2)] outline-none"
+          style={{ background: "var(--bg-1)", color: "var(--t1)", border: "1px solid var(--b1)" }}
+        />
+        {q && (
+          <Button size="xs" variant="ghost" onClick={() => setQuery("")} className="shrink-0">Clear</Button>
+        )}
+      </div>
+      {GROUPS.filter(g => byGroup.has(g.key)).map(g => (
+        <details key={g.key} open={g.open || !!q} className="mb-2 last:mb-0">
+          <summary className="cursor-pointer select-none list-none flex items-baseline gap-2 pt-1 pb-1.5">
+            <span className="text-[10.5px] font-medium uppercase tracking-wide" style={{ color: "var(--t3)" }}>{g.title}</span>
+            <span className="text-[9.5px]" style={{ color: "var(--t4)" }}>{byGroup.get(g.key)!.length}</span>
+            <span className="aug-fs-xs leading-snug truncate" style={{ color: "var(--t4)" }}>— {g.hint}</span>
+          </summary>
+          {g.key === "performance_profile" && (
+            <PerformanceProfile flags={flags} refresh={async () => setFlags(await getSystemFlags())} />
+          )}
+          {byGroup.get(g.key)!.map(([name, f]) => (
+            <FlagRow key={name} name={name} f={f} chip={sourceChip(f)}
+                     busy={busy === name} onToggle={v => toggle(name, v)} />
+          ))}
+        </details>
       ))}
     </Section>
+  );
+}
+
+/** One flag row — the long registry description clamps to two lines with a more/less toggle. */
+function FlagRow({ name, f, chip, busy, onToggle }: {
+  name: string; f: SystemFlag; chip: string; busy: boolean; onToggle: (v: boolean) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const long = f.description.length > 180;
+  return (
+    <div className="flex items-start justify-between gap-4 py-2 border-b border-white/5 last:border-0">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-zinc-200">{f.label}</span>
+          <span className="text-[9.5px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t4)" }}>
+            {chip}
+          </span>
+        </div>
+        <p className="aug-fs-xs text-zinc-500 mt-0.5 leading-snug"
+           style={expanded || !long ? undefined
+             : { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          {f.description}
+        </p>
+        {f.disposition_note && (
+          <p className="aug-fs-xs mt-0.5 leading-snug italic" style={{ color: "var(--t4)" }}>{f.disposition_note}</p>
+        )}
+        {long && (
+          <Button size="xs" variant="ghost" className="mt-0.5 h-5 px-1"
+                  onClick={() => setExpanded(e => !e)}>
+            {expanded ? "less" : "more"}
+          </Button>
+        )}
+      </div>
+      <Toggle checked={f.value} disabled={busy} onChange={onToggle} />
+    </div>
+  );
+}
+
+/** Group E as one control: the four parallelism flags set together, matched to rate limits. */
+const PERF_FLAGS = ["explore.parallel_subq", "ada.parallel_lenses", "ada.parallel_phases",
+                    "ada.parallel_why_lenses"] as const;
+
+function PerformanceProfile({ flags, refresh }: {
+  flags: Record<string, SystemFlag>; refresh: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const vals = PERF_FLAGS.map(n => !!flags[n]?.value);
+  const current = vals.every(v => v) ? "fast"
+    : vals.every(v => !v) ? "conservative"
+    : (flags["ada.parallel_why_lenses"]?.value && vals.filter(Boolean).length === 1) ? "balanced"
+    : "custom";
+
+  const apply = async (profile: "conservative" | "balanced" | "fast") => {
+    setBusy(true);
+    for (const n of PERF_FLAGS) {
+      const state = profile === "fast" ? "on"
+        : profile === "balanced" && n === "ada.parallel_why_lenses" ? "on"
+        : "auto";                                  // auto = clear the override → code default (off)
+      await setCapabilityState(n, state as CapabilityState);
+    }
+    await refresh();
+    setBusy(false);
+  };
+
+  const OPTS: Array<{ id: "conservative" | "balanced" | "fast"; label: string; hint: string }> = [
+    { id: "conservative", label: "Conservative", hint: "serial — fits a 20 RPM free tier" },
+    { id: "balanced", label: "Balanced", hint: "parallel WHY lenses only (byte-identical output)" },
+    { id: "fast", label: "Fast", hint: "all waves concurrent — needs provider headroom" },
+  ];
+  return (
+    <div className="flex items-center gap-2 py-2 border-b border-white/5 flex-wrap">
+      <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>Profile:</span>
+      <div className="inline-flex overflow-hidden rounded-[var(--r2)]" style={{ border: "1px solid var(--b1)" }}>
+        {OPTS.map(o => (
+          <Button key={o.id} size="xs" variant={current === o.id ? "secondary" : "ghost"}
+                  disabled={busy} onClick={() => apply(o.id)}
+                  className="h-6 rounded-none px-2" title={o.hint}>
+            {o.label}
+          </Button>
+        ))}
+      </div>
+      <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+        {current === "custom" ? "custom mix — pick a profile to align all four"
+          : OPTS.find(o => o.id === current)?.hint}
+      </span>
+    </div>
   );
 }
 

@@ -6571,16 +6571,15 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
 
 
 # ── T4-3 / P5: tiered adversarial verification ─────────────────────────────────────────
-def _adversarial_should_run(synth, *, full: bool, high_stakes: bool) -> bool:
+def _adversarial_should_run(synth, *, high_stakes: bool) -> bool:
     """Whether the ReFoRCE-style refuter should spend its ONE skeptic LLM call on this verdict. The
     caller has already confirmed the verdict is DECISION-CHANGING (a premise rejection / abstention).
-      • ``full`` (``ada.adversarial_verify``) — challenge EVERY decision-changing verdict.
-      • ``high_stakes`` (``ada.adversarial_high_stakes``) — the deterministic materiality gate: fire
-        ONLY when the verdict is asserted with **HIGH** confidence. That's the costly-if-wrong minority
-        AND the only case where the HIGH→MEDIUM cap can bite — so the refuter earns a default-path place
-        without paying an LLM call on the many MEDIUM/LOW verdicts. Confidence-triggered activation."""
-    if full:
-        return True
+    ``high_stakes`` (``ada.adversarial_high_stakes``) is the deterministic materiality gate: fire
+    ONLY when the verdict is asserted with **HIGH** confidence. That's the costly-if-wrong minority
+    AND the only case where the HIGH→MEDIUM cap can bite — so the refuter earns a default-path place
+    without paying an LLM call on the many MEDIUM/LOW verdicts. Confidence-triggered activation.
+    (The always-challenge full tier, ``ada.adversarial_verify``, was deleted 2026-07-31 — flag
+    strategy §4G.)"""
     if high_stakes:
         return (getattr(synth, "confidence", "") or "").upper() == "HIGH"
     return False
@@ -6968,28 +6967,26 @@ def ada_synthesize(state: AgentState) -> dict:
     # T4-3 / P5: confidence-tiered adversarial verification (ReFoRCE-style). Spend ONE skeptic LLM call
     # to try to REFUTE a DECISION-CHANGING verdict (a premise rejection or an abstention) before
     # shipping — the few high-stakes conclusions, never per finding. A surviving refutation records the
-    # objection and caps a HIGH confidence to MEDIUM. Two opt-in tiers, both default-off (the
-    # deterministic default path is byte-identical): `ada.adversarial_verify` challenges EVERY
-    # decision-changing verdict; `ada.adversarial_high_stakes` is the cheaper materiality-gated tier —
-    # only a HIGH-confidence decision-changing verdict (where being wrong is costly and the cap bites).
+    # objection and caps a HIGH confidence to MEDIUM. One materiality-gated tier
+    # (`ada.adversarial_high_stakes`, auto-eligible): only a HIGH-confidence decision-changing verdict,
+    # where being wrong is costly and the cap bites. (The always-challenge full tier was deleted
+    # 2026-07-31 — flag strategy §4G.)
     from aughor.kernel.flags import flag_enabled as _flag_enabled
-    _adv_full = _flag_enabled("ada.adversarial_verify")
     _adv_high_stakes = _flag_enabled("ada.adversarial_high_stakes")
-    if synth and (_adv_full or _adv_high_stakes):
+    if synth and _adv_high_stakes:
         try:
             from aughor.agent.orchestrator import is_decision_changing_verdict
             if is_decision_changing_verdict(synth.headline, synth.executive_summary) \
-                    and _adversarial_should_run(synth, full=_adv_full, high_stakes=_adv_high_stakes):
+                    and _adversarial_should_run(synth, high_stakes=_adv_high_stakes):
                 from aughor.agent.explore import run_refutation
                 _verdict = run_refutation(question, synth.headline or "", _phases_summary(phases))
                 _apply_adversarial_refutation(synth, _verdict)
-                if _adv_high_stakes:                          # Activation Receipt (Wave 1·E3)
-                    from aughor.kernel import metering
-                    metering.record_activation("ada.adversarial_high_stakes")
+                from aughor.kernel import metering               # Activation Receipt (Wave 1·E3)
+                metering.record_activation("ada.adversarial_high_stakes")
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "adversarial verification is best-effort; report proceeds",
-                     counter="ada.adversarial_verify")
+                     counter="ada.adversarial")
 
     # F3/F2 — a CROSS-SECTIONAL scan ranks the metric ACROSS dimensions at a point in time; it
     # measures no temporal change, so:

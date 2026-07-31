@@ -37,7 +37,9 @@ def _on(monkeypatch, tmp_path):
 
 # ── The flag contract ─────────────────────────────────────────────────────────
 
-def test_flag_off_writes_nothing_and_reads_nothing():
+def test_flag_off_writes_nothing_and_reads_nothing(monkeypatch):
+    # Explicit =0 — default-ON since flag strategy batch B.
+    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")
     assert save_draft(KIND, NK, {"a": 1}) is None
     assert resolve(KIND, NK) is None
     assert history(KIND, NK) == []
@@ -268,6 +270,7 @@ def test_savedquery_update_records_a_revision(_on, monkeypatch, tmp_path):
 
 
 def test_savedquery_update_is_unaffected_when_the_flag_is_off(monkeypatch, tmp_path):
+    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")   # escape hatch; default-ON
     monkeypatch.setenv("AUGHOR_SAVEDQUERY_DB", str(tmp_path / "sq2.db"))
     import importlib
 

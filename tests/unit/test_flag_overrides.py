@@ -34,7 +34,11 @@ from aughor.kernel.flags import (
 )
 
 FLAG = "ada.evidence_stubs"      # registered, defaults off, and E4's own sixth customer
-OTHER = "ada.evidence_dedup"
+# `ai_sql` deliberately: the nested-release assertion below expects OTHER's AMBIENT value
+# to be off, and ai_sql is intentionally-off forever (per-row LLM cost) so this test never
+# needs re-pointing when a flag graduates (its previous exemplar, ada.evidence_dedup,
+# graduated default-ON in flag strategy batch A).
+OTHER = "ai_sql"
 
 
 @pytest.fixture(autouse=True)

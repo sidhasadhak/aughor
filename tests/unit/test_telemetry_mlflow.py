@@ -93,10 +93,20 @@ def _make_stub(active: bool = True) -> types.ModuleType:
 @pytest.fixture(autouse=True)
 def _fresh_mlflow_state(monkeypatch):
     """Reset the module-level lazy-init state so each test starts cold, and keep
-    the init's os.environ.setdefault writes from leaking across tests."""
+    the init's os.environ.setdefault writes from leaking across tests.
+
+    Also clears any tracking-URI env LEAKED from an upstream test (test_model_bakeoff
+    drives real mlflow and mlflow.set_tracking_uri writes MLFLOW_TRACKING_URI). Since
+    the 2026-07-31 flag strategy made `_mlflow()` self-gate on that env var (the
+    `obs.mlflow` flag was deleted), a leaked URI would let real mlflow init cache
+    itself into `tel._mlf` — so `_mlflow()` returns the real module instead of this
+    file's stub, whose `get_current_active_span()` is None ⇒ no span. Each test here
+    sets exactly the URI it wants, so clearing both is safe and makes the file
+    hermetic against upstream leakage."""
     monkeypatch.setattr(tel, "_mlf", None)
     monkeypatch.setattr(tel, "_mlf_retry_at", 0.0)
-    for k in ("MLFLOW_HTTP_REQUEST_TIMEOUT", "MLFLOW_HTTP_REQUEST_MAX_RETRIES"):
+    for k in ("MLFLOW_HTTP_REQUEST_TIMEOUT", "MLFLOW_HTTP_REQUEST_MAX_RETRIES",
+              "AUGHOR_MLFLOW_TRACKING_URI", "MLFLOW_TRACKING_URI"):
         monkeypatch.delenv(k, raising=False)
     yield
     tel._mlf = None
@@ -106,11 +116,13 @@ def _fresh_mlflow_state(monkeypatch):
 
 
 def _set_flag(monkeypatch, value: bool):
-    import aughor.kernel.flags as flags
-    monkeypatch.setattr(
-        flags, "flag_enabled",
-        lambda name: value if name == "obs.mlflow" else False,
-    )
+    # Self-gating on the tracking URI since the 2026-07-31 flag strategy deleted the
+    # `obs.mlflow` flag (§4C): a set URI IS the operator's intent, an unset one is off.
+    if value:
+        monkeypatch.setenv("AUGHOR_MLFLOW_TRACKING_URI", "http://localhost:5001")
+    else:
+        monkeypatch.delenv("AUGHOR_MLFLOW_TRACKING_URI", raising=False)
+        monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
 
 
 # ── Flag OFF: byte-identical default path ────────────────────────────────────
@@ -346,25 +358,21 @@ def test_broken_mlflow_api_never_breaks_caller(monkeypatch):
 
 
 def test_runtime_toggle_off_unpatches_autolog(monkeypatch):
-    """Flag flipped off at runtime → spans stop AND autolog is disabled, so
-    trace export does not silently continue after the operator opted out."""
-    import aughor.kernel.flags as flags
+    """Tracking URI unset at runtime → spans stop AND autolog is disabled, so trace
+    export does not silently continue after the operator opted out. (The gate is the
+    URI itself since the 2026-07-31 flag strategy deleted `obs.mlflow`.)"""
     stub = _make_stub()
     monkeypatch.setitem(sys.modules, "mlflow", stub)
-    state = {"on": True}
-    monkeypatch.setattr(
-        flags, "flag_enabled",
-        lambda name: state["on"] if name == "obs.mlflow" else False,
-    )
+    _set_flag(monkeypatch, True)
     with tel.mlflow_tool_span("sql.execute") as s:
         assert s is not None
-    state["on"] = False
+    _set_flag(monkeypatch, False)
     with tel.mlflow_tool_span("sql.execute") as s2:
         assert s2 is None
     assert len(stub.calls["spans"]) == 1
     assert len(stub.calls["autolog_disable"]) == 2  # both flavors unpatched
     # Re-enabling re-initializes cleanly.
-    state["on"] = True
+    _set_flag(monkeypatch, True)
     with tel.mlflow_tool_span("sql.execute") as s3:
         assert s3 is not None
     assert len(stub.calls["autolog"]) == 4  # re-patched

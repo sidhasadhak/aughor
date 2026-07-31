@@ -82,7 +82,7 @@ from aughor import telemetry as _telemetry
 MAX_ITER = int(__import__("os").getenv("AUGHOR_MAX_ITER", "6"))
 
 
-def _metrics_for_state(state) -> list:
+def metrics_for_state(state) -> list:
     """AL-05 — the first live *consumer* of the resolved Semantic plane. When a run carries a
     `semantic_context` (resolved once at seed, schema-filtered), read its metrics instead of
     re-consulting `list_metrics()`, so every node works off ONE metric set. Falls back to a direct
@@ -691,7 +691,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     _ontology_formulas_section = ""
     _targeted_metrics: list = []   # governed metrics this hypothesis targets (B-7 gate)
     try:
-        all_metrics = _metrics_for_state(state)   # AL-05: reuse the resolved Semantic plane's metrics
+        all_metrics = metrics_for_state(state)   # AL-05: reuse the resolved Semantic plane's metrics
         hyp_lower = h.description.lower()
         matched_formulas: list[str] = []
         for m in all_metrics:

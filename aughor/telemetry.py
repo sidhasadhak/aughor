@@ -4,8 +4,9 @@ MLflow trace trees per run.
 Activation:
   Langfuse: set LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY
   OTel:     set OTEL_EXPORTER_OTLP_ENDPOINT
-  MLflow:   flip the `obs.mlflow` feature flag (env AUGHOR_OBS_MLFLOW / Settings →
-            System) + point AUGHOR_MLFLOW_TRACKING_URI at a server. Unlike the
+  MLflow:   point AUGHOR_MLFLOW_TRACKING_URI (or MLFLOW_TRACKING_URI) at a server —
+            self-gating on the URI, like the other two backends, since the
+            2026-07-31 flag strategy deleted the `obs.mlflow` flag. Unlike the
             other two, MLflow owns trace *creation* via autolog (LangChain/OpenAI),
             so this module only nests node/tool spans under the active trace and
             tags it with the investigation id.
@@ -88,7 +89,7 @@ def _otel() -> Any | None:
     return _otel_tracer
 
 
-# ── MLflow (feature flag `obs.mlflow`) ────────────────────────────────────────
+# ── MLflow (self-gating on AUGHOR_MLFLOW_TRACKING_URI) ────────────────────────
 
 _mlf: Any = None
 _mlf_lock = threading.Lock()
@@ -98,21 +99,21 @@ _MLF_ATTR_MAX_CHARS = 2000  # cap string span attributes (e.g. SQL text)
 
 
 def _mlflow() -> Any | None:
-    """The mlflow module — only when the `obs.mlflow` flag is ON and init succeeded.
+    """The mlflow module — only when a tracking URI is configured and init succeeded.
 
-    Unlike Langfuse/OTel (env-configured, checked once), the flag is
-    operator-toggleable at runtime, so it is re-checked on every call (one
-    kernel-ledger kv read — the house cost of a runtime flag). Init is
-    lock-serialized (parallel waves must not race it) and a transient failure
-    (tracking server still booting) retries after a cooldown instead of
-    disabling for the process lifetime. Flipping the flag OFF after a
-    successful init unpatches autolog. Every failure path degrades to None
-    (tracing off), never raises.
+    SELF-GATING on config presence since the 2026-07-31 flag strategy (§4C): the old
+    `obs.mlflow` flag was deleted, because a flag that is a no-op without an external
+    server and silently inert with one configured is two ways to be confused — the
+    URI being set IS the operator's intent. Like Langfuse/OTel this is env-configured,
+    but it stays re-checked per call so unsetting the URI and restarting cleanly
+    disables, and a transient failure (tracking server still booting) retries after a
+    cooldown instead of disabling for the process lifetime. Every failure path
+    degrades to None (tracing off), never raises.
     """
     global _mlf
     try:
-        from aughor.kernel.flags import flag_enabled
-        enabled = flag_enabled("obs.mlflow")
+        enabled = bool(os.getenv("AUGHOR_MLFLOW_TRACKING_URI")
+                       or os.getenv("MLFLOW_TRACKING_URI"))
     except Exception:
         return None
     if not enabled:
@@ -137,7 +138,7 @@ def _mlflow_init() -> Any | None:
     except ImportError:
         _mlf_retry_at = float("inf")  # the package won't appear mid-process
         logger.warning(
-            "obs.mlflow is ON but the `mlflow` package is not installed — "
+            "an MLflow tracking URI is set but the `mlflow` package is not installed — "
             "MLflow tracing disabled (install with: uv sync --extra observability)")
         return None
     try:
@@ -185,7 +186,7 @@ def _mlflow_disable() -> None:
             except Exception as exc:
                 logger.debug("mlflow.%s.autolog disable failed: %s", _flavor, exc)
         _mlf_retry_at = 0.0  # re-enabling re-inits immediately
-        logger.info("MLflow tracing disabled (obs.mlflow off)")
+        logger.info("MLflow tracing disabled (no tracking URI configured)")
 
 
 def trace_identity() -> tuple[str, str, str]:

@@ -70,6 +70,11 @@ for _env, _file in (
     ("AUGHOR_AUTOMATIONS_DB", "automations.db"),
     # Wave A4 — the resolve-once proposal inbox + target-bound standing grants (born hermetic).
     ("AUGHOR_KINETIC_INBOX_DB", "kinetic_inbox.db"),
+    # R8 — the compiled ontology doc tree (a FILE store, not SQLite). Hardcoded to
+    # data/ontology_docs/ until flag strategy batch C flipped `ontology.autodoc`
+    # default-ON and the suite started writing real doc trees for the fixture
+    # connection — the matcache hole, rediscovered. Same fix: point it at the tmp dir.
+    ("AUGHOR_ONTOLOGY_DOCS_DIR", "ontology_docs"),
     ("AUGHOR_KINETIC_GRANTS_DB", "kinetic_grants.db"),
     # Wave E/L — the eval plane's own store: suites, cases, RUN HISTORY and graduation
     # receipts. It honoured AUGHOR_EVALS_DB from the start but was never listed here, so any

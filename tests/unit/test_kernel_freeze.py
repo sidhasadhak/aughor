@@ -58,7 +58,9 @@ def _saved(body=None):
 
 # ── The flag contract ─────────────────────────────────────────────────────────
 
-def test_flag_off_freezes_nothing():
+def test_flag_off_freezes_nothing(monkeypatch):
+    # Explicit =0 — default-ON since flag strategy batch B.
+    monkeypatch.setenv("AUGHOR_LIFECYCLE_FREEZE", "0")
     assert fz.freeze(KIND, NK, version=1, connection_id="c") is None
     assert fz.frozen(KIND, NK) is None
     assert fz.unfreeze(KIND, NK) is False

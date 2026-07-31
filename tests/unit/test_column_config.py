@@ -285,8 +285,10 @@ def test_apply_schema_enrichment_prunes_only_when_flag_on(monkeypatch, store):
     set_column_flags("connX", "default", "sales", "notes", visible=False)
     raw = "TABLE: sales  (10 rows)\n  id  INTEGER\n  notes  VARCHAR"
 
+    # Explicit =0 — default-ON since flag strategy batch C; "off" is the escape hatch.
+    monkeypatch.setenv("AUGHOR_ONTOLOGY_COLUMN_CONFIG", "0")
     off = apply_schema_enrichment(raw, connection_id="connX")
-    assert "  notes  VARCHAR" in off                          # flag off → byte-identical schema body
+    assert "  notes  VARCHAR" in off                          # forced off → byte-identical schema body
 
     monkeypatch.setenv("AUGHOR_ONTOLOGY_COLUMN_CONFIG", "1")
     on = apply_schema_enrichment(raw, connection_id="connX")

@@ -17,8 +17,11 @@ def _duck_file(path, *stmts):
     return str(path)
 
 
-def test_cross_source_join_disabled_by_default(client: TestClient, monkeypatch):
-    monkeypatch.delenv("AUGHOR_FEDERATION_REMOTE_JOIN", raising=False)
+def test_cross_source_join_disabled_when_forced_off(client: TestClient, monkeypatch):
+    # Explicit =0 — the route graduated default-ON in flag strategy batch B, so "off"
+    # is now the operator escape hatch, not the ambient state (an unset env resolves on
+    # and the fully-specified body would attempt a real cross-source join).
+    monkeypatch.setenv("AUGHOR_FEDERATION_REMOTE_JOIN", "0")
     resp = client.post("/query/cross-source-join", json={
         "left_conn_id": "x", "left_sql": "SELECT 1", "left_key": "a",
         "right_conn_id": "y", "right_table": "t", "right_key": "b",

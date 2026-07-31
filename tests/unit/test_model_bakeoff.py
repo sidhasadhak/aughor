@@ -56,6 +56,13 @@ def _clean_env(monkeypatch):
     monkeypatch.setenv("AUGHOR_CODER_MODEL", "pre-existing")  # restored by monkeypatch
     yield
     os.environ.pop("MLFLOW_GENAI_EVAL_MAX_WORKERS", None)
+    # mlflow.set_tracking_uri (driven with a tmp file store above) writes
+    # MLFLOW_TRACKING_URI into os.environ, which OUTLIVES this test's tmp_path. Since
+    # the 2026-07-31 flag strategy made telemetry._mlflow() self-gate on that env var,
+    # a leaked tmp URI would make every later test init real mlflow. Pop it so the
+    # bakeoff cannot pollute the rest of the suite.
+    for _k in ("MLFLOW_TRACKING_URI", "AUGHOR_MLFLOW_TRACKING_URI"):
+        os.environ.pop(_k, None)
 
 
 # ── Pure helpers ──────────────────────────────────────────────────────────────

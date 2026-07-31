@@ -140,8 +140,9 @@ def test_the_manifest_still_names_the_tables_that_were_narrowed_away():
 
 # ── the wiring ────────────────────────────────────────────────────────────────
 
-def test_for_repair_is_identity_when_the_flag_is_off(monkeypatch):
-    monkeypatch.delenv("AUGHOR_SCHEMA_TWO_TIER_CATALOG", raising=False)
+def test_for_repair_is_identity_when_forced_off(monkeypatch):
+    # Explicit =0 — the escape hatch; default-ON since flag strategy batch A.
+    monkeypatch.setenv("AUGHOR_SCHEMA_TWO_TIER_CATALOG", "0")
     assert SF.for_repair(BIG, "SELECT * FROM orders", "boom") == BIG
 
 
@@ -167,7 +168,7 @@ def test_both_repair_paths_share_one_definition(mod, monkeypatch):
     import importlib
 
     m = importlib.import_module(mod)
-    monkeypatch.delenv("AUGHOR_SCHEMA_TWO_TIER_CATALOG", raising=False)
+    monkeypatch.setenv("AUGHOR_SCHEMA_TWO_TIER_CATALOG", "0")   # escape hatch: identity
     assert m._focus_schema_for_repair({"schema_context": BIG}, "SELECT * FROM orders", "e") == BIG
     monkeypatch.setenv("AUGHOR_SCHEMA_TWO_TIER_CATALOG", "1")
     assert m._focus_schema_for_repair({"schema_context": BIG}, "SELECT * FROM orders", "e") != BIG

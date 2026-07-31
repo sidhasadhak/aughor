@@ -1,6 +1,6 @@
 """P5 — the adversarial-verification confidence cap + the high-stakes materiality gate.
 
-T4-3's refuter (opt-in `ada.adversarial_verify`) fired live and recorded objections, but the
+T4-3's refuter (originally the opt-in full tier, deleted 2026-07-31) fired live and recorded objections, but the
 HIGH→MEDIUM confidence cap — the part that actually protects the reader from a confident wrong verdict
 — was never exercised (it needs a surviving refutation of a HIGH-confidence verdict). The apply logic is
 now a pure function, so the cap is tested deterministically with no LLM. P5 also adds a deterministic
@@ -70,19 +70,16 @@ def test_idempotent_note_no_double_insert():
 
 # ── The deterministic materiality gate ────────────────────────────────────────────
 
-def test_full_tier_runs_on_any_decision_changing_verdict():
-    assert I._adversarial_should_run(_synth("MEDIUM"), full=True, high_stakes=False)
-    assert I._adversarial_should_run(_synth("LOW"), full=True, high_stakes=False)
-
-
 def test_high_stakes_tier_runs_only_on_high_confidence():
-    assert I._adversarial_should_run(_synth("HIGH"), full=False, high_stakes=True)
-    assert not I._adversarial_should_run(_synth("MEDIUM"), full=False, high_stakes=True)
-    assert not I._adversarial_should_run(_synth("LOW"), full=False, high_stakes=True)
+    # The always-challenge full tier was deleted 2026-07-31 (flag strategy §4G);
+    # the materiality gate is the one tier left.
+    assert I._adversarial_should_run(_synth("HIGH"), high_stakes=True)
+    assert not I._adversarial_should_run(_synth("MEDIUM"), high_stakes=True)
+    assert not I._adversarial_should_run(_synth("LOW"), high_stakes=True)
 
 
 def test_no_tier_never_runs():
-    assert not I._adversarial_should_run(_synth("HIGH"), full=False, high_stakes=False)
+    assert not I._adversarial_should_run(_synth("HIGH"), high_stakes=False)
 
 
 # ── Flag registration ─────────────────────────────────────────────────────────────

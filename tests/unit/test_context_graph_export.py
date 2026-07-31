@@ -76,8 +76,10 @@ def _export(tmp_path, graph=None, **kw):
 
 # ── the flag contract ─────────────────────────────────────────────────────────
 
-def test_flag_off_writes_nothing(tmp_path):
-    """Default-off must be byte-identical: no return value AND no filesystem trace."""
+def test_flag_off_writes_nothing(tmp_path, monkeypatch):
+    """Forced off must be byte-identical: no return value AND no filesystem trace.
+    (Default-ON since flag strategy batch C — =0 is the operator escape hatch.)"""
+    monkeypatch.setenv("AUGHOR_GRAPH_EXPORT", "0")
     out = tmp_path / "pack"
     assert export_pack("shop", out, graph=_graph()) is None
     assert not out.exists()

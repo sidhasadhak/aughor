@@ -55,6 +55,7 @@ def test_canvas_update_records_a_revision(_on, monkeypatch, tmp_path):
 
 
 def test_canvas_update_is_unaffected_when_the_flag_is_off(monkeypatch, tmp_path):
+    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")   # escape hatch; default-ON
     monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
     cv = _canvas_store(monkeypatch, tmp_path)
     from aughor.canvas.models import CanvasScope
@@ -90,6 +91,7 @@ def test_card_update_records_a_revision_but_create_does_not(_on, monkeypatch, tm
 
 
 def test_card_upsert_is_unaffected_when_the_flag_is_off(monkeypatch, tmp_path):
+    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")   # escape hatch; default-ON
     monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
     ds = _dash_store(monkeypatch, tmp_path)
     from aughor.dashboard.models import DashboardCard
@@ -131,6 +133,7 @@ def test_corpus_mutations_record_revisions_and_predelete_state_survives(_on, mon
 
 
 def test_corpus_mutations_are_unaffected_when_the_flag_is_off(monkeypatch, tmp_path):
+    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")   # escape hatch; default-ON
     monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
     ev = _evals_store(monkeypatch, tmp_path)
 

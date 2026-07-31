@@ -125,9 +125,12 @@ def test_suggestions_carries_starters_only_when_flag_on(client, monkeypatch):
     monkeypatch.setattr("aughor.semantic.suggestions_cache.get_cached",
                         lambda cid, fp: [{"text": "cached q", "mode": "ask"}])
 
+    # Explicit =0 — the operator escape hatch, which is what "off" means now that the
+    # flag is default-ON (flag strategy batch A). An unset env would resolve on.
+    monkeypatch.setenv("AUGHOR_STARTERS_LIBRARY", "0")
     r = client.get("/suggestions", params={"connection_id": "fixture"})
     assert r.status_code == 200
-    assert "starters" not in r.json()                     # flag off → byte-identical
+    assert "starters" not in r.json()                     # forced off → byte-identical
 
     monkeypatch.setenv("AUGHOR_STARTERS_LIBRARY", "1")
     r = client.get("/suggestions", params={"connection_id": "fixture"})
