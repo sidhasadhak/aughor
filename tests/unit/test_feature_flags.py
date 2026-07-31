@@ -53,12 +53,30 @@ def test_auto_eligible_flag_env_semantics(monkeypatch):
 
 def test_plain_default_off_flag_env_semantics(monkeypatch):
     # A NON-auto-eligible default-off flag keeps the strict opt-in contract.
+    # `ai_sql` is the exemplar deliberately: it is INTENTIONALLY off (per-row LLM
+    # calls) and will never graduate, so this test never needs re-pointing again
+    # (its previous exemplar, specialist_packs, graduated 2026-07-31).
+    monkeypatch.delenv("AUGHOR_AI_SQL", raising=False)
+    assert flag_enabled("ai_sql") is False
+    monkeypatch.setenv("AUGHOR_AI_SQL", "1")
+    assert flag_enabled("ai_sql") is True
+    monkeypatch.setenv("AUGHOR_AI_SQL", "garbage")
+    assert flag_enabled("ai_sql") is False
+
+
+def test_specialist_packs_is_default_on(monkeypatch):
+    # Graduated 2026-07-31 (flag strategy batch 1, receipt 452a6fcebba4). What
+    # matters at default-on is the OPERATOR ESCAPE HATCH: an explicit falsy env
+    # value still kills steering outright.
+    assert FLAG_DEFAULT.get("specialist_packs") is True
     monkeypatch.delenv("AUGHOR_SPECIALIST_PACKS", raising=False)
-    assert flag_enabled("specialist_packs") is False
-    monkeypatch.setenv("AUGHOR_SPECIALIST_PACKS", "1")
     assert flag_enabled("specialist_packs") is True
+    for off in ("0", "false", "no", "off"):
+        monkeypatch.setenv("AUGHOR_SPECIALIST_PACKS", off)
+        assert flag_enabled("specialist_packs") is False, off
+    # default-on semantics: any non-off value stays on
     monkeypatch.setenv("AUGHOR_SPECIALIST_PACKS", "garbage")
-    assert flag_enabled("specialist_packs") is False
+    assert flag_enabled("specialist_packs") is True
 
 
 def test_ask_clarify_is_default_on(monkeypatch):

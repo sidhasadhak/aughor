@@ -265,6 +265,29 @@ FLAG_DEFAULT = {
     # refused with the authored sentence, and an active agent's retrieval is restricted
     # to its own documents (with none bound it sees none — never a fall-back to all).
     "agents.user_defined": True,
+    # Flag strategy batch 1 (2026-07-31) — graduated on a DETERMINISTIC data-gated claim,
+    # receipt `452a6fcebba4`, from run `c84f1e75a50c` of the suite
+    # `aughor/evals/specialist_packs_receipt.py` (8/8 stable over 3 iterations, 0 errors,
+    # 0 flaky, bar 1.0, no baseline — the same carve-out L4, N3, CR0 and Wave H used: a
+    # claim with no sampling has no noise floor and so needs none).
+    #
+    # The claim is NOT "packs make answers better" — a pack is authored domain expertise
+    # and nothing here can promise the author was right. It is that steering is DATA-GATED
+    # three gates deep: an INSTALLED pack whose manifest says `status: active`, matching
+    # the question, with a HUMAN-PINNED deploy binding on the exact connection
+    # (`save_binding`'s only product caller is the deploy endpoint behind
+    # `govern.guard("pack.bind")`, so a binding row IS a recorded human act). Until all
+    # three are earned, `injection_for_question` returns None and the planner context is
+    # byte-identical on and off. The repo's one shipped pack is `status: draft`, so a
+    # fresh clone holds zero active packs and the flip's whole observable effect is
+    # `GET /packs` reporting `enabled: true`.
+    #
+    # What this default-OFF was silently costing (the defect that ordered the batch):
+    # Wave H4's hire-an-analyst flow never consults this flag — hiring from a pack worked
+    # on a fresh clone, the pack bound, validation passed — but the steering half returned
+    # None, so a hired expert's expertise never injected, with no error anywhere. See
+    # docs/FLAG_STRATEGY_2026-07-31.md §2.
+    "specialist_packs": True,
 }
 
 # Human-facing copy for the Settings UI.
@@ -427,7 +450,7 @@ FLAG_META = {
     },
     "specialist_packs": {
         "label": "Specialist Agents (Domain Expertise Packs)",
-        "description": "Load user-built specialist packs (packs/) and let them steer the engine at intake. Off by default while the subsystem lands — see docs/DOMAIN_EXPERTISE_PACKS.md.",
+        "description": "Load user-built specialist packs (packs/) and let them steer the engine at intake — the pack's stance, grounded metric recipes and diagnostic questions prepended to the explore planner context. Steering is data-gated three gates deep: it requires an installed pack whose manifest says status: active, matching the question, AND a human-pinned deploy binding on the exact connection (propose → confirm → pin in the deploy UI; auto-proposals never steer). A hired agent's pack bindings restrict selection to its packs but never bypass the deploy gate. Default-ON since the 2026-07-31 flag-strategy batch 1, graduated on receipt `452a6fcebba4` (run `c84f1e75a50c` of aughor/evals/specialist_packs_receipt.py, 8/8 stable ×3): with no active pack or no pinned deployment the planner context is byte-identical on vs off, and the fresh-clone delta is exactly GET /packs reporting enabled: true (the shipped sample pack is status: draft). Force off with AUGHOR_SPECIALIST_PACKS=0 or a runtime override. See docs/DOMAIN_EXPERTISE_PACKS.md.",
     },
     "explore.parallel_subq": {
         "label": "Parallel explore sub-questions",

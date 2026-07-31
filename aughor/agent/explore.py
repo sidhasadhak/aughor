@@ -158,9 +158,10 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
         if scan_context else ""
     )
 
-    # Specialist-pack steering (Bet 3/Bet 1 intake hook) — flag-gated, off by default so a
-    # normal run is byte-identical. If an active pack owns this question AND grounds on the
-    # connection, prepend its persona + grounded recipes + diagnostics to the planner context.
+    # Specialist-pack steering (Bet 3/Bet 1 intake hook) — default-ON since the 2026-07-31
+    # flag-strategy batch 1 (receipt 452a6fcebba4), but data-gated three deep: an ACTIVE pack
+    # must own this question AND carry a human-pinned deploy binding on the connection, so a
+    # run with neither is byte-identical. Prepends persona + grounded recipes + diagnostics.
     steered_by = None
     try:
         # An explicit pre-rendered block (e.g. from the pack eval harness) forces steering for
