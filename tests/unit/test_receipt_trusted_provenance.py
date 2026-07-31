@@ -90,3 +90,70 @@ def test_the_real_chat_lineage_shape_end_to_end():
     trusted = next(r for r in rows if r["action"] == "trusted")
     assert trusted["fired"] is True
     assert trusted["caveat"] == EVAL_WARRANT
+
+
+# ── the deep path (Wave S2, second half) ─────────────────────────────────────────
+#
+# `guard_edges` used to be passed at exactly ONE call site — the chat path — so a deep
+# answer's receipt carried no guards at all and structurally could not report that it had
+# reused a verified pattern, while a quick answer on the same question could.
+#
+# These seed their OWN trusted library. `data/trusted_queries.json` is untracked, so a test
+# that read the developer's copy would pass here and fail on a fresh checkout — the same
+# "measuring the machine, not the code" mistake this wave already made once.
+
+import json
+import pytest
+
+
+@pytest.fixture()
+def seeded_library(tmp_path, monkeypatch):
+    """A two-entry trusted library, with the warrant sentence the promoter really writes."""
+    from aughor.semantic import trusted_queries as tq
+
+    store = tmp_path / "trusted_queries.json"
+    store.write_text(json.dumps([
+        {"id": "tq1", "connection_id": "c1",
+         "question": "How many rows are in the returns table?",
+         "sql": "SELECT count(*) FROM returns", "tables": ["returns"],
+         "note": EVAL_WARRANT, "tags": ["from_eval"]},
+        {"id": "tq2", "connection_id": "c1",
+         "question": "How many returns by reason were logged?",
+         "sql": "SELECT reason, count(*) FROM returns GROUP BY reason",
+         "tables": ["returns"], "note": EVAL_WARRANT, "tags": ["from_eval"]},
+    ]))
+    monkeypatch.setattr(tq, "_PATH", store)
+    return store
+
+
+def _du(question: str, connection_id: str = "c1"):
+    from aughor.semantic.data_understanding import build_data_understanding
+    return build_data_understanding(None, connection_id=connection_id, question=question)
+
+
+def test_the_deep_intake_records_which_trusted_patterns_it_used(seeded_library):
+    du = _du("How many rows are in the returns table?")
+    assert du.trusted_block, "precondition: this question matches the seeded library"
+    assert du.trusted_used, "the block went into the prompt but nothing recorded what was in it"
+    assert du.trusted_used[0]["question"] == "How many rows are in the returns table?"
+    assert "NOT independently checked" in du.trusted_used[0]["note"]
+
+
+def test_a_question_matching_nothing_records_nothing(seeded_library):
+    """The list and the claim must never disagree: no block ⇒ no provenance."""
+    du = _du("zzz nonsense qqq about unrelated widgets")
+    assert du.trusted_block == ""
+    assert du.trusted_used == []
+
+
+def test_the_deep_edges_reduce_to_the_same_receipt_rows_as_chat(seeded_library):
+    """One receipt reader serves both paths — the deep edge shape is the chat edge shape."""
+    du = _du("How many rows are in the returns table?")
+    edges = [{"relation": "trusted", "ref": f"query:{t['question'][:60]}", "detail": t["note"]}
+             for t in du.trusted_used]
+
+    rows = _guards_from_lineage(edges)
+
+    assert len(rows) == len(du.trusted_used) > 0
+    assert {r["action"] for r in rows} == {"trusted"}
+    assert rows[0]["caveat"] == du.trusted_used[0]["note"]
