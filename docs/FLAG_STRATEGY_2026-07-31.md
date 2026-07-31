@@ -166,10 +166,20 @@ overhead on real brief ticks; no LLM grid needed, just a cost number.
 the prompt?" pass over all 15 (the free `grid-budget` check) split the queue into what needs a
 model and what does not:
 
-- **Settled with ZERO LLM budget:** **`snapshot_receipts` — ✅ GRADUATED** (see below).
-  `search.rrf` and `explore.route_wide`'s routing half are also model-free (the rerank is
-  deterministic; the routing contract is already pinned by `evals/route_wide_eval.py`) — only
-  their *answer-quality* deltas need a grid.
+- **Settled with ZERO LLM budget:** **`snapshot_receipts` — ✅ GRADUATED** and **`search.rrf` —
+  ✅ SETTLED OFF on a measured negative** (see below). `explore.route_wide`'s routing half is
+  also model-free (already pinned by `evals/route_wide_eval.py`) — only its *answer-quality*
+  delta needs a grid.
+
+**✅ `search.rrf` SETTLED OFF** — not a hunch, a measurement. An honest known-item retrieval eval
+over the real 282-entry `data/kb/` corpus (definitional labels from each entry's own fields, real
+local embeddings, `aughor/evals/rrf_retrieval_eval.py`) found RRF ranks **worse** than the α-blend
+default — MRR 0.964 vs 0.977, recall@1 0.931 vs 0.957, consistent across the title and usage query
+regimes. The "the evals are the grid" note was optimistic (no labeled KB-retrieval suite existed);
+this built one with construction-honest labels and got a clean negative. RRF's target regime
+(recovering an exact-term hit the dense retriever buries) is not exercised by semantic queries and
+stays unproven, so the flag stays OFF but is not deleted — the mechanic is unit-proven and cheap to
+keep. Moved from the queue to `INTENTIONALLY_OFF` with the measured reason.
 - **A decision, not a grid:** `ada.causal_drill` is inert whenever `ada.parallel_lenses` is on
   (its serial-path twin), so its exit is coupled to the performance-profile call, not an
   independent A/B — delete it if/when the parallel profile becomes the default.
@@ -180,10 +190,10 @@ model and what does not:
   byte-identical / no-call unless the fixture carries the data (corrections, a built graph,
   declared actions) — grid only where that data exists; the off-state no-op is already unit-proven.
 
-**✅ `snapshot_receipts` GRADUATED** (receipt `f1cd50a45a96`, run `4e96751b95c2` of
+**✅ `snapshot_receipts` GRADUATED** (receipt `2dee7a36c03f`, run `11de013bb901` of
 `aughor/evals/snapshot_receipts_receipt.py`, 5/5 stable ×3) — its exit was decidable without a
 model. Cost: one metadata `COUNT(*)` per finding table, size-independent on DuckDB (row counts
-are metadata), measured **p95 0.35ms** for a 3-table finding vs E1's 5ms bar. Reconcile: already
+are metadata), measured **median ~0.2ms** for a 3-table finding vs E1's 5ms bar. Reconcile: already
 one mechanism — `kernel/freeze.py` imports `data_version` *from* `db/snapshot.py`, so a frozen
 artifact and a pinned finding share one function. Additive/fail-open (off ⇒ `data_version` is
 None; a broken probe ⇒ None, never blocks the emit).

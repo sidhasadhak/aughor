@@ -456,9 +456,9 @@ FLAG_DEFAULT = {
     # Experiment-queue settle (2026-07-31, batch D) — snapshot_receipts graduated WITHOUT
     # an A/B grid because its exit question was decidable without a model. The cost half:
     # the per-emit probe is one metadata COUNT(*) per finding table, size-independent
-    # because DuckDB keeps row counts in metadata — measured p95 0.35ms for a 3-table
-    # finding, against E1's pre-registered 5ms bar (run `4e96751b95c2` of
-    # `aughor/evals/snapshot_receipts_receipt.py`, 5/5 stable ×3, receipt `f1cd50a45a96`).
+    # because DuckDB keeps row counts in metadata — measured median ~0.2ms for a 3-table
+    # finding, against E1's pre-registered 5ms bar (run `11de013bb901` of
+    # `aughor/evals/snapshot_receipts_receipt.py`, 5/5 stable ×3, receipt `2dee7a36c03f`).
     # The reconcile half ("two pinning mechanisms should be one") was already true by
     # construction: Wave V4's `kernel/freeze.py` imports `data_version` FROM `db/snapshot.py`,
     # so a frozen artifact and a snapshot-pinned finding pin against one function. The
@@ -583,7 +583,7 @@ FLAG_META = {
     },
     "search.rrf": {
         "label": "Reciprocal Rank Fusion (hybrid retrieval)",
-        "description": "Fuse the vector and lexical (BM25) rankings in hybrid_rerank by Reciprocal Rank Fusion (rank-based, k=60) instead of the min-max α-blend. Rank-based fusion is robust to the score-scale mismatch between Qdrant cosine and BM25 that α-blending is sensitive to; it preserves vector order when there is no lexical signal, so it is a safe A/B on the KB-retrieval evals. Off by default = byte-identical (α-blend). Rec 6 of the combined platform study.",
+        "description": "Fuse the vector and lexical (BM25) rankings in hybrid_rerank by Reciprocal Rank Fusion (rank-based, k=60) instead of the min-max α-blend. Rank-based fusion is robust to the score-scale mismatch between Qdrant cosine and BM25 that α-blending is sensitive to, and preserves vector order when there is no lexical signal. MEASURED and kept OFF (2026-07-31): an honest known-item retrieval eval over the real 282-entry data/kb corpus (aughor/evals/rrf_retrieval_eval.py) found RRF ranks WORSE than the α-blend default — MRR 0.964 vs 0.977, recall@1 0.931 vs 0.957 — so flipping it would regress retrieval on realistic queries. Force ON with AUGHOR_SEARCH_RRF=1 to try RRF (e.g. on a keyword-heavy corpus where the buried-exact-term case dominates). Rec 6 of the combined platform study.",
     },
     "explorer.manifest_driven": {
         "label": "Manifest-driven deterministic exploration",
@@ -619,7 +619,7 @@ FLAG_META = {
     },
     "snapshot_receipts": {
         "label": "Snapshot-pinned receipts",
-        "description": "Pin every finding to the exact data version it ran against (reproducible-as-of), so a re-validate can tell a MOVED dataset apart from a mis-derived finding — the same data_version Wave V4's freeze pins an artifact to. The version probe is one metadata COUNT(*) per finding table (size-independent on DuckDB; the native snapshot id on DuckLake), added at dossier emit off the answer path. Default-ON since the 2026-07-31 flag strategy experiment-queue settle (batch D, receipt `f1cd50a45a96`): measured p95 0.35ms for a 3-table finding against E1's 5ms bar, additive (off ⇒ the dossier's data_version is None, byte-identical otherwise), and fail-open (a probe that cannot run yields None, never blocking the emit). Force off with AUGHOR_SNAPSHOT_RECEIPTS=0 or a runtime override.",
+        "description": "Pin every finding to the exact data version it ran against (reproducible-as-of), so a re-validate can tell a MOVED dataset apart from a mis-derived finding — the same data_version Wave V4's freeze pins an artifact to. The version probe is one metadata COUNT(*) per finding table (size-independent on DuckDB; the native snapshot id on DuckLake), added at dossier emit off the answer path. Default-ON since the 2026-07-31 flag strategy experiment-queue settle (batch D, receipt `2dee7a36c03f`): measured median ~0.2ms for a 3-table finding against E1's 5ms bar, additive (off ⇒ the dossier's data_version is None, byte-identical otherwise), and fail-open (a probe that cannot run yields None, never blocking the emit). Force off with AUGHOR_SNAPSHOT_RECEIPTS=0 or a runtime override.",
     },
     "explorer.synthesis_incremental": {
         "label": "Incremental synthesis",
@@ -886,6 +886,18 @@ INTENTIONALLY_OFF: dict = {
                                 "legacy schedulers — the win is one loop, not a flag",
     "explorer.continuous": "recurring background spend; revisit now that "
                            "ops.metered_monitors (its declared gate) is default-ON",
+    # Settled 2026-07-31 (batch D) by a MEASURED negative result, not a hunch: an honest
+    # known-item retrieval eval over the real 282-entry data/kb corpus (definitional
+    # labels, local embeddings, `aughor/evals/rrf_retrieval_eval.py`) found RRF ranks
+    # WORSE than the α-blend default — MRR 0.964 vs 0.977, recall@1 0.931 vs 0.957,
+    # consistently across the title and usage query regimes. RRF's hypothesised benefit
+    # (recovering an exact-term hit the dense retriever buries) is not exercised by
+    # realistic semantic queries and stays unproven; on the realistic distribution it is
+    # a small but consistent regression. Keep α-blend. Revisit only if a keyword-buried-hit
+    # regime or real relevance labels show RRF winning — the RRF mechanic itself stays
+    # unit-proven (scale-invariant) in test_lexical.py, so the code is cheap to keep.
+    "search.rrf": "measured worse than the α-blend default on the real KB (MRR 0.964 vs "
+                  "0.977); keep off unless a keyword-buried-hit eval shows RRF winning",
 }
 
 #: Group D — adds LLM calls (or changes prompts/routing) for a claimed quality gain;
@@ -914,13 +926,12 @@ EXPERIMENT: dict = {
                         "performance profile makes parallel the default",
     "deep_analysis.evidence_stubs": "drops rows — its own description forbids graduation before "
                           "an A/B against the full-evidence baseline",
-    "search.rrf": "RRF vs α-blend on the KB-retrieval evals (cheap; the evals are the grid)",
     "explorer.manifest_driven": "does deterministic coverage match LLM-loop quality?",
     "kinetic.agent_actions": "does the action proposer earn its LLM call?",
     "semops.champion_validate": "does champion validation catch enough cheap-tier "
                                 "errors to pay one extra sample call per filter?",
     # snapshot_receipts SETTLED 2026-07-31 (batch D) and moved to FLAG_DEFAULT — its exit
-    # was decidable without a grid: cost measured sub-ms (receipt f1cd50a45a96), reconcile
+    # was decidable without a grid: cost measured sub-ms (receipt 2dee7a36c03f), reconcile
     # already one mechanism (freeze.py reuses snapshot.data_version).
 }
 
