@@ -19,7 +19,11 @@ import os
 import threading
 from typing import Optional
 
-PUBLIC_RECEIPT_VERSION = 1
+#: Bumped to 2 in Wave S2: additive only (`resolved_readings`, `learning`, `activations`).
+#: The projection is rebuilt and re-signed on every read, so existing artifacts gain the new
+#: fields rather than failing verification — but a consumer that pinned v1 should know the
+#: shape grew.
+PUBLIC_RECEIPT_VERSION = 2
 
 # ledger artifact `kind` → the user-facing mode on the receipt.
 _MODE = {
@@ -231,6 +235,18 @@ def build_public_receipt(raw: dict, *, connection: Optional[dict] = None,
         # Null is the honest answer for an anonymous ask — the alternative, an empty agent
         # object, would render as a nameless agent on every receipt ever issued.
         "agent": payload.get("agent") or None,
+        # Wave S2 — three things only the older per-mode panel could show, so the unified
+        # receipt could not replace it without losing them. Rare but real: measured over 835
+        # answer receipts, `learning` appears on 27, `activations` on 2, and there are 26
+        # `resolved_ambiguity` edges. Rare is the reason to carry them, not to drop them —
+        # they are exactly the runs where the loop did something worth seeing.
+        "resolved_readings": [
+            {"reading": (e.get("ref") or "").split("reading:", 1)[-1],
+             "note": e.get("detail") or ""}
+            for e in lineage if e.get("relation") == "resolved_ambiguity"
+        ],
+        "learning": payload.get("learning") or None,
+        "activations": list(payload.get("activations") or []),
         "cost": raw.get("cost"),
     }
     if signed:

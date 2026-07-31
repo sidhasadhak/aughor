@@ -3746,6 +3746,14 @@ export interface PublicReceipt {
   confidence: { level: string | null; capped_by: string | null };
   data_trust: { window: string | null; coverage_notes: string | null };
   model: { role: string; id: string | null };
+  /** Wave H2 — the user-defined persona this answer ran as, or null when unbound. */
+  agent: { id: string; name: string } | null;
+  /** Ambiguities this connection settled earlier that this answer applied (I6). */
+  resolved_readings: { reading: string; note: string }[];
+  /** What the closed loop learned on this run (Wave 1·E4), or null when it ran nothing. */
+  learning: LearningReceiptPayload | null;
+  /** Self-gating capabilities whose trigger fired this run (Wave 1·E3). */
+  activations: { capability: string; reason: string; count: number }[];
   cost: Record<string, number | string> | null;
   signature: string;                     // HMAC — server-issued proof
 }

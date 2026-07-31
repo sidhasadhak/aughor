@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { TrustReceipt } from "./TrustReceipt";
 import { WhyThisNumber } from "./WhyThisNumber";
 
 import { API_BASE as BASE } from "@/lib/config";
@@ -882,12 +881,15 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         onEscalate={() => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, depth: "deep", skipClarify: true })}
                       />
                     )}
-                    {/* B-9 — Trust Receipt on every answered turn that has one:
-                        a chat answer (receiptId) or an agentic ADA report
-                        (investigationId). */}
+                    {/* Wave S2 — ONE receipt surface per answer. Two panels used to render
+                        here (B-9's inline badge row over the per-mode route, and WP-10's
+                        drawer over the unified /receipt/{id}); they overlapped on SQL,
+                        metrics and cost and disagreed on everything else. The unified
+                        receipt now carries what only the old one showed — resolved
+                        readings, the Learning Receipt, activations and "Add as eval case" —
+                        so the duplicate could go without losing evidence. */}
                     {turn.status === "done" && turn.receiptId && (
                       <div className="flex items-center gap-1.5">
-                        <TrustReceipt connectionId={connectionId} receiptId={turn.receiptId} question={turn.question} />
                         {/* R10 — thumbs: helpful teaches the learned table prior */}
                         {thumbsDone.has(turn.receiptId) ? (
                           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
@@ -906,9 +908,6 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                           </>
                         )}
                       </div>
-                    )}
-                    {turn.status === "done" && turn.adaReport && turn.investigationId && (
-                      <TrustReceipt connectionId={connectionId} receiptId={turn.investigationId} kind="ada" question={turn.question} />
                     )}
                     {/* WP-10 — "Why this number": opens the unified signed receipt (GET /receipt/{id}). */}
                     {turn.status === "done" && turn.publicReceiptId && (

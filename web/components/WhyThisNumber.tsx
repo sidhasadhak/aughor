@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { getPublicReceipt, type PublicReceipt, type PublicReceiptGuard } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
+import { AddToEvalSuite } from "@/components/AddToEvalSuite";
 import { costSummary } from "@/lib/cost";
 import { formatTimestamp } from "@/lib/format";
 
@@ -90,6 +91,19 @@ function Drawer({ receiptId, onClose }: { receiptId: string; onClose: () => void
   const allRows: PublicReceiptGuard[] = rec?.guards ?? [];
   const guards = allRows.filter(g => g.action !== "trusted");
   const trusted = allRows.filter(g => g.action === "trusted");
+
+  // The Learning Receipt as sentences. Only what this run actually did — a zeroed
+  // counter is "the loop ran and changed nothing", which is not worth a line.
+  const l = rec?.learning;
+  const learned: string[] = [];
+  if (l?.readings_reused) {
+    learned.push(`reused ${l.readings_reused} resolved reading${l.readings_reused !== 1 ? "s" : ""}` +
+      (l.corrections_applied ? ` (${l.corrections_applied} correction${l.corrections_applied !== 1 ? "s" : ""})` : ""));
+  }
+  if (l?.resolutions_crystallized) {
+    learned.push(`crystallized ${l.resolutions_crystallized} new resolution${l.resolutions_crystallized !== 1 ? "s" : ""}`);
+  }
+  if (l?.trusted_program_replayed) learned.push("replayed a trusted plan");
 
   return (
     <div
@@ -177,6 +191,41 @@ function Drawer({ receiptId, onClose }: { receiptId: string; onClose: () => void
                 </Section>
               )}
 
+              {rec.resolved_readings.length > 0 && (
+                <Section title="Readings this connection already settled">
+                  <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                    Applied so this question does not re-ask what was decided before.
+                  </div>
+                  {rec.resolved_readings.map((r, i) => (
+                    <div key={`rr:${i}`} className="aug-fs-xs"
+                      style={{ color: "var(--t2)", lineHeight: 1.5, marginTop: 4 }}>
+                      {r.reading}{r.note ? ` — ${r.note}` : ""}
+                    </div>
+                  ))}
+                </Section>
+              )}
+
+              {learned.length > 0 && (
+                <Section title="What the loop learned this run">
+                  <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+                    {learned.join(" · ")}.
+                  </div>
+                </Section>
+              )}
+
+              {rec.activations.length > 0 && (
+                <Section title="Capabilities whose trigger fired">
+                  {rec.activations.map((a, i) => (
+                    <div key={`ac:${i}`} className="aug-fs-xs"
+                      style={{ color: "var(--t2)", lineHeight: 1.5, marginTop: 2 }}>
+                      {a.capability.replace(/^[a-z]+\./, "").replace(/[._]/g, " ")}
+                      {a.reason ? ` — activated because ${a.reason}` : ""}
+                      {a.count > 1 ? ` (×${a.count})` : ""}
+                    </div>
+                  ))}
+                </Section>
+              )}
+
               {rec.caveats.length > 0 && (
                 <Section title="Caveats">
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -225,6 +274,14 @@ function Drawer({ receiptId, onClose }: { receiptId: string; onClose: () => void
                 {costSummary(rec.cost) && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Cost: {costSummary(rec.cost)}</div>}
                 {rec.created_at && <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>Recorded {formatTimestamp(rec.created_at)}</div>}
                 <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>Receipt {rec.id} · server-signed (HMAC)</div>
+                {/* E6 — capture this exact question + executed SQL as an eval case. Moved
+                    here from the older per-mode panel, which was the only place it lived. */}
+                {rec.connection.id && rec.executed_sql[0]?.sql && (
+                  <div style={{ marginTop: 4 }}>
+                    <AddToEvalSuite connectionId={rec.connection.id}
+                      sql={rec.executed_sql[0].sql} question={rec.question} />
+                  </div>
+                )}
               </div>
             </>
           )}

@@ -157,3 +157,66 @@ def test_the_deep_edges_reduce_to_the_same_receipt_rows_as_chat(seeded_library):
     assert len(rows) == len(du.trusted_used) > 0
     assert {r["action"] for r in rows} == {"trusted"}
     assert rows[0]["caveat"] == du.trusted_used[0]["note"]
+
+
+# ── the unified receipt carries what only the old panel could show (Wave S2) ──────
+#
+# `TrustReceipt.tsx` and `WhyThisNumber.tsx` both render on the same answer, and the
+# arc doc calls collapsing them "unavoidable S2 work". But the older panel is not a
+# duplicate: it alone showed resolved readings, the Learning Receipt and the Activation
+# Receipt, none of which the unified projection carried. Measured over 835 answer
+# receipts: learning on 27, activations on 2, and 26 resolved_ambiguity edges. Deleting
+# the panel first would have destroyed those.
+
+def _raw(payload: dict, lineage: list) -> dict:
+    """The shape `build_public_receipt` actually takes: {artifact, lineage, job, cost}."""
+    return {
+        "artifact": {"id": "art1", "kind": "chat_answer", "conn_id": "c1", "version": 1,
+                     "created_at": "2026-07-31T00:00:00Z", "payload": payload},
+        "lineage": lineage, "job": None, "cost": None,
+    }
+
+
+def _build(payload=None, lineage=None, signed=False):
+    from aughor.trust.receipt import build_public_receipt
+    return build_public_receipt(_raw(payload or {}, lineage or []), signed=signed)
+
+
+def test_resolved_readings_reach_the_unified_receipt():
+    r = _build(lineage=[{"relation": "resolved_ambiguity", "ref": "reading:revenue = net",
+                         "detail": "settled on 2026-07-02 by a reviewer"}])
+    assert r["resolved_readings"] == [
+        {"reading": "revenue = net", "note": "settled on 2026-07-02 by a reviewer"}]
+
+
+def test_learning_and_activations_reach_the_unified_receipt():
+    r = _build(payload={
+        "learning": {"readings_reused": 2, "resolutions_crystallized": 1,
+                     "corrections_applied": 0, "trusted_program_replayed": 0},
+        "activations": [{"capability": "ada.premise_check", "reason": "a claim was checkable",
+                         "count": 1}],
+    })
+    assert r["learning"]["resolutions_crystallized"] == 1
+    assert r["activations"][0]["capability"] == "ada.premise_check"
+
+
+def test_an_answer_that_learned_nothing_says_so_without_inventing_shape():
+    """Null, not an empty learning object: a zeroed Learning Receipt would render as
+    'the loop ran and learned nothing', which is a different claim from 'no loop ran'."""
+    r = _build()
+    assert r["learning"] is None
+    assert r["activations"] == []
+    assert r["resolved_readings"] == []
+
+
+def test_the_new_fields_are_inside_the_signature():
+    """Additive fields still have to be tamper-evident, or the collapse would move
+    evidence from a signed surface to an unsigned one."""
+    from aughor.trust.receipt import verify
+    signed = _build(payload={"learning": {"readings_reused": 1, "resolutions_crystallized": 0,
+                                          "corrections_applied": 0,
+                                          "trusted_program_replayed": 0}}, signed=True)
+    assert verify(signed) is True
+
+    signed["learning"]["readings_reused"] = 99
+    assert verify(signed) is False, "the learning receipt is outside the signature"
