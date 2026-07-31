@@ -51,6 +51,11 @@ KNOWN_MODELS: dict[str, tuple[str, ...]] = {
     # Deliberately EXCLUDED: google/lyria-3-*-preview. They appear in
     # OpenRouter's Text tab and the API reports them free, but Lyria is a
     # music-generation model — offering it where a SQL writer is chosen is a trap.
+    #
+    # This floor stays all-`:free` on purpose (test_openrouter_floor_is_all_free_tier):
+    # a paid id here would start costing money the moment someone picked it. A checked
+    # paid id — `deepseek/deepseek-v4-flash` — lives in the vouched matrix instead, and
+    # reaches the picker only via `add_custom_model`, which is the operator's own act.
     "openrouter": (
         "nvidia/nemotron-3-ultra-550b-a55b:free",             # 1M ctx · coding 49.3 · the ceiling
         "google/gemma-4-31b-it:free",                         # coding 43.4 @ 1089ms · best balance
