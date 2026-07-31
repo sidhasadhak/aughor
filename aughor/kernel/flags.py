@@ -49,7 +49,11 @@ FLAG_ENV = {
     "capability.pipeline_live": "AUGHOR_CAPABILITY_PIPELINE_LIVE",
     "ada.premise_check": "AUGHOR_PREMISE_CHECK",
     "ada.causal_drill": "AUGHOR_CAUSAL_DRILL",
-    "ada.adversarial_verify": "AUGHOR_ADA_ADVERSARIAL",
+    # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
+    # strategy §4G): the always-challenge tier was superseded by the materiality-gated
+    # auto tier below, had no constituency, and a deleted flag is the only disposition
+    # that actually shrinks the registry. One-off audits can reproduce it by asking the
+    # question directly; the refuter itself (run_refutation) is unchanged.
     "ada.adversarial_high_stakes": "AUGHOR_ADA_ADVERSARIAL_HIGH_STAKES",
     "ada.pin_canonical_metric": "AUGHOR_ADA_PIN_CANONICAL_METRIC",
     "ada.progress_events": "AUGHOR_ADA_PROGRESS_EVENTS",
@@ -596,13 +600,9 @@ FLAG_META = {
         "label": "Causal-dimension priority + WHERE→WHY drill",
         "description": "The cross-section scan floats diagnostic dimensions (reason/condition/defect) ahead of the descriptive taxonomy so they survive the query cap, and after localising WHERE it auto-drills event-only dims into the WHY composition lens instead of stopping. Only affects the serial scan path (inert when 'Parallel Deep-Analysis lenses' is on, which lands the same idea in-lens). Off by default.",
     },
-    "ada.adversarial_verify": {
-        "label": "Adversarial verify decision-changing verdicts",
-        "description": "ReFoRCE-style confidence-tiered verification: when a deep analysis lands a DECISION-CHANGING verdict (a premise rejection — 'X is not the problem' — or an abstention — 'within normal variance'), spend ONE extra skeptic LLM call to try to REFUTE it before shipping; a survived refutation caps confidence and records the objection. Fires only on the few high-stakes conclusions, never per finding. Off by default (adds an LLM call to those runs).",
-    },
     "ada.adversarial_high_stakes": {
         "label": "Adversarial verify — high-stakes only",
-        "description": "The cheaper, materiality-gated tier of adversarial verification: challenge a decision-changing verdict (premise rejection / abstention) with one skeptic LLM call ONLY when it is asserted with HIGH confidence — the costly-if-wrong minority, and the only case where the HIGH→MEDIUM confidence cap can bite. Lets the refuter earn a place on the default path without paying an LLM call on the many MEDIUM/LOW verdicts. Off by default; supersedes 'Adversarial verify decision-changing verdicts' (the full tier) for cost.",
+        "description": "The materiality-gated tier of adversarial verification (ReFoRCE-style): challenge a decision-changing verdict (premise rejection / abstention) with one skeptic LLM call ONLY when it is asserted with HIGH confidence — the costly-if-wrong minority, and the only case where the HIGH→MEDIUM confidence cap can bite. Lets the refuter earn a place on the default path without paying an LLM call on the many MEDIUM/LOW verdicts. The always-challenge full tier (`ada.adversarial_verify`) was deleted 2026-07-31 (flag strategy §4G) — this is the one refuter gate.",
     },
     "ada.pin_canonical_metric": {
         "label": "Pin governed metric at Deep-Analysis intake",
@@ -714,6 +714,130 @@ CAPABILITY_TRIGGER: dict = {
     "ada.pin_canonical_metric": "a governed metric matches the question and its canonical SQL dry-runs clean",
     "ask.overview": "the question asks for a broad overview with no metric, entity, or time window",
 }
+
+
+# ── The disposition ratchet (flag strategy §5.1, 2026-07-31) ─────────────────────
+# Every registered flag lives in EXACTLY ONE disposition — FLAG_DEFAULT (graduated),
+# AUTO_ELIGIBLE (self-gating), or one of the declared sets below — and
+# tests/unit/test_flag_dispositions.py enforces the partition. This converts "off"
+# from an accident into a decision: a new flag that declares no exit fails CI, which
+# is what stops the registry regrowing past human comprehension (it hit 91 before
+# the 2026-07-31 study; ~1/day through July). A flag is a loan, not an asset.
+
+#: Deliberately OFF, forever or until the named condition — the only category that
+#: should stay a raw manual toggle.
+INTENTIONALLY_OFF: dict = {
+    "ai_sql": "per-row LLM calls — its own description says 'enable deliberately'",
+    "obs.prompt_capture": "captures prompt CONTENT — the most sensitive material in a "
+                          "deployment; deliberate, bounded-window use only",
+    "automations.adopt_legacy": "changes an outward-send path (brief delivery); adopt "
+                                "deliberately after the engine soaks, then DELETE the "
+                                "legacy schedulers — the win is one loop, not a flag",
+    "explorer.continuous": "recurring background spend; revisit now that "
+                           "ops.metered_monitors (its declared gate) is default-ON",
+}
+
+#: Group D — adds LLM calls (or changes prompts/routing) for a claimed quality gain;
+#: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
+#: "does the flag change the prompt?" before buying any grid.
+EXPERIMENT: dict = {
+    "closed_loop": "does reading captured corrections back into the planner improve "
+                   "answers on your data? (its own description names this exit)",
+    "graph.readback": "does the injected graph slice improve plans enough to pay its "
+                      "prompt cost?",
+    "explore.route_wide": "do landscape questions answer better through the explore wave?",
+    "explorer.synthesis_incremental": "is mid-run synthesis worth the extra LLM calls?",
+    "ada.why_where_interaction": "does the WHY×WHERE cross query change conclusions?",
+    "ada.why_deepen": "do the peer-benchmark + drill queries change the fix target?",
+    "ada.causal_drill": "serial-path twin of the parallel lenses — delete it if the "
+                        "performance profile makes parallel the default",
+    "ada.evidence_stubs": "drops rows — its own description forbids graduation before "
+                          "an A/B against the full-evidence baseline",
+    "search.rrf": "RRF vs α-blend on the KB-retrieval evals (cheap; the evals are the grid)",
+    "explorer.manifest_driven": "does deterministic coverage match LLM-loop quality?",
+    "kinetic.agent_actions": "does the action proposer earn its LLM call?",
+    "semops.champion_validate": "does champion validation catch enough cheap-tier "
+                                "errors to pay one extra sample call per filter?",
+    "snapshot_receipts": "measure the per-emit version-probe cost, and reconcile with "
+                         "V4's data_version pin — two pinning mechanisms should be one",
+}
+
+#: Group E — wall-clock vs concurrent-request trades. The exit is ONE performance
+#: profile (Conservative / Balanced / Fast) that sets these together; under a 20 RPM
+#: free-tier transport, defaulting them on individually is actively wrong today.
+COST_LATENCY_PROFILE: frozenset = frozenset({
+    "explore.parallel_subq", "ada.parallel_lenses", "ada.parallel_phases",
+    "ada.parallel_why_lenses",
+})
+
+#: Group F — a fork of two maintained code paths with a completion obligation: flip,
+#: soak, then DELETE the flag and the losing path. A migration flag with no completion
+#: date is a permanent fork.
+MIGRATION: dict = {
+    "semantic.resolve_live": "AL-05 — complete the resolved-Semantic-plane migration",
+    "semantic.contract_live": "REC-U10 — 'byte-identical output today' per its own "
+                              "description; flip, soak, delete",
+    "capability.pipeline_live": "AL-02 — adopt the capability pipeline answer path or "
+                                "remove it",
+    "plan.program": "a whole alternate executor path — adopt or kill",
+}
+
+#: Groups B/C + bundles — dispositioned to graduate, receipts pending. Each entry
+#: names the receipt shape (or conversion) that is its exit.
+GRADUATION_QUEUE: dict = {
+    # the data-gated batch (the #241 receipt shape: user-created data + explicit request)
+    "govern.clearances": "data-gated: untagged securables are always allowed",
+    "govern.usage_caps": "data-gated: with no caps declared every decision allows",
+    "rbac.row_policy": "data-gated: triple-gated already; no policies ⇒ no-op; fails closed",
+    "kinetic.actions": "data-gated: no declared actions ⇒ empty overlay, byte-identical",
+    "kinetic.overlay": "data-gated: no human edits ⇒ byte-identical results",
+    "lifecycle.freeze": "data-gated: nothing is frozen until a user freezes",
+    "lifecycle.publish": "data-gated once verified that pre-existing unversioned "
+                         "artifacts stay visible to viewers (else backfill first)",
+    "automations.source_probes": "data-gated: probes only tables a user-created "
+                                 "automation watches — creating one is the consent",
+    "automations.proposals": "data-gated: nothing staged unless the proposer runs",
+    "ask.brief_context": "data-gated: empty when no brief is cached",
+    "freshness.resolved_rebuild": "graduate after measuring probe overhead on real "
+                                  "brief ticks (no LLM grid needed — one cost number)",
+    # conversions (group C)
+    "ask.conversation_context": "convert to AUTO_ELIGIBLE — trigger: the turn is a "
+                                "follow-up (ask.resolve_first is already auto)",
+    "obs.mlflow": "self-gate on AUGHOR_MLFLOW_TRACKING_URI being set, then delete the flag",
+    "agui.endpoint": "invocation-gated additive route — calling it is the consent",
+    "federation.remote_join": "invocation-gated route — calling it is the consent",
+    "federation.planner": "invocation-gated route (one LLM call per explicit invocation)",
+    # the Knowledge Graph bundle (one decision; graph.readback stays in EXPERIMENT)
+    "graph.build": "Knowledge Graph bundle — graduate with freshness/surface/tour/export",
+    "graph.freshness": "Knowledge Graph bundle",
+    "graph.surface": "Knowledge Graph bundle",
+    "graph.tour": "Knowledge Graph bundle (invocation-gated narration)",
+    "graph.export": "Knowledge Graph bundle (invocation-gated export)",
+    # the connection-birth bundle (R8/R11/R12/R14 — one decision)
+    "birth.job": "connection-birth bundle — graduate with autodoc/column_config/popularity",
+    "ontology.autodoc": "connection-birth bundle",
+    "ontology.column_config": "connection-birth bundle",
+    "obs.popularity": "connection-birth bundle",
+}
+
+
+def flag_disposition(name: str) -> str:
+    """The declared disposition for a registered flag — the UI's grouping key."""
+    if name in FLAG_DEFAULT:
+        return "default_on"
+    if name in AUTO_ELIGIBLE:
+        return "auto"
+    if name in INTENTIONALLY_OFF:
+        return "intentionally_off"
+    if name in EXPERIMENT:
+        return "experiment"
+    if name in COST_LATENCY_PROFILE:
+        return "performance_profile"
+    if name in MIGRATION:
+        return "migration"
+    if name in GRADUATION_QUEUE:
+        return "graduation_queue"
+    return "undispositioned"   # the ratchet test fails on this
 
 
 def _auto_mode_active() -> bool:
@@ -880,5 +1004,14 @@ def list_flags() -> dict:
             "env_var": var,
             "label": meta.get("label", name),
             "description": meta.get("description", ""),
+            # The declared disposition (flag strategy §5.1) — lets the Settings UI
+            # group by KIND instead of rendering one flat list of toggles.
+            "disposition": flag_disposition(name),
+            **({"disposition_note": INTENTIONALLY_OFF.get(name)
+                                    or EXPERIMENT.get(name)
+                                    or MIGRATION.get(name)
+                                    or GRADUATION_QUEUE.get(name)}
+               if flag_disposition(name) in ("intentionally_off", "experiment",
+                                             "migration", "graduation_queue") else {}),
         }
     return out

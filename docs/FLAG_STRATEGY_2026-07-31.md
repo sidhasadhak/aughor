@@ -189,6 +189,8 @@ All stalled since ~2026-07-05 — a month of maintaining two code paths each:
 - `ada.adversarial_verify` — superseded by `ada.adversarial_high_stakes` (auto-eligible,
   materiality-gated) per its own description. The full "challenge every verdict" tier has no
   constituency; the run-scoped `flag_overrides` plane can resurrect it for any one-off audit.
+  **✅ DELETED 2026-07-31** — registry 91 → 90; `_adversarial_should_run` lost its `full`
+  tier; a test pins the deletion so a re-registration cannot slip back silently.
 
 ### H. Intentionally OFF — declare the reason, ratchet it (4)
 
@@ -219,6 +221,11 @@ All stalled since ~2026-07-05 — a month of maintaining two code paths each:
    `AUTO_ELIGIBLE` / `INTENTIONALLY_OFF{reason}` / `EXPERIMENT{measure-by}` /
    `MIGRATION{delete-by}`. A new flag that declares no exit fails CI. This converts "off" from an
    accident into a decision, permanently.
+   **✅ BUILT 2026-07-31** — seven declared sets in `aughor/kernel/flags.py` (the two above
+   plus `COST_LATENCY_PROFILE` and `GRADUATION_QUEUE`), partition enforced by
+   `tests/unit/test_flag_dispositions.py` (a failure names the flag), deleted flags pinned as
+   tombstones, and `list_flags()` now carries `disposition` + `disposition_note` so the
+   Settings UI can group by kind instead of rendering one flat list.
 2. **A flag is a loan, not an asset.** Born with an exit plan; the five receipt kinds (sampled
    delta · L4 equivalence · N3 artifact · CR0 observationally-free · #241 data-gated) are the
    repayment schedule — and four of the five cost zero LLM budget.
