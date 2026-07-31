@@ -315,12 +315,36 @@ read at call time + the conftest isolation list.
    ✅ C done 2026-07-31 (same commit as B); G done earlier; bundles done in batch C
    (run `2dbff8c60c10`) — the queue is now empty.
 5. **Group F** — migrations: flip `semantic.contract_live` first (byte-identical today).
-   ✅ contract_live flipped 2026-07-31 (receipt `e801ff3a4448`); three migrations remain.
+   ✅ Done 2026-07-31 (batch C): `semantic.contract_live`, `semantic.resolve_live` and
+   `capability.pipeline_live` all flipped default-ON on proven claims; `plan.program` moved to
+   EXPERIMENT (its /ask auto-depth hook). **MIGRATION is now empty** — the remaining obligation is
+   deleting the legacy paths once soaked (noted at each FLAG_DEFAULT entry).
 6. **The ratchet + UI restructure** — after dispositions are code, not prose.
+   ✅ Done 2026-07-31 (batches A/B): `test_flag_dispositions.py` enforces the partition;
+   `list_flags()` carries the disposition; the Settings panel groups by kind with search,
+   collapsible sections and the performance-profile selector.
 7. **Group D** — the E4 queue, run as grid budget allows; each result either graduates the flag
    or moves it to INTENTIONALLY_OFF with the measured reason.
+   🔶 **Free tier done 2026-08-01 (batch D):** `snapshot_receipts` GRADUATED (cost measured, no
+   grid — receipt `2dee7a36c03f`); `search.rrf` SETTLED OFF on a measured negative
+   (`aughor/evals/rrf_retrieval_eval.py`: RRF MRR 0.964 < α-blend 0.977 on the real KB) → moved to
+   INTENTIONALLY_OFF. **12 flags remain — all budget-bound LLM grids or coupled decisions**
+   (see §D); none started (no request budget spent). `ada.causal_drill` rides the perf-profile
+   call; `explore.route_wide` routing is settled, only its answer-quality delta is open.
 
 Discipline per flip (hard-won): simulate with `AUGHOR_<VAR>=1 pytest` BEFORE editing
 `FLAG_DEFAULT` (off-state tests reach "off" several ways — `delenv`, never-setting — nothing to
 grep); then force both states explicitly; snapshot `data/` before full runs; the graduation
-ratchet already refuses on contradicting live overrides (this box is at zero overrides — clean).
+ratchet already refuses on contradicting live overrides. **Match CI exactly from the start:
+`uv sync --all-extras` then `pytest -m "not e2e and not eval"` over the WHOLE tree — the two
+whole-tree ratchets (`test_no_new_silent_swallows`, `test_no_new_private_cross_imports`) and
+`tests/integration` reach "off" cases a `tests/unit`-only run structurally cannot. Avoid p95
+wall-clock assertions in receipt suites (they flake under full-suite load) — assert the median.**
+
+## 7. Current state (2026-08-01)
+
+**89 flags, every one in exactly one CI-enforced disposition:** 57 default-ON · 10 auto · 5
+intentionally-off · 13 experiment · 4 performance-profile · **0 migration · 0 graduation-queue**.
+The whole strategy is executed except the 12 remaining experiment-queue flags, which need LLM
+grid budget (~1/day at the 1,000-req cap) and are the natural next-session work. The registry no
+longer regrows silently — a new flag that declares no exit fails CI.
