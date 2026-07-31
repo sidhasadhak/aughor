@@ -125,6 +125,17 @@ VOUCHED: tuple[VouchedModel, ...] = (
     VouchedModel("openrouter", "deepseek/deepseek-v4-flash-0731", _VERIFIED_2026_08_01,
                  True, "PAID, same weights/pricing as the undated slug — 1M ctx "
                        "(NOT the 33k the capability chip reports)"),
+    # The premium end of the paid tier. Confirmed in the live catalogue 2026-08-01:
+    # 1M ctx, structured_outputs + tools, $3.00/M in · $15.00/M out.
+    #
+    # fast_eligible=False, and this is the least ambiguous False in the table: at
+    # $15/M output it is ~54× deepseek-v4-flash's completion price, so a throwaway
+    # interpret or evidence-summary call reaching it IS the cost bug #202 — the same reason
+    # 550B is banned from `fast`. Approved for coder and narrator, where one good
+    # answer is worth the money; never for the tier that fires seven times a run.
+    VouchedModel("openrouter", "moonshotai/kimi-k3", _VERIFIED_2026_08_01,
+                 False, "PAID $3.00/M in · $15.00/M out — 1M ctx; the expensive pick, "
+                        "deliberately barred from the cheap `fast` tier"),
 
     # ── Gemini ── confirmed in the live catalogue on 2026-07-24, which lists them
     # PREFIXED as `models/<id>`. See `normalize_id`: comparing raw would report all

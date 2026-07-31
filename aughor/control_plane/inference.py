@@ -69,6 +69,12 @@ _CONTEXT_WINDOWS: dict[str, int] = {
     "gemini": 1_048_576,          # Gemini 1.5/2.x — 1M-token window (Pro may exceed; under-estimate is safe)
     "qwen3-coder": 131_072,
     "qwen2.5-coder": 131_072,
+    # Ahead of the generic "kimi" for the same first-match reason as deepseek-v4:
+    # K3 is a 1M-context model (live catalogue 2026-08-01), and inheriting the 131k
+    # below would fire the overflow warning at ~108k on a model with ~888k of budget.
+    # The generic key stays understated — the K2 family really reports 262,144 — since
+    # an under-estimate only costs headroom while an over-estimate silences the guard.
+    "kimi-k3": 1_048_576,
     "kimi": 131_072,
     "llama-3.3": 131_072,
     # BEFORE the generic "deepseek" key — first substring match wins, so the specific
