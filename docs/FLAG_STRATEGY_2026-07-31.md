@@ -160,11 +160,38 @@ overhead on real brief ticks; no LLM grid needed, just a cost number.
   the route 404s off and does nothing unless explicitly POSTed. Calling it is the consent
   (the planner's one LLM call is user-initiated). Graduate as always-available surfaces.
 
-### D. The experiment queue — measure with E4, the plane built for exactly this (12)
+### D. The experiment queue — measure with E4, the plane built for exactly this
 
-Each adds LLM calls (or changes prompts/routing) for a claimed quality gain. `closed_loop`'s own
-description — "until its delta is proven on your data" — names the exit criterion for the whole
-group. Pre-check each with "does the flag change the prompt?" before buying any grid
+**Batch D (2026-07-31) — the triage that pays before any grid.** A full "does the flag change
+the prompt?" pass over all 15 (the free `grid-budget` check) split the queue into what needs a
+model and what does not:
+
+- **Settled with ZERO LLM budget:** **`snapshot_receipts` — ✅ GRADUATED** (see below).
+  `search.rrf` and `explore.route_wide`'s routing half are also model-free (the rerank is
+  deterministic; the routing contract is already pinned by `evals/route_wide_eval.py`) — only
+  their *answer-quality* deltas need a grid.
+- **A decision, not a grid:** `ada.causal_drill` is inert whenever `ada.parallel_lenses` is on
+  (its serial-path twin), so its exit is coupled to the performance-profile call, not an
+  independent A/B — delete it if/when the parallel profile becomes the default.
+- **Cost measurable free now, quality deferred:** `ada.evidence_stubs` and
+  `explorer.synthesis_incremental` — the token/call cost is deterministic; only the quality
+  effect needs the grid.
+- **Data-gated grids:** `closed_loop`, `graph.readback`, `kinetic.agent_actions` are
+  byte-identical / no-call unless the fixture carries the data (corrections, a built graph,
+  declared actions) — grid only where that data exists; the off-state no-op is already unit-proven.
+
+**✅ `snapshot_receipts` GRADUATED** (receipt `f1cd50a45a96`, run `4e96751b95c2` of
+`aughor/evals/snapshot_receipts_receipt.py`, 5/5 stable ×3) — its exit was decidable without a
+model. Cost: one metadata `COUNT(*)` per finding table, size-independent on DuckDB (row counts
+are metadata), measured **p95 0.35ms** for a 3-table finding vs E1's 5ms bar. Reconcile: already
+one mechanism — `kernel/freeze.py` imports `data_version` *from* `db/snapshot.py`, so a frozen
+artifact and a pinned finding share one function. Additive/fail-open (off ⇒ `data_version` is
+None; a broken probe ⇒ None, never blocks the emit).
+
+The genuine-grid remainder still needs LLM budget (~1 flag/day at 1,000 req/day). Each adds LLM
+calls (or changes prompts/routing) for a claimed quality gain. `closed_loop`'s own description —
+"until its delta is proven on your data" — names the exit criterion for the whole group.
+Pre-check each with "does the flag change the prompt?" before buying any grid
 (the check that saved ~850 requests on #241).
 
 `closed_loop` · `graph.readback` · `explore.route_wide` · `explorer.synthesis_incremental` ·
@@ -173,9 +200,8 @@ delete it if the performance profile makes parallel the default) · `ada.evidenc
 description forbids graduation before an A/B) · `search.rrf` (cheap: the KB-retrieval evals are
 the grid) · `explorer.manifest_driven` · `kinetic.agent_actions` · `semops.champion_validate`.
 
-`snapshot_receipts` (born 2026-06-23, the oldest OFF flag) also lands here: measure the per-emit
-version-probe cost, and reconcile with V4's data-version machinery (`lifecycle.freeze` composes
-`db/snapshot.data_version` — two pinning mechanisms should become one).
+`snapshot_receipts` (born 2026-06-23, the oldest OFF flag) is **no longer here — it graduated**
+in batch D above (the cost was measured sub-ms and the reconcile was already true).
 
 ### E. Collapse into ONE performance profile (4 → 1 control)
 

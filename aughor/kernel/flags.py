@@ -453,6 +453,18 @@ FLAG_DEFAULT = {
     # remaining obligation on both is deleting the legacy path once soaked.
     "semantic.resolve_live": True,     # receipt 49e7af321440
     "capability.pipeline_live": True,  # receipt 0dd2b45930c7 — single route gate; calling is the consent
+    # Experiment-queue settle (2026-07-31, batch D) — snapshot_receipts graduated WITHOUT
+    # an A/B grid because its exit question was decidable without a model. The cost half:
+    # the per-emit probe is one metadata COUNT(*) per finding table, size-independent
+    # because DuckDB keeps row counts in metadata — measured p95 0.35ms for a 3-table
+    # finding, against E1's pre-registered 5ms bar (run `4e96751b95c2` of
+    # `aughor/evals/snapshot_receipts_receipt.py`, 5/5 stable ×3, receipt `f1cd50a45a96`).
+    # The reconcile half ("two pinning mechanisms should be one") was already true by
+    # construction: Wave V4's `kernel/freeze.py` imports `data_version` FROM `db/snapshot.py`,
+    # so a frozen artifact and a snapshot-pinned finding pin against one function. The
+    # on/off delta is a single additive `data_version` token (None when off, fail-open when
+    # the probe cannot run), so a fresh clone's dossiers are byte-identical bar that field.
+    "snapshot_receipts": True,
 }
 
 # Human-facing copy for the Settings UI.
@@ -607,7 +619,7 @@ FLAG_META = {
     },
     "snapshot_receipts": {
         "label": "Snapshot-pinned receipts",
-        "description": "Pin every finding to the exact data version it ran against (reproducible-as-of). The version probe touches the DB on each emit.",
+        "description": "Pin every finding to the exact data version it ran against (reproducible-as-of), so a re-validate can tell a MOVED dataset apart from a mis-derived finding — the same data_version Wave V4's freeze pins an artifact to. The version probe is one metadata COUNT(*) per finding table (size-independent on DuckDB; the native snapshot id on DuckLake), added at dossier emit off the answer path. Default-ON since the 2026-07-31 flag strategy experiment-queue settle (batch D, receipt `f1cd50a45a96`): measured p95 0.35ms for a 3-table finding against E1's 5ms bar, additive (off ⇒ the dossier's data_version is None, byte-identical otherwise), and fail-open (a probe that cannot run yields None, never blocking the emit). Force off with AUGHOR_SNAPSHOT_RECEIPTS=0 or a runtime override.",
     },
     "explorer.synthesis_incremental": {
         "label": "Incremental synthesis",
@@ -907,8 +919,9 @@ EXPERIMENT: dict = {
     "kinetic.agent_actions": "does the action proposer earn its LLM call?",
     "semops.champion_validate": "does champion validation catch enough cheap-tier "
                                 "errors to pay one extra sample call per filter?",
-    "snapshot_receipts": "measure the per-emit version-probe cost, and reconcile with "
-                         "V4's data_version pin — two pinning mechanisms should be one",
+    # snapshot_receipts SETTLED 2026-07-31 (batch D) and moved to FLAG_DEFAULT — its exit
+    # was decidable without a grid: cost measured sub-ms (receipt f1cd50a45a96), reconcile
+    # already one mechanism (freeze.py reuses snapshot.data_version).
 }
 
 #: Group E — wall-clock vs concurrent-request trades. The exit is ONE performance
