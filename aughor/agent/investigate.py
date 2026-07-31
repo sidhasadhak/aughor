@@ -3693,10 +3693,16 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     try:
         from aughor.semantic.data_understanding import build_data_understanding
         _phase_schema = _with_ledger({"analysis_ledger": analysis_ledger}, filtered_schema)
-        intake_dict["data_understanding_block"] = build_data_understanding(
+        _du = build_data_understanding(
             conn, connection_id=state.get("connection_id", ""),
             schema=_phase_schema, question=question,
-        ).grounding_block()
+        )
+        intake_dict["data_understanding_block"] = _du.grounding_block()
+        # Wave S2 — carry WHICH trusted patterns went into the prompt, not just the rendered
+        # text. Without this the deep receipt has no provenance to report: the chat path
+        # records the same thing, and a deep answer that reused a verified pattern could not
+        # say so while a quick one could.
+        intake_dict["trusted_used"] = _du.trusted_used
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "shared data-understanding grounding is advisory; phases build it "

@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { getPublicReceipt, type PublicReceipt, type PublicReceiptGuard } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
+import { AddToEvalSuite } from "@/components/AddToEvalSuite";
 import { costSummary } from "@/lib/cost";
 import { formatTimestamp } from "@/lib/format";
 
@@ -22,7 +23,9 @@ import { formatTimestamp } from "@/lib/format";
 // a guard doing its job (info/positive), never red.
 function guardTone(action: string): { hue: ChipHue; verb: string } {
   if (action === "flagged") return { hue: "caution", verb: "flagged" };
-  if (action === "trusted") return { hue: "positive", verb: "reused a trusted query" };
+  // `trusted` is deliberately absent: it is not a guard and is rendered in its own section.
+  // It used to map to "reused a trusted query" here — a claim the receipt cannot support,
+  // since the pattern was shown to the model rather than demonstrably used by it.
   return { hue: "info", verb: action.replace(/_/g, " ") };   // validated_by, etc.
 }
 
@@ -63,17 +66,23 @@ function SqlBlock({ q }: { q: PublicReceipt["executed_sql"][number] }) {
   );
 }
 
-function Drawer({ receiptId, onClose }: { receiptId: string; onClose: () => void }) {
-  const [rec, setRec] = useState<PublicReceipt | null>(null);
-  const [state, setState] = useState<"loading" | "ready" | "missing">("loading");
+function Drawer({ receiptId, preloaded, onClose }: {
+  receiptId: string; preloaded?: PublicReceipt | null; onClose: () => void;
+}) {
+  const [rec, setRec] = useState<PublicReceipt | null>(preloaded ?? null);
+  const [state, setState] = useState<"loading" | "ready" | "missing">(
+    preloaded ? "ready" : "loading");
 
   useEffect(() => {
+    // The glance row above already fetched this receipt; re-fetching on open would make
+    // the same answer cost two requests again, which is what the S2 collapse removed.
+    if (preloaded) { setRec(preloaded); setState("ready"); return; }
     let alive = true;
     getPublicReceipt(receiptId)
       .then(r => { if (alive) { setRec(r); setState(r ? "ready" : "missing"); } })
       .catch(() => { if (alive) setState("missing"); });
     return () => { alive = false; };
-  }, [receiptId]);
+  }, [receiptId, preloaded]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -81,7 +90,26 @@ function Drawer({ receiptId, onClose }: { receiptId: string; onClose: () => void
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const guards: PublicReceiptGuard[] = rec?.guards ?? [];
+  // Wave S2 — a reused trusted pattern arrives in the same `guards` array as a real guard
+  // (one lineage shape, one reader), but it is not a guard that FIRED and must not be
+  // listed as one. It also carries a whole question as its name, which is a sentence, not
+  // a chip label. So the two are separated here and rendered differently.
+  const allRows: PublicReceiptGuard[] = rec?.guards ?? [];
+  const guards = allRows.filter(g => g.action !== "trusted");
+  const trusted = allRows.filter(g => g.action === "trusted");
+
+  // The Learning Receipt as sentences. Only what this run actually did — a zeroed
+  // counter is "the loop ran and changed nothing", which is not worth a line.
+  const l = rec?.learning;
+  const learned: string[] = [];
+  if (l?.readings_reused) {
+    learned.push(`reused ${l.readings_reused} resolved reading${l.readings_reused !== 1 ? "s" : ""}` +
+      (l.corrections_applied ? ` (${l.corrections_applied} correction${l.corrections_applied !== 1 ? "s" : ""})` : ""));
+  }
+  if (l?.resolutions_crystallized) {
+    learned.push(`crystallized ${l.resolutions_crystallized} new resolution${l.resolutions_crystallized !== 1 ? "s" : ""}`);
+  }
+  if (l?.trusted_program_replayed) learned.push("replayed a trusted plan");
 
   return (
     <div
@@ -143,6 +171,67 @@ function Drawer({ receiptId, onClose }: { receiptId: string; onClose: () => void
                 </Section>
               )}
 
+              {trusted.length > 0 && (
+                <Section title={`Trusted patterns in scope (${trusted.length})`}>
+                  <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                    Verified query patterns for this connection were put in front of the model
+                    for this question. That is what the model was shown — not proof that this
+                    answer reused one.
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+                    {trusted.map((t, i) => (
+                      <div key={`t:${i}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+                          {t.name}
+                        </div>
+                        {/* The promoter's own warrant sentence, verbatim — it is what
+                            separates consistency-verified from human-checked. */}
+                        {t.caveat && (
+                          <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                            {t.caveat}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              )}
+
+              {rec.resolved_readings.length > 0 && (
+                <Section title="Readings this connection already settled">
+                  <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                    Applied so this question does not re-ask what was decided before.
+                  </div>
+                  {rec.resolved_readings.map((r, i) => (
+                    <div key={`rr:${i}`} className="aug-fs-xs"
+                      style={{ color: "var(--t2)", lineHeight: 1.5, marginTop: 4 }}>
+                      {r.reading}{r.note ? ` — ${r.note}` : ""}
+                    </div>
+                  ))}
+                </Section>
+              )}
+
+              {learned.length > 0 && (
+                <Section title="What the loop learned this run">
+                  <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+                    {learned.join(" · ")}.
+                  </div>
+                </Section>
+              )}
+
+              {rec.activations.length > 0 && (
+                <Section title="Capabilities whose trigger fired">
+                  {rec.activations.map((a, i) => (
+                    <div key={`ac:${i}`} className="aug-fs-xs"
+                      style={{ color: "var(--t2)", lineHeight: 1.5, marginTop: 2 }}>
+                      {a.capability.replace(/^[a-z]+\./, "").replace(/[._]/g, " ")}
+                      {a.reason ? ` — activated because ${a.reason}` : ""}
+                      {a.count > 1 ? ` (×${a.count})` : ""}
+                    </div>
+                  ))}
+                </Section>
+              )}
+
               {rec.caveats.length > 0 && (
                 <Section title="Caveats">
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -191,6 +280,14 @@ function Drawer({ receiptId, onClose }: { receiptId: string; onClose: () => void
                 {costSummary(rec.cost) && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Cost: {costSummary(rec.cost)}</div>}
                 {rec.created_at && <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>Recorded {formatTimestamp(rec.created_at)}</div>}
                 <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>Receipt {rec.id} · server-signed (HMAC)</div>
+                {/* E6 — capture this exact question + executed SQL as an eval case. Moved
+                    here from the older per-mode panel, which was the only place it lived. */}
+                {rec.connection.id && rec.executed_sql[0]?.sql && (
+                  <div style={{ marginTop: 4 }}>
+                    <AddToEvalSuite connectionId={rec.connection.id}
+                      sql={rec.executed_sql[0].sql} question={rec.question} />
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -200,15 +297,91 @@ function Drawer({ receiptId, onClose }: { receiptId: string; onClose: () => void
   );
 }
 
+/** The at-a-glance chips: what this answer's receipt says, without opening anything.
+ *
+ *  B-9's inline badge row, restored after the S2 collapse removed the second panel that
+ *  carried it — but fed by the UNIFIED receipt rather than the retired per-mode route, and
+ *  by the SAME fetch the drawer uses. The old arrangement cost two components and two
+ *  requests per answer; this is one of each.
+ *
+ *  Every chip states something the receipt actually carries. `trusted` says "in scope"
+ *  rather than "verified" for the same reason the drawer does: the pattern was shown to
+ *  the model, not demonstrably used by it.
+ */
+function GlanceChips({ rec }: { rec: PublicReceipt }) {
+  const trusted = rec.guards.filter(g => g.action === "trusted").length;
+  const fired = rec.guards.filter(g => g.action !== "trusted").length;
+  const learned = rec.learning
+    ? (rec.learning.resolutions_crystallized || 0) + (rec.learning.trusted_program_replayed || 0)
+    : 0;
+  const chips: React.ReactNode[] = [];
+
+  rec.metrics.used.forEach((m, i) => chips.push(
+    <StatusChip key={`u${i}`} hue="info" strength="soft">{m} · governed</StatusChip>));
+  rec.metrics.drifted.forEach((m, i) => chips.push(
+    <StatusChip key={`d${i}`} hue="caution" strength="soft" title={m.detail ?? undefined}>
+      {m.metric} · non-governed
+    </StatusChip>));
+  rec.metrics.proposed.forEach((m, i) => chips.push(
+    <StatusChip key={`p${i}`} hue="accent" strength="soft"
+      title={m.detail ?? "Define this metric in the Semantic Layer to enforce it"}>
+      define {m.metric}
+    </StatusChip>));
+  if (fired > 0) chips.push(
+    <StatusChip key="g" hue="positive" strength="soft">
+      {fired} guard{fired !== 1 ? "s" : ""} fired
+    </StatusChip>);
+  if (trusted > 0) chips.push(
+    <StatusChip key="t" hue="info" strength="soft"
+      title="Verified query patterns were put in front of the model — not proof this answer reused one">
+      {trusted} trusted pattern{trusted !== 1 ? "s" : ""} in scope
+    </StatusChip>);
+  if (rec.resolved_readings.length > 0) chips.push(
+    <StatusChip key="r" hue="info" strength="soft">
+      {rec.resolved_readings.length === 1 ? "resolved reading"
+        : `${rec.resolved_readings.length} resolved readings`}
+    </StatusChip>);
+  if (learned > 0) chips.push(
+    <StatusChip key="l" hue="positive" strength="soft">the loop learned something</StatusChip>);
+  if (rec.activations.length > 0) chips.push(
+    <StatusChip key="a" hue="positive" strength="soft">
+      {rec.activations.length} capabilit{rec.activations.length !== 1 ? "ies" : "y"}
+    </StatusChip>);
+
+  // Nothing notable fired — say what the answer rests on rather than showing an empty row.
+  if (chips.length === 0) chips.push(
+    <StatusChip key="s" hue="muted" strength="soft">
+      {rec.input_tables.length} source{rec.input_tables.length !== 1 ? "s" : ""} · executed SQL
+    </StatusChip>);
+
+  return <>{chips}</>;
+}
+
 export function WhyThisNumber({ receiptId }: { receiptId: string }) {
   const [open, setOpen] = useState(false);
+  const [rec, setRec] = useState<PublicReceipt | null>(null);
+
+  // Fetched once here and handed to the drawer, so opening it costs nothing and the chips
+  // and the panel can never disagree about the same answer.
+  useEffect(() => {
+    let alive = true;
+    getPublicReceipt(receiptId)
+      .then(r => { if (alive) setRec(r); })
+      .catch(() => { /* no receipt → the trigger still opens and says so */ });
+    return () => { alive = false; };
+  }, [receiptId]);
+
   return (
     <>
-      <Button size="xs" variant="ghost" onClick={() => setOpen(true)}
-        style={{ color: "var(--t3)" }} aria-label="Why this number — open the Trust Receipt">
-        Why this number →
-      </Button>
-      {open && <Drawer receiptId={receiptId} onClose={() => setOpen(false)} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
+        <span className="aug-fs-xs" style={{ color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
+        {rec && <GlanceChips rec={rec} />}
+        <Button size="xs" variant="ghost" onClick={() => setOpen(true)}
+          style={{ color: "var(--t3)" }} aria-label="Why this number — open the Trust Receipt">
+          Why this number →
+        </Button>
+      </div>
+      {open && <Drawer receiptId={receiptId} preloaded={rec} onClose={() => setOpen(false)} />}
     </>
   );
 }

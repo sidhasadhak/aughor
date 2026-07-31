@@ -19,7 +19,11 @@ import os
 import threading
 from typing import Optional
 
-PUBLIC_RECEIPT_VERSION = 1
+#: Bumped to 2 in Wave S2: additive only (`resolved_readings`, `learning`, `activations`).
+#: The projection is rebuilt and re-signed on every read, so existing artifacts gain the new
+#: fields rather than failing verification — but a consumer that pinned v1 should know the
+#: shape grew.
+PUBLIC_RECEIPT_VERSION = 2
 
 # ledger artifact `kind` → the user-facing mode on the receipt.
 _MODE = {
@@ -93,20 +97,45 @@ def verify(receipt: dict) -> bool:
     return hmac.compare_digest(sig, sign(receipt))
 
 
+#: Lineage relations that belong on the receipt even though their ref is not a `guard:`.
+#: `trusted` names the QUERY it reused, so it is written as `query:<question>` — matching on
+#: the ref prefix alone silently dropped every one of them (see below).
+_NON_GUARD_RELATIONS = ("trusted",)
+
+
 def _guards_from_lineage(lineage: list) -> list[dict]:
-    """Guard edges (`validated_by`/`flagged`/`trusted` on a `guard:*` ref) → guard rows.
+    """Guard edges → guard rows for the receipt.
+
     A guard is on the receipt only because it FIRED, so `fired` is True; `action` is what it
-    did (repaired vs merely flagged) and `caveat` is its human note."""
+    did (repaired vs merely flagged) and `caveat` is its human note.
+
+    Matched on the RELATION as well as the ref prefix. Matching on `guard:` alone was a silent
+    data-loss bug: the chat path writes its trusted-query provenance as
+    ``("trusted", "query:<question>", note)``, so every trusted edge ever written was dropped
+    here — and the frontend branch that renders it (`WhyThisNumber.tsx`, `action === "trusted"`)
+    could never fire. The evidence existed at both ends and only the middle was missing.
+
+    The `caveat` carried through is the promoter's authored warrant sentence, verbatim — e.g.
+    "Consistency-verified (reproduces this connection's prior answer), NOT independently
+    checked for correctness." That distinction is the whole point of surfacing this at all, so
+    it is never paraphrased or shortened here.
+    """
     out: list[dict] = []
     for e in lineage:
         ref = e.get("ref") or ""
+        relation = e.get("relation") or ""
         if ref.startswith("guard:"):
-            out.append({
-                "name": ref.split("guard:", 1)[1],
-                "fired": True,
-                "action": e.get("relation") or "",
-                "caveat": e.get("detail") or "",
-            })
+            name = ref.split("guard:", 1)[1]
+        elif relation in _NON_GUARD_RELATIONS:
+            name = ref.split(":", 1)[1] if ":" in ref else ref
+        else:
+            continue
+        out.append({
+            "name": name,
+            "fired": True,
+            "action": relation,
+            "caveat": e.get("detail") or "",
+        })
     return out
 
 
@@ -206,6 +235,18 @@ def build_public_receipt(raw: dict, *, connection: Optional[dict] = None,
         # Null is the honest answer for an anonymous ask — the alternative, an empty agent
         # object, would render as a nameless agent on every receipt ever issued.
         "agent": payload.get("agent") or None,
+        # Wave S2 — three things only the older per-mode panel could show, so the unified
+        # receipt could not replace it without losing them. Rare but real: measured over 835
+        # answer receipts, `learning` appears on 27, `activations` on 2, and there are 26
+        # `resolved_ambiguity` edges. Rare is the reason to carry them, not to drop them —
+        # they are exactly the runs where the loop did something worth seeing.
+        "resolved_readings": [
+            {"reading": (e.get("ref") or "").split("reading:", 1)[-1],
+             "note": e.get("detail") or ""}
+            for e in lineage if e.get("relation") == "resolved_ambiguity"
+        ],
+        "learning": payload.get("learning") or None,
+        "activations": list(payload.get("activations") or []),
         "cost": raw.get("cost"),
     }
     if signed:
