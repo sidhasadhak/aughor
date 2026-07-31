@@ -240,7 +240,7 @@ def graduate_flag(flag: str, body: GraduateIn):
     """
     from aughor.evals import store
     from aughor.evals.promotion import evaluate_graduation
-    from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
+    from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV, override_drift
     from aughor.kernel.ledger import Ledger
 
     suite = _suite_or_404(body.suite_id)
@@ -268,6 +268,10 @@ def graduate_flag(flag: str, body: GraduateIn):
                             else body.baseline_pass_rate),
         min_pass_rate=body.min_pass_rate,
         delta=derived_delta,
+        # The configuration the decision is being made in, read from the live ledger
+        # rather than trusted: a graduation decided on a drifted box is a claim about
+        # that box. Recorded on the receipt either way; a contradicting override blocks.
+        override_drift=override_drift(),
     )
     payload = decision.to_dict()
     # A no-run decision carries no suite_id from the summary — pin the one the caller named.

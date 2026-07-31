@@ -40,6 +40,10 @@ class GraduationDecision:
     #: but the decision says so rather than pretending it flipped something.
     current_default: bool = False
     already_default_on: bool = False
+    #: Runtime overrides in the deciding environment that contradict what a fresh clone
+    #: resolves ({flag: {override, without_override}}). Recorded on every decision, not
+    #: only failing ones, so a receipt states the configuration it was measured in.
+    override_drift: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -53,6 +57,7 @@ class GraduationDecision:
             "suite_id": self.suite_id,
             "current_default": self.current_default,
             "already_default_on": self.already_default_on,
+            "override_drift": dict(self.override_drift),
         }
 
 
@@ -65,6 +70,7 @@ def evaluate_graduation(
     baseline_pass_rate: Optional[float] = None,
     min_pass_rate: float = 1.0,
     delta: Any = None,
+    override_drift: Optional[dict] = None,
 ) -> GraduationDecision:
     """Decide whether ``flag`` has EARNED graduation to default-on, from one eval run.
 
@@ -94,15 +100,37 @@ def evaluate_graduation(
     """
     reasons: list[str] = []
     bar = baseline_pass_rate if baseline_pass_rate is not None else min_pass_rate
+    drift = dict(override_drift or {})
 
     if flag not in registered_flags:
         reasons.append(f"unknown flag {flag!r} — not in the flag registry")
+
+    # THE ratchet for override drift. A graduation decides what a FRESH CLONE does, so it
+    # cannot be decided in a configuration no fresh clone has. The 2026-07-22 audit found
+    # 19 such overrides and the 2026-07-27 re-audit found 23 more — it is a recurring leak,
+    # written by the Settings UI during ordinary use and never expiring, so the only thing
+    # that stops it being re-discovered by hand is refusing the claim that depends on it.
+    #
+    # Deliberately blocks on ANY contradicting override, not merely one touching `flag`:
+    # the drifted flags are the ones nobody was thinking about, which is exactly why they
+    # are the ones that silently move a measurement. Clear them (`clear_flag`) and re-run.
+    if drift:
+        listed = ", ".join(
+            f"{name} is {'on' if d['override'] else 'off'} here but "
+            f"{'on' if d['without_override'] else 'off'} on a fresh clone"
+            for name, d in sorted(drift.items())[:6])
+        more = f" (+{len(drift) - 6} more)" if len(drift) > 6 else ""
+        reasons.append(
+            f"{len(drift)} runtime override(s) contradict a fresh clone — a graduation "
+            f"measured in a configuration nobody else runs is a claim about one machine: "
+            f"{listed}{more}")
 
     if not run_summary:
         reasons.append("no run to evaluate — run the suite first")
         return GraduationDecision(
             flag=flag, reasons=reasons, baseline_pass_rate=baseline_pass_rate,
             bar=bar, current_default=current_default, already_default_on=current_default,
+            override_drift=drift,
         )
 
     total = int(run_summary.get("total", 0) or 0)
@@ -151,4 +179,5 @@ def evaluate_graduation(
         suite_id=str(run_summary.get("suite_id", "")),
         current_default=current_default,
         already_default_on=current_default,
+        override_drift=drift,
     )
