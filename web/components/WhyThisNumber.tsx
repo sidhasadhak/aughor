@@ -22,7 +22,9 @@ import { formatTimestamp } from "@/lib/format";
 // a guard doing its job (info/positive), never red.
 function guardTone(action: string): { hue: ChipHue; verb: string } {
   if (action === "flagged") return { hue: "caution", verb: "flagged" };
-  if (action === "trusted") return { hue: "positive", verb: "reused a trusted query" };
+  // `trusted` is deliberately absent: it is not a guard and is rendered in its own section.
+  // It used to map to "reused a trusted query" here — a claim the receipt cannot support,
+  // since the pattern was shown to the model rather than demonstrably used by it.
   return { hue: "info", verb: action.replace(/_/g, " ") };   // validated_by, etc.
 }
 
@@ -81,7 +83,13 @@ function Drawer({ receiptId, onClose }: { receiptId: string; onClose: () => void
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const guards: PublicReceiptGuard[] = rec?.guards ?? [];
+  // Wave S2 — a reused trusted pattern arrives in the same `guards` array as a real guard
+  // (one lineage shape, one reader), but it is not a guard that FIRED and must not be
+  // listed as one. It also carries a whole question as its name, which is a sentence, not
+  // a chip label. So the two are separated here and rendered differently.
+  const allRows: PublicReceiptGuard[] = rec?.guards ?? [];
+  const guards = allRows.filter(g => g.action !== "trusted");
+  const trusted = allRows.filter(g => g.action === "trusted");
 
   return (
     <div
@@ -139,6 +147,32 @@ function Drawer({ receiptId, onClose }: { receiptId: string; onClose: () => void
                         </div>
                       );
                     })}
+                  </div>
+                </Section>
+              )}
+
+              {trusted.length > 0 && (
+                <Section title={`Trusted patterns in scope (${trusted.length})`}>
+                  <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                    Verified query patterns for this connection were put in front of the model
+                    for this question. That is what the model was shown — not proof that this
+                    answer reused one.
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+                    {trusted.map((t, i) => (
+                      <div key={`t:${i}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+                          {t.name}
+                        </div>
+                        {/* The promoter's own warrant sentence, verbatim — it is what
+                            separates consistency-verified from human-checked. */}
+                        {t.caveat && (
+                          <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                            {t.caveat}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </Section>
               )}
