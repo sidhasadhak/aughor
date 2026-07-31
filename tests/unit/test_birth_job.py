@@ -142,7 +142,7 @@ async def test_run_birth_mines_popularity_when_flag_on(monkeypatch, tmp_path):
 
 @pytest.mark.anyio
 async def test_run_birth_skips_popularity_when_flag_off(monkeypatch):
-    monkeypatch.delenv("AUGHOR_OBS_POPULARITY", raising=False)
+    monkeypatch.setenv("AUGHOR_OBS_POPULARITY", "0")   # escape hatch; default-ON since batch C
     db = _FakeDB()
     monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
 
@@ -170,7 +170,7 @@ async def test_kickoff_spawns_explorer_when_flag_off(monkeypatch):
 
     monkeypatch.setattr(_shared, "spawn_birth", _fake_birth)
     monkeypatch.setattr(_shared, "spawn_explorer", _fake_spawn)
-    monkeypatch.delenv("AUGHOR_BIRTH_JOB", raising=False)
+    monkeypatch.setenv("AUGHOR_BIRTH_JOB", "0")   # escape hatch; default-ON since batch C
 
     assert _shared.kickoff_exploration("conn-off") is True
     await asyncio.sleep(0)                        # let the created task run
@@ -235,7 +235,7 @@ def test_canvas_create_unchanged_when_flag_off(client, monkeypatch):
         return {"ok": True, "job_id": "b"}
 
     monkeypatch.setattr(_shared, "spawn_birth", _fake_birth)
-    monkeypatch.delenv("AUGHOR_BIRTH_JOB", raising=False)
+    monkeypatch.setenv("AUGHOR_BIRTH_JOB", "0")   # escape hatch; default-ON since batch C
 
     r = client.post("/canvases", json={"name": "Plain Canvas", "connection_id": "fixture"})
     assert r.status_code == 201

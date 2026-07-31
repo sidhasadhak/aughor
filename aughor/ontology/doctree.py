@@ -43,7 +43,20 @@ from aughor.ontology.models import OntologyEntity, OntologyGraph
 
 logger = logging.getLogger("aughor.ontology.doctree")
 
-_ROOT = Path(__file__).parent.parent.parent / "data" / "ontology_docs"
+_DEFAULT_ROOT = Path(__file__).parent.parent.parent / "data" / "ontology_docs"
+
+
+def _root() -> Path:
+    """The doc-tree store root — ``AUGHOR_ONTOLOGY_DOCS_DIR`` overrides, read at CALL
+    time (never at import, so a test's env isolation is never a silent no-op).
+
+    Every SQLite store honours an ``AUGHOR_*_DB`` override that tests/conftest.py
+    points at a throwaway dir; this file store was the one without that seam, which
+    stayed invisible while `ontology.autodoc` was off — the flag's batch-C default
+    flip surfaced unit tests writing real ``data/ontology_docs/`` files."""
+    import os
+
+    return Path(os.getenv("AUGHOR_ONTOLOGY_DOCS_DIR") or _DEFAULT_ROOT)
 
 # Tables that are pipeline scaffolding, not business entities — documented understanding
 # should skip them. SQL-LIKE-style globs (``%`` ⇒ ``*``) matched case-insensitively against the
@@ -572,7 +585,7 @@ def _safe(s: str) -> str:
 
 
 def _base(conn: str, schema: str) -> Path:
-    return _ROOT / _safe(conn) / _safe(schema or "default")
+    return _root() / _safe(conn) / _safe(schema or "default")
 
 
 def save_doc_tree(tree: DocTree) -> None:

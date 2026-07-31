@@ -58,10 +58,11 @@ def test_al01_clean_select_passes_when_flag_on(monkeypatch):
 
 # ── AL-05 — the Semantic plane resolved at seed ──────────────────────────────────────────
 
-def test_al05_dormant_by_default(monkeypatch):
-    monkeypatch.delenv("AUGHOR_SEMANTIC_RESOLVE_LIVE", raising=False)
+def test_al05_dormant_when_forced_off(monkeypatch):
+    # Explicit =0 — default-ON since flag strategy batch C; off is the escape hatch.
+    monkeypatch.setenv("AUGHOR_SEMANTIC_RESOLVE_LIVE", "0")
     from aughor.semantic.context import resolve_if_enabled
-    assert resolve_if_enabled("q", "fixture") is None          # off → the plane stays dormant
+    assert resolve_if_enabled("q", "fixture") is None          # forced off → the plane stays dormant
 
 
 def test_al05_resolves_when_flag_on(monkeypatch):
@@ -87,20 +88,20 @@ def test_al05_agentstate_carries_the_field():
 
 def test_al05_metrics_consumer_uses_resolved_context():
     # The first live CONSUMER: a node reads the resolved metrics instead of re-consulting.
-    from aughor.agent.nodes import _metrics_for_state
+    from aughor.agent.nodes import metrics_for_state
     from aughor.semantic.context import SemanticContext
 
     class _M:
         def __init__(self, n): self.name = n
     sc = SemanticContext(question="q", connection_id="c", metrics=[_M("gmv"), _M("aov")])
-    assert [m.name for m in _metrics_for_state({"semantic_context": sc})] == ["gmv", "aov"]
+    assert [m.name for m in metrics_for_state({"semantic_context": sc})] == ["gmv", "aov"]
 
 
 def test_al05_metrics_consumer_falls_back_without_context(monkeypatch):
     from aughor.agent import nodes
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: ["SENTINEL"])
-    assert nodes._metrics_for_state({}) == ["SENTINEL"]                       # no context
-    assert nodes._metrics_for_state({"semantic_context": None}) == ["SENTINEL"]  # flag off → None
+    assert nodes.metrics_for_state({}) == ["SENTINEL"]                       # no context
+    assert nodes.metrics_for_state({"semantic_context": None}) == ["SENTINEL"]  # flag off → None
 
 
 # ── AL-02 — the Capability plane as a live end-to-end answer path ─────────────────────────
@@ -179,8 +180,9 @@ def test_al02_endpoint_answers_when_flag_on(client, builtin_conn_id, monkeypatch
     assert body["row_count"] == 1
 
 
-def test_al02_endpoint_disabled_when_flag_off(client, builtin_conn_id, monkeypatch):
-    monkeypatch.delenv("AUGHOR_CAPABILITY_PIPELINE_LIVE", raising=False)
+def test_al02_endpoint_disabled_when_forced_off(client, builtin_conn_id, monkeypatch):
+    # Explicit =0 — default-ON since flag strategy batch C; off is the escape hatch.
+    monkeypatch.setenv("AUGHOR_CAPABILITY_PIPELINE_LIVE", "0")
     r = client.post("/query/capability-answer",
                     json={"conn_id": builtin_conn_id, "question": "q"})
     assert r.status_code == 404

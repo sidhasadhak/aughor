@@ -351,6 +351,31 @@ FLAG_DEFAULT = {
     # byte-identical on vs off — receipt e801ff3a4448). The flag's remaining obligation
     # is DELETION: soak default-on, then remove the legacy CanonicalMetric path.
     "semantic.contract_live": True,
+    # Flag strategy batch C (2026-07-31) — the two bundles the queue held back, plus the
+    # last two migration flips. One suite — `aughor/evals/flag_batch_c_receipt.py`, run
+    # `2dbff8c60c10` (11/11 stable over 3 iterations, 0 errors, 0 flaky, bar 1.0, no
+    # baseline). The claims are construction-decidable: a graph projection cannot precede
+    # its ontology (nothing is written a connection's intelligence does not already
+    # contain), the surfaces 404 off and data-refuse empty, the birth rite is
+    # DOUBLE-gated (flag AND the workspace's Curator agent) and fires only on an
+    # explicit create/re-arm kick, an empty column-config store and an unmined
+    # popularity signal are byte-identical no-ops. `plan.program` did NOT flip: its
+    # /ask auto-depth hook (`_program_eligible`, mirroring `_federation_eligible`)
+    # moved it to EXPERIMENT instead.
+    "graph.build": True,               # receipt 1a773d95d0b3 — a projection of the ontology; None without one
+    "graph.freshness": True,           # receipt 506ba8c6a163 — change-classified refresh; never raises into a live path
+    "graph.surface": True,             # receipt 049ac074f300 — the panel appears; content waits for a built ontology
+    "graph.tour": True,                # receipt 68328602e77f — deterministic order; narration only on explicit request
+    "graph.export": True,              # receipt adeca7f0fe7d — an empty graph is refused, never shipped
+    "birth.job": True,                 # receipt 189fc985e2a0 — kick-scoped AND Curator-governed; no ambient behaviour
+    "ontology.autodoc": True,          # receipt 4847eceb9a1f — compiled doc tree; a build artifact, no model
+    "ontology.column_config": True,    # receipt 743f540b4d72 — empty store ⇒ byte-identical; human edits always win
+    "obs.popularity": True,            # receipt d315c314e558 — nothing mined ⇒ priors untouched
+    # MIGRATION flips, not graduations: resolve_live proven equal to the per-node
+    # consult over real stores (one context per run — AL-05's whole point); the
+    # remaining obligation on both is deleting the legacy path once soaked.
+    "semantic.resolve_live": True,     # receipt 49e7af321440
+    "capability.pipeline_live": True,  # receipt 0dd2b45930c7 — single route gate; calling is the consent
 }
 
 # Human-facing copy for the Settings UI.
@@ -389,7 +414,7 @@ FLAG_META = {
     },
     "graph.build": {
         "label": "Build the connection knowledge graph (Wave C1)",
-        "description": "Project the already-built structural ontology plus the narrative stores (glossary, governed metrics, crystallized ambiguity resolutions, discovered findings) into ONE typed, committed, provenance-complete graph per (org, connection, schema) — the read-back artifact every question will pass through in C2. Deterministic projection: no LLM, no SQL; node summaries/tags are a later narrow emission. Every edge carries real provenance or is not constructible (J4) — a `joins_on` edge carries the join guard's MEASURED value-domain overlap (already probed at ontology-build time; value-disjoint coincidences were dropped upstream), and the self-reported model confidences (EvidenceClaim.confidence, pack_deltas.confidence) are banned as edge evidence. The graph is a git-reviewable file under data/context_graph/, version-bumped on rebuild. Off by default = byte-identical: the projection is never invoked and nothing is written (C1 builds the artifact; nothing reads it back until C2).",
+        "description": "Project the already-built structural ontology plus the narrative stores (glossary, governed metrics, crystallized ambiguity resolutions, discovered findings) into ONE typed, committed, provenance-complete graph per (org, connection, schema) — the read-back artifact every question will pass through in C2. Deterministic projection: no LLM, no SQL; node summaries/tags are a later narrow emission. Every edge carries real provenance or is not constructible (J4) — a `joins_on` edge carries the join guard's MEASURED value-domain overlap (already probed at ontology-build time; value-disjoint coincidences were dropped upstream), and the self-reported model confidences (EvidenceClaim.confidence, pack_deltas.confidence) are banned as edge evidence. The graph is a git-reviewable file under data/context_graph/, version-bumped on rebuild. Forced off = byte-identical: the projection is never invoked and nothing is written (C1 builds the artifact; nothing reads it back until C2). Default-ON since flag strategy batch C (2026-07-31, receipt `1a773d95d0b3`); force off with AUGHOR_GRAPH_BUILD=0 or a runtime override.",
     },
     "graph.readback": {
         "label": "Grep-the-graph-first read-back (Wave C2)",
@@ -397,19 +422,19 @@ FLAG_META = {
     },
     "graph.freshness": {
         "label": "Graph freshness — change-classified refresh + staleness (Wave C3)",
-        "description": "Keep the connection knowledge graph fresh at cost proportional to the change, and surface how stale it is. Two fingerprints are split: STRUCTURAL (tables + columns + types) and DATA (row counts, from the ontology fingerprint). The classifier reads SKIP (structure and data unchanged, or a comment-only change → no work), a data-only reload (row counts moved, structure identical → the graph is marked DIRTY but NOT rebuilt — a nightly load is not a schema change), PARTIAL (columns changed on known tables → rebuild, naming the tables), or FULL (tables added/removed → rebuild). Typed staleness states fresh|dirty|stale|unknown drive a UI banner and can gate a briefing built on a stale graph. The read-back slice honours a token-proportional budget. This freshness vocabulary is written to be lifted by Wave V (one dialect for graph, briefs, profiles, caches). Deterministic; no LLM. Off by default ⇒ refresh_context_graph is a no-op (byte-identical). A rebuild still requires `graph.build`.",
+        "description": "Keep the connection knowledge graph fresh at cost proportional to the change, and surface how stale it is. Two fingerprints are split: STRUCTURAL (tables + columns + types) and DATA (row counts, from the ontology fingerprint). The classifier reads SKIP (structure and data unchanged, or a comment-only change → no work), a data-only reload (row counts moved, structure identical → the graph is marked DIRTY but NOT rebuilt — a nightly load is not a schema change), PARTIAL (columns changed on known tables → rebuild, naming the tables), or FULL (tables added/removed → rebuild). Typed staleness states fresh|dirty|stale|unknown drive a UI banner and can gate a briefing built on a stale graph. The read-back slice honours a token-proportional budget. This freshness vocabulary is written to be lifted by Wave V (one dialect for graph, briefs, profiles, caches). Deterministic; no LLM. Forced off ⇒ refresh_context_graph is a no-op (byte-identical). A rebuild still requires `graph.build`. Default-ON since flag strategy batch C (2026-07-31, receipt `506ba8c6a163`); force off with AUGHOR_GRAPH_FRESHNESS=0 or a runtime override.",
     },
     "graph.surface": {
         "label": "Connection knowledge graph surface (Wave C4)",
-        "description": "Serve and render the connection knowledge graph as a three-level, anti-hairball surface: domain cluster cards with aggregated cross-domain join counts (level 1) → the tables inside a domain, with their verified joins (level 2) → a table detail panel showing columns, the measured value-domain overlap on each join, the glossary terms, and the PAST FINDINGS that touch the table (level 3 — the dossier system makes those $0). Aggregation at every zoom level makes the hairball structurally impossible rather than stylistically discouraged. Exposes GET /graph (the graph JSON: nodes + edges + provenance) and a Knowledge Graph panel. Off by default ⇒ the route 404s and the panel is hidden (byte-identical). Requires a graph built by `graph.build`; the endpoint builds on demand when that flag is on. This is the J6 seam — an entity page is this surface's table-detail view.",
+        "description": "Serve and render the connection knowledge graph as a three-level, anti-hairball surface: domain cluster cards with aggregated cross-domain join counts (level 1) → the tables inside a domain, with their verified joins (level 2) → a table detail panel showing columns, the measured value-domain overlap on each join, the glossary terms, and the PAST FINDINGS that touch the table (level 3 — the dossier system makes those $0). Aggregation at every zoom level makes the hairball structurally impossible rather than stylistically discouraged. Exposes GET /graph (the graph JSON: nodes + edges + provenance) and a Knowledge Graph panel. Forced off ⇒ the route 404s and the panel is hidden (byte-identical). Requires a graph built by `graph.build`; the endpoint builds on demand when that flag is on. This is the J6 seam — an entity page is this surface's table-detail view. Default-ON since flag strategy batch C (2026-07-31, receipt `049ac074f300`); force off with AUGHOR_GRAPH_SURFACE=0 or a runtime override.",
     },
     "graph.tour": {
         "label": "Connection tour — a curriculum from graph topology (Wave C5)",
-        "description": "A guided tour of a connection, ordered by TOPOLOGY not notability, so it teaches rather than lists. The reading order is computed deterministically from the graph: the highest-join-degree table is the entry (the hub every other table reaches), a breadth-first walk introduces each table right after one it joins to, standalone tables follow the connected core, and the governed metrics come last as the capstone (each tied to the table it derives from). Every step after the first names the prior step it builds on. The LLM only narrates the connective tissue over that already-fixed sequence — a single narrow emission, never the ordering. Exposes GET /graph/tour. Off by default ⇒ the route 404s (byte-identical). Turns the ephemeral 7-lens interesting-facts listicle into an ordered curriculum.",
+        "description": "A guided tour of a connection, ordered by TOPOLOGY not notability, so it teaches rather than lists. The reading order is computed deterministically from the graph: the highest-join-degree table is the entry (the hub every other table reaches), a breadth-first walk introduces each table right after one it joins to, standalone tables follow the connected core, and the governed metrics come last as the capstone (each tied to the table it derives from). Every step after the first names the prior step it builds on. The LLM only narrates the connective tissue over that already-fixed sequence — a single narrow emission, never the ordering. Exposes GET /graph/tour. Forced off ⇒ the route 404s (byte-identical). Turns the ephemeral 7-lens interesting-facts listicle into an ordered curriculum. Default-ON since flag strategy batch C (2026-07-31, receipt `68328602e77f`); force off with AUGHOR_GRAPH_TOUR=0 or a runtime override.",
     },
     "graph.export": {
         "label": "Graph distribution — the committed artifact + skills pack (Wave C6)",
-        "description": "Export a connection's knowledge graph as a self-contained pack a teammate consumes with NO LLM, no API key and no Aughor running — generation paid once, consumption free. Writes graph.json (the C1 nodes/edges/provenance re-emitted as id-sorted, pretty-printed, greppable lists inside an envelope carrying the source spine, the graph version and C3's typed freshness state), two markdown skills that run the C2 read-back protocol offline (freshness-check → grep labels/summaries/tags → pull the 1-hop subgraph → answer only from that subgraph, citing tables), a README, and an install.sh that SYMLINKS the skills into agent platforms. The staleness state travels with the data because a consumer offline cannot re-derive it, and a freshness it cannot determine ships as `unknown`, never as a cheerful `fresh`. NO coercive hook injection (the forbidden anti-pattern): install.sh only links files — it registers no hook, no daemon, nothing that speaks for the user, and no skill instructs an agent to hide the freshness state or refuse the reader. Exporting a connection with no committed graph is refused rather than shipping an empty pack that answers confidently from nothing. Off by default ⇒ export_pack returns None and nothing is written (byte-identical). Requires a graph built by `graph.build`.",
+        "description": "Export a connection's knowledge graph as a self-contained pack a teammate consumes with NO LLM, no API key and no Aughor running — generation paid once, consumption free. Writes graph.json (the C1 nodes/edges/provenance re-emitted as id-sorted, pretty-printed, greppable lists inside an envelope carrying the source spine, the graph version and C3's typed freshness state), two markdown skills that run the C2 read-back protocol offline (freshness-check → grep labels/summaries/tags → pull the 1-hop subgraph → answer only from that subgraph, citing tables), a README, and an install.sh that SYMLINKS the skills into agent platforms. The staleness state travels with the data because a consumer offline cannot re-derive it, and a freshness it cannot determine ships as `unknown`, never as a cheerful `fresh`. NO coercive hook injection (the forbidden anti-pattern): install.sh only links files — it registers no hook, no daemon, nothing that speaks for the user, and no skill instructs an agent to hide the freshness state or refuse the reader. Exporting a connection with no committed graph is refused rather than shipping an empty pack that answers confidently from nothing. Forced off ⇒ export_pack returns None and nothing is written (byte-identical). Requires a graph built by `graph.build`. Default-ON since flag strategy batch C (2026-07-31, receipt `adeca7f0fe7d`); force off with AUGHOR_GRAPH_EXPORT=0 or a runtime override.",
     },
     "govern.usage_caps": {
         "label": "Org and per-user usage caps (Wave G4)",
@@ -465,7 +490,7 @@ FLAG_META = {
     },
     "obs.popularity": {
         "label": "Query popularity as a shared notability signal",
-        "description": "Mine real query history (the SQL-examples store + task_history span inputs) into a persisted per-table and per-column usage counter, and let one signal feed four consumers: column-config default protection (a queried column is never default-hidden), doc-tree table facts + ranking, the overview's learned-prior boost, and a most-queried-tables block in /suggestions. Mining runs inside the R12 birth job; deterministic (sqlglot, no model). Off by default = byte-identical — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R14).",
+        "description": "Mine real query history (the SQL-examples store + task_history span inputs) into a persisted per-table and per-column usage counter, and let one signal feed four consumers: column-config default protection (a queried column is never default-hidden), doc-tree table facts + ranking, the overview's learned-prior boost, and a most-queried-tables block in /suggestions. Mining runs inside the R12 birth job; deterministic (sqlglot, no model). Forced off = byte-identical — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R14). Default-ON since flag strategy batch C (2026-07-31, receipt `d315c314e558`); force off with AUGHOR_OBS_POPULARITY=0 or a runtime override.",
     },
     "search.rrf": {
         "label": "Reciprocal Rank Fusion (hybrid retrieval)",
@@ -573,15 +598,15 @@ FLAG_META = {
     },
     "ontology.autodoc": {
         "label": "Compile ontology docs as a build artifact",
-        "description": "After the ontology is built, project it into a persisted, Merkle-checksummed doc tree (column→table→schema→connection) with per-table analyst questions — understanding compiled once and re-read cheaply, rebuilt incrementally as the schema moves. Deterministic (no model); also available on demand via the `aughor ontology-docs` CLI. When an embedder + Qdrant are available the compiled table docs are ALSO embedded into the knowledge store with FQN provenance (R8a), so retrieval can ground on understanding, not just uploads — best-effort, degrades to the YAML artifact alone. Off by default — see docs/DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md (R8).",
+        "description": "After the ontology is built, project it into a persisted, Merkle-checksummed doc tree (column→table→schema→connection) with per-table analyst questions — understanding compiled once and re-read cheaply, rebuilt incrementally as the schema moves. Deterministic (no model); also available on demand via the `aughor ontology-docs` CLI. When an embedder + Qdrant are available the compiled table docs are ALSO embedded into the knowledge store with FQN provenance (R8a), so retrieval can ground on understanding, not just uploads — best-effort, degrades to the YAML artifact alone. Forced off — see docs/DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md (R8). Default-ON since flag strategy batch C (2026-07-31, receipt `4847eceb9a1f`); force off with AUGHOR_ONTOLOGY_AUTODOC=0 or a runtime override.",
     },
     "birth.job": {
         "label": "Connection/canvas birth as one observable job",
-        "description": "Run the 'understand this data' rite as ONE supervised kernel job at connection creation, upload re-arm, and canvas creation: eager intelligence first (profiles → ontology → doc tree → column config), then the exploration handoff — each step a birth.step event on the event spine, governed by the Curator agent's charter. Off by default: exploration alone kicks off and intelligence stays lazy (built on the first question), exactly as before — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R12).",
+        "description": "Run the 'understand this data' rite as ONE supervised kernel job at connection creation, upload re-arm, and canvas creation: eager intelligence first (profiles → ontology → doc tree → column config), then the exploration handoff — each step a birth.step event on the event spine, governed by the Curator agent's charter. Forced off: exploration alone kicks off and intelligence stays lazy (built on the first question), exactly as before — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R12). Default-ON since flag strategy batch C (2026-07-31, receipt `189fc985e2a0`); force off with AUGHOR_BIRTH_JOB=0 or a runtime override.",
     },
     "ontology.column_config": {
         "label": "Per-column visibility / sampling / indexing config",
-        "description": "A persisted, human-editable per-column config with three flags: visible (render the column into agent prompt schemas at all — hiding prunes noise columns from the context), sample (enumerate the column's values in the schema context), and index (build the offline value index over it). Deterministic defaults come from the profiler — entity dimensions index+sample, dead all-null columns and free-text blobs hide; a human edit always wins and survives schema rebuilds. No model in the loop. Off by default — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R11).",
+        "description": "A persisted, human-editable per-column config with three flags: visible (render the column into agent prompt schemas at all — hiding prunes noise columns from the context), sample (enumerate the column's values in the schema context), and index (build the offline value index over it). Deterministic defaults come from the profiler — entity dimensions index+sample, dead all-null columns and free-text blobs hide; a human edit always wins and survives schema rebuilds. No model in the loop. Forced off — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R11). Default-ON since flag strategy batch C (2026-07-31, receipt `743f540b4d72`); force off with AUGHOR_ONTOLOGY_COLUMN_CONFIG=0 or a runtime override.",
     },
     "ada.parallel_lenses": {
         "label": "Parallel Deep-Analysis lenses",
@@ -617,7 +642,7 @@ FLAG_META = {
     },
     "semantic.resolve_live": {
         "label": "Semantic plane resolved at the router",
-        "description": "Resolve the Semantic plane (metrics · ontology · profile · KB) once when a deep investigation is seeded and attach the SemanticContext to the run state, so every node reads one consistent context instead of re-consulting ad-hoc. Off by default (AL-05 live migration).",
+        "description": "Resolve the Semantic plane (metrics · ontology · profile · KB) once when a deep investigation is seeded and attach the SemanticContext to the run state, so every node reads one consistent context instead of re-consulting ad-hoc. Forced off (AL-05 live migration). Default-ON since flag strategy batch C (2026-07-31, receipt `49e7af321440`); force off with AUGHOR_SEMANTIC_RESOLVE_LIVE=0 or a runtime override.",
     },
     "semantic.contract_live": {
         "label": "Unified metric contract (planning)",
@@ -625,7 +650,7 @@ FLAG_META = {
     },
     "capability.pipeline_live": {
         "label": "Capability plane answer path",
-        "description": "Enable the end-to-end Capability-plane answer path (/query/capability-answer): a data question runs generate → validate (trust.verify) → execute → interpret through the one CapabilityPipeline template. Off by default (AL-02 live migration).",
+        "description": "Enable the end-to-end Capability-plane answer path (/query/capability-answer): a data question runs generate → validate (trust.verify) → execute → interpret through the one CapabilityPipeline template. Forced off (AL-02 live migration). Default-ON since flag strategy batch C (2026-07-31, receipt `0dd2b45930c7`); force off with AUGHOR_CAPABILITY_PIPELINE_LIVE=0 or a runtime override.",
     },
     "ada.premise_check": {
         "label": "Premise validation",
@@ -783,6 +808,11 @@ EXPERIMENT: dict = {
     # /ask auto-depth turns — an LLM-bearing routing change nothing has measured.
     "federation.planner": "does auto-federating fresh /ask turns improve cross-source "
                           "answers enough to pay its planning call?",
+    # Moved from MIGRATION by batch C's premise check — the same disease as
+    # federation.planner: `_program_eligible` auto-routes fresh /ask auto-depth turns
+    # through plan-as-program. The adopt-or-kill decision IS this measurement.
+    "plan.program": "does answering fresh /ask auto turns via plan-as-program match "
+                    "quick-path quality (and settle adopt-or-kill)?",
     "closed_loop": "does reading captured corrections back into the planner improve "
                    "answers on your data? (its own description names this exit)",
     "graph.readback": "does the injected graph slice improve plans enough to pay its "
@@ -816,35 +846,19 @@ COST_LATENCY_PROFILE: frozenset = frozenset({
 #: soak, then DELETE the flag and the losing path. A migration flag with no completion
 #: date is a permanent fork.
 MIGRATION: dict = {
-    "semantic.resolve_live": "AL-05 — complete the resolved-Semantic-plane migration",
-    # semantic.contract_live flipped default-ON in batch B on a proven byte-equality
-    # (receipt e801ff3a4448) and now lives in FLAG_DEFAULT; its remaining obligation —
-    # deleting the legacy CanonicalMetric path — is noted at its FLAG_DEFAULT entry.
-    "capability.pipeline_live": "AL-02 — adopt the capability pipeline answer path or "
-                                "remove it",
-    "plan.program": "a whole alternate executor path — adopt or kill",
+    # EMPTY as of batch C (2026-07-31): contract_live, resolve_live and pipeline_live
+    # all flipped default-ON on proven claims and live in FLAG_DEFAULT (their remaining
+    # obligation — deleting each legacy path once soaked — is noted at their entries);
+    # plan.program moved to EXPERIMENT when its /ask auto-depth hook surfaced. A future
+    # migration flag declares itself here with a completion obligation, or fails CI.
 }
 
-#: The two remaining BUNDLES — dispositioned to graduate as one decision each, receipts
-#: pending. Batch B (2026-07-31) graduated the data-gated/invocation-gated queue and
-#: executed the group-C conversions (ask.conversation_context → AUTO, obs.mlflow →
-#: deleted/self-gating, federation.planner → EXPERIMENT after its /ask hook surfaced).
-#: The bundles stay queued deliberately: `graph.build` writes COMMITTED files under
-#: data/context_graph/ on rebuild (a visible repo side-effect that deserves its own
-#: reviewed flip), and the birth chain changes when connection intelligence is built.
 GRADUATION_QUEUE: dict = {
-    # the Knowledge Graph bundle (one decision; graph.readback stays in EXPERIMENT)
-    "graph.build": "Knowledge Graph bundle — graduate with freshness/surface/tour/export; "
-                   "writes tracked artifacts, so the flip is its own reviewed decision",
-    "graph.freshness": "Knowledge Graph bundle",
-    "graph.surface": "Knowledge Graph bundle",
-    "graph.tour": "Knowledge Graph bundle (invocation-gated narration)",
-    "graph.export": "Knowledge Graph bundle (invocation-gated export)",
-    # the connection-birth bundle (R8/R11/R12/R14 — one decision)
-    "birth.job": "connection-birth bundle — graduate with autodoc/column_config/popularity",
-    "ontology.autodoc": "connection-birth bundle",
-    "ontology.column_config": "connection-birth bundle",
-    "obs.popularity": "connection-birth bundle",
+    # EMPTY as of batch C (2026-07-31): the Knowledge-Graph and connection-birth
+    # bundles graduated on construction claims (a projection cannot precede its
+    # ontology; the rite is kick-scoped and Curator-governed; empty stores are
+    # byte-identical no-ops). A future flag queued to graduate declares itself here
+    # with its receipt shape, or fails CI.
 }
 
 

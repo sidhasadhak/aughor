@@ -219,6 +219,22 @@ All stalled since ~2026-07-05 — a month of maintaining two code paths each:
 
 ### Bundles — many flags, one decision each
 
+**✅ EXECUTED 2026-07-31 (batch C)** — both bundles default-ON plus the last two migration
+flips, one suite (`aughor/evals/flag_batch_c_receipt.py`, run `2dbff8c60c10`, 11/11 ×3),
+eleven receipts. `plan.program` did NOT flip: the premise check found `_program_eligible`
+auto-routes fresh `/ask` auto-depth turns — the same disease as `federation.planner` — so it
+moved to EXPERIMENT (test-pinned). `semantic.resolve_live` flipped on a proven equality (the
+resolved context's metrics == the per-node consult, over real stores); `capability.pipeline_live`
+on its single-route gate. **The GRADUATION_QUEUE and MIGRATION sets are now EMPTY** — every
+registered flag is graduated, auto, an opt-in, an experiment, or in the performance profile,
+and the ratchet test asserts the empties stay honest.
+
+**Defect found by the flip itself:** the doc-tree store (`aughor/ontology/doctree.py`) was
+hardcoded to `data/ontology_docs/` with no env override — the one store without the isolation
+seam, invisible while `ontology.autodoc` was off. The suite started writing real doc trees the
+moment the default flipped (the matcache hole, rediscovered). Fixed: `AUGHOR_ONTOLOGY_DOCS_DIR`
+read at call time + the conftest isolation list.
+
 - **Knowledge Graph** (5 → 1): `graph.build` + `graph.freshness` + `graph.surface` +
   `graph.tour` + `graph.export` are one product feature (deterministic build, invocation-gated
   surfaces). `graph.readback` stays in D — it is the one that changes prompts.
@@ -260,7 +276,8 @@ All stalled since ~2026-07-05 — a month of maintaining two code paths each:
 3. **Group B** (11 flags) — the data-gated batch; one receipt suite shape, applied 11 times.
    ✅ Done 2026-07-31 (run `cbb2e91c7f26`, fourteen receipts, this branch).
 4. **Groups C + G + graph/birth bundles** — self-gating conversions and the one deletion.
-   ✅ C done 2026-07-31 (same commit as B); G done earlier; bundles stay queued (see §4B note).
+   ✅ C done 2026-07-31 (same commit as B); G done earlier; bundles done in batch C
+   (run `2dbff8c60c10`) — the queue is now empty.
 5. **Group F** — migrations: flip `semantic.contract_live` first (byte-identical today).
    ✅ contract_live flipped 2026-07-31 (receipt `e801ff3a4448`); three migrations remain.
 6. **The ratchet + UI restructure** — after dispositions are code, not prose.

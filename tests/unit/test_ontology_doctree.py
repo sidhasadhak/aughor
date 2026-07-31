@@ -178,7 +178,7 @@ def test_table_stats_enrich_table_facts_and_summary():
 # ── persistence roundtrip ─────────────────────────────────────────────────────
 
 def test_persistence_roundtrip(tmp_path, monkeypatch):
-    monkeypatch.setattr(dt, "_ROOT", tmp_path)
+    monkeypatch.setenv("AUGHOR_ONTOLOGY_DOCS_DIR", str(tmp_path))   # the store's real seam
     tree = build_doc_tree(_graph())
     save_doc_tree(tree)
     loaded = load_doc_tree("test_conn", "analytics")
@@ -192,7 +192,7 @@ def test_persistence_roundtrip(tmp_path, monkeypatch):
 
 
 def test_load_missing_returns_none(tmp_path, monkeypatch):
-    monkeypatch.setattr(dt, "_ROOT", tmp_path)
+    monkeypatch.setenv("AUGHOR_ONTOLOGY_DOCS_DIR", str(tmp_path))   # the store's real seam
     assert load_doc_tree("nope", "nope") is None
 
 
