@@ -114,3 +114,6 @@ evals/llm_exp/
 # TRACKED deliberately: a synonym is governed curation a reviewer should see in a diff,
 # same as data/ontology_overrides/. Listed here only to document that it is NOT ignored.
 !data/vocabulary/
+
+# DuckDB spills temp storage here during test runs — never commit it.
+.tmp/
