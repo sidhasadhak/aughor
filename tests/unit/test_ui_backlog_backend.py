@@ -11,23 +11,23 @@ from aughor.routers.query import _PostprocRequest, query_postproc
 
 class TestFeatureFlags:
     def test_override_wins_then_env_fallback(self, monkeypatch):
-        monkeypatch.delenv("AUGHOR_AI_SQL", raising=False)
-        clear_flag("ai_sql")
-        assert flag_enabled("ai_sql") is False          # no override, env unset
-        set_flag("ai_sql", True)
-        assert flag_enabled("ai_sql") is True            # runtime override wins
-        set_flag("ai_sql", False)
-        monkeypatch.setenv("AUGHOR_AI_SQL", "1")
-        assert flag_enabled("ai_sql") is False           # override still wins over env
-        clear_flag("ai_sql")
-        assert flag_enabled("ai_sql") is True             # cleared → env decides
-        monkeypatch.delenv("AUGHOR_AI_SQL", raising=False)
-        clear_flag("ai_sql")
+        monkeypatch.delenv("AUGHOR_OBS_PROMPT_CAPTURE", raising=False)
+        clear_flag("obs.prompt_capture")
+        assert flag_enabled("obs.prompt_capture") is False   # no override, env unset
+        set_flag("obs.prompt_capture", True)
+        assert flag_enabled("obs.prompt_capture") is True    # runtime override wins
+        set_flag("obs.prompt_capture", False)
+        monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
+        assert flag_enabled("obs.prompt_capture") is False   # override still wins over env
+        clear_flag("obs.prompt_capture")
+        assert flag_enabled("obs.prompt_capture") is True    # cleared → env decides
+        monkeypatch.delenv("AUGHOR_OBS_PROMPT_CAPTURE", raising=False)
+        clear_flag("obs.prompt_capture")
 
     def test_list_flags_shape(self):
         f = list_flags()
-        assert "ai_sql" in f and "snapshot_receipts" in f
-        assert {"value", "source", "env_var", "label", "description"} <= set(f["ai_sql"])
+        assert "obs.prompt_capture" in f and "snapshot_receipts" in f
+        assert {"value", "source", "env_var", "label", "description"} <= set(f["obs.prompt_capture"])
 
 
 class TestPostprocEndpoint:

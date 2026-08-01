@@ -4,12 +4,11 @@ execution and connection setup.
 Two seams the platform's connection layer exposes, which the AGENT fills:
 
   • **post-execute** — after a (gated, audited, metered) query runs, the agent may
-    react: e.g. emit an AI-column Trust-Receipt when the SQL used a governed
-    ``prompt()`` / ``embedding()`` UDF. ``fn(sql, result, connection_id)``.
+    react: e.g. emit a receipt about what the query did. ``fn(sql, result, connection_id)``.
   • **on-connect** — when a physical DuckDB connection is opened, the agent may
-    install capabilities: e.g. register the AI ``prompt()`` / ``embedding()`` UDFs
-    (when ``AUGHOR_AI_SQL`` is on, and not for MotherDuck which has them natively).
-    ``fn(raw_conn, *, is_motherduck=...)``.
+    install capabilities on the raw handle. ``fn(raw_conn, *, is_motherduck=...)``.
+    (The original client — the deleted ai_sql UDF installer — is gone; the seam
+    stays for the guard-receipt work that needs a post-execute attachment point.)
 
 Both run under ``tolerate`` — best-effort, never break execution or a connect. With
 nothing registered they are no-ops (the platform executes and connects with zero

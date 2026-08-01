@@ -53,15 +53,15 @@ def test_auto_eligible_flag_env_semantics(monkeypatch):
 
 def test_plain_default_off_flag_env_semantics(monkeypatch):
     # A NON-auto-eligible default-off flag keeps the strict opt-in contract.
-    # `ai_sql` is the exemplar deliberately: it is INTENTIONALLY off (per-row LLM
-    # calls) and will never graduate, so this test never needs re-pointing again
-    # (its previous exemplar, specialist_packs, graduated 2026-07-31).
-    monkeypatch.delenv("AUGHOR_AI_SQL", raising=False)
-    assert flag_enabled("ai_sql") is False
-    monkeypatch.setenv("AUGHOR_AI_SQL", "1")
-    assert flag_enabled("ai_sql") is True
-    monkeypatch.setenv("AUGHOR_AI_SQL", "garbage")
-    assert flag_enabled("ai_sql") is False
+    # `obs.prompt_capture` is the exemplar (its predecessor `ai_sql` was deleted
+    # in the 2026-08-01 flag endgame): content capture stays a deliberate opt-in
+    # until its own Wave-1 reshape, so it is the last reliably-off flag.
+    monkeypatch.delenv("AUGHOR_OBS_PROMPT_CAPTURE", raising=False)
+    assert flag_enabled("obs.prompt_capture") is False
+    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
+    assert flag_enabled("obs.prompt_capture") is True
+    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "garbage")
+    assert flag_enabled("obs.prompt_capture") is False
 
 
 def test_specialist_packs_is_default_on(monkeypatch):

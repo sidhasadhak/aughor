@@ -667,13 +667,9 @@ def apply_lane_envelope(duck_conn, connection_id: str) -> None:
     _apply_lane_envelope(duck_conn, connection_id)
 
 
-def _maybe_register_ai_udfs(duck_conn, md_db) -> None:
-    """Register the governed ``prompt()``/``embedding()`` AI-column UDFs (R8) when
-    ``AUGHOR_AI_SQL`` is on, so agent-generated SQL can compute an AI column in-query.
-    Skipped for MotherDuck-backed connections (they have NATIVE prompt()/embedding() — don't
-    shadow them) and a strict no-op when the flag is off. Fail-open — never breaks a connect."""
-    # On-connect hooks (agent-registered): e.g. installing the AI prompt()/embedding()
-    # UDFs when AUGHOR_AI_SQL is on. No-op if nothing is registered.
+def _run_connect_hooks(duck_conn, md_db) -> None:
+    """Run the agent-registered on-connect hooks over a freshly opened raw handle.
+    No-op if nothing is registered; fail-open — never breaks a connect."""
     from aughor.kernel.registries.execution_hooks import run_on_connect_hooks
     run_on_connect_hooks(duck_conn, is_motherduck=bool(md_db))
 
@@ -722,7 +718,7 @@ class DuckDBConnection(DatabaseConnection):
         # R6: bound this workspace's compute (memory_limit + threads). No-op at defaults.
         _apply_lane_envelope(self._conn, connection_id)
         # R8: optionally expose the governed AI-column UDFs to generated SQL (opt-in, no-op off).
-        _maybe_register_ai_udfs(self._conn, _md_db)
+        _run_connect_hooks(self._conn, _md_db)
 
     def make_reader(self) -> "DuckDBConnection":
         """Open a fresh read-only DuckDB connection for use in a parallel thread.
@@ -751,7 +747,7 @@ class DuckDBConnection(DatabaseConnection):
         # R6: a reader runs in the same workspace lane → same resource envelope.
         _apply_lane_envelope(clone._conn, clone._connection_id)
         # R8: a reader runs the same generated SQL → same governed AI-column UDFs.
-        _maybe_register_ai_udfs(clone._conn, _md_db)
+        _run_connect_hooks(clone._conn, _md_db)
         return clone
 
     def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:

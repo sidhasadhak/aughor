@@ -1,7 +1,7 @@
 """Runtime feature flags — operator-toggleable, env-var fallback.
 
-A handful of capabilities ship off-by-default because they cost (per-row LLM calls,
-per-table version probes). They were previously env-only (`AUGHOR_AI_SQL`,
+A handful of capabilities ship off-by-default because they cost (per-table version
+probes, prompt-content capture). They were previously env-only (e.g.
 `AUGHOR_SNAPSHOT_RECEIPTS`), so an operator had to restart the process to flip them.
 This stores an override in the kernel ledger kv so the UI can toggle them at runtime;
 when no override is set, the env var still decides.
@@ -22,7 +22,11 @@ _STORE = "feature_flags"
 
 # Registered flags: logical name → the env var that decides when no override is set.
 FLAG_ENV = {
-    "ai_sql": "AUGHOR_AI_SQL",
+    # "ai_sql" (AUGHOR_AI_SQL) was DELETED 2026-08-01 (flag endgame, verdict sheet
+    # Wave 1): off since birth, per-row LLM calls inside SQL are a cost trap, and the
+    # guarded semantic operators (aughor/semops/operators.py) cover the need. The
+    # prompt()/embedding() UDF module (semops/ai_sql.py) went with it; the generic
+    # execution-hook seams it registered into remain.
     "snapshot_receipts": "AUGHOR_SNAPSHOT_RECEIPTS",
     "explorer.synthesis_incremental": "AUGHOR_SYNTHESIS_INCREMENTAL",
     "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
@@ -386,7 +390,7 @@ FLAG_DEFAULT = {
     #
     # An operator can still force any of them off (env `=0` or a runtime override),
     # and the flip simulation surfaced exactly the expected class of test debt: two
-    # tests reaching "off" by never setting the flag (re-pointed to `ai_sql` / an
+    # tests reaching "off" by never setting the flag (re-pointed to an off flag / an
     # explicit `=0`), and the L4 equivalence suite inheriting the kernel bridge into
     # its legacy oracle (now pinned OFF there — the comparison is between loops, not
     # the bridge).
@@ -472,10 +476,6 @@ FLAG_DEFAULT = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
-    "ai_sql": {
-        "label": "In-SQL AI operators",
-        "description": "Register the governed prompt()/embedding() UDFs and let the generator use them. Makes per-row LLM calls — enable deliberately.",
-    },
     "agui.endpoint": {
         "label": "AG-UI protocol endpoint (POST /agui/run)",
         "description": "Expose an additive AG-UI-compatible translator at POST /agui/run that re-frames the existing /ask event stream (via the shared build_ask_stream factory) into standard AG-UI protocol events (RunStarted / TextMessage* / ToolCall* / Custom / RunError / RunFinished) using the ag-ui-protocol SDK. Purely additive — the legacy /ask, /chat and /investigate emission is byte-identical and the frontend's default transport is unchanged; this is the backend half of the AG-UI protocol seam, letting any AG-UI client (for example the @ag-ui/client transport) drive Aughor. Forced off ⇒ the route 404s. Default-ON since flag strategy batch B (2026-07-31, receipt `b395745f7771`); force off with AUGHOR_AGUI_ENDPOINT=0 or a runtime override. See docs/AGENTIC_PLATFORM_UNIFICATION_2026-07-13.md.",
@@ -594,7 +594,7 @@ FLAG_META = {
     },
     "capabilities.auto": {
         "label": "Capabilities Auto-mode (self-gating guards decide per run)",
-        "description": "Master switch for Auto-mode: with it on, each SELF-GATING capability (a deterministic guard that already only fires on a runtime trigger — premise-check, clarify gate, high-stakes adversarial verify, join key-reconciliation, capability-contract repair, guarded extract) is ENABLED unless the operator explicitly turned it off, and its own trigger decides per run — so you turn on the smart guards with one switch instead of flipping each. An explicit per-capability On/Off always wins; cost-dangerous flags (ai_sql, federation, champion-validate) are NOT auto-eligible. Off by default = byte-identical. Wave 1 · E3 of the combined platform study.",
+        "description": "Master switch for Auto-mode: with it on, each SELF-GATING capability (a deterministic guard that already only fires on a runtime trigger — premise-check, clarify gate, high-stakes adversarial verify, join key-reconciliation, capability-contract repair, guarded extract) is ENABLED unless the operator explicitly turned it off, and its own trigger decides per run — so you turn on the smart guards with one switch instead of flipping each. An explicit per-capability On/Off always wins; cost-dangerous flags (federation, champion-validate) are NOT auto-eligible. Off by default = byte-identical. Wave 1 · E3 of the combined platform study.",
     },
     "trust.e1_live": {
         "label": "E1 function-semantics checks on live answers",
@@ -831,7 +831,7 @@ FLAG_META = {
 # SELF-GATING capabilities: a deterministic runtime trigger already decides whether they fire, so the
 # flag is just a master enable. Under `capabilities.auto`, an unset one is treated as ENABLED (its own
 # trigger then gates it per run) — the operator turns on the smart guards with one switch instead of
-# flipping each. Cost-dangerous flags (ai_sql, federation.*, semops.champion_validate) are deliberately
+# flipping each. Cost-dangerous flags (federation.*, semops.champion_validate) are deliberately
 # NOT here: running them automatically would be expensive, so they stay manual.
 AUTO_ELIGIBLE: frozenset = frozenset({
     "deep_analysis.premise_check", "deep_analysis.clarify_gate", "deep_analysis.adversarial_high_stakes",
@@ -877,7 +877,7 @@ CAPABILITY_TRIGGER: dict = {
 #: Deliberately OFF, forever or until the named condition — the only category that
 #: should stay a raw manual toggle.
 INTENTIONALLY_OFF: dict = {
-    "ai_sql": "per-row LLM calls — its own description says 'enable deliberately'",
+    # "ai_sql" left this set 2026-08-01: DELETED outright (see the FLAG_ENV tombstone).
     "obs.prompt_capture": "captures prompt CONTENT — the most sensitive material in a "
                           "deployment; deliberate, bounded-window use only",
     "automations.adopt_legacy": "changes an outward-send path (brief delivery); adopt "
