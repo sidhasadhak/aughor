@@ -33,7 +33,7 @@ from aughor.kernel.flags import (
     set_flag,
 )
 
-FLAG = "deep_analysis.evidence_stubs"      # registered, defaults off, and E4's own sixth customer
+FLAG = "closed_loop"      # a registered, default-off flag (evidence_stubs was deleted 2026-08-01)
 # `obs.prompt_capture` deliberately: the nested-release assertion below expects OTHER's
 # AMBIENT value to be off, and prompt capture stays intentionally off (content capture
 # is a deliberate opt-in) — its predecessor exemplar `ai_sql` was deleted in the
@@ -76,9 +76,9 @@ def test_nested_blocks_merge_so_one_axis_can_vary_inside_another():
 
 def test_unknown_flag_name_raises_rather_than_no_opping():
     with pytest.raises(UnknownFlagError) as exc:
-        with flag_overrides({"deep_analysis.evidence_stub": True}):   # missing trailing 's'
+        with flag_overrides({"closed_looop": True}):   # typo'd flag name
             pass
-    assert "deep_analysis.evidence_stub" in str(exc.value)
+    assert "closed_looop" in str(exc.value)
 
 
 def test_unknown_name_is_rejected_before_any_flag_is_applied():

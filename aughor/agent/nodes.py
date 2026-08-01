@@ -1553,17 +1553,12 @@ def _evidence_renderer(history: list[QueryResult], hypotheses: list):
         from aughor.agent import evidence_budget as EB
 
         collapse = EB.enabled("ada.evidence_dedup")
-        stubbing = EB.enabled("ada.evidence_stubs")
-        if not (collapse or stubbing):
+        if not collapse:
             return plain
         # Safe direction: a small block is not what strains a window, and trimming it
         # could only lose ground. Measure the real thing, not an estimate.
         if sum(len(format_result_for_llm(r)) for r in history) < EB.MIN_BLOCK_CHARS:
             return plain
-        # Only a hypothesis that actually produced a finding may go stale — its
-        # `key_finding` is what carries the meaning the rows are being dropped from.
-        scored = {h.id for h in hypotheses if getattr(h, "key_finding", "")}
-
         # One accumulator for the WHOLE block. The prompt is assembled one section per
         # hypothesis, so a per-call `seen` resets between sections and would catch only
         # same-section repeats — the rarest kind, and not the one worth collapsing.
@@ -1572,8 +1567,8 @@ def _evidence_renderer(history: list[QueryResult], hypotheses: list):
         def _render(results):
             try:
                 parts, info = EB.render_history(
-                    results, full_renderer=format_result_for_llm, scored_steps=scored,
-                    collapse_duplicates=collapse, stub_scored=stubbing, seen=seen)
+                    results, full_renderer=format_result_for_llm,
+                    collapse_duplicates=collapse, seen=seen)
             except Exception:
                 # Synthesis is where the answer gets written. A trimming helper that can
                 # raise HERE loses a whole investigation to save some tokens, so the
@@ -1582,9 +1577,8 @@ def _evidence_renderer(history: list[QueryResult], hypotheses: list):
                 _logging.getLogger(__name__).debug(
                     "evidence render failed; falling back to full", exc_info=True)
                 return plain(results)
-            if info["stubbed"] or info["duplicates"]:
+            if info["duplicates"]:
                 from aughor.stats import bump
-                bump("ada.evidence.stubbed", info["stubbed"])
                 bump("ada.evidence.duplicates", info["duplicates"])
             return parts
 

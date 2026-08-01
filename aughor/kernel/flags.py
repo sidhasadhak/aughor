@@ -89,7 +89,12 @@ FLAG_ENV = {
     "explore.wandering_detector": "AUGHOR_EXPLORE_WANDERING_DETECTOR",
     "schema.two_tier_catalog": "AUGHOR_SCHEMA_TWO_TIER_CATALOG",
     "deep_analysis.evidence_dedup": "AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP",
-    "deep_analysis.evidence_stubs": "AUGHOR_DEEP_ANALYSIS_EVIDENCE_STUBS",
+    # "deep_analysis.evidence_stubs" (AUGHOR_DEEP_ANALYSIS_EVIDENCE_STUBS) was DELETED
+    # 2026-08-01 (flag endgame, verdict sheet Wave 1): it rendered already-scored
+    # results as row-capped stubs — deliberately showing the model FEWER rows to save
+    # tokens, the opposite of the evidence-budget direction, and its own description
+    # forbade graduation without the A/B that was never bought. Its lossless sibling
+    # (evidence_dedup) carries the whole win.
     "evals.experiments": "AUGHOR_EVALS_EXPERIMENTS",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
     "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
@@ -155,7 +160,6 @@ RENAMED: dict[str, str] = {
     "ada.causal_drill": "deep_analysis.causal_drill",
     "ada.clarify_gate": "deep_analysis.clarify_gate",
     "ada.evidence_dedup": "deep_analysis.evidence_dedup",
-    "ada.evidence_stubs": "deep_analysis.evidence_stubs",
     "ada.parallel_lenses": "deep_analysis.parallel_lenses",
     "ada.parallel_phases": "deep_analysis.parallel_phases",
     "ada.parallel_why_lenses": "deep_analysis.parallel_why_lenses",
@@ -174,7 +178,6 @@ RETIRED_ENV: dict[str, str] = {
     # CAUSAL_DRILL, CLARIFY_GATE — kept their variable and need no entry.)
     "AUGHOR_ADA_ADVERSARIAL_HIGH_STAKES": "deep_analysis.adversarial_high_stakes",
     "AUGHOR_ADA_EVIDENCE_DEDUP": "deep_analysis.evidence_dedup",
-    "AUGHOR_ADA_EVIDENCE_STUBS": "deep_analysis.evidence_stubs",
     "AUGHOR_ADA_PARALLEL_LENSES": "deep_analysis.parallel_lenses",
     "AUGHOR_ADA_PARALLEL_PHASES": "deep_analysis.parallel_phases",
     "AUGHOR_ADA_PARALLEL_WHY_LENSES": "deep_analysis.parallel_why_lenses",
@@ -644,13 +647,9 @@ FLAG_META = {
         "label": "Collapse duplicate query results in the synthesis block",
         "description": "When two steps ran the identical query, the synthesis prompt renders the identical table twice. This replaces the second with a one-line pointer to the first. LOSSLESS by construction — the table is still in the block, once — so nothing the narrator could cite disappears. Sees the whole block, so a repeat spread across two hypothesis sections is still caught. No-op below a 24k-char evidence block. Default-ON since flag strategy batch A (2026-07-31, receipt `0c96518ab1c4` — the first copy always renders full and byte-identical; an errored result never collapses); force off with AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP=0 or a runtime override. Counter: deep_analysis.evidence.duplicates.",
     },
-    "deep_analysis.evidence_stubs": {
-        "label": "Stale-stub already-scored evidence in the synthesis block",
-        "description": "Every result reaching synthesis was already rendered in FULL once, for the score_evidence step that turned it into its hypothesis's key_finding — so the narrator re-reads up to thirty rows of a table whose conclusion is stated three lines above it, for every query the run made. This renders such a result as a stub instead: the SQL (provenance), the column names, the TRUE row count, every statistical finding, and the first four real rows, with the omitted count stated explicitly so the head can never be mistaken for the whole table. Only hypotheses that actually produced a key_finding are eligible; an unscored or unattributed result is always rendered full, because nothing else in the prompt carries its meaning yet. ⚠️ Unlike its dedup sibling this DOES drop rows, so the token saving is measured but the effect on ANSWER QUALITY is not — it should not graduate until Wave E4 can A/B it against the full-evidence baseline. Off by default. Counter: deep_analysis.evidence.stubbed.",
-    },
     "evals.experiments": {
         "label": "Grid experiments: run-scoped model / temperature / flag overrides",
-        "description": "Lets an eval suite run the same cases under several configurations in ONE process, so a variant can be compared against its baseline instead of against a number recorded on a different day under an unrecorded config. Flags resolve through the ledger and the environment, both process-global, so before this two cells of a grid could not disagree; a contextvar consulted ahead of both can, and it reaches worker threads through ContextThreadPoolExecutor like the model pin and the metering hook. The plane is inert unless a run enters it (the contextvars default to unset, so ordinary traffic is byte-identical), and it refuses to measure at all while AUGHOR_FALLBACK_DISABLED is off, because the failover chain would silently finish a run on a different model and the report would attribute the number to the binding that started it. Every cell records the configuration read back through the product's own resolvers rather than the one requested — an override that silently no-ops is indistinguishable from a variant that did not help, and the second reading flatters the harness. First customers: the five flags the graduation audit could not measure, plus deep_analysis.evidence_stubs, which trades rows for tokens with the saving measured and the quality effect not. Default-ON since flag strategy batch A (2026-07-31, receipt `1bc0e4690955` — the plane is inert until a run enters it: ambient traffic carries no run-scoped overrides, and with the flag off a grid REFUSES loudly rather than silently running one configuration); force off with AUGHOR_EVALS_EXPERIMENTS=0 or a runtime override.",
+        "description": "Lets an eval suite run the same cases under several configurations in ONE process, so a variant can be compared against its baseline instead of against a number recorded on a different day under an unrecorded config. Flags resolve through the ledger and the environment, both process-global, so before this two cells of a grid could not disagree; a contextvar consulted ahead of both can, and it reaches worker threads through ContextThreadPoolExecutor like the model pin and the metering hook. The plane is inert unless a run enters it (the contextvars default to unset, so ordinary traffic is byte-identical), and it refuses to measure at all while AUGHOR_FALLBACK_DISABLED is off, because the failover chain would silently finish a run on a different model and the report would attribute the number to the binding that started it. Every cell records the configuration read back through the product's own resolvers rather than the one requested — an override that silently no-ops is indistinguishable from a variant that did not help, and the second reading flatters the harness. First customers: the experiment-queue flags whose exit questions need an A/B. Default-ON since flag strategy batch A (2026-07-31, receipt `1bc0e4690955` — the plane is inert until a run enters it: ambient traffic carries no run-scoped overrides, and with the flag off a grid REFUSES loudly rather than silently running one configuration); force off with AUGHOR_EVALS_EXPERIMENTS=0 or a runtime override.",
     },
     "schema.two_tier_catalog": {
         "label": "Two-tier schema catalog for SQL repair prompts",
@@ -913,8 +912,8 @@ EXPERIMENT: dict = {
     "deep_analysis.why_deepen": "do the peer-benchmark + drill queries change the fix target?",
     "deep_analysis.causal_drill": "serial-path twin of the parallel lenses — delete it if the "
                         "performance profile makes parallel the default",
-    "deep_analysis.evidence_stubs": "drops rows — its own description forbids graduation before "
-                          "an A/B against the full-evidence baseline",
+    # "deep_analysis.evidence_stubs" left this set 2026-08-01: DELETED outright (see
+    # the FLAG_ENV tombstone) — it dropped rows, the opposite of the evidence direction.
     "explorer.manifest_driven": "does deterministic coverage match LLM-loop quality?",
     "kinetic.agent_actions": "does the action proposer earn its LLM call?",
     "semops.champion_validate": "does champion validation catch enough cheap-tier "

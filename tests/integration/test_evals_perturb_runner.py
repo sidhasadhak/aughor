@@ -27,7 +27,7 @@ from aughor.evals.runner import run_experiment, run_suite
 from aughor.evals.targets import reference_checker, reference_target
 from aughor.kernel.flags import clear_flag
 
-FLAG = "deep_analysis.evidence_stubs"
+FLAG = "closed_loop"   # a registered, default-off flag (evidence_stubs was deleted 2026-08-01)
 
 
 @pytest.fixture(autouse=True)

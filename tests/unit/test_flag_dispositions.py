@@ -77,6 +77,6 @@ def test_deleted_flags_stay_deleted():
     removed. ada.adversarial_verify — the always-challenge refuter tier (§4G);
     obs.mlflow — replaced by self-gating on AUGHOR_MLFLOW_TRACKING_URI (§4C)."""
     for tombstone in ("deep_analysis.adversarial_verify", "obs.mlflow", "search.rrf",
-                      "ai_sql"):
+                      "ai_sql", "deep_analysis.evidence_stubs"):
         assert tombstone not in FLAG_ENV, tombstone
         assert all(tombstone not in s for s in SETS.values()), tombstone
