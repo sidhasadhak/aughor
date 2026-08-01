@@ -45,7 +45,9 @@ def test_agui_run_deep_clarify_pause_then_resume(client: TestClient, monkeypatch
     async def fake_ask(req, request):
         # The endpoint parsed the AG-UI input into a real AskRequest before streaming.
         captured["question"] = req.question
-        captured["deep"] = req.deep
+        # The wire name is still `deep` (forwardedProps below); the ATTRIBUTE is
+        # `escalate` — one word no longer means both the depth knob and the escalation.
+        captured["deep"] = req.escalate
         captured["connection_id"] = req.connection_id
         yield 'data: {"type": "start"}\n\n'
         yield 'data: {"type": "route", "depth": "deep"}\n\n'
