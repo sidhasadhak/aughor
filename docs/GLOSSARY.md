@@ -17,7 +17,7 @@ fall, never rise.
 |---|---|---|
 | **Deep analysis** | The autonomous multi-phase path — *both* the mode you pick and the record it produces (plural: deep analyses) | ADA, Agentic, "investigation" *in anything a user reads* |
 | **Quick answer** | The fast NL→SQL→answer path | "Insight" as a mode, chat, `direct` as a user word |
-| **Survey** | A wide question answered by many cuts at once | `explore` as a question mode, landscape, wide wave |
+| **Survey** | A wide question answered by many cuts at once | "landscape", "wide wave"; `explore` in anything a user reads |
 | **Knowledge answer** | A definitional answer from the knowledge base | `final_text` |
 | **Overview** | The first-look tour of a newly connected schema | — (Home is Home; the catalog's per-table tab is "Summary") |
 | **Exploration** | Background autonomous learning about the data | cartography |
@@ -136,6 +136,12 @@ the boundary. If you are tempted to rename one, you are about to orphan history.
 
 - Ledger `natural_key` prefixes `ada:` and `insight:`; artifact kinds `ada_report`, `finding`
 - The `investigations` table, the `/investigate` route, the `investigation` job kind
+- **The four `STRUCTURAL_MODES`** — `direct`, `investigate`, `explore`, `final_text`.
+  `query_mode` is a field on the checkpointed graph state and the checkpointer writes to
+  `data/checkpoints.db`, so these values sit on disk in every paused run. Display words map
+  at the boundary: Quick answer · Deep analysis · **Survey** · Knowledge answer.
+  `aughor/agent/explore.py` keeps its name deliberately — renaming it to `survey.py` while
+  the mode id stays `explore` would trade one mismatch for another
 - The licence capability **value** `"analysis.deep"`
 - Job kinds; agent ids (`scout`, `analyst`, `insight`, …); sub-role ids in `agent.handoff`
   payloads; the `agent_governance` store name and keys; session-log and checkpoint `agent_id`

@@ -380,8 +380,15 @@ sweeps and are now ratcheted.
   dual-emitted beside `insight`/`insight_delta`, then retiring `ada_report` and
   `answer_report` after a release. The frontend already reads all three.
 - Dual-routes for `/findings` (over `/exploration/{conn}/insights/*`) and `/briefing`.
-- Mode id `explore` → `survey`, plus registering `overview` and `knowledge` as real modes and
-  adding `final_text` to the frontend union (it is emitted today but not typed).
+- ~~Mode id `explore` → `survey`~~ **— resolved as a FREEZE, not a rename.** The premise
+  check killed the scope: `query_mode` is a field on the checkpointed graph state and the
+  checkpointer is a `SqliteSaver` over `data/checkpoints.db`, so `"explore"` is written to
+  disk in every paused run. Renaming it orphans them. It joins `investigation` as a frozen
+  internal spelling with **Survey** as its display word, and `agent/explore.py` deliberately
+  keeps its name — renaming the module while the mode id stays would trade one mismatch for
+  another. Same reasoning retires the `explore.*` → `survey.*` flag rename.
+- Still open: registering `overview` and `knowledge` as real modes, and adding `final_text`
+  to the frontend union (it is emitted today but not typed).
 - The briefing artifact renames: `Digest` → `BriefingContent`, `monitors/digest.py` →
   `AlertSummary`.
 - The `insight` burn-down continues by ratchet — 2,062 remain, and they fall as files are
