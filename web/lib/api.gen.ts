@@ -6993,12 +6993,13 @@ export interface components {
         };
         /**
          * ActionParameter
-         * @description A typed, named input to a QueryTemplate *or* to a KineticAction.
+         * @description A typed, named input to a QueryTemplate *or* to a declared, governed write action.
          *
          *     Deliberately NOT renamed alongside QueryTemplate: this one type is shared by the
-         *     read-side template (``QueryTemplate.parameters``) and the governed write unit
-         *     (``KineticAction.params``), and "action" is still the right word for the latter.
-         *     Naming it ``QueryTemplateParameter`` would mislabel every KineticAction parameter.
+         *     read-side template (``QueryTemplate.parameters``) and the write-surface unit's
+         *     ``params`` (the declared-action model below), and "action" is still the right word
+         *     for the latter. Naming it ``QueryTemplateParameter`` would mislabel every declared
+         *     write-action parameter.
          *
          *     Parameters are extracted from {placeholder} tokens in the sql_template.
          *     Data type is inferred from column profiles where possible; falls back to VARCHAR.
@@ -8604,7 +8605,7 @@ export interface components {
          *     Was ``OntologyAction``. It never acted on anything: it is a parameterized SELECT with
          *     business rules attached, which is what the planner reuses instead of re-deriving the
          *     query. "Action" now means exactly one thing (a governed write to the data), so this
-         *     type had to give the word back — see ``KineticAction`` below for the write surface.
+         *     type had to give the word back — the declared-action model below is the write surface.
          *
          *     The persisted spelling is frozen: these live under ``OntologyGraph.actions`` in the
          *     JSON cache and under ``data/learned_actions.json``, and ``action_type`` / ``origin``

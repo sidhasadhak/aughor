@@ -140,7 +140,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
 #: `blueprint`, `foundry`, `mindsdb` and `tableau` are at ZERO — they stay listed so
 #: the ratchet keeps them there.
 BASELINE: dict[str, int] = {
-    "ada": 665,
+    "ada": 664,
     "agentic_ops": 27,
     "blueprint": 0,
     "charter": 72,
