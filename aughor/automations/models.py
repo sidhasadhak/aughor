@@ -104,7 +104,7 @@ class Effect(BaseModel):
     """What to do when the conditions hold — a reference to an existing primitive.
 
     ``kinetic_action`` is the governed write: it runs through
-    :func:`~aughor.kinetic.executor.execute_kinetic_action`, inheriting submission criteria,
+    :func:`~aughor.actions.executor.execute_kinetic_action`, inheriting submission criteria,
     the graduated-approval gate and the audit trail unchanged. Wave A never bypasses it, which is
     why nothing above LOW risk can auto-fire from an automation either.
 

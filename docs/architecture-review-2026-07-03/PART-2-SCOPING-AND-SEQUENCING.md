@@ -282,7 +282,7 @@ into `SqlCapability.generate` (metric-aware SQL) — the "not a big bang" migrat
 **◑ AL-02 — the Capability plane template + one real instance (2026-07-04).** The three answer
 pipelines are the *same shape* built three times (Data: SQL-gen → validate → execute → interpret;
 Code: same but unimplemented; Metadata: handler → interpret). Modeled that shape once in a new
-`aughor/capability` plane: a `CapabilityPipeline` Protocol (`generate/validate/execute/interpret`
+`aughor/pipeline` plane: a `CapabilityPipeline` Protocol (`generate/validate/execute/interpret`
 + `domain`/`kind`), a `run()` template that sequences the four phases — **`validate` routes through
 the Trust plane** (`trust.verify`, so AL-02 consumes AL-01) and a BLOCK **short-circuits before
 execute** (a mutating statement never reaches the DB) while a repair from `validate` is adopted as

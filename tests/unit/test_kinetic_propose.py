@@ -8,7 +8,7 @@ model may abstain; and no declared actions ⇒ no LLM call. Hermetic: no network
 """
 from __future__ import annotations
 
-from aughor.kinetic.propose import (
+from aughor.actions.propose import (
     ProposedAction,
     ProposerOutput,
     build_kinetic_actions_section,

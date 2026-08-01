@@ -24,7 +24,7 @@ import pytest
 
 from aughor.automations.engine import _dispatch_investigate
 from aughor.automations.models import Automation, Condition, Effect
-from aughor.user_agents import create_agent, delete_agent, list_agents, update_agent
+from aughor.custom_agents import create_agent, delete_agent, list_agents, update_agent
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
 

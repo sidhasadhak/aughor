@@ -12,7 +12,7 @@ import json
 import pytest
 
 from aughor.connectors.file.local_upload import LocalUploadConnection, _is_pinnable_type
-from aughor.platform import vending
+from aughor.control_plane import vending
 
 
 @pytest.fixture(autouse=True)

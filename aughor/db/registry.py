@@ -134,7 +134,7 @@ def list_connections(org_id: str | None = None) -> list[dict]:
 
     # Include built-in fixture unless user has removed it
     if BUILTIN_ID not in hidden:
-        from aughor.samples.setup import fixture_db_path
+        from aughor.demo.setup import fixture_db_path
         fixture_path = fixture_db_path()
         rows.append({
             "id": BUILTIN_ID,
@@ -231,7 +231,7 @@ def get_meta(conn_id: str) -> dict:
     if conn_id == AUGHOR_OPS_ID:
         return {"builtin_aughor_ops": True, "schema_name": "aughor_ops"}
     if conn_id == WORKSPACE_ID:
-        from aughor.samples.setup import samples_db_path
+        from aughor.demo.setup import samples_db_path
         samples_path = samples_db_path()
         meta = {"builtin_workspace": True}
         if samples_path.exists():
@@ -318,7 +318,7 @@ def update_connection_settings(conn_id: str, updates: dict) -> dict:
 def get_dsn(conn_id: str) -> tuple[str, str]:
     """Return (conn_type, plain_dsn) for the given connection ID."""
     if conn_id == SAMPLES_ID:
-        from aughor.samples.setup import samples_db_path
+        from aughor.demo.setup import samples_db_path
         return "duckdb", str(samples_db_path())
     if conn_id == WORKSPACE_ID:
         return "local_upload", "local://"
@@ -328,7 +328,7 @@ def get_dsn(conn_id: str) -> tuple[str, str]:
         from aughor.kernel.ledger import Ledger
         return "aughor_ops", str(Ledger.default().path)
     if conn_id == BUILTIN_ID:
-        from aughor.samples.setup import fixture_db_path
+        from aughor.demo.setup import fixture_db_path
         return "duckdb", str(fixture_db_path())
     if conn_id == POSTGRES_BUILTIN_ID:
         if not _postgres_builtin_dsn():

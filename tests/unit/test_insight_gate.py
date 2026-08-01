@@ -209,7 +209,7 @@ class TestGroupByContinuousMeasure:
 
 
 def test_make_cardinality_oracle_probes_and_caches():
-    from aughor.profile.validate import make_cardinality_oracle
+    from aughor.business_profile.validate import make_cardinality_oracle
 
     class _Conn:
         calls = 0

@@ -12,7 +12,7 @@ Three properties carry the weight, and they are the three decisions Wave H defer
 **Risk tier.** Starting an investigation is a read-path analysis — it issues SELECTs and
 writes an investigation row, never a source mutation — but it SPENDS the LLM budget. So
 it is not ``read_only``, and the kinetic executor enforces that as a floor rather than
-trusting the declaration (:func:`aughor.kinetic.executor._risk_of`).
+trusting the declaration (:func:`aughor.actions.executor._risk_of`).
 
 Metering is not added here, and the reason is worth stating precisely because the obvious
 reading is wrong. ``submit_background_tick`` makes THIS a supervised kernel job, but the

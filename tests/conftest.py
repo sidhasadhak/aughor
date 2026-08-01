@@ -156,7 +156,7 @@ def _seed_builtin_dbs():
     test. Both are gitignored dev artifacts absent on a clean checkout / CI, and the
     'fixture' connection (used by builtin_conn_id) breaks if its file is missing.
     Runs independently of the app lifespan (whose seeding is fault-isolated)."""
-    from aughor.samples.setup import ensure_fixture_db, ensure_samples_db
+    from aughor.demo.setup import ensure_fixture_db, ensure_samples_db
     ensure_fixture_db()
     ensure_samples_db()
     yield

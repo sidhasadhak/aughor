@@ -153,7 +153,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
         return (s + "\n\n") if s else ""
 
     def _causal() -> str:
-        from aughor.process.causal import build_causal_context_section
+        from aughor.lifecycle.causal import build_causal_context_section
         s = build_causal_context_section(question, conn_id=connection_id)
         return (s + "\n") if s else ""
 
@@ -267,7 +267,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     # close-the-loop) alongside verified patterns, so the ratchet measures the same
     # pipeline production runs. Empty + zero-cost when the flag is off.
     try:
-        from aughor.verify.priors import build_corrections_section
+        from aughor.feedback.priors import build_corrections_section
         _cblk = build_corrections_section(question, connection_id)
         if _cblk:
             prompt = _cblk + "\n" + prompt

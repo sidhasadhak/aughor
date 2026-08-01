@@ -16,7 +16,7 @@ from pathlib import Path
 import duckdb
 import sqlglot
 
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 # Security baseline — imported lazily to avoid circular imports at module load
 

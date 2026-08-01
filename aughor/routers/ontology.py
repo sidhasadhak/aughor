@@ -948,7 +948,7 @@ def rebuild_ontology(
     # before exploration. Best-effort — a profile failure must not fail the rebuild.
     profile_industry = None
     try:
-        from aughor.profile.infer import infer_business_profile
+        from aughor.business_profile.infer import infer_business_profile
         from aughor.orgsettings import resolve_industry
         bp = infer_business_profile(connection_id, effective)
         profile_industry = resolve_industry(bp.industry)

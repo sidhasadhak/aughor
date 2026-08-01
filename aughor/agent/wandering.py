@@ -243,7 +243,7 @@ def veto_result(step_id: str, sql: str, prior: Any, verdict: Verdict):
     adds is a caveat naming the step it duplicates, which is what makes the duplication
     visible in the trust receipt instead of silently absorbed.
     """
-    from aughor.platform.contracts.execution import QueryResult
+    from aughor.control_plane.contracts.execution import QueryResult
 
     return QueryResult(
         hypothesis_id=step_id,

@@ -72,7 +72,7 @@ def test_real_rows_not_degenerate():
 # keyword guess can't make. Origin: a "conversion 1.4138 by channel" card leaked.
 
 from types import SimpleNamespace as _NS
-from aughor.profile.validate import profile_metric_ranges as _ranges
+from aughor.business_profile.validate import profile_metric_ranges as _ranges
 
 _PROFILE = _NS(north_star_metrics=[
     _NS(name="Cart-to-Order Conversion Rate", unit_or_range="ratio 0-1"),

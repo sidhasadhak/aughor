@@ -1,7 +1,7 @@
 """Scheduled Brief subscriptions — CRUD + test delivery.
 
 A subscription pushes a connection's Intelligence Digest on a recurring schedule
-through an existing Action Hub trigger. See aughor/briefs/.
+through an existing Action Hub trigger. See aughor/briefing/.
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def _validate_period(period: str) -> None:
 
 @router.get("/briefs/subscriptions")
 def list_brief_subscriptions(conn_id: Optional[str] = None):
-    from aughor.briefs.store import list_subscriptions
+    from aughor.briefing.store import list_subscriptions
     from aughor.security.authz import org_visible_conn_ids
     org_conns = org_visible_conn_ids()  # DATA-06: only this org's subscriptions
     subs = [
@@ -53,10 +53,10 @@ def list_brief_subscriptions(conn_id: Optional[str] = None):
 
 @router.post("/briefs/subscriptions", status_code=201, dependencies=[gate(Capability.SCHEDULED_BRIEFS)])
 def create_brief_subscription(body: _SubscriptionBody, request: Request):
-    from aughor.briefs.models    import BriefSubscription
-    from aughor.briefs.store     import save_subscription
-    from aughor.briefs.scheduler import reload_subscription
-    from aughor.actions.store    import get_trigger
+    from aughor.briefing.models    import BriefSubscription
+    from aughor.briefing.store     import save_subscription
+    from aughor.briefing.scheduler import reload_subscription
+    from aughor.notifications.store    import get_trigger
     from aughor.security.authz   import check_owner, get_principal
 
     check_owner("connection", body.conn_id, get_principal(request))  # DATA-06: no cross-org subscribe
@@ -75,8 +75,8 @@ def create_brief_subscription(body: _SubscriptionBody, request: Request):
 
 @router.put("/briefs/subscriptions/{sub_id}", dependencies=[gate(Capability.SCHEDULED_BRIEFS)])
 def update_brief_subscription(sub_id: str, body: _SubscriptionBody):
-    from aughor.briefs.store     import get_subscription, save_subscription
-    from aughor.briefs.scheduler import reload_subscription
+    from aughor.briefing.store     import get_subscription, save_subscription
+    from aughor.briefing.scheduler import reload_subscription
 
     _validate_period(body.period)
     existing = get_subscription(sub_id)
@@ -96,8 +96,8 @@ def update_brief_subscription(sub_id: str, body: _SubscriptionBody):
 
 @router.delete("/briefs/subscriptions/{sub_id}", status_code=204)
 def delete_brief_subscription(sub_id: str):
-    from aughor.briefs.store     import delete_subscription
-    from aughor.briefs.scheduler import remove_subscription
+    from aughor.briefing.store     import delete_subscription
+    from aughor.briefing.scheduler import remove_subscription
     if not delete_subscription(sub_id):
         raise HTTPException(status_code=404, detail="Subscription not found")
     remove_subscription(sub_id)
@@ -106,7 +106,7 @@ def delete_brief_subscription(sub_id: str):
 @router.post("/briefs/subscriptions/{sub_id}/test")
 def test_brief_subscription(sub_id: str):
     """Deliver the brief immediately and return the outcome (status + preview)."""
-    from aughor.briefs.scheduler import trigger_now
+    from aughor.briefing.scheduler import trigger_now
     result = trigger_now(sub_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Subscription not found")

@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from aughor.org import using_org
-from aughor.volumes import (
+from aughor.files import (
     create_volume,
     delete_object,
     list_objects,
@@ -22,8 +22,8 @@ from aughor.volumes import (
 @pytest.fixture()
 def env(tmp_path, monkeypatch):
     import aughor.metastore.store as ms_store
-    import aughor.volumes.store as vol_store
-    from aughor.platform import vending
+    import aughor.files.store as vol_store
+    from aughor.control_plane import vending
     monkeypatch.setattr(ms_store, "_DB_PATH", tmp_path / "metastore.db")
     monkeypatch.setattr(vol_store, "_DB_PATH", tmp_path / "volumes.db")
     root = tmp_path / "uploads"

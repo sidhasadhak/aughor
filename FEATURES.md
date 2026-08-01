@@ -386,7 +386,7 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 
 - **User-defined agents** (`agents.user_defined`) — reusable domain personas ("Gems on governed data"):
   an agent binds standing INSTRUCTIONS + a set of uploaded DOCUMENTS + a CONNECTION
-  (`aughor/user_agents/`, store `data/agents.db`, CRUD `/agents/custom`). Answering via
+  (`aughor/custom_agents/`, store `data/agents.db`, CRUD `/agents/custom`). Answering via
   `/ask` + `agent_id`: the instructions lead the prompt (rules_block-style), document retrieval is
   restricted to the agent's bound documents (fail-closed — an agent with none sees none), the
   connection binding wins (a conflicting explicit connection is a 409, never a silent override), and
@@ -440,7 +440,7 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   read-only/mutation **BLOCK** runs on the Deep-Analysis generation path (`trust.verify_live`) and on the
   `/query/validate` surface (`trust.verify_facade`), so a mutating/DDL statement is stopped at the plane,
   not just at the fail-closed connection layer;
-  a **Capability plane** (`aughor/capability`) — one `Generate→Validate→Execute→Interpret` template
+  a **Capability plane** (`aughor/pipeline`) — one `Generate→Validate→Execute→Interpret` template
   parameterized by domain (`data` SQL + `metadata` schema-Q&A), whose `validate` *is* the Trust plane;
   and a **Semantic plane** (`aughor/semantic/context.py:resolve → SemanticContext`) that resolves
   metrics/ontology/profile/KB **once** per run instead of ad-hoc, read back by the planner. Live-verified

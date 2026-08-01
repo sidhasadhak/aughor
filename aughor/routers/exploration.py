@@ -491,7 +491,7 @@ def _load_business_profile(conn_id: str, schema: str | None):
     the brief must not block on profile inference; without one it still gates + ranks, just
     without north-star weighting or currency correction. Fail-open."""
     try:
-        from aughor.profile import store as _pstore
+        from aughor.business_profile import store as _pstore
         return _pstore.load(conn_id, schema)
     except Exception:
         return None

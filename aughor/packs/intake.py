@@ -60,7 +60,7 @@ def injection_for_question(
     # pinned-binding deploy gate below applies unchanged). No agent, or an agent
     # without pack bindings → the pool is untouched.
     try:
-        from aughor.user_agents.context import agent_pack_ids
+        from aughor.custom_agents.context import agent_pack_ids
         _agent_packs = agent_pack_ids()
         if _agent_packs:
             pool = [p for p in pool if p.id in set(_agent_packs)]

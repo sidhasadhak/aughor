@@ -50,8 +50,8 @@ class TestVault:
 class TestActionTriggerStore:
     def test_url_encrypted_at_rest_plaintext_on_load(self, tmp_path, monkeypatch):
         from aughor.util.json_store import JsonListStore
-        import aughor.actions.store as store
-        from aughor.actions.models import ActionTrigger
+        import aughor.notifications.store as store
+        from aughor.notifications.models import ActionTrigger
         # isolate the store to a temp file
         monkeypatch.setattr(store, "_triggers", JsonListStore(tmp_path / "triggers.json"))
 
@@ -66,7 +66,7 @@ class TestActionTriggerStore:
 
     def test_legacy_plaintext_trigger_still_loads(self, tmp_path, monkeypatch):
         from aughor.util.json_store import JsonListStore
-        import aughor.actions.store as store
+        import aughor.notifications.store as store
         s = JsonListStore(tmp_path / "triggers.json")
         s.upsert({"id": "leg", "name": "old", "type": "webhook",
                   "url": "https://old.example.com/hook", "headers": {}, "enabled": True})
@@ -75,8 +75,8 @@ class TestActionTriggerStore:
 
     def test_auth_headers_encrypted_non_secret_headers_plaintext(self, tmp_path, monkeypatch):
         from aughor.util.json_store import JsonListStore
-        import aughor.actions.store as store
-        from aughor.actions.models import ActionTrigger
+        import aughor.notifications.store as store
+        from aughor.notifications.models import ActionTrigger
         monkeypatch.setattr(store, "_triggers", JsonListStore(tmp_path / "t.json"))
         saved = store.save_trigger(ActionTrigger(
             id="", name="t", type="webhook", url="https://x.io/h",
@@ -88,7 +88,7 @@ class TestActionTriggerStore:
         assert store.get_trigger(saved.id).headers["Authorization"] == "Bearer sk-secret"
 
     def test_to_safe_dict_masks_only_secret_headers(self):
-        from aughor.actions.models import ActionTrigger
+        from aughor.notifications.models import ActionTrigger
         safe = ActionTrigger(id="1", name="t", type="webhook", url="https://x.io/abc/secret",
                              headers={"Authorization": "Bearer sk-secret",
                                       "Content-Type": "application/json"}).to_safe_dict()

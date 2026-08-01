@@ -1,13 +1,13 @@
 """Human-verdict store (Bet 0, 0-V, 2026-06-27).
 
 The non-circular ground truth the trust economy calibrates against. Org-scoped, validated,
-acceptance rate credits accept fully and 'correct' at half. See aughor/verify/verdicts.py.
+acceptance rate credits accept fully and 'correct' at half. See aughor/feedback/verdicts.py.
 """
 
 import pytest
 
 from aughor.org.context import using_org
-import aughor.verify.verdicts as vd
+import aughor.feedback.verdicts as vd
 
 
 @pytest.fixture

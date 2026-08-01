@@ -84,7 +84,7 @@ def test_formatter_cites_fqn_for_schema_docs(monkeypatch):
          "text": "Uploaded doc", "doc_id": "u1", "chunk_index": 0},
     ]
     monkeypatch.setattr(idx, "search_documents", lambda q, top_k=4: hits)
-    monkeypatch.setattr("aughor.user_agents.context.agent_doc_ids", lambda: None)
+    monkeypatch.setattr("aughor.custom_agents.context.agent_doc_ids", lambda: None)
     section = idx.build_external_context_section("anything")
     assert "── Sales (s.sales) ──" in section           # compiled docs cite the node
     assert "── Q3 report (q3.pdf) ──" in section        # uploads keep the filename

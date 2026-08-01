@@ -205,7 +205,7 @@ def trace_identity() -> tuple[str, str, str]:
     except Exception:
         session_id, user_id = "", ""
     try:
-        from aughor.user_agents.context import current_agent
+        from aughor.custom_agents.context import current_agent
         agent = current_agent()
         agent_id = agent.id if agent is not None else ""
     except Exception:

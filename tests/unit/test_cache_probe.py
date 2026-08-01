@@ -11,7 +11,7 @@ import pytest
 
 from aughor.llm import provider as P
 from aughor.llm.cache_probe import verdict_for
-from aughor.platform import capability_for, vend_llm
+from aughor.control_plane import capability_for, vend_llm
 
 
 # ── the pure verdict ──────────────────────────────────────────────────────────

@@ -77,7 +77,7 @@ def execute_action(
     if action is None:
         raise HTTPException(status_code=404, detail=f"No declared action '{action_id}'")
 
-    from aughor.kinetic.executor import execute_kinetic_action
+    from aughor.actions.executor import execute_kinetic_action
     # scope = the connection id — the grain the approval allowlist is keyed on.
     result = execute_kinetic_action(action, body.params, actor=body.actor, scope=connection_id)
     if result.ok:
@@ -109,7 +109,7 @@ def propose_actions_route(
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
 
-    from aughor.kinetic.propose import propose_actions
+    from aughor.actions.propose import propose_actions
     proposals = propose_actions(graph, body.context, scope=connection_id)
 
     # A4: when the inbox is on, persist each VALID proposal so a human can accept it later (durable,
@@ -118,7 +118,7 @@ def propose_actions_route(
     inbox_ids: dict[int, str] = {}
     if flag_enabled("automations.proposals"):
         import uuid as _uuid
-        from aughor.kinetic.inbox import StagedProposal, stage_proposal
+        from aughor.actions.inbox import StagedProposal, stage_proposal
         run_id = _uuid.uuid4().hex
         for i, p in enumerate(proposals):
             if not p.ok:
@@ -149,7 +149,7 @@ def _require_proposals() -> None:
 def list_inbox(connection_id: str = BUILTIN_ID, status: Optional[str] = Query(default=None)):
     """The staged proposals for a connection (optionally filtered by status) — the review queue."""
     _require_proposals()
-    from aughor.kinetic.inbox import list_proposals
+    from aughor.actions.inbox import list_proposals
     return {"proposals": [p.model_dump() for p in list_proposals(connection_id, status)]}
 
 
@@ -159,7 +159,7 @@ def accept_inbox(proposal_id: str, body: AcceptRequest):
     executor bypasses the approval gate (never the criteria). A criterion failure returns 422 with
     the authored message; a re-accept of an already-resolved proposal returns 409."""
     _require_proposals()
-    from aughor.kinetic.inbox import accept_proposal
+    from aughor.actions.inbox import accept_proposal
     result, grant_id = accept_proposal(proposal_id, actor=body.actor, mint_grant=body.mint_grant)
     if result.status == "not_found":
         raise HTTPException(status_code=404, detail="No such proposal")
@@ -178,7 +178,7 @@ def accept_inbox(proposal_id: str, body: AcceptRequest):
 def reject_inbox(proposal_id: str, body: RejectRequest):
     """Reject a staged proposal — resolved with the actor, no side effect. A re-reject is a no-op."""
     _require_proposals()
-    from aughor.kinetic.inbox import reject_proposal
+    from aughor.actions.inbox import reject_proposal
     return {"rejected": reject_proposal(proposal_id, actor=body.actor)}
 
 
@@ -186,7 +186,7 @@ def reject_inbox(proposal_id: str, body: RejectRequest):
 def list_grants_route(connection_id: str = BUILTIN_ID):
     """The target-bound standing grants on a connection — the pre-authorizations, for review/revoke."""
     _require_proposals()
-    from aughor.kinetic.grants import list_grants
+    from aughor.actions.grants import list_grants
     return {"grants": [g.model_dump() for g in list_grants(connection_id)]}
 
 
@@ -194,7 +194,7 @@ def list_grants_route(connection_id: str = BUILTIN_ID):
 def revoke_grant_route(grant_id: str):
     """Revoke a standing grant — future unattended runs of that target hit the approval gate again."""
     _require_proposals()
-    from aughor.kinetic.grants import revoke_grant
+    from aughor.actions.grants import revoke_grant
     if not revoke_grant(grant_id):
         raise HTTPException(status_code=404, detail="No such grant")
     return {"revoked": grant_id}
@@ -210,7 +210,7 @@ def annotate(body: AnnotateRequest, connection_id: str = BUILTIN_ID):
         raise HTTPException(status_code=404, detail="Overlay edits are not enabled")
     if not body.table or not body.body:
         raise HTTPException(status_code=400, detail="table and body are required")
-    from aughor.kinetic.overlay import OverlayEdit, save_edit
+    from aughor.actions.overlay import OverlayEdit, save_edit
     edit = save_edit(OverlayEdit(
         connection_id=connection_id, table=body.table, column=body.column,
         key_column=body.key_column, row_key=body.row_key, kind=body.kind, body=body.body,
@@ -221,5 +221,5 @@ def annotate(body: AnnotateRequest, connection_id: str = BUILTIN_ID):
 @router.get("/kinetic-actions/annotations")
 def list_annotations(connection_id: str = BUILTIN_ID):
     """Wave K5 — the human overlay edits on a connection, for the review UI."""
-    from aughor.kinetic.overlay import edits_for_connection
+    from aughor.actions.overlay import edits_for_connection
     return {"edits": [e.model_dump() for e in edits_for_connection(connection_id)]}

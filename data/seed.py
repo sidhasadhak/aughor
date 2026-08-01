@@ -1,6 +1,6 @@
 """Seed the demo DuckDB database — thin wrapper kept for `python data/seed.py`.
 
-The scenario itself lives in ``aughor/samples/scenario.py`` (single source of
+The scenario itself lives in ``aughor/demo/scenario.py`` (single source of
 truth): 90 days of SaaS revenue for ~800 customers with a discoverable APAC
 payment-gateway outage on day 83, EMEA/Enterprise unaffected, and an NA promo
 planted as a red herring.
@@ -20,7 +20,7 @@ DB_PATH = Path(__file__).parent / "aughor.duckdb"
 
 
 def main():
-    from aughor.samples.scenario import seed_scenario_db
+    from aughor.demo.scenario import seed_scenario_db
 
     summary = seed_scenario_db(DB_PATH, overwrite=True)
     print(f"Database seeded at: {DB_PATH}")

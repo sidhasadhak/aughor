@@ -9,7 +9,7 @@ import operator
 # The query-execution result contract lives on the PLATFORM side so the data plane
 # (db / connectors) returns it without importing the agent. Re-exported here so the
 # many `from aughor.agent.state import QueryResult` call sites stay unchanged.
-from aughor.platform.contracts.execution import QueryResult, StatResult  # noqa: F401
+from aughor.control_plane.contracts.execution import QueryResult, StatResult  # noqa: F401
 
 
 # ── Pydantic output schemas (structured LLM responses) ──────────────────────
@@ -107,7 +107,7 @@ class SQLOutput(BaseModel):
     reasoning: str = Field(default="", description="One sentence: what this query measures.")
 
 
-# StatResult + QueryResult moved to aughor.platform.contracts.execution (imported at
+# StatResult + QueryResult moved to aughor.control_plane.contracts.execution (imported at
 # the top of this module). They remain importable from here for back-compat.
 
 

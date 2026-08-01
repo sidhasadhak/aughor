@@ -161,7 +161,7 @@ def reference_checker(conn: Any) -> Callable[[EvalCase, EvalObservation], Option
     still passes). Returns None when a case declares no expectation, which the
     runner counts separately rather than scoring as a miss.
     """
-    from aughor.user_agents.quality import results_match
+    from aughor.custom_agents.quality import results_match
 
     def check(case: EvalCase, obs: EvalObservation) -> Optional[bool]:
         expected = case.expected or {}

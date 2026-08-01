@@ -25,7 +25,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 logger = logging.getLogger(__name__)
 

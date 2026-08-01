@@ -79,7 +79,7 @@ def list_adopted_automations() -> list[Automation]:
     except Exception as exc:
         logger.warning("adopt: could not read monitors: %s", exc)
     try:
-        from aughor.briefs.store import list_subscriptions
+        from aughor.briefing.store import list_subscriptions
         out.extend(subscription_as_automation(s) for s in list_subscriptions() if s.enabled)
     except Exception as exc:
         logger.warning("adopt: could not read brief subscriptions: %s", exc)

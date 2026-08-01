@@ -3,7 +3,7 @@
 After the resolver proposes a role→table/column mapping and the deployer confirms it, the
 binding is stored as a first-class, org-scoped, versioned record so a re-deploy is
 reproducible and auditable (DOMAIN_EXPERTISE_PACKS.md §5.4). A pack is "bound" on a
-connection iff a binding row exists. Mirrors the SQLite idiom of aughor/verify/verdicts.py.
+connection iff a binding row exists. Mirrors the SQLite idiom of aughor/feedback/verdicts.py.
 """
 from __future__ import annotations
 

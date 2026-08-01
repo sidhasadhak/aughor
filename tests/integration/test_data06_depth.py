@@ -38,8 +38,8 @@ def _mk_alert(conn_id: str, monitor_id: str):
 
 
 def _mk_subscription(conn_id: str, name: str = "sub"):
-    from aughor.briefs.models import BriefSubscription
-    from aughor.briefs.store import save_subscription
+    from aughor.briefing.models import BriefSubscription
+    from aughor.briefing.store import save_subscription
     return save_subscription(BriefSubscription(conn_id=conn_id, name=name, trigger_id="t-x"))
 
 
@@ -142,7 +142,7 @@ def test_create_monitor_on_foreign_connection_403(client, monkeypatch):
 def test_brief_by_id_is_org_scoped(client, monkeypatch):
     monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
     from aughor.db import registry
-    from aughor.briefs.store import delete_subscription
+    from aughor.briefing.store import delete_subscription
 
     cid = _mk_conn("d6brief_a", "brief-a-conn")
     sub = _mk_subscription(cid)
@@ -157,7 +157,7 @@ def test_brief_by_id_is_org_scoped(client, monkeypatch):
 def test_brief_list_is_org_scoped(client, monkeypatch):
     monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
     from aughor.db import registry
-    from aughor.briefs.store import delete_subscription
+    from aughor.briefing.store import delete_subscription
 
     cid = _mk_conn("d6blist_a", "blist-a-conn")
     sub = _mk_subscription(cid, "blist-sub")

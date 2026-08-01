@@ -51,8 +51,8 @@ def _install(monkeypatch, *, sleep=0.0):
 
     monkeypatch.setattr("aughor.semantic.retriever.retrieve_relevant_schema", _schema)
     monkeypatch.setattr("aughor.semantic.kb_retriever.retrieve_for_planning", _kb)
-    monkeypatch.setattr("aughor.process.causal.build_causal_context_section", _causal)
-    monkeypatch.setattr("aughor.verify.priors.build_corrections_section", _priors)
+    monkeypatch.setattr("aughor.lifecycle.causal.build_causal_context_section", _causal)
+    monkeypatch.setattr("aughor.feedback.priors.build_corrections_section", _priors)
     llm = _CaptureLLM()
     monkeypatch.setattr(N, "get_provider", lambda *_a, **_k: llm)
     return llm

@@ -5,7 +5,7 @@
   <p><em>Your warehouse, always thinking.</em></p>
 
   <p>
-    <a href="https://github.com/sidhasadhak/aughor/actions/workflows/ci.yml"><img src="https://github.com/sidhasadhak/aughor/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+    <a href="https://github.com/sidhasadhak/aughor/notifications/workflows/ci.yml"><img src="https://github.com/sidhasadhak/aughor/notifications/workflows/ci.yml/badge.svg" alt="CI" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-black" alt="License: Apache-2.0" /></a>
     <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status: alpha" />
     <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+" />

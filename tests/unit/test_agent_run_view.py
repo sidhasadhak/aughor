@@ -21,8 +21,8 @@ import pytest
 from aughor.db.history import (
     create_investigation, list_investigations_for_agent, save_chat_turn,
 )
-from aughor.user_agents.context import activate_agent, release_agent
-from aughor.user_agents.models import UserAgent
+from aughor.custom_agents.context import activate_agent, release_agent
+from aughor.custom_agents.models import UserAgent
 
 
 @pytest.fixture

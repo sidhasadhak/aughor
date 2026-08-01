@@ -418,7 +418,7 @@ Each phase ships value and is independently stoppable.
   `aughor/org/` (`Org` above `Workspace`, `current_org_id()` contextvar, registry + bootstrap);
   `org_id` on every persisted store (workspaces, connections, jobs, artifacts, lineage,
   audit_log) + metering; storage re-pathed to `{root}/{org_id}/{conn_id}/…` via the
-  `aughor/platform/` control plane (`vend_storage()` — access is vended, never ambient,
+  `aughor/control_plane/` control plane (`vend_storage()` — access is vended, never ambient,
   Invariant #2) with a crash-safe idempotent on-disk migration; the control-plane / data-plane
   split is explicit in code. Single org in practice; multi-tenant-shaped in structure.
 - **Phase 2 — the metastore service — ✅ done** *(2026-06-23).* `aughor/metastore/` ships
@@ -435,7 +435,7 @@ Each phase ships value and is independently stoppable.
   schema/table-level grants; the four control-path reverse lookups (governance/compute)
   deliberately stay on the workspace store.
 - **Phase 3 — storage maturity — ◑ in progress.** **Volumes** for the unstructured tier
-  shipped (`aughor/volumes/`): catalog-scoped governed containers for files/images/PDFs/video,
+  shipped (`aughor/files/`): catalog-scoped governed containers for files/images/PDFs/video,
   bytes vended to the tenant path (`{root}/{org}/{catalog}/_volumes/…`), a queryable object
   metadata catalog, and a `/metastore` API (create/list volume · put/list/download/delete
   object). *Remaining:* wire `extracted_text` to the R8 `prompt()`/`embedding()` operators;

@@ -7,7 +7,7 @@ evidence and a confidence, so the same pack is portable across connections.
 This module is the PURE proposal half: it scores roles against a connection-agnostic
 ``SchemaFacts`` contract (tables, identity columns, FK edges, date columns, business model).
 Two pieces are deliberately deferred because they need a live connection:
-  • the adapter that builds ``SchemaFacts`` from ``aughor/profile`` + the entity graph, and
+  • the adapter that builds ``SchemaFacts`` from ``aughor/business_profile`` + the entity graph, and
   • the dry-run/EXPLAIN verification of each metric recipe against the proposed binding.
 Keeping the contract explicit means this engine is fully unit-testable today and the live
 adapter slots in behind it without reshaping the logic. See DOMAIN_EXPERTISE_PACKS.md §5.

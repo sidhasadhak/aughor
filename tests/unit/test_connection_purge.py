@@ -16,7 +16,7 @@ import pytest
 @pytest.fixture
 def isolated(tmp_path, monkeypatch):
     """Redirect every connection-keyed store + the upload root to tmp."""
-    from aughor.briefs import store as brief_store
+    from aughor.briefing import store as brief_store
     from aughor.db import history, purge, type_overrides
     from aughor.evidence import store as evidence_store
     from aughor.monitors import store as monitor_store
@@ -25,8 +25,8 @@ def isolated(tmp_path, monkeypatch):
     from aughor.explorer import watermark
     from aughor.knowledge import briefing, patterns
     from aughor.ontology import store as ontology_store
-    from aughor.platform import vending
-    from aughor.profile import store as profile_store
+    from aughor.control_plane import vending
+    from aughor.business_profile import store as profile_store
     from aughor.semantic import connection_kb
     from aughor.tools import profile_cache
     from aughor.util.json_store import KeyedJsonStore
@@ -129,7 +129,7 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     }))
 
     # uploaded data dir
-    from aughor.platform.vending import vend_storage
+    from aughor.control_plane.vending import vend_storage
     root = vend_storage(conn).root
     (root / "main").mkdir(parents=True)
     (root / "main" / "sales.csv").write_text("a,b\n1,2\n")

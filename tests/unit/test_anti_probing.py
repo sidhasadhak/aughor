@@ -20,7 +20,7 @@ import inspect
 
 import pytest
 
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 from aughor.tools.executor import format_result_for_llm
 
 SUPPRESSION_WORDS = ("suppress", "redact", "hidden", "withheld", "filtered out",

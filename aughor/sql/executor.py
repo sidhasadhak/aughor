@@ -166,7 +166,7 @@ def execute_guarded(
                                                       dialect=getattr(conn, "dialect", "duckdb")),
                                      kind="sql")
             if not _verdict.ok:
-                from aughor.platform.contracts.execution import QueryResult
+                from aughor.control_plane.contracts.execution import QueryResult
                 return QueryResult(hypothesis_id=query_id, sql=sql, columns=[], rows=[],
                                    row_count=0, error=f"[BLOCKED] {_verdict.reason}")
         except Exception as _exc:
@@ -253,7 +253,7 @@ def execute_guarded(
         # Wave K3: merge this connection's human overlay edits onto the result at read time
         # (flag `kinetic.overlay`, default off ⇒ byte-identical). Best-effort inside apply_overlay.
         if flag_enabled("kinetic.overlay"):
-            from aughor.kinetic.overlay import apply_overlay
+            from aughor.actions.overlay import apply_overlay
             apply_overlay(res, getattr(conn, "_connection_id", ""))
         return res
 

@@ -3,7 +3,7 @@
 A steered, VERIFIED run distills learnings (caveats, diagnostics) via flywheel.distill_deltas.
 Rather than auto-mutate the pack folder, we PROPOSE them to this org-scoped store; a human
 accepts or dismisses (the 'expert changelog' UI). That keeps the flywheel compounding without
-letting an unattended loop rewrite an expert. Mirrors aughor/verify/verdicts.py.
+letting an unattended loop rewrite an expert. Mirrors aughor/feedback/verdicts.py.
 """
 from __future__ import annotations
 

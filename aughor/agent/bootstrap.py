@@ -59,7 +59,7 @@ def _register_authz_resolvers() -> None:
         return a.conn_id if a else None
 
     def _brief_conn(sub_id: str):
-        from aughor.briefs.store import get_subscription
+        from aughor.briefing.store import get_subscription
         sub = get_subscription(sub_id)
         return sub.conn_id if sub else None
 
@@ -179,7 +179,7 @@ def _ontology_conn(conn_id, org_id):
 
 
 def _profile_conn(conn_id, org_id):
-    from aughor.profile import store as profile_store
+    from aughor.business_profile import store as profile_store
     profile_store.invalidate(conn_id)
     return {"profile": 1}
 
@@ -191,7 +191,7 @@ def _profile_cache_conn(conn_id, org_id):
 
 
 def _briefs_conn(conn_id, org_id):
-    from aughor.briefs import store as brief_store
+    from aughor.briefing import store as brief_store
     return {"brief_subscriptions": brief_store.delete_for_connection(conn_id)}
 
 
@@ -243,19 +243,19 @@ def _ambiguity_conn(conn_id, org_id):
 def _overlay_conn(conn_id, org_id):
     # Wave K3: human overlay edits are per-connection annotations over that connection's data,
     # so they die with the connection.
-    from aughor.kinetic import overlay
+    from aughor.actions import overlay
     return {"overlay_edits": overlay.purge_connections([conn_id], org_id=org_id)}
 
 
 def _kinetic_inbox_conn(conn_id, org_id):
     # Wave A4: staged proposals name an action on this connection — they die with it.
-    from aughor.kinetic import inbox
+    from aughor.actions import inbox
     return {"staged_proposals": inbox.purge_connection(conn_id)}
 
 
 def _kinetic_grants_conn(conn_id, org_id):
     # Wave A4: a standing grant pre-authorizes a target on this connection — dies with it.
-    from aughor.kinetic import grants
+    from aughor.actions import grants
     return {"standing_grants": grants.purge_connection(conn_id)}
 
 
@@ -279,7 +279,7 @@ def _qdrant_conn(conn_id, org_id):
 # schema-keyed hooks ----------------------------------------------------------
 
 def _profile_schema(conn_id, schema):
-    from aughor.profile import store as profile_store
+    from aughor.business_profile import store as profile_store
     profile_store.invalidate(conn_id, schema)
     return {"profile": 1}
 

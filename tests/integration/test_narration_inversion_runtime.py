@@ -109,7 +109,7 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
 
     import aughor.llm.provider as prov
     import aughor.ontology.store as ostore
-    import aughor.profile.infer as pinfer
+    import aughor.business_profile.infer as pinfer
     import aughor.sql.writer as wmod
     from aughor.db.connection import open_connection_for
     from aughor.explorer.agent import SchemaExplorer

@@ -61,7 +61,7 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
     is forced — the question→execute→lint→drop path is the real one."""
     import aughor.llm.provider as prov
     import aughor.ontology.store as ostore
-    import aughor.profile.infer as pinfer
+    import aughor.business_profile.infer as pinfer
     import aughor.sql.writer as wmod
     from aughor.db.connection import open_connection_for
     from aughor.explorer.agent import SchemaExplorer

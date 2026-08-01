@@ -89,7 +89,7 @@ def log_outcome(
     # Promote (or weaken) causal proposals for this investigation
     if status in ("verified", "implemented", "rejected"):
         try:
-            from aughor.process.causal import promote_on_outcome
+            from aughor.lifecycle.causal import promote_on_outcome
             promote_on_outcome(inv_id, contradicted=(status == "rejected"))
         except Exception:
             pass

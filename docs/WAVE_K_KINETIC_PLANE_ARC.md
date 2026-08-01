@@ -46,7 +46,7 @@ is net-new. Precisely:
 | Foundation | Reality today | file:line |
 |---|---|---|
 | `OntologyAction` | Read-side SQL-template shortcut (`ACTION:id()`→subquery). Has **typed params** (`ActionParameter`) but **no** side-effect / submission / mutation concept; all 5 `action_type`s are read-side | [`ontology/models.py:215`](../aughor/ontology/models.py), [`ontology/actions.py`](../aughor/ontology/actions.py) |
-| "ActionHub" | **Exists** — outbound webhook/slack/jira notify, SSRF-guarded, append-only logged, `Capability.ACTION_HUB`-gated. A *side-effect* surface, not DB write | [`actions/executor.py:82`](../aughor/actions/executor.py) `fire_action`, [`routers/actions.py`](../aughor/routers/actions.py) |
+| "ActionHub" | **Exists** — outbound webhook/slack/jira notify, SSRF-guarded, append-only logged, `Capability.ACTION_HUB`-gated. A *side-effect* surface, not DB write | [`actions/executor.py:82`](../aughor/notifications/executor.py) `fire_action`, [`routers/actions.py`](../aughor/routers/actions.py) |
 | `govern/actions.py` | **Exists** — graduated-approval dial (`classify`/`guard`/`audit`, risk enum, 428 flow). But only **3** `guard()` call sites, **9 of 12** `_RISK` actions unenforced, and **off unless `AUGHOR_ACTION_APPROVAL`** | [`govern/actions.py:128`](../aughor/govern/actions.py) |
 | Approvals API | **Exists** — `/approvals/allow\|revoke\|allowlist\|audit`, 428→allow→retry | [`routers/approvals.py:23`](../aughor/routers/approvals.py) |
 | RBAC | **Exists** — `Permission` enum + `policy.py` route→perm table, but inert unless identity on AND `Capability.RBAC_SSO`; AND-ed with licensing capability | [`rbac/policy.py:33`](../aughor/rbac/policy.py), [`rbac/deps.py:75`](../aughor/rbac/deps.py) |
@@ -121,14 +121,14 @@ blocked or criterion-failed action, the gate fails.
 ## PR-K3 — The edits-as-overlay ledger
 
 **Scope.** New SQLite store `data/overlay_ledger.db` (env `AUGHOR_OVERLAY_LEDGER_DB`), org+connection-scoped,
-cloning the [`verify/verdicts.py`](../aughor/verify/verdicts.py) idiom the ambiguity ledger already uses.
+cloning the [`verify/verdicts.py`](../aughor/feedback/verdicts.py) idiom the ambiguity ledger already uses.
 Record: `{org_id, connection_id, schema_scope, target (table / table.column / table.column + row-key),
 kind (annotation|correction), body, source, precedence_rank, created_at, last_used_at}`. Precedence via a
 `_SOURCE_RANK` copy (human > machine), override-wins merge modelled on
 [`orgsettings/store.py:42`](../aughor/orgsettings/store.py). **Read-time merge:** extend
 [`_attach_caveats` (`sql/executor.py:250`)](../aughor/sql/executor.py) with a **per-cell channel** (address
 by row-index + column, since `rows` is `list[list]`) and add a column/metric-grain hook in
-[`profile/store.py`](../aughor/profile/store.py) (which already transforms at read). Register a
+[`profile/store.py`](../aughor/business_profile/store.py) (which already transforms at read). Register a
 catalog-delete purge hook (mirror `ambiguity_ledger.purge_connections` in `agent/bootstrap.py`).
 
 **Flag** `kinetic.overlay` (default off) · **Tests** ~26 · **Decision gate:** an annotation written to

@@ -13,7 +13,7 @@ from typing import Optional
 
 
 from aughor.agent.state import VerificationManifest
-from aughor.verify.gate import is_compoundable
+from aughor.feedback.gate import is_compoundable
 
 
 @dataclass

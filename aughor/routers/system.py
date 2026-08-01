@@ -36,7 +36,7 @@ def _llm_readiness() -> dict:
 
 @router.get("/health")
 def health():
-    from aughor.samples.setup import fixture_db_path
+    from aughor.demo.setup import fixture_db_path
     return {
         "status": "ok",
         "fixture_db": fixture_db_path().exists(),

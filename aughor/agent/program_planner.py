@@ -31,7 +31,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 logger = logging.getLogger(__name__)
 
@@ -426,7 +426,7 @@ def answer_program(question: str, conn_id: str, *, investigation_id: Optional[st
     Closed-loop replay (Stage C): when ``closed_loop`` is on, a matching trusted program is replayed
     deterministically instead of re-planning, and a clean fresh run is crystallized so it replays next time.
     Both are best-effort and default-off, so the base behaviour is unchanged."""
-    from aughor.verify.priors import closed_loop_enabled
+    from aughor.feedback.priors import closed_loop_enabled
 
     inv = investigation_id or hashlib.sha1(question.encode()).hexdigest()[:12]
     oid = org_id or ""

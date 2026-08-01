@@ -47,12 +47,12 @@ def test_dialect_rules_block_matches_original():
 
 
 def test_agent_brief_matches_original():
-    from aughor.user_agents.context import agent_brief_block
+    from aughor.custom_agents.context import agent_brief_block
     assert G.agent_brief() == (agent_brief_block() or "")
 
 
 def test_correction_priors_matches_original():
-    from aughor.verify.priors import build_corrections_section
+    from aughor.feedback.priors import build_corrections_section
     q, c = "why is refund rate high", "samples"
     assert G.correction_priors(q, c) == (build_corrections_section(q, c) or "")
 

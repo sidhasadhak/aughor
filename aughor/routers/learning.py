@@ -27,7 +27,7 @@ def learning_summary(connection_id: Optional[str] = None):
     from aughor.semantic.ambiguity_ledger import ledger_stats
     from aughor.semantic.trusted_programs import list_trusted_programs
     from aughor.semantic.trusted_queries import list_trusted
-    from aughor.verify import verdict_stats
+    from aughor.feedback import verdict_stats
 
     org = current_org_id()
     cid = connection_id or ""

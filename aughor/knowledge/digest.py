@@ -142,7 +142,7 @@ def _feedback(connection_id: str) -> Section:
     place and found zero, which is the same wrong-source mistake G3b's `llm_call` reader
     made. Worth the comment because the ledger is the obvious guess and it is wrong.
     """
-    from aughor.verify.verdicts import list_corrections, list_verdicts
+    from aughor.feedback.verdicts import list_corrections, list_verdicts
 
     verdicts = list_verdicts(connection_id) or []
     corrections = list_corrections(connection_id) or []
@@ -158,7 +158,7 @@ def _feedback(connection_id: str) -> Section:
 
 
 def _curation(connection_id: str) -> Section:
-    from aughor.kinetic.inbox import list_proposals
+    from aughor.actions.inbox import list_proposals
 
     staged = list_proposals() or []
     return Section(

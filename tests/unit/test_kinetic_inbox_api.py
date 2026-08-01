@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from aughor.api import app
-from aughor.kinetic import inbox
+from aughor.actions import inbox
 from aughor.ontology.models import ActionParameter, KineticAction
 
 client = TestClient(app)
@@ -38,7 +38,7 @@ def wired(monkeypatch):
         kinetic_actions = {"refund": _action()}
     monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
                         lambda cid, schema=None: _G())
-    import aughor.kinetic.executor as ex
+    import aughor.actions.executor as ex
     calls: list = []
     monkeypatch.setattr(ex, "default_dispatch", lambda a, p, s="": calls.append((a.id, p)))
     return calls
@@ -105,8 +105,8 @@ def test_propose_stages_to_the_inbox_when_the_flag_is_on(monkeypatch):
         kinetic_actions = {"refund": _action()}
     monkeypatch.setattr("aughor.routers.kinetic._resolve_graph", lambda c, s: _G())
 
-    from aughor.kinetic.propose import Proposal
-    monkeypatch.setattr("aughor.kinetic.propose.propose_actions",
+    from aughor.actions.propose import Proposal
+    monkeypatch.setattr("aughor.actions.propose.propose_actions",
                         lambda graph, ctx, scope="", provider=None: [
                             Proposal("refund", "proposed", {"order_id": "8821"}, "because")])
 

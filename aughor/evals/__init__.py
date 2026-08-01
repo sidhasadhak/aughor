@@ -17,7 +17,7 @@ Usage::
     failed = [s for s in scores if not s.passed and not s.skipped]
 
 Built-ins register at import so the library works out of the box, matching
-``aughor/capability/__init__.py``.
+``aughor/pipeline/__init__.py``.
 """
 from __future__ import annotations
 

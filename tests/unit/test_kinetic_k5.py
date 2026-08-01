@@ -64,7 +64,7 @@ def test_annotate_flag_off_is_404(monkeypatch):
 
 def test_annotate_writes_and_lists(monkeypatch):
     monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: n == "kinetic.overlay")
-    from aughor.kinetic import overlay as OVL
+    from aughor.actions import overlay as OVL
     OVL.purge_connections(["c-k5"])
     try:
         out = K.annotate(K.AnnotateRequest(table="orders", column="status", key_column="order_id",

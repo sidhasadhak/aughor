@@ -10,7 +10,7 @@ import duckdb
 
 
 def test_ensure_fixture_db_creates_openable_db(monkeypatch, tmp_path):
-    from aughor.samples import setup
+    from aughor.demo import setup
 
     fake = tmp_path / "aughor.duckdb"
     monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
@@ -43,7 +43,7 @@ def test_fixture_db_has_a_real_discoverable_signal(monkeypatch, tmp_path):
     `region`, so the first-run Briefing narrated a non-finding. Assert the three
     properties that make the demo honest: a dated outage event, a real failure
     spike confined to APAC/SMB on that day, and no plan≡region collinearity."""
-    from aughor.samples import setup
+    from aughor.demo import setup
 
     fake = tmp_path / "aughor.duckdb"
     monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
@@ -94,7 +94,7 @@ def test_fixture_db_has_a_real_discoverable_signal(monkeypatch, tmp_path):
 
 def test_seed_scenario_db_overwrite_contract(tmp_path):
     """`aughor seed` replaces an existing file; the auto-seed path never may."""
-    from aughor.samples.scenario import seed_scenario_db
+    from aughor.demo.scenario import seed_scenario_db
 
     target = tmp_path / "demo.duckdb"
     summary = seed_scenario_db(target, overwrite=False)

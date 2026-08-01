@@ -13,10 +13,10 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from aughor.user_agents import (
+from aughor.custom_agents import (
     create_agent, delete_agent, get_agent, list_agents, update_agent,
 )
-from aughor.user_agents.context import (
+from aughor.custom_agents.context import (
     activate_agent, agent_brief_block, agent_doc_ids, current_agent, release_agent,
 )
 
@@ -290,7 +290,7 @@ def test_store_schema_scope_and_pack_ids_roundtrip():
 
 
 def test_agent_pack_ids_semantics():
-    from aughor.user_agents.context import agent_pack_ids
+    from aughor.custom_agents.context import agent_pack_ids
     assert agent_pack_ids() == []  # no agent → no restriction
     a = create_agent("Packed", pack_ids=["p1", "p2"])
     token = activate_agent(a)
@@ -378,7 +378,7 @@ def test_apply_agent_bindings_rules():
 # ── Slice 5: measured agents (goldens + evaluation) ───────────────────────────
 
 def test_goldens_store_roundtrip():
-    from aughor.user_agents.store import add_golden, delete_golden, list_goldens
+    from aughor.custom_agents.store import add_golden, delete_golden, list_goldens
     a = create_agent("Measured")
     g = add_golden(a.id, "How many orders?", "SELECT COUNT(*) FROM orders")
     assert g["id"].startswith("ag_")
@@ -392,7 +392,7 @@ def test_goldens_store_roundtrip():
 
 
 def test_results_match_semantics():
-    from aughor.user_agents.quality import results_match
+    from aughor.custom_agents.quality import results_match
     assert results_match([[5]], [[5]])
     assert results_match([[5.0]], [["5"]])            # type-tolerant
     assert results_match([[1], [2]], [[2], [1]])      # order-insensitive
@@ -406,8 +406,8 @@ def test_evaluate_agent_stamps_result(monkeypatch):
     import duckdb as _duckdb
     import types as _types
 
-    from aughor.user_agents.quality import evaluate_agent
-    from aughor.user_agents.store import add_golden
+    from aughor.custom_agents.quality import evaluate_agent
+    from aughor.custom_agents.store import add_golden
 
     con = _duckdb.connect()
     con.execute("CREATE TABLE orders AS SELECT * FROM (VALUES (1), (2), (3)) t(id)")
@@ -443,8 +443,8 @@ def test_evaluate_agent_stamps_result(monkeypatch):
 def test_evaluate_agent_generation_failure_is_scored(monkeypatch):
     import types as _types
 
-    from aughor.user_agents.quality import evaluate_agent
-    from aughor.user_agents.store import add_golden
+    from aughor.custom_agents.quality import evaluate_agent
+    from aughor.custom_agents.store import add_golden
 
     db = _types.SimpleNamespace(
         execute=lambda qid, sql: _types.SimpleNamespace(rows=[[1]], error=None),

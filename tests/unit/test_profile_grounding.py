@@ -3,8 +3,8 @@
   F5 — guarantee a cross-domain AND key-question (the margin-leak class)
   F4 — anchor a metric's sane band on the MEASURED magnitude, not a world-knowledge guess
 """
-from aughor.profile import infer as I
-from aughor.profile.models import BusinessProfile, NorthStarMetric
+from aughor.business_profile import infer as I
+from aughor.business_profile.models import BusinessProfile, NorthStarMetric
 
 
 def _profile(**kw):

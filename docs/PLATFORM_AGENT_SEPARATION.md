@@ -38,11 +38,11 @@ Membership: **Platform** = `db`, `kernel`, `connectors`, `metastore`, `org`,
 ## The contract — two halves
 
 1. **Downward (what the platform offers the agent)** —
-   `aughor/platform/contracts/host.py`: a `HostCapabilities` Protocol + `default_host()`
+   `aughor/control_plane/contracts/host.py`: a `HostCapabilities` Protocol + `default_host()`
    naming the data plane, inference vending, the job/ledger substrate, the security
    gate, and the grant-scoped catalog view. The agent reaches these through their
    stable module functions today; the Protocol makes the surface explicit and
-   substitutable. Plus `aughor/platform/contracts/execution.py` — the `QueryResult`
+   substitutable. Plus `aughor/control_plane/contracts/execution.py` — the `QueryResult`
    execution-result contract every connector returns.
 
 2. **Upward (what the agent plugs into the platform)** — the registries under

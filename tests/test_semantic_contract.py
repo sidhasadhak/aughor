@@ -7,7 +7,7 @@ each source's trust signal (governance approval / live verification) maps to `is
 from __future__ import annotations
 
 from aughor.ontology.models import OntologyMetric
-from aughor.profile.models import NorthStarMetric
+from aughor.business_profile.models import NorthStarMetric
 from aughor.semantic.contracts import SemanticContract
 from aughor.semantic.metrics import MetricDefinition
 

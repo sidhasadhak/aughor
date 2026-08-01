@@ -65,7 +65,7 @@ def is_degenerate_result(rows, finding_text: str = "", sql: str = "", metric_ran
     matched = None
     if metric_ranges:
         try:
-            from aughor.profile.validate import match_metric_range
+            from aughor.business_profile.validate import match_metric_range
             matched = match_metric_range(f"{finding_text}\n{sql}", metric_ranges)
         except Exception:
             matched = None
@@ -149,7 +149,7 @@ def _uniqueness_oracle_for(conn):
     if conn is None:
         return None
     try:
-        from aughor.profile.validate import make_uniqueness_oracle
+        from aughor.business_profile.validate import make_uniqueness_oracle
         from aughor.tools.schema import parse_schema_tables
         tc = getattr(conn, "_insight_table_cols", None)
         if tc is None:
@@ -169,7 +169,7 @@ def _cardinality_oracle_for(conn):
     if conn is None:
         return None
     try:
-        from aughor.profile.validate import make_cardinality_oracle
+        from aughor.business_profile.validate import make_cardinality_oracle
         from aughor.tools.schema import parse_schema_tables
         tc = getattr(conn, "_insight_table_cols", None)
         if tc is None:

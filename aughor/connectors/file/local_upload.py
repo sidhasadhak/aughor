@@ -13,7 +13,7 @@ Storage layout (tenant-pathed, schema-aware)::
         finance/
             ledger.parquet
 
-The {org_id} segment is resolved via aughor.platform.vending.vend_storage (§5.1);
+The {org_id} segment is resolved via aughor.control_plane.vending.vend_storage (§5.1);
 this connector never joins the upload root directly.
             ledger.parquet.import.json
 
@@ -46,8 +46,8 @@ from pathlib import Path
 import duckdb
 
 from aughor.connectors.base import Connector
-from aughor.platform.contracts.execution import QueryResult
-from aughor.platform.vending import STORAGE_ROOT, vend_storage
+from aughor.control_plane.contracts.execution import QueryResult
+from aughor.control_plane.vending import STORAGE_ROOT, vend_storage
 
 logger = logging.getLogger(__name__)
 

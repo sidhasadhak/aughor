@@ -35,7 +35,7 @@ def put_org_settings(settings: OrgSettings):
     saved = save_org_settings(settings)
     new_ind = (saved.industry or "").strip().lower()
     if new_ind and new_ind != (prev.industry or "").strip().lower():
-        from aughor.profile import store as _pstore
+        from aughor.business_profile import store as _pstore
         from aughor.kernel.errors import tolerate
         try:
             n = _pstore.invalidate_all()

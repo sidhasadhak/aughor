@@ -161,7 +161,7 @@ def test_fanout_region_never_breaks_the_work_it_wraps(monkeypatch):
 
 def test_the_executor_refuses_rather_than_dispatching(monkeypatch):
     """The refusal must land BEFORE step 4 — the only step that can cause a side effect."""
-    from aughor.kinetic.executor import execute_kinetic_action
+    from aughor.actions.executor import execute_kinetic_action
 
     dispatched = []
     with PS.fanout("deep_analysis.phase_waves"):
@@ -173,7 +173,7 @@ def test_the_executor_refuses_rather_than_dispatching(monkeypatch):
 
 
 def test_the_executor_is_untouched_outside_a_fanout():
-    from aughor.kinetic.executor import execute_kinetic_action
+    from aughor.actions.executor import execute_kinetic_action
 
     dispatched = []
     out = execute_kinetic_action(_action(risk="read_only"), {},
@@ -182,7 +182,7 @@ def test_the_executor_is_untouched_outside_a_fanout():
 
 
 def test_a_declared_safe_action_runs_inside_a_fanout():
-    from aughor.kinetic.executor import execute_kinetic_action
+    from aughor.actions.executor import execute_kinetic_action
 
     dispatched = []
     with PS.fanout("explore.subq_wave"):

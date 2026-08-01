@@ -1,7 +1,7 @@
 """Wave A2 — the automation heartbeat.
 
 Deliberately **one interval job, not one cron job per automation** — the opposite of what
-:mod:`aughor.monitors.scheduler` and :mod:`aughor.briefs.scheduler` do, and the reason those two
+:mod:`aughor.monitors.scheduler` and :mod:`aughor.briefing.scheduler` do, and the reason those two
 could never merge. A per-automation cron job can only ever encode a *time* condition, so an
 automation whose trigger is "revenue dropped" or "new rows landed" has nothing to register. A single
 heartbeat that asks each enabled automation "are your conditions true?" handles time and non-time

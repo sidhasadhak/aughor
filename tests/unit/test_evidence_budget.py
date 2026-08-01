@@ -17,7 +17,7 @@ import pytest
 from aughor.agent import evidence_budget as EB
 from aughor.agent.nodes import _format_full_evidence
 from aughor.agent.state import Hypothesis
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 from aughor.tools.executor import format_result_for_llm
 
 

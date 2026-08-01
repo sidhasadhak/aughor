@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.platform import vending
+from aughor.control_plane import vending
 
 
 @pytest.fixture

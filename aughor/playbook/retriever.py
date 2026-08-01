@@ -113,7 +113,7 @@ def build_causal_playbook_section(question: str, conn_id: str) -> str:
     have been previously confirmed as causes.
     """
     try:
-        from aughor.process.causal import build_causal_context_section
+        from aughor.lifecycle.causal import build_causal_context_section
         return build_causal_context_section(question, conn_id=conn_id)
     except Exception:
         return ""

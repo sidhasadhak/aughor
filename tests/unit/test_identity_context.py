@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 from aughor.knowledge import briefing as B
-from aughor.profile import infer as I
+from aughor.business_profile import infer as I
 
 
 class _Boom(Exception):
@@ -73,7 +73,7 @@ def test_briefing_org_context_failure_is_fail_open(monkeypatch):
 
 def test_inference_prepends_org_context(monkeypatch):
     captured: dict = {}
-    monkeypatch.setattr("aughor.profile.infer._gather_context",
+    monkeypatch.setattr("aughor.business_profile.infer._gather_context",
                         lambda conn, schema=None: ("TABLE orders(order_id INTEGER, total DECIMAL)", []))
     monkeypatch.setattr("aughor.orgsettings.org_context",
                         lambda workspace_id=None: "ORGANIZATION: Acme Foods — industry: Food Delivery.\n")
@@ -86,7 +86,7 @@ def test_inference_prepends_org_context(monkeypatch):
 
 def test_inference_no_org_settings_is_a_noop(monkeypatch):
     captured: dict = {}
-    monkeypatch.setattr("aughor.profile.infer._gather_context",
+    monkeypatch.setattr("aughor.business_profile.infer._gather_context",
                         lambda conn, schema=None: ("TABLE orders(order_id INTEGER)", []))
     monkeypatch.setattr("aughor.orgsettings.org_context", lambda workspace_id=None: "")
     monkeypatch.setattr("aughor.llm.provider.get_provider", _capture_provider(captured))

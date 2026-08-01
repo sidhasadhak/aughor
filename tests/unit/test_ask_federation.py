@@ -10,7 +10,7 @@ import asyncio
 import aughor.routers.investigations as inv
 from aughor.agent.connection_selector import ConnectionSelection
 from aughor.agent.federated_planner import FederatedAnswer
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 
 def _collect(agen) -> list[str]:

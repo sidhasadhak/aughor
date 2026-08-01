@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 
 from aughor.agent import wandering as W
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 
 def _result(step, sql, rows=None, cols=("a",), error=None, caveats=()):

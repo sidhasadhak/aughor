@@ -155,7 +155,7 @@ BASELINE: dict[str, int] = {
     "hire": 27,
     "insight": 2062,
     "investigation_in_web": 659,
-    "kinetic": 499,
+    "kinetic": 435,
     "mindsdb": 0,
     "palantir": 8,
     "persona": 321,

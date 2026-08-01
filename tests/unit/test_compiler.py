@@ -203,7 +203,7 @@ def test_named_metric_binding_is_identical_under_contract_live_flag(monkeypatch)
     md = MetricDefinition(name="revenue", label="Revenue", sql="SUM(amount)", tables=["orders"])
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [md])
     monkeypatch.setattr("aughor.semantic.metrics.filter_metrics_to_schema", lambda m, s: list(m))
-    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: None)
+    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
 
     intent = QueryIntent(intent_type="scalar", table="orders", metric="revenue")
     monkeypatch.delenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", raising=False)

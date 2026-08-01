@@ -256,7 +256,7 @@ def _industry_for_conn(conn_id: str) -> str:
     if not conn_id:
         return ""
     try:
-        from aughor.profile import store as _pstore
+        from aughor.business_profile import store as _pstore
         bp = _pstore.load(conn_id)
         return (getattr(bp, "industry", "") or "") if bp else ""
     except Exception:
@@ -270,7 +270,7 @@ def metric_vocab_for(conn, industry: str = "") -> dict:
         ind = (industry or "").strip()
         if not ind and conn is not None:
             ind = _industry_for_conn(getattr(conn, "_connection_id", "") or "")
-        from aughor.profile.metric_kb import metric_vocabulary
+        from aughor.business_profile.metric_kb import metric_vocabulary
         vocab = {t: (label, formula) for (t, label, formula) in metric_vocabulary(ind)}
         try:    # org-registered metrics (governed) extend the vocabulary by name + label
             from aughor.semantic.metrics import list_metrics

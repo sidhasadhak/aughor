@@ -70,7 +70,7 @@ EXEMPT = {
         "the guard's OWN uniqueness probe (`__trust_grain__`). The SQL is constructed by the "
         "guard from a parsed table+key, never model-written — and routing the guard through the "
         "guard would recurse.",
-    "capability/builtins.py":
+    "pipeline/builtins.py":
         "guarded by a DIFFERENT door: CapabilityPipeline runs `validate` (= trust.verify) before "
         "`execute`, so a BLOCK short-circuits ahead of this call. Reclassify if that ordering "
         "ever changes.",
@@ -83,7 +83,7 @@ UNGUARDED = {
         "`__fix_save__` executes a model-repaired query to validate it before persisting.",
     "routers/investigations.py":
         "`ambiguity_probe` executes model-generated candidate readings for ambiguity assessment.",
-    "user_agents/quality.py":
+    "custom_agents/quality.py":
         "the agent-eval harness runs a model-generated query against a reference.",
 }
 

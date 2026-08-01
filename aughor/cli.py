@@ -59,7 +59,7 @@ def seed(db: str):
     customers with a discoverable APAC payment-gateway outage — replacing any
     existing file at the target path.
     """
-    from aughor.samples.scenario import seed_scenario_db
+    from aughor.demo.scenario import seed_scenario_db
 
     summary = seed_scenario_db(Path(db), overwrite=True)
     console.print(f"Database seeded at: [bold]{db}[/bold]")

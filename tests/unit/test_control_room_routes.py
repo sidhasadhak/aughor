@@ -152,7 +152,7 @@ def test_needs_human_count_equals_the_sum_of_its_sources(client, monkeypatch, tm
     inv_id = rows[0]["id"]
     history.pause_investigation(inv_id)
 
-    from aughor.kinetic.inbox import StagedProposal, stage_proposal
+    from aughor.actions.inbox import StagedProposal, stage_proposal
     proposal = stage_proposal(StagedProposal(
         connection_id="conn-cr4", action_id="create_ticket", params={"title": "t"},
         reasoning="margin fell", run_id="run-cr4", call_id="call-cr4"))
@@ -174,7 +174,7 @@ def test_needs_human_count_equals_the_sum_of_its_sources(client, monkeypatch, tm
 
     # Resolving through the native surface removes the row here — one store,
     # no copies (the J10 gate).
-    from aughor.kinetic.inbox import reject_proposal
+    from aughor.actions.inbox import reject_proposal
     assert reject_proposal(proposal.id, actor="test") is True
     after = client.get("/control-room/needs-human").json()
     assert all(r["id"] != proposal.id for r in after["rows"])
@@ -237,7 +237,7 @@ def test_fleet_hides_personas_while_their_surface_is_off(client, monkeypatch):
     assertion into an on-state one that still looks deliberate.
     """
     import aughor.kernel.flags as flags
-    from aughor.user_agents.store import create_agent
+    from aughor.custom_agents.store import create_agent
 
     create_agent(name="Ghost Persona", instructions="x")
 

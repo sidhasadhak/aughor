@@ -8,7 +8,7 @@ flag off.
 """
 from __future__ import annotations
 
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 
 class _SpyConn:
@@ -70,7 +70,7 @@ def test_al05_resolves_when_flag_on(monkeypatch):
     # Keep it hermetic — the sources are empty; we're testing the flag gate + attachment, not content.
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [])
     monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda *a, **k: None)
-    monkeypatch.setattr("aughor.profile.store.load_raw", lambda *a, **k: None)
+    monkeypatch.setattr("aughor.business_profile.store.load_raw", lambda *a, **k: None)
     monkeypatch.setattr("aughor.semantic.kb_retriever.has_strong_kb_match", lambda *a, **k: False)
     from aughor.semantic.context import resolve_if_enabled, SemanticContext
     ctx = resolve_if_enabled("why is gmv down", "fixture", "ecommerce")
@@ -119,7 +119,7 @@ class _FakeProvider:
 
 
 def test_al02_generate_sql_from_question():
-    from aughor.capability.sql_generate import generate_sql
+    from aughor.pipeline.sql_generate import generate_sql
     out = generate_sql("show me all orders", schema_text="orders(id)",
                        provider=_FakeProvider("SELECT * FROM orders"))
     assert out == "SELECT * FROM orders"
@@ -128,7 +128,7 @@ def test_al02_generate_sql_from_question():
 def test_al02_generate_sql_threads_rich_context():
     # The extended generator (used by the ADA path's _gen_sql) must thread the intent + pitfall +
     # schema + ontology sections into the one WRITE_SQL_PROMPT — so the convergence keeps context.
-    from aughor.capability.sql_generate import generate_sql
+    from aughor.pipeline.sql_generate import generate_sql
     prov = _FakeProvider("SELECT 1")
     generate_sql("hypothesis text", schema_text="SCHEMA_MARK", dialect="duckdb",
                  intent_description="INTENT_MARK", pitfall_section="PITFALL_MARK",
@@ -138,14 +138,14 @@ def test_al02_generate_sql_threads_rich_context():
 
 
 def test_al02_generate_sql_empty_question_is_empty():
-    from aughor.capability.sql_generate import generate_sql
+    from aughor.pipeline.sql_generate import generate_sql
     assert generate_sql("", provider=_FakeProvider("x")) == ""
 
 
 def test_al02_capability_generates_from_question(monkeypatch):
-    monkeypatch.setattr("aughor.capability.sql_generate.generate_sql", lambda *a, **k: "SELECT 1 AS n")
-    from aughor.capability.builtins import SqlCapability
-    from aughor.capability import CapabilityRequest
+    monkeypatch.setattr("aughor.pipeline.sql_generate.generate_sql", lambda *a, **k: "SELECT 1 AS n")
+    from aughor.pipeline.builtins import SqlCapability
+    from aughor.pipeline import CapabilityRequest
     from aughor.trust import Scope
     cap = SqlCapability()
     assert cap.generate(CapabilityRequest(question="anything", scope=Scope())) == "SELECT 1 AS n"
@@ -154,8 +154,8 @@ def test_al02_capability_generates_from_question(monkeypatch):
 
 
 def test_al02_full_answer_end_to_end(monkeypatch):
-    monkeypatch.setattr("aughor.capability.sql_generate.generate_sql", lambda *a, **k: "SELECT 1 AS n")
-    from aughor.capability import run_capability, CapabilityRequest
+    monkeypatch.setattr("aughor.pipeline.sql_generate.generate_sql", lambda *a, **k: "SELECT 1 AS n")
+    from aughor.pipeline import run_capability, CapabilityRequest
     from aughor.trust import Scope
     spy = _SpyConn()
     res = run_capability("data", CapabilityRequest(question="how many?",
@@ -169,7 +169,7 @@ def test_al02_full_answer_end_to_end(monkeypatch):
 
 def test_al02_endpoint_answers_when_flag_on(client, builtin_conn_id, monkeypatch):
     monkeypatch.setenv("AUGHOR_CAPABILITY_PIPELINE_LIVE", "1")
-    monkeypatch.setattr("aughor.capability.sql_generate.generate_sql", lambda *a, **k: "SELECT 1 AS n")
+    monkeypatch.setattr("aughor.pipeline.sql_generate.generate_sql", lambda *a, **k: "SELECT 1 AS n")
     r = client.post("/query/capability-answer",
                     json={"conn_id": builtin_conn_id, "question": "how many rows?"})
     assert r.status_code == 200

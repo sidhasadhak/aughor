@@ -10,7 +10,7 @@ import duckdb
 import pytest
 
 from aughor.connectors.file.local_upload import LocalUploadConnection
-from aughor.platform import vending
+from aughor.control_plane import vending
 
 
 @pytest.fixture

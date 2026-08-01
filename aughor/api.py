@@ -255,7 +255,7 @@ async def _setup_samples() -> None:
     # Run synchronous DB seeding off the event loop so startup returns instantly.
     loop = asyncio.get_running_loop()
     try:
-        from aughor.samples.setup import ensure_fixture_db, ensure_samples_db
+        from aughor.demo.setup import ensure_fixture_db, ensure_samples_db
 
         def _seed_and_validate() -> None:
             # Guarantee the 'fixture' builtin connection has an openable DB — it's
@@ -308,7 +308,7 @@ async def _migrate_upload_storage() -> None:
     # is constructed. One-time, idempotent, crash-safe. Must run AFTER the default
     # org exists and BEFORE connections are validated / explorers start.
     try:
-        from aughor.platform import migrate_uploads_to_org_layout
+        from aughor.control_plane import migrate_uploads_to_org_layout
         migrate_uploads_to_org_layout()
     except Exception as exc:
         logger.warning("Upload storage migration failed (non-fatal): %s", exc)
@@ -573,7 +573,7 @@ async def _start_monitor_scheduler() -> None:
 async def _start_brief_scheduler() -> None:
     """Load enabled brief subscriptions and start their delivery scheduler."""
     try:
-        from aughor.briefs.scheduler import start as _start_briefs
+        from aughor.briefing.scheduler import start as _start_briefs
         _start_briefs()
     except Exception as exc:
         logger.warning("Brief scheduler startup failed (non-fatal): %s", exc)

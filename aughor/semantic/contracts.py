@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:  # avoid import cost / any cycle at module load — adapters import lazily
     from aughor.ontology.models import OntologyMetric
-    from aughor.profile.models import NorthStarMetric
+    from aughor.business_profile.models import NorthStarMetric
     from aughor.semantic.metrics import MetricDefinition
 
 

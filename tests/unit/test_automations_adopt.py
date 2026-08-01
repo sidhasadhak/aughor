@@ -20,8 +20,8 @@ from aughor.automations.adopt import (
 )
 from aughor.automations.engine import run_automation
 from aughor.automations.models import Effect
-from aughor.briefs.models import BriefSubscription
-from aughor.briefs.store import save_subscription
+from aughor.briefing.models import BriefSubscription
+from aughor.briefing.store import save_subscription
 from aughor.monitors.models import Monitor, MonitorAlert
 from aughor.monitors.store import upsert_monitor
 
@@ -126,7 +126,7 @@ def test_brief_effect_delivers_the_subscription(monkeypatch):
         delivered.append(sub.id)
         return {"status": "ok"}
 
-    monkeypatch.setattr("aughor.briefs.delivery.deliver_subscription", fake_deliver)
+    monkeypatch.setattr("aughor.briefing.delivery.deliver_subscription", fake_deliver)
     from aughor.automations.engine import _dispatch_brief
     out = _dispatch_brief(Effect(kind="brief", config={"subscription_id": "s-eq"}),
                           subscription_as_automation(_sub(id="s-eq", conn_id="c-eq")))
@@ -184,11 +184,11 @@ def test_the_legacy_brief_job_stands_down_when_adoption_is_active(monkeypatch):
     """Same net for briefs — and it matters more, because a brief is an OUTWARD send."""
     save_subscription(_sub(id="s-sd", conn_id="c-sd"))
     delivered = {"value": False}
-    monkeypatch.setattr("aughor.briefs.delivery.deliver_subscription",
+    monkeypatch.setattr("aughor.briefing.delivery.deliver_subscription",
                         lambda sub, persist=True: delivered.__setitem__("value", True))
     monkeypatch.setattr("aughor.automations.adopt.adoption_active", lambda: True)
 
-    from aughor.briefs.scheduler import _make_job_fn
+    from aughor.briefing.scheduler import _make_job_fn
     _make_job_fn("s-sd")()
     assert delivered["value"] is False, "the legacy brief job delivered while adopted — double-send risk"
 

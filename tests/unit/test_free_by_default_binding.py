@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from aughor.llm.provider import ensure_free_or_allowed, set_config
-from aughor.platform.inference import _cost, _privacy_class
+from aughor.control_plane.inference import _cost, _privacy_class
 
 
 # ── the guard itself ────────────────────────────────────────────────────────────

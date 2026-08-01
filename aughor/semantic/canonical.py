@@ -114,7 +114,7 @@ def _load_profile_north_stars(connection_id: str, schema_name: Optional[str]) ->
     if not connection_id:
         return []
     try:
-        from aughor.profile.store import load as _load_profile
+        from aughor.business_profile.store import load as _load_profile
         _prof = _load_profile(connection_id, schema_name)
         return list(getattr(_prof, "north_star_metrics", None) or [])
     except Exception as exc:

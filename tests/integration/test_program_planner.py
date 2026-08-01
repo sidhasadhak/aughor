@@ -22,7 +22,7 @@ from aughor.agent.program_planner import (
     validate_program,
 )
 from aughor.db import registry
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 from aughor.semops.operators import _Aggregation, _FilterBatch, _RowVerdict
 
 _LINE = re.compile(r"^\[(\d+)\]\s?(.*)$", re.M)

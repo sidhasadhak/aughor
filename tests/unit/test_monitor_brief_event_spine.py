@@ -46,8 +46,8 @@ def test_append_alert_emits_monitor_alert(monkeypatch, tmp_path, stub_ledger):
 
 
 def test_deliver_subscription_emits_brief_delivered(monkeypatch, stub_ledger):
-    import aughor.briefs.delivery as delivery
-    from aughor.briefs.models import BriefSubscription
+    import aughor.briefing.delivery as delivery
+    from aughor.briefing.models import BriefSubscription
 
     sub = BriefSubscription(id="s1", name="Weekly digest", conn_id="connY",
                             period="week", trigger_id="t1")

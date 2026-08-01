@@ -13,7 +13,7 @@ Their OSS Editor tier (instruction overrides, versioned) is the ceiling we clear
 
 The wave is **composition, not construction**. Measured premises:
 
-- **UserAgent is already a product object**: `aughor/user_agents/models.py` — id, name,
+- **UserAgent is already a product object**: `aughor/custom_agents/models.py` — id, name,
   instructions, `connection_id`, `schema_scope`, `doc_ids`, `pack_ids`, owner, enabled,
   **`last_eval`** (the pass chip). Flag `agents.user_defined`.
 - **Quality is already measured, not vibes**: `user_agents/quality.py::evaluate_agent` —

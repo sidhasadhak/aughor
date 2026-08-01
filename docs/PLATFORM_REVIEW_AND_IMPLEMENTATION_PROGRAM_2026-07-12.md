@@ -65,7 +65,7 @@ These are the conventions and *earned* gotchas of this repo. Violating them is h
 - Live-data caution: any real app/investigation run writes live stores. For live verification,
   isolate with the `AUGHOR_*` env overrides, then `git status` and revert unintended tracked
   changes before committing. Prefer the seeded fixture (`aughor seed` → `data/aughor.duckdb`,
-  scenario in `aughor/samples/scenario.py`) or synthetic DuckDB for deterministic logic.
+  scenario in `aughor/demo/scenario.py`) or synthetic DuckDB for deterministic logic.
 
 ### 0.3 Web conventions
 - Primitives: `<Button>` from `components/ui/button` — **never** raw `<button>` (ratchet).

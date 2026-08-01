@@ -72,15 +72,32 @@ The agent that runs deep analyses stays **Analyst**; the human RBAC role renamed
 
 ## Platform internals
 
-| Use this | For | Don't use |
+These are the package names on disk. Every rename below has landed; the old names do not
+exist any more, so there is nothing to fall back to.
+
+| Package | Holds | Renamed from |
 |---|---|---|
-| **ambiguity probe** | Generating candidate readings and asking only when they diverge | soma |
-| **stall detector** | Detecting a run that has stopped making progress | wandering |
-| **feedback** | Human accept/correct/reject capture | verify (that sense) |
-| **control plane** | Credential and inference vending | platform (it also shadows stdlib `platform`) |
-| **business profile** | Inferred industry and business model | profile (that sense — data profiling is the other one) |
-| **demo data** | The bundled sample workspace | samples (that sense — a row sample is the other one) |
-| **AI functions** | LLM operators callable from SQL | semops |
+| `aughor/actions/` | Governed writes to the data | `kinetic/` |
+| `aughor/notifications/` | Outbound webhook / Slack / Jira delivery | `actions/` |
+| `aughor/control_plane/` | Credential and inference vending | `platform/` (also shadowed stdlib `platform`) |
+| `aughor/custom_agents/` | User-created agents | `user_agents/` (reads as the HTTP header) |
+| `aughor/feedback/` | Human accept / correct / reject capture | `verify/` (one of four `verify`s) |
+| `aughor/business_profile/` | Inferred industry and business model | `profile/` (collided with data profiling) |
+| `aughor/lifecycle/` | Lifecycle / state-machine mining | `process/` |
+| `aughor/pipeline/` | The generate→validate→execute→interpret template | `capability/` (collided with licence capabilities) |
+| `aughor/demo/` | The bundled sample workspace | `samples/` (collided with row samples) |
+| `aughor/files/` | Unstructured file store | `volumes/` |
+| `aughor/briefing/` | Briefing subscriptions and delivery | `briefs/` |
+
+Other internals: an **ambiguity probe** (`agent/ambiguity_probe.py`, was `soma`) generates
+candidate readings and asks only when they diverge. Say **validate** for SQL checking
+(`trust/`), **feedback** for human verdicts, **check** for claim verification — `verify`
+named all three plus a quality gate.
+
+**No import shims were left behind.** The plan originally called for them, but a shim would
+keep the retired word alive in the tree — and the ratchet would rightly count it. Every
+reference in the repo moved atomically instead. An out-of-repo script importing
+`aughor.platform` will need updating; the table above is the map.
 
 `verify` currently names four unrelated things (SQL validation in `trust/`, human feedback
 in `verify/`, claim checking in `agent/verify.py`, a quality gate in `explorer/verify.py`).

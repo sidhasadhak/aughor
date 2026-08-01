@@ -9,7 +9,7 @@ hermetic (no ontology cache / Qdrant needed).
 from __future__ import annotations
 
 from aughor.semantic.context import resolve, SemanticContext
-from aughor.capability import CapabilityRequest
+from aughor.pipeline import CapabilityRequest
 
 
 class _FakeMetric:
@@ -25,7 +25,7 @@ def _patch_all(monkeypatch, *, metrics=None, ontology=None, profile=None, kb=Fal
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics",
                         lambda *a, **k: metrics if metrics is not None else [])
     monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda *a, **k: ontology)
-    monkeypatch.setattr("aughor.profile.store.load_raw", lambda *a, **k: profile)
+    monkeypatch.setattr("aughor.business_profile.store.load_raw", lambda *a, **k: profile)
     monkeypatch.setattr("aughor.semantic.kb_retriever.has_strong_kb_match", lambda *a, **k: kb)
 
 

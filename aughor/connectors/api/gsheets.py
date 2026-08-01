@@ -28,7 +28,7 @@ from pathlib import Path
 import duckdb
 
 from aughor.connectors.base import Connector
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
 

@@ -116,7 +116,7 @@ def test_send_finding_empty_text_400():
 
 
 def test_send_finding_unknown_trigger_404(monkeypatch):
-    import aughor.actions.store as astore
+    import aughor.notifications.store as astore
     monkeypatch.setattr(astore, "get_trigger", lambda tid: None)
     with pytest.raises(HTTPException) as ei:
         send_finding_to_trigger("ghost", _SendFindingBody(text="hello"))
@@ -124,8 +124,8 @@ def test_send_finding_unknown_trigger_404(monkeypatch):
 
 
 def test_send_finding_maps_payload(monkeypatch):
-    import aughor.actions.store as astore
-    import aughor.actions.executor as execu
+    import aughor.notifications.store as astore
+    import aughor.notifications.executor as execu
     captured = {}
 
     def _capture(trigger, payload):
@@ -151,7 +151,7 @@ def test_send_finding_maps_payload(monkeypatch):
 def test_send_finding_disabled_trigger_reports_failed(monkeypatch, tmp_path):
     # End-to-end through the real fire_action with a DISABLED trigger: short-circuits
     # before any network call, so we exercise the wiring without external deps.
-    import aughor.actions.store as astore
+    import aughor.notifications.store as astore
     monkeypatch.setattr(astore, "get_trigger", lambda tid: _fake_trigger(enabled=False))
     monkeypatch.setattr(astore, "_LOG_PATH", tmp_path / "logs.json", raising=False)
     monkeypatch.setattr(astore, "log_action", lambda log: None)

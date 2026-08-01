@@ -564,7 +564,7 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
     def _get_causal() -> str:
         # Causal context from prior verified investigations. Best-effort (as before).
         try:
-            from aughor.process.causal import build_causal_context_section
+            from aughor.lifecycle.causal import build_causal_context_section
             _cc = build_causal_context_section(h.description, conn_id=state.get("connection_id"))
             return (_cc + "\n") if _cc else ""
         except Exception:
@@ -575,7 +575,7 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
         # so a mistake a reviewer already flagged is not planned again. Empty (zero-cost) when
         # nothing relevant is stored or the flag is off, so the default path is unchanged.
         try:
-            from aughor.verify.priors import build_corrections_section
+            from aughor.feedback.priors import build_corrections_section
             _p = build_corrections_section(state.get("question") or h.description,
                                            state.get("connection_id") or "")
             return _p, bool(_p)
@@ -738,7 +738,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
             # One WRITE_SQL_PROMPT call site — delegate to the shared NL→SQL generator that the
             # Capability plane also uses (AL-02 convergence). Same prompt, same `coder` provider;
             # its internal fail-open now goes through tolerate() instead of a silent except-pass.
-            from aughor.capability.sql_generate import generate_sql
+            from aughor.pipeline.sql_generate import generate_sql
             return generate_sql(
                 h.description, schema_text=_schema_ctx, dialect=_dialect,
                 intent_description=intent.get("description", ""),

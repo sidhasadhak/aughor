@@ -84,7 +84,7 @@ def scenario(name: str) -> Callable[[Scenario], Scenario]:
 
 
 def _qr(step: str, sql: str, *, rows=None, error=None):
-    from aughor.platform.contracts.execution import QueryResult
+    from aughor.control_plane.contracts.execution import QueryResult
     rows = [[1]] if rows is None else rows
     return QueryResult(hypothesis_id=step, sql=sql, columns=["a"], rows=rows,
                        row_count=len(rows), error=error, caveats=[])

@@ -24,7 +24,7 @@ from aughor.db.connection import (
     DuckDBConnection,
     _is_internal_query,
 )
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 
 def _conn():

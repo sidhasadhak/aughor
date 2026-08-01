@@ -109,13 +109,13 @@ grant value stays `"analyst"`.
 |---|---|---|
 | SQL-ambiguity probe | **ambiguity probe** (`agent/ambiguity_probe.py`) | `soma`, `SomaVerdict`, `AUGHOR_SOMA_CLARIFY` |
 | Stalled-run detection | **stall detector** | "wandering" |
-| Human ground-truth capture | **feedback** (`aughor/feedback/`) | `aughor/verify/` |
-| Control plane (credential / LLM vending) | **control_plane** | `aughor/platform/` (shadows stdlib `platform`) |
-| Business/industry inference | **business_profile** | `aughor/profile/` (collides with data profiling) |
-| Lifecycle mining | **lifecycle** | `aughor/process/` |
-| Demo data | **demo** | `aughor/samples/` (collides with row samples) |
-| Unstructured file store | **files** | `aughor/volumes/` |
-| Generate→Validate→Execute→Interpret template | **pipeline** | `aughor/capability/` (collides with licence capabilities; also `capability.*` vs `capabilities.*` flags) |
+| Human ground-truth capture | **feedback** (`aughor/feedback/`) | `aughor/feedback/` |
+| Control plane (credential / LLM vending) | **control_plane** | `aughor/control_plane/` (shadows stdlib `platform`) |
+| Business/industry inference | **business_profile** | `aughor/business_profile/` (collides with data profiling) |
+| Lifecycle mining | **lifecycle** | `aughor/lifecycle/` |
+| Demo data | **demo** | `aughor/demo/` (collides with row samples) |
+| Unstructured file store | **files** | `aughor/files/` |
+| Generate→Validate→Execute→Interpret template | **pipeline** | `aughor/pipeline/` (collides with licence capabilities; also `capability.*` vs `capabilities.*` flags) |
 | In-SQL LLM operators | **AI functions** | "semops" as a user word |
 
 ---

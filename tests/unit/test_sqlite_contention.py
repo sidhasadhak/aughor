@@ -96,8 +96,8 @@ def test_every_store_is_isolated_from_live_data():
     from aughor.monitors import store as monitors_store
     from aughor.org import store as org_store
     from aughor.savedquery import store as savedquery_store
-    from aughor.volumes import store as volumes_store
-    from aughor.verify import verdicts
+    from aughor.files import store as volumes_store
+    from aughor.feedback import verdicts
     from aughor.packs import deltastore, bindings
     from aughor.agent import graph
     from aughor.util import idempotency

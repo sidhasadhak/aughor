@@ -1930,7 +1930,7 @@ def _attach_kinetic_proposals(answer_report: dict, connection_id: str) -> None:
         graph = load_latest_ontology(connection_id or "")
         if graph is None or not getattr(graph, "kinetic_actions", None):
             return
-        from aughor.kinetic.propose import propose_actions
+        from aughor.actions.propose import propose_actions
         context = f"{answer_report.get('headline', '')}\n\n{answer_report.get('executive_summary', '')}".strip()
         answer_report["proposals"] = [
             {"action_id": p.action_id, "status": p.status, "ok": p.ok, "params": p.params,
@@ -3242,7 +3242,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # large context, tighter on a small BYO model so the curated payload fits instead of
     # overflowing. Defaults preserved exactly when the window is generous.
     from aughor.llm.context_budget import schema_scan_char_limits
-    from aughor.platform import vend_llm
+    from aughor.control_plane import vend_llm
     _schema_cap, _scan_cap = schema_scan_char_limits(vend_llm("coder").max_context,
                                                      default_schema=_SCHEMA_CHAR_LIMIT,
                                                      default_scan=_SCAN_CHAR_LIMIT)
@@ -6832,7 +6832,7 @@ def ada_synthesize(state: AgentState) -> dict:
     # Inert ("") when no agent is active.
     _agent_brief = ""
     try:
-        from aughor.user_agents.context import agent_brief_block
+        from aughor.custom_agents.context import agent_brief_block
         _agent_brief = agent_brief_block()
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
@@ -6897,7 +6897,7 @@ def ada_synthesize(state: AgentState) -> dict:
     conn_id = state.get("connection_id") or ""
     if synth and inv_id and hasattr(synth, "causal_links") and synth.causal_links:
         try:
-            from aughor.process.causal import CausalProposal, save_proposals
+            from aughor.lifecycle.causal import CausalProposal, save_proposals
             proposals = [
                 CausalProposal(
                     from_signal=cl.from_signal,

@@ -127,7 +127,7 @@ def test_build_corrections_section_appends_graph_block(monkeypatch, tmp_path):
     _save(_graph(), monkeypatch, tmp_path)
     monkeypatch.setenv("AUGHOR_GRAPH_READBACK", "1")
     monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "0")  # explicitly off
-    from aughor.verify.priors import build_corrections_section
+    from aughor.feedback.priors import build_corrections_section
     section = build_corrections_section("which orders never reach a terminal state", "c", org_id="o")
     assert "CONNECTION GRAPH" in section
     assert "32% of orders never reach a terminal state" in section
@@ -137,5 +137,5 @@ def test_build_corrections_section_byte_identical_when_both_off(monkeypatch, tmp
     _save(_graph(), monkeypatch, tmp_path)
     monkeypatch.setenv("AUGHOR_GRAPH_READBACK", "0")
     monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "0")
-    from aughor.verify.priors import build_corrections_section
+    from aughor.feedback.priors import build_corrections_section
     assert build_corrections_section("which orders never reach a terminal state", "c", org_id="o") == ""

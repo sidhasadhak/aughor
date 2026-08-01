@@ -14,7 +14,7 @@ from pathlib import Path
 import duckdb
 
 from aughor.db.connection import DuckDBConnection
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 from aughor.sql.executor import execute_guarded
 from aughor.stats import stats
 

@@ -288,7 +288,7 @@ def save_chat_turn(
     persona survives the hop to the worker thread.)
     """
     try:
-        from aughor.user_agents.context import current_agent
+        from aughor.custom_agents.context import current_agent
         _a = current_agent()
         agent_id = _a.id if _a is not None else ""
     except Exception:

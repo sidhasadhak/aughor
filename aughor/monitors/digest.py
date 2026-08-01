@@ -126,7 +126,7 @@ def build_digest(conn_id: str, period: str = "week") -> DigestResult:
 
     # ── 3. Causal edges ─────────────────────────────────────────────────────
     try:
-        from aughor.process.causal import load_causal_graph
+        from aughor.lifecycle.causal import load_causal_graph
         graph = load_causal_graph(conn_id)
         if graph:
             edges = graph.get("edges") or []

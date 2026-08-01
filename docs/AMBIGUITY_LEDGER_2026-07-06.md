@@ -37,7 +37,7 @@ properties, all unit-pinned:
   metric), `ledger_stats` (the burn-down chart: resolved-by-source vs served_total),
   `purge_connections` (catalog-delete cascade).
 
-### The read path — `aughor/verify/priors.py` (product)
+### The read path — `aughor/feedback/priors.py` (product)
 The ledger is now the **third plan-time prior**, alongside trusted queries and past corrections,
 in the existing P1 closed-loop module — and it **leads** the block (an explicit resolution beats
 an example). Injected everywhere `retrieve_priors`/`build_priors_section` is called, gated behind

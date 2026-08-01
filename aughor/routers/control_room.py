@@ -71,7 +71,7 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
     from aughor.kernel.jobs import concurrency_policy
     from aughor.obs import session_log
     from aughor.obs.usage import usage_report
-    from aughor.user_agents.store import list_agents as list_personas
+    from aughor.custom_agents.store import list_agents as list_personas
 
     ledger = Ledger.default()
     now = datetime.now(timezone.utc)
@@ -238,7 +238,7 @@ def needs_human(limit: int = 100):
     """
     from aughor.automations.store import get_runs
     from aughor.db.history import list_investigations
-    from aughor.kinetic.inbox import list_proposals
+    from aughor.actions.inbox import list_proposals
 
     now = datetime.now(timezone.utc)
     rows: list[dict] = []

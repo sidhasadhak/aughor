@@ -226,7 +226,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # machinery made honest to the user. Best-effort; gated with the ledger (closed_loop).
         _resolved_ambig: list = []
         try:
-            from aughor.verify.priors import closed_loop_enabled
+            from aughor.feedback.priors import closed_loop_enabled
             if closed_loop_enabled():
                 from aughor.semantic.ambiguity_ledger import retrieve_resolutions
                 for _r, _sc in retrieve_resolutions(question, connection_id, top_k=3):
@@ -280,7 +280,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # omission rather than carrying an empty agent that reads like a real one.
         _agent = None
         try:
-            from aughor.user_agents.context import current_agent
+            from aughor.custom_agents.context import current_agent
             _a = current_agent()
             _agent = {"id": _a.id, "name": _a.name} if _a is not None else None
         except Exception:
@@ -1067,7 +1067,7 @@ def _resolve_currency_symbol(connection_id: str, schema_name: Optional[str]) -> 
     profile, falling back to USD '$'. The app/workspace override applies even when no profile
     is loaded, so an EUR org gets '€' regardless. Best-effort; returns '$' on any failure."""
     try:
-        from aughor.profile import store as _pstore
+        from aughor.business_profile import store as _pstore
         from aughor.orgsettings import resolve_currency
         from aughor.knowledge.triage import currency_symbol
         prof = _pstore.load(connection_id, schema_name)
@@ -1294,7 +1294,7 @@ async def _stream_chat(
             return (s + "\n\n") if s else ""
 
         def _causal() -> str:
-            from aughor.process.causal import build_causal_context_section
+            from aughor.lifecycle.causal import build_causal_context_section
             s = build_causal_context_section(question, conn_id=connection_id)
             return (s + "\n") if s else ""
 
@@ -3656,7 +3656,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # resolution is an authoritative prior on this turn and every future one — the class never
     # re-ambiguates on this connection. Gated with the ledger (closed_loop); best-effort.
     if req.clarify_reading:
-        from aughor.verify.priors import closed_loop_enabled
+        from aughor.feedback.priors import closed_loop_enabled
         if closed_loop_enabled():
             try:
                 from aughor.org.context import current_org_id
@@ -3887,7 +3887,7 @@ def _resolve_ask_agent(req: "AskRequest"):
     if not flag_enabled("agents.user_defined"):
         raise HTTPException(status_code=404,
                             detail="user-defined agents are disabled (flag agents.user_defined)")
-    from aughor.user_agents import get_agent
+    from aughor.custom_agents import get_agent
     agent = get_agent(req.agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail=f"No such agent '{req.agent_id}'")
@@ -3921,7 +3921,7 @@ def _apply_agent_bindings(req: "AskRequest", agent, conn_id: str) -> str:
 
 def _current_agent_id() -> str:
     """The active user-agent's id for state seeding ("" when none)."""
-    from aughor.user_agents.context import current_agent
+    from aughor.custom_agents.context import current_agent
     agent = current_agent()
     return agent.id if agent is not None else ""
 
@@ -3941,7 +3941,7 @@ def persona_for_investigation(inv_id: str):
         agent_id = read_checkpoint_values(inv_id).get("agent_id") or ""
         if not agent_id:
             return None
-        from aughor.user_agents import get_agent
+        from aughor.custom_agents import get_agent
         persona = get_agent(agent_id)
         return persona if (persona is not None and persona.enabled) else None
     except Exception as exc:
@@ -3955,7 +3955,7 @@ async def _stream_as_agent(agent, stream: AsyncGenerator[str, None]) -> AsyncGen
     """Run the ask stream with the user-agent contextvar active, so the prompt
     brief and the document-retrieval scope see the agent everywhere (threads
     included — ContextThreadPoolExecutor propagates contextvars)."""
-    from aughor.user_agents.context import activate_agent, release_agent
+    from aughor.custom_agents.context import activate_agent, release_agent
     token = activate_agent(agent)
     try:
         yield _sse("agent", {"agent_id": agent.id, "name": agent.name,
@@ -4383,7 +4383,7 @@ def log_recommendation_outcome(inv_id: str, rec_index: int, req: OutcomeRequest)
     if req.status in ("verified", "implemented", "rejected"):
         update_playbook_success_rates()
         try:
-            from aughor.process.causal import promote_on_outcome
+            from aughor.lifecycle.causal import promote_on_outcome
             promote_on_outcome(inv_id, contradicted=(req.status == "rejected"))
         except Exception as exc:
             from aughor.kernel.errors import tolerate
