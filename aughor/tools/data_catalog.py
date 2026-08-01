@@ -223,7 +223,10 @@ def _fetch_sample(
     """Fetch up to 5 sample rows, returning raw values."""
     if not col_names:
         return []
-    quoted_cols = ", ".join(f'"{c}"' for c in col_names)
+    # Double every embedded quote: column names reach here from user-supplied file
+    # headers, and `_quote_ref` guards only the TABLE name. An unescaped `"` in a
+    # header closes the identifier and the rest of the cell executes as SQL.
+    quoted_cols = ", ".join('"' + str(c).replace('"', '""') + '"' for c in col_names)
     try:
         # Plain SELECT passes the validator — use the safe execute() path.
         result = conn.execute("_catalog", f"SELECT {quoted_cols} FROM {_quote_ref(table)} LIMIT 5")

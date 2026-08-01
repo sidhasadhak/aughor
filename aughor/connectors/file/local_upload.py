@@ -48,6 +48,15 @@ import duckdb
 from aughor.connectors.base import Connector
 from aughor.control_plane.contracts.execution import QueryResult
 from aughor.control_plane.vending import STORAGE_ROOT, vend_storage
+# Numbers stored as text ('₹1,099', '64%', '24,269') are re-typed at ingest. The
+# detection primitives are shared with the runtime trust gate — see
+# aughor.sql.numeric_text for why this matters and how the shape gate stays safe.
+from aughor.sql.numeric_text import (
+    COSTUME_CAST_TYPES as _COSTUME_CAST_TYPES,
+    costume_clean_sql as _costume_clean_sql,
+    costume_kind as _costume_kind,
+    detect_costume as _detect_costume,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +96,7 @@ _ALLOWED_CAST_TYPES = {
 
 # Tighter types we probe for, in preference order, when a column is VARCHAR.
 _PROBE_TYPES = ["BIGINT", "DOUBLE", "BOOLEAN", "DATE", "TIMESTAMP"]
+
 
 # DuckDB scalar types we'll TRY_CAST to when reproducing a pinned schema contract
 # on reload. Complex types (STRUCT/LIST/MAP/UNION) are deliberately excluded so a
@@ -387,12 +397,26 @@ class LocalUploadConnection(Connector):
             for row in desc:
                 name, dtype = row[0], str(row[1])
                 suggested = None
+                costume = None
                 if dtype.upper().startswith("VARCHAR"):
                     suggested = self._suggest_type(con, src, name)
+                    # Only probe for decoration where a plain cast already failed, so the
+                    # two detectors never contend for the same column.
+                    if suggested is None:
+                        costume = _detect_costume(con, src, name)
+                        if costume:
+                            suggested = costume["cast_to"]
                 columns.append({
                     "name": name,
                     "detected_type": dtype,
                     "suggested_type": suggested,
+                    # Surfaced so the import-review UI can say WHY a text column is about
+                    # to become a number ("currency-formatted — e.g. ₹1,099").
+                    "detected_format": (
+                        {"kind": _costume_kind(costume["unit"]),
+                         "unit": costume["unit"], "example": costume["sample"]}
+                        if costume else None
+                    ),
                 })
 
             prev = con.execute(f"SELECT * FROM {src} LIMIT {int(sample_rows)}").fetchall()
@@ -425,7 +449,14 @@ class LocalUploadConnection(Connector):
         )
         q = (
             f'SELECT count(*) FILTER (WHERE "{c}" IS NOT NULL '
-            f"AND trim(CAST(\"{c}\" AS VARCHAR)) <> '') AS nn, {probes} FROM {src}"
+            f"AND trim(CAST(\"{c}\" AS VARCHAR)) <> '') AS nn, {probes}, "
+            # DuckDB's TRY_CAST('4.2' AS BIGINT) SUCCEEDS, truncating to 4 — so a rating
+            # or price column probed in _PROBE_TYPES order was suggested as BIGINT, and
+            # accepting that suggestion silently discarded the fractional part of every
+            # value. Count the fractional values so BIGINT can be ruled out below.
+            f'count(*) FILTER (WHERE try_cast("{c}" AS DOUBLE) IS NOT NULL '
+            f'AND try_cast("{c}" AS DOUBLE) <> floor(try_cast("{c}" AS DOUBLE))) AS frac '
+            f"FROM {src}"
         )
         try:
             res = con.execute(q).fetchone()
@@ -434,10 +465,12 @@ class LocalUploadConnection(Connector):
         nn = res[0] or 0
         if nn == 0:
             return None
+        fractional = res[len(_PROBE_TYPES) + 1] or 0
         threshold = 0.95 * nn
         for i, t in enumerate(_PROBE_TYPES):
             if (res[i + 1] or 0) >= threshold:
-                # DOUBLE that's fully integer-castable is reported as BIGINT first
+                if t == "BIGINT" and fractional:
+                    continue          # would truncate — let DOUBLE win the probe order
                 return t
         return None
 
@@ -470,12 +503,27 @@ class LocalUploadConnection(Connector):
         table_name = _safe_ident(table_name or file_path.stem)
         clean_types = self._clean_types(column_types)
 
+        # Decorated numbers ('₹1,099', '64%') are re-typed automatically. Nothing else
+        # in the platform does this: `column_types` is entirely caller-supplied, so a
+        # file uploaded through the API — no import-review round-trip — kept every
+        # price as text and every downstream metric read NULL.
+        #
+        # Detection runs over EVERY column, including ones the caller typed explicitly,
+        # and the two are reconciled below. Skipping overridden columns looked like
+        # "the user's decision wins", but it meant asking for the numeric type — which
+        # is exactly what `analyze_file` now SUGGESTS and the import UI offers as a
+        # one-click chip — fell through to a plain TRY_CAST over '₹1,099' and emptied
+        # the column at ingest. The one action the UI recommends must not be the one
+        # that destroys the data.
+        transforms = self._reconcile_transforms(self._detect_costumes(dest), clean_types)
+
         # Materialize the table first (applying any user overrides), THEN pin the
         # result: DESCRIBE the created table to capture the full effective
         # {column: type} contract — a pinned schema hint. On reload we
         # reproduce these exact types instead of re-sniffing the file, which can
         # drift across DuckDB versions / sampling and silently re-type a column.
-        self._register_file(dest, table_name, schema, clean_types)
+        self._register_file(dest, table_name, schema, clean_types,
+                            column_transforms=transforms)
         contract = self._describe_contract(schema, table_name)
 
         # Persist the import config + the pinned contract + provenance, so reload
@@ -486,6 +534,7 @@ class LocalUploadConnection(Connector):
                 "table_name": table_name,
                 "schema": schema,
                 "column_types": clean_types,
+                "column_transforms": transforms,
                 "schema_contract": contract,
                 "source_file": file_path.name,
                 "format": ext.lstrip("."),
@@ -514,6 +563,68 @@ class LocalUploadConnection(Connector):
         except Exception:
             return {}
 
+    def _detect_costumes(self, path: Path, skip: set | None = None) -> dict:
+        """``{column: {"cast_to", "unit", "sample"}}`` for every decorated-number column.
+
+        Probed on a throwaway connection against the file itself, so detection sees the
+        reader's raw output rather than an already-materialized table.
+        """
+        skip = skip or set()
+        ext = path.suffix.lower()
+        reader = _SUPPORTED_EXTENSIONS.get(ext, "read_csv_auto")
+        src = f"{reader}('{path.as_posix()}')"
+        found: dict = {}
+        con = duckdb.connect(":memory:")
+        try:
+            for row in con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall():
+                name, dtype = row[0], str(row[1])
+                if name in skip or not dtype.upper().startswith("VARCHAR"):
+                    continue
+                if self._suggest_type(con, src, name) is not None:
+                    continue          # a plain cast already reaches it — not our column
+                hit = _detect_costume(con, src, name)
+                if hit:
+                    found[name] = hit
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "costume detection is best-effort; columns stay as the reader "
+                          "typed them on failure", counter="upload.costume_detect",
+                     conn_id=self._connection_id or None)
+        finally:
+            con.close()
+        if found:
+            logger.info("Re-typed %d decorated-number column(s) in %s: %s",
+                        len(found), path.name,
+                        ", ".join(f"{c}→{v['cast_to']}" for c, v in found.items()))
+        return found
+
+    @staticmethod
+    def _reconcile_transforms(transforms: dict, column_types: dict) -> dict:
+        """Settle detected decoration against an explicit caller override.
+
+        Three outcomes per column:
+        • no override                → transform as detected.
+        • override to a NUMERIC type → transform, casting to the type the caller asked
+          for. They want a number, and stripping the decoration is the only way to get
+          one; a plain cast over '₹1,099' yields NULL. This covers INTEGER and DECIMAL,
+          not just the two types detection picks for itself — a person choosing INTEGER
+          for a whole-rupee price means the same thing, and a real workspace was found
+          in exactly that state: `actual_price` pinned INTEGER over currency text,
+          1,465 rows, zero non-null.
+        • override to anything else  → drop the transform. Asking for VARCHAR (or DATE)
+          is a decision to keep the raw text, and it stands.
+        """
+        out = dict(transforms)
+        for col, requested in (column_types or {}).items():
+            if col not in out:
+                continue
+            t = str(requested).upper()
+            if t in _COSTUME_CAST_TYPES:
+                out[col] = {**out[col], "cast_to": t}
+            else:
+                out.pop(col)
+        return out
+
     @staticmethod
     def _clean_types(column_types: dict | None) -> dict:
         if not column_types:
@@ -532,11 +643,13 @@ class LocalUploadConnection(Connector):
         schema: str = DEFAULT_SCHEMA,
         column_types: dict | None = None,
         schema_contract: dict | None = None,
+        column_transforms: dict | None = None,
     ) -> None:
         ext = path.suffix.lower()
         reader = _SUPPORTED_EXTENSIONS.get(ext, "read_csv_auto")
         src = f"{reader}('{path.as_posix()}')"
-        select_sql = self._build_select(src, column_types, schema_contract)
+        select_sql = self._build_select(src, column_types, schema_contract,
+                                        column_transforms)
         fq = f'"{schema}"."{table_name}"'
         try:
             self._duckdb.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
@@ -552,6 +665,7 @@ class LocalUploadConnection(Connector):
         src: str,
         column_types: dict | None = None,
         schema_contract: dict | None = None,
+        column_transforms: dict | None = None,
     ) -> str:
         """Build the SELECT that materializes a file into a table.
 
@@ -562,10 +676,18 @@ class LocalUploadConnection(Connector):
           with a complex/non-scalar pinned type pass through unchanged.
         • ``column_types`` (ingest): TRY_CAST only the user-overridden columns; the
           rest keep the reader's freshly-inferred type. (Original behavior.)
+
+        ``column_transforms`` OUTRANKS both, and must: a decorated-number column is
+        DOUBLE in the pinned contract, but the file on disk still holds '₹1,099'. A
+        plain ``TRY_CAST(price AS DOUBLE)`` over that text yields NULL for every row,
+        so honouring the contract alone would silently empty the column on the first
+        reload — the ingest would look right and the restart would lose the data.
+        The transform re-derives the value the way ingest did.
         """
         strict = bool(schema_contract)
         pin = schema_contract if strict else (column_types or {})
-        if not pin:
+        tf = column_transforms or {}
+        if not pin and not tf:
             return f"SELECT * FROM {src}"
         con = self._duckdb
         try:
@@ -576,6 +698,10 @@ class LocalUploadConnection(Connector):
         parts = []
         for name in cols:
             esc = name.replace('"', '""')
+            spec = tf.get(name)
+            if isinstance(spec, dict) and spec.get("cast_to") in _COSTUME_CAST_TYPES:
+                parts.append(f'{_costume_clean_sql(name, spec["cast_to"])} AS "{esc}"')
+                continue
             t = pin.get(name)
             cast_to = None
             if t:
@@ -617,9 +743,15 @@ class LocalUploadConnection(Connector):
                 # Prefer the pinned full contract (deterministic reload); old
                 # sidecars without one fall back to overrides-only re-sniffing.
                 schema_contract = cfg.get("schema_contract") or None
+                # Decorated-number columns must be re-derived, not re-cast: the file on
+                # disk still holds '₹1,099' while the contract says DOUBLE. Dropping this
+                # on reload empties the column silently — ingest looks right, the first
+                # restart loses the data.
+                column_transforms = cfg.get("column_transforms") or None
                 try:
                     self._register_file(f, table_name, schema, column_types,
-                                        schema_contract=schema_contract)
+                                        schema_contract=schema_contract,
+                                        column_transforms=column_transforms)
                 except Exception:
                     pass  # never break startup on one bad file
 
@@ -651,6 +783,7 @@ class LocalUploadConnection(Connector):
                     "size_bytes": f.stat().st_size,
                     "extension": f.suffix.lower(),
                     "column_types": cfg.get("column_types") or {},
+                    "column_transforms": cfg.get("column_transforms") or {},
                     "schema_contract": cfg.get("schema_contract") or {},
                     "created_by": cfg.get("created_by"),
                     "created_at": cfg.get("created_at"),
@@ -815,16 +948,46 @@ class LocalUploadConnection(Connector):
                     ).fetchall()
                     from aughor.db.type_overrides import get_table_overrides
                     _overrides = get_table_overrides(self._connection_id or "", tname)
+                    samples = self._column_samples(tschema, tname, [c[0] for c in cols])
                     for col in cols:
                         col_name, col_type = col[0], col[1]
                         if col_name in _overrides:
                             col_type = _overrides[col_name]
-                        parts.append(f"  {col_name}  {col_type}")
+                        parts.append(f"  {col_name}  {col_type}"
+                                     + samples.get(col_name, ""))
                 except Exception:
                     parts.append("  # column info unavailable")
         except Exception as e:
             parts.append(f"# Schema introspection failed: {e}")
         return "\n".join(parts) or "(no files uploaded yet)"
+
+    def _column_samples(self, schema: str, table: str, columns: list) -> dict:
+        """``{column: " ~ e.g. 'a', 'b'"}`` — a few real values per column.
+
+        One scan of the table's head serves every column, so this costs a single extra
+        query per table. Best-effort: a table that won't sample renders exactly as it
+        did before.
+        """
+        from aughor.db.schema_render import format_value_samples
+        if not columns:
+            return {}
+        try:
+            # Double every embedded quote. Column names come from a user-supplied CSV
+            # header and are NEVER passed through `_safe_ident` (which guards only table
+            # and schema names), so a header cell containing a `"` closes the identifier
+            # and the rest of the cell executes as SQL on the workspace handle.
+            quoted = ", ".join('"' + c.replace('"', '""') + '"' for c in columns)
+            rows = self._duckdb.execute(
+                f'SELECT {quoted} FROM "{schema}"."{table}" LIMIT 5'
+            ).fetchall()
+        except Exception:
+            return {}
+        out: dict = {}
+        for i, col in enumerate(columns):
+            suffix = format_value_samples([r[i] for r in rows])
+            if suffix:
+                out[col] = suffix
+        return out
 
     def test(self) -> tuple[bool, str]:
         files = self.list_files()
