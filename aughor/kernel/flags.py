@@ -1047,6 +1047,34 @@ def _override(name: str):
     return None
 
 
+def override_drift() -> dict[str, dict]:
+    """Runtime overrides that CHANGE what this process does versus a fresh clone.
+
+    The count that matters is not "how many overrides exist" — it is how many *contradict*
+    what the flag would resolve to without them. Measured 2026-07-31 on the reference box:
+    **15 of 16 overrides were inert restatements of the default**, so an audit that counts
+    overrides reports 16 problems where there is 1.
+
+    The comparison is against :func:`_env_resolved`, NOT ``FLAG_DEFAULT``, and that
+    distinction is load-bearing: an ``AUTO_ELIGIBLE`` flag with no default still resolves
+    ON while Auto-mode is active, so an override pinning it ``False`` IS drift even though
+    it matches ``FLAG_DEFAULT.get(name, False)``. Predicting the effect of a clear from
+    ``FLAG_DEFAULT`` alone got three flags wrong on exactly that point.
+
+    Returns ``{flag: {"override": bool, "without_override": bool}}`` — empty when this
+    process resolves every flag the way a fresh clone would.
+    """
+    drift: dict[str, dict] = {}
+    for name in FLAG_ENV:
+        ov = _override(name)
+        if ov is None:
+            continue
+        clean = _env_resolved(name)
+        if bool(ov) != clean:
+            drift[name] = {"override": bool(ov), "without_override": clean}
+    return drift
+
+
 # ── Run-scoped overrides (Wave E4) ────────────────────────────────────────────────────
 # Both layers above are process-global: the ledger override is persistent and the env var
 # needs a restart. Neither can express "run THIS cell of the grid with the flag on" while a
