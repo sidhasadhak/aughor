@@ -334,7 +334,9 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                   </select>
                   {suggest && (
                     <Button variant="ghost" type="button" onClick={() => setChosen(p => ({ ...p, [c.name]: suggest }))}
-                      title={`DuckDB read this as text but the values look like ${suggest}`}
+                      title={c.detected_format
+                        ? `Values are ${c.detected_format.kind.replace(/_/g, " ")}-formatted${c.detected_format.example ? ` (e.g. ${c.detected_format.example})` : ""} — stored as text, read as ${suggest}`
+                        : `DuckDB read this as text but the values look like ${suggest}`}
                       className="h-auto p-0"
                       style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 5, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
                         background: chosen[c.name] === suggest ? "transparent" : "color-mix(in srgb, var(--amb4) 16%, transparent)",

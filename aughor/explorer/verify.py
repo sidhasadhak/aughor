@@ -28,7 +28,7 @@ _RATE_CTX_RE = re.compile(
 )
 
 # A finding whose text says the query returned nothing / failed (used by is_degenerate_result +
-# revalidate). These must not become insights: noise in the Briefing, broken monitors if clicked.
+# revalidate). These must not become findings: noise in the Briefing, broken monitors if clicked.
 _NO_DATA_RE = re.compile(
     r"(returned no data|no data (found|available|to report|for)|0 \w+ (were |was )?found|"
     r"null values for all|no rows (returned|found|matched)|query (failed|errored)|"
@@ -38,8 +38,8 @@ _NO_DATA_RE = re.compile(
 
 
 def is_degenerate_result(rows, finding_text: str = "", sql: str = "", metric_ranges=None) -> bool:
-    """True when a Phase-8 result carries no trustworthy data — so it never becomes an
-    insight (and so never reaches the Briefing). Cases:
+    """True when a Phase-8 result carries no trustworthy data — so it never becomes a
+    finding (and so never reaches the Briefing). Cases:
 
       1. the whole result is NULL (empty join/filter matched nothing), OR
       2. ANY numeric column is NULL across EVERY row, OR ZERO across every row — a metric
@@ -203,8 +203,71 @@ def _insight_col_types(conn) -> dict[str, str]:
         return {}
 
 
+_FROM_TABLE_RE = re.compile(r"\bFROM\s+([A-Za-z_][\w.]*|\"[^\"]+\"(?:\.\"[^\"]+\")*)", re.I)
+_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# How many suspect columns to probe. A degenerate result is already a rare path, but
+# the probe is a live query per column — one bad metric should not fan out into a scan.
+_COSTUME_DIAGNOSIS_MAX_COLS = 3
+
+
+def unparsed_numeric_diagnosis(sql: str, conn=None, col_types=None) -> str | None:
+    """Why an all-NULL metric is NULL: absent data, or PRESENT data that didn't parse?
+
+    An aggregate over a currency column stored as text ('₹1,099') returns NULL for
+    every row and every group. Read without checking the values, that is indexed as
+    "the column is empty" — and the report then recommends fixing an ingestion
+    pipeline that has nothing wrong with it, over data that is 100% populated. The two
+    diagnoses call for opposite work (parse it vs. go find it), so the gate must not
+    guess between them.
+
+    Returns a reader-grade sentence naming the column and the format, or None when the
+    columns really are empty (in which case the caller's generic advisory is right).
+    Best-effort throughout: any failure yields None and today's wording stands.
+    """
+    if conn is None or not (sql or "").strip():
+        return None
+    try:
+        from aughor.sql.numeric_text import (
+            costume_kind, costume_probe_sql, interpret_costume,
+        )
+        m = _FROM_TABLE_RE.search(sql)
+        if not m:
+            return None
+        table = m.group(1)
+        types = col_types if col_types is not None else _insight_col_types(conn)
+        if not types:
+            return None
+        # Only text columns the query actually names — a numeric column that is NULL
+        # is genuinely empty, and is not this diagnosis.
+        named = {i for i in _IDENT_RE.findall(sql)}
+        suspects = [
+            c for c in types
+            if c in named and str(types[c]).upper().startswith(("VARCHAR", "TEXT", "STRING", "CHAR"))
+        ][:_COSTUME_DIAGNOSIS_MAX_COLS]
+        for col in suspects:
+            res = conn.execute("_verify_costume",
+                               f"SELECT {costume_probe_sql(col)} FROM {table}")
+            if getattr(res, "error", None) or not getattr(res, "rows", None):
+                continue
+            hit = interpret_costume(res.rows[0])
+            if not hit:
+                continue
+            kind = costume_kind(hit["unit"])
+            shown = f" (e.g. '{hit['sample']}')" if hit.get("sample") else ""
+            return (
+                f"`{col}` is populated text, not a number — its values are "
+                f"{kind.replace('_', ' ')}-formatted{shown}, so aggregating it yields NULL "
+                f"for every row. The data is present and needs parsing, not backfilling"
+            )
+    except Exception as _e:
+        tolerate(_e, "trust gate: unparsed-numeric diagnosis",
+                 counter="insight_gate.costume_diagnosis_failed")
+    return None
+
+
 def _insight_sql_unsound(sql: str, conn=None) -> str | None:
-    """Static SQL-trust battery for a CANDIDATE INSIGHT's query — the same authorities the
+    """Static SQL-trust battery for a CANDIDATE FINDING's query — the same authorities the
     profile audit applies, now enforced BEFORE an explorer finding can be emitted. Returns a
     one-line reason the query is untrustworthy, or None. High precision (errs toward keeping):
 
@@ -431,7 +494,7 @@ def _claim_numbers_grounded(finding_text: str, rows) -> str | None:
     comma-grouped counts, percentages) should trace to the actual result. Flags ONLY gross
     fabrication — ≥2 salient numbers asserted and NONE grounded (raw or derived) in the rows.
     Rounding, abbreviations ($1.3M) and a single derived figure never trip it — false positives
-    here would drop good insights, so the bar is deliberately high."""
+    here would drop good findings, so the bar is deliberately high."""
     if not finding_text or not rows:
         return None
     pairs = _salient_number_pairs(finding_text)
@@ -513,18 +576,31 @@ def _implausible_ratio_claim(finding_text: str, cap: float = _IMPLAUSIBLE_RATIO_
 # Named-metric ↔ SQL coherence + relabel/drift guards live in metric_coherence.py (extracted
 # from this god-file). verify_insight (below) and the Phase-8 emission sites import them.
 
-def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None, *, columns=None, industry: str = "") -> tuple[bool, str]:
+def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None, *, columns=None, industry: str = "", diagnose_conn=None) -> tuple[bool, str]:
     """THE pre-emission trust gate: a candidate finding is surfaced ONLY if it passes every
     deterministic check. Returns (ok, reason). A SOTA platform treats generated claims as
     untrusted until verified — so the explorer self-weeds (tautologies, fan-out artifacts,
     boundary-saturated rates, fabricated numbers) instead of shipping confident nonsense to
     a Briefing. Supersedes the bare degenerate check at every emission site; fail-open only
-    on internal error (never silently drops a sound finding due to a gate bug)."""
+    on internal error (never silently drops a sound finding due to a gate bug).
+
+    ``diagnose_conn`` is a live handle used for ONE purpose: when the result is degenerate,
+    probing the source columns to distinguish absent data from unparsed data. It is
+    separate from ``conn`` on purpose — callers that keep the static battery static (the
+    deep-analysis path passes conn=None to skip the cardinality oracle) still want the honest
+    root cause on the rare path where a metric comes back empty."""
     try:
         why = _insight_sql_unsound(sql, conn)
         if why:
             return (False, why)
         if is_degenerate_result(rows, finding_text, sql, metric_ranges):
+            # Prefer the ROOT CAUSE over the symptom when we can establish it live. "No
+            # variation to rank" is true of an all-NULL metric either way, but it reads as
+            # missing data — and a reader acts on that by chasing an ingestion bug. When
+            # the values are actually there and merely unparsed, say so instead.
+            why = unparsed_numeric_diagnosis(sql, diagnose_conn or conn)
+            if why:
+                return (False, why)
             # Reader-grade wording: this string surfaces verbatim as a trust advisory in the
             # report body — "degenerate result (flat NULL / zero / boundary-pinned rate)" is
             # a debug label, not a sentence a reader should have to parse.
@@ -538,7 +614,7 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
             return (False, vc)
         # Deterministic plausibility, shared with the briefing's triage so there is ONE KB.
         # Lifted to the EMISSION gate so an impossible/void value never gets stored —
-        # protecting the insight cards and any other consumer, not just the brief. Two things
+        # protecting the finding cards and any other consumer, not just the brief. Two things
         # hard-reject here (both 'implausible'):
         #   • an impossible magnitude (inventory turnover 3,600× — operating-band KB), and
         #   • an aggregate↔type mismatch: SUM/AVG/STDDEV over a column whose DECLARED type

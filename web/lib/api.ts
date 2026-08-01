@@ -439,6 +439,10 @@ export interface ColumnAnalysis {
   name: string;
   detected_type: string;
   suggested_type: string | null;
+  /** Set when the column holds numbers wearing formatting — '₹1,099', '64%', '24,269'.
+   *  Carries WHY the text column is about to become a number, so the review row can say
+   *  it rather than showing an unexplained type change. */
+  detected_format: { kind: string; unit: string; example: string | null } | null;
 }
 
 export interface FileAnalysis {

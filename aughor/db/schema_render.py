@@ -156,6 +156,57 @@ def render_raw_schema(
     return "\n".join(parts)
 
 
+# ── Column value samples ──────────────────────────────────────────────────────
+# A type alone does not say what a column HOLDS. A schema line reading
+# `actual_price  VARCHAR` is indistinguishable from an empty column, so a planner
+# reading it cannot tell a genuinely missing price from one stored as '₹1,099' —
+# and will write SUM(TRY_CAST(...)) that returns NULL and calls the data missing.
+# Appending a couple of real values makes the column self-describing.
+#
+# The marker is distinctive so `strip_value_samples` can remove samples again before
+# any pass that scans the schema TEXT for column-name tokens: a product name
+# containing the word "discount" must never be mistaken for a discount COLUMN.
+SAMPLE_MARK = "  ~ e.g. "
+
+_SAMPLE_LINE_RE = re.compile(re.escape(SAMPLE_MARK) + r".*$", re.MULTILINE)
+
+# Per-value and per-column caps. Schema context is a budgeted payload — samples are
+# a hint, not a data dump, and a free-text column would otherwise swamp the block.
+SAMPLE_VALUE_CHARS = 28
+SAMPLE_MAX_VALUES = 3
+
+
+def strip_value_samples(schema_str: str) -> str:
+    """Remove `~ e.g. …` sample annotations, leaving the bare `col TYPE` schema.
+
+    Call this before any regex that scans schema text for column names — sample
+    VALUES are data, and letting them match a column-name pattern invents columns
+    that do not exist.
+    """
+    return _SAMPLE_LINE_RE.sub("", schema_str or "")
+
+
+def format_value_samples(values: list) -> str:
+    """Render sample values as a schema-line suffix, or '' when there's nothing useful.
+
+    Newlines and tabs are flattened: a raw value containing a newline would split the
+    schema line in two and the second half would parse as a bogus column.
+    """
+    seen: list[str] = []
+    for v in values or []:
+        if v is None:
+            continue
+        s = " ".join(str(v).split())            # flatten all whitespace, incl. newlines
+        if not s or s in seen:
+            continue
+        if len(s) > SAMPLE_VALUE_CHARS:
+            s = s[:SAMPLE_VALUE_CHARS - 1] + "…"
+        seen.append(s)
+        if len(seen) >= SAMPLE_MAX_VALUES:
+            break
+    return SAMPLE_MARK + ", ".join(f"'{s}'" for s in seen) if seen else ""
+
+
 # ── Pure schema-string helpers (no DB, no agent) ──────────────────────────────
 
 def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:

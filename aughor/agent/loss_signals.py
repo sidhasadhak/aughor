@@ -144,6 +144,12 @@ def detect_loss_signals(question: str, schema_text: str) -> dict | None:
     q = question or ""
     if not (LOSS_INTENT_RE.search(q) or OPPORTUNITY_INTENT_RE.search(q)):
         return None
+    # Scan the column NAMES only. The schema may now carry sample VALUES, and these are
+    # word-token scans: a product named "Discount Cable" or a status value "refunded"
+    # would otherwise be harvested as a contra-revenue COLUMN and handed to the intake
+    # as a column to aggregate — one that does not exist.
+    from aughor.db.schema_render import strip_value_samples
+    schema_text = strip_value_samples(schema_text or "")
     contra = sorted({m.group(1).lower() for m in CONTRA_REVENUE_RE.finditer(schema_text or "")})
     capacity = sorted({m.group(1).lower() for m in CAPACITY_RE.finditer(schema_text or "")})
     if not contra and not capacity:
@@ -153,6 +159,126 @@ def detect_loss_signals(question: str, schema_text: str) -> dict | None:
                         if LIFECYCLE_COL_RE.search(c)})
     return {"contra_revenue": contra[:12], "capacity": capacity[:8],
             "lifecycle": lifecycle[:4]}
+
+
+# ── Leakage direction ─────────────────────────────────────────────────────────
+# A leakage rate must RISE as money is lost. Bound to `SUM(net)/SUM(gross)` it measures
+# the opposite — revenue RETAINED — and every reading of the report inverts with it: the
+# deepest-discounted segment ranks as the most efficient one, and the scan's "weakest
+# first" ordering puts it at the top as the best performer.
+#
+# Observed live on a retail export: intake bound "Leakage Rate" to
+# `SUM(discounted_price)/SUM(actual_price)`, and the report led with
+# "the most efficient category ... 0.082" — a category selling at 8.2% of list, i.e. a
+# 91.8% discount, the worst in the file. That is worse than abstaining: the earlier bug
+# reported "cannot be assessed", this one asserts the reverse of the truth at HIGH
+# confidence. The direction is decidable from the column names alone, so it is settled
+# here deterministically rather than left to the planner.
+_GROSS_PRICE_RE = re.compile(
+    r"(^|_)(actual|list|mrp|msrp|original|full|retail|gross|undiscounted|standard|rack)(_|$)", re.I)
+_NET_PRICE_RE = re.compile(
+    r"(^|_)(discounted|discount|sale|selling|final|net|paid|offer|realized|realised)(_|$)", re.I)
+
+# The metric must claim to measure loss before we touch its direction.
+_LEAKAGE_LABEL_RE = re.compile(r"leakage|contra|discount|markdown|erosion", re.I)
+
+# `AGG(ref)` where ref is a possibly-qualified column.
+_SUM_REF_RE = re.compile(r"\bSUM\s*\(\s*([A-Za-z_][\w.\"]*)\s*\)", re.I)
+
+
+def leakage_direction_fix(metric_label: str, metric_sql: str) -> tuple | None:
+    """Correct a leakage metric bound backwards. Returns ``(sql, note)`` or None.
+
+    Fires only on the unambiguous shape: a single division whose numerator is a NET
+    (paid / post-discount) column and whose denominator is a GROSS (list / pre-discount)
+    column, under a label claiming to measure loss. That is retention wearing a leakage
+    name; the loss is `gross - net` over `gross`. Anything else — already correct, both
+    sides the same kind, more than one division, a non-SUM aggregate — is left alone.
+    """
+    sql = (metric_sql or "").strip()
+    if not sql or sql.count("/") != 1:
+        return None
+    # The LABEL only — never the SQL. `SUM(discounted_price)/SUM(actual_price)` contains
+    # the word "discount" whatever it is called, so matching the formula would rewrite
+    # any net-over-gross ratio, including an average selling price that is bound exactly
+    # that way on purpose. We correct a metric that CLAIMS to measure loss, nothing else.
+    if not _LEAKAGE_LABEL_RE.search(metric_label or ""):
+        return None
+    left, right = sql.split("/", 1)
+    lm, rm = _SUM_REF_RE.search(left), _SUM_REF_RE.search(right)
+    if not lm or not rm:
+        return None
+    num, den = lm.group(1), rm.group(1)
+    num_leaf, den_leaf = num.split(".")[-1].strip('"'), den.split(".")[-1].strip('"')
+    if num_leaf.lower() == den_leaf.lower():
+        return None                      # a self-ratio is a different defect
+    num_is_net = bool(_NET_PRICE_RE.search(num_leaf)) and not _GROSS_PRICE_RE.search(num_leaf)
+    den_is_gross = bool(_GROSS_PRICE_RE.search(den_leaf)) and not _NET_PRICE_RE.search(den_leaf)
+    if not (num_is_net and den_is_gross):
+        return None
+    pct = "* 100" if re.search(r"\*\s*100\b", sql) else ""
+    fixed = f"(SUM({den}) - SUM({num})) / NULLIF(SUM({den}), 0){(' ' + pct) if pct else ''}"
+    note = (f"Corrected the leakage formula's direction: `{num_leaf}`/`{den_leaf}` measures revenue "
+            f"RETAINED, so a lower value would have read as less leakage when it is in fact a "
+            f"deeper discount. Leakage is now ({den_leaf} − {num_leaf}) ÷ {den_leaf}.")
+    return fixed, note
+
+
+# Metrics where a HIGH value is the bad outcome. The cross-section scan ranks ascending
+# by default — a weakness frame that is correct for revenue or margin, where the laggard
+# is the smallest number. For a loss rate it is exactly backwards: the worst segment is
+# the LARGEST, so an ascending, LIMIT-capped scan returns the healthiest slice of the
+# business and the report cannot answer "where are we losing money" from it. Observed
+# live: a leakage scan surfaced the fifteen LOWEST-leakage groups and concluded "overall
+# loss location is unproven" at LOW confidence — correctly, because it had been shown the
+# wrong tail.
+_HIGHER_IS_WORSE_RE = re.compile(
+    r"leakage|contra|refund|chargeback|discount|rebate|writeoff|write[ _-]?off|clawback"
+    r"|penalt|churn|attrition|cancel|return[s]?[ _-]?rate|defect|error[ _-]?rate|failure"
+    r"|waste|shrink|cost|spend|burn|overrun|markdown|erosion|delay|late|backlog|breach",
+    re.I)
+
+# …unless the metric is explicitly a good-thing-per-bad-thing framing.
+_HIGHER_IS_BETTER_RE = re.compile(
+    r"\b(margin|profit|revenue|sales|retention|recovery|savings|uptime|fill[ _-]?rate)\b", re.I)
+
+
+def loss_magnitude_sql(metric_sql: str) -> str | None:
+    """The absolute money behind a loss RATE — its numerator aggregate, standing alone.
+
+    A rate answers "how deeply", never "how much". Two segments at 90% leakage are not
+    the same finding when one gives away ₹2M and the other ₹900, and a ranking by rate
+    puts the trivial one first whenever its denominator is small. The numerator is
+    already inside the metric; this just lifts it out so the magnitude can be measured
+    over the WHOLE table — never summed from the scan's capped rows, which would report
+    a truncated total as the total.
+
+    Returns e.g. ``SUM(actual_price - discounted_price)``, or None if the formula is not
+    a single ratio with an aggregate numerator.
+    """
+    s = (metric_sql or "").strip()
+    if not s or s.count("/") != 1:
+        return None
+    left = re.sub(r"^\s*100(\.0+)?\s*\*\s*", "", s.split("/", 1)[0].strip())
+    left = left.strip().rstrip(")").strip() if left.count("(") < left.count(")") else left.strip()
+    if not re.match(r"^(SUM|COUNT)\s*\(", left, re.I):
+        return None
+    # Balanced parens only — a half-captured expression would not run.
+    if left.count("(") != left.count(")"):
+        return None
+    return left
+
+
+def higher_is_worse(metric_label: str, metric_sql: str = "") -> bool:
+    """True when a LARGER value of this metric is the worse outcome.
+
+    Decided from the metric's own name, not the question's wording, so a loss rate is
+    ranked worst-first even when the user simply asks where the money goes.
+    """
+    text = f"{metric_label or ''} {metric_sql or ''}"
+    if _HIGHER_IS_BETTER_RE.search(metric_label or ""):
+        return False
+    return bool(_HIGHER_IS_WORSE_RE.search(text))
 
 
 # Which loss CLASS a metric already covers — used to decide which forward-chained

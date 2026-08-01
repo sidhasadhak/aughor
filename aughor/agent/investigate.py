@@ -870,7 +870,7 @@ def _extreme_tie_note(columns, rows) -> Optional[str]:
         return None
 
 
-def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label=""):
+def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label="", conn=None):
     """Build phase findings by binding each (query, result) to the narrator finding for
     its OWN dimension — never by list position. The displayed title is grounded in the
     query that produced the rows whenever the match is dimension-certain, so a card can
@@ -899,11 +899,16 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
         # magnitude, fan-out artifact, vacuous CASE, ungrounded claim). It NEVER blocks: the
         # answer is always shown; an untrusted result just carries a caveat the UI surfaces.
         # conn=None → static checks only (no live cardinality probe), to keep ADA snappy.
+        # `diagnose_conn` is narrower: it is used ONLY on the degenerate-result branch, to
+        # tell "this data is missing" apart from "this data is text we failed to parse".
+        # That branch is already rare, so the live probe costs a healthy run nothing — and
+        # getting it wrong sends someone to fix a pipeline that isn't broken.
         f["trust_caveat"] = None
         if not r.error and r.rows:
             try:
                 from aughor.explorer.agent import verify_insight
-                _ok, _why = verify_insight(r.rows, f.get("interpretation", ""), r.sql, columns=r.columns)
+                _ok, _why = verify_insight(r.rows, f.get("interpretation", ""), r.sql,
+                                           columns=r.columns, diagnose_conn=conn)
                 if not _ok:
                     f["trust_caveat"] = _why
             except Exception as _e:
@@ -3532,6 +3537,27 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         if _pin_note:
             _metric_note = f"{_metric_note} {_pin_note}".strip() if _metric_note else _pin_note
 
+    # A leakage rate must RISE as money is lost. Bound to SUM(net)/SUM(gross) it measures
+    # revenue RETAINED, and every downstream reading inverts with it — the scan ranks
+    # ascending, so the deepest-discounted segment surfaces first and is narrated as the
+    # BEST performer. Runs after the canonical pin so a governed formula is never
+    # second-guessed, and only rewrites the one unambiguous net-over-gross shape.
+    if intake is not None:
+        try:
+            from aughor.agent.loss_signals import leakage_direction_fix
+            _dir = leakage_direction_fix(getattr(intake, "metric_label", ""),
+                                         getattr(intake, "metric_sql", ""))
+            if _dir:
+                intake.metric_sql, _dir_note = _dir
+                intake.metric_is_ratio = True
+                _metric_note = f"{_metric_note} {_dir_note}".strip() if _metric_note else _dir_note
+                _logging.getLogger(__name__).info(
+                    "intake: corrected leakage metric direction → %s", intake.metric_sql)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "leakage direction check is best-effort; the intake formula stands",
+                     counter="deep_analysis.leakage_direction")
+
     # Resolve a hallucinated / non-date `date_column` to a REAL date/timestamp column —
     # often on a joinable table (orders.order_ts) rather than the metric table (invoices).
     if intake is not None and intake.date_column and intake.date_column.upper() != "NONE":
@@ -3789,12 +3815,16 @@ class _PhaseRun:
     """Outcome of the shared plan→execute→interpret skeleton. On failure `error_phase` is a
     ready phase the caller returns; on success the caller proceeds with its bespoke tail."""
     def __init__(self, ok, results=None, results_text="", interpretation=None, error_phase=None,
-                 fanout_caveat=None):
+                 fanout_caveat=None, conn=None):
         self.ok = ok
         self.results = results or []
         self.results_text = results_text
         self.interpretation = interpretation
         self.error_phase = error_phase
+        # The connection these results came from. Carried so a shared tail (which receives
+        # only the run) can still reach the live data — the degenerate-result diagnosis
+        # needs to probe the source columns, and a tail with no handle cannot.
+        self.conn = conn
         # Set when a metric still aggregates across a fan-out join AFTER the corrective
         # re-plan — the magnitude is unreliable and must not be presented as trustworthy.
         self.fanout_caveat = fanout_caveat
@@ -4123,7 +4153,7 @@ def run_analysis_phase(
                            conn_id=getattr(conn, "_connection_id", None),
                            dialect=getattr(conn, "dialect", "duckdb"))
     return _PhaseRun(ok=True, results=results, results_text=results_text, interpretation=interpretation,
-                     fanout_caveat=_fanout_caveat)
+                     fanout_caveat=_fanout_caveat, conn=conn)
 
 
 @_telemetry.node_span("ada_baseline")
@@ -4263,7 +4293,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
                  counter="deep_analysis.level_shift_probe")
 
     if interpretation and interpretation.findings:
-        findings = _assemble_phase_findings(results, interpretation.findings, "baseline")
+        findings = _assemble_phase_findings(results, interpretation.findings, "baseline", conn=conn)
         summary = interpretation.phase_summary
         passes_to_next = interpretation.passes_to_next
         # If stats.py couldn't compute sigma, fall back to LLM's is_significant flags
@@ -4605,7 +4635,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     results, _results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     if interpretation and interpretation.findings:
-        findings = _assemble_phase_findings(results, interpretation.findings, "dim")
+        findings = _assemble_phase_findings(results, interpretation.findings, "dim", conn=conn)
         # G1 — strip fabricated change-attribution from any finding whose prior-period baseline is empty.
         for f in findings:
             _neutralize_baseless_contribution(f)
@@ -4720,7 +4750,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     results, _results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     if interpretation and interpretation.findings:
-        findings = _assemble_phase_findings(results, interpretation.findings, "beh")
+        findings = _assemble_phase_findings(results, interpretation.findings, "beh", conn=conn)
         summary = interpretation.phase_summary
     else:
         findings = [
@@ -4871,15 +4901,52 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # the top so synthesis doesn't lead with a mid-rank value (the D8 "makeup_lips not skincare_face"
     # miss). The metric_computation_block sorts ASC; this override flips it and re-frames the read.
     _max_seeking = _xsec_max_seeking(question)
+    # …and independently of how the question is worded, the METRIC's own polarity decides
+    # which tail matters. For a loss rate the worst segment is the LARGEST, so an ascending
+    # LIMIT-capped scan hands the reader the healthiest slice of the business — the report
+    # then cannot locate the loss it was asked about, and says so at LOW confidence.
+    try:
+        from aughor.agent.loss_signals import higher_is_worse as _hiw
+        _worst_is_max = _hiw(metric_label, metric_sql)
+    except Exception:
+        _worst_is_max = False
+    _orient_top = _max_seeking or _worst_is_max
+    _why_top = ("this question asks for the HIGHEST / MOST" if _max_seeking
+                else f"a HIGHER {metric_label} is the WORSE outcome")
     _direction_plan = (
-        "\n\nDIRECTION OVERRIDE — this question asks for the HIGHEST / MOST: ORDER BY metric_total "
+        f"\n\nDIRECTION OVERRIDE — {_why_top}: ORDER BY metric_total "
         "DESC so the LARGEST values come first, and treat the MAXIMUM as the answer (NOT the "
         "minimum). Keep every other rule above."
-    ) if _max_seeking else ""
+    ) if _orient_top else ""
     _direction_interp = (
-        " DIRECTION: this question asks for the HIGHEST / MOST — name and LEAD WITH the LARGEST "
+        f" DIRECTION: {_why_top} — name and LEAD WITH the LARGEST "
         "value(s); the maximum is the answer, never the minimum."
-    ) if _max_seeking else ""
+    ) if _orient_top else ""
+
+    # MAGNITUDE — a loss rate says how deeply, never how much. Two segments at 90%
+    # leakage are not the same finding when one gives away ₹2M and the other ₹900, and
+    # ranking by rate puts the trivial one first whenever its denominator is small. The
+    # total is measured over the WHOLE table in one probe, never summed from the scan's
+    # capped rows (that would present a truncated total as the total).
+    _magnitude_interp = ""
+    if _worst_is_max:
+        try:
+            from aughor.agent.loss_signals import loss_magnitude_sql
+            _mag_expr = loss_magnitude_sql(metric_sql)
+            if _mag_expr and metric_table:
+                _mag = _probe_metric_scalar(conn, state.get("connection_id", ""),
+                                            metric_table, _mag_expr)
+                if _mag is not None:
+                    _magnitude_interp = (
+                        f" MAGNITUDE: the metric is a RATE; the absolute {metric_label} across the "
+                        f"whole table is {_mag:,.0f} (from {_mag_expr}). LEAD the summary with this "
+                        "total, then say where the rate concentrates. A high rate on a tiny base is "
+                        "not the biggest loss — rank by rate, but SIZE the finding with this number."
+                    )
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "loss-magnitude probe is best-effort; the scan reports the rate alone",
+                     counter="deep_analysis.loss_magnitude")
 
     # PREMISE VALIDATION (flag-gated): a "why is X so high/low" question ASSERTS the metric
     # sits at an extreme. Before scanning WHERE it concentrates, validate that premise —
@@ -4983,7 +5050,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             "below the in-result average — being the minimum of a ranking is NOT, by itself, "
             "evidence it is unhealthy. Otherwise use relative language ('the lowest at X vs the ~Y "
             "average'). Be explicit when the spread is tight and all values are healthy."
-        ) + _direction_interp,
+        ) + _direction_interp + _magnitude_interp,
         interpret_user_fn=(lambda results_text: CROSS_SECTION_RATIO_INTERPRET_PROMPT.format(
             question=question, metric_label=metric_label, results_text=results_text))
         if is_ratio else
@@ -5019,7 +5086,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # (default "cross_section" keeps the historical "xsec" prefix → byte-identical).
     _fprefix = "xsec" if _phase_id == "cross_section" else _phase_id
     if interpretation and interpretation.findings:
-        findings = _assemble_phase_findings(results, interpretation.findings, _fprefix, metric_label=metric_label)
+        findings = _assemble_phase_findings(results, interpretation.findings, _fprefix, metric_label=metric_label, conn=conn)
         summary = interpretation.phase_summary
     else:
         findings = [
@@ -5801,7 +5868,7 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
         return _run.error_phase, None
     results, interp = _run.results, _run.interpretation
     if interp and interp.findings:
-        findings = _assemble_phase_findings(results, interp.findings, "when", metric_label=metric_label)
+        findings = _assemble_phase_findings(results, interp.findings, "when", metric_label=metric_label, conn=conn)
         summary = interp.phase_summary
     else:
         findings = [
@@ -5908,7 +5975,7 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
         return _run.error_phase
     results, interp = _run.results, _run.interpretation
     if interp and interp.findings:
-        findings = _assemble_phase_findings(results, interp.findings, "why", metric_label=metric_label)
+        findings = _assemble_phase_findings(results, interp.findings, "why", metric_label=metric_label, conn=conn)
         summary = interp.phase_summary
     else:
         findings = [
@@ -6039,7 +6106,7 @@ def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
         return _run.error_phase
     results, interp = _run.results, _run.interpretation
     if interp and interp.findings:
-        findings = _assemble_phase_findings(results, interp.findings, "interaction", metric_label=metric_label)
+        findings = _assemble_phase_findings(results, interp.findings, "interaction", metric_label=metric_label, conn=conn)
         summary = interp.phase_summary
     else:
         findings = [
@@ -6205,7 +6272,8 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
         return _run.error_phase
     results, interp = _run.results, _run.interpretation
     if interp and interp.findings:
-        findings = _assemble_phase_findings(results, interp.findings, fprefix, metric_label=metric_label)
+        findings = _assemble_phase_findings(results, interp.findings, fprefix,
+                                            metric_label=metric_label, conn=_run.conn)
         summary = interp.phase_summary
     else:
         findings = [
